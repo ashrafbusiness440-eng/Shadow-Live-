@@ -35,7 +35,7 @@ A feature-rich Flutter application for creating and managing voice chat rooms wi
 
 1. Clone the repository
 ```bash
-git clone https://github.com/yourusername/voice_chat_room.git
+git clone https://github.com/RebornSEC/room-voice-chat-demo.git
 ```
 
 2. Install dependencies
