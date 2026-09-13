@@ -102,3 +102,4 @@ GoogleService-Info.plist
 
 # Agora configuration
 lib/core/config/agora_config.dart
+Shadow-Live-debug.apk
