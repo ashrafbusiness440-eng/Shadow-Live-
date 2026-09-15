@@ -7,7 +7,6 @@ class SettingsScreen extends StatelessWidget {
   static const _gold = Color(0xFFFFD166);
   static const _purple = Color(0xFF8B5CF6);
   static const _deep = Color(0xFF050814);
-  static const _card = Color(0xFF0C1322);
 
   Future<void> _confirmLogout(BuildContext context) async {
     final confirmed = await showDialog<bool>(
