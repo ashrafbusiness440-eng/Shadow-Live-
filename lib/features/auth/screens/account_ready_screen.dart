@@ -110,6 +110,7 @@ class AccountReadyScreen extends StatelessWidget {
                             .doc(user.uid)
                             .set({
                           'setupStep': 'complete',
+                          'setupComplete': true,
                           'onboardingComplete': true,
                           'updatedAt': FieldValue.serverTimestamp(),
                         }, SetOptions(merge: true));
