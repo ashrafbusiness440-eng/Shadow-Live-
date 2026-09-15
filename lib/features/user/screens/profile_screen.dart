@@ -21,12 +21,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       final id = await NumericIdService.ensureForUser(uid);
       if (mounted) setState(() => _numericId = id);
-    } finally { _allocatingId = false; }
+    } catch (_) {
+      if (mounted) setState(() => _numericId = null);
+    } finally {
+      _allocatingId = false;
+    }
   }
 
   Future<void> _copyId() async {
     final id = _numericId;
-    if (id == null) return;
+    if (id == null || !RegExp(r'^\d{6}$').hasMatch(id)) return;
     await Clipboard.setData(ClipboardData(text: id));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم نسخ الـ ID'), duration: Duration(seconds: 1)));
@@ -40,7 +44,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       builder:(context,snapshot){
         final d=snapshot.data?.data()??const <String,dynamic>{};
         final storedId=d['numericId']?.toString();
-        if(storedId!=null&&RegExp(r'^\d+$').hasMatch(storedId)){_numericId=storedId;}else if(snapshot.hasData){WidgetsBinding.instance.addPostFrameCallback((_)=>_ensureNumericId(user.uid));}
+        if(storedId!=null&&RegExp(r'^\d{6}$').hasMatch(storedId)){_numericId=storedId;}else if(snapshot.hasData){_numericId=null;WidgetsBinding.instance.addPostFrameCallback((_)=>_ensureNumericId(user.uid));}
         final name=(d['displayName']??d['name']??user.displayName??'مستخدم Shadow Live').toString();
         final photoUrl=(d['profileImageUrl']??d['photoUrl']??d['photoURL']??user.photoURL??'').toString();
         final avatarAsset=(d['profileAvatarAsset']??'').toString();
@@ -52,7 +56,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _brandHeader(),_coverAndAvatar(cover,photoUrl,avatarAsset),const SizedBox(height:48),
           Text(name,textAlign:TextAlign.center,style:const TextStyle(color:Colors.white,fontSize:24,fontWeight:FontWeight.w900)),const SizedBox(height:8),
           Padding(padding:const EdgeInsets.symmetric(horizontal:12),child:Wrap(alignment:WrapAlignment.center,crossAxisAlignment:WrapCrossAlignment.center,spacing:7,runSpacing:6,children:[
-            Text('ID: ${_numericId??'...'}',textDirection:TextDirection.ltr,style:const TextStyle(color:Colors.white70,fontSize:14,fontWeight:FontWeight.w600)),
+            Text('ID: ${_numericId??'جارٍ إنشاء ID'}',textDirection:TextDirection.ltr,style:const TextStyle(color:Colors.white70,fontSize:14,fontWeight:FontWeight.w600)),
             InkWell(onTap:_numericId==null?null:_copyId,borderRadius:BorderRadius.circular(7),child:Container(width:27,height:27,decoration:BoxDecoration(color:Colors.white.withValues(alpha:.06),borderRadius:BorderRadius.circular(7),border:Border.all(color:Colors.white24)),child:const Icon(Icons.copy_rounded,size:15,color:Color(0xFFFFC84A)))),
             Text(location,style:const TextStyle(color:Colors.white54,fontSize:14)),
             if(gender=='ذكر'||gender=='أنثى')_genderBadge(gender),
