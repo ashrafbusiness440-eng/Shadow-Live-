@@ -261,8 +261,6 @@ class ThemeService {
         return Colors.blueGrey;
       case VipLevel.diamond:
         return Colors.lightBlue;
-      default:
-        return Colors.grey;
     }
   }
 
