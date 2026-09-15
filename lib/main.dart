@@ -1,19 +1,60 @@
+import 'widgets/bottom_nav_bar.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
+
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'features/auth/bloc/auth_bloc.dart';
+import 'features/user/bloc/user_bloc.dart';
+import 'shared/services/firebase_service.dart' as shared_fb;
+import 'shared/services/storage_service.dart';
+
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'widgets/host_section.dart';
 import 'widgets/participant_grid.dart';
 import 'widgets/notifications_section.dart';
-import 'screens/auth/login_screen.dart';
-import 'screens/auth/register_screen.dart';
-import 'screens/profile/profile_screen.dart';
+import 'features/auth/screens/login_screen.dart';
+import 'features/auth/screens/email_login_screen.dart';
+import 'features/auth/screens/profile_setup_screen.dart';
+import 'features/auth/screens/account_success_screen.dart';
+import 'features/auth/screens/account_linking_screen.dart';
+import 'features/auth/screens/account_ready_screen.dart';
+import 'features/onboarding/screens/splash_screen.dart';
+import 'features/onboarding/screens/onboarding_screen.dart';
+import 'features/onboarding/screens/auth_choice_screen.dart';
+import 'features/main/screens/main_shell_screen.dart';
+import 'features/auth/screens/register_screen.dart';
+import 'features/user/screens/profile_screen.dart';
 import 'screens/room/create_room_screen.dart';
 import 'screens/room/room_list_screen.dart';
 import 'screens/settings/settings_screen.dart';
 import 'services/navigation_service.dart';
 
-void main() {
-  runApp(const MyApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+  runApp(
+    MultiBlocProvider(
+      providers: [
+        BlocProvider(
+          create: (_) => AuthBloc(
+            shared_fb.FirebaseService(),
+            StorageService(),
+          )..add(AuthCheckRequested()),
+        ),
+        BlocProvider(
+          create: (_) => UserBloc(
+            shared_fb.FirebaseService(),
+            StorageService(),
+          ),
+        ),
+      ],
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -22,20 +63,30 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Voice Chat Room',
+      debugShowCheckedModeBanner: false,
+      title: 'Shadow Live',
       navigatorKey: NavigationService.navigatorKey,
       theme: ThemeData(
         colorScheme: ColorScheme.dark(
           primary: Colors.yellow[400]!,
-          background: Colors.black,
+          surface: Colors.black,
         ),
         textTheme: GoogleFonts.robotoTextTheme(
           Theme.of(context).textTheme,
         ).apply(bodyColor: Colors.white),
       ),
-      initialRoute: AppRoutes.login,
+      initialRoute: AppRoutes.splash,
       routes: {
+        AppRoutes.splash: (context) => const SplashScreen(),
+        AppRoutes.onboarding: (context) => const OnboardingScreen(),
+        AppRoutes.authChoice: (context) => const AuthChoiceScreen(),
+        AppRoutes.main: (context) => const MainShellScreen(),
         AppRoutes.login: (context) => const LoginScreen(),
+        AppRoutes.emailLogin: (context) => const EmailLoginScreen(),
+        AppRoutes.profileSetup: (context) => const ProfileSetupScreen(),
+        AppRoutes.accountSuccess: (context) => const AccountSuccessScreen(),
+        AppRoutes.accountLinking: (context) => const AccountLinkingScreen(),
+        AppRoutes.accountReady: (context) => const AccountReadyScreen(),
         AppRoutes.register: (context) => const RegisterScreen(),
         AppRoutes.profile: (context) => const ProfileScreen(),
         AppRoutes.settings: (context) => const SettingsScreen(),
@@ -72,7 +123,7 @@ class VoiceChatRoom extends StatelessWidget {
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.grey[800]!.withOpacity(0.5),
+                          color: Colors.grey[800]!.withValues(alpha: 0.5),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Row(
@@ -86,7 +137,6 @@ class VoiceChatRoom extends StatelessWidget {
                                   image: CachedNetworkImageProvider(
                                     'https://example.com/gift.jpg',
                                   ),
-                              ),
                                   fit: BoxFit.cover,
                                 ),
                               ),
@@ -98,7 +148,8 @@ class VoiceChatRoom extends StatelessWidget {
                                 children: const [
                                   Text(
                                     'Wish List',
-                                    style: TextStyle(fontWeight: FontWeight.bold),
+                                    style:
+                                        TextStyle(fontWeight: FontWeight.bold),
                                   ),
                                   Text(
                                     'Send her a wish gift',
@@ -111,7 +162,8 @@ class VoiceChatRoom extends StatelessWidget {
                               ),
                             ),
                             TextButton(
-                              onPressed: () => NavigationService.navigateTo(AppRoutes.settings),
+                              onPressed: () => NavigationService.navigateTo(
+                                  AppRoutes.settings),
                               child: Text(
                                 'Send',
                                 style: TextStyle(
@@ -142,7 +194,7 @@ class VoiceChatRoom extends StatelessWidget {
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
                       colors: [
-                        Colors.black.withOpacity(0.8),
+                        Colors.black.withValues(alpha: 0.8),
                         Colors.transparent,
                       ],
                     ),
@@ -157,11 +209,13 @@ class VoiceChatRoom extends StatelessWidget {
                           Row(
                             children: [
                               GestureDetector(
-                                onTap: () => NavigationService.navigateTo(AppRoutes.profile),
-                                child: CircleAvatar(
-                                radius: 20,
-                                backgroundImage: CachedNetworkImageProvider(
-                                  'https://example.com/avatar.jpg',
+                                onTap: () => NavigationService.navigateTo(
+                                    AppRoutes.profile),
+                                child: const CircleAvatar(
+                                  radius: 20,
+                                  backgroundImage: CachedNetworkImageProvider(
+                                    'https://example.com/avatar.jpg',
+                                  ),
                                 ),
                               ),
                               const SizedBox(width: 8),
@@ -170,9 +224,8 @@ class VoiceChatRoom extends StatelessWidget {
                                 children: [
                                   const Text(
                                     'Enrique Pemala',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
+                                    style:
+                                        TextStyle(fontWeight: FontWeight.bold),
                                   ),
                                   Row(
                                     children: [
@@ -207,14 +260,15 @@ class VoiceChatRoom extends StatelessWidget {
                                   vertical: 6,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.5),
+                                  color: Colors.black.withValues(alpha: 0.5),
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                                 child: const Text('387'),
                               ),
                               IconButton(
                                 icon: const Icon(Icons.settings),
-                                onPressed: () => NavigationService.navigateTo(AppRoutes.settings),
+                                onPressed: () => NavigationService.navigateTo(
+                                    AppRoutes.settings),
                               ),
                             ],
                           ),
@@ -285,7 +339,7 @@ class VoiceChatRoom extends StatelessWidget {
                 child: Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.8),
+                    color: Colors.black.withValues(alpha: 0.8),
                     borderRadius: const BorderRadius.vertical(
                       top: Radius.circular(20),
                     ),
@@ -308,7 +362,9 @@ class VoiceChatRoom extends StatelessWidget {
                       Row(
                         children: [
                           GestureDetector(
-                            onTap: () => NavigationService.navigateToReplacement(AppRoutes.roomList),
+                            onTap: () =>
+                                NavigationService.navigateToReplacement(
+                                    AppRoutes.roomList),
                             child: Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(

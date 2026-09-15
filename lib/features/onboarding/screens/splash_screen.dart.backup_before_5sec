@@ -1,0 +1,82 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import '../../../services/navigation_service.dart';
+
+class SplashScreen extends StatefulWidget {
+  const SplashScreen({super.key});
+
+  @override
+  State<SplashScreen> createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends State<SplashScreen> {
+  @override
+  void initState() {
+    super.initState();
+
+    Timer(const Duration(seconds: 3), () {
+      if (!mounted) return;
+      Navigator.of(context).pushReplacementNamed(AppRoutes.onboarding);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          // الصورة تغطي كامل الشاشة
+          Image.asset(
+            'assets/images/splash_bg.png',
+            fit: BoxFit.fill,
+            gaplessPlayback: true,
+          ),
+
+          // شريط التحميل فقط
+          Positioned(
+            left: 70,
+            right: 70,
+            bottom: 28,
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0.0, end: 1.0),
+              duration: const Duration(seconds: 3),
+              builder: (context, value, child) {
+                return Container(
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  alignment: Alignment.centerLeft,
+                  child: FractionallySizedBox(
+                    widthFactor: value,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(20),
+                        gradient: const LinearGradient(
+                          colors: [
+                            Color(0xFFFFD84D),
+                            Color(0xFFFF3BD4),
+                            Color(0xFF7B2CFF),
+                          ],
+                        ),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0xAAFF3BD4),
+                            blurRadius: 8,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

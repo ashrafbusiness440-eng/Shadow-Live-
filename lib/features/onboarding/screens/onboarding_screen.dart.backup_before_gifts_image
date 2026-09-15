@@ -1,0 +1,409 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import '../../../services/navigation_service.dart';
+
+class OnboardingScreen extends StatefulWidget {
+  const OnboardingScreen({super.key});
+
+  @override
+  State<OnboardingScreen> createState() => _OnboardingScreenState();
+}
+
+class _OnboardingScreenState extends State<OnboardingScreen> {
+  final PageController _controller = PageController();
+  int _current = 0;
+  Timer? _autoTimer;
+
+  static const _gold = Color(0xFFFFD54A);
+  static const _purple = Color(0xFF8A00FF);
+  static const _pink = Color(0xFFFF00FF);
+
+  final List<_PageData> _pages = const [
+    _PageData(
+      icon: Icons.mic_rounded,
+      secondIcon: Icons.headphones_rounded,
+      title: 'غرف صوتية حية',
+      subtitle: 'تحدث، استمع، تعرّف على أصدقاء\nمن جميع أنحاء العالم',
+    ),
+    _PageData(
+      icon: Icons.card_giftcard_rounded,
+      secondIcon: Icons.favorite_rounded,
+      title: 'هدايا ومكافآت',
+      subtitle: 'ادعم من تحب بالهدايا وكن جزءاً\nمن اللحظات المميزة',
+    ),
+    _PageData(
+      icon: Icons.sports_esports_rounded,
+      secondIcon: Icons.casino_rounded,
+      title: 'ألعاب وتحديات',
+      subtitle: 'استمتع بألعاب جماعية وفعاليات\nممتعة يومياً',
+    ),
+    _PageData(
+      icon: Icons.groups_rounded,
+      secondIcon: Icons.workspace_premium_rounded,
+      title: 'مجتمعك بانتظارك',
+      subtitle: 'انضم إلى مجتمع Shadow Live\nواصنع قصتك الخاصة',
+    ),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _startAutoTimer();
+  }
+
+  void _startAutoTimer() {
+    _autoTimer?.cancel();
+
+    _autoTimer = Timer(const Duration(seconds: 8), () {
+      if (!mounted) return;
+      _next();
+    });
+  }
+
+  void _onPageChanged(int index) {
+    setState(() => _current = index);
+    _startAutoTimer();
+  }
+
+  void _finish() {
+    _autoTimer?.cancel();
+    Navigator.of(context).pushReplacementNamed(AppRoutes.authChoice);
+  }
+
+  void _next() {
+    _autoTimer?.cancel();
+
+    if (_current == _pages.length - 1) {
+      _finish();
+      return;
+    }
+
+    _controller.nextPage(
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  @override
+  void dispose() {
+    _autoTimer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          PageView.builder(
+            controller: _controller,
+            itemCount: _pages.length,
+            onPageChanged: _onPageChanged,
+            itemBuilder: (context, index) {
+              // الصفحة الأولى: الصورة نفسها تحتوي النص والنقاط
+              if (index == 0) {
+                return SizedBox.expand(
+                  child: Image.asset(
+                    'assets/images/onboarding_voice.png',
+                    width: double.infinity,
+                    height: double.infinity,
+                    fit: BoxFit.fill,
+                  ),
+                );
+              }
+
+              // الصفحات الأخرى تبقى بتصميمها الحالي
+              final page = _pages[index];
+
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  const _LuxuryBackground(),
+                  SafeArea(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 70, 24, 145),
+                      child: Column(
+                        children: [
+                          const Spacer(),
+                          _HeroGraphic(
+                            icon: page.icon,
+                            secondIcon: page.secondIcon,
+                          ),
+                          const SizedBox(height: 34),
+                          Text(
+                            page.title,
+                            textDirection: TextDirection.rtl,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: _gold,
+                              fontSize: 28,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            page.subtitle,
+                            textDirection: TextDirection.rtl,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Color(0xFFE4E4EA),
+                              fontSize: 17,
+                              height: 1.65,
+                            ),
+                          ),
+                          const Spacer(),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+
+          // زر تخطي
+          SafeArea(
+            child: Align(
+              alignment: AlignmentDirectional.topEnd,
+              child: Padding(
+                padding: const EdgeInsets.only(
+                  top: 6,
+                  right: 10,
+                  left: 10,
+                ),
+                child: TextButton(
+                  onPressed: _finish,
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    backgroundColor: const Color(0x33000000),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                  ),
+                  child: const Text(
+                    'تخطي',
+                    textDirection: TextDirection.rtl,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // نقاط الصفحات البرمجية لا تظهر على الصفحة الأولى
+          // لأنها موجودة أصلًا داخل الصورة.
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 88,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(
+                _pages.length,
+                (index) => AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  width: index == _current ? 20 : 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: index == _current ? _gold : Colors.white30,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // زر التالي
+          SafeArea(
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: Container(
+                  width: double.infinity,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    gradient: const LinearGradient(
+                      colors: [_purple, _pink],
+                    ),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x668A00FF),
+                        blurRadius: 18,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: _next,
+                      borderRadius: BorderRadius.circular(16),
+                      child: Center(
+                        child: Text(
+                          _current == _pages.length - 1
+                              ? 'ابدأ الآن'
+                              : 'التالي',
+                          textDirection: TextDirection.rtl,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LuxuryBackground extends StatelessWidget {
+  const _LuxuryBackground();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: RadialGradient(
+          center: Alignment(0.15, -0.55),
+          radius: 1.25,
+          colors: [
+            Color(0xFF271052),
+            Color(0xFF09101D),
+            Color(0xFF03040B),
+          ],
+          stops: [0, .46, 1],
+        ),
+      ),
+    );
+  }
+}
+
+class _HeroGraphic extends StatelessWidget {
+  final IconData icon;
+  final IconData secondIcon;
+
+  const _HeroGraphic({
+    required this.icon,
+    required this.secondIcon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 285,
+      height: 285,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Container(
+            width: 230,
+            height: 230,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: RadialGradient(
+                colors: [
+                  Color(0x777E00FF),
+                  Color(0x33280077),
+                  Colors.transparent,
+                ],
+              ),
+            ),
+          ),
+          Container(
+            width: 180,
+            height: 180,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFF42106D),
+                  Color(0xFF090D1C),
+                ],
+              ),
+              border: Border.all(
+                color: const Color(0x887F2CFF),
+                width: 2,
+              ),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x997600FF),
+                  blurRadius: 42,
+                  spreadRadius: 5,
+                ),
+              ],
+            ),
+            child: Icon(
+              icon,
+              size: 92,
+              color: const Color(0xFFFFD54A),
+            ),
+          ),
+          Positioned(
+            right: 24,
+            top: 30,
+            child: Transform.rotate(
+              angle: .18,
+              child: Icon(
+                secondIcon,
+                size: 58,
+                color: const Color(0xFFFF4FCE),
+              ),
+            ),
+          ),
+          const Positioned(
+            left: 28,
+            bottom: 35,
+            child: Icon(
+              Icons.auto_awesome,
+              size: 42,
+              color: Color(0xFFFFD54A),
+            ),
+          ),
+          const Positioned(
+            right: 42,
+            bottom: 26,
+            child: Icon(
+              Icons.star_rounded,
+              size: 30,
+              color: Color(0xFFB56CFF),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PageData {
+  final IconData icon;
+  final IconData secondIcon;
+  final String title;
+  final String subtitle;
+
+  const _PageData({
+    required this.icon,
+    required this.secondIcon,
+    required this.title,
+    required this.subtitle,
+  });
+}
