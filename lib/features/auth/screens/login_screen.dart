@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -20,12 +21,16 @@ class _LoginScreenState extends State<LoginScreen> {
   String _countryCode = '+971';
   String? _verificationId;
   bool _otpPage = false;
+  bool _isVerifyingOtp = false;
+  Timer? _resendTimer;
+  int _resendSeconds = 120;
 
   static const _gold = Color(0xFFFFD54A);
   static const _pink = Color(0xFFE000FF);
 
   @override
   void dispose() {
+    _resendTimer?.cancel();
     _phoneController.dispose();
 
     for (final controller in _otpControllers) {
@@ -72,6 +77,34 @@ class _LoginScreenState extends State<LoginScreen> {
     return buffer.toString();
   }
 
+  void _startResendTimer() {
+    _resendTimer?.cancel();
+    _resendSeconds = 120;
+
+    _resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
+      setState(() {
+        if (_resendSeconds > 0) {
+          _resendSeconds--;
+        }
+
+        if (_resendSeconds == 0) {
+          timer.cancel();
+        }
+      });
+    });
+  }
+
+  String get _resendTime {
+    final minutes = (_resendSeconds ~/ 60).toString().padLeft(2, '0');
+    final seconds = (_resendSeconds % 60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
+
   void _handleOtpInput(int index, String rawValue) {
     final value = _normalizeDigits(rawValue);
 
@@ -86,6 +119,11 @@ class _LoginScreenState extends State<LoginScreen> {
       final target = digits.length >= 6 ? 5 : digits.length;
       _otpFocus[target].requestFocus();
       setState(() {});
+
+      if (digits.length == 6) {
+        _verifyOtp();
+      }
+
       return;
     }
 
@@ -110,6 +148,10 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     setState(() {});
+
+    if (_otp.length == 6) {
+      _verifyOtp();
+    }
   }
 
   String get _otp =>
@@ -129,6 +171,10 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _verifyOtp() {
+    if (_isVerifyingOtp) {
+      return;
+    }
+
     if (_verificationId == null) {
       _showMessage('لم يتم إرسال رمز التحقق بعد');
       return;
@@ -138,6 +184,10 @@ class _LoginScreenState extends State<LoginScreen> {
       _showMessage('أدخل رمز التحقق المكوّن من 6 أرقام');
       return;
     }
+
+    setState(() {
+      _isVerifyingOtp = true;
+    });
 
     context.read<AuthBloc>().add(
           PhoneCodeSubmitted(
@@ -169,6 +219,12 @@ class _LoginScreenState extends State<LoginScreen> {
         body: BlocConsumer<AuthBloc, AuthState>(
           listener: (context, state) {
             if (state is AuthError) {
+              if (_isVerifyingOtp) {
+                setState(() {
+                  _isVerifyingOtp = false;
+                });
+              }
+
               _showMessage(state.message);
             }
 
@@ -176,7 +232,10 @@ class _LoginScreenState extends State<LoginScreen> {
               setState(() {
                 _verificationId = state.verificationId;
                 _otpPage = true;
+                _isVerifyingOtp = false;
               });
+
+              _startResendTimer();
 
               Future.delayed(
                 const Duration(milliseconds: 250),
@@ -641,14 +700,31 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           const SizedBox(height: 22),
           Center(
-            child: TextButton(
-              onPressed: state is AuthLoading ? null : _sendOtp,
-              child: const Text(
-                'إعادة إرسال الرمز',
-                style: TextStyle(
-                  color: Colors.white60,
+            child: Column(
+              children: [
+                if (_resendSeconds > 0)
+                  Text(
+                    'يمكنك إعادة إرسال الرمز بعد $_resendTime',
+                    style: const TextStyle(
+                      color: Colors.white54,
+                      fontSize: 13,
+                    ),
+                  ),
+                const SizedBox(height: 6),
+                TextButton(
+                  onPressed: state is AuthLoading || _resendSeconds > 0
+                      ? null
+                      : _sendOtp,
+                  child: Text(
+                    _resendSeconds > 0
+                        ? 'إعادة إرسال الرمز'
+                        : 'إعادة إرسال الرمز الآن',
+                    style: TextStyle(
+                      color: _resendSeconds > 0 ? Colors.white30 : _gold,
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
           const SizedBox(height: 16),
