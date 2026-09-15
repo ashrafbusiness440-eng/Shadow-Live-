@@ -29,7 +29,7 @@ jobs:
         run: flutter pub get
 
       - name: Analyze
-        run: flutter analyze
+        run: flutter analyze lib test
 
       - name: Test
         run: flutter test
