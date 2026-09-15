@@ -1,377 +1,127 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
-import '../bloc/user_bloc.dart';
-import '../../auth/bloc/auth_bloc.dart';
-import '../../../shared/widgets/custom_button.dart';
-import '../../../shared/widgets/loading_indicator.dart';
+import '../../../services/navigation_service.dart';
 
-class ProfileScreen extends StatefulWidget {
+class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
   @override
-  _ProfileScreenState createState() => _ProfileScreenState();
-}
-
-class _ProfileScreenState extends State<ProfileScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 3, vsync: this);
-    _loadUserProfile();
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  void _loadUserProfile() {
-    final authState = context.read<AuthBloc>().state;
-    final userId = authState is Authenticated ? authState.user.uid : null;
-    if (userId != null) {
-      context.read<UserBloc>().add(LoadUserProfile(userId));
-    }
-  }
-
-  void _handleEditProfile() {
-    // Navigate to edit profile screen
-  }
-
-  void _handleSignOut() {
-    context.read<AuthBloc>().add(SignOutRequested());
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: BlocBuilder<UserBloc, UserState>(
-        builder: (context, state) {
-          if (state is UserLoading) {
-            return const LoadingIndicator();
-          }
-
-          if (state is UserError) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(state.message),
-                  const SizedBox(height: 16),
-                  CustomButton(
-                    text: 'Retry',
-                    onPressed: _loadUserProfile,
-                  ),
-                ],
-              ),
-            );
-          }
-
-          if (state is UserProfileLoaded) {
-            return NestedScrollView(
-              headerSliverBuilder: (context, innerBoxIsScrolled) {
-                return [
-                  SliverAppBar(
-                    leading: IconButton(
-                      icon: const Icon(Icons.arrow_back),
-                      onPressed: () {
-                        if (Navigator.of(context).canPop()) {
-                          Navigator.of(context).pop();
-                        } else {
-                          Navigator.of(context).pushReplacementNamed('/');
-                        }
-                      },
-                    ),
-                    expandedHeight: 300,
-                    pinned: true,
-                    flexibleSpace: FlexibleSpaceBar(
-                      background: _buildProfileHeader(state.profile),
-                    ),
-                    actions: [
-                      IconButton(
-                        icon: const Icon(Icons.edit),
-                        onPressed: _handleEditProfile,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.settings),
-                        onPressed: () {
-                          Navigator.of(context).pushNamed('/settings');
-                        },
-                      ),
-                    ],
-                  ),
-                  SliverPersistentHeader(
-                    delegate: _SliverAppBarDelegate(
-                      TabBar(
-                        controller: _tabController,
-                        tabs: const [
-                          Tab(text: 'About'),
-                          Tab(text: 'Rooms'),
-                          Tab(text: 'Gifts'),
-                        ],
-                      ),
-                    ),
-                    pinned: true,
-                  ),
-                ];
-              },
-              body: TabBarView(
-                controller: _tabController,
-                children: [
-                  _buildAboutTab(state.profile),
-                  _buildRoomsTab(),
-                  _buildGiftsTab(),
-                ],
-              ),
-            );
-          }
-
-          return const Center(
-            child: Text('No profile data available'),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildProfileHeader(Map<String, dynamic> profile) {
-    return Stack(
-      children: [
-        Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Theme.of(context).primaryColor,
-                Theme.of(context).primaryColor.withValues(alpha: 0.8),
-              ],
-            ),
-          ),
-        ),
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: 0,
-          child: Container(
-            height: 100,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.bottomCenter,
-                end: Alignment.topCenter,
-                colors: [
-                  Colors.black.withValues(alpha: 0.7),
-                  Colors.transparent,
-                ],
-              ),
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.end,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  CircleAvatar(
-                    radius: 50,
-                    backgroundImage: NetworkImage(profile['avatarUrl'] ?? ''),
-                    child: profile['avatarUrl'] == null
-                        ? const Icon(Icons.person, size: 50)
-                        : null,
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+    final user = FirebaseAuth.instance.currentUser;
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: const Color(0xFF05060D),
+        body: SafeArea(
+          child: user == null
+              ? _guest(context)
+              : StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                  stream: FirebaseFirestore.instance.collection('users').doc(user.uid).snapshots(),
+                  builder: (context, snapshot) {
+                    final d = snapshot.data?.data() ?? const <String, dynamic>{};
+                    final name = (d['displayName'] ?? d['name'] ?? user.displayName ?? 'مستخدم Shadow Live').toString();
+                    final photo = (d['photoUrl'] ?? d['photoURL'] ?? user.photoURL ?? '').toString();
+                    final cover = (d['coverUrl'] ?? '').toString();
+                    final id = (d['numericId'] ?? d['userId'] ?? user.uid.substring(0, user.uid.length > 8 ? 8 : user.uid.length)).toString();
+                    final bio = (d['bio'] ?? 'أهلاً بك في Shadow Live').toString();
+                    final location = (d['country'] ?? d['location'] ?? 'الإمارات').toString();
+                    return ListView(
+                      padding: EdgeInsets.zero,
                       children: [
-                        Text(
-                          profile['username'] ?? '',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        _brandHeader(context),
+                        _coverAndAvatar(cover, photo),
+                        const SizedBox(height: 48),
+                        Text(name, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900)),
+                        const SizedBox(height: 5),
+                        Text('ID: $id  •  $location', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white54)),
+                        const SizedBox(height: 8),
+                        Padding(padding: const EdgeInsets.symmetric(horizontal: 24), child: Text(bio, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70))),
+                        const SizedBox(height: 18),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Row(children: [
+                            Expanded(child: _button(Icons.edit_rounded, 'تعديل الملف', () {})),
+                            const SizedBox(width: 10),
+                            Expanded(child: _button(Icons.workspace_premium_rounded, 'VIP', () {})),
+                            const SizedBox(width: 10),
+                            Expanded(child: _button(Icons.apartment_rounded, 'الوكالة', () {})),
+                          ]),
                         ),
-                        if (profile['vipLevel'] != null) ...[
-                          const SizedBox(height: 4),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.amber,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              'VIP ${profile['vipLevel']}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
+                        const SizedBox(height: 16),
+                        _stats(d),
+                        const SizedBox(height: 16),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Row(children: [
+                            Expanded(child: _quick(Icons.account_balance_wallet_rounded, 'محفظتي', () => NavigationService.navigateTo(AppRoutes.wallet))),
+                            const SizedBox(width: 10),
+                            Expanded(child: _quick(Icons.add_card_rounded, 'شحن', () => NavigationService.navigateTo(AppRoutes.recharge))),
+                            const SizedBox(width: 10),
+                            Expanded(child: _quick(Icons.card_giftcard_rounded, 'الهدايا', () {})),
+                          ]),
+                        ),
+                        const SizedBox(height: 28),
                       ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _buildStat('Followers', profile['followers'] ?? 0),
-                  _buildStat('Following', profile['following'] ?? 0),
-                  _buildStat(
-                      'Gifts Received', profile['totalGiftsReceived'] ?? 0),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStat(String label, int value) {
-    return Column(
-      children: [
-        Text(
-          value.toString(),
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        Text(
-          label,
-          style: const TextStyle(
-            color: Colors.white70,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAboutTab(Map<String, dynamic> profile) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _buildInfoCard(
-          'Personal Information',
-          [
-            _buildInfoRow('Email', profile['email'] ?? ''),
-            _buildInfoRow('Join Date',
-                profile['createdAt']?.toString().split('T')[0] ?? ''),
-            _buildInfoRow(
-                'Status', profile['isOnline'] == true ? 'Online' : 'Offline'),
-          ],
-        ),
-        const SizedBox(height: 16),
-        _buildInfoCard(
-          'Statistics',
-          [
-            _buildInfoRow('Total Rooms Created',
-                profile['totalRoomsCreated']?.toString() ?? '0'),
-            _buildInfoRow('Total Gifts Sent',
-                profile['totalGiftsSent']?.toString() ?? '0'),
-            _buildInfoRow(
-                'Balance', '${profile['balance']?.toString() ?? '0'} coins'),
-          ],
-        ),
-        const SizedBox(height: 24),
-        CustomButton(
-          text: 'Sign Out',
-          onPressed: _handleSignOut,
-          isOutlined: true,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildInfoCard(String title, List<Widget> children) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-            const SizedBox(height: 16),
-            ...children,
-          ],
+                    );
+                  },
+                ),
         ),
       ),
     );
   }
 
-  Widget _buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(color: Colors.grey),
-          ),
-          Text(value),
-        ],
-      ),
-    );
-  }
+  Widget _guest(BuildContext context) => Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+    const Icon(Icons.person_outline_rounded, color: Color(0xFFFFC84A), size: 64),
+    const SizedBox(height: 14),
+    const Text('أنت داخل كضيف', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800)),
+    const SizedBox(height: 14),
+    ElevatedButton(onPressed: () => NavigationService.navigateToAndRemoveUntil(AppRoutes.authChoice), child: const Text('العودة لتسجيل الدخول')),
+  ]));
 
-  Widget _buildRoomsTab() {
-    return const Center(
-      child: Text('Rooms tab content'),
-    );
-  }
+  Widget _brandHeader(BuildContext context) => Container(
+    height: 82,
+    padding: const EdgeInsets.symmetric(horizontal: 14),
+    decoration: const BoxDecoration(color: Color(0xFF090A11)),
+    child: Row(children: [
+      Image.asset('assets/images/profile/profile_header_logo.png', width: 145, fit: BoxFit.contain),
+      const Spacer(),
+      IconButton(onPressed: () => NavigationService.navigateTo(AppRoutes.settings), icon: const Icon(Icons.settings_rounded, color: Color(0xFFFFC84A))),
+    ]),
+  );
 
-  Widget _buildGiftsTab() {
-    return const Center(
-      child: Text('Gifts tab content'),
-    );
-  }
-}
+  Widget _coverAndAvatar(String cover, String photo) => SizedBox(
+    height: 210,
+    child: Stack(clipBehavior: Clip.none, children: [
+      Positioned.fill(child: cover.isEmpty ? Image.asset('assets/images/profile/default_profile_cover.png', fit: BoxFit.cover) : Image.network(cover, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Image.asset('assets/images/profile/default_profile_cover.png', fit: BoxFit.cover))),
+      Positioned(bottom: -42, left: 0, right: 0, child: Center(child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: const BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [Color(0xFFFFC84A), Color(0xFF8A3DFF)])),
+        child: CircleAvatar(radius: 48, backgroundColor: const Color(0xFF151526), backgroundImage: photo.isEmpty ? null : NetworkImage(photo), child: photo.isEmpty ? const Icon(Icons.person_rounded, size: 52, color: Colors.white70) : null),
+      ))),
+    ]),
+  );
 
-class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
-  final TabBar _tabBar;
+  Widget _button(IconData icon, String label, VoidCallback tap) => OutlinedButton.icon(
+    onPressed: tap, icon: Icon(icon, size: 18), label: FittedBox(child: Text(label)),
+    style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFFFC84A), side: BorderSide(color: const Color(0xFFFFC84A).withValues(alpha: .35)), padding: const EdgeInsets.symmetric(vertical: 13)),
+  );
 
-  _SliverAppBarDelegate(this._tabBar);
+  Widget _stats(Map<String, dynamic> d) => Container(
+    margin: const EdgeInsets.symmetric(horizontal: 16), padding: const EdgeInsets.symmetric(vertical: 16),
+    decoration: BoxDecoration(color: const Color(0xFF10121D), borderRadius: BorderRadius.circular(20)),
+    child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+      _stat('${d['followersCount'] ?? d['followers'] ?? 0}', 'متابعون'),
+      _stat('${d['followingCount'] ?? d['following'] ?? 0}', 'أتابع'),
+      _stat('${d['roomsCount'] ?? 0}', 'غرف'),
+      _stat('${d['giftsCount'] ?? d['totalGiftsReceived'] ?? 0}', 'هدايا'),
+    ]),
+  );
 
-  @override
-  double get minExtent => _tabBar.preferredSize.height;
+  Widget _stat(String value, String label) => Column(children: [Text(value, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 17)), const SizedBox(height: 4), Text(label, style: const TextStyle(color: Colors.white54, fontSize: 11))]);
 
-  @override
-  double get maxExtent => _tabBar.preferredSize.height;
-
-  @override
-  Widget build(
-    BuildContext context,
-    double shrinkOffset,
-    bool overlapsContent,
-  ) {
-    return Container(
-      color: Theme.of(context).scaffoldBackgroundColor,
-      child: _tabBar,
-    );
-  }
-
-  @override
-  bool shouldRebuild(_SliverAppBarDelegate oldDelegate) {
-    return false;
-  }
+  Widget _quick(IconData icon, String label, VoidCallback tap) => Material(
+    color: const Color(0xFF111321), borderRadius: BorderRadius.circular(18),
+    child: InkWell(onTap: tap, borderRadius: BorderRadius.circular(18), child: Padding(padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 6), child: Column(children: [Icon(icon, color: const Color(0xFFFFC84A), size: 27), const SizedBox(height: 7), Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700))]))),
+  );
 }
