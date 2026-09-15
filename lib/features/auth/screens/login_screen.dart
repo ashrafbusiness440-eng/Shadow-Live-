@@ -152,6 +152,26 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
+  void _routeAfterAuthentication(Authenticated state) {
+    final userData = state.userData ?? const <String, dynamic>{};
+    final setupComplete = userData['setupComplete'] == true;
+    final setupStep = userData['setupStep'] as String?;
+
+    final destination = switch (setupStep) {
+      'success' => '/account-success',
+      'linking' => '/account-linking',
+      'ready' => '/account-ready',
+      'complete' => '/main',
+      'profile' || null => setupComplete ? '/main' : '/profile-setup',
+      _ => '/profile-setup',
+    };
+
+    Navigator.of(context).pushNamedAndRemoveUntil(
+      destination,
+      (route) => false,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Directionality(
@@ -181,10 +201,7 @@ class _LoginScreenState extends State<LoginScreen> {
             }
 
             if (state is Authenticated) {
-              Navigator.of(context).pushNamedAndRemoveUntil(
-                '/main',
-                (route) => false,
-              );
+              _routeAfterAuthentication(state);
             }
           },
           builder: (context, state) {
