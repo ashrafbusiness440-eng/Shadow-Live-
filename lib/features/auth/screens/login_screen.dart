@@ -209,6 +209,21 @@ class _LoginScreenState extends State<LoginScreen> {
     // أثناء إعداد الحساب نحافظ على شاشة الدخول السابقة،
     // حتى يرجع زر الرجوع إلى المسار الذي جاء منه المستخدم.
     if (destination == '/profile-setup') {
+      // بعد نجاح OTP لا نترك شاشة OTP خلف إعداد الملف الشخصي.
+      // نعيد شاشة الدخول إلى وضع رقم الهاتف أولاً،
+      // ثم نفتح إعداد الملف الشخصي فوقها.
+      setState(() {
+        _otpPage = false;
+        _verificationId = null;
+        _isVerifyingOtp = false;
+        _resendTimer?.cancel();
+        _resendSeconds = 0;
+
+        for (final controller in _otpControllers) {
+          controller.clear();
+        }
+      });
+
       Navigator.of(context).pushNamed(destination);
       return;
     }

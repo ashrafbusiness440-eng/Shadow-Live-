@@ -550,7 +550,12 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                           ),
                         ),
                         child: IconButton(
-                          onPressed: () => Navigator.of(context).pop(),
+                          onPressed: () {
+                            Navigator.of(context).pushNamedAndRemoveUntil(
+                              '/login',
+                              (route) => false,
+                            );
+                          },
                           icon: const Icon(
                             Icons.arrow_forward_ios_rounded,
                             color: Colors.white,
