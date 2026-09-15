@@ -21,8 +21,8 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _startSplash() async {
-    // The splash screen always stays visible for five seconds.
-    await Future<void>.delayed(const Duration(seconds: 5));
+    // The splash screen stays visible for three seconds.
+    await Future<void>.delayed(const Duration(seconds: 3));
     if (!mounted) return;
 
     final destination = await _destinationAfterSplash();
@@ -80,7 +80,7 @@ class _SplashScreenState extends State<SplashScreen> {
             bottom: 28,
             child: TweenAnimationBuilder<double>(
               tween: Tween(begin: 0.0, end: 1.0),
-              duration: const Duration(seconds: 5),
+              duration: const Duration(seconds: 3),
               builder: (context, value, child) {
                 return Container(
                   height: 5,
