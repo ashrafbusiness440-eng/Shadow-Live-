@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import '../constants/app_constants.dart';
 import '../utils/app_logger.dart';
 import '../exceptions/app_exceptions.dart';
 
