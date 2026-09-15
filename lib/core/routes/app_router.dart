@@ -5,7 +5,6 @@ import '../../features/auth/screens/register_screen.dart';
 import '../../features/home/screens/home_screen.dart';
 import '../../features/room/screens/room_screen.dart';
 import '../../features/user/screens/profile_screen.dart';
-import '../constants/route_constants.dart';
 
 class AppRouter {
   static final _rootNavigatorKey = GlobalKey<NavigatorState>();
