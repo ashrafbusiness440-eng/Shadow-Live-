@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import '../constants/route_constants.dart';
 import '../utils/app_logger.dart';
 
 class NavigationService {
