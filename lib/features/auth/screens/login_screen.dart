@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../bloc/auth_bloc.dart';
+import '../setup_route.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -153,21 +154,8 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _routeAfterAuthentication(Authenticated state) {
-    final userData = state.userData ?? const <String, dynamic>{};
-    final setupComplete = userData['setupComplete'] == true;
-    final setupStep = userData['setupStep'] as String?;
-
-    final destination = switch (setupStep) {
-      'success' => '/account-success',
-      'linking' => '/account-linking',
-      'ready' => '/account-ready',
-      'complete' => '/main',
-      'profile' || null => setupComplete ? '/main' : '/profile-setup',
-      _ => '/profile-setup',
-    };
-
     Navigator.of(context).pushNamedAndRemoveUntil(
-      destination,
+      setupDestination(state.userData),
       (route) => false,
     );
   }
