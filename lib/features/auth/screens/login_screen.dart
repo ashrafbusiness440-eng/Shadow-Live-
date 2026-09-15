@@ -204,8 +204,18 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _routeAfterAuthentication(Authenticated state) {
+    final destination = setupDestination(state.userData);
+
+    // أثناء إعداد الحساب نحافظ على شاشة الدخول السابقة،
+    // حتى يرجع زر الرجوع إلى المسار الذي جاء منه المستخدم.
+    if (destination == '/profile-setup') {
+      Navigator.of(context).pushNamed(destination);
+      return;
+    }
+
+    // بعد اكتمال إعداد الحساب لا نسمح بالرجوع إلى شاشات التسجيل.
     Navigator.of(context).pushNamedAndRemoveUntil(
-      setupDestination(state.userData),
+      destination,
       (route) => false,
     );
   }
