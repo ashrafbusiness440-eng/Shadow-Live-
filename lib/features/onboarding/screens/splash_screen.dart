@@ -1,5 +1,9 @@
 import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+
 import '../../../services/navigation_service.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -13,14 +17,49 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
+    _startSplash();
+  }
 
-    Timer(const Duration(seconds: 5), () {
-      if (!mounted) return;
+  Future<void> _startSplash() async {
+    // The splash screen always stays visible for five seconds.
+    await Future<void>.delayed(const Duration(seconds: 5));
+    if (!mounted) return;
 
-      Navigator.of(context).pushReplacementNamed(
-        AppRoutes.onboarding,
-      );
-    });
+    final destination = await _destinationAfterSplash();
+    if (!mounted) return;
+
+    Navigator.of(context).pushNamedAndRemoveUntil(
+      destination,
+      (route) => false,
+    );
+  }
+
+  Future<String> _destinationAfterSplash() async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    // No saved Firebase session: keep showing onboarding on every launch.
+    if (user == null) {
+      return AppRoutes.onboarding;
+    }
+
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      final data = snapshot.data();
+
+      // Only a fully completed account may bypass onboarding.
+      if (data != null && data['setupComplete'] == true) {
+        return AppRoutes.main;
+      }
+    } catch (_) {
+      // If account state cannot be confirmed, never send the user to main.
+    }
+
+    // A signed-in but unfinished account must continue through the normal
+    // onboarding/auth flow rather than being treated as a completed account.
+    return AppRoutes.onboarding;
   }
 
   @override
@@ -30,14 +69,11 @@ class _SplashScreenState extends State<SplashScreen> {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // الصورة تغطي كامل الشاشة
           Image.asset(
             'assets/images/splash_bg.png',
             fit: BoxFit.fill,
             gaplessPlayback: true,
           ),
-
-          // شريط التحميل فقط
           Positioned(
             left: 70,
             right: 70,
