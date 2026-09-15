@@ -369,6 +369,8 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
                   'role': 'user',
                   'coins': 0,
                   'diamonds': 0,
+                  'setupStep': 'profile',
+                  'setupComplete': false,
                   'createdAt': DateTime.now().toIso8601String(),
                   'lastLogin': DateTime.now().toIso8601String(),
                 };
@@ -435,7 +437,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
             'coins': 0,
             'diamonds': 0,
             'setupStep': 'profile',
-            'onboardingComplete': false,
+            'setupComplete': false,
             'createdAt': DateTime.now().toIso8601String(),
             'lastLogin': DateTime.now().toIso8601String(),
           };
