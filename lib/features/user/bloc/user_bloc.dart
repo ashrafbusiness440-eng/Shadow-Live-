@@ -105,8 +105,9 @@ class UserBloc extends Bloc<UserEvent, UserState> {
     emit(UserLoading());
     try {
       await _firebaseService.updateUserProfile(event.userId, event.data);
-      
-      final updatedProfile = await _firebaseService.getUserProfile(event.userId);
+
+      final updatedProfile =
+          await _firebaseService.getUserProfile(event.userId);
       if (updatedProfile != null) {
         await _storageService.saveUser(updatedProfile);
         emit(UserProfileUpdated(updatedProfile));
@@ -124,10 +125,10 @@ class UserBloc extends Bloc<UserEvent, UserState> {
   ) async {
     try {
       await _storageService.saveSettings(event.settings);
-      
+
       final profile = await _storageService.getUser();
       final settings = await _storageService.getSettings();
-      
+
       if (profile != null) {
         emit(UserProfileLoaded(profile, settings));
       }
@@ -149,8 +150,9 @@ class UserBloc extends Bloc<UserEvent, UserState> {
       };
 
       await _firebaseService.updateUserProfile(event.userId, updateData);
-      
-      final updatedProfile = await _firebaseService.getUserProfile(event.userId);
+
+      final updatedProfile =
+          await _firebaseService.getUserProfile(event.userId);
       if (updatedProfile != null) {
         await _storageService.saveUser(updatedProfile);
         emit(UserProfileUpdated(updatedProfile));
@@ -169,7 +171,7 @@ class UserBloc extends Bloc<UserEvent, UserState> {
     emit(UserLoading());
     try {
       final profile = await _firebaseService.getUserProfile(event.userId);
-      
+
       if (profile != null) {
         final currentBalance = profile['balance'] as int? ?? 0;
         final newBalance = event.operation == 'add'
@@ -187,8 +189,9 @@ class UserBloc extends Bloc<UserEvent, UserState> {
         };
 
         await _firebaseService.updateUserProfile(event.userId, updateData);
-        
-        final updatedProfile = await _firebaseService.getUserProfile(event.userId);
+
+        final updatedProfile =
+            await _firebaseService.getUserProfile(event.userId);
         if (updatedProfile != null) {
           await _storageService.saveUser(updatedProfile);
           emit(UserProfileUpdated(updatedProfile));

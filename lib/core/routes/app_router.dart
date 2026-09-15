@@ -74,14 +74,14 @@ class AppRouter {
       // Example:
       // final isAuth = context.read<AuthBloc>().state is Authenticated;
       // final isAuthRoute = state.location == '/login' || state.location == '/register';
-      
+
       // if (!isAuth && !isAuthRoute) {
       //   return '/login';
       // }
       // if (isAuth && isAuthRoute) {
       //   return '/home';
       // }
-      
+
       return null;
     },
 

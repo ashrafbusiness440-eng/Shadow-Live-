@@ -29,18 +29,23 @@ class CustomButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     return SizedBox(
       width: width,
       height: height,
       child: ElevatedButton(
         onPressed: isLoading ? null : onPressed,
         style: ElevatedButton.styleFrom(
-          backgroundColor: isOutlined ? Colors.transparent : (backgroundColor ?? theme.primaryColor),
-          padding: padding ?? const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+          backgroundColor: isOutlined
+              ? Colors.transparent
+              : (backgroundColor ?? theme.primaryColor),
+          padding: padding ??
+              const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(borderRadius),
-            side: isOutlined ? BorderSide(color: backgroundColor ?? theme.primaryColor) : BorderSide.none,
+            side: isOutlined
+                ? BorderSide(color: backgroundColor ?? theme.primaryColor)
+                : BorderSide.none,
           ),
         ),
         child: isLoading
@@ -52,7 +57,10 @@ class CustomButton extends StatelessWidget {
             : Text(
                 text,
                 style: theme.textTheme.labelLarge?.copyWith(
-                  color: textColor ?? (isOutlined ? (backgroundColor ?? theme.primaryColor) : Colors.white),
+                  color: textColor ??
+                      (isOutlined
+                          ? (backgroundColor ?? theme.primaryColor)
+                          : Colors.white),
                 ),
               ),
       ),

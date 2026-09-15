@@ -359,7 +359,7 @@ class SettingsScreen extends StatelessWidget {
                 const Divider(
                   height: 1,
                   indent: 70,
-                  color: Color(0x221FFFFFFF),
+                  color: Color(0x221fffffff),
                 ),
             ],
           );

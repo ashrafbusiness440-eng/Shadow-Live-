@@ -119,7 +119,7 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
                 ),
                 value: _isPrivate,
                 onChanged: (value) => setState(() => _isPrivate = value),
-                activeColor: Colors.yellow[700],
+                activeThumbColor: Colors.yellow[700],
               ),
             ),
             const SizedBox(height: 24),

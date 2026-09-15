@@ -17,7 +17,8 @@ class NavigationService {
   }
 
   // Navigate to a named route
-  Future<dynamic> navigateTo(String routeName, {Map<String, dynamic>? params}) async {
+  Future<dynamic> navigateTo(String routeName,
+      {Map<String, dynamic>? params}) async {
     try {
       AppLogger.d('Navigating to: $routeName', tag: 'Navigation');
       if (params != null && params.isNotEmpty) {
@@ -42,7 +43,8 @@ class NavigationService {
   }
 
   // Replace current route
-  Future<dynamic> replaceTo(String routeName, {Map<String, dynamic>? params}) async {
+  Future<dynamic> replaceTo(String routeName,
+      {Map<String, dynamic>? params}) async {
     try {
       AppLogger.d('Replacing route with: $routeName', tag: 'Navigation');
       if (params != null && params.isNotEmpty) {
@@ -153,7 +155,8 @@ class NavigationService {
       AppLogger.d('Navigating to notifications', tag: 'Navigation');
       await router.pushNamed('notifications');
     } catch (e) {
-      AppLogger.e('Notifications navigation error', tag: 'Navigation', error: e);
+      AppLogger.e('Notifications navigation error',
+          tag: 'Navigation', error: e);
     }
   }
 
@@ -238,10 +241,12 @@ class NavigationService {
   // Get current route name
   String? getCurrentRouteName() {
     try {
-      final RouteMatch lastMatch = router.routerDelegate.currentConfiguration.last;
+      final RouteMatch lastMatch =
+          router.routerDelegate.currentConfiguration.last;
       return lastMatch.matchedLocation;
     } catch (e) {
-      AppLogger.e('Error getting current route name', tag: 'Navigation', error: e);
+      AppLogger.e('Error getting current route name',
+          tag: 'Navigation', error: e);
       return null;
     }
   }

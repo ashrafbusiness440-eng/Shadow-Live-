@@ -183,7 +183,8 @@ class RoomListScreen extends StatelessWidget {
                 ),
                 const Spacer(),
                 ElevatedButton(
-                  onPressed: () => NavigationService.navigateTo(AppRoutes.voiceChatRoom),
+                  onPressed: () =>
+                      NavigationService.navigateTo(AppRoutes.voiceChatRoom),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.yellow[700],
                     shape: RoundedRectangleBorder(

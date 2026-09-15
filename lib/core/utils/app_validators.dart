@@ -172,8 +172,8 @@ class AppValidators {
       return null; // URL is optional
     }
 
-    final urlRegex = RegExp(
-        r'^(https?:\/\/)?[\w\-]+(\.[\w\-]+)+[\/\?\=\&\#\%\w\-]*\$');
+    final urlRegex =
+        RegExp(r'^(https?:\/\/)?[\w\-]+(\.[\w\-]+)+[\/\?\=\&\#\%\w\-]*\$');
     if (!urlRegex.hasMatch(value)) {
       return 'Please enter a valid URL';
     }

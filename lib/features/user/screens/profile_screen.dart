@@ -6,7 +6,7 @@ import '../../../shared/widgets/custom_button.dart';
 import '../../../shared/widgets/loading_indicator.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({Key? key}) : super(key: key);
+  const ProfileScreen({super.key});
 
   @override
   _ProfileScreenState createState() => _ProfileScreenState();
@@ -147,7 +147,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               end: Alignment.bottomCenter,
               colors: [
                 Theme.of(context).primaryColor,
-                Theme.of(context).primaryColor.withOpacity(0.8),
+                Theme.of(context).primaryColor.withValues(alpha: 0.8),
               ],
             ),
           ),
@@ -163,7 +163,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                 begin: Alignment.bottomCenter,
                 end: Alignment.topCenter,
                 colors: [
-                  Colors.black.withOpacity(0.7),
+                  Colors.black.withValues(alpha: 0.7),
                   Colors.transparent,
                 ],
               ),

@@ -142,23 +142,37 @@ class AppDimensions {
   static const double opacityDragged = 0.16;
 
   // Device Specific
-  static double screenWidth(BuildContext context) => MediaQuery.of(context).size.width;
-  static double screenHeight(BuildContext context) => MediaQuery.of(context).size.height;
-  static double statusBarHeight(BuildContext context) => MediaQuery.of(context).padding.top;
-  static double bottomBarHeight(BuildContext context) => MediaQuery.of(context).padding.bottom;
-  static double keyboardHeight(BuildContext context) => MediaQuery.of(context).viewInsets.bottom;
+  static double screenWidth(BuildContext context) =>
+      MediaQuery.of(context).size.width;
+  static double screenHeight(BuildContext context) =>
+      MediaQuery.of(context).size.height;
+  static double statusBarHeight(BuildContext context) =>
+      MediaQuery.of(context).padding.top;
+  static double bottomBarHeight(BuildContext context) =>
+      MediaQuery.of(context).padding.bottom;
+  static double keyboardHeight(BuildContext context) =>
+      MediaQuery.of(context).viewInsets.bottom;
 
   // Responsive Helpers
-  static bool isMobile(BuildContext context) => screenWidth(context) < mobileBreakpoint;
-  static bool isTablet(BuildContext context) => screenWidth(context) >= mobileBreakpoint && screenWidth(context) < tabletBreakpoint;
-  static bool isDesktop(BuildContext context) => screenWidth(context) >= tabletBreakpoint;
+  static bool isMobile(BuildContext context) =>
+      screenWidth(context) < mobileBreakpoint;
+  static bool isTablet(BuildContext context) =>
+      screenWidth(context) >= mobileBreakpoint &&
+      screenWidth(context) < tabletBreakpoint;
+  static bool isDesktop(BuildContext context) =>
+      screenWidth(context) >= tabletBreakpoint;
 
   // Safe Area Helpers
-  static EdgeInsets safeAreaPadding(BuildContext context) => MediaQuery.of(context).padding;
-  static double safePaddingTop(BuildContext context) => MediaQuery.of(context).padding.top;
-  static double safePaddingBottom(BuildContext context) => MediaQuery.of(context).padding.bottom;
-  static double safePaddingLeft(BuildContext context) => MediaQuery.of(context).padding.left;
-  static double safePaddingRight(BuildContext context) => MediaQuery.of(context).padding.right;
+  static EdgeInsets safeAreaPadding(BuildContext context) =>
+      MediaQuery.of(context).padding;
+  static double safePaddingTop(BuildContext context) =>
+      MediaQuery.of(context).padding.top;
+  static double safePaddingBottom(BuildContext context) =>
+      MediaQuery.of(context).padding.bottom;
+  static double safePaddingLeft(BuildContext context) =>
+      MediaQuery.of(context).padding.left;
+  static double safePaddingRight(BuildContext context) =>
+      MediaQuery.of(context).padding.right;
 
   // Theme compatibility aliases
   static const double appBarElevation = elevationXS;
@@ -190,5 +204,4 @@ class AppDimensions {
   static const double bodySmallFontSize = fontXS;
 
   static const double buttonElevation = elevationS;
-
 }

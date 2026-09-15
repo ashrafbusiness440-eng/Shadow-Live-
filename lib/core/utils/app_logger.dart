@@ -45,7 +45,8 @@ class AppLogger {
   }
 
   // Error level logging
-  static void e(String message, {String? tag, Object? error, StackTrace? stackTrace}) {
+  static void e(String message,
+      {String? tag, Object? error, StackTrace? stackTrace}) {
     _log(
       message,
       LogLevel.error,
@@ -56,7 +57,8 @@ class AppLogger {
   }
 
   // Critical level logging
-  static void c(String message, {String? tag, Object? error, StackTrace? stackTrace}) {
+  static void c(String message,
+      {String? tag, Object? error, StackTrace? stackTrace}) {
     _log(
       message,
       LogLevel.critical,
@@ -77,7 +79,8 @@ class AppLogger {
     if (!_enabled || level.index < _minLevel.index) return;
 
     final now = DateTime.now();
-    final timeString = '${now.hour}:${now.minute}:${now.second}.${now.millisecond}';
+    final timeString =
+        '${now.hour}:${now.minute}:${now.second}.${now.millisecond}';
     final finalTag = tag ?? _tag;
     final levelString = level.toString().split('.').last.toUpperCase();
 
@@ -155,7 +158,8 @@ class AppLogger {
   }
 
   // Helper method to log method exit
-  static void logMethodExit(String methodName, {String? className, dynamic result}) {
+  static void logMethodExit(String methodName,
+      {String? className, dynamic result}) {
     if (!_enabled || LogLevel.debug.index < _minLevel.index) return;
 
     final location = className != null ? '$className.$methodName' : methodName;
@@ -166,7 +170,8 @@ class AppLogger {
   }
 
   // Helper method to log API calls
-  static void logApiCall(String endpoint, {
+  static void logApiCall(
+    String endpoint, {
     String? method,
     Map<String, dynamic>? parameters,
     dynamic response,
@@ -207,8 +212,7 @@ class AppLogger {
   static void logUserAction(String action, {Map<String, dynamic>? data}) {
     if (!_enabled || LogLevel.info.index < _minLevel.index) return;
 
-    final message = StringBuffer()
-      ..write('User Action: $action');
+    final message = StringBuffer()..write('User Action: $action');
 
     if (data != null) {
       message.write('\nData: $data');

@@ -4,7 +4,8 @@ class AppAssets {
   static const String logo = '$_imagesPath/logo.svg';
   static const String appIcon = '$_imagesPath/app_icon.svg';
   static const String defaultAvatar = '$_imagesPath/default_avatar.svg';
-  static const String defaultRoomBackground = '$_imagesPath/default_room_bg.svg';
+  static const String defaultRoomBackground =
+      '$_imagesPath/default_room_bg.svg';
   static const String onboarding1 = '$_imagesPath/onboarding_1.svg';
   static const String onboarding2 = '$_imagesPath/onboarding_2.svg';
   static const String onboarding3 = '$_imagesPath/onboarding_3.svg';

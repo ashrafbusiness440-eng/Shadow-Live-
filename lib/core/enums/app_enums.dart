@@ -27,13 +27,7 @@ enum RoomType {
 }
 
 // Room Status
-enum RoomStatus {
-  active,
-  ended,
-  paused,
-  locked,
-  maintenance
-}
+enum RoomStatus { active, ended, paused, locked, maintenance }
 
 // User Roles
 enum UserRole {
@@ -67,13 +61,7 @@ enum UserRole {
 }
 
 // User Status
-enum UserStatus {
-  online,
-  offline,
-  away,
-  busy,
-  inRoom
-}
+enum UserStatus { online, offline, away, busy, inRoom }
 
 // VIP Levels
 enum VipLevel {
@@ -147,9 +135,9 @@ enum GiftType {
   }
 
   bool get isSpecial {
-    return this == GiftType.exclusive || 
-           this == GiftType.limited || 
-           this == GiftType.seasonal;
+    return this == GiftType.exclusive ||
+        this == GiftType.limited ||
+        this == GiftType.seasonal;
   }
 
   GiftEffect get defaultEffect {
@@ -169,13 +157,7 @@ enum GiftType {
 }
 
 // Gift Effects
-enum GiftEffect {
-  none,
-  simple,
-  animated,
-  special,
-  custom
-}
+enum GiftEffect { none, simple, animated, special, custom }
 
 // Notification Types
 enum NotificationType {
@@ -204,14 +186,13 @@ enum NotificationType {
   }
 
   bool get requiresImmediate {
-    return this == NotificationType.roomInvite || 
-           this == NotificationType.pk;
+    return this == NotificationType.roomInvite || this == NotificationType.pk;
   }
 
   bool get isInteractive {
-    return this == NotificationType.roomInvite || 
-           this == NotificationType.pk || 
-           this == NotificationType.gift;
+    return this == NotificationType.roomInvite ||
+        this == NotificationType.pk ||
+        this == NotificationType.gift;
   }
 }
 
@@ -228,9 +209,9 @@ enum PKStatus {
   }
 
   bool get isFinished {
-    return this == PKStatus.completed || 
-           this == PKStatus.cancelled || 
-           this == PKStatus.draw;
+    return this == PKStatus.completed ||
+        this == PKStatus.cancelled ||
+        this == PKStatus.draw;
   }
 
   String get displayName {
@@ -288,35 +269,18 @@ enum AchievementType {
   }
 
   bool get isRare {
-    return this == AchievementType.special || 
-           this == AchievementType.streaming;
+    return this == AchievementType.special || this == AchievementType.streaming;
   }
 }
 
 // Payment Status
-enum PaymentStatus {
-  pending,
-  completed,
-  failed,
-  refunded,
-  cancelled
-}
+enum PaymentStatus { pending, completed, failed, refunded, cancelled }
 
 // Report Types
-enum ReportType {
-  inappropriate,
-  spam,
-  abuse,
-  technical,
-  other
-}
+enum ReportType { inappropriate, spam, abuse, technical, other }
 
 // Theme Mode
-enum AppThemeMode {
-  light,
-  dark,
-  system
-}
+enum AppThemeMode { light, dark, system }
 
 // Language Code
 enum AppLanguage {
@@ -331,12 +295,7 @@ enum AppLanguage {
 }
 
 // Audio Quality
-enum AudioQuality {
-  low,
-  medium,
-  high,
-  ultra
-}
+enum AudioQuality { low, medium, high, ultra }
 
 // Connection Status
 enum ConnectionStatus {
@@ -348,69 +307,28 @@ enum ConnectionStatus {
 }
 
 // Sort Order
-enum SortOrder {
-  ascending,
-  descending
-}
+enum SortOrder { ascending, descending }
 
 // Filter Type
-enum FilterType {
-  all,
-  popular,
-  following,
-  nearby,
-  recommended
-}
+enum FilterType { all, popular, following, nearby, recommended }
 
 // Time Period
-enum TimePeriod {
-  today,
-  week,
-  month,
-  year,
-  allTime
-}
+enum TimePeriod { today, week, month, year, allTime }
 
 // Device Type
-enum DeviceType {
-  mobile,
-  tablet,
-  desktop,
-  web
-}
+enum DeviceType { mobile, tablet, desktop, web }
 
 // Platform Type
-enum PlatformType {
-  ios,
-  android,
-  windows,
-  macos,
-  linux,
-  web
-}
+enum PlatformType { ios, android, windows, macos, linux, web }
 
 // Media Type
-enum MediaType {
-  image,
-  video,
-  audio,
-  document
-}
+enum MediaType { image, video, audio, document }
 
 // Storage Type
-enum StorageType {
-  local,
-  cloud,
-  cache
-}
+enum StorageType { local, cloud, cache }
 
 // Cache Policy
-enum CachePolicy {
-  none,
-  memory,
-  disk,
-  both
-}
+enum CachePolicy { none, memory, disk, both }
 
 // Error Type
 enum ErrorType {
@@ -424,22 +342,10 @@ enum ErrorType {
 }
 
 // Log Level
-enum LogLevel {
-  debug,
-  info,
-  warning,
-  error,
-  critical
-}
+enum LogLevel { debug, info, warning, error, critical }
 
 // Analytics Event
-enum AnalyticsEvent {
-  screenView,
-  userAction,
-  error,
-  performance,
-  custom
-}
+enum AnalyticsEvent { screenView, userAction, error, performance, custom }
 
 // Feature Flag
 enum FeatureFlag {

@@ -18,9 +18,9 @@ class LoginScreen extends StatelessWidget {
               Text(
                 'Welcome Back!',
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 32),
@@ -52,7 +52,8 @@ class LoginScreen extends StatelessWidget {
               ),
               const SizedBox(height: 24),
               ElevatedButton(
-                onPressed: () => NavigationService.navigateToAndRemoveUntil(AppRoutes.roomList),
+                onPressed: () => NavigationService.navigateToAndRemoveUntil(
+                    AppRoutes.roomList),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.yellow[700],
                   padding: const EdgeInsets.symmetric(vertical: 16),
@@ -82,7 +83,8 @@ class LoginScreen extends StatelessWidget {
                     style: TextStyle(color: Colors.grey),
                   ),
                   TextButton(
-                    onPressed: () => NavigationService.navigateTo(AppRoutes.register),
+                    onPressed: () =>
+                        NavigationService.navigateTo(AppRoutes.register),
                     child: Text(
                       'Sign Up',
                       style: TextStyle(color: Colors.yellow[700]),

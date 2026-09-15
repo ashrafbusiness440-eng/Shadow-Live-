@@ -78,7 +78,8 @@ class ThemeService {
         style: ElevatedButton.styleFrom(
           elevation: AppDimensions.buttonElevation,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppDimensions.buttonBorderRadius),
+            borderRadius:
+                BorderRadius.circular(AppDimensions.buttonBorderRadius),
           ),
           padding: const EdgeInsets.symmetric(
             horizontal: AppDimensions.buttonHorizontalPadding,
@@ -172,7 +173,8 @@ class ThemeService {
         style: ElevatedButton.styleFrom(
           elevation: AppDimensions.buttonElevation,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppDimensions.buttonBorderRadius),
+            borderRadius:
+                BorderRadius.circular(AppDimensions.buttonBorderRadius),
           ),
           padding: const EdgeInsets.symmetric(
             horizontal: AppDimensions.buttonHorizontalPadding,

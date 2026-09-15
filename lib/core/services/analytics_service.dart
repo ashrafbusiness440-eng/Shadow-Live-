@@ -172,9 +172,11 @@ class AnalyticsService {
           'timestamp': DateTime.now().toIso8601String(),
         },
       );
-      AppLogger.d('Achievement unlock logged: $achievementName', tag: 'Analytics');
+      AppLogger.d('Achievement unlock logged: $achievementName',
+          tag: 'Analytics');
     } catch (e) {
-      AppLogger.e('Failed to log achievement unlock', tag: 'Analytics', error: e);
+      AppLogger.e('Failed to log achievement unlock',
+          tag: 'Analytics', error: e);
     }
   }
 

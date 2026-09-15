@@ -38,11 +38,14 @@ class AppStrings {
   static const String emailRequired = 'Email is required';
   static const String invalidEmail = 'Please enter a valid email';
   static const String passwordRequired = 'Password is required';
-  static const String passwordTooShort = 'Password must be at least 8 characters';
+  static const String passwordTooShort =
+      'Password must be at least 8 characters';
   static const String passwordsDontMatch = 'Passwords do not match';
   static const String usernameRequired = 'Username is required';
-  static const String usernameTooShort = 'Username must be at least 3 characters';
-  static const String acceptTermsRequired = 'Please accept the terms and conditions';
+  static const String usernameTooShort =
+      'Username must be at least 3 characters';
+  static const String acceptTermsRequired =
+      'Please accept the terms and conditions';
 
   // Home Screen
   static const String home = 'Home';
@@ -153,9 +156,12 @@ class AppStrings {
 
   // Confirmation Messages
   static const String confirmLogout = 'Are you sure you want to logout?';
-  static const String confirmDeleteAccount = 'Are you sure you want to delete your account?';
-  static const String confirmLeaveRoom = 'Are you sure you want to leave this room?';
-  static const String confirmEndRoom = 'Are you sure you want to end this room?';
+  static const String confirmDeleteAccount =
+      'Are you sure you want to delete your account?';
+  static const String confirmLeaveRoom =
+      'Are you sure you want to leave this room?';
+  static const String confirmEndRoom =
+      'Are you sure you want to end this room?';
   static const String confirmDelete = 'Are you sure you want to delete this?';
 
   // PK System

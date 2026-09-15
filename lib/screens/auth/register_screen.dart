@@ -18,9 +18,9 @@ class RegisterScreen extends StatelessWidget {
               Text(
                 'Create Account',
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 32),
@@ -79,7 +79,8 @@ class RegisterScreen extends StatelessWidget {
               ),
               const SizedBox(height: 24),
               ElevatedButton(
-                onPressed: () => NavigationService.navigateToAndRemoveUntil(AppRoutes.roomList),
+                onPressed: () => NavigationService.navigateToAndRemoveUntil(
+                    AppRoutes.roomList),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.yellow[700],
                   padding: const EdgeInsets.symmetric(vertical: 16),

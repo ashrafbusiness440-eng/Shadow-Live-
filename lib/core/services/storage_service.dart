@@ -174,7 +174,8 @@ class StorageService {
   }
 
   // Save object list value
-  Future<bool> setObjectList(String key, List<Map<String, dynamic>> value) async {
+  Future<bool> setObjectList(
+      String key, List<Map<String, dynamic>> value) async {
     try {
       final jsonString = json.encode(value);
       await _prefs.setString(key, jsonString);
@@ -192,9 +193,8 @@ class StorageService {
       final jsonString = _prefs.getString(key);
       if (jsonString != null) {
         final List<dynamic> decodedList = json.decode(jsonString);
-        final value = decodedList
-            .map((item) => item as Map<String, dynamic>)
-            .toList();
+        final value =
+            decodedList.map((item) => item as Map<String, dynamic>).toList();
         AppLogger.d('Retrieved object list for key: $key', tag: 'Storage');
         return value;
       }
@@ -252,7 +252,8 @@ class StorageService {
   // Save user preferences
   Future<bool> saveUserPreferences(Map<String, dynamic> preferences) async {
     try {
-      return await setObject(AppConstants.storageKeys.userPreferences, preferences);
+      return await setObject(
+          AppConstants.storageKeys.userPreferences, preferences);
     } catch (e) {
       AppLogger.e('Error saving user preferences', tag: 'Storage', error: e);
       return false;

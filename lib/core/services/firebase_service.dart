@@ -60,7 +60,8 @@ class FirebaseService {
   }
 
   // User Profile Methods
-  Future<void> createUserProfile(String userId, Map<String, dynamic> data) async {
+  Future<void> createUserProfile(
+      String userId, Map<String, dynamic> data) async {
     try {
       await _firestore.collection('users').doc(userId).set(data);
       AppLogger.i('User profile created: $userId', tag: 'Firestore');
@@ -403,10 +404,12 @@ class FirebaseService {
           .snapshots();
     } catch (e) {
       AppLogger.e('Get PK battle stream error', tag: 'Firestore', error: e);
-      throw FirestoreException('Failed to get PK battle stream: ${e.toString()}');
+      throw FirestoreException(
+          'Failed to get PK battle stream: ${e.toString()}');
     }
   }
 }
+
 class FirestoreException implements Exception {
   final String message;
   const FirestoreException(this.message);

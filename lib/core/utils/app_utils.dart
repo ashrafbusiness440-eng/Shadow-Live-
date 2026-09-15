@@ -118,7 +118,8 @@ class AppUtils {
     assert(amount >= 0 && amount <= 1);
 
     final hsl = HSLColor.fromColor(color);
-    final hslLight = hsl.withLightness((hsl.lightness + amount).clamp(0.0, 1.0));
+    final hslLight =
+        hsl.withLightness((hsl.lightness + amount).clamp(0.0, 1.0));
 
     return hslLight.toColor();
   }
@@ -126,7 +127,8 @@ class AppUtils {
   // Device Info
   static bool get isIOS => Platform.isIOS;
   static bool get isAndroid => Platform.isAndroid;
-  static bool get isWeb => Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+  static bool get isWeb =>
+      Platform.isWindows || Platform.isLinux || Platform.isMacOS;
 
   // Screen Utilities
   static bool isPortrait(BuildContext context) {
@@ -141,7 +143,8 @@ class AppUtils {
   // Error Handling
   static String getErrorMessage(dynamic error) {
     if (error is String) return error;
-    if (error is Exception) return error.toString().replaceAll('Exception:', '');
+    if (error is Exception)
+      return error.toString().replaceAll('Exception:', '');
     return AppStrings.unknownError;
   }
 
@@ -168,7 +171,9 @@ class AppUtils {
     final hours = twoDigits(duration.inHours);
     final minutes = twoDigits(duration.inMinutes.remainder(60));
     final seconds = twoDigits(duration.inSeconds.remainder(60));
-    return duration.inHours > 0 ? '$hours:$minutes:$seconds' : '$minutes:$seconds';
+    return duration.inHours > 0
+        ? '$hours:$minutes:$seconds'
+        : '$minutes:$seconds';
   }
 
   // Gift Utilities

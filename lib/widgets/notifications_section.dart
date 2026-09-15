@@ -15,7 +15,7 @@ class NotificationsSection extends StatelessWidget {
           _buildNotification(
             text: 'The broadcaster invites you to join a PK',
             textColor: Colors.purple[400]!,
-            backgroundColor: Colors.purple[900]!.withOpacity(0.5),
+            backgroundColor: Colors.purple[900]!.withValues(alpha: 0.5),
             showChevron: true,
           ),
           const SizedBox(height: 8),
@@ -23,13 +23,13 @@ class NotificationsSection extends StatelessWidget {
             text: 'Ankush joined the LIVE',
             username: 'Ankush',
             usernameColor: Colors.green[400]!,
-            backgroundColor: Colors.black.withOpacity(0.5),
+            backgroundColor: Colors.black.withValues(alpha: 0.5),
           ),
           const SizedBox(height: 8),
           _buildNotification(
             text: 'The broadcaster invites you to join a PK',
             textColor: Colors.purple[400]!,
-            backgroundColor: Colors.purple[900]!.withOpacity(0.5),
+            backgroundColor: Colors.purple[900]!.withValues(alpha: 0.5),
             showChevron: true,
           ),
           const SizedBox(height: 8),
@@ -37,7 +37,7 @@ class NotificationsSection extends StatelessWidget {
             text: 'Sumit joined the LIVE',
             username: 'Sumit',
             usernameColor: Colors.green[400]!,
-            backgroundColor: Colors.black.withOpacity(0.5),
+            backgroundColor: Colors.black.withValues(alpha: 0.5),
           ),
         ],
       ),
@@ -61,7 +61,7 @@ class NotificationsSection extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (username != null) ...[            
+          if (username != null) ...[
             Text(
               username,
               style: TextStyle(
@@ -77,10 +77,11 @@ class NotificationsSection extends StatelessWidget {
             style: TextStyle(
               color: username != null ? Colors.grey[300] : textColor,
               fontSize: 12,
-              fontWeight: username != null ? FontWeight.normal : FontWeight.bold,
+              fontWeight:
+                  username != null ? FontWeight.normal : FontWeight.bold,
             ),
           ),
-          if (showChevron) ...[            
+          if (showChevron) ...[
             const SizedBox(width: 4),
             const Icon(
               Icons.chevron_right,

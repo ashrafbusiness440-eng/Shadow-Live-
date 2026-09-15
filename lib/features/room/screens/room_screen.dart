@@ -11,10 +11,10 @@ class RoomScreen extends StatefulWidget {
   final bool isHost;
 
   const RoomScreen({
-    Key? key,
+    super.key,
     required this.roomId,
     this.isHost = false,
-  }) : super(key: key);
+  });
 
   @override
   _RoomScreenState createState() => _RoomScreenState();
@@ -126,7 +126,7 @@ class _RoomScreenState extends State<RoomScreen> {
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            Colors.black.withOpacity(0.7),
+            Colors.black.withValues(alpha: 0.7),
             Colors.transparent,
           ],
         ),
@@ -261,7 +261,7 @@ class _RoomScreenState extends State<RoomScreen> {
         color: Theme.of(context).scaffoldBackgroundColor,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 4,
             offset: const Offset(0, -2),
           ),

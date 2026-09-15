@@ -12,196 +12,159 @@ abstract class AppException implements Exception {
 
 // Authentication Exceptions
 class AuthException extends AppException {
-  AuthException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  AuthException(super.message, {super.code, super.details});
 }
 
 class SignInException extends AuthException {
-  SignInException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  SignInException(super.message, {super.code, super.details});
 }
 
 class SignUpException extends AuthException {
-  SignUpException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  SignUpException(super.message, {super.code, super.details});
 }
 
 class SignOutException extends AuthException {
-  SignOutException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  SignOutException(super.message, {super.code, super.details});
 }
 
 class PasswordResetException extends AuthException {
-  PasswordResetException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  PasswordResetException(super.message, {super.code, super.details});
 }
 
 // Network Exceptions
 class NetworkException extends AppException {
-  NetworkException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  NetworkException(super.message, {super.code, super.details});
 }
 
 class ConnectionException extends NetworkException {
-  ConnectionException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  ConnectionException(super.message, {super.code, super.details});
 }
 
 class TimeoutException extends NetworkException {
-  TimeoutException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  TimeoutException(super.message, {super.code, super.details});
 }
 
 class ServerException extends NetworkException {
-  ServerException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  ServerException(super.message, {super.code, super.details});
 }
 
 // Room Exceptions
 class RoomException extends AppException {
-  RoomException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  RoomException(super.message, {super.code, super.details});
 }
 
 class RoomCreateException extends RoomException {
-  RoomCreateException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  RoomCreateException(super.message, {super.code, super.details});
 }
 
 class RoomJoinException extends RoomException {
-  RoomJoinException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  RoomJoinException(super.message, {super.code, super.details});
 }
 
 class RoomLeaveException extends RoomException {
-  RoomLeaveException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  RoomLeaveException(super.message, {super.code, super.details});
 }
 
 // Voice Chat Exceptions
 class VoiceChatException extends AppException {
-  VoiceChatException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  VoiceChatException(super.message, {super.code, super.details});
 }
 
 class MicrophoneException extends VoiceChatException {
-  MicrophoneException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  MicrophoneException(super.message, {super.code, super.details});
 }
 
 class AudioException extends VoiceChatException {
-  AudioException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  AudioException(super.message, {super.code, super.details});
 }
 
 // Gift Exceptions
 class GiftException extends AppException {
-  GiftException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  GiftException(super.message, {super.code, super.details});
 }
 
 class GiftSendException extends GiftException {
-  GiftSendException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  GiftSendException(super.message, {super.code, super.details});
 }
 
 class GiftReceiveException extends GiftException {
-  GiftReceiveException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  GiftReceiveException(super.message, {super.code, super.details});
 }
 
 // Payment Exceptions
 class PaymentException extends AppException {
-  PaymentException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  PaymentException(super.message, {super.code, super.details});
 }
 
 class PaymentProcessException extends PaymentException {
-  PaymentProcessException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  PaymentProcessException(super.message, {super.code, super.details});
 }
 
 class PaymentVerificationException extends PaymentException {
-  PaymentVerificationException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  PaymentVerificationException(super.message, {super.code, super.details});
 }
 
 // Storage Exceptions
 class StorageException extends AppException {
-  StorageException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  StorageException(super.message, {super.code, super.details});
 }
 
 class FileUploadException extends StorageException {
-  FileUploadException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  FileUploadException(super.message, {super.code, super.details});
 }
 
 class FileDownloadException extends StorageException {
-  FileDownloadException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  FileDownloadException(super.message, {super.code, super.details});
 }
 
 // Validation Exceptions
 class ValidationException extends AppException {
-  ValidationException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  ValidationException(super.message, {super.code, super.details});
 }
 
 class InputValidationException extends ValidationException {
-  InputValidationException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  InputValidationException(super.message, {super.code, super.details});
 }
 
 class DataValidationException extends ValidationException {
-  DataValidationException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  DataValidationException(super.message, {super.code, super.details});
 }
 
 // Permission Exceptions
 class PermissionException extends AppException {
-  PermissionException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  PermissionException(super.message, {super.code, super.details});
 }
 
 class DevicePermissionException extends PermissionException {
-  DevicePermissionException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  DevicePermissionException(super.message, {super.code, super.details});
 }
 
 class RolePermissionException extends PermissionException {
-  RolePermissionException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  RolePermissionException(super.message, {super.code, super.details});
 }
 
 // Cache Exceptions
 class CacheException extends AppException {
-  CacheException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  CacheException(super.message, {super.code, super.details});
 }
 
 class CacheReadException extends CacheException {
-  CacheReadException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  CacheReadException(super.message, {super.code, super.details});
 }
 
 class CacheWriteException extends CacheException {
-  CacheWriteException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  CacheWriteException(super.message, {super.code, super.details});
 }
 
 // Configuration Exceptions
 class ConfigException extends AppException {
-  ConfigException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  ConfigException(super.message, {super.code, super.details});
 }
 
 class ConfigLoadException extends ConfigException {
-  ConfigLoadException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  ConfigLoadException(super.message, {super.code, super.details});
 }
 
 class ConfigUpdateException extends ConfigException {
-  ConfigUpdateException(String message, {String? code, dynamic details})
-      : super(message, code: code, details: details);
+  ConfigUpdateException(super.message, {super.code, super.details});
 }

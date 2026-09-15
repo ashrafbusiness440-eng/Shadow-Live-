@@ -49,7 +49,18 @@ class AppConstants {
 
   // VIP System
   static const int maxVipLevel = 10;
-  static const List<int> vipUpgradePoints = [100, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000];
+  static const List<int> vipUpgradePoints = [
+    100,
+    500,
+    1000,
+    2000,
+    5000,
+    10000,
+    20000,
+    50000,
+    100000,
+    200000
+  ];
   static const List<String> vipBenefits = [
     'Custom entrance effects',
     'Special badges',
@@ -89,12 +100,16 @@ class AppConstants {
   static const int achievementRefreshInterval = 300000; // milliseconds
 
   // Error Messages
-  static const String networkError = 'Network connection error. Please try again.';
+  static const String networkError =
+      'Network connection error. Please try again.';
   static const String serverError = 'Server error. Please try again later.';
-  static const String authError = 'Authentication failed. Please check your credentials.';
-  static const String permissionError = 'Permission denied. Please check your settings.';
+  static const String authError =
+      'Authentication failed. Please check your credentials.';
+  static const String permissionError =
+      'Permission denied. Please check your settings.';
   static const String roomError = 'Unable to join room. Please try again.';
-  static const String micError = 'Microphone access denied. Please check your settings.';
+  static const String micError =
+      'Microphone access denied. Please check your settings.';
   static const String paymentError = 'Payment failed. Please try again.';
 
   // Success Messages
@@ -108,7 +123,8 @@ class AppConstants {
   // Notification Channel
   static const String notificationChannelId = "shadow_live_notifications";
   static const String notificationChannelName = "Shadow Live Notifications";
-  static const String notificationChannelDescription = "Notifications for Shadow Live";
+  static const String notificationChannelDescription =
+      "Notifications for Shadow Live";
 
   // Storage Keys
   static const storageKeys = (
@@ -120,7 +136,8 @@ class AppConstants {
   // Asset Paths
   static const String defaultAvatarPath = 'assets/images/default_avatar.png';
   static const String logoPath = 'assets/images/logo.png';
-  static const String defaultRoomBackground = 'assets/images/default_room_bg.png';
+  static const String defaultRoomBackground =
+      'assets/images/default_room_bg.png';
   static const String loadingAnimation = 'assets/animations/loading.json';
 
   // Feature Flags

@@ -171,9 +171,9 @@ class AgoraService {
   Future<void> setNoiseSuppression(bool enabled) async {
     try {
       await _engine.setAINSMode(
-          enabled: enabled,
-          mode: AudioAinsMode.ainsModeBalanced,
-        );
+        enabled: enabled,
+        mode: AudioAinsMode.ainsModeBalanced,
+      );
       AppLogger.i(
         'Noise suppression ${enabled ? "enabled" : "disabled"}',
         tag: 'Agora',
@@ -237,7 +237,8 @@ class AgoraService {
         onUserOffline: (connection, remoteUid, reason) {
           onUserOffline?.call(connection.channelId ?? '', remoteUid);
         },
-        onAudioVolumeIndication: (connection, speakers, speakerNumber, totalVolume) {
+        onAudioVolumeIndication:
+            (connection, speakers, speakerNumber, totalVolume) {
           onAudioVolumeIndication?.call(speakers);
         },
         onError: (err, msg) {
@@ -255,7 +256,8 @@ class AgoraService {
       AppLogger.i('Agora engine disposed', tag: 'Agora');
     } catch (e) {
       AppLogger.e('Dispose error', tag: 'Agora', error: e);
-      throw VoiceChatException('Failed to dispose Agora engine: ${e.toString()}');
+      throw VoiceChatException(
+          'Failed to dispose Agora engine: ${e.toString()}');
     }
   }
 

@@ -249,15 +249,11 @@ class NotificationService {
     try {
       return Map<String, dynamic>.from(
         Map<String, dynamic>.from(
-          payload
-              .replaceAll('{', '')
-              .replaceAll('}', '')
-              .split(', ')
-              .map((e) {
+          payload.replaceAll('{', '').replaceAll('}', '').split(', ').map((e) {
             final parts = e.split(': ');
             return MapEntry(parts[0], parts[1]);
-          })
-              .fold<Map<String, dynamic>>({}, (map, entry) => map..[entry.key] = entry.value),
+          }).fold<Map<String, dynamic>>(
+              {}, (map, entry) => map..[entry.key] = entry.value),
         ),
       );
     } catch (e) {

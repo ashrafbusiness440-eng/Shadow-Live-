@@ -160,14 +160,14 @@ class GiftBloc extends Bloc<GiftEvent, GiftState> {
     try {
       final query = _firebaseService
           .getCollection('gift_transactions')
-          .where(event.type == 'sent' ? 'senderId' : 'receiverId', isEqualTo: event.userId)
+          .where(event.type == 'sent' ? 'senderId' : 'receiverId',
+              isEqualTo: event.userId)
           .orderBy('timestamp', descending: true)
           .limit(50);
 
       final snapshot = await query.get();
-      final history = snapshot.docs
-          .map((doc) => {'id': doc.id, ...doc.data()})
-          .toList();
+      final history =
+          snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
 
       emit(GiftHistoryLoaded(history));
     } catch (e) {
@@ -188,15 +188,15 @@ class GiftBloc extends Bloc<GiftEvent, GiftState> {
           .limit(100)
           .get();
 
-      final gifts = snapshot.docs
-          .map((doc) => {'id': doc.id, ...doc.data()})
-          .toList();
+      final gifts =
+          snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
 
       // Calculate gift counts
       final giftCounts = <String, int>{};
       for (var gift in gifts) {
         final giftId = gift['giftId'] as String;
-        giftCounts[giftId] = (giftCounts[giftId] ?? 0) + (gift['quantity'] as int);
+        giftCounts[giftId] =
+            (giftCounts[giftId] ?? 0) + (gift['quantity'] as int);
       }
 
       emit(RoomGiftsLoaded(gifts, giftCounts));

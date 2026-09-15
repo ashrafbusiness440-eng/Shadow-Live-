@@ -49,12 +49,36 @@ class _ShadowBottomNavigation extends StatelessWidget {
   });
 
   static const _items = <({String label, IconData icon, IconData activeIcon})>[
-    (label: 'الرئيسية', icon: Icons.home_outlined, activeIcon: Icons.home_rounded),
-    (label: 'الألعاب', icon: Icons.sports_esports_outlined, activeIcon: Icons.sports_esports_rounded),
-    (label: 'الغرف', icon: Icons.groups_outlined, activeIcon: Icons.groups_rounded),
-    (label: 'الرسائل', icon: Icons.chat_bubble_outline, activeIcon: Icons.chat_bubble_rounded),
-    (label: 'المنشورات', icon: Icons.article_outlined, activeIcon: Icons.article_rounded),
-    (label: 'الملف الشخصي', icon: Icons.person_outline_rounded, activeIcon: Icons.person_rounded),
+    (
+      label: 'الرئيسية',
+      icon: Icons.home_outlined,
+      activeIcon: Icons.home_rounded
+    ),
+    (
+      label: 'الألعاب',
+      icon: Icons.sports_esports_outlined,
+      activeIcon: Icons.sports_esports_rounded
+    ),
+    (
+      label: 'الغرف',
+      icon: Icons.groups_outlined,
+      activeIcon: Icons.groups_rounded
+    ),
+    (
+      label: 'الرسائل',
+      icon: Icons.chat_bubble_outline,
+      activeIcon: Icons.chat_bubble_rounded
+    ),
+    (
+      label: 'المنشورات',
+      icon: Icons.article_outlined,
+      activeIcon: Icons.article_rounded
+    ),
+    (
+      label: 'الملف الشخصي',
+      icon: Icons.person_outline_rounded,
+      activeIcon: Icons.person_rounded
+    ),
   ];
 
   @override
@@ -65,9 +89,11 @@ class _ShadowBottomNavigation extends StatelessWidget {
         height: 76,
         decoration: BoxDecoration(
           color: const Color(0xFF090A11),
-          border: Border(top: BorderSide(color: Colors.white.withValues(alpha: .09))),
+          border: Border(
+              top: BorderSide(color: Colors.white.withValues(alpha: .09))),
           boxShadow: const [
-            BoxShadow(color: Colors.black54, blurRadius: 18, offset: Offset(0, -4)),
+            BoxShadow(
+                color: Colors.black54, blurRadius: 18, offset: Offset(0, -4)),
           ],
         ),
         child: Row(
@@ -79,7 +105,8 @@ class _ShadowBottomNavigation extends StatelessWidget {
                 onTap: () => onChanged(index),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 180),
-                  margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 7),
+                  margin:
+                      const EdgeInsets.symmetric(horizontal: 2, vertical: 7),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(16),
                     gradient: selected
@@ -99,7 +126,8 @@ class _ShadowBottomNavigation extends StatelessWidget {
                       Icon(
                         selected ? item.activeIcon : item.icon,
                         size: 23,
-                        color: selected ? const Color(0xFFFFC84A) : Colors.white60,
+                        color:
+                            selected ? const Color(0xFFFFC84A) : Colors.white60,
                       ),
                       const SizedBox(height: 4),
                       FittedBox(
@@ -108,9 +136,12 @@ class _ShadowBottomNavigation extends StatelessWidget {
                           item.label,
                           maxLines: 1,
                           style: TextStyle(
-                            color: selected ? const Color(0xFFFFC84A) : Colors.white60,
+                            color: selected
+                                ? const Color(0xFFFFC84A)
+                                : Colors.white60,
                             fontSize: 10,
-                            fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
+                            fontWeight:
+                                selected ? FontWeight.w800 : FontWeight.w500,
                           ),
                         ),
                       ),
@@ -147,14 +178,18 @@ class _ComingSoonPage extends StatelessWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: const Color(0xFF8A3DFF).withValues(alpha: .14),
-                  border: Border.all(color: const Color(0xFF8A3DFF).withValues(alpha: .35)),
+                  border: Border.all(
+                      color: const Color(0xFF8A3DFF).withValues(alpha: .35)),
                 ),
                 child: Icon(icon, color: const Color(0xFFFFD54A), size: 38),
               ),
               const SizedBox(height: 18),
               Text(
                 title,
-                style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900),
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 8),
               const Text(

@@ -97,7 +97,7 @@ class RoomBloc extends Bloc<RoomEvent, RoomState> {
   final FirebaseService _firebaseService;
   final AgoraService _agoraService;
   StreamSubscription? _roomSubscription;
-  List<int> _participants = [];
+  final List<int> _participants = [];
   String? _currentRoomId;
   bool _isHost = false;
 
@@ -140,7 +140,8 @@ class RoomBloc extends Bloc<RoomEvent, RoomState> {
 
       // Initialize Agora and join as host
       await _agoraService.initialize();
-      await _agoraService.joinChannel(roomId, int.parse(event.hostId), asHost: true);
+      await _agoraService.joinChannel(roomId, int.parse(event.hostId),
+          asHost: true);
 
       emit(RoomCreated(roomId, roomData));
     } catch (e) {
@@ -189,7 +190,8 @@ class RoomBloc extends Bloc<RoomEvent, RoomState> {
 
         // Update room data in Firestore
         if (_isHost) {
-          await _firebaseService.updateRoom(_currentRoomId!, {'isActive': false});
+          await _firebaseService
+              .updateRoom(_currentRoomId!, {'isActive': false});
         }
 
         _currentRoomId = null;
