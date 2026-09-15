@@ -1,7 +1,5 @@
 import 'package:firebase_analytics/firebase_analytics.dart';
-import '../enums/app_enums.dart';
 import '../utils/app_logger.dart';
-import '../utils/app_utils.dart';
 
 class AnalyticsService {
   static final AnalyticsService _instance = AnalyticsService._internal();
