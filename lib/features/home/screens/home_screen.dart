@@ -25,6 +25,16 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (_) {}
   }
 
+  ImageProvider? _profileImage() {
+    final url = (_userData?['profileImageUrl'] ?? _userData?['avatarUrl'])?.toString();
+    if (url != null && url.trim().isNotEmpty) return NetworkImage(url);
+    final asset = _userData?['profileAvatarAsset']?.toString();
+    if (asset != null && asset.trim().isNotEmpty) return AssetImage(asset);
+    final authPhoto = FirebaseAuth.instance.currentUser?.photoURL;
+    if (authPhoto != null && authPhoto.trim().isNotEmpty) return NetworkImage(authPhoto);
+    return null;
+  }
+
   void _recharge(int tab) => Navigator.push(context, MaterialPageRoute(builder: (_) => RechargeScreen(initialTab: tab)));
 
   @override
@@ -61,12 +71,15 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _header(String name, String level, String coins, String diamonds) => Row(children: [
-    Container(width: 48, height: 48, decoration: BoxDecoration(shape: BoxShape.circle, gradient: const LinearGradient(colors: [_gold, _purple]), border: Border.all(color: Colors.white24)), child: const Icon(Icons.person_rounded, color: Colors.white, size: 28)),
-    const SizedBox(width: 10),
-    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('أهلاً، $name', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)), Text('LV.$level', style: const TextStyle(color: _gold, fontSize: 11, fontWeight: FontWeight.w800))])),
-    _wallet(Icons.monetization_on_rounded, coins, _gold, 0), const SizedBox(width: 6), _wallet(Icons.diamond_rounded, diamonds, const Color(0xFF64D8FF), 1), const SizedBox(width: 6), const Icon(Icons.notifications_none_rounded, color: Colors.white)
-  ]);
+  Widget _header(String name, String level, String coins, String diamonds) {
+    final image = _profileImage();
+    return Row(children: [
+      Container(width: 50, height: 50, padding: const EdgeInsets.all(2), decoration: BoxDecoration(shape: BoxShape.circle, gradient: const LinearGradient(colors: [_gold, _purple]), border: Border.all(color: Colors.white24)), child: CircleAvatar(backgroundColor: const Color(0xFF171D31), backgroundImage: image, child: image == null ? const Icon(Icons.person_rounded, color: Colors.white, size: 28) : null)),
+      const SizedBox(width: 10),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('أهلاً، $name', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)), Text('LV.$level', style: const TextStyle(color: _gold, fontSize: 11, fontWeight: FontWeight.w800))])),
+      _wallet(Icons.monetization_on_rounded, coins, _gold, 0), const SizedBox(width: 6), _wallet(Icons.diamond_rounded, diamonds, const Color(0xFF64D8FF), 1), const SizedBox(width: 6), const Icon(Icons.notifications_none_rounded, color: Colors.white)
+    ]);
+  }
 
   Widget _wallet(IconData icon, String value, Color color, int tab) => InkWell(onTap: () => _recharge(tab), borderRadius: BorderRadius.circular(14), child: Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7), decoration: BoxDecoration(color: Colors.white.withValues(alpha: .06), borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.white10)), child: Row(children: [Icon(icon, color: color, size: 15), const SizedBox(width: 3), Text(value, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)), const SizedBox(width: 3), const Icon(Icons.add_circle_rounded, color: Color(0xFF9A5CFF), size: 15)])));
   Widget _search() => Container(height: 48, padding: const EdgeInsets.symmetric(horizontal: 14), decoration: BoxDecoration(color: _card, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white10)), child: const Row(children: [Icon(Icons.search_rounded, color: Colors.white54), SizedBox(width: 10), Text('ابحث عن غرف، أصدقاء، ألعاب...', style: TextStyle(color: Colors.white54, fontSize: 13))]));
