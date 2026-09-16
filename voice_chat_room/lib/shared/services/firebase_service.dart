@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -97,7 +98,7 @@ class FirebaseService {
   Future<String> uploadFile(String path, List<int> data) async {
     try {
       final ref = _storage.ref().child(path);
-      await ref.putData(data);
+      await ref.putData(Uint8List.fromList(data));
       return await ref.getDownloadURL();
     } catch (e) {
       throw Exception('Failed to upload file: $e');
