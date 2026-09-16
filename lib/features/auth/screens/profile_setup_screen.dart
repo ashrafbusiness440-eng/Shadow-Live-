@@ -260,13 +260,16 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
         'profileAvatarAsset': photo == null ? _selectedAvatarAsset : null,
         'setupStep': 'success',
         'updatedAt': FieldValue.serverTimestamp()
-      }, SetOptions(merge: true));
+      }, SetOptions(merge: true)).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => throw Exception('Firestore save timeout'),
+      );
       if (mounted)
         Navigator.of(context).pushReplacementNamed('/account-success');
     } catch (e) {
       if (mounted) {
         setState(() => _saving = false);
-        _msg('تعذر حفظ الملف الشخصي، حاول مرة أخرى');
+        _msg('خطأ الحفظ: $e');
       }
     }
   }
