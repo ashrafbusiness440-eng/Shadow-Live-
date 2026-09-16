@@ -8,11 +8,20 @@ on:
 
 permissions:
   contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
 
 jobs:
   build-web:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
       - name: Checkout
@@ -30,13 +39,17 @@ jobs:
       - name: Analyze app code
         run: flutter analyze --no-fatal-infos --no-fatal-warnings lib
 
-      - name: Build Flutter web
-        run: flutter build web --release
+      - name: Build Flutter web for GitHub Pages
+        run: flutter build web --release --base-href "/Shadow-Live-/"
 
-      - name: Upload web preview
-        uses: actions/upload-artifact@v4
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          name: shadow-live-web
           path: build/web
-          if-no-files-found: error
-          retention-days: 7
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
