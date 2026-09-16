@@ -34,49 +34,75 @@ import 'services/navigation_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  runApp(MultiBlocProvider(providers: [
-    BlocProvider(create: (_) => AuthBloc(shared_fb.FirebaseService(), StorageService())..add(AuthCheckRequested())),
-    BlocProvider(create: (_) => UserBloc(shared_fb.FirebaseService(), StorageService())),
-  ], child: const MyApp()));
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+  runApp(
+    MultiBlocProvider(
+      providers: [
+        BlocProvider(
+          create: (_) => AuthBloc(
+            shared_fb.FirebaseService(),
+            StorageService(),
+          )..add(AuthCheckRequested()),
+        ),
+        BlocProvider(
+          create: (_) => UserBloc(
+            shared_fb.FirebaseService(),
+            StorageService(),
+          ),
+        ),
+      ],
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
+
   @override
-  Widget build(BuildContext context) => MaterialApp(
-    debugShowCheckedModeBanner: false,
-    title: 'Shadow Live',
-    navigatorKey: NavigationService.navigatorKey,
-    theme: ThemeData(
-      colorScheme: ColorScheme.dark(primary: Colors.yellow[400]!, surface: Colors.black),
-      textTheme: GoogleFonts.robotoTextTheme(Theme.of(context).textTheme).apply(bodyColor: Colors.white),
-    ),
-    initialRoute: AppRoutes.splash,
-    routes: {
-      AppRoutes.splash: (_) => const SplashScreen(),
-      AppRoutes.onboarding: (_) => const OnboardingScreen(),
-      AppRoutes.authChoice: (_) => const AuthChoiceScreen(),
-      AppRoutes.main: (_) => const MainShellScreen(),
-      AppRoutes.login: (_) => const LoginScreen(),
-      AppRoutes.emailLogin: (_) => const EmailLoginScreen(),
-      AppRoutes.profileSetup: (_) => const ProfileSetupScreen(),
-      AppRoutes.accountSuccess: (_) => const AccountSuccessScreen(),
-      AppRoutes.accountLinking: (_) => const AccountLinkingScreen(),
-      AppRoutes.accountReady: (_) => const AccountReadyScreen(),
-      AppRoutes.register: (_) => const RegisterScreen(),
-      AppRoutes.profile: (_) => const ProfileScreen(),
-      AppRoutes.editProfile: (_) => const EditProfileScreen(),
-      AppRoutes.settings: (_) => const SettingsScreen(),
-      AppRoutes.roomList: (_) => const RoomListScreen(),
-      AppRoutes.createRoom: (_) => const CreateRoomScreen(),
-      AppRoutes.voiceChatRoom: (_) => const VoiceChatRoom(),
-    },
-  );
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'Shadow Live',
+      navigatorKey: NavigationService.navigatorKey,
+      theme: ThemeData(
+        colorScheme: ColorScheme.dark(
+          primary: Colors.yellow[400]!,
+          surface: Colors.black,
+        ),
+        textTheme: GoogleFonts.robotoTextTheme(
+          Theme.of(context).textTheme,
+        ).apply(bodyColor: Colors.white),
+      ),
+      initialRoute: AppRoutes.splash,
+      routes: {
+        AppRoutes.splash: (context) => const SplashScreen(),
+        AppRoutes.onboarding: (context) => const OnboardingScreen(),
+        AppRoutes.authChoice: (context) => const AuthChoiceScreen(),
+        AppRoutes.main: (context) => const MainShellScreen(),
+        AppRoutes.login: (context) => const LoginScreen(),
+        AppRoutes.emailLogin: (context) => const EmailLoginScreen(),
+        AppRoutes.profileSetup: (context) => const ProfileSetupScreen(),
+        AppRoutes.accountSuccess: (context) => const AccountSuccessScreen(),
+        AppRoutes.accountLinking: (context) => const AccountLinkingScreen(),
+        AppRoutes.accountReady: (context) => const AccountReadyScreen(),
+        AppRoutes.register: (context) => const RegisterScreen(),
+        AppRoutes.profile: (context) => const ProfileScreen(),
+        AppRoutes.editProfile: (context) => const EditProfileScreen(),
+        AppRoutes.settings: (context) => const SettingsScreen(),
+        AppRoutes.roomList: (context) => const RoomListScreen(),
+        AppRoutes.createRoom: (context) => const CreateRoomScreen(),
+        AppRoutes.voiceChatRoom: (context) => const VoiceChatRoom(),
+      },
+    );
+  }
 }
 
 class VoiceChatRoom extends StatelessWidget {
   const VoiceChatRoom({super.key});
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -84,52 +110,138 @@ class VoiceChatRoom extends StatelessWidget {
       body: Center(
         child: Container(
           constraints: const BoxConstraints(maxWidth: 400),
-          child: Stack(children: [
-            SingleChildScrollView(child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Column(children: [
-                const SizedBox(height: 120),
-                const HostSection(),
-                const SizedBox(height: 32),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(color: Colors.grey[800]!.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(12)),
-                  child: Row(children: [
-                    Container(width: 40,height: 40,decoration: const BoxDecoration(image: DecorationImage(image: CachedNetworkImageProvider('https://example.com/gift.jpg'),fit: BoxFit.cover))),
-                    const SizedBox(width: 12),
-                    const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start,children: [Text('Wish List',style: TextStyle(fontWeight: FontWeight.bold)),Text('Send her a wish gift',style: TextStyle(color: Colors.grey,fontSize: 12))])),
-                    TextButton(onPressed: () => NavigationService.navigateTo(AppRoutes.settings),child: Text('Send',style: TextStyle(color: Colors.yellow[400],fontWeight: FontWeight.bold))),
-                  ]),
+          child: Stack(
+            children: [
+              SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 120),
+                      const HostSection(),
+                      const SizedBox(height: 32),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[800]!.withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(8),
+                                image: const DecorationImage(
+                                  image: CachedNetworkImageProvider('https://example.com/gift.jpg'),
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Wish List', style: TextStyle(fontWeight: FontWeight.bold)),
+                                  Text('Send her a wish gift', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                                ],
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () => NavigationService.navigateTo(AppRoutes.settings),
+                              child: Text('Send', style: TextStyle(color: Colors.yellow[400], fontWeight: FontWeight.bold)),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 32),
+                      const ParticipantGrid(),
+                      const SizedBox(height: 100),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 32),
-                const ParticipantGrid(),
-                const SizedBox(height: 100),
-              ]),
-            )),
-            Positioned(top: 0,left: 0,right: 0,child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter,end: Alignment.bottomCenter,colors: [Colors.black.withValues(alpha: 0.8),Colors.transparent])),
-              child: Column(children: [
-                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween,children: [
-                  Row(children: [
-                    GestureDetector(onTap: () => NavigationService.navigateTo(AppRoutes.profile),child: const CircleAvatar(radius:20,backgroundImage:CachedNetworkImageProvider('https://example.com/avatar.jpg'))),
-                    const SizedBox(width:8),
-                    const Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text('Enrique Pemala',style:TextStyle(fontWeight:FontWeight.bold)),Text('8811M',style:TextStyle(color:Colors.grey,fontSize:12))]),
-                  ]),
-                  Row(children: [IconButton(icon:const Icon(Icons.share),onPressed:(){}),const Text('387'),IconButton(icon:const Icon(Icons.settings),onPressed:()=>NavigationService.navigateTo(AppRoutes.settings))]),
-                ]),
-              ]),
-            )),
-            const NotificationsSection(),
-            Positioned(bottom:80,left:0,right:0,child:Container(
-              padding:const EdgeInsets.all(16),color:Colors.black.withValues(alpha:0.8),
-              child:Row(mainAxisAlignment:MainAxisAlignment.spaceBetween,children:[
-                const Row(children:[Icon(Icons.star),SizedBox(width:16),Icon(Icons.sentiment_satisfied_alt),SizedBox(width:16),Icon(Icons.list)]),
-                Row(children:[GestureDetector(onTap:()=>NavigationService.navigateToReplacement(AppRoutes.roomList),child:Container(padding:const EdgeInsets.all(8),decoration:BoxDecoration(color:Colors.red[600],shape:BoxShape.circle),child:const Icon(Icons.call_end))),const SizedBox(width:16),const Icon(Icons.mic_off)]),
-              ]),
-            )),
-            const Positioned(bottom:0,left:0,right:0,child:BottomNavBar(currentIndex:1)),
-          ]),
+              ),
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Colors.black.withValues(alpha: 0.8), Colors.transparent],
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              GestureDetector(
+                                onTap: () => NavigationService.navigateTo(AppRoutes.profile),
+                                child: const CircleAvatar(radius: 20, backgroundImage: CachedNetworkImageProvider('https://example.com/avatar.jpg')),
+                              ),
+                              const SizedBox(width: 8),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Enrique Pemala', style: TextStyle(fontWeight: FontWeight.bold)),
+                                  Row(children: [Icon(Icons.star, color: Colors.yellow[400], size: 16), const Text('8811M', style: TextStyle(color: Colors.grey, fontSize: 12))]),
+                                ],
+                              ),
+                            ],
+                          ),
+                          Row(
+                            children: [
+                              IconButton(icon: const Icon(Icons.share), onPressed: () {}),
+                              Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(20)), child: const Text('387')),
+                              IconButton(icon: const Icon(Icons.settings), onPressed: () => NavigationService.navigateTo(AppRoutes.settings)),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                            decoration: BoxDecoration(color: Colors.yellow[500], borderRadius: BorderRadius.circular(20)),
+                            child: const Row(children: [Icon(Icons.military_tech, color: Colors.black, size: 16), SizedBox(width: 4), Text('Top Score', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 12))]),
+                          ),
+                          const Row(children: [Text('For You', style: TextStyle(color: Colors.grey, fontSize: 14)), Icon(Icons.chevron_right, color: Colors.grey, size: 20)]),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const NotificationsSection(),
+              Positioned(
+                bottom: 80,
+                left: 0,
+                right: 0,
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.8), borderRadius: const BorderRadius.vertical(top: Radius.circular(20))),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(children: [Icon(Icons.star, color: Colors.yellow[400]), const SizedBox(width: 16), const Icon(Icons.sentiment_satisfied_alt), const SizedBox(width: 16), const Icon(Icons.list)]),
+                      Row(children: [GestureDetector(onTap: () => NavigationService.navigateToReplacement(AppRoutes.roomList), child: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.red[600], shape: BoxShape.circle), child: const Icon(Icons.call_end))), const SizedBox(width: 16), Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.grey[800], shape: BoxShape.circle), child: const Icon(Icons.mic_off))]),
+                    ],
+                  ),
+                ),
+              ),
+              const Positioned(bottom: 0, left: 0, right: 0, child: BottomNavBar(currentIndex: 1)),
+            ],
+          ),
         ),
       ),
     );
