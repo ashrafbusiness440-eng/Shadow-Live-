@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../../../services/navigation_service.dart';
 import '../../wallet/screens/recharge_screen.dart';
 import 'discovery_search_screen.dart';
 
@@ -39,6 +40,7 @@ class _HomeScreenState extends State<HomeScreen>{
   ImageProvider? _profileImage(){final url=(_userData?['profileImageUrl']??_userData?['avatarUrl'])?.toString();if(url!=null&&url.trim().isNotEmpty)return NetworkImage(url);final asset=_userData?['profileAvatarAsset']?.toString();if(asset!=null&&asset.trim().isNotEmpty)return AssetImage(asset);final auth=FirebaseAuth.instance.currentUser?.photoURL;return auth!=null&&auth.trim().isNotEmpty?NetworkImage(auth):null;}
   void _recharge(int tab)=>Navigator.push(context,MaterialPageRoute(builder:(_)=>RechargeScreen(initialTab:tab)));
   void _search()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const DiscoverySearchScreen()));
+  void _openRoom(Map<String,dynamic> room)=>NavigationService.navigateTo(AppRoutes.voiceChatRoom,arguments:room);
   void _soon(String title)=>ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('$title سيتم تفعيله في مرحلته القادمة')));
 
   @override Widget build(BuildContext context){
@@ -63,7 +65,7 @@ class _HomeScreenState extends State<HomeScreen>{
   Widget _roomsSection(){
     if(_loading&&_rooms.isEmpty)return const SizedBox(height:130,child:Center(child:CircularProgressIndicator(color:_purple)));
     if(_rooms.isEmpty)return Container(height:120,padding:const EdgeInsets.all(18),decoration:BoxDecoration(color:_card,borderRadius:BorderRadius.circular(20),border:Border.all(color:Colors.white10)),child:const Column(mainAxisAlignment:MainAxisAlignment.center,children:[Icon(Icons.mic_none_rounded,color:Colors.white38,size:32),SizedBox(height:8),Text('لا توجد غرف متاحة حالياً',style:TextStyle(color:Colors.white70,fontWeight:FontWeight.w700)),SizedBox(height:4),Text('ستظهر الغرف النشطة هنا تلقائياً',style:TextStyle(color:Colors.white38,fontSize:11))]));
-    return SizedBox(height:170,child:ListView(scrollDirection:Axis.horizontal,children:_rooms.take(8).map((r)=>_RoomCard(room:r,onTap:()=>_soon('دخول الغرفة'))).toList()));
+    return SizedBox(height:170,child:ListView(scrollDirection:Axis.horizontal,children:_rooms.take(8).map((r)=>_RoomCard(room:r,onTap:()=>_openRoom(r))).toList()));
   }
 
   Widget _header(String name,String level,String coins,String diamonds){final image=_profileImage();return Row(children:[Container(width:50,height:50,padding:const EdgeInsets.all(2),decoration:BoxDecoration(shape:BoxShape.circle,gradient:const LinearGradient(colors:[_gold,_purple]),border:Border.all(color:Colors.white24)),child:CircleAvatar(backgroundColor:const Color(0xFF171D31),backgroundImage:image,child:image==null?const Icon(Icons.person_rounded,color:Colors.white,size:28):null)),const SizedBox(width:10),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text('أهلاً، $name',maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(color:Colors.white,fontSize:18,fontWeight:FontWeight.w800)),Text('LV.$level',style:const TextStyle(color:_gold,fontSize:11,fontWeight:FontWeight.w800))])),_wallet(Icons.monetization_on_rounded,coins,_gold,0),const SizedBox(width:6),_wallet(Icons.diamond_rounded,diamonds,const Color(0xFF64D8FF),1),const SizedBox(width:6),IconButton(onPressed:()=>_soon('الإشعارات'),icon:const Icon(Icons.notifications_none_rounded,color:Colors.white),tooltip:'الإشعارات')]);}
