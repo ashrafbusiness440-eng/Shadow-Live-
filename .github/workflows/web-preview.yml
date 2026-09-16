@@ -36,6 +36,32 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Prepare Shadow Live install icons
+        run: |
+          python3 -m pip install --quiet Pillow
+          python3 - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+
+          source = Path('assets/images/app_icon.png')
+          if not source.exists():
+              raise SystemExit('Missing assets/images/app_icon.png')
+
+          image = Image.open(source).convert('RGBA')
+          icons = Path('web/icons')
+          icons.mkdir(parents=True, exist_ok=True)
+
+          for size, name in [
+              (192, 'Icon-192.png'),
+              (512, 'Icon-512.png'),
+              (192, 'Icon-maskable-192.png'),
+              (512, 'Icon-maskable-512.png'),
+          ]:
+              image.resize((size, size), Image.Resampling.LANCZOS).save(icons / name)
+
+          image.resize((64, 64), Image.Resampling.LANCZOS).save('web/favicon.png')
+          PY
+
       - name: Analyze app code
         run: flutter analyze --no-fatal-infos --no-fatal-warnings lib
 
