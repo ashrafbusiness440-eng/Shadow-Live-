@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../../screens/room/room_list_screen.dart';
+import '../../chat/screens/chat_list_screen.dart';
 import '../../home/screens/home_screen.dart';
 import '../../user/screens/profile_screen.dart';
 import '../../wallet/screens/recharge_screen.dart';
@@ -13,7 +14,7 @@ class MainShellScreen extends StatefulWidget {
 
 class _MainShellScreenState extends State<MainShellScreen>{
   int _currentIndex=0;
-  final List<Widget> _pages=const [HomeScreen(),_ComingSoonPage(title:'الألعاب',icon:Icons.sports_esports_rounded),RoomListScreen(),_ComingSoonPage(title:'الرسائل',icon:Icons.chat_bubble_rounded),_ComingSoonPage(title:'المنشورات',icon:Icons.article_rounded),ProfileScreen()];
+  final List<Widget> _pages=const [HomeScreen(),_ComingSoonPage(title:'الألعاب',icon:Icons.sports_esports_rounded),RoomListScreen(),ChatListScreen(),_ComingSoonPage(title:'المنشورات',icon:Icons.article_rounded),ProfileScreen()];
   bool get _guest=>FirebaseAuth.instance.currentUser?.isAnonymous==true;
 
   Future<void> _guestGuard()async{
