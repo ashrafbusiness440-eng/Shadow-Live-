@@ -8,13 +8,7 @@ class PrivateChatScreen extends StatefulWidget {
   final String otherName;
   final String otherPhoto;
 
-  const PrivateChatScreen({
-    super.key,
-    required this.conversationId,
-    required this.otherUid,
-    required this.otherName,
-    this.otherPhoto = '',
-  });
+  const PrivateChatScreen({super.key, required this.conversationId, required this.otherUid, required this.otherName, this.otherPhoto = ''});
 
   @override
   State<PrivateChatScreen> createState() => _PrivateChatScreenState();
@@ -26,8 +20,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   bool _markingRead = false;
 
   String get _uid => FirebaseAuth.instance.currentUser!.uid;
-  DocumentReference<Map<String, dynamic>> get _conversation =>
-      FirebaseFirestore.instance.collection('conversations').doc(widget.conversationId);
+  DocumentReference<Map<String, dynamic>> get _conversation => FirebaseFirestore.instance.collection('conversations').doc(widget.conversationId);
 
   @override
   void initState() {
@@ -39,13 +32,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     if (_markingRead) return;
     _markingRead = true;
     try {
-      final snap = await _conversation.get();
-      if (!snap.exists) return;
-      final data = snap.data() ?? const <String, dynamic>{};
-      final counts = Map<String, dynamic>.from(data['unreadCounts'] ?? const <String, dynamic>{});
-      if (((counts[_uid] as num?)?.toInt() ?? 0) == 0) return;
-      counts[_uid] = 0;
-      await _conversation.set({'unreadCounts': counts}, SetOptions(merge: true));
+      await _conversation.update({'unreadCounts.$_uid': 0});
     } catch (_) {
       // Reading a conversation should not block the chat UI.
     } finally {
@@ -58,39 +45,24 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     if (text.isEmpty || _sending || text.length > 2000) return;
     setState(() => _sending = true);
     try {
-      final snap = await _conversation.get();
-      final data = snap.data() ?? const <String, dynamic>{};
-      final counts = Map<String, dynamic>.from(data['unreadCounts'] ?? const <String, dynamic>{});
-      counts[_uid] = 0;
-      counts[widget.otherUid] = ((counts[widget.otherUid] as num?)?.toInt() ?? 0) + 1;
-
       final batch = FirebaseFirestore.instance.batch();
-      batch.set(
-        _conversation,
-        {
-          'participants': [_uid, widget.otherUid],
-          'lastMessage': text,
-          'lastSenderId': _uid,
-          'updatedAt': FieldValue.serverTimestamp(),
-          'unreadCounts': counts,
-        },
-        SetOptions(merge: true),
-      );
-      batch.set(
-        _conversation.collection('messages').doc(),
-        {
-          'senderId': _uid,
-          'text': text,
-          'type': 'text',
-          'createdAt': FieldValue.serverTimestamp(),
-        },
-      );
+      batch.update(_conversation, {
+        'lastMessage': text,
+        'lastSenderId': _uid,
+        'updatedAt': FieldValue.serverTimestamp(),
+        'unreadCounts.$_uid': 0,
+        'unreadCounts.${widget.otherUid}': FieldValue.increment(1),
+      });
+      batch.set(_conversation.collection('messages').doc(), {
+        'senderId': _uid,
+        'text': text,
+        'type': 'text',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
       await batch.commit();
       _controller.clear();
     } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تعذر إرسال الرسالة')));
-      }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تعذر إرسال الرسالة')));
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -119,110 +91,75 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
             backgroundColor: const Color(0xFF0B0D16),
             foregroundColor: Colors.white,
             titleSpacing: 0,
-            title: Row(
-              children: [
-                CircleAvatar(
-                  radius: 18,
-                  backgroundColor: const Color(0xFF25183F),
-                  backgroundImage: widget.otherPhoto.isNotEmpty ? NetworkImage(widget.otherPhoto) : null,
-                  child: widget.otherPhoto.isEmpty ? const Icon(Icons.person, color: Color(0xFFFFD54A), size: 20) : null,
-                ),
-                const SizedBox(width: 10),
-                Expanded(child: Text(widget.otherName, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800))),
-              ],
-            ),
+            title: Row(children: [
+              CircleAvatar(radius: 18, backgroundColor: const Color(0xFF25183F), backgroundImage: widget.otherPhoto.isNotEmpty ? NetworkImage(widget.otherPhoto) : null, child: widget.otherPhoto.isEmpty ? const Icon(Icons.person, color: Color(0xFFFFD54A), size: 20) : null),
+              const SizedBox(width: 10),
+              Expanded(child: Text(widget.otherName, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800))),
+            ]),
           ),
-          body: Column(
-            children: [
-              Expanded(
-                child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                  stream: _conversation.collection('messages').orderBy('createdAt', descending: true).limit(100).snapshots(),
-                  builder: (context, snapshot) {
-                    if (snapshot.hasError) {
-                      return const Center(child: Text('تعذر تحميل الرسائل', style: TextStyle(color: Colors.white60)));
-                    }
-                    if (!snapshot.hasData) {
-                      return const Center(child: CircularProgressIndicator(color: Color(0xFF8A3DFF)));
-                    }
-                    WidgetsBinding.instance.addPostFrameCallback((_) => _markRead());
-                    final docs = snapshot.data!.docs;
-                    if (docs.isEmpty) {
-                      return const Center(child: Text('ابدأ المحادثة برسالة 👋', style: TextStyle(color: Colors.white54)));
-                    }
-                    return ListView.builder(
-                      reverse: true,
-                      padding: const EdgeInsets.all(14),
-                      itemCount: docs.length,
-                      itemBuilder: (_, index) {
-                        final data = docs[index].data();
-                        final mine = data['senderId'] == _uid;
-                        return Align(
-                          alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-                          child: Container(
-                            constraints: const BoxConstraints(maxWidth: 300),
-                            margin: const EdgeInsets.only(bottom: 8),
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-                            decoration: BoxDecoration(
-                              color: mine ? const Color(0xFF6D27D9) : const Color(0xFF151925),
-                              borderRadius: BorderRadius.circular(18),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('${data['text'] ?? ''}', style: const TextStyle(color: Colors.white, height: 1.35)),
-                                const SizedBox(height: 3),
-                                Text(_time(data['createdAt']), style: const TextStyle(color: Colors.white54, fontSize: 9)),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    );
-                  },
-                ),
-              ),
-              SafeArea(
-                top: false,
-                child: Container(
-                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF0B0D16),
-                    border: Border(top: BorderSide(color: Colors.white10)),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _controller,
-                          minLines: 1,
-                          maxLines: 5,
-                          maxLength: 2000,
-                          buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
-                          style: const TextStyle(color: Colors.white),
-                          decoration: InputDecoration(
-                            hintText: 'اكتب رسالة...',
-                            hintStyle: const TextStyle(color: Colors.white38),
-                            filled: true,
-                            fillColor: const Color(0xFF151925),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(22), borderSide: BorderSide.none),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                          ),
+          body: Column(children: [
+            Expanded(
+              child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                stream: _conversation.collection('messages').orderBy('createdAt', descending: true).limit(100).snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) return const Center(child: Text('تعذر تحميل الرسائل', style: TextStyle(color: Colors.white60)));
+                  if (!snapshot.hasData) return const Center(child: CircularProgressIndicator(color: Color(0xFF8A3DFF)));
+                  WidgetsBinding.instance.addPostFrameCallback((_) => _markRead());
+                  final docs = snapshot.data!.docs;
+                  if (docs.isEmpty) return const Center(child: Text('ابدأ المحادثة برسالة 👋', style: TextStyle(color: Colors.white54)));
+                  return ListView.builder(
+                    reverse: true,
+                    padding: const EdgeInsets.all(14),
+                    itemCount: docs.length,
+                    itemBuilder: (_, index) {
+                      final data = docs[index].data();
+                      final mine = data['senderId'] == _uid;
+                      return Align(
+                        alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+                        child: Container(
+                          constraints: const BoxConstraints(maxWidth: 300),
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                          decoration: BoxDecoration(color: mine ? const Color(0xFF6D27D9) : const Color(0xFF151925), borderRadius: BorderRadius.circular(18)),
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Text('${data['text'] ?? ''}', style: const TextStyle(color: Colors.white, height: 1.35)),
+                            const SizedBox(height: 3),
+                            Text(_time(data['createdAt']), style: const TextStyle(color: Colors.white54, fontSize: 9)),
+                          ]),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      IconButton.filled(
-                        onPressed: _sending ? null : _send,
-                        style: IconButton.styleFrom(backgroundColor: const Color(0xFF7B2DFF), foregroundColor: Colors.white),
-                        icon: _sending
-                            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                            : const Icon(Icons.send_rounded),
-                      ),
-                    ],
-                  ),
-                ),
+                      );
+                    },
+                  );
+                },
               ),
-            ],
-          ),
+            ),
+            SafeArea(
+              top: false,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+                decoration: const BoxDecoration(color: Color(0xFF0B0D16), border: Border(top: BorderSide(color: Colors.white10))),
+                child: Row(children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _controller,
+                      minLines: 1,
+                      maxLines: 5,
+                      maxLength: 2000,
+                      buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(hintText: 'اكتب رسالة...', hintStyle: const TextStyle(color: Colors.white38), filled: true, fillColor: const Color(0xFF151925), border: OutlineInputBorder(borderRadius: BorderRadius.circular(22), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10)),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton.filled(
+                    onPressed: _sending ? null : _send,
+                    style: IconButton.styleFrom(backgroundColor: const Color(0xFF7B2DFF), foregroundColor: Colors.white),
+                    icon: _sending ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.send_rounded),
+                  ),
+                ]),
+              ),
+            ),
+          ]),
         ),
       );
 }
