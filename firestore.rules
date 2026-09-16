@@ -1,42 +1,54 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() {
-      return request.auth != null;
-    }
-
+    function signedIn() { return request.auth != null; }
     function conversationParticipant(conversationId) {
-      return signedIn() &&
-        request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants;
+      return signedIn() && request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants;
     }
 
-    // Profiles remain readable for signed-in discovery/search.
     match /users/{userId} {
-      allow read: if signedIn();
-      allow create: if signedIn() && request.auth.uid == userId;
-      allow update: if signedIn() && request.auth.uid == userId;
+      allow create, read, update: if signedIn() && request.auth.uid == userId;
       allow delete: if false;
     }
 
-    // Public IDs are used to resolve a Shadow Live ID to a user account.
-    match /public_ids/{publicId} {
+    match /public_profiles/{userId} {
       allow read: if signedIn();
-      allow create, update: if signedIn() && request.resource.data.uid == request.auth.uid;
-      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+      allow create, update: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          'uid','displayName','publicId','profileImageUrl','profileAvatarAsset','createdAt','updatedAt'
+        ]);
+      allow delete: if false;
+    }
+
+    match /public_ids/{publicId} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && !exists(/databases/$(database)/documents/public_ids/$(publicId));
+      allow update, delete: if false;
+    }
+
+    match /usernames/{username} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && !exists(/databases/$(database)/documents/usernames/$(username));
+      allow update, delete: if false;
     }
 
     match /conversations/{conversationId} {
       allow read: if signedIn() && request.auth.uid in resource.data.participants;
-
       allow create: if signedIn()
         && request.resource.data.participants is list
         && request.resource.data.participants.size() == 2
         && request.auth.uid in request.resource.data.participants;
-
       allow update: if signedIn()
         && request.auth.uid in resource.data.participants
         && request.resource.data.participants == resource.data.participants;
-
       allow delete: if false;
 
       match /messages/{messageId} {
