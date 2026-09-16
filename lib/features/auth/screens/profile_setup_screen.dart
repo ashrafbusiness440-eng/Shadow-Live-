@@ -31,12 +31,12 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     'assets/images/avatars/female_1.png','assets/images/avatars/female_2.png','assets/images/avatars/female_3.png','assets/images/avatars/female_4.png','assets/images/avatars/female_5.png','assets/images/avatars/female_6.png'
   ];
   static const _countries = [
-    '🇦🇪 الإمارات العربية المتحدة','🇸🇦 السعودية','🇸🇾 سوريا','🇯🇴 الأردن','🇱🇧 لبنان','🇮🇶 العراق','🇵🇸 فلسطين','🇰🇼 الكويت','🇶🇦 قطر','🇧🇭 البحرين','🇴🇲 عُمان','🇾🇪 اليمن','🇪🇬 مصر','🇱🇾 ليبيا','🇹🇳 تونس','🇩🇿 الجزائر','🇲🇦 المغرب','🇸🇩 السودان','🇸🇴 الصومال','🇩🇯 جيبوتي','🇲🇷 موريتانيا','🇰🇲 جزر القمر','🇹🇷 تركيا','🇺🇸 الولايات المتحدة','🇬🇧 المملكة المتحدة','🇫🇷 فرنسا','🇩🇪 ألمانيا','🇮🇹 إيطاليا','🇪🇸 إسبانيا','🇵🇹 البرتغال','🇳🇱 هولندا','🇧🇪 بلجيكا','🇨🇭 سويسرا','🇦🇹 النمسا','🇸🇪 السويد','🇳🇴 النرويج','🇩🇰 الدنمارك','🇫🇮 فنلندا','🇮🇪 أيرلندا','🇵🇱 بولندا','🇨🇿 التشيك','🇬🇷 اليونان','🇷🇴 رومانيا','🇧🇬 بلغاريا','🇭🇺 المجر','🇭🇷 كرواتيا','🇷🇸 صربيا','🇸🇰 سلوفاكيا','🇸🇮 سلوفينيا','🇱🇺 لوكسمبورغ','🇮🇸 آيسلندا','🇲🇹 مالطا','🇨🇾 قبرص','🇪🇪 إستونيا','🇱🇻 لاتفيا','🇱🇹 ليتوانيا','🇺🇦 أوكرانيا'
+    '🇧🇹 البشان','🇦🇪 الإمارات العربية المتحدة','🇸🇦 السعودية','🇸🇾 سوريا','🇯🇴 الأردن','🇱🇧 لبنان','🇮🇶 العراق','🇵🇸 فلسطين','🇰🇼 الكويت','🇶🇦 قطر','🇧🇭 البحرين','🇴🇲 عُمان','🇾🇪 اليمن','🇪🇬 مصر','🇱🇾 ليبيا','🇹🇳 تونس','🇩🇿 الجزائر','🇲🇦 المغرب','🇸🇩 السودان','🇸🇴 الصومال','🇩🇯 جيبوتي','🇲🇷 موريتانيا','🇰🇲 جزر القمر','🇹🇷 تركيا','🇺🇸 الولايات المتحدة','🇬🇧 المملكة المتحدة','🇫🇷 فرنسا','🇩🇪 ألمانيا','🇮🇹 إيطاليا','🇪🇸 إسبانيا','🇵🇹 البرتغال','🇳🇱 هولندا','🇧🇪 بلجيكا','🇨🇭 سويسرا','🇦🇹 النمسا','🇸🇪 السويد','🇳🇴 النرويج','🇩🇰 الدنمارك','🇫🇮 فنلندا','🇮🇪 أيرلندا','🇵🇱 بولندا','🇨🇿 التشيك','🇬🇷 اليونان','🇷🇴 رومانيا','🇧🇬 بلغاريا','🇭🇺 المجر','🇭🇷 كرواتيا','🇷🇸 صربيا','🇸🇰 سلوفاكيا','🇸🇮 سلوفينيا','🇱🇺 لوكسمبورغ','🇮🇸 آيسلندا','🇲🇹 مالطا','🇨🇾 قبرص','🇪🇪 إستونيا','🇱🇻 لاتفيا','🇱🇹 ليتوانيا','🇺🇦 أوكرانيا'
   ];
 
   List<String> get _avatars => _gender == 'ذكر' ? _male : _female;
   bool get _hasImage => _selectedAvatarAsset != null || _pickedImageBytes != null;
-  bool get _ready => _hasImage && _validateName(_displayNameController.text) == null && _birthDate != null && !_saving;
+  bool get _ready => _hasImage && _validateName(_displayNameController.text) == null && _birthDate != null && _selectedLocation != null && !_saving;
 
   @override
   void dispose() {
@@ -56,7 +56,13 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   }
 
   Future<void> _pickPhone() async {
-    final x = await _imagePicker.pickImage(source: ImageSource.gallery, imageQuality: 85, maxWidth: 1200);
+    final x = await _imagePicker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 25,
+      maxWidth: 512,
+      maxHeight: 512,
+      requestFullMetadata: false,
+    );
     if (x == null) return;
     final b = await x.readAsBytes();
     if (!mounted) return;
@@ -111,18 +117,19 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   }
 
   Future<void> _next() async {
-    if (_saving) return;
+    if (_saving || !_ready) return;
     final err = _validateName(_displayNameController.text);
     if (err != null) { setState(() => _displayNameError = err); return; }
     if (!_hasImage) { _msg('اختر صورة للحساب'); return; }
     if (_birthDate == null) { _msg('اختر تاريخ الميلاد'); return; }
+    if (_selectedLocation == null) { _msg('اختر الدولة'); return; }
     final u = FirebaseAuth.instance.currentUser;
     if (u == null) { _msg('انتهت جلسة تسجيل الدخول، سجّل الدخول من جديد'); return; }
     setState(() => _saving = true);
     try {
       String? photo;
       if (_pickedImageBytes != null) {
-        photo = await _firebase.uploadFile('profile_images/${u.uid}.jpg', _pickedImageBytes!).timeout(const Duration(seconds: 35));
+        photo = await _firebase.uploadFile('profile_images/${u.uid}.jpg', _pickedImageBytes!).timeout(const Duration(seconds: 20));
       }
       await _firebase.updateUserProfile(u.uid, {
         'uid': u.uid,
@@ -130,7 +137,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
         'bio': _bioController.text.trim(),
         'gender': _gender,
         'birthDate': Timestamp.fromDate(_birthDate!),
-        'location': _selectedLocation ?? '',
+        'location': _selectedLocation!,
         'profileImageUrl': photo,
         'profileAvatarAsset': photo == null ? _selectedAvatarAsset : null,
         'setupStep': 'success',
@@ -138,8 +145,8 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
       }).timeout(const Duration(seconds: 12));
       await _firebase.ensurePublicId(u.uid).timeout(const Duration(seconds: 12));
       if (mounted) Navigator.of(context).pushReplacementNamed('/account-success');
-    } catch (_) {
-      if (mounted) _msg('تعذر حفظ الملف الشخصي. تحقق من الاتصال وحاول مجدداً.');
+    } catch (e) {
+      if (mounted) _msg('تعذر حفظ الملف الشخصي. حاول مجدداً.');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -179,10 +186,10 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
             _label('تاريخ الميلاد'),
             _tile(Icons.cake_outlined, _date, _pickBirth),
             const SizedBox(height: 18),
-            _label('الموقع (اختياري)'),
-            DropdownButtonFormField<String>(initialValue: _selectedLocation, isExpanded: true, dropdownColor: const Color(0xFF11182A), style: const TextStyle(color: Colors.white), decoration: _dec('اختر الدولة', Icons.public_rounded), items: _countries.map((c) => DropdownMenuItem(value: c, child: Text(c, overflow: TextOverflow.ellipsis))).toList(), onChanged: _saving ? null : (v) => setState(() => _selectedLocation = v)),
+            _label('الدولة'),
+            DropdownButtonFormField<String>(initialValue: _selectedLocation, isExpanded: true, dropdownColor: const Color(0xFF11182A), style: const TextStyle(color: Colors.white), decoration: _dec('اختر الدولة (مطلوب)', Icons.public_rounded), items: _countries.map((c) => DropdownMenuItem(value: c, child: Text(c, overflow: TextOverflow.ellipsis))).toList(), onChanged: _saving ? null : (v) => setState(() => _selectedLocation = v)),
             const SizedBox(height: 30),
-            SizedBox(height: 58, child: DecoratedBox(decoration: BoxDecoration(borderRadius: BorderRadius.circular(17), gradient: const LinearGradient(colors: [Color(0xFF8A00FF), Color(0xFFFF00D4)])), child: TextButton(onPressed: _ready ? _next : null, child: _saving ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Text('متابعة', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900))))),
+            SizedBox(height: 58, child: DecoratedBox(decoration: BoxDecoration(borderRadius: BorderRadius.circular(17), gradient: LinearGradient(colors: _ready ? const [Color(0xFF8A00FF), Color(0xFFFF00D4)] : const [Color(0xFF252A35), Color(0xFF252A35)])), child: TextButton(onPressed: _ready ? _next : null, child: _saving ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : Text('متابعة', style: TextStyle(color: _ready ? Colors.white : Colors.white38, fontSize: 18, fontWeight: FontWeight.w900))))),
           ]),
         ))),
       ),
