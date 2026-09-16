@@ -12,6 +12,7 @@ class FirebaseService {
  Future<UserCredential> signInWithPhoneCode({required String verificationId,required String smsCode})async=>_auth.signInWithCredential(PhoneAuthProvider.credential(verificationId:verificationId,smsCode:smsCode));
  Future<UserCredential> signInAnonymously()async{try{return await _auth.signInAnonymously();}catch(e){throw _handleAuthError(e);}}
  Future<void> signOut()=>_auth.signOut();Future<void> resetPassword(String email)async{try{await _auth.sendPasswordResetEmail(email:email.trim());}catch(e){throw _handleAuthError(e);}}
+ Future<void> touchLastLogin(String userId)=>updateUserProfile(userId,{'lastLoginAt':FieldValue.serverTimestamp(),'isOnline':true});
 
  Future<String> ensurePublicId(String userId)async{
   final userRef=_firestore.collection('users').doc(userId);final existing=await userRef.get();final current=existing.data()?['publicId']?.toString();if(current!=null&&current.isNotEmpty)return current;final random=Random.secure();
