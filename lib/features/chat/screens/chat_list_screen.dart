@@ -4,91 +4,22 @@ import 'package:flutter/material.dart';
 
 import 'private_chat_screen.dart';
 
-class ChatListScreen extends StatelessWidget {
+class ChatListScreen extends StatefulWidget {
   const ChatListScreen({super.key});
+  @override State<ChatListScreen> createState()=>_ChatListScreenState();
+}
+class _ChatListScreenState extends State<ChatListScreen>{
+  String get uid=>FirebaseAuth.instance.currentUser!.uid;
+  String _conversationId(String other){final ids=[uid,other]..sort();return ids.join('_');}
 
-  @override
-  Widget build(BuildContext context) {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return const SizedBox.shrink();
-
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Scaffold(
-        backgroundColor: const Color(0xFF05060D),
-        body: SafeArea(
-          child: Column(
-            children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(18, 18, 18, 12),
-                child: Row(children: [
-                  Icon(Icons.chat_bubble_rounded, color: Color(0xFFFFD54A)),
-                  SizedBox(width: 10),
-                  Text('الرسائل', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900)),
-                ]),
-              ),
-              Expanded(
-                child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                  stream: FirebaseFirestore.instance.collection('conversations').where('participants', arrayContains: uid).snapshots(),
-                  builder: (context, snapshot) {
-                    if (snapshot.hasError) return _state(Icons.error_outline_rounded, 'تعذر تحميل المحادثات');
-                    if (!snapshot.hasData) return const Center(child: CircularProgressIndicator(color: Color(0xFF8A3DFF)));
-                    final docs = [...snapshot.data!.docs];
-                    docs.sort((a, b) {
-                      final at = a.data()['updatedAt'] as Timestamp?;
-                      final bt = b.data()['updatedAt'] as Timestamp?;
-                      return (bt?.millisecondsSinceEpoch ?? 0).compareTo(at?.millisecondsSinceEpoch ?? 0);
-                    });
-                    if (docs.isEmpty) return _state(Icons.forum_outlined, 'لا توجد محادثات بعد');
-                    return ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 20),
-                      itemCount: docs.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 8),
-                      itemBuilder: (context, index) {
-                        final data = docs[index].data();
-                        final participants = List<String>.from(data['participants'] ?? const []);
-                        final otherUid = participants.firstWhere((id) => id != uid, orElse: () => '');
-                        return _ConversationTile(conversationId: docs[index].id, otherUid: otherUid, lastMessage: '${data['lastMessage'] ?? ''}');
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+  Future<void> _newChat()async{
+    final c=TextEditingController();
+    await showModalBottomSheet(context:context,isScrollControlled:true,backgroundColor:const Color(0xFF101522),builder:(sheet)=>Directionality(textDirection:TextDirection.rtl,child:Padding(padding:EdgeInsets.fromLTRB(16,18,16,MediaQuery.of(sheet).viewInsets.bottom+18),child:StatefulBuilder(builder:(context,setSheet){List<QueryDocumentSnapshot<Map<String,dynamic>>> results=[];bool loading=false;return Column(mainAxisSize:MainAxisSize.min,children:[const Text('محادثة جديدة',style:TextStyle(color:Colors.white,fontSize:20,fontWeight:FontWeight.w900)),const SizedBox(height:14),TextField(controller:c,style:const TextStyle(color:Colors.white),decoration:InputDecoration(prefixIcon:const Icon(Icons.search,color:Color(0xFFFFD54A)),hintText:'ابحث بالاسم أو ID',hintStyle:const TextStyle(color:Colors.white38),filled:true,fillColor:const Color(0xFF181C29),border:OutlineInputBorder(borderRadius:BorderRadius.circular(18),borderSide:BorderSide.none)),onChanged:(q)async{q=q.trim();if(q.length<2){setSheet(()=>results=[]);return;}setSheet(()=>loading=true);try{final snap=await FirebaseFirestore.instance.collection('users').limit(40).get();final low=q.toLowerCase();results=snap.docs.where((d){if(d.id==uid)return false;final x=d.data();return '${x['displayName']??x['name']??''}'.toLowerCase().contains(low)||'${x['publicId']??x['id']??''}'.toLowerCase()==low;}).toList();}catch(_){results=[];}if(context.mounted)setSheet(()=>loading=false);}),const SizedBox(height:10),if(loading)const Padding(padding:EdgeInsets.all(16),child:CircularProgressIndicator(color:Color(0xFF8A3DFF))),if(!loading&&results.isNotEmpty)SizedBox(height:240,child:ListView.builder(itemCount:results.length,itemBuilder:(_,i){final d=results[i],u=d.data(),name='${u['displayName']??u['name']??'مستخدم Shadow Live'}',photo='${u['photoUrl']??u['avatarUrl']??''}';return ListTile(leading:CircleAvatar(backgroundImage:photo.isNotEmpty?NetworkImage(photo):null,child:photo.isEmpty?const Icon(Icons.person):null),title:Text(name,style:const TextStyle(color:Colors.white)),subtitle:Text('ID: ${u['publicId']??d.id}',style:const TextStyle(color:Colors.white54)),onTap:()async{final id=_conversationId(d.id);await FirebaseFirestore.instance.collection('conversations').doc(id).set({'participants':[uid,d.id],'createdAt':FieldValue.serverTimestamp(),'updatedAt':FieldValue.serverTimestamp(),'unreadCounts':{uid:0,d.id:0}},SetOptions(merge:true));if(!context.mounted)return;Navigator.pop(context);if(mounted)Navigator.push(this.context,MaterialPageRoute(builder:(_)=>PrivateChatScreen(conversationId:id,otherUid:d.id,otherName:name,otherPhoto:photo)));});}))]);}))));
+    c.dispose();
   }
 
-  static Widget _state(IconData icon, String text) => Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(icon, color: Colors.white38, size: 48), const SizedBox(height: 12), Text(text, style: const TextStyle(color: Colors.white60, fontSize: 15))]));
+  @override Widget build(BuildContext context)=>Directionality(textDirection:TextDirection.rtl,child:Scaffold(backgroundColor:const Color(0xFF05060D),body:SafeArea(child:Column(children:[Padding(padding:const EdgeInsets.fromLTRB(18,18,18,12),child:Row(children:[const Icon(Icons.chat_bubble_rounded,color:Color(0xFFFFD54A)),const SizedBox(width:10),const Expanded(child:Text('الرسائل',style:TextStyle(color:Colors.white,fontSize:24,fontWeight:FontWeight.w900))),IconButton(onPressed:_newChat,tooltip:'محادثة جديدة',icon:const Icon(Icons.add_comment_rounded,color:Color(0xFFFFD54A)))])),Expanded(child:StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(stream:FirebaseFirestore.instance.collection('conversations').where('participants',arrayContains:uid).snapshots(),builder:(context,s){if(s.hasError)return _state(Icons.error_outline,'تعذر تحميل المحادثات');if(!s.hasData)return const Center(child:CircularProgressIndicator(color:Color(0xFF8A3DFF)));final docs=[...s.data!.docs]..sort((a,b)=>((b.data()['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch??0).compareTo((a.data()['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch??0));if(docs.isEmpty)return _state(Icons.forum_outlined,'لا توجد محادثات بعد\nاضغط + لبدء محادثة');return ListView.separated(padding:const EdgeInsets.fromLTRB(12,4,12,20),itemCount:docs.length,separatorBuilder:(_,__)=>const SizedBox(height:8),itemBuilder:(_,i){final d=docs[i],x=d.data(),p=List<String>.from(x['participants']??const[]),other=p.firstWhere((e)=>e!=uid,orElse:()=>''),unread=((x['unreadCounts'] as Map?)?[uid] as num?)?.toInt()??0;return _Tile(id:d.id,other:other,last:'${x['lastMessage']??''}',unread:unread);});}))]))));
+  static Widget _state(IconData i,String t)=>Center(child:Column(mainAxisSize:MainAxisSize.min,children:[Icon(i,color:Colors.white38,size:48),const SizedBox(height:12),Text(t,textAlign:TextAlign.center,style:const TextStyle(color:Colors.white60,height:1.6))]));
 }
-
-class _ConversationTile extends StatelessWidget {
-  final String conversationId;
-  final String otherUid;
-  final String lastMessage;
-  const _ConversationTile({required this.conversationId, required this.otherUid, required this.lastMessage});
-
-  @override
-  Widget build(BuildContext context) => FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-    future: otherUid.isEmpty ? null : FirebaseFirestore.instance.collection('users').doc(otherUid).get(),
-    builder: (context, snapshot) {
-      final user = snapshot.data?.data() ?? const <String, dynamic>{};
-      final name = '${user['displayName'] ?? user['name'] ?? 'مستخدم Shadow Live'}';
-      final photo = '${user['photoUrl'] ?? user['avatarUrl'] ?? ''}';
-      return Material(
-        color: const Color(0xFF101522),
-        borderRadius: BorderRadius.circular(18),
-        child: ListTile(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          leading: CircleAvatar(backgroundColor: const Color(0xFF25183F), backgroundImage: photo.isNotEmpty ? NetworkImage(photo) : null, child: photo.isEmpty ? const Icon(Icons.person_rounded, color: Color(0xFFFFD54A)) : null),
-          title: Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
-          subtitle: Text(lastMessage.isEmpty ? 'ابدأ المحادثة' : lastMessage, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white54)),
-          trailing: const Icon(Icons.chevron_left_rounded, color: Colors.white38),
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PrivateChatScreen(conversationId: conversationId, otherUid: otherUid, otherName: name, otherPhoto: photo))),
-        ),
-      );
-    },
-  );
-}
+class _Tile extends StatelessWidget{final String id,other,last;final int unread;const _Tile({required this.id,required this.other,required this.last,required this.unread});
+ @override Widget build(BuildContext context)=>FutureBuilder<DocumentSnapshot<Map<String,dynamic>>>(future:other.isEmpty?null:FirebaseFirestore.instance.collection('users').doc(other).get(),builder:(context,s){final u=s.data?.data()??const<String,dynamic>{},name='${u['displayName']??u['name']??'مستخدم Shadow Live'}',photo='${u['photoUrl']??u['avatarUrl']??''}';return Material(color:const Color(0xFF101522),borderRadius:BorderRadius.circular(18),child:ListTile(leading:CircleAvatar(backgroundColor:const Color(0xFF25183F),backgroundImage:photo.isNotEmpty?NetworkImage(photo):null,child:photo.isEmpty?const Icon(Icons.person,color:Color(0xFFFFD54A)):null),title:Text(name,style:TextStyle(color:Colors.white,fontWeight:unread>0?FontWeight.w900:FontWeight.w700)),subtitle:Text(last.isEmpty?'ابدأ المحادثة':last,maxLines:1,overflow:TextOverflow.ellipsis,style:TextStyle(color:unread>0?Colors.white70:Colors.white54)),trailing:unread>0?CircleAvatar(radius:11,backgroundColor:const Color(0xFF8A3DFF),child:Text('$unread',style:const TextStyle(color:Colors.white,fontSize:11,fontWeight:FontWeight.bold))):const Icon(Icons.chevron_left,color:Colors.white38),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>PrivateChatScreen(conversationId:id,otherUid:other,otherName:name,otherPhoto:photo))));});}}
