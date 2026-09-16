@@ -1,7 +1,96 @@
+import 'dart:math';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-class AccountSuccessScreen extends StatelessWidget {
+class AccountSuccessScreen extends StatefulWidget {
   const AccountSuccessScreen({super.key});
+
+  @override
+  State<AccountSuccessScreen> createState() => _AccountSuccessScreenState();
+}
+
+class _AccountSuccessScreenState extends State<AccountSuccessScreen> {
+  String? _publicId;
+  String? _idError;
+  bool _creatingId = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _ensurePublicId();
+  }
+
+  Future<void> _ensurePublicId() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      if (mounted) {
+        setState(() {
+          _creatingId = false;
+          _idError = 'تعذر إنشاء ID: المستخدم غير مسجل الدخول';
+        });
+      }
+      return;
+    }
+
+    final firestore = FirebaseFirestore.instance;
+    final userRef = firestore.collection('users').doc(user.uid);
+    final random = Random.secure();
+
+    try {
+      for (var attempt = 0; attempt < 12; attempt++) {
+        final candidate = (100000000 + random.nextInt(900000000)).toString();
+        final idRef = firestore.collection('publicIds').doc(candidate);
+
+        final result = await firestore.runTransaction<String?>((transaction) async {
+          final userSnapshot = await transaction.get(userRef);
+          final existingId = userSnapshot.data()?['publicId'] as String?;
+
+          if (existingId != null && existingId.isNotEmpty) {
+            return existingId;
+          }
+
+          final idSnapshot = await transaction.get(idRef);
+          if (idSnapshot.exists) return null;
+
+          transaction.set(idRef, {
+            'uid': user.uid,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+          transaction.set(
+            userRef,
+            {
+              'publicId': candidate,
+              'updatedAt': FieldValue.serverTimestamp(),
+            },
+            SetOptions(merge: true),
+          );
+          return candidate;
+        });
+
+        if (result != null) {
+          if (mounted) {
+            setState(() {
+              _publicId = result;
+              _creatingId = false;
+              _idError = null;
+            });
+          }
+          return;
+        }
+      }
+
+      throw Exception('PUBLIC_ID_GENERATION_FAILED');
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _creatingId = false;
+          _idError = 'تعذر إنشاء ID الآن، حاول مرة أخرى';
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -37,10 +126,7 @@ class AccountSuccessScreen extends StatelessWidget {
                       gradient: LinearGradient(
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
-                        colors: [
-                          Color(0xFF8A00FF),
-                          Color(0xFFFF00D4),
-                        ],
+                        colors: [Color(0xFF8A00FF), Color(0xFFFF00D4)],
                       ),
                       boxShadow: [
                         BoxShadow(
@@ -103,6 +189,51 @@ class AccountSuccessScreen extends StatelessWidget {
                       fontWeight: FontWeight.w500,
                     ),
                   ),
+                  const SizedBox(height: 18),
+                  if (_creatingId)
+                    const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        SizedBox(width: 10),
+                        Text(
+                          'جاري إنشاء ID الحساب...',
+                          style: TextStyle(color: Colors.white60),
+                        ),
+                      ],
+                    )
+                  else if (_publicId != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 11,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0C1728),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFF6F3AA8)),
+                      ),
+                      child: Text(
+                        'ID: $_publicId',
+                        textDirection: TextDirection.ltr,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                    )
+                  else
+                    TextButton.icon(
+                      onPressed: _ensurePublicId,
+                      icon: const Icon(Icons.refresh_rounded),
+                      label: Text(_idError ?? 'إعادة محاولة إنشاء ID'),
+                    ),
                   const Spacer(flex: 4),
                   Container(
                     width: double.infinity,
@@ -110,10 +241,7 @@ class AccountSuccessScreen extends StatelessWidget {
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(17),
                       gradient: const LinearGradient(
-                        colors: [
-                          Color(0xFF8A00FF),
-                          Color(0xFFFF00D4),
-                        ],
+                        colors: [Color(0xFF8A00FF), Color(0xFFFF00D4)],
                       ),
                       boxShadow: const [
                         BoxShadow(
@@ -123,10 +251,13 @@ class AccountSuccessScreen extends StatelessWidget {
                       ],
                     ),
                     child: TextButton(
-                      onPressed: () {
-                        Navigator.of(context)
-                            .pushReplacementNamed('/account-linking');
-                      },
+                      onPressed: _creatingId || _publicId == null
+                          ? null
+                          : () {
+                              Navigator.of(context).pushReplacementNamed(
+                                '/account-linking',
+                              );
+                            },
                       child: const Text(
                         'التالي',
                         style: TextStyle(
