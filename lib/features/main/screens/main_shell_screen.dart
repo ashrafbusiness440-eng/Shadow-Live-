@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../../screens/room/room_list_screen.dart';
@@ -13,7 +14,19 @@ class MainShellScreen extends StatefulWidget {
 class _MainShellScreenState extends State<MainShellScreen>{
   int _currentIndex=0;
   final List<Widget> _pages=const [HomeScreen(),_ComingSoonPage(title:'الألعاب',icon:Icons.sports_esports_rounded),RoomListScreen(),_ComingSoonPage(title:'الرسائل',icon:Icons.chat_bubble_rounded),_ComingSoonPage(title:'المنشورات',icon:Icons.article_rounded),ProfileScreen()];
-  @override Widget build(BuildContext context)=>Directionality(textDirection:TextDirection.rtl,child:Scaffold(backgroundColor:const Color(0xFF05060D),body:IndexedStack(index:_currentIndex,children:_pages),floatingActionButton:_currentIndex==0?FloatingActionButton.small(heroTag:'recharge',backgroundColor:const Color(0xFF6D27D9),foregroundColor:const Color(0xFFFFD54A),tooltip:'شحن الرصيد',onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const RechargeScreen())),child:const Icon(Icons.monetization_on_rounded)):null,bottomNavigationBar:_ShadowBottomNavigation(currentIndex:_currentIndex,onChanged:(i)=>setState(()=>_currentIndex=i))));
+  bool get _guest=>FirebaseAuth.instance.currentUser?.isAnonymous==true;
+
+  Future<void> _guestGuard()async{
+    final create=await showDialog<bool>(context:context,builder:(dialogContext)=>Directionality(textDirection:TextDirection.rtl,child:AlertDialog(backgroundColor:const Color(0xFF101522),shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(22),side:BorderSide(color:const Color(0xFF8A3DFF).withValues(alpha:.45))),title:const Row(children:[Icon(Icons.lock_person_rounded,color:Color(0xFFFFD54A)),SizedBox(width:10),Expanded(child:Text('هذه الميزة تحتاج حساباً',style:TextStyle(color:Colors.white,fontWeight:FontWeight.w900)))]),content:const Text('يمكنك كضيف تصفح Shadow Live والغرف والإعدادات، لكن المراسلة والكتابة والتفاعل مع المستخدمين تتطلب حساباً حقيقياً.',style:TextStyle(color:Colors.white70,height:1.6)),actions:[TextButton(onPressed:()=>Navigator.pop(dialogContext,false),child:const Text('إلغاء',style:TextStyle(color:Colors.white70))),FilledButton(onPressed:()=>Navigator.pop(dialogContext,true),style:FilledButton.styleFrom(backgroundColor:const Color(0xFF7B2DFF)),child:const Text('متابعة لإنشاء حساب'))])));
+    if(create==true&&mounted){await FirebaseAuth.instance.signOut();if(mounted)Navigator.of(context).pushNamedAndRemoveUntil('/auth-choice',(route)=>false);}
+  }
+
+  void _changePage(int index){
+    if(_guest&&(index==1||index==3||index==4)){_guestGuard();return;}
+    setState(()=>_currentIndex=index);
+  }
+
+  @override Widget build(BuildContext context)=>Directionality(textDirection:TextDirection.rtl,child:Scaffold(backgroundColor:const Color(0xFF05060D),body:IndexedStack(index:_currentIndex,children:_pages),floatingActionButton:_currentIndex==0?FloatingActionButton.small(heroTag:'recharge',backgroundColor:const Color(0xFF6D27D9),foregroundColor:const Color(0xFFFFD54A),tooltip:'شحن الرصيد',onPressed:_guest?_guestGuard:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const RechargeScreen())),child:const Icon(Icons.monetization_on_rounded)):null,bottomNavigationBar:_ShadowBottomNavigation(currentIndex:_currentIndex,onChanged:_changePage)));
 }
 
 class _ShadowBottomNavigation extends StatelessWidget{
