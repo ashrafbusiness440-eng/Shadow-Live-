@@ -58,37 +58,15 @@ class _RechargeScreenState extends State<RechargeScreen> {
         child: AlertDialog(
           backgroundColor: const Color(0xFF101222),
           title: const Text('إنشاء كلمة سر الألماس', style: TextStyle(color: Colors.white)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('هذه المرة الأولى. أنشئ كلمة سر للمعاملات والتحويلات.', style: TextStyle(color: Colors.white70)),
-              const SizedBox(height: 12),
-              _dialogField(p, 'كلمة السر'),
-              const SizedBox(height: 10),
-              _dialogField(c, 'تأكيد كلمة السر'),
-            ],
-          ),
-          actions: [
-            FilledButton(
-              onPressed: () async {
-                if (p.text.length < 6) {
-                  _msg('كلمة السر 6 خانات على الأقل.');
-                  return;
-                }
-                if (p.text != c.text) {
-                  _msg('كلمتا السر غير متطابقتين.');
-                  return;
-                }
-                try {
-                  await DiamondWalletService.setInitialPassword(p.text);
-                  if (d.mounted) Navigator.pop(d);
-                } catch (e) {
-                  _msg('$e');
-                }
-              },
-              child: const Text('حفظ'),
-            ),
-          ],
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Text('هذه المرة الأولى. أنشئ كلمة سر للمعاملات والتحويلات.', style: TextStyle(color: Colors.white70)),
+            const SizedBox(height: 12), _dialogField(p, 'كلمة السر'), const SizedBox(height: 10), _dialogField(c, 'تأكيد كلمة السر'),
+          ]),
+          actions: [FilledButton(onPressed: () async {
+            if (p.text.length < 6) { _msg('كلمة السر 6 خانات على الأقل.'); return; }
+            if (p.text != c.text) { _msg('كلمتا السر غير متطابقتين.'); return; }
+            try { await DiamondWalletService.setInitialPassword(p.text); if (d.mounted) Navigator.pop(d); } catch (e) { _msg('$e'); }
+          }, child: const Text('حفظ'))],
         ),
       ),
     );
@@ -105,19 +83,13 @@ class _RechargeScreenState extends State<RechargeScreen> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
             children: [
-              Row(
-                children: [
-                  IconButton(onPressed: () => Navigator.maybePop(context), icon: const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white)),
-                  Expanded(child: Text(diamond ? 'محفظة الألماس' : 'شحن الرصيد', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900))),
-                  const SizedBox(width: 48),
-                ],
-              ),
+              Row(children: [
+                IconButton(onPressed: () => Navigator.maybePop(context), icon: const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white)),
+                Expanded(child: Text(diamond ? 'محفظة الألماس' : 'شحن الرصيد', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900))),
+                const SizedBox(width: 48),
+              ]),
               const SizedBox(height: 10),
-              Container(
-                height: 58,
-                decoration: BoxDecoration(color: const Color(0xFF101222), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFF7B35FF))),
-                child: Row(children: [_tab('🪙 العملات الذهبية', 0), _tab('💎 الألماس', 1)]),
-              ),
+              Container(height: 58, decoration: BoxDecoration(color: const Color(0xFF101222), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFF7B35FF))), child: Row(children: [_tab('🪙 العملات الذهبية', 0), _tab('💎 الألماس', 1)])),
               const SizedBox(height: 18),
               _asset('assets/images/recharge_banner.png', 145),
               if (diamond) ...[
@@ -129,13 +101,10 @@ class _RechargeScreenState extends State<RechargeScreen> {
                     return Container(
                       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
                       decoration: BoxDecoration(color: const Color(0xFF101222), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFF5635A7))),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text('رصيد الألماس الحالي', style: TextStyle(color: Color(0xFFC9B8FF), fontWeight: FontWeight.w800)),
-                          Text('💎 ${_format(n)}', style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
-                        ],
-                      ),
+                      child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                        const Text('رصيد الألماس الحالي', style: TextStyle(color: Color(0xFFC9B8FF), fontWeight: FontWeight.w800)),
+                        Text('💎 ${_format(n)}', style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
+                      ]),
                     );
                   },
                 ),
@@ -148,7 +117,7 @@ class _RechargeScreenState extends State<RechargeScreen> {
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 itemCount: packages.length,
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 10, mainAxisSpacing: 12, childAspectRatio: .72),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 10, mainAxisSpacing: 12, childAspectRatio: .68),
                 itemBuilder: (_, i) {
                   final p = packages[i];
                   final active = selected == i;
@@ -157,32 +126,26 @@ class _RechargeScreenState extends State<RechargeScreen> {
                     borderRadius: BorderRadius.circular(17),
                     child: Container(
                       decoration: BoxDecoration(color: const Color(0xFF101222), borderRadius: BorderRadius.circular(17), border: Border.all(color: active ? const Color(0xFFBD43FF) : Colors.white10, width: active ? 1.5 : 1)),
-                      child: Column(
-                        children: [
-                          if (i == 1) _tag('🔥 الأكثر شعبية', const Color(0xFFFF3B72)),
-                          if (i == 5) _tag('👑 أفضل قيمة', const Color(0xFF8A2CFF)),
-                          Expanded(
-                            child: Center(
-                              child: SizedBox(
-                                width: 64,
-                                height: 64,
-                                child: Padding(
-                                  padding: const EdgeInsets.all(7),
-                                  child: Image.asset(p.image, fit: BoxFit.contain, errorBuilder: (_, __, ___) => const Icon(Icons.monetization_on_rounded, color: Color(0xFFFFC93D), size: 42)),
-                                ),
+                      child: Column(children: [
+                        if (i == 1) _tag('🔥 الأكثر شعبية', const Color(0xFFFF3B72)),
+                        if (i == 5) _tag('👑 أفضل قيمة', const Color(0xFF8A2CFF)),
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(6, 8, 6, 4),
+                            child: SizedBox.expand(
+                              child: Image.asset(
+                                p.image,
+                                fit: BoxFit.contain,
+                                alignment: Alignment.center,
+                                errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.monetization_on_rounded, color: Color(0xFFFFC93D), size: 48)),
                               ),
                             ),
                           ),
-                          Text('🪙 ${_format(p.amount)}', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
-                          const SizedBox(height: 8),
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            decoration: const BoxDecoration(color: Color(0xFF201071), borderRadius: BorderRadius.vertical(bottom: Radius.circular(16))),
-                            child: Text(diamond ? '💎 ${_format(p.diamonds)}' : '\$ ${p.price.toStringAsFixed(2)}', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
-                          ),
-                        ],
-                      ),
+                        ),
+                        Text('🪙 ${_format(p.amount)}', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
+                        const SizedBox(height: 8),
+                        Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 10), decoration: const BoxDecoration(color: Color(0xFF201071), borderRadius: BorderRadius.vertical(bottom: Radius.circular(16))), child: Text(diamond ? '💎 ${_format(p.diamonds)}' : '\$ ${p.price.toStringAsFixed(2)}', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900))),
+                      ]),
                     ),
                   );
                 },
@@ -191,22 +154,14 @@ class _RechargeScreenState extends State<RechargeScreen> {
               const Divider(color: Colors.white12),
               const SizedBox(height: 12),
               if (diamond)
-                SizedBox(
-                  height: 54,
-                  child: FilledButton.icon(
-                    onPressed: _openGiftSheet,
-                    icon: const Icon(Icons.card_giftcard_rounded),
-                    label: const Text('إهداء العملات لصديق 🎁', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
-                    style: FilledButton.styleFrom(backgroundColor: const Color(0xFF7130D9), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-                  ),
-                )
+                SizedBox(height: 54, child: FilledButton.icon(onPressed: _openGiftSheet, icon: const Icon(Icons.card_giftcard_rounded), label: const Text('إهداء العملات لصديق 🎁', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900)), style: FilledButton.styleFrom(backgroundColor: const Color(0xFF7130D9), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)))))
               else ...[
                 const Text('🎁 لديك كود ترويجي؟', style: TextStyle(color: Color(0xFFC9B8FF), fontWeight: FontWeight.w800)),
                 const SizedBox(height: 10),
                 TextField(style: const TextStyle(color: Colors.white), decoration: InputDecoration(hintText: 'أدخل الكود هنا', hintStyle: const TextStyle(color: Colors.white38), filled: true, fillColor: const Color(0xFF101222), border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)))),
               ],
               const SizedBox(height: 16),
-              _asset('assets/images/recharge_features.png', 105),
+              _assetNatural('assets/images/recharge_features.png'),
               const SizedBox(height: 16),
               SizedBox(
                 height: 54,
@@ -214,21 +169,10 @@ class _RechargeScreenState extends State<RechargeScreen> {
                   onPressed: () async {
                     final p = packages[selected];
                     if (diamond) {
-                      try {
-                        await DiamondWalletService.exchangeDiamondsForCoins(diamondCost: p.diamonds, coins: p.amount);
-                        if (mounted) _msg('تم استبدال الألماس بـ ${_format(p.amount)} عملة.');
-                      } catch (e) {
-                        _msg('$e');
-                      }
+                      try { await DiamondWalletService.exchangeDiamondsForCoins(diamondCost: p.diamonds, coins: p.amount); if (mounted) _msg('تم استبدال الألماس بـ ${_format(p.amount)} عملة.'); } catch (e) { _msg('$e'); }
                       return;
                     }
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const RechargeCheckoutScreen(),
-                        settings: RouteSettings(arguments: {'coins': p.amount, 'price': p.price, 'currencyType': 'coins'}),
-                      ),
-                    );
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const RechargeCheckoutScreen(), settings: RouteSettings(arguments: {'coins': p.amount, 'price': p.price, 'currencyType': 'coins'})));
                   },
                   style: FilledButton.styleFrom(backgroundColor: const Color(0xFF8A32FF), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
                   child: Text(diamond ? 'استبدال الألماس بالعملات' : 'متابعة إلى الدفع', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
@@ -255,48 +199,24 @@ class _RechargeScreenState extends State<RechargeScreen> {
           textDirection: TextDirection.rtl,
           child: Padding(
             padding: EdgeInsets.fromLTRB(20, 22, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text('إهداء العملات لصديق 🎁', style: TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)),
-                const SizedBox(height: 14),
-                _input(id, 'ID المستلم', Icons.badge_outlined),
-                const SizedBox(height: 8),
-                OutlinedButton(
-                  onPressed: () async {
-                    try {
-                      final r = await DiamondWalletService.findUserByPublicId(id.text);
-                      setLocal(() => recipient = r);
-                      if (r == null) _msg('لم يتم العثور على مستخدم بهذا الـ ID.');
-                    } catch (e) {
-                      _msg('$e');
-                    }
-                  },
-                  child: const Text('تم / تحقق من المستخدم'),
-                ),
-                if (recipient != null) ...[
-                  const SizedBox(height: 12),
-                  _recipientCard(recipient!),
-                ],
-                const SizedBox(height: 12),
-                _input(amount, 'عدد العملات — الحد الأدنى 100', Icons.monetization_on_outlined),
-                const SizedBox(height: 16),
-                FilledButton(
-                  onPressed: recipient == null ? null : () async {
-                    final n = int.tryParse(amount.text) ?? 0;
-                    if (n < 100) {
-                      _msg('الحد الأدنى 100 عملة.');
-                      return;
-                    }
-                    Navigator.pop(ctx);
-                    await _requestTransferPassword(recipient!['uid'].toString(), n);
-                  },
-                  style: FilledButton.styleFrom(backgroundColor: const Color(0xFF8A32FF), minimumSize: const Size.fromHeight(52)),
-                  child: const Text('إرسال', style: TextStyle(fontWeight: FontWeight.w900)),
-                ),
-              ],
-            ),
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              const Text('إهداء العملات لصديق 🎁', style: TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 14), _input(id, 'ID المستلم', Icons.badge_outlined), const SizedBox(height: 8),
+              OutlinedButton(onPressed: () async {
+                try { final r = await DiamondWalletService.findUserByPublicId(id.text); setLocal(() => recipient = r); if (r == null) _msg('لم يتم العثور على مستخدم بهذا الـ ID.'); } catch (e) { _msg('$e'); }
+              }, child: const Text('تم / تحقق من المستخدم')),
+              if (recipient != null) ...[const SizedBox(height: 12), _recipientCard(recipient!)],
+              const SizedBox(height: 12), _input(amount, 'عدد العملات — الحد الأدنى 100', Icons.monetization_on_outlined), const SizedBox(height: 16),
+              FilledButton(
+                onPressed: recipient == null ? null : () async {
+                  final n = int.tryParse(amount.text) ?? 0;
+                  if (n < 100) { _msg('الحد الأدنى 100 عملة.'); return; }
+                  Navigator.pop(ctx); await _requestTransferPassword(recipient!['uid'].toString(), n);
+                },
+                style: FilledButton.styleFrom(backgroundColor: const Color(0xFF8A32FF), minimumSize: const Size.fromHeight(52)),
+                child: const Text('إرسال', style: TextStyle(fontWeight: FontWeight.w900)),
+              ),
+            ]),
           ),
         ),
       ),
@@ -315,18 +235,9 @@ class _RechargeScreenState extends State<RechargeScreen> {
           content: _dialogField(p, 'كلمة السر'),
           actions: [
             TextButton(onPressed: () => Navigator.pop(d), child: const Text('إلغاء')),
-            FilledButton(
-              onPressed: () async {
-                try {
-                  await DiamondWalletService.transferCoins(recipientUid: recipientUid, amount: amount, password: p.text);
-                  if (d.mounted) Navigator.pop(d);
-                  if (mounted) _msg('تم إرسال $amount عملة بنجاح.');
-                } catch (e) {
-                  _msg('$e');
-                }
-              },
-              child: const Text('تأكيد الإرسال'),
-            ),
+            FilledButton(onPressed: () async {
+              try { await DiamondWalletService.transferCoins(recipientUid: recipientUid, amount: amount, password: p.text); if (d.mounted) Navigator.pop(d); if (mounted) _msg('تم إرسال $amount عملة بنجاح.'); } catch (e) { _msg('$e'); }
+            }, child: const Text('تأكيد الإرسال')),
           ],
         ),
       ),
@@ -352,10 +263,7 @@ class _RechargeScreenState extends State<RechargeScreen> {
     return Expanded(
       child: InkWell(
         onTap: () {
-          setState(() {
-            tab = index;
-            selected = 1;
-          });
+          setState(() { tab = index; selected = 1; });
           if (index == 1) _ensurePassword();
         },
         borderRadius: BorderRadius.circular(15),
@@ -365,6 +273,21 @@ class _RechargeScreenState extends State<RechargeScreen> {
   }
 
   Widget _tag(String t, Color c) => Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 4), decoration: BoxDecoration(color: c, borderRadius: const BorderRadius.vertical(top: Radius.circular(16))), child: Text(t, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)));
-  Widget _asset(String path, double h) => ClipRRect(borderRadius: BorderRadius.circular(18), child: Image.asset(path, height: h, width: double.infinity, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(height: h, color: const Color(0xFF121426))));
+
+  Widget _asset(String path, double h) => ClipRRect(
+    borderRadius: BorderRadius.circular(18),
+    child: Image.asset(path, height: h, width: double.infinity, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(height: h, color: const Color(0xFF121426))),
+  );
+
+  Widget _assetNatural(String path) => ClipRRect(
+    borderRadius: BorderRadius.circular(18),
+    child: Image.asset(
+      path,
+      width: double.infinity,
+      fit: BoxFit.fitWidth,
+      errorBuilder: (_, __, ___) => Container(height: 105, color: const Color(0xFF121426)),
+    ),
+  );
+
   String _format(int n) => n.toString().replaceAllMapped(RegExp(r'(?<=\d)(?=(\d{3})+(?!\d))'), (_) => ',');
 }
