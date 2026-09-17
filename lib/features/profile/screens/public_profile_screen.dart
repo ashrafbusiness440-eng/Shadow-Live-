@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../chat/screens/private_chat_screen.dart';
@@ -35,7 +36,7 @@ class PublicProfileScreen extends StatelessWidget {
             if(location.isNotEmpty)...[const SizedBox(height:8),Row(mainAxisAlignment:MainAxisAlignment.center,children:[const Icon(Icons.location_on_outlined,color:Colors.white38,size:16),const SizedBox(width:4),Text(location,style:const TextStyle(color:Colors.white54))])],
             const SizedBox(height:22),
             FilledButton.icon(onPressed:() async {
-              final current=await _currentUid();if(current==null||current==userId||!context.mounted)return;
+              final current=FirebaseAuth.instance.currentUser?.uid;if(current==null||current==userId||!context.mounted)return;
               final id=_conversationId(current,userId);final ref=FirebaseFirestore.instance.collection('conversations').doc(id);final snap=await ref.get();
               if(!snap.exists){await ref.set({'participants':[current,userId],'createdAt':FieldValue.serverTimestamp(),'updatedAt':FieldValue.serverTimestamp(),'unreadCounts':{current:0,userId:0}});}
               if(context.mounted)Navigator.push(context,MaterialPageRoute(builder:(_)=>PrivateChatScreen(conversationId:id,otherUid:userId,otherName:name,otherPhoto:'${data['profileImageUrl']??''}')));
@@ -49,9 +50,6 @@ class PublicProfileScreen extends StatelessWidget {
       ),
     ),
   );
-
-  Future<String?> _currentUid()async{final auth=await importAuth();return auth;}
-  Future<String?> importAuth()async{final user=(await Future.value(null));return user as String?;}
 }
 
 class _Stat extends StatelessWidget{final String label,value;const _Stat(this.label,this.value);@override Widget build(BuildContext context)=>Column(children:[Text(value,style:const TextStyle(color:Color(0xFFFFD54A),fontSize:18,fontWeight:FontWeight.w900)),const SizedBox(height:4),Text(label,style:const TextStyle(color:Colors.white54,fontSize:12))]);}
