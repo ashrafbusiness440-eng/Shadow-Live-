@@ -311,7 +311,7 @@ class _ConversationTile extends StatelessWidget {
               ],
             ),
             onTap: otherUid.isEmpty ? null : () => Navigator.push(context, MaterialPageRoute(builder: (_) => PrivateChatScreen(conversationId: id, otherUid: otherUid, otherName: name, otherPhoto: photo))),
-            onLongPress: otherUid.isEmpty ? null : () => Navigator.push(context, MaterialPageRoute(builder: (_) => PublicProfileScreen(userId: otherUid))),
+            onLongPress: otherUid.isEmpty ? null : () => showModalBottomSheet<void>(context: context, backgroundColor: const Color(0xFF101522), shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))), builder: (sheetContext) => Directionality(textDirection: TextDirection.rtl, child: SafeArea(child: Wrap(children: [ListTile(leading: const Icon(Icons.person_outline_rounded, color: Color(0xFFFFD54A)), title: const Text('عرض الملف الشخصي', style: TextStyle(color: Colors.white)), onTap: () {Navigator.pop(sheetContext);Navigator.push(context, MaterialPageRoute(builder: (_) => PublicProfileScreen(userId: otherUid)));}), ListTile(leading: const Icon(Icons.close_rounded, color: Colors.white54), title: const Text('إغلاق', style: TextStyle(color: Colors.white70)), onTap: () => Navigator.pop(sheetContext))]))),
           ),
         );
       },
