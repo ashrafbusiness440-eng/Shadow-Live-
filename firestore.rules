@@ -2,13 +2,51 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
+    function userDoc() { return get(/databases/$(database)/documents/users/$(request.auth.uid)); }
+    function isOwner() { return signedIn() && userDoc().data.role == 'owner'; }
+    function hasCapability(capability) {
+      return signedIn() && userDoc().data.adminEnabled == true
+        && (isOwner() || (userDoc().data.capabilities is list && capability in userDoc().data.capabilities));
+    }
+    function protectedUserFieldsUnchanged() {
+      return request.resource.data.role == resource.data.role
+        && request.resource.data.adminEnabled == resource.data.adminEnabled
+        && request.resource.data.capabilities == resource.data.capabilities
+        && request.resource.data.coins == resource.data.coins
+        && request.resource.data.diamonds == resource.data.diamonds;
+    }
     function conversationParticipant(conversationId) {
       return signedIn() && request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants;
     }
 
     match /users/{userId} {
-      allow create, read, update: if signedIn() && request.auth.uid == userId;
+      allow create: if signedIn() && request.auth.uid == userId
+        && request.resource.data.role == 'user'
+        && request.resource.data.coins == 0
+        && request.resource.data.diamonds == 0;
+      allow read: if signedIn() && (request.auth.uid == userId || hasCapability('viewUsers'));
+      allow update: if signedIn() && request.auth.uid == userId && protectedUserFieldsUnchanged();
       allow delete: if false;
+    }
+
+    match /admin_audit_logs/{logId} {
+      allow read: if hasCapability('viewAuditLog');
+      allow create, update, delete: if false;
+    }
+
+    match /financial_ledger/{entryId} {
+      allow read: if isOwner() || hasCapability('manageEconomy') || hasCapability('manageSettlements');
+      allow create, update, delete: if false;
+    }
+
+    match /system_config/{configId} {
+      allow read: if signedIn();
+      allow create, update, delete: if false;
+    }
+
+    match /agency_settlements/{settlementId} {
+      allow read: if hasCapability('manageSettlements') || hasCapability('manageAgencies');
+      allow create, update, delete: if false;
     }
 
     match /public_profiles/{userId} {
