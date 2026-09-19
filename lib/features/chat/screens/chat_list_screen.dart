@@ -94,8 +94,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
       ),
       title: Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
       subtitle: Text('ID: ${user['publicId'] ?? doc.id}', style: const TextStyle(color: Colors.white54)),
-      trailing: const Icon(Icons.chevron_left_rounded, color: Colors.white38),
-      onTap: () { Navigator.pop(sheetContext); Navigator.push(context, MaterialPageRoute(builder: (_) => PublicProfileScreen(userId: doc.id))); },
+      trailing: IconButton(tooltip:'فتح الملف الشخصي',icon:const Icon(Icons.person_outline_rounded,color:Colors.white54),onPressed:(){Navigator.pop(sheetContext);Navigator.push(context,MaterialPageRoute(builder:(_)=>PublicProfileScreen(userId:doc.id)));}),
+      onTap: () => _openChat(sheetContext, doc),
     );
   }
 
