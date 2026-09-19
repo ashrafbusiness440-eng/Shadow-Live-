@@ -23,4 +23,4 @@ jobs:
       - working-directory: functions
         run: npm install
       - working-directory: functions
-        run: npm run build
+        run: npm test
