@@ -311,6 +311,7 @@ class _ConversationTile extends StatelessWidget {
               ],
             ),
             onTap: otherUid.isEmpty ? null : () => Navigator.push(context, MaterialPageRoute(builder: (_) => PrivateChatScreen(conversationId: id, otherUid: otherUid, otherName: name, otherPhoto: photo))),
+            onLongPress: otherUid.isEmpty ? null : () => Navigator.push(context, MaterialPageRoute(builder: (_) => PublicProfileScreen(userId: otherUid))),
           ),
         );
       },
