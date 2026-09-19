@@ -24,14 +24,15 @@ class PublicProfileScreen extends StatelessWidget {
           if(!snapshot.hasData)return const Center(child:CircularProgressIndicator(color:Color(0xFF8A3DFF)));
           final data=snapshot.data?.data();
           if(data==null)return const Center(child:Text('هذا الملف غير متاح',style:TextStyle(color:Colors.white60)));
-          final name='${data['displayName']??'مستخدم Shadow Live'}';final publicId='${data['publicId']??'—'}';final provider=_avatar(data);final bio='${data['bio']??''}';final location='${data['location']??''}';
+          final name='${data['displayName']??'مستخدم Shadow Live'}';final publicId='${data['publicId']??'—'}';final provider=_avatar(data);final bio='${data['bio']??''}';final location='${data['location']??''}';final level=(data['level'] as num?)?.toInt()??0;final vip=(data['vipLevel'] as num?)?.toInt()??0;final online=data['isOnline']==true;
           return ListView(padding:const EdgeInsets.all(20),children:[
             const SizedBox(height:12),
-            Center(child:CircleAvatar(radius:54,backgroundColor:const Color(0xFF25183F),backgroundImage:provider,child:provider==null?const Icon(Icons.person,size:50,color:Color(0xFFFFD54A)):null)),
+            Center(child:Stack(clipBehavior:Clip.none,children:[CircleAvatar(radius:54,backgroundColor:const Color(0xFF25183F),backgroundImage:provider,child:provider==null?const Icon(Icons.person,size:50,color:Color(0xFFFFD54A)):null),if(online)Positioned(bottom:3,left:3,child:Container(width:18,height:18,decoration:BoxDecoration(color:const Color(0xFF38D996),shape:BoxShape.circle,border:Border.all(color:const Color(0xFF05060D),width:3))))])),
             const SizedBox(height:14),
             Text(name,textAlign:TextAlign.center,style:const TextStyle(color:Colors.white,fontSize:24,fontWeight:FontWeight.w900)),
             const SizedBox(height:5),
             Text('ID: $publicId',textAlign:TextAlign.center,style:const TextStyle(color:Colors.white54)),
+            if(level>0||vip>0)...[const SizedBox(height:10),Wrap(alignment:WrapAlignment.center,spacing:8,children:[if(level>0)Chip(avatar:const Icon(Icons.star_rounded,size:16,color:Color(0xFFFFD54A)),label:Text('Lv.$level'),backgroundColor:const Color(0xFF171B28),labelStyle:const TextStyle(color:Colors.white)),if(vip>0)Chip(avatar:const Icon(Icons.workspace_premium_rounded,size:16,color:Color(0xFFFFD54A)),label:Text('VIP $vip'),backgroundColor:const Color(0xFF171B28),labelStyle:const TextStyle(color:Colors.white))])],
             if(bio.isNotEmpty)...[const SizedBox(height:14),Text(bio,textAlign:TextAlign.center,style:const TextStyle(color:Colors.white70,height:1.5))],
             if(location.isNotEmpty)...[const SizedBox(height:8),Row(mainAxisAlignment:MainAxisAlignment.center,children:[const Icon(Icons.location_on_outlined,color:Colors.white38,size:16),const SizedBox(width:4),Text(location,style:const TextStyle(color:Colors.white54))])],
             const SizedBox(height:22),
