@@ -1,0 +1,25 @@
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'control_server_contract.dart';
+
+class ControlApiClient {
+ ControlApiClient({required this.baseUri,required this.idTokenProvider,http.Client? client}):_client=client??http.Client();
+ final Uri baseUri; final Future<String> Function() idTokenProvider; final http.Client _client;
+
+ Future<TrustedServerResponse> execute(TrustedServerRequest request) async {
+  final token=await idTokenProvider();
+  if(token.trim().isEmpty)throw StateError('Firebase ID token required');
+  final response=await _client.post(
+   baseUri.resolve('/v1/control/actions'),
+   headers:{'authorization':'Bearer $token','content-type':'application/json'},
+   body:jsonEncode(request.toJson()),
+  );
+  Map<String,dynamic> body={};
+  if(response.body.isNotEmpty){final decoded=jsonDecode(response.body);if(decoded is Map<String,dynamic>)body=decoded;}
+  if(response.statusCode<200||response.statusCode>=300){
+   return TrustedServerResponse(ok:false,code:'${body['code']??'http_${response.statusCode}'}',message:body['message']?.toString());
+  }
+  return TrustedServerResponse.fromJson(body);
+ }
+ void close()=>_client.close();
+}
