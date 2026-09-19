@@ -13,7 +13,7 @@ class ControlService {
  }) async {
   final definition=ControlActionCatalog.get(action);
   final nextPayload=Map<String,dynamic>.from(payload);
-  if(definition.financial){
+  if(definition.financial||definition.sensitive){
    nextPayload['idempotencyKey']=ControlIdempotency.key(actorUid:actorUid,action:action,targetId:targetId,clientRequestId:clientRequestId);
   }
   final local=ControlActionRequest(action:action,targetType:targetType,targetId:targetId,reason:reason,payload:nextPayload);
