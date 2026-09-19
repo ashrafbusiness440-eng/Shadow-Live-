@@ -2,7 +2,7 @@ import {onRequest} from "firebase-functions/v2/https";
 import {initializeApp} from "firebase-admin/app";
 import {getAuth} from "firebase-admin/auth";
 import {FieldValue,getFirestore} from "firebase-admin/firestore";
-import {ownerTargetProtected,validRole} from "./policy.js";
+import {isRecentAuth,ownerTargetProtected,sanitizeCapabilities,validIdempotencyKey,validRole} from "./policy.js";
 
 initializeApp();
 const db=getFirestore();
@@ -30,7 +30,7 @@ async function actorFrom(req:any):Promise<Actor>{
 function can(actor:Actor,capability:string){return actor.enabled&&(actor.role==="owner"||actor.capabilities.has(capability));}
 function requireRecentAuth(actor:Actor){
  const now=Math.floor(Date.now()/1000);
- if(!actor.authTime||now-actor.authTime>600)throw new Error("reauth_required");
+ if(!isRecentAuth(actor.authTime,now))throw new Error("reauth_required");
 }
 function requireCapability(actor:Actor,action:string){
  const cap=capabilityByAction[action]; if(!cap||!can(actor,cap))throw new Error("denied");
@@ -43,7 +43,7 @@ async function adjustBalance(actor:Actor,body:any){
  const targetId=String(body.targetId??"").trim(),reason=String(body.reason??"").trim();
  const payload=body.payload??{},asset=String(payload.asset??""),key=String(payload.idempotencyKey??"").trim();
  const raw=Number(payload.delta);
- if(!targetId||reason.length<3||!["coins","diamonds"].includes(asset)||!Number.isFinite(raw)||raw===0||!key)throw new Error("invalid_request");
+ if(!targetId||reason.length<3||!["coins","diamonds"].includes(asset)||!Number.isFinite(raw)||raw===0||!validIdempotencyKey(key))throw new Error("invalid_request");
  if(asset==="coins"&&!Number.isInteger(raw))throw new Error("invalid_amount");
  const opRef=db.collection("control_operations").doc(key);
  const userRef=db.collection("users").doc(targetId);
@@ -67,7 +67,7 @@ async function adjustBalance(actor:Actor,body:any){
 async function changeRole(actor:Actor,body:any){
  const targetId=String(body.targetId??"").trim(),reason=String(body.reason??"").trim();
  const role=String(body.payload?.role??"").trim(),key=String(body.payload?.idempotencyKey??body.clientRequestId??"").trim();
- if(!targetId||reason.length<3||!validRole(role)||!key)throw new Error("invalid_request");
+ if(!targetId||reason.length<3||!validRole(role)||!validIdempotencyKey(key))throw new Error("invalid_request");
  const targetRef=db.collection("users").doc(targetId),opRef=db.collection("control_operations").doc(key),auditRef=db.collection("admin_audit_logs").doc();
  return db.runTransaction(async tx=>{
   const [op,target,lock]=await Promise.all([tx.get(opRef),tx.get(targetRef),tx.get(db.collection("system_config").doc("emergency_lock"))]);
@@ -84,7 +84,7 @@ async function changeRole(actor:Actor,body:any){
 }
 async function approveWithdrawal(actor:Actor,body:any){
  const id=String(body.targetId??"").trim(),reason=String(body.reason??"").trim(),key=String(body.payload?.idempotencyKey??"").trim();
- if(!id||reason.length<3||!key)throw new Error("invalid_request");
+ if(!id||reason.length<3||!validIdempotencyKey(key))throw new Error("invalid_request");
  const ref=db.collection("withdrawals").doc(id),opRef=db.collection("control_operations").doc(key),auditRef=db.collection("admin_audit_logs").doc();
  return db.runTransaction(async tx=>{
   const [op,w,lock]=await Promise.all([tx.get(opRef),tx.get(ref),tx.get(db.collection("system_config").doc("emergency_lock"))]);
@@ -101,7 +101,7 @@ async function approveWithdrawal(actor:Actor,body:any){
 }
 async function paySettlement(actor:Actor,body:any){
  const id=String(body.targetId??"").trim(),reason=String(body.reason??"").trim(),key=String(body.payload?.idempotencyKey??"").trim();
- if(!id||reason.length<3||!key)throw new Error("invalid_request");
+ if(!id||reason.length<3||!validIdempotencyKey(key))throw new Error("invalid_request");
  const ref=db.collection("agency_settlements").doc(id),opRef=db.collection("control_operations").doc(key),auditRef=db.collection("admin_audit_logs").doc();
  return db.runTransaction(async tx=>{
   const [op,s,lock]=await Promise.all([tx.get(opRef),tx.get(ref),tx.get(db.collection("system_config").doc("emergency_lock"))]);
@@ -120,8 +120,8 @@ async function paySettlement(actor:Actor,body:any){
 async function changeCapabilities(actor:Actor,body:any){
  const targetId=String(body.targetId??"").trim(),reason=String(body.reason??"").trim();
  const values=body.payload?.capabilities,key=String(body.payload?.idempotencyKey??body.clientRequestId??"").trim();
- if(!targetId||reason.length<3||!Array.isArray(values)||!key)throw new Error("invalid_request");
- const capabilities=[...new Set(values.map((x:any)=>String(x).trim()).filter(Boolean))];
+ if(!targetId||reason.length<3||!Array.isArray(values)||!validIdempotencyKey(key))throw new Error("invalid_request");
+ const capabilities=sanitizeCapabilities(values);
  const targetRef=db.collection("users").doc(targetId),opRef=db.collection("control_operations").doc(key),auditRef=db.collection("admin_audit_logs").doc();
  return db.runTransaction(async tx=>{
   const [op,target,lock]=await Promise.all([tx.get(opRef),tx.get(targetRef),tx.get(db.collection("system_config").doc("emergency_lock"))]);
@@ -140,7 +140,7 @@ async function changeCapabilities(actor:Actor,body:any){
 async function setEmergencyLock(actor:Actor,body:any){
  if(actor.role!=="owner")throw new Error("denied");
  const reason=String(body.reason??"").trim(),enabled=body.payload?.enabled,key=String(body.payload?.idempotencyKey??body.clientRequestId??"").trim();
- if(reason.length<3||typeof enabled!=="boolean"||!key)throw new Error("invalid_request");
+ if(reason.length<3||typeof enabled!=="boolean"||!validIdempotencyKey(key))throw new Error("invalid_request");
  const ref=db.collection("system_config").doc("emergency_lock"),opRef=db.collection("control_operations").doc(key),auditRef=db.collection("admin_audit_logs").doc();
  return db.runTransaction(async tx=>{
   const [op,current]=await Promise.all([tx.get(opRef),tx.get(ref)]);
@@ -175,7 +175,7 @@ export const controlApi=onRequest({region:"us-central1"},async(req,res)=>{
   res.status(501).json({ok:false,code:"trusted_backend_required",message:"Action handler is not implemented yet."});
  }catch(e:any){
   const code=String(e?.message??"denied");
-  const status=code==="unauthenticated"?401:code==="reauth_required"?401:code==="denied"?403:code==="not_found"?404:code==="emergency_locked"?423:code==="insufficient_balance"||code==="invalid_transition"||code==="owner_protected"?409:400;
+  const status=code==="unauthenticated"?401:code==="reauth_required"?401:code==="denied"?403:code==="not_found"?404:code==="emergency_locked"?423:code==="insufficient_balance"||code==="invalid_transition"||code==="owner_protected"?409:code==="invalid_capability"?400:400;
   res.status(status).json({ok:false,code});
  }
 });
