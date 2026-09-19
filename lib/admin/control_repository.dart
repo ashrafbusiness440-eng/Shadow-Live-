@@ -11,13 +11,6 @@ class ControlRepository {
     return ControlAccess.fromMap(uid,snap.data()??{});
   }
 
-  Future<void> writeAudit({
-    required String actorUid,required String action,required String targetType,
-    required String targetId,String? reason,Map<String,dynamic>? before,Map<String,dynamic>? after,
-  })=>_db.collection('admin_audit_logs').add({
-    'actorUid':actorUid,'action':action,'targetType':targetType,'targetId':targetId,
-    'reason':reason,'before':before,'after':after,'createdAt':FieldValue.serverTimestamp(),
-  });
 
   Stream<QuerySnapshot<Map<String,dynamic>>> users({int limit=50})=>
       _db.collection('users').limit(limit).snapshots();
