@@ -2,6 +2,7 @@ import {onRequest} from "firebase-functions/v2/https";
 import {initializeApp} from "firebase-admin/app";
 import {getAuth} from "firebase-admin/auth";
 import {FieldValue,getFirestore} from "firebase-admin/firestore";
+import {ownerTargetProtected,validRole} from "./policy.js";
 
 initializeApp();
 const db=getFirestore();
@@ -58,6 +59,59 @@ async function adjustBalance(actor:Actor,body:any){
  });
 }
 
+async function changeRole(actor:Actor,body:any){
+ const targetId=String(body.targetId??"").trim(),reason=String(body.reason??"").trim();
+ const role=String(body.payload?.role??"").trim(),key=String(body.payload?.idempotencyKey??body.clientRequestId??"").trim();
+ if(!targetId||reason.length<3||!validRole(role)||!key)throw new Error("invalid_request");
+ const targetRef=db.collection("users").doc(targetId),opRef=db.collection("control_operations").doc(key),auditRef=db.collection("admin_audit_logs").doc();
+ return db.runTransaction(async tx=>{
+  const [op,target,lock]=await Promise.all([tx.get(opRef),tx.get(targetRef),tx.get(db.collection("system_config").doc("emergency_lock"))]);
+  if(op.exists)return {ok:true,code:"duplicate",operationId:key};
+  if(lock.exists&&lock.data()?.enabled===true)throw new Error("emergency_locked");
+  if(!target.exists)throw new Error("not_found");
+  const beforeRole=String(target.data()?.role??"user");
+  if(ownerTargetProtected(actor.role,beforeRole,"demote")||role==="owner"&&actor.role!=="owner")throw new Error("owner_protected");
+  tx.update(targetRef,{role,adminEnabled:role!=="user"});
+  tx.create(auditRef,{actorUid:actor.uid,action:"changeRole",targetType:"user",targetId,reason,before:{role:beforeRole},after:{role},operationId:key,createdAt:FieldValue.serverTimestamp()});
+  tx.create(opRef,{action:"changeRole",actorUid:actor.uid,targetId,status:"completed",createdAt:FieldValue.serverTimestamp()});
+  return {ok:true,code:"ok",operationId:key};
+ });
+}
+async function approveWithdrawal(actor:Actor,body:any){
+ const id=String(body.targetId??"").trim(),reason=String(body.reason??"").trim(),key=String(body.payload?.idempotencyKey??"").trim();
+ if(!id||reason.length<3||!key)throw new Error("invalid_request");
+ const ref=db.collection("withdrawals").doc(id),opRef=db.collection("control_operations").doc(key),auditRef=db.collection("admin_audit_logs").doc();
+ return db.runTransaction(async tx=>{
+  const [op,w,lock]=await Promise.all([tx.get(opRef),tx.get(ref),tx.get(db.collection("system_config").doc("emergency_lock"))]);
+  if(op.exists)return {ok:true,code:"duplicate",operationId:key};
+  if(lock.exists&&lock.data()?.enabled===true)throw new Error("emergency_locked");
+  if(!w.exists)throw new Error("not_found");
+  const before=String(w.data()?.status??"pending");
+  if(!["pending","under_review"].includes(before))throw new Error("invalid_transition");
+  tx.update(ref,{status:"approved",approvedBy:actor.uid,approvedAt:FieldValue.serverTimestamp()});
+  tx.create(auditRef,{actorUid:actor.uid,action:"approveWithdrawal",targetType:"withdrawal",targetId:id,reason,before:{status:before},after:{status:"approved"},operationId:key,createdAt:FieldValue.serverTimestamp()});
+  tx.create(opRef,{action:"approveWithdrawal",actorUid:actor.uid,targetId:id,status:"completed",createdAt:FieldValue.serverTimestamp()});
+  return {ok:true,code:"ok",operationId:key};
+ });
+}
+async function paySettlement(actor:Actor,body:any){
+ const id=String(body.targetId??"").trim(),reason=String(body.reason??"").trim(),key=String(body.payload?.idempotencyKey??"").trim();
+ if(!id||reason.length<3||!key)throw new Error("invalid_request");
+ const ref=db.collection("agency_settlements").doc(id),opRef=db.collection("control_operations").doc(key),auditRef=db.collection("admin_audit_logs").doc();
+ return db.runTransaction(async tx=>{
+  const [op,s,lock]=await Promise.all([tx.get(opRef),tx.get(ref),tx.get(db.collection("system_config").doc("emergency_lock"))]);
+  if(op.exists)return {ok:true,code:"duplicate",operationId:key};
+  if(lock.exists&&lock.data()?.enabled===true)throw new Error("emergency_locked");
+  if(!s.exists)throw new Error("not_found");
+  const before=String(s.data()?.status??"pending");
+  if(before!=="approved")throw new Error("invalid_transition");
+  tx.update(ref,{status:"paid",paidBy:actor.uid,paidAt:FieldValue.serverTimestamp()});
+  tx.create(auditRef,{actorUid:actor.uid,action:"paySettlement",targetType:"agency_settlement",targetId:id,reason,before:{status:before},after:{status:"paid"},operationId:key,createdAt:FieldValue.serverTimestamp()});
+  tx.create(opRef,{action:"paySettlement",actorUid:actor.uid,targetId:id,status:"completed",createdAt:FieldValue.serverTimestamp()});
+  return {ok:true,code:"ok",operationId:key};
+ });
+}
+
 export const controlApi=onRequest({region:"us-central1"},async(req,res)=>{
  try{
   if(req.method==="GET"&&req.path.endsWith("/v1/control/health")){
@@ -70,11 +124,14 @@ export const controlApi=onRequest({region:"us-central1"},async(req,res)=>{
   if(reason.length<3){res.status(400).json({ok:false,code:"invalid_reason"});return;}
   requireCapability(actor,action);
   if(action==="adjustBalance"){res.json(await adjustBalance(actor,req.body));return;}
+  if(action==="approveWithdrawal"){res.json(await approveWithdrawal(actor,req.body));return;}
+  if(action==="paySettlement"){res.json(await paySettlement(actor,req.body));return;}
+  if(action==="changeRole"){res.json(await changeRole(actor,req.body));return;}
   if(sensitive.has(action)&&await emergencyLocked()){res.status(423).json({ok:false,code:"emergency_locked"});return;}
   res.status(501).json({ok:false,code:"trusted_backend_required",message:"Action handler is not implemented yet."});
  }catch(e:any){
   const code=String(e?.message??"denied");
-  const status=code==="unauthenticated"?401:code==="denied"?403:code==="not_found"?404:code==="emergency_locked"?423:code==="insufficient_balance"?409:400;
+  const status=code==="unauthenticated"?401:code==="denied"?403:code==="not_found"?404:code==="emergency_locked"?423:code==="insufficient_balance"||code==="invalid_transition"||code==="owner_protected"?409:400;
   res.status(status).json({ok:false,code});
  }
 });
