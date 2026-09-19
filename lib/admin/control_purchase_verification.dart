@@ -4,6 +4,6 @@ class PurchaseVerification {
  void validate(){
   if(productId.trim().isEmpty||purchaseToken.trim().isEmpty||userId.trim().isEmpty)throw ArgumentError('purchase verification fields required');
  }
- static bool clientResultIsAuthoritative=>false;
- static bool requiresServerVerification=>true;
+ static bool get clientResultIsAuthoritative=>false;
+ static bool get requiresServerVerification=>true;
 }
