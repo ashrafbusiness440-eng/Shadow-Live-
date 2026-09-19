@@ -14,6 +14,7 @@ const capabilityByAction:Record<string,string>={
  paySettlement:"manageSettlements",
  changeRole:"manageRoles",
  emergencyLock:"emergencyLock",
+ changeCapabilities:"manageRoles",
 };
 const sensitive=new Set(Object.keys(capabilityByAction));
 
@@ -112,6 +113,42 @@ async function paySettlement(actor:Actor,body:any){
  });
 }
 
+async function changeCapabilities(actor:Actor,body:any){
+ const targetId=String(body.targetId??"").trim(),reason=String(body.reason??"").trim();
+ const values=body.payload?.capabilities,key=String(body.payload?.idempotencyKey??body.clientRequestId??"").trim();
+ if(!targetId||reason.length<3||!Array.isArray(values)||!key)throw new Error("invalid_request");
+ const capabilities=[...new Set(values.map((x:any)=>String(x).trim()).filter(Boolean))];
+ const targetRef=db.collection("users").doc(targetId),opRef=db.collection("control_operations").doc(key),auditRef=db.collection("admin_audit_logs").doc();
+ return db.runTransaction(async tx=>{
+  const [op,target,lock]=await Promise.all([tx.get(opRef),tx.get(targetRef),tx.get(db.collection("system_config").doc("emergency_lock"))]);
+  if(op.exists)return {ok:true,code:"duplicate",operationId:key};
+  if(lock.exists&&lock.data()?.enabled===true)throw new Error("emergency_locked");
+  if(!target.exists)throw new Error("not_found");
+  const targetRole=String(target.data()?.role??"user");
+  if(targetRole==="owner")throw new Error("owner_protected");
+  const before=Array.isArray(target.data()?.capabilities)?target.data()?.capabilities:[];
+  tx.update(targetRef,{capabilities});
+  tx.create(auditRef,{actorUid:actor.uid,action:"changeCapabilities",targetType:"user",targetId,reason,before:{capabilities:before},after:{capabilities},operationId:key,createdAt:FieldValue.serverTimestamp()});
+  tx.create(opRef,{action:"changeCapabilities",actorUid:actor.uid,targetId,status:"completed",createdAt:FieldValue.serverTimestamp()});
+  return {ok:true,code:"ok",operationId:key};
+ });
+}
+async function setEmergencyLock(actor:Actor,body:any){
+ if(actor.role!=="owner")throw new Error("denied");
+ const reason=String(body.reason??"").trim(),enabled=body.payload?.enabled,key=String(body.payload?.idempotencyKey??body.clientRequestId??"").trim();
+ if(reason.length<3||typeof enabled!=="boolean"||!key)throw new Error("invalid_request");
+ const ref=db.collection("system_config").doc("emergency_lock"),opRef=db.collection("control_operations").doc(key),auditRef=db.collection("admin_audit_logs").doc();
+ return db.runTransaction(async tx=>{
+  const [op,current]=await Promise.all([tx.get(opRef),tx.get(ref)]);
+  if(op.exists)return {ok:true,code:"duplicate",operationId:key};
+  const before=current.exists&&current.data()?.enabled===true;
+  tx.set(ref,{enabled,reason,activatedBy:actor.uid,activatedAt:FieldValue.serverTimestamp()},{merge:true});
+  tx.create(auditRef,{actorUid:actor.uid,action:"emergencyLock",targetType:"system",targetId:"emergency_lock",reason,before:{enabled:before},after:{enabled},operationId:key,createdAt:FieldValue.serverTimestamp()});
+  tx.create(opRef,{action:"emergencyLock",actorUid:actor.uid,targetId:"emergency_lock",status:"completed",createdAt:FieldValue.serverTimestamp()});
+  return {ok:true,code:"ok",operationId:key};
+ });
+}
+
 export const controlApi=onRequest({region:"us-central1"},async(req,res)=>{
  try{
   if(req.method==="GET"&&req.path.endsWith("/v1/control/health")){
@@ -127,6 +164,8 @@ export const controlApi=onRequest({region:"us-central1"},async(req,res)=>{
   if(action==="approveWithdrawal"){res.json(await approveWithdrawal(actor,req.body));return;}
   if(action==="paySettlement"){res.json(await paySettlement(actor,req.body));return;}
   if(action==="changeRole"){res.json(await changeRole(actor,req.body));return;}
+  if(action==="changeCapabilities"){res.json(await changeCapabilities(actor,req.body));return;}
+  if(action==="emergencyLock"){res.json(await setEmergencyLock(actor,req.body));return;}
   if(sensitive.has(action)&&await emergencyLocked()){res.status(423).json({ok:false,code:"emergency_locked"});return;}
   res.status(501).json({ok:false,code:"trusted_backend_required",message:"Action handler is not implemented yet."});
  }catch(e:any){
