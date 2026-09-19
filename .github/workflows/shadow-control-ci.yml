@@ -1,0 +1,26 @@
+name: Shadow Control CI
+on:
+  pull_request:
+    branches: [feature/recharge-main]
+  push:
+    branches: [feature/shadow-control-foundation]
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.2'
+          cache: true
+      - run: flutter pub get
+      - run: dart analyze lib/admin test/admin
+      - run: flutter test test/admin
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - working-directory: functions
+        run: npm install
+      - working-directory: functions
+        run: npm test
