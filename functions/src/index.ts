@@ -7,7 +7,7 @@ import {ownerTargetProtected,validRole} from "./policy.js";
 initializeApp();
 const db=getFirestore();
 
-type Actor={uid:string;role:string;enabled:boolean;capabilities:Set<string>};
+type Actor={uid:string;role:string;enabled:boolean;capabilities:Set<string>;authTime:number};
 const capabilityByAction:Record<string,string>={
  adjustBalance:"manageEconomy",
  approveWithdrawal:"manageWithdrawals",
@@ -25,9 +25,13 @@ async function actorFrom(req:any):Promise<Actor>{
  const snap=await db.collection("users").doc(decoded.uid).get();
  if(!snap.exists)throw new Error("denied");
  const data=snap.data()??{};
- return {uid:decoded.uid,role:String(data.role??"user"),enabled:data.adminEnabled!==false,capabilities:new Set<string>(Array.isArray(data.capabilities)?data.capabilities:[])};
+ return {uid:decoded.uid,role:String(data.role??"user"),enabled:data.adminEnabled!==false,capabilities:new Set<string>(Array.isArray(data.capabilities)?data.capabilities:[]),authTime:Number(decoded.auth_time??0)};
 }
 function can(actor:Actor,capability:string){return actor.enabled&&(actor.role==="owner"||actor.capabilities.has(capability));}
+function requireRecentAuth(actor:Actor){
+ const now=Math.floor(Date.now()/1000);
+ if(!actor.authTime||now-actor.authTime>600)throw new Error("reauth_required");
+}
 function requireCapability(actor:Actor,action:string){
  const cap=capabilityByAction[action]; if(!cap||!can(actor,cap))throw new Error("denied");
 }
@@ -160,6 +164,7 @@ export const controlApi=onRequest({region:"us-central1"},async(req,res)=>{
   if(!actor.enabled){res.status(403).json({ok:false,code:"denied"});return;}
   if(reason.length<3){res.status(400).json({ok:false,code:"invalid_reason"});return;}
   requireCapability(actor,action);
+  if(sensitive.has(action)||action==="changeCapabilities")requireRecentAuth(actor);
   if(action==="adjustBalance"){res.json(await adjustBalance(actor,req.body));return;}
   if(action==="approveWithdrawal"){res.json(await approveWithdrawal(actor,req.body));return;}
   if(action==="paySettlement"){res.json(await paySettlement(actor,req.body));return;}
@@ -170,7 +175,7 @@ export const controlApi=onRequest({region:"us-central1"},async(req,res)=>{
   res.status(501).json({ok:false,code:"trusted_backend_required",message:"Action handler is not implemented yet."});
  }catch(e:any){
   const code=String(e?.message??"denied");
-  const status=code==="unauthenticated"?401:code==="denied"?403:code==="not_found"?404:code==="emergency_locked"?423:code==="insufficient_balance"||code==="invalid_transition"||code==="owner_protected"?409:400;
+  const status=code==="unauthenticated"?401:code==="reauth_required"?401:code==="denied"?403:code==="not_found"?404:code==="emergency_locked"?423:code==="insufficient_balance"||code==="invalid_transition"||code==="owner_protected"?409:400;
   res.status(status).json({ok:false,code});
  }
 });
