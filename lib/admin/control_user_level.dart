@@ -4,5 +4,5 @@ abstract final class UserLevelPolicy {
   if(earned<0||dailyCap<0)throw ArgumentError('xp cannot be negative');
   return earned>dailyCap?dailyCap:earned;
  }
- static bool canDecreaseLevel=>false;
+ static bool get canDecreaseLevel=>false;
 }
