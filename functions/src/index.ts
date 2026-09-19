@@ -156,7 +156,7 @@ async function setEmergencyLock(actor:Actor,body:any){
 export const controlApi=onRequest({region:"us-central1"},async(req,res)=>{
  try{
   if(req.method==="GET"&&req.path.endsWith("/v1/control/health")){
-   res.json({ok:true,environment:process.env.CONTROL_ENV??"staging",version:"1",financialWritesEnabled:true,roleMutationsEnabled:false});
+   res.json({ok:true,environment:process.env.CONTROL_ENV??"staging",version:"1",financialWritesEnabled:true,roleMutationsEnabled:true});
    return;
   }
   if(req.method!=="POST"||!req.path.endsWith("/v1/control/actions")){res.status(404).json({ok:false,code:"not_found"});return;}
