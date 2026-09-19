@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import 'private_chat_screen.dart';
+import '../../profile/screens/public_profile_screen.dart';
 
 class ChatListScreen extends StatefulWidget {
   const ChatListScreen({super.key});
@@ -94,7 +95,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
       title: Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
       subtitle: Text('ID: ${user['publicId'] ?? doc.id}', style: const TextStyle(color: Colors.white54)),
       trailing: const Icon(Icons.chevron_left_rounded, color: Colors.white38),
-      onTap: () => _openChat(sheetContext, doc),
+      onTap: () { Navigator.pop(sheetContext); Navigator.push(context, MaterialPageRoute(builder: (_) => PublicProfileScreen(userId: doc.id))); },
     );
   }
 
