@@ -4,7 +4,7 @@ abstract final class ControlRequestValidator {
  static ControlActionDefinition validate(ControlActionRequest request){
   request.validate();
   final definition=ControlActionCatalog.get(request.action);
-  if(definition.financial&&!request.payload.containsKey('idempotencyKey'))throw ArgumentError('financial action requires idempotencyKey');
+  if((definition.financial||definition.sensitive)&&!request.payload.containsKey('idempotencyKey'))throw ArgumentError('sensitive action requires idempotencyKey');
   return definition;
  }
 }
