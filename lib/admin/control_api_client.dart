@@ -1,10 +1,22 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'control_server_contract.dart';
+import 'control_backend_status.dart';
+import 'control_health.dart';
 
 class ControlApiClient {
  ControlApiClient({required this.baseUri,required this.idTokenProvider,http.Client? client}):_client=client??http.Client();
  final Uri baseUri; final Future<String> Function() idTokenProvider; final http.Client _client;
+
+ Future<Map<String,dynamic>> _getHealth() async {
+  final response=await _client.get(baseUri.resolve('/v1/control/health'));
+  if(response.statusCode<200||response.statusCode>=300)throw StateError('Control health unavailable: ${response.statusCode}');
+  final decoded=jsonDecode(response.body);
+  if(decoded is! Map<String,dynamic>)throw StateError('Invalid control health response');
+  return decoded;
+ }
+ Future<ControlBackendStatus> backendStatus() async=>ControlBackendStatus.fromJson(await _getHealth());
+ Future<ControlHealth> health() async=>ControlHealth.fromJson(await _getHealth());
 
  Future<TrustedServerResponse> execute(TrustedServerRequest request) async {
   final token=await idTokenProvider();
