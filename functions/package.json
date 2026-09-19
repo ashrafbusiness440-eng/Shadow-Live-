@@ -1,1 +1,20 @@
-{"name":"shadow-live-control-functions","private":true,"main":"lib/index.js","engines":{"node":"22"},"scripts":{"build":"tsc","test":"npm run build"},"dependencies":{"firebase-admin":"13.5.0","firebase-functions":"6.4.0"},"devDependencies":{"typescript":"5.9.2"}}
+{
+  "name": "shadow-live-control-functions",
+  "private": true,
+  "main": "lib/index.js",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "npm run build && node --test lib-test/test/*.test.js"
+  },
+  "dependencies": {
+    "firebase-admin": "13.5.0",
+    "firebase-functions": "6.4.0"
+  },
+  "devDependencies": {
+    "typescript": "5.9.2",
+    "@types/node": "22.15.30"
+  }
+}
