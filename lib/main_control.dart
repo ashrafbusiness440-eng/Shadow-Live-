@@ -365,10 +365,20 @@ class _RolePolicyCard extends StatelessWidget {
 
 class RoomsPage extends StatelessWidget {
   const RoomsPage({super.key});
-  @override Widget build(BuildContext context)=>const ControlList(title:'الغرف',icon:Icons.mic_none_rounded,items:[
-    ControlItem('الغرف النشطة','عرض الغرف الحالية وإدارة المضيفين',Icons.podcasts_outlined),
-    ControlItem('الغرف المبلغ عنها','مراجعة البلاغات المرتبطة بالغرف',Icons.report_outlined),
-    ControlItem('إدارة المضيفين','صلاحيات المضيف والكتم والمنع',Icons.record_voice_over_outlined),
+  @override Widget build(BuildContext context)=>ListView(padding:const EdgeInsets.all(16),children:[
+    const Row(children:[Icon(Icons.mic_none_rounded,size:28,color:Color(0xFFD7B85A)),SizedBox(width:10),Text('الغرف',style:TextStyle(fontSize:25,fontWeight:FontWeight.w900))]),
+    const SizedBox(height:16),
+    const Card(child:ListTile(
+      leading:Icon(Icons.shield_outlined,color:Color(0xFFD7B85A)),
+      title:Text('الربط الآمن قيد التجهيز',style:TextStyle(fontWeight:FontWeight.w800)),
+      subtitle:Text('Firestore Rules الحالية لا تمنح لوحة التحكم قراءة لمجموعة غرف. لذلك لن نستخدم قراءة مفتوحة أو صلاحيات مؤقتة واسعة.'),
+    )),
+    const SizedBox(height:10),
+    ...const [
+      ControlItem('الغرف النشطة','ستعرض roomId، الاسم، المضيف، الحالة وعدد المشاركين بعد اعتماد Collection وقاعدة القراءة.',Icons.podcasts_outlined),
+      ControlItem('الغرف المبلغ عنها','ستعرض بلاغات الغرف للقراءة والمراجعة بعد إضافة صلاحية reviewReports.',Icons.report_outlined),
+      ControlItem('إدارة المضيفين','أي كتم/منع/تغيير مضيف سيبقى عملية Backend مسجلة في Audit Log.',Icons.record_voice_over_outlined),
+    ].map((item)=>Card(child:ListTile(leading:Icon(item.icon,color:const Color(0xFFD7B85A)),title:Text(item.title,style:const TextStyle(fontWeight:FontWeight.w700)),subtitle:Text(item.subtitle)))),
   ]);
 }
 class FinancePage extends StatelessWidget {
@@ -384,7 +394,7 @@ class MorePage extends StatelessWidget {
   const MorePage({super.key});
   @override Widget build(BuildContext context)=>const ControlList(title:'المزيد',icon:Icons.grid_view_rounded,items:[
     ControlItem('الوكالات','إدارة الوكالات والمضيفين والتسويات',Icons.apartment_outlined),
-    ControlItem('التقارير','مراجعة بلاغات المستخدمين والمحتوى',Icons.flag_outlined),
+    ControlItem('التقارير','واجهة جاهزة؛ القراءة الحقيقية تنتظر Rules محددة لـ reports بدل فتح Firestore بشكل واسع',Icons.flag_outlined),
     ControlItem('VIP و IDs الخاصة','إدارة VIP والمعرّفات الخاصة',Icons.workspace_premium_outlined),
     ControlItem('الإعدادات','إعدادات النظام وEmergency Lock',Icons.settings_outlined),
     ControlItem('سجل الإدارة','Audit Log للعمليات الحساسة',Icons.history_outlined),
