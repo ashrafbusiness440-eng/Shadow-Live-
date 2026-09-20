@@ -67,6 +67,21 @@ class _AdminSignInPageState extends State<AdminSignInPage> {
   bool busy = false;
   String? error;
 
+  Future<void> signInWithGoogle() async {
+    setState(() { busy = true; error = null; });
+    try {
+      final provider = GoogleAuthProvider();
+      provider.setCustomParameters({'prompt': 'select_account'});
+      await FirebaseAuth.instance.signInWithPopup(provider);
+    } on FirebaseAuthException catch (e) {
+      if (mounted) setState(() => error = e.message ?? e.code);
+    } catch (e) {
+      if (mounted) setState(() => error = 'تعذر تسجيل الدخول باستخدام Google: $e');
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
   Future<void> resetPassword() async {
     final address = email.text.trim();
     if (address.isEmpty) {
@@ -129,6 +144,12 @@ class _AdminSignInPageState extends State<AdminSignInPage> {
             if (error != null) ...[const SizedBox(height: 10), Text(error!, style: const TextStyle(color: Colors.redAccent))],
             const SizedBox(height: 16),
             FilledButton.icon(onPressed: busy ? null : submit, icon: const Icon(Icons.login), label: Text(busy ? 'جار التحقق...' : 'تسجيل الدخول')),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: busy ? null : signInWithGoogle,
+              icon: const Icon(Icons.account_circle_outlined),
+              label: const Text('الدخول باستخدام Google'),
+            ),
           ],
         ),
       ),
