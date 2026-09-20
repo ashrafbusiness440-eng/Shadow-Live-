@@ -1,6 +1,19 @@
 import {getApps,initializeApp,cert} from "firebase-admin/app";
 import {getAuth} from "firebase-admin/auth";
 import {getFirestore,FieldValue} from "firebase-admin/firestore";
+function normalizePrivateKey(value){
+ let key=String(value||"").replace(/\\n/g,"\n").replace(/\r/g,"").trim();
+ const begin="-----BEGIN PRIVATE KEY-----",end="-----END PRIVATE KEY-----";
+ const bi=key.indexOf(begin),ei=key.indexOf(end);
+ if(bi>=0&&ei>bi){
+  const body=key.slice(bi+begin.length,ei).replace(/[^A-Za-z0-9+/=]/g,"");
+  if(body.length>0){
+   const lines=body.match(/.{1,64}/g)||[];
+   key=begin+"\n"+lines.join("\n")+"\n"+end+"\n";
+  }
+ }
+ return key;
+}
 function parseServiceAccount(raw){
  let text=String(raw||"").trim();
  if(!text)throw Error("server_not_configured");
@@ -8,6 +21,8 @@ function parseServiceAccount(raw){
  try{
   let parsed=JSON.parse(text);
   if(typeof parsed==="string")parsed=JSON.parse(parsed);
+  if(parsed?.private_key)parsed.private_key=normalizePrivateKey(parsed.private_key);
+  if(parsed?.privateKey)parsed.privateKey=normalizePrivateKey(parsed.privateKey);
   return parsed;
  }catch(_){
   const read=(key)=>{
@@ -16,7 +31,7 @@ function parseServiceAccount(raw){
   };
   const projectId=read("project_id"),clientEmail=read("client_email"),rawKey=read("private_key");
   if(!projectId||!clientEmail||!rawKey)throw Error("invalid_service_account_json");
-  const privateKey=rawKey.split("\\n").join("\n").replace(/\\r/g,"");
+  const privateKey=normalizePrivateKey(rawKey);
   return {projectId,clientEmail,privateKey};
  }
 }
