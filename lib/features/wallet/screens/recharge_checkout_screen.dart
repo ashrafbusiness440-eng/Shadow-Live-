@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../utils/compact_number.dart';
 
 class RechargeCheckoutScreen extends StatefulWidget {
   const RechargeCheckoutScreen({super.key});
@@ -40,7 +41,7 @@ class _RechargeCheckoutScreenState extends State<RechargeCheckoutScreen> {
               _card(child: Row(children: [
                 const Icon(Icons.monetization_on_rounded, color: Color(0xFFFFC83D), size: 48),
                 const SizedBox(width: 12),
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('${_format(coins)} عملة ذهبية', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 17)), const SizedBox(height: 4), Text('\$ ${price.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900))])),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('${formatCompactAmount(coins)} عملة ذهبية', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 17)), const SizedBox(height: 4), Text('\$ ${price.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900))])),
                 TextButton(onPressed: () => Navigator.pop(context), child: const Text('تغيير الباقة')),
               ])),
               const SizedBox(height: 26),
@@ -55,7 +56,7 @@ class _RechargeCheckoutScreenState extends State<RechargeCheckoutScreen> {
               const Text('🧾  تفاصيل الطلب', style: TextStyle(color: Color(0xFFC9B8FF), fontSize: 18, fontWeight: FontWeight.w900)),
               const SizedBox(height: 10),
               _card(child: Column(children: [
-                _row('الباقة المختارة', '${_format(coins)} عملة ذهبية'),
+                _row('الباقة المختارة', '${formatCompactAmount(coins)} عملة ذهبية'),
                 _row('السعر', '\$ ${price.toStringAsFixed(2)}'),
                 _row('الرسوم', '\$ 0.00'),
                 const Divider(color: Colors.white12, height: 28),
@@ -77,6 +78,4 @@ class _RechargeCheckoutScreenState extends State<RechargeCheckoutScreen> {
   Widget _card({required Widget child}) => Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: const Color(0xFF101222), borderRadius: BorderRadius.circular(17), border: Border.all(color: Colors.white10)), child: child);
 
   Widget _row(String a, String b, {bool strong = false}) => Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: Row(children: [Expanded(child: Text(a, style: TextStyle(color: strong ? Colors.white : Colors.white60, fontWeight: strong ? FontWeight.w900 : FontWeight.w500))), Text(b, style: TextStyle(color: strong ? const Color(0xFFFFC83D) : Colors.white, fontSize: strong ? 18 : 14, fontWeight: FontWeight.w900))]));
-
-  static String _format(dynamic n) => n.toString().replaceAllMapped(RegExp(r'(?<=\d)(?=(\d{3})+(?!\d))'), (_) => ',');
 }
