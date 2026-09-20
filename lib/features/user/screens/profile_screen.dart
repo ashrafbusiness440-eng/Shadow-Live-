@@ -16,7 +16,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
  bool get _guest{final u=FirebaseAuth.instance.currentUser;if(u?.isAnonymous==true){return true;}final a=context.read<AuthBloc>().state;return a is Authenticated&&(a.user.isAnonymous||a.userData?['isGuest']==true);}
  void _load(){if(!mounted||_guest)return;final firebaseUser=FirebaseAuth.instance.currentUser;String? id=firebaseUser?.uid;if(id==null){final a=context.read<AuthBloc>().state;if(a is Authenticated)id=a.user.uid;}if(id!=null&&id.isNotEmpty){context.read<UserBloc>().add(LoadUserProfile(id));}}
  Future<void> _edit()async{final changed=await Navigator.of(context).pushNamed(AppRoutes.editProfile);if(changed==true&&mounted)_load();}
- void _recharge(int tab)=>Navigator.push(context,MaterialPageRoute(builder:(_)=>RechargeScreen(initialTab:tab)));
+ Future<void> _recharge(int tab)async{await Navigator.push(context,MaterialPageRoute(builder:(_)=>RechargeScreen(initialTab:tab)));if(mounted)await _load();}
  void _guestLogin(){if(_loggingOut)return;setState(()=>_loggingOut=true);context.read<AuthBloc>().add(SignOutRequested());}
  String _text(Map<String,dynamic>p,String k,[String f='—']){final v=p[k];return v==null||v.toString().trim().isEmpty?f:v.toString();}int _num(Map<String,dynamic>p,List<String>ks){for(final k in ks){final v=p[k];if(v is num)return v.toInt();final n=int.tryParse(v?.toString()??'');if(n!=null)return n;}return 0;}
  ImageProvider? _avatar(Map<String,dynamic>p){final u=p['profileImageUrl']??p['avatarUrl'];if(u is String&&u.isNotEmpty)return NetworkImage(u);final a=p['profileAvatarAsset'];if(a is String&&a.isNotEmpty)return AssetImage(a);return null;}
