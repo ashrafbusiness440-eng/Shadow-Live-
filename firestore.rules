@@ -9,11 +9,24 @@ service cloud.firestore {
         && (isOwner() || (userDoc().data.capabilities is list && capability in userDoc().data.capabilities));
     }
     function protectedUserFieldsUnchanged() {
-      return request.resource.data.role == resource.data.role
-        && request.resource.data.adminEnabled == resource.data.adminEnabled
-        && request.resource.data.capabilities == resource.data.capabilities
-        && request.resource.data.coins == resource.data.coins
-        && request.resource.data.diamonds == resource.data.diamonds;
+      // Legacy-safe: compare only when the protected field exists on either side.
+      // This allows old user documents that predate admin fields to keep updating
+      // normal profile data without granting a path to create/change protected fields.
+      return (!('role' in resource.data) && !('role' in request.resource.data)
+          || ('role' in resource.data) && ('role' in request.resource.data)
+             && request.resource.data.role == resource.data.role)
+        && (!('adminEnabled' in resource.data) && !('adminEnabled' in request.resource.data)
+          || ('adminEnabled' in resource.data) && ('adminEnabled' in request.resource.data)
+             && request.resource.data.adminEnabled == resource.data.adminEnabled)
+        && (!('capabilities' in resource.data) && !('capabilities' in request.resource.data)
+          || ('capabilities' in resource.data) && ('capabilities' in request.resource.data)
+             && request.resource.data.capabilities == resource.data.capabilities)
+        && (!('coins' in resource.data) && !('coins' in request.resource.data)
+          || ('coins' in resource.data) && ('coins' in request.resource.data)
+             && request.resource.data.coins == resource.data.coins)
+        && (!('diamonds' in resource.data) && !('diamonds' in request.resource.data)
+          || ('diamonds' in resource.data) && ('diamonds' in request.resource.data)
+             && request.resource.data.diamonds == resource.data.diamonds);
     }
     function conversationParticipant(conversationId) {
       return signedIn() && request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants;
