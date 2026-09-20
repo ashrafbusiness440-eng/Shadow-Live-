@@ -158,7 +158,11 @@ export const controlApi=onRequest({region:"us-central1"},async(req,res)=>{
   if(req.method==="GET"&&req.path.endsWith("/v1/control/health")){
    const environment=process.env.CONTROL_ENV??"staging";
    const privilegedEnabled=privilegedWritesEnabled(process.env.CONTROL_PRIVILEGED_WRITES);
-   res.json({ok:true,environment,version:"1",api:true,firestore:true,auth:true,audit:true,ledger:true,financialWritesEnabled:privilegedEnabled,roleMutationsEnabled:privilegedEnabled});
+   const checks={firestore:false,auth:false};
+   try{await db.collection("system_config").doc("health").get();checks.firestore=true;}catch{}
+   try{getAuth().app;checks.auth=true;}catch{}
+   const coreReady=checks.firestore&&checks.auth;
+   res.status(coreReady?200:503).json({ok:coreReady,environment,version:"1",api:true,firestore:checks.firestore,auth:checks.auth,audit:checks.firestore,ledger:checks.firestore,financialWritesEnabled:coreReady&&privilegedEnabled,roleMutationsEnabled:coreReady&&privilegedEnabled});
    return;
   }
   if(req.method!=="POST"||!req.path.endsWith("/v1/control/actions")){res.status(404).json({ok:false,code:"not_found"});return;}
