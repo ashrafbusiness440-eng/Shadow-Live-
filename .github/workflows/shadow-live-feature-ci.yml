@@ -1,0 +1,38 @@
+name: Shadow Live Feature CI
+
+on:
+  push:
+    branches:
+      - feature/shadow-control-foundation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shadow-live-feature-ci
+  cancel-in-progress: true
+
+jobs:
+  validate-app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.2'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze Shadow Live
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings lib
+
+      - name: Build Shadow Live web
+        run: flutter build web --release
