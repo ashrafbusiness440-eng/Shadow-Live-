@@ -323,6 +323,8 @@ class UserReadOnlyPage extends StatelessWidget {
           subtitle:Text(caps.isEmpty?'لا توجد صلاحيات إضافية':caps.join(' • ')),
         )),
         const SizedBox(height:10),
+        _RolePolicyCard(role:t(data['role']??'user'),adminEnabled:data['adminEnabled']==true,capabilities:caps),
+        const SizedBox(height:10),
         const Card(child:ListTile(
           leading:Icon(Icons.lock_outline,color:Color(0xFFD7B85A)),
           title:Text('وضع القراءة الآمن'),
@@ -332,6 +334,35 @@ class UserReadOnlyPage extends StatelessWidget {
     );
   }
 }
+class _RolePolicyCard extends StatelessWidget {
+  const _RolePolicyCard({required this.role,required this.adminEnabled,required this.capabilities});
+  final String role; final bool adminEnabled; final List<String> capabilities;
+  static const labels=<String,String>{
+    'viewUsers':'عرض المستخدمين','manageUsers':'إدارة المستخدمين','manageRooms':'إدارة الغرف',
+    'reviewReports':'مراجعة البلاغات','manageEconomy':'إدارة الاقتصاد','manageWithdrawals':'إدارة السحب',
+    'manageSettlements':'إدارة التسويات','manageRoles':'إدارة الأدوار','manageCapabilities':'إدارة الصلاحيات',
+    'manageSystem':'إدارة النظام',
+  };
+  @override Widget build(BuildContext context){
+    final isOwner=role=='owner';
+    final roleLabel={'owner':'Owner — المالك','super_admin':'Super Admin','admin':'Admin','moderator':'Moderator','user':'User'}[role]??role;
+    return Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+      Row(children:[const Icon(Icons.security_outlined,color:Color(0xFFD7B85A)),const SizedBox(width:8),Expanded(child:Text('سياسة الدور: $roleLabel',style:const TextStyle(fontWeight:FontWeight.w800)))]),
+      const SizedBox(height:8),
+      Text(isOwner?'حساب Owner محمي: لا يمكن خفض رتبته أو منح رتبة Owner لحساب آخر من واجهة العميل.':(adminEnabled?'دخول لوحة الإدارة مفعّل لهذا الحساب.':'دخول لوحة الإدارة غير مفعّل لهذا الحساب.')),
+      const SizedBox(height:10),
+      if(isOwner) const Wrap(spacing:6,runSpacing:6,children:[
+        Chip(label:Text('كل الصلاحيات')),Chip(label:Text('Owner Protection')),Chip(label:Text('Recent Auth')),Chip(label:Text('Audit')),
+      ]) else if(capabilities.isEmpty) const Text('لا توجد Capabilities إضافية.')
+      else Wrap(spacing:6,runSpacing:6,children:capabilities.map((c)=>Chip(label:Text(labels[c]??c))).toList()),
+      const SizedBox(height:10),
+      const Divider(),
+      const Text('التعديل مقفول حاليًا',style:TextStyle(fontWeight:FontWeight.w800)),
+      const Text('تغيير الدور أو الصلاحيات سيُفعّل فقط عبر Backend موثّق مع Audit Log، وليس بكتابة مباشرة من PWA.'),
+    ])));
+  }
+}
+
 class RoomsPage extends StatelessWidget {
   const RoomsPage({super.key});
   @override Widget build(BuildContext context)=>const ControlList(title:'الغرف',icon:Icons.mic_none_rounded,items:[
