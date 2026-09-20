@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../services/diamond_wallet_service.dart';
 import 'recharge_checkout_screen.dart';
+import '../../../utils/compact_number.dart';
 
 class RechargeScreen extends StatefulWidget {
   final int initialTab;
@@ -86,7 +87,7 @@ class _RechargeScreenState extends State<RechargeScreen> {
               final n = (s.data?.data()?['diamonds'] as num?)?.toInt() ?? 0;
               return Container(padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13), decoration: BoxDecoration(color: const Color(0xFF101222), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFF5635A7))), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
                 const Text('رصيد الألماس الحالي', style: TextStyle(color: Color(0xFFC9B8FF), fontWeight: FontWeight.w800)),
-                Text('💎 ${_format(n)}', style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
+                Text('💎 ${formatCompactAmount(n)}', style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
               ]));
             }),
           ],
@@ -121,10 +122,10 @@ class _RechargeScreenState extends State<RechargeScreen> {
                       Positioned(left: 0, right: 0, bottom: 0, child: Container(
                         padding: const EdgeInsets.fromLTRB(4, 18, 4, 8),
                         decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Color(0xE605060D)])),
-                        child: Text('🪙 ${_format(p.amount)}', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900, shadows: [Shadow(blurRadius: 8, color: Colors.black)])),
+                        child: Text('🪙 ${formatCompactAmount(p.amount)}', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900, shadows: [Shadow(blurRadius: 8, color: Colors.black)])),
                       )),
                     ])),
-                    Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 10), decoration: const BoxDecoration(color: Color(0xFF201071)), child: Text(diamond ? '💎 ${_format(p.diamonds)}' : '\$ ${p.price.toStringAsFixed(2)}', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900))),
+                    Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 10), decoration: const BoxDecoration(color: Color(0xFF201071)), child: Text(diamond ? '💎 ${formatCompactAmount(p.diamonds)}' : '\$ ${p.price.toStringAsFixed(2)}', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900))),
                   ]),
                 ),
               );
@@ -143,7 +144,7 @@ class _RechargeScreenState extends State<RechargeScreen> {
             onPressed: () async {
               final p = packages[selected];
               if (diamond) {
-                try { await DiamondWalletService.exchangeDiamondsForCoins(diamondCost: p.diamonds, coins: p.amount); if (mounted) _msg('تم استبدال الألماس بـ ${_format(p.amount)} عملة.'); } catch (e) { _msg('$e'); }
+                try { await DiamondWalletService.exchangeDiamondsForCoins(diamondCost: p.diamonds, coins: p.amount); if (mounted) _msg('تم استبدال الألماس بـ ${formatCompactAmount(p.amount)} عملة.'); } catch (e) { _msg('$e'); }
                 return;
               }
               Navigator.push(context, MaterialPageRoute(builder: (_) => const RechargeCheckoutScreen(), settings: RouteSettings(arguments: {'coins': p.amount, 'price': p.price, 'currencyType': 'coins'})));
@@ -200,5 +201,4 @@ class _RechargeScreenState extends State<RechargeScreen> {
   Widget _tag(String t, Color c) => Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 4), decoration: BoxDecoration(color: c, borderRadius: const BorderRadius.vertical(top: Radius.circular(16))), child: Text(t, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)));
   Widget _asset(String path, double h) => ClipRRect(borderRadius: BorderRadius.circular(18), child: Image.asset(path, height: h, width: double.infinity, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(height: h, color: const Color(0xFF121426))));
   Widget _assetNatural(String path) => ClipRRect(borderRadius: BorderRadius.circular(18), child: Image.asset(path, width: double.infinity, fit: BoxFit.fitWidth, errorBuilder: (_, __, ___) => Container(height: 105, color: const Color(0xFF121426))));
-  String _format(int n) => n.toString().replaceAllMapped(RegExp(r'(?<=\d)(?=(\d{3})+(?!\d))'), (_) => ',');
 }
