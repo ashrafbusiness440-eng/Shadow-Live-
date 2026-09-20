@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import 'firebase_options.dart';
 
 Future<void> main() async {
@@ -388,15 +390,35 @@ class _OwnerEconomyCard extends StatelessWidget {
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('أدخل مبلغًا أكبر من صفر وسببًا من 3 أحرف على الأقل.'))); return;
           }
           Navigator.pop(dialogContext);
-          showDialog(context:context,builder:(c)=>AlertDialog(
-            title:const Text('جاهز للربط الآمن'),
-            content:Text('العملية: ${subtract?'خصم':'زيادة'} ${value.toString()} ${asset=='coins'?'Coins':'Diamonds'}\nالسبب: ${reason.text.trim()}\n\nلن يتم تغيير الرصيد الآن لأن Control Backend غير منشور بعد.'),
-            actions:[TextButton(onPressed:()=>Navigator.pop(c),child:const Text('حسنًا'))],
-          ));
+          _confirmAndExecute(context,asset,subtract?-value:value,reason.text.trim());
+
         },child:const Text('مراجعة العملية')),
       ],
     )));
     amount.dispose(); reason.dispose();
+  }
+  Future<void> _confirmAndExecute(BuildContext context,String asset,num delta,String reason) async {
+    final current=asset=='coins'?num.tryParse('${coins??0}')??0:num.tryParse('${diamonds??0}')??0;
+    final projected=current+delta;
+    final ok=await showDialog<bool>(context:context,builder:(c)=>AlertDialog(
+      title:const Text('تأكيد تعديل الرصيد'),
+      content:Text('الحالي: $current\nالتغيير: ${delta>0?'+':''}$delta\nبعد العملية: $projected\nالسبب: $reason'),
+      actions:[TextButton(onPressed:()=>Navigator.pop(c,false),child:const Text('إلغاء')),FilledButton(onPressed:projected<0?null:()=>Navigator.pop(c,true),child:const Text('تنفيذ'))],
+    ));
+    if(ok!=true||!context.mounted)return;
+    showDialog(context:context,barrierDismissible:false,builder:(c)=>const Center(child:CircularProgressIndicator()));
+    try{
+      final user=FirebaseAuth.instance.currentUser;if(user==null)throw Exception('not_signed_in');
+      final token=await user.getIdToken(true);
+      final key='bal_${DateTime.now().millisecondsSinceEpoch}_${user.uid.substring(0,6)}';
+      final response=await http.post(Uri.parse('/api/adjust-balance'),headers:{'Content-Type':'application/json','Authorization':'Bearer $token'},body:jsonEncode({'targetId':uid,'asset':asset,'delta':delta,'reason':reason,'idempotencyKey':key}));
+      if(context.mounted)Navigator.of(context,rootNavigator:true).pop();
+      final body=jsonDecode(response.body) as Map<String,dynamic>;
+      if(response.statusCode!=200||body['ok']!=true)throw Exception(body['code']??'request_failed');
+      if(context.mounted){ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('تم تعديل الرصيد بنجاح: ${body['before']} → ${body['after']}')));Navigator.pop(context);}
+    }catch(e){
+      if(context.mounted){try{Navigator.of(context,rootNavigator:true).pop();}catch(_){}ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('تعذر تنفيذ العملية: $e')));}
+    }
   }
 }
 
