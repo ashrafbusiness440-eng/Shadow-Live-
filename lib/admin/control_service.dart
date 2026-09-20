@@ -8,11 +8,7 @@ import 'control_runtime_gate.dart';
 
 class ControlService {
  ControlService(this.api); final ControlApiClient api;
- Future<ControlRuntimeGate> runtimeGate() async {
-  final backend=await api.backendStatus();
-  final health=await api.health();
-  return ControlRuntimeGate(backend:backend,health:health);
- }
+ Future<ControlRuntimeGate> runtimeGate()=>api.runtimeGate();
  Future<TrustedServerResponse> execute({
   required String actorUid,required String action,required String targetType,required String targetId,
   required String reason,required String clientRequestId,Map<String,dynamic> payload=const {},
