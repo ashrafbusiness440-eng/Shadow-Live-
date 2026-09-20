@@ -383,13 +383,57 @@ class RoomsPage extends StatelessWidget {
 }
 class FinancePage extends StatelessWidget {
   const FinancePage({super.key});
-  @override Widget build(BuildContext context)=>const ControlList(title:'المالية',icon:Icons.account_balance_wallet_outlined,items:[
-    ControlItem('العملات Coins','تعديل رصيد تجريبي عبر عملية إدارية مسجلة',Icons.monetization_on_outlined),
-    ControlItem('الألماس Diamonds','إدارة رصيد الأرباح التجريبي',Icons.diamond_outlined),
-    ControlItem('الشحن والمعاملات','مراجعة الشحن والسجل المالي',Icons.receipt_long_outlined),
-    ControlItem('السحب والتسويات','طلبات السحب وتسويات الوكالات',Icons.payments_outlined),
+  @override Widget build(BuildContext context)=>ListView(padding:const EdgeInsets.all(16),children:[
+    const Row(children:[Icon(Icons.account_balance_wallet_outlined,size:28,color:Color(0xFFD7B85A)),SizedBox(width:10),Text('المالية',style:TextStyle(fontSize:25,fontWeight:FontWeight.w900))]),
+    const SizedBox(height:16),
+    _AdminCollectionTile(title:'السجل المالي',subtitle:'financial_ledger — قراءة فقط',icon:Icons.receipt_long_outlined,collection:'financial_ledger'),
+    _AdminCollectionTile(title:'تسويات الوكالات',subtitle:'agency_settlements — قراءة فقط',icon:Icons.payments_outlined,collection:'agency_settlements'),
+    const Card(child:ListTile(leading:Icon(Icons.lock_outline,color:Color(0xFFD7B85A)),title:Text('تعديل Coins / Diamonds مقفول'),subtitle:Text('أي تعديل رصيد أو دفع تسوية سيبقى عبر Backend آمن + Audit Log فقط.'))),
   ]);
 }
+
+class _AdminCollectionTile extends StatelessWidget {
+  const _AdminCollectionTile({required this.title,required this.subtitle,required this.icon,required this.collection});
+  final String title,subtitle,collection; final IconData icon;
+  @override Widget build(BuildContext context)=>Card(child:ListTile(
+    leading:Icon(icon,color:const Color(0xFFD7B85A)),trailing:const Icon(Icons.chevron_left),
+    title:Text(title,style:const TextStyle(fontWeight:FontWeight.w800)),subtitle:Text(subtitle),
+    onTap:()=>Navigator.of(context).push(MaterialPageRoute(builder:(_)=>AdminCollectionPage(title:title,collection:collection))),
+  ));
+}
+
+class AdminCollectionPage extends StatelessWidget {
+  const AdminCollectionPage({super.key,required this.title,required this.collection});
+  final String title,collection;
+  String compact(Map<String,dynamic> d)=>d.entries.take(6).map((e)=>'${e.key}: ${e.value}').join('\n');
+  @override Widget build(BuildContext context)=>Scaffold(
+    appBar:AppBar(title:Text(title)),
+    body:StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(
+      stream:FirebaseFirestore.instance.collection(collection).limit(100).snapshots(),
+      builder:(context,snap){
+        if(snap.connectionState==ConnectionState.waiting)return const Center(child:CircularProgressIndicator());
+        if(snap.hasError)return ListView(padding:const EdgeInsets.all(16),children:[
+          const Card(child:ListTile(leading:Icon(Icons.lock_outline,color:Color(0xFFD7B85A)),title:Text('قراءة إدارية فقط'),subtitle:Text('لا توجد عمليات كتابة من هذه الشاشة.'))),
+          Card(child:ListTile(leading:const Icon(Icons.error_outline,color:Colors.orangeAccent),title:const Text('تعذر تحميل البيانات'),subtitle:Text('${snap.error}'))),
+        ]);
+        final docs=snap.data?.docs??[];
+        if(docs.isEmpty)return const Center(child:Text('لا توجد سجلات حتى الآن.'));
+        return ListView.builder(padding:const EdgeInsets.all(16),itemCount:docs.length,itemBuilder:(context,i){
+          final doc=docs[i]; return Card(child:ListTile(
+            leading:const Icon(Icons.description_outlined,color:Color(0xFFD7B85A)),
+            title:SelectableText(doc.id),subtitle:Text(compact(doc.data())),
+          ));
+        });
+      },
+    ),
+  );
+}
+
+class SystemConfigPage extends StatelessWidget {
+  const SystemConfigPage({super.key});
+  @override Widget build(BuildContext context)=>AdminCollectionPage(title:'إعدادات النظام',collection:'system_config');
+}
+
 class AuditLogPage extends StatelessWidget {
   const AuditLogPage({super.key});
   String t(dynamic v)=>v==null?'—':'$v';
@@ -429,7 +473,7 @@ class MorePage extends StatelessWidget {
     ControlItem('الوكالات','إدارة الوكالات والمضيفين والتسويات',Icons.apartment_outlined),
     ControlItem('التقارير','واجهة جاهزة؛ القراءة الحقيقية تنتظر Rules محددة لـ reports بدل فتح Firestore بشكل واسع',Icons.flag_outlined),
     ControlItem('VIP و IDs الخاصة','إدارة VIP والمعرّفات الخاصة',Icons.workspace_premium_outlined),
-    ControlItem('الإعدادات','إعدادات النظام وEmergency Lock',Icons.settings_outlined),
+    ControlItem('إعدادات النظام','system_config — قراءة فقط، وEmergency Lock يبقى Backend فقط',Icons.settings_outlined),
     ControlItem('سجل الإدارة','Audit Log للعمليات الحساسة — قراءة فقط',Icons.history_outlined),
   ]);
 }
@@ -447,7 +491,7 @@ class ControlList extends StatelessWidget {
     ...items.map((item)=>Card(child:ListTile(
       leading:Icon(item.icon,color:const Color(0xFFD7B85A)),trailing:const Icon(Icons.chevron_left),
       title:Text(item.title,style:const TextStyle(fontWeight:FontWeight.w700)),subtitle:Text(item.subtitle),
-      onTap:()=>Navigator.of(context).push(MaterialPageRoute(builder:(_)=>item.title=='سجل الإدارة'?const AuditLogPage():DetailPage(item:item))),
+      onTap:()=>Navigator.of(context).push(MaterialPageRoute(builder:(_)=>item.title=='سجل الإدارة'?const AuditLogPage():(item.title=='إعدادات النظام'?const SystemConfigPage():DetailPage(item:item)))),
     ))),
   ]);
 }
