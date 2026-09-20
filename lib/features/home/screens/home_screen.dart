@@ -39,7 +39,7 @@ class _HomeScreenState extends State<HomeScreen>{
 
   static int _count(Map<String,dynamic> r){final v=r['onlineCount']??r['memberCount']??r['participantsCount']??0;return v is num?v.toInt():int.tryParse(v.toString())??0;}
   ImageProvider? _profileImage(){final url=(_userData?['profileImageUrl']??_userData?['avatarUrl'])?.toString();if(url!=null&&url.trim().isNotEmpty)return NetworkImage(url);final asset=_userData?['profileAvatarAsset']?.toString();if(asset!=null&&asset.trim().isNotEmpty)return AssetImage(asset);final auth=FirebaseAuth.instance.currentUser?.photoURL;return auth!=null&&auth.trim().isNotEmpty?NetworkImage(auth):null;}
-  void _recharge(int tab)=>Navigator.push(context,MaterialPageRoute(builder:(_)=>RechargeScreen(initialTab:tab)));
+  Future<void> _recharge(int tab)async{await Navigator.push(context,MaterialPageRoute(builder:(_)=>RechargeScreen(initialTab:tab)));if(mounted)await _load();}
   void _search()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const DiscoverySearchScreen()));
   void _openRoom(Map<String,dynamic> room)=>NavigationService.navigateTo(AppRoutes.voiceChatRoom,arguments:room);
   void _soon(String title)=>ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('$title سيتم تفعيله في مرحلته القادمة')));
