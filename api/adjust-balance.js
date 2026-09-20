@@ -50,7 +50,21 @@ function init(){
    bodyLength:body.length,
    bodyMod4:body.length%4
   });
-  initializeApp({credential:cert(sa),projectId:sa.project_id||sa.projectId});
+  const projectId=sa.project_id||sa.projectId;
+  const clientEmail=sa.client_email||sa.clientEmail;
+  const makePem=(b)=>"-----BEGIN PRIVATE KEY-----\n"+((b.match(/.{1,64}/g)||[]).join("\n"))+"\n-----END PRIVATE KEY-----\n";
+  let credential,lastError;
+  for(const trim of [0,4,8,12]){
+   const candidate=trim===0?body:body.slice(0,-trim);
+   if(candidate.length<1000||candidate.length%4!==0)continue;
+   try{
+    credential=cert({projectId,clientEmail,privateKey:makePem(candidate)});
+    console.log("service-account-key-variant",{trimmedBase64Chars:trim});
+    break;
+   }catch(e){lastError=e;}
+  }
+  if(!credential)throw lastError||Error("invalid_private_key");
+  initializeApp({credential,projectId});
  }
 }
 const out=(r,s,b)=>r.status(s).json(b);
