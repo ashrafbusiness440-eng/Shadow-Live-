@@ -411,7 +411,8 @@ class _OwnerEconomyCard extends StatelessWidget {
       final user=FirebaseAuth.instance.currentUser;if(user==null)throw Exception('not_signed_in');
       final token=await user.getIdToken(true);
       final key='bal_${DateTime.now().millisecondsSinceEpoch}_${user.uid.substring(0,6)}';
-      final response=await http.post(Uri.parse('/api/adjust-balance'),headers:{'Content-Type':'application/json','Authorization':'Bearer $token'},body:jsonEncode({'targetId':uid,'asset':asset,'delta':delta,'reason':reason,'idempotencyKey':key}));
+      final apiUri=Uri.base.resolve('/api/adjust-balance');
+      final response=await http.post(apiUri,headers:{'Content-Type':'application/json','Authorization':'Bearer $token'},body:jsonEncode({'targetId':uid,'asset':asset,'delta':delta,'reason':reason,'idempotencyKey':key}));
       if(context.mounted)Navigator.of(context,rootNavigator:true).pop();
       final body=jsonDecode(response.body) as Map<String,dynamic>;
       if(response.statusCode!=200||body['ok']!=true)throw Exception(body['code']??'request_failed');
