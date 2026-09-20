@@ -44,7 +44,7 @@ class FirebaseService {
   if(current!=null&&current.isNotEmpty){await _syncPublicProfile(userId);return current;}
   final random=Random.secure();
   for(var attempt=0;attempt<16;attempt++){
-   final id=(10000000+random.nextInt(90000000)).toString();final idRef=_firestore.collection('public_ids').doc(id);
+   final id=(100000+random.nextInt(900000)).toString();final idRef=_firestore.collection('public_ids').doc(id);
    try{
     final result=await _firestore.runTransaction<String>((tx)async{
      final userSnap=await tx.get(userRef);final already=userSnap.data()?['publicId']?.toString();if(already!=null&&already.isNotEmpty)return already;
