@@ -153,7 +153,15 @@ async function setEmergencyLock(actor:Actor,body:any){
  });
 }
 
+function applySecurityHeaders(res:any){
+ res.set("X-Content-Type-Options","nosniff");
+ res.set("X-Frame-Options","DENY");
+ res.set("Referrer-Policy","no-referrer");
+ res.set("Permissions-Policy","camera=(), microphone=(), geolocation=()");
+}
+
 export const controlApi=onRequest({region:"us-central1"},async(req,res)=>{
+ applySecurityHeaders(res);
  try{
   if(req.method==="GET"&&req.path.endsWith("/v1/control/health")){
    const environment=process.env.CONTROL_ENV??"staging";
