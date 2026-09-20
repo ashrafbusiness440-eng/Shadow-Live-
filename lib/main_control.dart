@@ -406,13 +406,19 @@ class _OwnerEconomyCard extends StatelessWidget {
       actions:[TextButton(onPressed:()=>Navigator.pop(c,false),child:const Text('إلغاء')),FilledButton(onPressed:projected<0?null:()=>Navigator.pop(c,true),child:const Text('تنفيذ'))],
     ));
     if(ok!=true||!context.mounted)return;
-    showDialog(context:context,barrierDismissible:false,builder:(c)=>const Center(child:CircularProgressIndicator()));
+    void stage(String message){if(context.mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(message),duration:const Duration(seconds:2)));}
+    stage('1/4 تم الضغط على تنفيذ');
     try{
       final user=FirebaseAuth.instance.currentUser;if(user==null)throw Exception('not_signed_in');
+      stage('2/4 جاري الحصول على Firebase token');
       final token=await user.getIdToken(true);
+      if(token==null||token.isEmpty)throw Exception('empty_token');
       final key='bal_${DateTime.now().millisecondsSinceEpoch}_${user.uid.substring(0,6)}';
       final apiUri=Uri(scheme:Uri.base.scheme,host:Uri.base.host,port:Uri.base.hasPort?Uri.base.port:null,path:'/api/adjust-balance');
-      final response=await http.post(apiUri,headers:{'Content-Type':'application/json','Authorization':'Bearer $token'},body:jsonEncode({'targetId':uid,'asset':asset,'delta':delta,'reason':reason,'idempotencyKey':key}));
+      stage('3/4 إرسال الطلب إلى Control Backend');
+      final response=await http.post(apiUri,headers:{'Content-Type':'application/json','Authorization':'Bearer $token'},body:jsonEncode({'targetId':uid,'asset':asset,'delta':delta,'reason':reason,'idempotencyKey':key})).timeout(const Duration(seconds:20));
+      stage('4/4 استجابة السيرفر: ${response.statusCode}');
+      await Future<void>.delayed(const Duration(milliseconds:350));
       if(context.mounted)Navigator.of(context,rootNavigator:true).pop();
       final body=jsonDecode(response.body) as Map<String,dynamic>;
       if(response.statusCode!=200||body['ok']!=true)throw Exception(body['code']??'request_failed');
