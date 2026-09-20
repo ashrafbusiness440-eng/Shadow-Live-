@@ -16,7 +16,7 @@ function parseServiceAccount(raw){
   };
   const projectId=read("project_id"),clientEmail=read("client_email"),rawKey=read("private_key");
   if(!projectId||!clientEmail||!rawKey)throw Error("invalid_service_account_json");
-  const privateKey=rawKey.replace(/\\\\n/g,"\n");
+  const privateKey=rawKey.split("\\n").join("\n").replace(/\\r/g,"");
   return {projectId,clientEmail,privateKey};
  }
 }
