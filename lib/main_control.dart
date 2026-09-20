@@ -389,9 +389,12 @@ class _OwnerEconomyCard extends StatelessWidget {
           if(value==null||value<=0||reason.text.trim().length<3){
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('أدخل مبلغًا أكبر من صفر وسببًا من 3 أحرف على الأقل.'))); return;
           }
+          final delta=subtract?-value:value;
+          final why=reason.text.trim();
           Navigator.pop(dialogContext);
-          _confirmAndExecute(context,asset,subtract?-value:value,reason.text.trim());
-
+          WidgetsBinding.instance.addPostFrameCallback((_){
+            if(context.mounted)_confirmAndExecute(context,asset,delta,why);
+          });
         },child:const Text('مراجعة العملية')),
       ],
     )));
