@@ -1,5 +1,7 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
+
 import '../../../services/navigation_service.dart';
 
 class OnboardingScreen extends StatefulWidget {
@@ -20,26 +22,22 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   final List<_PageData> _pages = const [
     _PageData(
-      icon: Icons.mic_rounded,
-      secondIcon: Icons.headphones_rounded,
+      image: 'assets/images/onboarding_voice.png',
       title: 'غرف صوتية حية',
       subtitle: 'تحدث، استمع، تعرّف على أصدقاء\nمن جميع أنحاء العالم',
     ),
     _PageData(
-      icon: Icons.card_giftcard_rounded,
-      secondIcon: Icons.favorite_rounded,
+      image: 'assets/images/onboarding_gifts.png',
       title: 'هدايا ومكافآت',
       subtitle: 'ادعم من تحب بالهدايا وكن جزءاً\nمن اللحظات المميزة',
     ),
     _PageData(
-      icon: Icons.sports_esports_rounded,
-      secondIcon: Icons.casino_rounded,
+      image: 'assets/images/onboarding_games.png',
       title: 'ألعاب وتحديات',
       subtitle: 'استمتع بألعاب جماعية وفعاليات\nممتعة يومياً',
     ),
     _PageData(
-      icon: Icons.groups_rounded,
-      secondIcon: Icons.workspace_premium_rounded,
+      image: 'assets/images/onboarding_community.png',
       title: 'مجتمعك بانتظارك',
       subtitle: 'انضم إلى مجتمع Shadow Live\nواصنع قصتك الخاصة',
     ),
@@ -53,7 +51,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   void _startAutoTimer() {
     _autoTimer?.cancel();
-
     _autoTimer = Timer(const Duration(seconds: 8), () {
       if (!mounted) return;
       _next();
@@ -72,13 +69,21 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   void _next() {
     _autoTimer?.cancel();
-
     if (_current == _pages.length - 1) {
       _finish();
       return;
     }
 
     _controller.nextPage(
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _back() {
+    if (_current <= 0) return;
+    _autoTimer?.cancel();
+    _controller.previousPage(
       duration: const Duration(milliseconds: 350),
       curve: Curves.easeOutCubic,
     );
@@ -103,72 +108,49 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             itemCount: _pages.length,
             onPageChanged: _onPageChanged,
             itemBuilder: (context, index) {
-              // الصفحة الأولى: الصورة نفسها تحتوي النص والنقاط
-              if (index == 0) {
-                return SizedBox.expand(
-                  child: Image.asset(
-                    'assets/images/onboarding_voice.png',
-                    width: double.infinity,
-                    height: double.infinity,
-                    fit: BoxFit.fill,
-                  ),
-                );
-              }
-
-              // الصفحة الثانية: صورة الهدايا تحتوي العنوان والوصف
-              if (index == 1) {
-                return SizedBox.expand(
-                  child: Image.asset(
-                    'assets/images/onboarding_gifts.png',
-                    width: double.infinity,
-                    height: double.infinity,
-                    fit: BoxFit.fill,
-                  ),
-                );
-              }
-
-              // الصفحة الثالثة: صورة الألعاب تحتوي العنوان والوصف
-              if (index == 2) {
-                return SizedBox.expand(
-                  child: Image.asset(
-                    'assets/images/onboarding_games.png',
-                    width: double.infinity,
-                    height: double.infinity,
-                    fit: BoxFit.fill,
-                  ),
-                );
-              }
-
-              // الصفحة الرابعة: صورة المجتمع تحتوي العنوان والوصف
-              if (index == 3) {
-                return SizedBox.expand(
-                  child: Image.asset(
-                    'assets/images/onboarding_community.png',
-                    width: double.infinity,
-                    height: double.infinity,
-                    fit: BoxFit.fill,
-                  ),
-                );
-              }
-
-              // احتياط للصفحات الأخرى
               final page = _pages[index];
-
               return Stack(
                 fit: StackFit.expand,
                 children: [
-                  const _LuxuryBackground(),
+                  Image.asset(
+                    page.image,
+                    width: double.infinity,
+                    height: double.infinity,
+                    fit: BoxFit.cover,
+                    alignment: Alignment.topCenter,
+                  ),
+
+                  // The artwork is visual only. This lower overlay deliberately
+                  // masks any legacy baked-in labels/dots in older image assets.
+                  Align(
+                    alignment: Alignment.bottomCenter,
+                    child: FractionallySizedBox(
+                      widthFactor: 1,
+                      heightFactor: .53,
+                      child: DecoratedBox(
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Color(0x00000000),
+                              Color(0xE6080711),
+                              Color(0xFF02040B),
+                              Color(0xFF02040B),
+                            ],
+                            stops: [0, .18, .42, 1],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
                   SafeArea(
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(24, 70, 24, 145),
+                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 120),
                       child: Column(
                         children: [
-                          const Spacer(),
-                          _HeroGraphic(
-                            icon: page.icon,
-                            secondIcon: page.secondIcon,
-                          ),
-                          const SizedBox(height: 34),
+                          const Spacer(flex: 7),
                           Text(
                             page.title,
                             textDirection: TextDirection.rtl,
@@ -177,6 +159,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                               color: _gold,
                               fontSize: 28,
                               fontWeight: FontWeight.w900,
+                              height: 1.2,
+                              shadows: [
+                                Shadow(
+                                  color: Color(0x99000000),
+                                  blurRadius: 14,
+                                ),
+                              ],
                             ),
                           ),
                           const SizedBox(height: 12),
@@ -185,12 +174,39 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                             textDirection: TextDirection.rtl,
                             textAlign: TextAlign.center,
                             style: const TextStyle(
-                              color: Color(0xFFE4E4EA),
+                              color: Color(0xFFE7E7EF),
                               fontSize: 17,
-                              height: 1.65,
+                              height: 1.55,
+                              fontWeight: FontWeight.w500,
+                              shadows: [
+                                Shadow(
+                                  color: Color(0xCC000000),
+                                  blurRadius: 12,
+                                ),
+                              ],
                             ),
                           ),
-                          const Spacer(),
+                          const SizedBox(height: 18),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: List.generate(
+                              _pages.length,
+                              (dotIndex) => AnimatedContainer(
+                                duration: const Duration(milliseconds: 250),
+                                margin:
+                                    const EdgeInsets.symmetric(horizontal: 2.5),
+                                width: dotIndex == _current ? 13 : 5,
+                                height: 5,
+                                decoration: BoxDecoration(
+                                  color: dotIndex == _current
+                                      ? _gold
+                                      : Colors.white30,
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const Spacer(flex: 1),
                         ],
                       ),
                     ),
@@ -200,25 +216,18 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             },
           ),
 
-          // زر تخطي
           SafeArea(
             child: Align(
               alignment: AlignmentDirectional.topEnd,
               child: Padding(
-                padding: const EdgeInsets.only(
-                  top: 6,
-                  right: 10,
-                  left: 10,
-                ),
+                padding: const EdgeInsets.only(top: 6, right: 10, left: 10),
                 child: TextButton(
                   onPressed: _finish,
                   style: TextButton.styleFrom(
                     foregroundColor: Colors.white,
-                    backgroundColor: const Color(0x33000000),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 8,
-                    ),
+                    backgroundColor: const Color(0x66000000),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   ),
                   child: const Text(
                     'تخطي',
@@ -234,31 +243,29 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             ),
           ),
 
-          // نقاط الصفحات البرمجية لا تظهر على الصفحة الأولى
-          // لأنها موجودة أصلًا داخل الصورة.
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 74,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(
-                _pages.length,
-                (index) => AnimatedContainer(
-                  duration: const Duration(milliseconds: 250),
-                  margin: const EdgeInsets.symmetric(horizontal: 2.5),
-                  width: index == _current ? 14 : 5,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: index == _current ? _gold : Colors.white30,
-                    borderRadius: BorderRadius.circular(20),
+          if (_current > 0)
+            SafeArea(
+              child: Align(
+                alignment: AlignmentDirectional.topStart,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 7, right: 12, left: 12),
+                  child: Material(
+                    color: const Color(0x66000000),
+                    shape: const CircleBorder(),
+                    child: IconButton(
+                      onPressed: _back,
+                      tooltip: 'رجوع',
+                      icon: const Icon(
+                        Icons.arrow_back_ios_new_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
 
-          // زر التالي
           SafeArea(
             child: Align(
               alignment: Alignment.bottomCenter,
@@ -287,9 +294,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       borderRadius: BorderRadius.circular(16),
                       child: Center(
                         child: Text(
-                          _current == _pages.length - 1
-                              ? 'ابدأ الآن'
-                              : 'التالي',
+                          _current == _pages.length - 1 ? 'ابدأ الآن' : 'التالي',
                           textDirection: TextDirection.rtl,
                           style: const TextStyle(
                             color: Colors.white,
@@ -310,135 +315,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 }
 
-class _LuxuryBackground extends StatelessWidget {
-  const _LuxuryBackground();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: RadialGradient(
-          center: Alignment(0.15, -0.55),
-          radius: 1.25,
-          colors: [
-            Color(0xFF271052),
-            Color(0xFF09101D),
-            Color(0xFF03040B),
-          ],
-          stops: [0, .46, 1],
-        ),
-      ),
-    );
-  }
-}
-
-class _HeroGraphic extends StatelessWidget {
-  final IconData icon;
-  final IconData secondIcon;
-
-  const _HeroGraphic({
-    required this.icon,
-    required this.secondIcon,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 285,
-      height: 285,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Container(
-            width: 230,
-            height: 230,
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: RadialGradient(
-                colors: [
-                  Color(0x777E00FF),
-                  Color(0x33280077),
-                  Colors.transparent,
-                ],
-              ),
-            ),
-          ),
-          Container(
-            width: 180,
-            height: 180,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Color(0xFF42106D),
-                  Color(0xFF090D1C),
-                ],
-              ),
-              border: Border.all(
-                color: const Color(0x887F2CFF),
-                width: 2,
-              ),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x997600FF),
-                  blurRadius: 42,
-                  spreadRadius: 5,
-                ),
-              ],
-            ),
-            child: Icon(
-              icon,
-              size: 92,
-              color: const Color(0xFFFFD54A),
-            ),
-          ),
-          Positioned(
-            right: 24,
-            top: 30,
-            child: Transform.rotate(
-              angle: .18,
-              child: Icon(
-                secondIcon,
-                size: 58,
-                color: const Color(0xFFFF4FCE),
-              ),
-            ),
-          ),
-          const Positioned(
-            left: 28,
-            bottom: 35,
-            child: Icon(
-              Icons.auto_awesome,
-              size: 42,
-              color: Color(0xFFFFD54A),
-            ),
-          ),
-          const Positioned(
-            right: 42,
-            bottom: 26,
-            child: Icon(
-              Icons.star_rounded,
-              size: 30,
-              color: Color(0xFFB56CFF),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _PageData {
-  final IconData icon;
-  final IconData secondIcon;
+  final String image;
   final String title;
   final String subtitle;
 
   const _PageData({
-    required this.icon,
-    required this.secondIcon,
+    required this.image,
     required this.title,
     required this.subtitle,
   });
