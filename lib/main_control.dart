@@ -67,6 +67,26 @@ class _AdminSignInPageState extends State<AdminSignInPage> {
   bool busy = false;
   String? error;
 
+  Future<void> resetPassword() async {
+    final address = email.text.trim();
+    if (address.isEmpty) {
+      setState(() => error = 'اكتب بريدك الإلكتروني أولاً لإرسال رابط إعادة تعيين كلمة المرور.');
+      return;
+    }
+    setState(() { busy = true; error = null; });
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: address);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تم إرسال رابط إعادة تعيين كلمة المرور إلى $address')),
+      );
+    } on FirebaseAuthException catch (e) {
+      if (mounted) setState(() => error = e.message ?? e.code);
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
   Future<void> submit() async {
     setState(() { busy = true; error = null; });
     try {
@@ -99,6 +119,13 @@ class _AdminSignInPageState extends State<AdminSignInPage> {
             TextField(controller: email, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'البريد الإلكتروني', border: OutlineInputBorder())),
             const SizedBox(height: 12),
             TextField(controller: password, obscureText: true, onSubmitted: (_) => submit(), decoration: const InputDecoration(labelText: 'كلمة المرور', border: OutlineInputBorder())),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: busy ? null : resetPassword,
+                child: const Text('نسيت كلمة المرور؟'),
+              ),
+            ),
             if (error != null) ...[const SizedBox(height: 10), Text(error!, style: const TextStyle(color: Colors.redAccent))],
             const SizedBox(height: 16),
             FilledButton.icon(onPressed: busy ? null : submit, icon: const Icon(Icons.login), label: Text(busy ? 'جار التحقق...' : 'تسجيل الدخول')),
