@@ -2,7 +2,7 @@ import {getApps,initializeApp,cert} from "firebase-admin/app";
 import {getAuth} from "firebase-admin/auth";
 import {getFirestore,FieldValue} from "firebase-admin/firestore";
 function normalizePrivateKey(value){
- let key=String(value||"").replace(/\\r?\\n/g,"\n").replace(/\r/g,"").trim();
+ let key=String(value||"").replace(/\\r\\n/g,"\n").replace(/\\n/g,"\n").replace(/\\r/g,"\n").replace(/\r/g,"").trim();
  key=key
   .replace(/-*\s*BEGIN\s+PRIVATE\s+KEY\s*-*/gi,"")
   .replace(/-*\s*END\s+PRIVATE\s+KEY\s*-*/gi,"");
