@@ -241,13 +241,96 @@ class DashboardPage extends StatelessWidget {
   ]);
 }
 
-class UsersPage extends StatelessWidget {
+class UsersPage extends StatefulWidget {
   const UsersPage({super.key});
-  @override Widget build(BuildContext context)=>const ControlList(title:'المستخدمون',icon:Icons.people_alt_outlined,items:[
-    ControlItem('إدارة الحسابات','بحث بالاسم أو ID وفتح تفاصيل الحساب',Icons.manage_accounts_outlined),
-    ControlItem('الحظر والتنبيهات','مراجعة حالة الحساب والإجراءات الإدارية',Icons.gpp_maybe_outlined),
-    ControlItem('الأدوار والصلاحيات','Owner / Admin / Moderator والصلاحيات المنفصلة',Icons.admin_panel_settings_outlined),
+  @override State<UsersPage> createState()=>_UsersPageState();
+}
+
+class _UsersPageState extends State<UsersPage> {
+  String query='';
+  String text(dynamic value)=>value==null?'':'$value';
+  String displayName(Map<String,dynamic> d)=>text(d['displayName']).isNotEmpty?text(d['displayName']):(text(d['name']).isNotEmpty?text(d['name']):'مستخدم بدون اسم');
+  bool matches(String uid,Map<String,dynamic> d){
+    final q=query.trim().toLowerCase();
+    if(q.isEmpty)return true;
+    return [uid,d['displayName'],d['name'],d['email'],d['id'],d['userId'],d['username'],d['role']]
+      .map((v)=>text(v).toLowerCase()).any((v)=>v.contains(q));
+  }
+  @override Widget build(BuildContext context)=>ListView(padding:const EdgeInsets.all(16),children:[
+    const Row(children:[Icon(Icons.people_alt_outlined,size:28,color:Color(0xFFD7B85A)),SizedBox(width:10),Text('المستخدمون',style:TextStyle(fontSize:25,fontWeight:FontWeight.w900))]),
+    const SizedBox(height:12),
+    TextField(
+      onChanged:(v)=>setState(()=>query=v),
+      decoration:const InputDecoration(prefixIcon:Icon(Icons.search),hintText:'بحث بالاسم، البريد، ID أو الدور',border:OutlineInputBorder()),
+    ),
+    const SizedBox(height:12),
+    StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(
+      stream:FirebaseFirestore.instance.collection('users').limit(100).snapshots(),
+      builder:(context,snap){
+        if(snap.connectionState==ConnectionState.waiting)return const Padding(padding:EdgeInsets.all(32),child:Center(child:CircularProgressIndicator()));
+        if(snap.hasError)return Card(child:ListTile(leading:const Icon(Icons.error_outline,color:Colors.orangeAccent),title:const Text('تعذر قراءة المستخدمين'),subtitle:Text('${snap.error}')));
+        final docs=(snap.data?.docs??[]).where((d)=>matches(d.id,d.data())).toList();
+        if(docs.isEmpty)return const Card(child:ListTile(leading:Icon(Icons.person_search_outlined),title:Text('لا توجد نتائج مطابقة')));
+        return Column(children:docs.map((doc){
+          final d=doc.data();
+          final role=text(d['role']).isEmpty?'user':text(d['role']);
+          final enabled=d['adminEnabled']==true;
+          final caps=d['capabilities'] is List?(d['capabilities'] as List).length:0;
+          final email=text(d['email']);
+          final publicId=text(d['id']).isNotEmpty?text(d['id']):text(d['userId']);
+          return Card(child:ListTile(
+            leading:CircleAvatar(child:Icon(role=='owner'?Icons.workspace_premium:Icons.person_outline)),
+            title:Text(displayName(d),style:const TextStyle(fontWeight:FontWeight.w800)),
+            subtitle:Text([
+              if(email.isNotEmpty) email,
+              if(publicId.isNotEmpty) 'ID: $publicId',
+              'الدور: $role',
+              'الإدارة: ${enabled?'مفعلة':'غير مفعلة'} • الصلاحيات: $caps'
+            ].join('\n')),
+            isThreeLine:true,
+            trailing:role=='owner'?const Icon(Icons.verified,color:Color(0xFFD7B85A)):const Icon(Icons.chevron_left),
+            onTap:()=>Navigator.of(context).push(MaterialPageRoute(builder:(_)=>UserReadOnlyPage(uid:doc.id,data:d))),
+          ));
+        }).toList());
+      },
+    ),
   ]);
+}
+
+class UserReadOnlyPage extends StatelessWidget {
+  const UserReadOnlyPage({super.key,required this.uid,required this.data});
+  final String uid; final Map<String,dynamic> data;
+  String t(dynamic v)=>v==null?'—':'$v';
+  @override Widget build(BuildContext context){
+    final caps=data['capabilities'] is List?(data['capabilities'] as List).map((e)=>'$e').toList():<String>[];
+    return Scaffold(
+      appBar:AppBar(title:const Text('تفاصيل المستخدم')),
+      body:ListView(padding:const EdgeInsets.all(16),children:[
+        Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+          Text(t(data['displayName']??data['name']),style:const TextStyle(fontSize:21,fontWeight:FontWeight.w900)),
+          const SizedBox(height:12),
+          SelectableText('UID: $uid'),
+          Text('البريد: ${t(data['email'])}'),
+          Text('الدور: ${t(data['role']??'user')}'),
+          Text('دخول الإدارة: ${data['adminEnabled']==true?'مفعّل':'غير مفعّل'}'),
+          Text('Coins: ${t(data['coins'])}'),
+          Text('Diamonds: ${t(data['diamonds'])}'),
+        ]))),
+        const SizedBox(height:10),
+        Card(child:ListTile(
+          leading:const Icon(Icons.admin_panel_settings_outlined,color:Color(0xFFD7B85A)),
+          title:const Text('الصلاحيات'),
+          subtitle:Text(caps.isEmpty?'لا توجد صلاحيات إضافية':caps.join(' • ')),
+        )),
+        const SizedBox(height:10),
+        const Card(child:ListTile(
+          leading:Icon(Icons.lock_outline,color:Color(0xFFD7B85A)),
+          title:Text('وضع القراءة الآمن'),
+          subtitle:Text('هذه الشاشة لا تعدّل الرتبة أو الرصيد. العمليات الحساسة ستبقى مقفلة حتى ربط Backend آمن مع Audit Log.'),
+        )),
+      ]),
+    );
+  }
 }
 class RoomsPage extends StatelessWidget {
   const RoomsPage({super.key});
