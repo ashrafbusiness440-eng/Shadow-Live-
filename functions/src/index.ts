@@ -156,11 +156,14 @@ async function setEmergencyLock(actor:Actor,body:any){
 export const controlApi=onRequest({region:"us-central1"},async(req,res)=>{
  try{
   if(req.method==="GET"&&req.path.endsWith("/v1/control/health")){
-   res.json({ok:true,environment:process.env.CONTROL_ENV??"staging",version:"1",api:true,firestore:true,auth:true,audit:true,ledger:true,financialWritesEnabled:true,roleMutationsEnabled:true});
+   const environment=process.env.CONTROL_ENV??"staging";
+   const privilegedEnabled=process.env.CONTROL_PRIVILEGED_WRITES==="true";
+   res.json({ok:true,environment,version:"1",api:true,firestore:true,auth:true,audit:true,ledger:true,financialWritesEnabled:privilegedEnabled,roleMutationsEnabled:privilegedEnabled});
    return;
   }
   if(req.method!=="POST"||!req.path.endsWith("/v1/control/actions")){res.status(404).json({ok:false,code:"not_found"});return;}
   const actor=await actorFrom(req),action=String(req.body?.action??""),reason=String(req.body?.reason??"").trim();
+  if(process.env.CONTROL_PRIVILEGED_WRITES!=="true"){res.status(423).json({ok:false,code:"privileged_writes_disabled"});return;}
   if(!actor.enabled){res.status(403).json({ok:false,code:"denied"});return;}
   if(reason.length<3){res.status(400).json({ok:false,code:"invalid_reason"});return;}
   requireCapability(actor,action);
