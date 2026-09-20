@@ -1,7 +1,7 @@
 String setupDestination(Map<String, dynamic>? userData) {
   final data = userData ?? const <String, dynamic>{};
   final setupComplete = data['setupComplete'] == true;
-  final setupStep = data['setupStep'] as String?;
+  final setupStep = data['setupStep']?.toString();
   if (setupComplete) return '/main';
 
   return switch (setupStep) {

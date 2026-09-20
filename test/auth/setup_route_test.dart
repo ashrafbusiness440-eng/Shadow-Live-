@@ -24,5 +24,33 @@ void main() {
       expect(setupDestination({'setupStep': 'linking'}), '/account-linking');
       expect(setupDestination({'setupStep': 'ready'}), '/account-ready');
     });
+
+    test('covers the complete Phase 3 account journey in order', () {
+      final destinations = [
+        setupDestination({'setupStep': 'profile', 'setupComplete': false}),
+        setupDestination({'setupStep': 'success', 'setupComplete': false}),
+        setupDestination({'setupStep': 'linking', 'setupComplete': false}),
+        setupDestination({'setupStep': 'ready', 'setupComplete': false}),
+        setupDestination({'setupStep': 'complete', 'setupComplete': true}),
+      ];
+
+      expect(
+        destinations,
+        [
+          '/profile-setup',
+          '/account-success',
+          '/account-linking',
+          '/account-ready',
+          '/main',
+        ],
+      );
+    });
+
+    test('login resume is safe for malformed setupStep values', () {
+      expect(
+        setupDestination({'setupStep': 123, 'setupComplete': false}),
+        '/profile-setup',
+      );
+    });
   });
 }
