@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "git clone --depth 1 --branch 3.47.2 https://github.com/flutter/flutter.git /tmp/flutter && /tmp/flutter/bin/flutter config --enable-web && /tmp/flutter/bin/flutter pub get",
-  "buildCommand": "/tmp/flutter/bin/flutter build web --release --target lib/main_control.dart",
+  "buildCommand": "rm -rf /tmp/shadow-live-app && /tmp/flutter/bin/flutter build web --release --target lib/main.dart --base-href /app/ && mv build/web /tmp/shadow-live-app && /tmp/flutter/bin/flutter build web --release --target lib/main_control.dart && mkdir -p build/web/app && cp -R /tmp/shadow-live-app/. build/web/app/",
   "outputDirectory": "build/web"
 }
