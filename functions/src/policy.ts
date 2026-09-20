@@ -33,3 +33,5 @@ export function protectedFieldTransitionAllowed(before:Record<string,unknown>,af
  if(had!==has)return false;
  return JSON.stringify(before[field])===JSON.stringify(after[field]);
 }
+
+export function privilegedWritesEnabled(value:unknown){return value==="true";}
