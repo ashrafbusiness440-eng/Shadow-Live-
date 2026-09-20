@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
 
 Future<void> main() async {
@@ -20,7 +21,112 @@ class ShadowControlApp extends StatelessWidget {
       cardTheme: const CardThemeData(color: Color(0xFF151022)),
       navigationBarTheme: const NavigationBarThemeData(backgroundColor: Color(0xFF0D0917), indicatorColor: Color(0x443F2B71)),
     ),
-    home: const Directionality(textDirection: TextDirection.rtl, child: ControlShell()),
+    home: const Directionality(textDirection: TextDirection.rtl, child: AdminGate()),
+  );
+}
+
+class AdminGate extends StatelessWidget {
+  const AdminGate({super.key});
+  @override
+  Widget build(BuildContext context) => StreamBuilder<User?>(
+    stream: FirebaseAuth.instance.authStateChanges(),
+    builder: (context, auth) {
+      if (auth.connectionState == ConnectionState.waiting) {
+        return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      }
+      final user = auth.data;
+      if (user == null) return const AdminSignInPage();
+      return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+        future: FirebaseFirestore.instance.collection('users').doc(user.uid).get(),
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          }
+          final data = snap.data?.data();
+          final role = '${data?['role'] ?? 'user'}';
+          final enabled = data?['adminEnabled'] == true;
+          if (data == null || (role != 'owner' && !enabled)) {
+            return const AccessDeniedPage();
+          }
+          return const ControlShell();
+        },
+      );
+    },
+  );
+}
+
+class AdminSignInPage extends StatefulWidget {
+  const AdminSignInPage({super.key});
+  @override
+  State<AdminSignInPage> createState() => _AdminSignInPageState();
+}
+
+class _AdminSignInPageState extends State<AdminSignInPage> {
+  final email = TextEditingController();
+  final password = TextEditingController();
+  bool busy = false;
+  String? error;
+
+  Future<void> submit() async {
+    setState(() { busy = true; error = null; });
+    try {
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: email.text.trim(),
+        password: password.text,
+      );
+    } on FirebaseAuthException catch (e) {
+      if (mounted) setState(() => error = e.message ?? e.code);
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    body: Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.all(24),
+          children: [
+            const Icon(Icons.admin_panel_settings, size: 64, color: Color(0xFFD7B85A)),
+            const SizedBox(height: 16),
+            const Text('Shadow Control', textAlign: TextAlign.center, style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 6),
+            const Text('دخول الإدارة', textAlign: TextAlign.center),
+            const SizedBox(height: 24),
+            TextField(controller: email, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'البريد الإلكتروني', border: OutlineInputBorder())),
+            const SizedBox(height: 12),
+            TextField(controller: password, obscureText: true, onSubmitted: (_) => submit(), decoration: const InputDecoration(labelText: 'كلمة المرور', border: OutlineInputBorder())),
+            if (error != null) ...[const SizedBox(height: 10), Text(error!, style: const TextStyle(color: Colors.redAccent))],
+            const SizedBox(height: 16),
+            FilledButton.icon(onPressed: busy ? null : submit, icon: const Icon(Icons.login), label: Text(busy ? 'جار التحقق...' : 'تسجيل الدخول')),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class AccessDeniedPage extends StatelessWidget {
+  const AccessDeniedPage({super.key});
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    body: Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.gpp_bad_outlined, size: 64, color: Colors.orangeAccent),
+          const SizedBox(height: 16),
+          const Text('لا توجد صلاحية إدارية', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 8),
+          const Text('الحساب مسجل لكنه غير مخول لدخول Shadow Control.', textAlign: TextAlign.center),
+          const SizedBox(height: 18),
+          OutlinedButton.icon(onPressed: () => FirebaseAuth.instance.signOut(), icon: const Icon(Icons.logout), label: const Text('تسجيل الخروج')),
+        ]),
+      ),
+    ),
   );
 }
 
