@@ -24,3 +24,5 @@ jobs:
         run: npm install
       - working-directory: functions
         run: npm test
+      - name: Validate Firestore rules compile
+        run: npx --yes firebase-tools@15.1.0 emulators:exec --only firestore --project shadow-control-ci "echo Firestore rules compiled"
