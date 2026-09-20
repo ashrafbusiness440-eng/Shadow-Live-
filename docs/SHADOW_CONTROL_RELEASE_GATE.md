@@ -25,3 +25,11 @@ For every candidate commit:
 4. Test Owner protection, recent re-auth, capability denial, idempotent retry, Emergency Lock, and a non-negative balance adjustment with test accounts only.
 5. Confirm an audit record and, for financial actions, a matching immutable ledger record.
 6. Do not enable production financial/role mutations until all checks pass and the deployed Functions/Rules versions match the reviewed commit.
+
+## Privileged-write switch
+
+- Trusted Control mutations fail closed unless `CONTROL_PRIVILEGED_WRITES=true` is explicitly configured on the deployed staging backend.
+- Keep the switch disabled during initial deployment and health/read-only verification.
+- Enable it only for the bounded staging mutation tests in this gate, using test accounts and non-production data.
+- After mutation verification, disable it again until the next controlled staging test window.
+- Production must never inherit the staging switch implicitly; production enablement requires a separate reviewed release decision.
