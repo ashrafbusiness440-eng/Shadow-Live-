@@ -7,8 +7,6 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    env:
-      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -32,8 +30,8 @@ jobs:
           java-version: '21'
       - name: Validate Firestore rules compile
         run: npx --yes firebase-tools@15.1.0 emulators:exec --only firestore --project shadow-control-ci "echo Firestore rules compiled"
-      - name: Build Shadow Control web staging artifact
-        run: flutter build web --release --target lib/main_control.dart
+      - name: Build Shadow Control web
+        run: flutter build web --release --target lib/main_control.dart --base-href /Shadow-Live-/control/
       - name: Upload Shadow Control web artifact
         uses: actions/upload-artifact@v4
         with:
@@ -41,11 +39,13 @@ jobs:
           path: build/web
           if-no-files-found: error
           retention-days: 7
-      - name: Deploy Shadow Control staging to Netlify
-        if: ${{ github.event_name == 'push' && env.NETLIFY_AUTH_TOKEN != '' }}
-        env:
-          NETLIFY_SITE_ID: 0fc84ac0-fbb8-4dbe-aabb-80fa3580169f
-        run: npx --yes netlify-cli@latest deploy --dir=build/web --site="$NETLIFY_SITE_ID" --prod
-      - name: Report unavailable Netlify credentials
-        if: ${{ github.event_name == 'push' && env.NETLIFY_AUTH_TOKEN == '' }}
-        run: echo "Shadow Control artifact is ready; Netlify deploy skipped because NETLIFY_AUTH_TOKEN is not configured."
+      - name: Package Control site for GitHub Pages
+        if: ${{ github.event_name == 'push' }}
+        run: |
+          mkdir -p pages/control
+          cp -R build/web/. pages/control/
+      - name: Upload Pages artifact
+        if: ${{ github.event_name == 'push' }}
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: pages
