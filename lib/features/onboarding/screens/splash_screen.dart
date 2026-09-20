@@ -20,6 +20,7 @@ class _SplashScreenState extends State<SplashScreen>{
     case 'success': return AppRoutes.accountSuccess;
     case 'linking': return AppRoutes.accountLinking;
     case 'ready': return AppRoutes.accountReady;
+    case 'complete':
     case 'completed': return AppRoutes.main;
     case 'profile':
     default:return AppRoutes.profileSetup;
