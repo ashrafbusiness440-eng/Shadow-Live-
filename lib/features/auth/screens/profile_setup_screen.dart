@@ -36,6 +36,12 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   Future<void> _pickBirth() async {final n=DateTime.now();final last=DateTime(n.year-18,n.month,n.day);final d=await showDatePicker(context:context,initialDate:DateTime(2000),firstDate:DateTime(1940),lastDate:last,helpText:'اختر تاريخ الميلاد',cancelText:'إلغاء',confirmText:'اختيار');if(d!=null&&mounted)setState(()=>_birthDate=d);}
   Future<void> _next() async {if(_saving||!_ready)return;final err=_validateName(_displayNameController.text);if(err!=null){setState(()=>_displayNameError=err);return;}if(!_hasImage){_msg('اختر صورة للحساب');return;}if(_birthDate==null){_msg('اختر تاريخ الميلاد');return;}if(_selectedLocation==null){_msg('اختر الدولة');return;}final u=FirebaseAuth.instance.currentUser;if(u==null){_msg('انتهت جلسة تسجيل الدخول، سجّل الدخول من جديد');return;}setState(()=>_saving=true);try{String? photo;if(_pickedImageBytes!=null)photo=await _firebase.uploadFile('profile_images/${u.uid}.jpg',_pickedImageBytes!).timeout(const Duration(seconds:20));await _firebase.updateUserProfile(u.uid,{'uid':u.uid,'displayName':_displayNameController.text.trim(),'bio':_bioController.text.trim(),'gender':_gender,'birthDate':Timestamp.fromDate(_birthDate!),'location':_selectedLocation!,'profileImageUrl':photo,'profileAvatarAsset':photo==null?_selectedAvatarAsset:null,'setupStep':'success','setupComplete':false}).timeout(const Duration(seconds:12));await _firebase.ensurePublicId(u.uid).timeout(const Duration(seconds:12));if(mounted)Navigator.of(context).pushReplacementNamed('/account-success');}catch(e){if(mounted)_msg('تعذر حفظ الملف الشخصي. حاول مجدداً.');}finally{if(mounted)setState(()=>_saving=false);}}
   void _msg(String s)=>ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(s)));
+  void _back(){
+    if(_saving)return;
+    final navigator=Navigator.of(context);
+    if(navigator.canPop()){navigator.pop();return;}
+    navigator.pushNamedAndRemoveUntil('/auth-choice',(route)=>false);
+  }
   String get _date=>_birthDate==null?'اختر تاريخ الميلاد':'${_birthDate!.year}/${_birthDate!.month.toString().padLeft(2,'0')}/${_birthDate!.day.toString().padLeft(2,'0')}';
 
   @override
@@ -50,7 +56,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(22,16,22,30),
               child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                Row(children:[const Expanded(child:Text('إنشاء الملف الشخصي',style:TextStyle(color:Colors.white,fontSize:27,fontWeight:FontWeight.w900))),IconButton(onPressed:_saving?null:()=>Navigator.of(context).pushNamedAndRemoveUntil('/auth-choice',(r)=>false),icon:const Icon(Icons.arrow_forward_ios_rounded,color:Colors.white))]),
+                Row(children:[const Expanded(child:Text('إنشاء الملف الشخصي',style:TextStyle(color:Colors.white,fontSize:27,fontWeight:FontWeight.w900))),IconButton(onPressed:_saving?null:_back,icon:const Icon(Icons.arrow_forward_ios_rounded,color:Colors.white))]),
                 const SizedBox(height:28),
                 Center(child:Stack(clipBehavior:Clip.none,children:[GestureDetector(onTap:_saving?null:_showImages,child:Container(width:132,height:132,padding:const EdgeInsets.all(3),decoration:const BoxDecoration(shape:BoxShape.circle,gradient:LinearGradient(colors:[Color(0xFF8A00FF),Color(0xFFFF00D4)])),child:ClipOval(child:_pickedImageBytes!=null?Image.memory(_pickedImageBytes!,fit:BoxFit.cover):Image.asset(_selectedAvatarAsset!,fit:BoxFit.cover)))),Positioned(left:-4,bottom:2,child:GestureDetector(onTap:_saving?null:_showImages,child:Container(width:44,height:44,decoration:BoxDecoration(shape:BoxShape.circle,color:const Color(0xFF171D31),border:Border.all(color:const Color(0xFFB84CFF))),child:const Icon(Icons.camera_alt_rounded,color:Colors.white))))])),
                 const SizedBox(height:34),
