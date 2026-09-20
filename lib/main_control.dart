@@ -370,8 +370,9 @@ class _OwnerEconomyCard extends StatelessWidget {
     );
   }
   Future<void> _openAdjustment(BuildContext context,String asset) async {
+    final parentContext=context;
     final amount=TextEditingController(),reason=TextEditingController(); bool subtract=false;
-    await showDialog(context:context,builder:(dialogContext)=>StatefulBuilder(builder:(context,setState)=>AlertDialog(
+    await showDialog(context:parentContext,builder:(dialogContext)=>StatefulBuilder(builder:(context,setState)=>AlertDialog(
       title:Text(asset=='coins'?'تعديل Coins':'تعديل Diamonds'),
       content:SizedBox(width:420,child:Column(mainAxisSize:MainAxisSize.min,children:[
         SegmentedButton<bool>(segments:const [ButtonSegment(value:false,label:Text('زيادة'),icon:Icon(Icons.add)),ButtonSegment(value:true,label:Text('خصم'),icon:Icon(Icons.remove))],selected:{subtract},onSelectionChanged:(v)=>setState(()=>subtract=v.first)),
@@ -393,7 +394,7 @@ class _OwnerEconomyCard extends StatelessWidget {
           final why=reason.text.trim();
           Navigator.pop(dialogContext);
           WidgetsBinding.instance.addPostFrameCallback((_){
-            if(context.mounted)_confirmAndExecute(context,asset,delta,why);
+            if(parentContext.mounted)_confirmAndExecute(parentContext,asset,delta,why);
           });
         },child:const Text('مراجعة العملية')),
       ],
