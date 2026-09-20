@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'control_server_contract.dart';
 import 'control_backend_status.dart';
 import 'control_health.dart';
+import 'control_runtime_gate.dart';
 
 class ControlApiClient {
  ControlApiClient({required this.baseUri,required this.idTokenProvider,http.Client? client}):_client=client??http.Client();
@@ -17,6 +18,13 @@ class ControlApiClient {
  }
  Future<ControlBackendStatus> backendStatus() async=>ControlBackendStatus.fromJson(await _getHealth());
  Future<ControlHealth> health() async=>ControlHealth.fromJson(await _getHealth());
+ Future<ControlRuntimeGate> runtimeGate() async {
+  final snapshot=await _getHealth();
+  return ControlRuntimeGate(
+   backend:ControlBackendStatus.fromJson(snapshot),
+   health:ControlHealth.fromJson(snapshot),
+  );
+ }
 
  Future<TrustedServerResponse> execute(TrustedServerRequest request) async {
   final token=await idTokenProvider();
