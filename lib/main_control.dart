@@ -219,24 +219,33 @@ class DashboardPage extends StatelessWidget {
   final ValueChanged<int> onOpen;
   @override Widget build(BuildContext context)=>ListView(padding:const EdgeInsets.all(16),children:[
     const Text('لوحة التحكم',style:TextStyle(fontSize:25,fontWeight:FontWeight.w900)),
-    const SizedBox(height:4),const Text('نظرة سريعة على Shadow Live',style:TextStyle(color:Color(0xFFAAA3B8))),const SizedBox(height:16),
-    const Wrap(spacing:10,runSpacing:10,children:[
-      StatCard(icon:Icons.people_alt_outlined,label:'المستخدمون',value:'إدارة'),
-      StatCard(icon:Icons.mic_none,label:'الغرف',value:'مراقبة'),
-      StatCard(icon:Icons.monetization_on_outlined,label:'العملات',value:'Coins'),
-      StatCard(icon:Icons.diamond_outlined,label:'الألماس',value:'Diamonds'),
-    ]),
+    const SizedBox(height:4),const Text('حالة Shadow Live الإدارية — قراءة مباشرة وآمنة',style:TextStyle(color:Color(0xFFAAA3B8))),const SizedBox(height:16),
+    StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(
+      stream:FirebaseFirestore.instance.collection('users').limit(100).snapshots(),
+      builder:(context,snap){
+        final docs=snap.data?.docs??[];
+        final admins=docs.where((d)=>d.data()['adminEnabled']==true).length;
+        final owners=docs.where((d)=>d.data()['role']=='owner').length;
+        return Wrap(spacing:10,runSpacing:10,children:[
+          StatCard(icon:Icons.people_alt_outlined,label:'المستخدمون',value:snap.hasError?'—':(snap.hasData?'${docs.length}':'...')),
+          StatCard(icon:Icons.admin_panel_settings_outlined,label:'إدارة مفعلة',value:snap.hasError?'—':(snap.hasData?'$admins':'...')),
+          StatCard(icon:Icons.workspace_premium_outlined,label:'Owner',value:snap.hasError?'—':(snap.hasData?'$owners':'...')),
+          const StatCard(icon:Icons.shield_outlined,label:'الوضع',value:'Read-only'),
+        ]);
+      },
+    ),
     const SizedBox(height:18),
     Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-      const Row(children:[Icon(Icons.science_outlined,color:Color(0xFFD7B85A)),SizedBox(width:8),Text('وضع الاختبار',style:TextStyle(fontSize:18,fontWeight:FontWeight.w800))]),
-      const SizedBox(height:8),Text(FirebaseAuth.instance.currentUser==null?'Firebase جاهز. سجّل دخول بحساب الإدارة عند تفعيل بوابة الدخول؛ البيانات الحالية للاختبار.':'جلسة Firebase نشطة. العمليات الحساسة ستستخدم صلاحيات السيرفر وسجل الإدارة.',style:const TextStyle(height:1.55,color:Color(0xFFCBC5D6))),
+      const Row(children:[Icon(Icons.verified_user_outlined,color:Color(0xFFD7B85A)),SizedBox(width:8),Text('حالة الأمان',style:TextStyle(fontSize:18,fontWeight:FontWeight.w800))]),
+      const SizedBox(height:8),
+      Text(FirebaseAuth.instance.currentUser==null?'لا توجد جلسة Firebase نشطة.':'Firebase متصل والجلسة نشطة. بيانات المستخدمين والسجلات المتاحة تُقرأ مباشرة، بينما تغييرات الرتب والأرصدة والإجراءات الحساسة مقفلة حتى Backend موثّق + Audit Log.',style:const TextStyle(height:1.55,color:Color(0xFFCBC5D6))),
     ]))),
-    const SizedBox(height:12),const Text('اختصارات',style:TextStyle(fontSize:18,fontWeight:FontWeight.w800)),const SizedBox(height:8),
+    const SizedBox(height:12),const Text('اختصارات آمنة',style:TextStyle(fontSize:18,fontWeight:FontWeight.w800)),const SizedBox(height:8),
     Wrap(spacing:8,runSpacing:8,children:[
-      ActionChip(label:const Text('إضافة عملات'),avatar:const Icon(Icons.add_circle_outline),onPressed:()=>onOpen(3)),
-      ActionChip(label:const Text('إضافة ألماس'),avatar:const Icon(Icons.diamond_outlined),onPressed:()=>onOpen(3)),
-      ActionChip(label:const Text('إدارة مستخدم'),avatar:const Icon(Icons.manage_accounts_outlined),onPressed:()=>onOpen(1)),
-      ActionChip(label:const Text('مراجعة بلاغ'),avatar:const Icon(Icons.report_outlined),onPressed:()=>onOpen(4)),
+      ActionChip(label:const Text('المستخدمون'),avatar:const Icon(Icons.manage_accounts_outlined),onPressed:()=>onOpen(1)),
+      ActionChip(label:const Text('الغرف'),avatar:const Icon(Icons.mic_none_rounded),onPressed:()=>onOpen(2)),
+      ActionChip(label:const Text('السجل المالي'),avatar:const Icon(Icons.receipt_long_outlined),onPressed:()=>onOpen(3)),
+      ActionChip(label:const Text('السجلات والإعدادات'),avatar:const Icon(Icons.history_outlined),onPressed:()=>onOpen(4)),
     ]),
   ]);
 }
