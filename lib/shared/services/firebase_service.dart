@@ -36,7 +36,7 @@ class FirebaseService {
    ..._publicProfileData(userId,data),
    'createdAt':data['createdAt']??FieldValue.serverTimestamp(),
    'updatedAt':FieldValue.serverTimestamp(),
-  },SetOptions(merge:true));
+  });
  }
 
  Future<String> ensurePublicId(String userId)async{
