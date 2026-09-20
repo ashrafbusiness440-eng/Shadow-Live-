@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../../services/navigation_service.dart';
 import '../../wallet/screens/recharge_screen.dart';
 import 'discovery_search_screen.dart';
+import '../../../utils/compact_number.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -45,7 +46,7 @@ class _HomeScreenState extends State<HomeScreen>{
 
   @override Widget build(BuildContext context){
     final name=(_userData?['displayName']??_userData?['username']??'صديقنا').toString();
-    final level=(_userData?['level']??1).toString(),coins=(_userData?['coins']??0).toString(),diamonds=(_userData?['diamonds']??0).toString();
+    final level=(_userData?['level']??1).toString(),coins=formatCompactAmount(_userData?['coins']),diamonds=formatCompactAmount(_userData?['diamonds']);
     return Directionality(textDirection:TextDirection.rtl,child:Scaffold(backgroundColor:_bg,body:Container(decoration:const BoxDecoration(gradient:RadialGradient(center:Alignment(.7,-.9),radius:1.25,colors:[Color(0xFF251047),_bg])),child:SafeArea(bottom:false,child:RefreshIndicator(onRefresh:_load,child:ListView(padding:const EdgeInsets.fromLTRB(16,12,16,28),children:[
       _header(name,level,coins,diamonds),
       if(_loading)...[const SizedBox(height:10),const LinearProgressIndicator(minHeight:2,color:_purple,backgroundColor:Colors.transparent)],
