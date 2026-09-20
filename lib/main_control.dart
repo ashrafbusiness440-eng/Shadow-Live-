@@ -334,15 +334,51 @@ class UserReadOnlyPage extends StatelessWidget {
         const SizedBox(height:10),
         _RolePolicyCard(role:t(data['role']??'user'),adminEnabled:data['adminEnabled']==true,capabilities:caps),
         const SizedBox(height:10),
+        _OwnerEconomyCard(uid:uid,coins:data['coins'],diamonds:data['diamonds']),
+        const SizedBox(height:10),
         const Card(child:ListTile(
           leading:Icon(Icons.lock_outline,color:Color(0xFFD7B85A)),
-          title:Text('وضع القراءة الآمن'),
-          subtitle:Text('هذه الشاشة لا تعدّل الرتبة أو الرصيد. العمليات الحساسة ستبقى مقفلة حتى ربط Backend آمن مع Audit Log.'),
+          title:Text('الكتابة المباشرة إلى Firestore ممنوعة'),
+          subtitle:Text('تعديل الرصيد سيعمل فقط عبر Control Backend الموثّق، مع Recent Auth وFinancial Ledger وAudit Log.'),
         )),
       ]),
     );
   }
 }
+class _OwnerEconomyCard extends StatelessWidget {
+  const _OwnerEconomyCard({required this.uid,required this.coins,required this.diamonds});
+  final String uid; final dynamic coins,diamonds;
+  @override Widget build(BuildContext context){
+    final current=FirebaseAuth.instance.currentUser;
+    return FutureBuilder<DocumentSnapshot<Map<String,dynamic>>>(
+      future:current==null?null:FirebaseFirestore.instance.collection('users').doc(current.uid).get(),
+      builder:(context,snap){
+        final actor=snap.data?.data();
+        final isOwner=actor?['role']=='owner'&&actor?['adminEnabled']==true;
+        return Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+          const Row(children:[Icon(Icons.account_balance_wallet_outlined,color:Color(0xFFD7B85A)),SizedBox(width:8),Text('إدارة Coins و Diamonds',style:TextStyle(fontWeight:FontWeight.w900))]),
+          const SizedBox(height:8),
+          Text('Coins: ${coins??0}   •   Diamonds: ${diamonds??0}'),
+          const SizedBox(height:12),
+          Wrap(spacing:8,runSpacing:8,children:[
+            FilledButton.icon(onPressed:isOwner?()=>_showPending(context,'coins'):null,icon:const Icon(Icons.monetization_on_outlined),label:const Text('تعديل Coins')),
+            FilledButton.icon(onPressed:isOwner?()=>_showPending(context,'diamonds'):null,icon:const Icon(Icons.diamond_outlined),label:const Text('تعديل Diamonds')),
+          ]),
+          const SizedBox(height:8),
+          Text(isOwner?'صلاحية Owner مؤكدة. الواجهة جاهزة للربط مع adjustBalance عبر Control Backend.':'هذه الأدوات تظهر مفعّلة فقط لحساب Owner.',style:const TextStyle(color:Color(0xFFAAA3B8))),
+        ])));
+      },
+    );
+  }
+  void _showPending(BuildContext context,String asset){
+    showDialog(context:context,builder:(context)=>AlertDialog(
+      title:Text(asset=='coins'?'تعديل Coins':'تعديل Diamonds'),
+      content:const Text('واجهة التعديل جاهزة، لكن تنفيذ العملية سيبقى مقفولًا حتى يصبح Control Backend منشورًا ومتحققًا. لن نكتب الرصيد مباشرة إلى Firestore.'),
+      actions:[TextButton(onPressed:()=>Navigator.pop(context),child:const Text('حسنًا'))],
+    ));
+  }
+}
+
 class _RolePolicyCard extends StatelessWidget {
   const _RolePolicyCard({required this.role,required this.adminEnabled,required this.capabilities});
   final String role; final bool adminEnabled; final List<String> capabilities;
