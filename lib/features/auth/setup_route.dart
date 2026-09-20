@@ -7,7 +7,7 @@ String setupDestination(Map<String, dynamic>? userData) {
     'success' => '/account-success',
     'linking' => '/account-linking',
     'ready' => '/account-ready',
-    'complete' => '/main',
+    'complete' || 'completed' => '/main',
     'profile' || null => setupComplete ? '/main' : '/profile-setup',
     _ => '/profile-setup',
   };
