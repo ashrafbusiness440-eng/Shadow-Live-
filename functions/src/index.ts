@@ -2,7 +2,7 @@ import {onRequest} from "firebase-functions/v2/https";
 import {initializeApp} from "firebase-admin/app";
 import {getAuth} from "firebase-admin/auth";
 import {FieldValue,getFirestore} from "firebase-admin/firestore";
-import {isRecentAuth,ownerTargetProtected,sanitizeCapabilities,validIdempotencyKey,validRole} from "./policy.js";
+import {isRecentAuth,ownerTargetProtected,sanitizeCapabilities,validBalanceDelta,validIdempotencyKey,validRole} from "./policy.js";
 
 initializeApp();
 const db=getFirestore();
@@ -43,8 +43,8 @@ async function adjustBalance(actor:Actor,body:any){
  const targetId=String(body.targetId??"").trim(),reason=String(body.reason??"").trim();
  const payload=body.payload??{},asset=String(payload.asset??""),key=String(payload.idempotencyKey??"").trim();
  const raw=Number(payload.delta);
- if(!targetId||reason.length<3||!["coins","diamonds"].includes(asset)||!Number.isFinite(raw)||raw===0||!validIdempotencyKey(key))throw new Error("invalid_request");
- if(asset==="coins"&&!Number.isInteger(raw))throw new Error("invalid_amount");
+ if(!targetId||reason.length<3||!["coins","diamonds"].includes(asset)||!validIdempotencyKey(key))throw new Error("invalid_request");
+ if(!validBalanceDelta(asset,raw))throw new Error("invalid_amount");
  const opRef=db.collection("control_operations").doc(key);
  const userRef=db.collection("users").doc(targetId);
  const ledgerRef=db.collection("financial_ledger").doc(key);
