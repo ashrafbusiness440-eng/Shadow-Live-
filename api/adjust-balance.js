@@ -1,7 +1,31 @@
 import {getApps,initializeApp,cert} from "firebase-admin/app";
 import {getAuth} from "firebase-admin/auth";
 import {getFirestore,FieldValue} from "firebase-admin/firestore";
-function init(){if(!getApps().length){const raw=process.env.FIREBASE_SERVICE_ACCOUNT;if(!raw)throw Error("server_not_configured");initializeApp({credential:cert(JSON.parse(raw))});}}
+function parseServiceAccount(raw){
+ let text=String(raw||"").trim();
+ if(!text)throw Error("server_not_configured");
+ if(text.startsWith("```"))text=text.replace(/^```(?:json)?\s*/i,"").replace(/\s*```$/,"").trim();
+ try{
+  let parsed=JSON.parse(text);
+  if(typeof parsed==="string")parsed=JSON.parse(parsed);
+  return parsed;
+ }catch(_){
+  const read=(key)=>{
+   const m=text.match(new RegExp('["\\\']'+key+'["\\\']\\s*:\\s*["\\\']([^"\\\']*)["\\\']','m'));
+   return m?m[1]:null;
+  };
+  const projectId=read("project_id"),clientEmail=read("client_email"),rawKey=read("private_key");
+  if(!projectId||!clientEmail||!rawKey)throw Error("invalid_service_account_json");
+  const privateKey=rawKey.replace(/\\\\n/g,"\n");
+  return {projectId,clientEmail,privateKey};
+ }
+}
+function init(){
+ if(!getApps().length){
+  const sa=parseServiceAccount(process.env.FIREBASE_SERVICE_ACCOUNT);
+  initializeApp({credential:cert(sa),projectId:sa.project_id||sa.projectId});
+ }
+}
 const out=(r,s,b)=>r.status(s).json(b);
 export default async function handler(req,res){
  if(req.method==="GET"){
