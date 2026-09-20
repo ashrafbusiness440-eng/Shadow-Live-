@@ -19,3 +19,10 @@ export function validIdempotencyKey(key:string){return /^[A-Za-z0-9_-]{16,128}$/
 export function isRecentAuth(authTime:number,nowSeconds:number,maxAgeSeconds=600){
  return Number.isFinite(authTime)&&authTime>0&&nowSeconds>=authTime&&nowSeconds-authTime<=maxAgeSeconds;
 }
+
+export function validBalanceDelta(asset:string,value:number){
+ if(!Number.isFinite(value)||value===0)return false;
+ if(asset==="coins")return Number.isInteger(value);
+ if(asset==="diamonds")return Number.isInteger(value*100);
+ return false;
+}
