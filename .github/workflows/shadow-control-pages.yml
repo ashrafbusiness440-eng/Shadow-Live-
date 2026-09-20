@@ -1,4 +1,5 @@
 name: Shadow Control Pages
+# GitHub-hosted staging fallback when external deploy credits are unavailable.
 
 on:
   push:
