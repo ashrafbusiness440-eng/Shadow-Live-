@@ -158,6 +158,7 @@ function applySecurityHeaders(res:any){
  res.set("X-Frame-Options","DENY");
  res.set("Referrer-Policy","no-referrer");
  res.set("Permissions-Policy","camera=(), microphone=(), geolocation=()");
+ res.set("Content-Security-Policy","default-src none; frame-ancestors none; base-uri none; form-action none");
 }
 
 export const controlApi=onRequest({region:"us-central1"},async(req,res)=>{
