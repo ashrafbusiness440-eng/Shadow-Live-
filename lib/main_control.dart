@@ -6,6 +6,17 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'firebase_options.dart';
 
+String formatCompactAmount(dynamic value){
+  final n=num.tryParse('${value??0}')??0;
+  String trim(double v){
+    final s=v.toStringAsFixed(v.truncateToDouble()==v?0:1);
+    return s.endsWith('.0')?s.substring(0,s.length-2):s;
+  }
+  if(n.abs()>=1000000)return '${trim(n/1000000)}M';
+  if(n.abs()>=1000)return '${trim(n/1000)}K';
+  return n.truncateToDouble()==n?n.toInt().toString():n.toString();
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
@@ -324,8 +335,8 @@ class UserReadOnlyPage extends StatelessWidget {
           Text('البريد: ${t(data['email'])}'),
           Text('الدور: ${t(data['role']??'user')}'),
           Text('دخول الإدارة: ${data['adminEnabled']==true?'مفعّل':'غير مفعّل'}'),
-          Text('Coins: ${t(data['coins'])}'),
-          Text('Diamonds: ${t(data['diamonds'])}'),
+          Text('Coins: ${formatCompactAmount(data['coins'])}'),
+          Text('Diamonds: ${formatCompactAmount(data['diamonds'])}'),
         ]))),
         const SizedBox(height:10),
         Card(child:ListTile(
@@ -359,12 +370,12 @@ class _OwnerEconomyCard extends StatelessWidget {
         final isOwner=actor?['role']=='owner'&&actor?['adminEnabled']==true;
         return Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
           const Row(children:[Icon(Icons.account_balance_wallet_outlined,color:Color(0xFFD7B85A)),SizedBox(width:8),Text('إدارة Coins و Diamonds',style:TextStyle(fontWeight:FontWeight.w900))]),
-          const SizedBox(height:8),Text('Coins: ${coins??0}   •   Diamonds: ${diamonds??0}'),const SizedBox(height:12),
+          const SizedBox(height:8),Text('Coins: ${formatCompactAmount(coins)}   •   Diamonds: ${formatCompactAmount(diamonds)}'),const SizedBox(height:12),
           Wrap(spacing:8,runSpacing:8,children:[
             FilledButton.icon(onPressed:isOwner?()=>_openAdjustment(context,'coins'):null,icon:const Icon(Icons.monetization_on_outlined),label:const Text('تعديل Coins')),
             FilledButton.icon(onPressed:isOwner?()=>_openAdjustment(context,'diamonds'):null,icon:const Icon(Icons.diamond_outlined),label:const Text('تعديل Diamonds')),
           ]),
-          const SizedBox(height:8),Text(isOwner?'صلاحية Owner مؤكدة. العملية ستُرسل إلى adjustBalance بعد تفعيل Control Backend.':'هذه الأدوات مخصصة لحساب Owner.',style:const TextStyle(color:Color(0xFFAAA3B8))),
+          const SizedBox(height:8),Text(isOwner?'صلاحية Owner مؤكدة. التعديلات تُنفذ عبر Control Backend وتُسجّل في Financial Ledger وAudit Log.':'هذه الأدوات مخصصة لحساب Owner.',style:const TextStyle(color:Color(0xFFAAA3B8))),
         ])));
       },
     );
@@ -406,26 +417,20 @@ class _OwnerEconomyCard extends StatelessWidget {
     final projected=current+delta;
     final ok=await showDialog<bool>(context:context,builder:(c)=>AlertDialog(
       title:const Text('تأكيد تعديل الرصيد'),
-      content:Text('الحالي: $current\nالتغيير: ${delta>0?'+':''}$delta\nبعد العملية: $projected\nالسبب: $reason'),
+      content:Text('الحالي: ${formatCompactAmount(current)}\nالتغيير: ${delta>0?'+':''}${formatCompactAmount(delta.abs())}\nبعد العملية: ${formatCompactAmount(projected)}\nالسبب: $reason'),
       actions:[TextButton(onPressed:()=>Navigator.pop(c,false),child:const Text('إلغاء')),FilledButton(onPressed:projected<0?null:()=>Navigator.pop(c,true),child:const Text('تنفيذ'))],
     ));
     if(ok!=true||!context.mounted)return;
-    void stage(String message){if(context.mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(message),duration:const Duration(seconds:2)));}
-    stage('1/4 تم الضغط على تنفيذ');
     try{
       final user=FirebaseAuth.instance.currentUser;if(user==null)throw Exception('not_signed_in');
-      stage('2/4 جاري الحصول على Firebase token');
       final token=await user.getIdToken().timeout(const Duration(seconds:12));
       if(token==null||token.isEmpty)throw Exception('empty_token');
       final key='bal_${DateTime.now().millisecondsSinceEpoch}_${user.uid.substring(0,6)}';
       final apiUri=Uri(scheme:Uri.base.scheme,host:Uri.base.host,port:Uri.base.hasPort?Uri.base.port:null,path:'/api/adjust-balance');
-      stage('3/4 إرسال الطلب إلى Control Backend');
       final response=await http.post(apiUri,headers:{'Content-Type':'application/json','Authorization':'Bearer $token'},body:jsonEncode({'targetId':uid,'asset':asset,'delta':delta,'reason':reason,'idempotencyKey':key})).timeout(const Duration(seconds:20));
-      stage('4/4 استجابة السيرفر: ${response.statusCode}');
-      await Future<void>.delayed(const Duration(milliseconds:350));
       final body=jsonDecode(response.body) as Map<String,dynamic>;
       if(response.statusCode!=200||body['ok']!=true)throw Exception(body['code']??'request_failed');
-      if(context.mounted){ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('تم تعديل الرصيد بنجاح: ${body['before']} → ${body['after']}')));Navigator.pop(context);}
+      if(context.mounted){ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('تم تعديل الرصيد بنجاح: ${formatCompactAmount(body['before'])} → ${formatCompactAmount(body['after'])}')));Navigator.pop(context);}
     }catch(e){
       if(context.mounted){ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('تعذر تنفيذ العملية: $e'),duration:const Duration(seconds:6)));}
     }
@@ -486,7 +491,7 @@ class FinancePage extends StatelessWidget {
     const SizedBox(height:16),
     _AdminCollectionTile(title:'السجل المالي',subtitle:'financial_ledger — قراءة فقط',icon:Icons.receipt_long_outlined,collection:'financial_ledger'),
     _AdminCollectionTile(title:'تسويات الوكالات',subtitle:'agency_settlements — قراءة فقط',icon:Icons.payments_outlined,collection:'agency_settlements'),
-    const Card(child:ListTile(leading:Icon(Icons.lock_outline,color:Color(0xFFD7B85A)),title:Text('تعديل Coins / Diamonds مقفول'),subtitle:Text('أي تعديل رصيد أو دفع تسوية سيبقى عبر Backend آمن + Audit Log فقط.'))),
+    const Card(child:ListTile(leading:Icon(Icons.verified_user_outlined,color:Color(0xFFD7B85A)),title:Text('تعديل Coins / Diamonds عبر Backend آمن'),subtitle:Text('Owner يمكنه تعديل الأرصدة من صفحة المستخدم، وكل عملية تُسجّل في Financial Ledger وAudit Log.'))),
   ]);
 }
 
