@@ -1,70 +1,21 @@
 import {getApps,initializeApp,cert} from "firebase-admin/app";
 import {getAuth} from "firebase-admin/auth";
 import {getFirestore,FieldValue} from "firebase-admin/firestore";
-function normalizePrivateKey(value){
- let key=String(value||"").replace(/\\r\\n/g,"\n").replace(/\\n/g,"\n").replace(/\\r/g,"\n").replace(/\r/g,"").trim();
- key=key
-  .replace(/-*\s*BEGIN\s+PRIVATE\s+KEY\s*-*/gi,"")
-  .replace(/-*\s*END\s+PRIVATE\s+KEY\s*-*/gi,"");
- let body=key.replace(/[^A-Za-z0-9+/=]/g,"");
- body=body.replace(/^BEGINPRIVATEKEY/i,"").replace(/ENDPRIVATEKEY$/i,"");
- body=body.replace(/=+$/,"");
- if(body.length%4===1)throw Error("invalid_private_key_body");
- while(body.length%4!==0)body+="=";
- if(body.length<1000)throw Error("private_key_too_short");
- const lines=body.match(/.{1,64}/g)||[];
- return "-----BEGIN PRIVATE KEY-----\n"+lines.join("\n")+"\n-----END PRIVATE KEY-----\n";
-}
 function parseServiceAccount(raw){
- let text=String(raw||"").trim();
+ const text=String(raw||"").trim();
  if(!text)throw Error("server_not_configured");
- if(text.startsWith("```"))text=text.replace(/^```(?:json)?\s*/i,"").replace(/\s*```$/,"").trim();
- try{
-  let parsed=JSON.parse(text);
-  if(typeof parsed==="string")parsed=JSON.parse(parsed);
-  if(parsed?.private_key)parsed.private_key=normalizePrivateKey(parsed.private_key);
-  if(parsed?.privateKey)parsed.privateKey=normalizePrivateKey(parsed.privateKey);
-  return parsed;
- }catch(_){
-  const read=(key)=>{
-   const m=text.match(new RegExp('["\\\']'+key+'["\\\']\\s*:\\s*["\\\']([^"\\\']*)["\\\']','m'));
-   return m?m[1]:null;
-  };
-  const projectId=read("project_id"),clientEmail=read("client_email"),rawKey=read("private_key");
-  if(!projectId||!clientEmail||!rawKey)throw Error("invalid_service_account_json");
-  const privateKey=normalizePrivateKey(rawKey);
-  return {projectId,clientEmail,privateKey};
- }
+ let sa=JSON.parse(text);
+ if(typeof sa==="string")sa=JSON.parse(sa);
+ const projectId=sa.project_id||sa.projectId;
+ const clientEmail=sa.client_email||sa.clientEmail;
+ const privateKey=String(sa.private_key||sa.privateKey||"").replace(/\\n/g,"\n");
+ if(!projectId||!clientEmail||!privateKey)throw Error("invalid_service_account_json");
+ return {projectId,clientEmail,privateKey};
 }
 function init(){
  if(!getApps().length){
   const sa=parseServiceAccount(process.env.FIREBASE_SERVICE_ACCOUNT);
-  const key=String(sa.private_key||sa.privateKey||"");
-  const body=key.replace(/-----BEGIN [^-]+-----/g,"").replace(/-----END [^-]+-----/g,"").replace(/[^A-Za-z0-9+/=]/g,"");
-  console.log("service-account-shape",{
-   hasProjectId:Boolean(sa.project_id||sa.projectId),
-   hasClientEmail:Boolean(sa.client_email||sa.clientEmail),
-   hasBegin:key.includes("-----BEGIN PRIVATE KEY-----"),
-   hasEnd:key.includes("-----END PRIVATE KEY-----"),
-   keyLength:key.length,
-   bodyLength:body.length,
-   bodyMod4:body.length%4
-  });
-  const projectId=sa.project_id||sa.projectId;
-  const clientEmail=sa.client_email||sa.clientEmail;
-  const makePem=(b)=>"-----BEGIN PRIVATE KEY-----\n"+((b.match(/.{1,64}/g)||[]).join("\n"))+"\n-----END PRIVATE KEY-----\n";
-  let credential,lastError;
-  for(const trim of [0,4,8,12]){
-   const candidate=trim===0?body:body.slice(0,-trim);
-   if(candidate.length<1000||candidate.length%4!==0)continue;
-   try{
-    credential=cert({projectId,clientEmail,privateKey:makePem(candidate)});
-    console.log("service-account-key-variant",{trimmedBase64Chars:trim});
-    break;
-   }catch(e){lastError=e;}
-  }
-  if(!credential)throw lastError||Error("invalid_private_key");
-  initializeApp({credential,projectId});
+  initializeApp({credential:cert(sa),projectId:sa.projectId});
  }
 }
 const out=(r,s,b)=>r.status(s).json(b);
@@ -74,8 +25,7 @@ export default async function handler(req,res){
    init();
    await getFirestore().collection("users").limit(1).get();
    return out(res,200,{ok:true,service:"shadow-control-api",firebaseAdmin:true,firestore:true});
-  }catch(e){
-   console.error("adjust-balance health",e?.message||e);
+  }catch(_){
    return out(res,500,{ok:false,service:"shadow-control-api",code:"backend_firebase_init_failed"});
   }
  }
@@ -97,5 +47,5 @@ export default async function handler(req,res){
    tx.create(auditRef,{actorUid:decoded.uid,action:"adjustBalance",targetType:"user",targetId,reason,before:{[asset]:before},after:{[asset]:after},operationId:key,createdAt:FieldValue.serverTimestamp()});
    tx.create(opRef,{action:"adjustBalance",actorUid:decoded.uid,targetId,status:"completed",createdAt:FieldValue.serverTimestamp()});return {ok:true,code:"ok",operationId:key,before,after};
   });return out(res,200,result);
- }catch(e){const raw=e?.message||"server_error";console.error("adjust-balance",phase,raw);const known=["not_found","emergency_locked","insufficient_balance"];const code=known.includes(raw)?raw:`server_${phase}_failed`;return out(res,["not_found"].includes(raw)?404:["emergency_locked","insufficient_balance"].includes(raw)?409:500,{ok:false,code});}
+ }catch(e){const raw=e?.message||"server_error";const known=["not_found","emergency_locked","insufficient_balance"];const code=known.includes(raw)?raw:`server_${phase}_failed`;return out(res,["not_found"].includes(raw)?404:["emergency_locked","insufficient_balance"].includes(raw)?409:500,{ok:false,code});}
 }
