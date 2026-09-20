@@ -30,3 +30,12 @@ jobs:
           java-version: '21'
       - name: Validate Firestore rules compile
         run: npx --yes firebase-tools@15.1.0 emulators:exec --only firestore --project shadow-control-ci "echo Firestore rules compiled"
+      - name: Build Shadow Control web staging artifact
+        run: flutter build web --release
+      - name: Upload Shadow Control web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: shadow-control-web-${{ github.sha }}
+          path: build/web
+          if-no-files-found: error
+          retention-days: 7
