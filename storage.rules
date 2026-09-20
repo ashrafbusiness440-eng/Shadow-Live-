@@ -1,0 +1,34 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function ownsJpg(fileName) {
+      return signedIn() && fileName == request.auth.uid + '.jpg';
+    }
+
+    function validProfileImage() {
+      return request.resource != null
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    match /profile_images/{fileName} {
+      allow read: if signedIn();
+      allow create, update: if ownsJpg(fileName) && validProfileImage();
+      allow delete: if ownsJpg(fileName);
+    }
+
+    match /profile_covers/{fileName} {
+      allow read: if signedIn();
+      allow create, update: if ownsJpg(fileName) && validProfileImage();
+      allow delete: if ownsJpg(fileName);
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
