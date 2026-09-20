@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../services/navigation_service.dart';
 import '../../widgets/bottom_nav_bar.dart';
+import '../../utils/compact_number.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -82,7 +83,7 @@ class ProfileScreen extends StatelessWidget {
   Widget _avatarFallback() => Container(color: const Color(0xFF17132A), child: const Icon(Icons.person_rounded, size: 64, color: Colors.white38));
 
   Widget _stats(Map<String, dynamic> d) => Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Container(padding: const EdgeInsets.symmetric(vertical: 16), decoration: _box(), child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-    _Stat('${d['followersCount'] ?? 0}', 'المتابعون'), _Stat('${d['followingCount'] ?? 0}', 'أتابع'), _Stat('${d['roomsCount'] ?? 0}', 'الغرف'), _Stat('${d['giftsCount'] ?? 0}', 'الهدايا'), _Stat('${d['coins'] ?? 0}', 'الرصيد'),
+    _Stat('${d['followersCount'] ?? 0}', 'المتابعون'), _Stat('${d['followingCount'] ?? 0}', 'أتابع'), _Stat('${d['roomsCount'] ?? 0}', 'الغرف'), _Stat('${d['giftsCount'] ?? 0}', 'الهدايا'), _Stat(formatCompactAmount(d['coins']), 'الرصيد'),
   ])));
 
   Widget _actions(BuildContext context) => Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Row(children: [
