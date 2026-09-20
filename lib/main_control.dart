@@ -415,7 +415,7 @@ class _OwnerEconomyCard extends StatelessWidget {
     try{
       final user=FirebaseAuth.instance.currentUser;if(user==null)throw Exception('not_signed_in');
       stage('2/4 جاري الحصول على Firebase token');
-      final token=await user.getIdToken(true);
+      final token=await user.getIdToken().timeout(const Duration(seconds:12));
       if(token==null||token.isEmpty)throw Exception('empty_token');
       final key='bal_${DateTime.now().millisecondsSinceEpoch}_${user.uid.substring(0,6)}';
       final apiUri=Uri(scheme:Uri.base.scheme,host:Uri.base.host,port:Uri.base.hasPort?Uri.base.port:null,path:'/api/adjust-balance');
@@ -423,12 +423,11 @@ class _OwnerEconomyCard extends StatelessWidget {
       final response=await http.post(apiUri,headers:{'Content-Type':'application/json','Authorization':'Bearer $token'},body:jsonEncode({'targetId':uid,'asset':asset,'delta':delta,'reason':reason,'idempotencyKey':key})).timeout(const Duration(seconds:20));
       stage('4/4 استجابة السيرفر: ${response.statusCode}');
       await Future<void>.delayed(const Duration(milliseconds:350));
-      if(context.mounted)Navigator.of(context,rootNavigator:true).pop();
       final body=jsonDecode(response.body) as Map<String,dynamic>;
       if(response.statusCode!=200||body['ok']!=true)throw Exception(body['code']??'request_failed');
       if(context.mounted){ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('تم تعديل الرصيد بنجاح: ${body['before']} → ${body['after']}')));Navigator.pop(context);}
     }catch(e){
-      if(context.mounted){try{Navigator.of(context,rootNavigator:true).pop();}catch(_){}ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('تعذر تنفيذ العملية: $e')));}
+      if(context.mounted){ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('تعذر تنفيذ العملية: $e'),duration:const Duration(seconds:6)));}
     }
   }
 }
