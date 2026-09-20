@@ -38,6 +38,17 @@ function parseServiceAccount(raw){
 function init(){
  if(!getApps().length){
   const sa=parseServiceAccount(process.env.FIREBASE_SERVICE_ACCOUNT);
+  const key=String(sa.private_key||sa.privateKey||"");
+  const body=key.replace(/-----BEGIN [^-]+-----/g,"").replace(/-----END [^-]+-----/g,"").replace(/[^A-Za-z0-9+/=]/g,"");
+  console.log("service-account-shape",{
+   hasProjectId:Boolean(sa.project_id||sa.projectId),
+   hasClientEmail:Boolean(sa.client_email||sa.clientEmail),
+   hasBegin:key.includes("-----BEGIN PRIVATE KEY-----"),
+   hasEnd:key.includes("-----END PRIVATE KEY-----"),
+   keyLength:key.length,
+   bodyLength:body.length,
+   bodyMod4:body.length%4
+  });
   initializeApp({credential:cert(sa),projectId:sa.project_id||sa.projectId});
  }
 }
