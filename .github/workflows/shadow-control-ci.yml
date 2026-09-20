@@ -39,3 +39,14 @@ jobs:
           path: build/web
           if-no-files-found: error
           retention-days: 7
+      - name: Deploy Shadow Control staging to Netlify
+        if: ${{ github.event_name == 'push' && env.NETLIFY_AUTH_TOKEN != '' }}
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: 0fc84ac0-fbb8-4dbe-aabb-80fa3580169f
+        run: npx --yes netlify-cli@latest deploy --dir=build/web --site="$NETLIFY_SITE_ID" --prod
+      - name: Report unavailable Netlify credentials
+        if: ${{ github.event_name == 'push' && env.NETLIFY_AUTH_TOKEN == '' }}
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+        run: echo "Shadow Control artifact is ready; Netlify deploy skipped because NETLIFY_AUTH_TOKEN is not configured."
