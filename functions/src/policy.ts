@@ -26,3 +26,10 @@ export function validBalanceDelta(asset:string,value:number){
  if(asset==="diamonds")return Number.isInteger(value*100);
  return false;
 }
+
+export function protectedFieldTransitionAllowed(before:Record<string,unknown>,after:Record<string,unknown>,field:string){
+ const had=Object.prototype.hasOwnProperty.call(before,field),has=Object.prototype.hasOwnProperty.call(after,field);
+ if(!had&&!has)return true;
+ if(had!==has)return false;
+ return JSON.stringify(before[field])===JSON.stringify(after[field]);
+}
