@@ -357,25 +357,46 @@ class _OwnerEconomyCard extends StatelessWidget {
         final isOwner=actor?['role']=='owner'&&actor?['adminEnabled']==true;
         return Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
           const Row(children:[Icon(Icons.account_balance_wallet_outlined,color:Color(0xFFD7B85A)),SizedBox(width:8),Text('إدارة Coins و Diamonds',style:TextStyle(fontWeight:FontWeight.w900))]),
-          const SizedBox(height:8),
-          Text('Coins: ${coins??0}   •   Diamonds: ${diamonds??0}'),
-          const SizedBox(height:12),
+          const SizedBox(height:8),Text('Coins: ${coins??0}   •   Diamonds: ${diamonds??0}'),const SizedBox(height:12),
           Wrap(spacing:8,runSpacing:8,children:[
-            FilledButton.icon(onPressed:isOwner?()=>_showPending(context,'coins'):null,icon:const Icon(Icons.monetization_on_outlined),label:const Text('تعديل Coins')),
-            FilledButton.icon(onPressed:isOwner?()=>_showPending(context,'diamonds'):null,icon:const Icon(Icons.diamond_outlined),label:const Text('تعديل Diamonds')),
+            FilledButton.icon(onPressed:isOwner?()=>_openAdjustment(context,'coins'):null,icon:const Icon(Icons.monetization_on_outlined),label:const Text('تعديل Coins')),
+            FilledButton.icon(onPressed:isOwner?()=>_openAdjustment(context,'diamonds'):null,icon:const Icon(Icons.diamond_outlined),label:const Text('تعديل Diamonds')),
           ]),
-          const SizedBox(height:8),
-          Text(isOwner?'صلاحية Owner مؤكدة. الواجهة جاهزة للربط مع adjustBalance عبر Control Backend.':'هذه الأدوات تظهر مفعّلة فقط لحساب Owner.',style:const TextStyle(color:Color(0xFFAAA3B8))),
+          const SizedBox(height:8),Text(isOwner?'صلاحية Owner مؤكدة. العملية ستُرسل إلى adjustBalance بعد تفعيل Control Backend.':'هذه الأدوات مخصصة لحساب Owner.',style:const TextStyle(color:Color(0xFFAAA3B8))),
         ])));
       },
     );
   }
-  void _showPending(BuildContext context,String asset){
-    showDialog(context:context,builder:(context)=>AlertDialog(
+  Future<void> _openAdjustment(BuildContext context,String asset) async {
+    final amount=TextEditingController(),reason=TextEditingController(); bool subtract=false;
+    await showDialog(context:context,builder:(dialogContext)=>StatefulBuilder(builder:(context,setState)=>AlertDialog(
       title:Text(asset=='coins'?'تعديل Coins':'تعديل Diamonds'),
-      content:const Text('واجهة التعديل جاهزة، لكن تنفيذ العملية سيبقى مقفولًا حتى يصبح Control Backend منشورًا ومتحققًا. لن نكتب الرصيد مباشرة إلى Firestore.'),
-      actions:[TextButton(onPressed:()=>Navigator.pop(context),child:const Text('حسنًا'))],
-    ));
+      content:SizedBox(width:420,child:Column(mainAxisSize:MainAxisSize.min,children:[
+        SegmentedButton<bool>(segments:const [ButtonSegment(value:false,label:Text('زيادة'),icon:Icon(Icons.add)),ButtonSegment(value:true,label:Text('خصم'),icon:Icon(Icons.remove))],selected:{subtract},onSelectionChanged:(v)=>setState(()=>subtract=v.first)),
+        const SizedBox(height:12),
+        TextField(controller:amount,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'المبلغ',border:OutlineInputBorder())),
+        const SizedBox(height:12),
+        TextField(controller:reason,maxLength:160,decoration:const InputDecoration(labelText:'سبب العملية',hintText:'مثال: مكافأة اختبار',border:OutlineInputBorder())),
+        const SizedBox(height:6),
+        const Text('سيتم تسجيل الرصيد قبل وبعد العملية والسبب وهوية الـOwner في Financial Ledger وAudit Log.',style:TextStyle(fontSize:12,color:Color(0xFFAAA3B8))),
+      ])),
+      actions:[
+        TextButton(onPressed:()=>Navigator.pop(dialogContext),child:const Text('إلغاء')),
+        FilledButton(onPressed:(){
+          final value=num.tryParse(amount.text.trim());
+          if(value==null||value<=0||reason.text.trim().length<3){
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('أدخل مبلغًا أكبر من صفر وسببًا من 3 أحرف على الأقل.'))); return;
+          }
+          Navigator.pop(dialogContext);
+          showDialog(context:context,builder:(c)=>AlertDialog(
+            title:const Text('جاهز للربط الآمن'),
+            content:Text('العملية: ${subtract?'خصم':'زيادة'} ${value.toString()} ${asset=='coins'?'Coins':'Diamonds'}\nالسبب: ${reason.text.trim()}\n\nلن يتم تغيير الرصيد الآن لأن Control Backend غير منشور بعد.'),
+            actions:[TextButton(onPressed:()=>Navigator.pop(c),child:const Text('حسنًا'))],
+          ));
+        },child:const Text('مراجعة العملية')),
+      ],
+    )));
+    amount.dispose(); reason.dispose();
   }
 }
 
