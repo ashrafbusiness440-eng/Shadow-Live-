@@ -2,17 +2,18 @@ import {getApps,initializeApp,cert} from "firebase-admin/app";
 import {getAuth} from "firebase-admin/auth";
 import {getFirestore,FieldValue} from "firebase-admin/firestore";
 function normalizePrivateKey(value){
- let key=String(value||"").replace(/\\n/g,"\n").replace(/\r/g,"").trim();
- const begin="-----BEGIN PRIVATE KEY-----",end="-----END PRIVATE KEY-----";
- const bi=key.indexOf(begin),ei=key.indexOf(end);
- if(bi>=0&&ei>bi){
-  const body=key.slice(bi+begin.length,ei).replace(/[^A-Za-z0-9+/=]/g,"");
-  if(body.length>0){
-   const lines=body.match(/.{1,64}/g)||[];
-   key=begin+"\n"+lines.join("\n")+"\n"+end+"\n";
-  }
- }
- return key;
+ let key=String(value||"").replace(/\\r?\\n/g,"\n").replace(/\r/g,"").trim();
+ key=key
+  .replace(/-*\s*BEGIN\s+PRIVATE\s+KEY\s*-*/gi,"")
+  .replace(/-*\s*END\s+PRIVATE\s+KEY\s*-*/gi,"");
+ let body=key.replace(/[^A-Za-z0-9+/=]/g,"");
+ body=body.replace(/^BEGINPRIVATEKEY/i,"").replace(/ENDPRIVATEKEY$/i,"");
+ body=body.replace(/=+$/,"");
+ if(body.length%4===1)throw Error("invalid_private_key_body");
+ while(body.length%4!==0)body+="=";
+ if(body.length<1000)throw Error("private_key_too_short");
+ const lines=body.match(/.{1,64}/g)||[];
+ return "-----BEGIN PRIVATE KEY-----\n"+lines.join("\n")+"\n-----END PRIVATE KEY-----\n";
 }
 function parseServiceAccount(raw){
  let text=String(raw||"").trim();
