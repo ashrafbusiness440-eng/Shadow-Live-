@@ -1,8 +1,10 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../features/home/screens/discovery_search_screen.dart';
 import '../../features/home/services/discovery_service.dart';
+import '../../features/room/services/room_action_service.dart';
 import '../../services/navigation_service.dart';
 
 class RoomListScreen extends StatefulWidget {
@@ -14,9 +16,11 @@ class RoomListScreen extends StatefulWidget {
 
 class _RoomListScreenState extends State<RoomListScreen> {
   final DiscoveryService _service = DiscoveryService();
+  final RoomActionService _roomActions = RoomActionService();
 
   List<DiscoveryRoom> _rooms = const [];
   bool _loading = true;
+  bool _openingPersonalRoom = false;
   String? _error;
   String _category = 'الكل';
 
@@ -84,6 +88,48 @@ class _RoomListScreenState extends State<RoomListScreen> {
     );
   }
 
+  Future<void> _openPersonalRoom() async {
+    if (_openingPersonalRoom) return;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.isAnonymous) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('إنشاء غرفة خاصة يحتاج حساباً مسجلاً.')),
+      );
+      return;
+    }
+
+    setState(() => _openingPersonalRoom = true);
+    try {
+      final room = await _roomActions.openPersonalRoom();
+      if (!mounted) return;
+      NavigationService.navigateTo(
+        AppRoutes.voiceChatRoom,
+        arguments: room.toNavigationArguments(),
+      );
+    } on StateError catch (error) {
+      if (!mounted) return;
+      final message = error.message == 'account_required'
+          ? 'إنشاء غرفة خاصة يحتاج حساباً مسجلاً.'
+          : 'تعذر فتح غرفتك حالياً.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر فتح غرفتك حالياً.')),
+      );
+    } finally {
+      if (mounted) setState(() => _openingPersonalRoom = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _roomActions.close();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final visibleRooms = _visibleRooms;
@@ -127,6 +173,29 @@ class _RoomListScreenState extends State<RoomListScreen> {
                             ],
                           ),
                         ),
+                        IconButton(
+                          onPressed:
+                              _openingPersonalRoom ? null : _openPersonalRoom,
+                          style: IconButton.styleFrom(
+                            backgroundColor:
+                                const Color(0xFF8A3DFF).withValues(alpha: .18),
+                          ),
+                          icon: _openingPersonalRoom
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Color(0xFFFFD54A),
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.meeting_room_rounded,
+                                  color: Color(0xFFFFD54A),
+                                ),
+                          tooltip: 'غرفتي',
+                        ),
+                        const SizedBox(width: 6),
                         IconButton(
                           onPressed: _search,
                           style: IconButton.styleFrom(
