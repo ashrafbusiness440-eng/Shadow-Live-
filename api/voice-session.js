@@ -293,6 +293,16 @@ async function roomSeatAction(db,uid,body){
       if(!isOwner)throw new ApiError("forbidden",403);
       if(!targetUid||targetUid===uid)throw new ApiError("invalid_target",400);
       if(!invites.includes(targetUid))invites.push(targetUid);
+    }else if(action==="approveMicRequest"){
+      if(!isOwner)throw new ApiError("forbidden",403);
+      if(!targetUid||targetUid===uid)throw new ApiError("invalid_target",400);
+      if(!requests.includes(targetUid))throw new ApiError("mic_request_not_found",404);
+      requests=requests.filter(id=>id!==targetUid);
+      if(!invites.includes(targetUid))invites.push(targetUid);
+    }else if(action==="rejectMicRequest"){
+      if(!isOwner)throw new ApiError("forbidden",403);
+      if(!targetUid)throw new ApiError("invalid_target",400);
+      requests=requests.filter(id=>id!==targetUid);
     }else if(action==="declineMicInvite"){
       invites=invites.filter(id=>id!==uid);
     }else if(action==="takeSeat"||action==="switchSeat"){
