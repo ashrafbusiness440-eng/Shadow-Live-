@@ -33,8 +33,23 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Build Shadow Control
-        run: flutter build web --release --target lib/main_control.dart --base-href /Shadow-Live-/
+      - name: Build Shadow Live app and Shadow Control
+        run: |
+          set -e
+          cp web/index.html /tmp/control-index.html
+          cp web/manifest.json /tmp/control-manifest.json
+
+          cp scripts/app_index.html web/index.html
+          sed 's#"scope": "/app/"#"scope": "/Shadow-Live-/app/"#' scripts/app_manifest.json > web/manifest.json
+          flutter build web --release --target lib/main.dart --base-href /Shadow-Live-/app/
+          mv build/web /tmp/shadow-live-app
+
+          cp /tmp/control-index.html web/index.html
+          cp /tmp/control-manifest.json web/manifest.json
+          flutter build web --release --target lib/main_control.dart --base-href /Shadow-Live-/
+
+          mkdir -p build/web/app
+          cp -R /tmp/shadow-live-app/. build/web/app/
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
