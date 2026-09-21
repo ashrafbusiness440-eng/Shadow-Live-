@@ -171,6 +171,11 @@ async function openPersonalRoom(db,uid){
           isFeatured:false,
           onlineCount:0,
           participantsCount:0,
+          level:1,
+          levelPoints:0,
+          levelTarget:1000,
+          followerCount:0,
+          dailySupport:0,
           publicId,
           searchTokens:searchTokens(name,publicId),
           createdAt:now,
@@ -216,6 +221,88 @@ async function closePersonalRoom(db,uid,roomId){
   return {ok:true,roomId,isActive:false};
 }
 
+async function roomInsights(db,uid,roomId){
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+  const roomRef=db.collection("rooms").doc(roomId);
+  const followRef=db.collection("room_follows").doc(roomId).collection("users").doc(uid);
+
+  const [roomSnap,followSnap,activeRooms,supportersSnap]=await Promise.all([
+    roomRef.get(),
+    followRef.get(),
+    db.collection("rooms").where("isActive","==",true).limit(200).get(),
+    roomRef.collection("supporters").orderBy("totalSupport","desc").limit(50).get(),
+  ]);
+  if(!roomSnap.exists)throw new ApiError("room_not_found",404);
+
+  const room=roomSnap.data()||{};
+  const ranked=activeRooms.docs
+    .map(doc=>({id:doc.id,...(doc.data()||{})}))
+    .sort((a,b)=>Number(b.dailySupport||0)-Number(a.dailySupport||0));
+  const rankIndex=ranked.findIndex(item=>item.id===roomId);
+
+  const supporters=supportersSnap.docs.map((doc,index)=>{
+    const data=doc.data()||{};
+    return {
+      uid:doc.id,
+      rank:index+1,
+      displayName:String(data.displayName||data.username||"مستخدم Shadow Live"),
+      profileImageUrl:String(data.profileImageUrl||""),
+      totalSupport:Number(data.totalSupport||0),
+      dailySupport:Number(data.dailySupport||0),
+    };
+  });
+
+  return {
+    ok:true,
+    roomId,
+    level:Math.max(1,Number(room.level||1)),
+    levelPoints:Math.max(0,Number(room.levelPoints||0)),
+    levelTarget:Math.max(1,Number(room.levelTarget||1000)),
+    followerCount:Math.max(0,Number(room.followerCount||0)),
+    followed:followSnap.exists,
+    dailySupport:Math.max(0,Number(room.dailySupport||0)),
+    dailyRank:rankIndex>=0?rankIndex+1:null,
+    supporters,
+  };
+}
+
+async function setRoomFollow(db,uid,roomId,following){
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+  const roomRef=db.collection("rooms").doc(roomId);
+  const followRef=db.collection("room_follows").doc(roomId).collection("users").doc(uid);
+
+  return db.runTransaction(async tx=>{
+    const [roomSnap,followSnap]=await Promise.all([
+      tx.get(roomRef),
+      tx.get(followRef),
+    ]);
+    if(!roomSnap.exists)throw new ApiError("room_not_found",404);
+    const room=roomSnap.data()||{};
+    if(room.isActive===false)throw new ApiError("room_unavailable",409);
+
+    let count=Math.max(0,Number(room.followerCount||0));
+    if(following&&!followSnap.exists){
+      tx.create(followRef,{
+        uid,
+        createdAt:FieldValue.serverTimestamp(),
+      });
+      count+=1;
+      tx.update(roomRef,{
+        followerCount:count,
+        updatedAt:FieldValue.serverTimestamp(),
+      });
+    }else if(!following&&followSnap.exists){
+      tx.delete(followRef);
+      count=Math.max(0,count-1);
+      tx.update(roomRef,{
+        followerCount:count,
+        updatedAt:FieldValue.serverTimestamp(),
+      });
+    }
+    return {ok:true,roomId,following,followerCount:count};
+  });
+}
+
 export default async function handler(req,res){
   if(cors(req,res))return;
   const cfg=config();
@@ -248,6 +335,15 @@ export default async function handler(req,res){
       const roomId=clean(req.body?.roomId);
       const result=await closePersonalRoom(getFirestore(),decoded.uid,roomId);
       return out(res,200,result);
+    }
+    if(action==="roomInsights"){
+      const roomId=clean(req.body?.roomId);
+      return out(res,200,await roomInsights(getFirestore(),decoded.uid,roomId));
+    }
+    if(action==="setRoomFollow"){
+      const roomId=clean(req.body?.roomId);
+      const following=req.body?.following===true;
+      return out(res,200,await setRoomFollow(getFirestore(),decoded.uid,roomId,following));
     }
     if(action!=="token")throw new ApiError("invalid_action",400);
 
