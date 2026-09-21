@@ -13,21 +13,24 @@ class ChatListScreen extends StatefulWidget {
 }
 
 class _ChatListScreenState extends State<ChatListScreen> {
-  String get uid => FirebaseAuth.instance.currentUser!.uid;
+  String? get uid => FirebaseAuth.instance.currentUser?.uid;
 
-  String _conversationId(String otherUid) {
-    final ids = [uid, otherUid]..sort();
+  String? _conversationId(String otherUid) {
+    final me = uid;
+    if (me == null || me.isEmpty) return null;
+    final ids = [me, otherUid]..sort();
     return ids.join('_');
   }
 
   Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _searchUsers(String query) async {
     final q = query.trim();
-    if (q.length < 2) return [];
+    final me = uid;
+    if (q.length < 2 || me == null || me.isEmpty) return [];
     final found = <String, QueryDocumentSnapshot<Map<String, dynamic>>>{};
     try {
       final idDoc = await FirebaseFirestore.instance.collection('public_ids').doc(q).get();
       final targetUid = idDoc.data()?['uid']?.toString();
-      if (targetUid != null && targetUid != uid) {
+      if (targetUid != null && targetUid != me) {
         final exact = await FirebaseFirestore.instance.collection('public_profiles').where(FieldPath.documentId, isEqualTo: targetUid).limit(1).get();
         for (final doc in exact.docs) {
           found[doc.id] = doc;
@@ -37,16 +40,18 @@ class _ChatListScreenState extends State<ChatListScreen> {
     try {
       final snap = await FirebaseFirestore.instance.collection('public_profiles').orderBy('displayName').startAt([q]).endAt(['$q\uf8ff']).limit(20).get();
       for (final doc in snap.docs) {
-        if (doc.id != uid) found[doc.id] = doc;
+        if (doc.id != me) found[doc.id] = doc;
       }
     } catch (_) {}
     return found.values.toList();
   }
 
   Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _suggestedUsers() async {
+    final me = uid;
+    if (me == null || me.isEmpty) return [];
     try {
       final snap = await FirebaseFirestore.instance.collection('public_profiles').orderBy('createdAt', descending: true).limit(20).get();
-      return snap.docs.where((d) => d.id != uid).take(12).toList();
+      return snap.docs.where((d) => d.id != me).take(12).toList();
     } catch (_) {
       return [];
     }
@@ -64,15 +69,18 @@ class _ChatListScreenState extends State<ChatListScreen> {
     final user = doc.data();
     final name = '${user['displayName'] ?? 'مستخدم Shadow Live'}';
     final photo = '${user['profileImageUrl'] ?? ''}';
+    final me = uid;
+    if (me == null || me.isEmpty) return;
     final id = _conversationId(doc.id);
+    if (id == null) return;
     final ref = FirebaseFirestore.instance.collection('conversations').doc(id);
     final existing = await ref.get();
     if (!existing.exists) {
       await ref.set({
-        'participants': [uid, doc.id],
+        'participants': [me, doc.id],
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
-        'unreadCounts': {uid: 0, doc.id: 0},
+        'unreadCounts': {me: 0, doc.id: 0},
       });
     }
     if (!sheetContext.mounted) return;
@@ -198,6 +206,20 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final me = uid;
+    if (me == null || me.isEmpty) {
+      return const Directionality(
+        textDirection: TextDirection.rtl,
+        child: Scaffold(
+          backgroundColor: Color(0xFF05060D),
+          body: SafeArea(
+            child: Center(
+              child: Text('سجّل الدخول لعرض الرسائل', style: TextStyle(color: Colors.white60)),
+            ),
+          ),
+        ),
+      );
+    }
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
@@ -218,7 +240,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
               ),
               Expanded(
                 child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                  stream: FirebaseFirestore.instance.collection('conversations').where('participants', arrayContains: uid).snapshots(),
+                  stream: FirebaseFirestore.instance.collection('conversations').where('participants', arrayContains: me).snapshots(),
                   builder: (context, snapshot) {
                     if (snapshot.hasError) return _state(Icons.error_outline, 'تعذر تحميل المحادثات');
                     if (!snapshot.hasData) return const Center(child: CircularProgressIndicator(color: Color(0xFF8A3DFF)));
@@ -233,8 +255,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
                         final doc = docs[index];
                         final data = doc.data();
                         final participants = List<String>.from(data['participants'] ?? const []);
-                        final other = participants.firstWhere((id) => id != uid, orElse: () => '');
-                        final unread = ((data['unreadCounts'] as Map?)?[uid] as num?)?.toInt() ?? 0;
+                        final other = participants.firstWhere((id) => id != me, orElse: () => '');
+                        final unread = ((data['unreadCounts'] as Map?)?[me] as num?)?.toInt() ?? 0;
                         return _ConversationTile(id: doc.id, otherUid: other, lastMessage: '${data['lastMessage'] ?? ''}', unread: unread, updatedAt: data['updatedAt']);
                       },
                     );
