@@ -90,22 +90,23 @@ async function getUserDocument() {
   const snap = await adminDb.collection('users').limit(1).get();
   if (snap.empty) throw new Error('No user document found in Firestore emulator');
   const doc = snap.docs[0];
-  return { id: doc.id, data: doc.data() };
+  return { __uid: doc.id, ...doc.data() };
 }
 
 async function getPublicProfile(uid) {
   const snap = await adminDb.collection('public_profiles').doc(uid).get();
-  if (!snap.exists) throw new Error(`Public profile missing for ${uid}`);
+  if (!snap.exists) throw new Error('Public profile missing for ' + uid);
   return snap.data();
 }
 
-function stringField(data, key) {
-  const value = data?.[key];
-  return value == null ? null : String(value);
+function stringField(doc, key) {
+  const value = doc?.[key];
+  return typeof value === 'string' ? value : null;
 }
 
-function boolField(data, key) {
-  return data?.[key] === true;
+function boolField(doc, key) {
+  const value = doc?.[key];
+  return typeof value === 'boolean' ? value : null;
 }
 
 try {
