@@ -24,8 +24,12 @@ class DiscoveryRoom {
 
   bool get isActive => data['isActive'] != false;
 
+  String get visibility => (data['visibility'] ?? 'public').toString();
+
   bool get isHidden =>
-      data['isHidden'] == true || data['visibility']?.toString() == 'hidden';
+      data['isHidden'] == true || visibility == 'hidden';
+
+  bool get isPasswordProtected => visibility == 'password';
 
   Map<String, dynamic> toNavigationArguments() => {
         ...data,
