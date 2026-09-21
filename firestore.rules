@@ -68,7 +68,7 @@ service cloud.firestore {
         && request.auth.uid == userId
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.keys().hasOnly([
-          'uid','displayName','username','publicId','profileImageUrl','profileAvatarAsset',
+          'uid','displayName','username','publicId','searchTokens','profileImageUrl','profileAvatarAsset',
           'bio','location','level','vipLevel','isOnline','createdAt','updatedAt'
         ]);
       allow delete: if false;
