@@ -39,6 +39,7 @@ import 'features/voice/services/voice_service.dart';
 import 'features/voice/services/zego_voice_service.dart';
 import 'features/voice/services/voice_room_session_controller.dart';
 import 'features/room/services/room_action_service.dart';
+import 'features/room/services/room_invite_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -124,6 +125,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   final VoiceRoomSessionController _voiceSession =
       VoiceRoomSessionController.instance;
   final RoomActionService _roomActions = RoomActionService();
+  final RoomInviteService _roomInvites = RoomInviteService();
   bool _voiceStarted = false;
 
   @override
@@ -145,6 +147,9 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   bool _voiceMicMuted = true;
   String? _voiceError;
   Map<String, dynamic> _roomArguments = <String, dynamic>{};
+  bool _roomSoundEnabled = true;
+  bool _effectSoundEnabled = true;
+  bool _roomEffectsEnabled = true;
 
   @override
   void didChangeDependencies() {
@@ -252,6 +257,391 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     }
   }
 
+  Future<void> _showShareRoomSheet() async {
+    final roomId = (_roomArguments['roomId'] ?? '').toString().trim();
+    if (roomId.isEmpty) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF0C101A),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      ),
+      builder: (sheetContext) {
+        final sending = <String>{};
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: StatefulBuilder(
+            builder: (context, setSheetState) => SafeArea(
+              child: SizedBox(
+                height: MediaQuery.of(context).size.height * .72,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.white24,
+                          borderRadius: BorderRadius.circular(99),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      const Row(
+                        children: [
+                          Icon(
+                            Icons.share_rounded,
+                            color: Color(0xFFFFD54A),
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            'مشاركة الغرفة',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 21,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      Expanded(
+                        child: FutureBuilder<List<RoomInviteFriend>>(
+                          future: _roomInvites.loadFriends(),
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState !=
+                                ConnectionState.done) {
+                              return const Center(
+                                child: CircularProgressIndicator(
+                                  color: Color(0xFF8A3DFF),
+                                ),
+                              );
+                            }
+                            if (snapshot.hasError) {
+                              return const Center(
+                                child: Text(
+                                  'تعذر تحميل الأصدقاء حالياً',
+                                  style: TextStyle(color: Colors.white60),
+                                ),
+                              );
+                            }
+                            final friends = snapshot.data ?? const [];
+                            if (friends.isEmpty) {
+                              return const Center(
+                                child: Text(
+                                  'لا يوجد أصدقاء بمتابعة متبادلة حالياً',
+                                  style: TextStyle(color: Colors.white60),
+                                ),
+                              );
+                            }
+                            return ListView.separated(
+                              itemCount: friends.length,
+                              separatorBuilder: (_, __) =>
+                                  const Divider(color: Colors.white10),
+                              itemBuilder: (_, index) {
+                                final friend = friends[index];
+                                final busy = sending.contains(friend.uid);
+                                return ListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  leading: CircleAvatar(
+                                    radius: 23,
+                                    backgroundColor:
+                                        const Color(0xFF25183F),
+                                    backgroundImage:
+                                        friend.photoUrl.trim().isEmpty
+                                            ? null
+                                            : NetworkImage(friend.photoUrl),
+                                    child: friend.photoUrl.trim().isEmpty
+                                        ? const Icon(
+                                            Icons.person_rounded,
+                                            color: Color(0xFFFFD54A),
+                                          )
+                                        : null,
+                                  ),
+                                  title: Text(
+                                    friend.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    friend.online
+                                        ? 'متصل الآن'
+                                        : 'غير متصل',
+                                    style: TextStyle(
+                                      color: friend.online
+                                          ? const Color(0xFF39D98A)
+                                          : Colors.white38,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                  trailing: FilledButton(
+                                    onPressed: busy
+                                        ? null
+                                        : () async {
+                                            setSheetState(
+                                              () => sending.add(friend.uid),
+                                            );
+                                            try {
+                                              await _roomInvites.sendInvite(
+                                                friendUid: friend.uid,
+                                                roomId: roomId,
+                                              );
+                                              if (sheetContext.mounted) {
+                                                ScaffoldMessenger.of(
+                                                  sheetContext,
+                                                ).showSnackBar(
+                                                  SnackBar(
+                                                    content: Text(
+                                                      'تم إرسال الدعوة إلى ' +
+                                                          friend.name,
+                                                    ),
+                                                  ),
+                                                );
+                                              }
+                                            } on StateError catch (error) {
+                                              if (sheetContext.mounted) {
+                                                final text =
+                                                    error.message == 'blocked'
+                                                        ? 'لا يمكن إرسال الدعوة بسبب الحظر.'
+                                                        : 'تعذر إرسال الدعوة حالياً.';
+                                                ScaffoldMessenger.of(
+                                                  sheetContext,
+                                                ).showSnackBar(
+                                                  SnackBar(
+                                                    content: Text(text),
+                                                  ),
+                                                );
+                                              }
+                                            } catch (_) {
+                                              if (sheetContext.mounted) {
+                                                ScaffoldMessenger.of(
+                                                  sheetContext,
+                                                ).showSnackBar(
+                                                  const SnackBar(
+                                                    content: Text(
+                                                      'تعذر إرسال الدعوة حالياً.',
+                                                    ),
+                                                  ),
+                                                );
+                                              }
+                                            } finally {
+                                              if (sheetContext.mounted) {
+                                                setSheetState(
+                                                  () => sending.remove(
+                                                    friend.uid,
+                                                  ),
+                                                );
+                                              }
+                                            }
+                                          },
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor:
+                                          const Color(0xFF6D27D9),
+                                    ),
+                                    child: busy
+                                        ? const SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: Colors.white,
+                                            ),
+                                          )
+                                        : const Text('مشاركة'),
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showToolsSheet() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF171717),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      ),
+      builder: (sheetContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: StatefulBuilder(
+          builder: (context, setSheetState) {
+            void toggleRoomSound(bool value) {
+              setState(() => _roomSoundEnabled = value);
+              setSheetState(() {});
+            }
+
+            void toggleEffectSound(bool value) {
+              setState(() => _effectSoundEnabled = value);
+              setSheetState(() {});
+            }
+
+            void toggleRoomEffects(bool value) {
+              setState(() => _roomEffectsEnabled = value);
+              setSheetState(() {});
+            }
+
+            Widget tool({
+              required IconData icon,
+              required String label,
+              required VoidCallback onTap,
+              Color iconColor = const Color(0xFFFFD54A),
+            }) {
+              return InkWell(
+                borderRadius: BorderRadius.circular(18),
+                onTap: onTap,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 58,
+                      height: 58,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF262626),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(icon, color: iconColor, size: 30),
+                    ),
+                    const SizedBox(height: 7),
+                    Text(
+                      label,
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            void comingSoon(String label) {
+              ScaffoldMessenger.of(sheetContext).showSnackBar(
+                SnackBar(content: Text(label + ' سيتم ربطه في مرحلته.')),
+              );
+            }
+
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 22),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'الأدوات',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 21,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    GridView.count(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      crossAxisCount: 5,
+                      mainAxisSpacing: 16,
+                      crossAxisSpacing: 8,
+                      childAspectRatio: .78,
+                      children: [
+                        tool(
+                          icon: Icons.account_balance_wallet_rounded,
+                          label: 'مركز الشحن',
+                          onTap: () {
+                            Navigator.pop(sheetContext);
+                            NavigationService.navigateTo(AppRoutes.recharge);
+                          },
+                          iconColor: const Color(0xFFFF8A80),
+                        ),
+                        tool(
+                          icon: Icons.local_activity_rounded,
+                          label: 'الأنشطة',
+                          onTap: () => comingSoon('الأنشطة'),
+                          iconColor: const Color(0xFFFFE082),
+                        ),
+                        tool(
+                          icon: Icons.storefront_rounded,
+                          label: 'المتجر',
+                          onTap: () => comingSoon('المتجر'),
+                          iconColor: const Color(0xFFFFF59D),
+                        ),
+                        tool(
+                          icon: Icons.checkroom_rounded,
+                          label: 'الإكسسوارات',
+                          onTap: () => comingSoon('الإكسسوارات'),
+                          iconColor: const Color(0xFFCE93D8),
+                        ),
+                        tool(
+                          icon: Icons.music_note_rounded,
+                          label: 'الأغاني',
+                          onTap: () => comingSoon('الأغاني'),
+                          iconColor: const Color(0xFFF48FB1),
+                        ),
+                        tool(
+                          icon: Icons.autorenew_rounded,
+                          label: 'عجلة الحظ',
+                          onTap: () => comingSoon('عجلة الحظ'),
+                          iconColor: const Color(0xFFFFF59D),
+                        ),
+                        _RoomToolToggle(
+                          icon: Icons.auto_awesome_rounded,
+                          label: 'مؤثرات الغرفة',
+                          value: _roomEffectsEnabled,
+                          onChanged: toggleRoomEffects,
+                        ),
+                        _RoomToolToggle(
+                          icon: Icons.volume_up_rounded,
+                          label: 'صوت الغرفة',
+                          value: _roomSoundEnabled,
+                          onChanged: toggleRoomSound,
+                        ),
+                        _RoomToolToggle(
+                          icon: Icons.star_rounded,
+                          label: 'صوت المؤثرات',
+                          value: _effectSoundEnabled,
+                          onChanged: toggleEffectSound,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   Future<void> _showRoomMenu() async {
     final personal = (_roomArguments['roomType'] ?? '').toString() == 'personal';
     final owner = _voiceSession.isOwner;
@@ -336,6 +726,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   void dispose() {
     _voiceSession.removeListener(_syncVoiceSession);
     _roomActions.close();
+    _roomInvites.close();
     super.dispose();
   }
 
@@ -437,7 +828,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                             children: [
                               IconButton(
                                 icon: const Icon(Icons.share_rounded),
-                                onPressed: () {},
+                                onPressed: _showShareRoomSheet,
                                 tooltip: 'مشاركة الغرفة',
                               ),
                               Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(20)), child: const Text('387')),
@@ -489,7 +880,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                           ),
                           const SizedBox(width: 4),
                           IconButton(
-                            onPressed: () {},
+                            onPressed: _showToolsSheet,
                             tooltip: 'الأدوات',
                             icon: const Icon(Icons.grid_view_rounded),
                           ),
@@ -554,6 +945,72 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           ),
         ),
       ),
+    );
+  }
+}
+
+
+class _RoomToolToggle extends StatelessWidget {
+  const _RoomToolToggle({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Container(
+          width: 58,
+          height: 58,
+          decoration: const BoxDecoration(
+            color: Color(0xFF262626),
+            shape: BoxShape.circle,
+          ),
+          child: Stack(
+            children: [
+              Center(
+                child: Icon(
+                  icon,
+                  color: const Color(0xFFBBD4FF),
+                  size: 30,
+                ),
+              ),
+              Positioned(
+                right: -3,
+                bottom: -5,
+                child: Transform.scale(
+                  scale: .65,
+                  child: Switch(
+                    value: value,
+                    onChanged: onChanged,
+                    activeThumbColor: Colors.white,
+                    activeTrackColor: const Color(0xFF5A20FF),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 7),
+        Text(
+          label,
+          textAlign: TextAlign.center,
+          maxLines: 2,
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 11,
+          ),
+        ),
+      ],
     );
   }
 }
