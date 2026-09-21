@@ -98,6 +98,19 @@ class HomeDiscoveryData {
       });
     return result;
   }
+
+  List<Map<String, dynamic>> get events => _configList('events');
+
+  List<Map<String, dynamic>> get rankingPreview => _configList('rankingPreview');
+
+  List<Map<String, dynamic>> _configList(String key) {
+    final raw = config[key];
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+  }
 }
 
 class DiscoveryService {
