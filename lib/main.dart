@@ -135,11 +135,27 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
 
   void _syncVoiceSession() {
     if (!mounted) return;
+    final roomClosed = _voiceSession.error == 'room_closed';
     setState(() {
       _voiceJoining = _voiceSession.joining;
       _voiceMicMuted = _voiceSession.micMuted;
       _voiceError = _voiceSession.error;
     });
+    if (roomClosed && !_roomClosedHandled) {
+      _roomClosedHandled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم إغلاق الغرفة من صاحبها.')),
+        );
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(
+            builder: (_) => const MainShellScreen(initialNavIndex: 1),
+          ),
+          (_) => false,
+        );
+      });
+    }
   }
 
   bool _voiceJoining = true;
@@ -157,6 +173,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   RoomSeatState? _roomSeatState;
   bool _changingSeat = false;
   StreamSubscription<RoomSeatState>? _roomSeatSubscription;
+  bool _roomClosedHandled = false;
 
   @override
   void didChangeDependencies() {
