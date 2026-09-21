@@ -28,6 +28,8 @@ class _DiscoverySearchScreenState extends State<DiscoverySearchScreen> {
   List<Map<String, dynamic>> _people = const [];
   List<Map<String, dynamic>> _rooms = const [];
   List<DiscoveryRoom> _roomCache = const [];
+  List<Map<String, dynamic>> _legacyPeopleCache = const [];
+  bool _legacyPeopleCacheLoading = false;
 
   String? get _uid => FirebaseAuth.instance.currentUser?.uid;
 
@@ -35,6 +37,7 @@ class _DiscoverySearchScreenState extends State<DiscoverySearchScreen> {
   void initState() {
     super.initState();
     _warmRoomCache();
+    _warmLegacyPeopleCache();
   }
 
   @override
@@ -50,6 +53,27 @@ class _DiscoverySearchScreenState extends State<DiscoverySearchScreen> {
       const Duration(milliseconds: 250),
       () => _search(value),
     );
+  }
+
+  Future<void> _warmLegacyPeopleCache() async {
+    if (_legacyPeopleCacheLoading || _legacyPeopleCache.isNotEmpty) return;
+    _legacyPeopleCacheLoading = true;
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('public_profiles')
+          .limit(120)
+          .get();
+      if (mounted) {
+        _legacyPeopleCache = snapshot.docs
+            .where((doc) => doc.id != _uid)
+            .map((doc) => {...doc.data(), 'uid': doc.id})
+            .toList(growable: false);
+      }
+    } catch (_) {
+      // Transitional fallback only. Indexed search remains the primary path.
+    } finally {
+      _legacyPeopleCacheLoading = false;
+    }
   }
 
   Future<void> _warmRoomCache() async {
@@ -155,6 +179,17 @@ class _DiscoverySearchScreenState extends State<DiscoverySearchScreen> {
     } catch (_) {
       // Legacy public_profiles may not have searchTokens until their next
       // profile sync. Prefix fallback below keeps them discoverable.
+    }
+
+    await _warmLegacyPeopleCache();
+    for (final profile in _legacyPeopleCache) {
+      final uid = (profile['uid'] ?? '').toString();
+      if (uid.isEmpty || uid == _uid) continue;
+      if (searchTextMatches(profile['displayName'], query) ||
+          searchTextMatches(profile['username'], query) ||
+          normalizeSearchText(profile['publicId']) == query) {
+        results[uid] = profile;
+      }
     }
 
     if (rawQuery.isNotEmpty && results.length < 20) {
