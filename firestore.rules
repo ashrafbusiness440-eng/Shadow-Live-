@@ -215,6 +215,15 @@ service cloud.firestore {
       }
     }
 
+    match /room_bans/{roomId} {
+      allow read, write: if false;
+
+      match /users/{userId} {
+        allow get: if signedIn() && request.auth.uid == userId;
+        allow list, create, update, delete: if false;
+      }
+    }
+
     match /follows/{followId} {
       allow read: if signedIn();
       allow create, update, delete: if false;
