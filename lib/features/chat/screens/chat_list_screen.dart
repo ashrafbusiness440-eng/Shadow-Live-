@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'private_chat_screen.dart';
 import '../../profile/widgets/quick_profile_sheet.dart';
+import '../../profile/services/profile_action_service.dart';
 
 class ChatListScreen extends StatefulWidget {
   const ChatListScreen({super.key});
@@ -69,24 +70,14 @@ class _ChatListScreenState extends State<ChatListScreen> {
     final user = doc.data();
     final name = '${user['displayName'] ?? 'مستخدم Shadow Live'}';
     final photo = '${user['profileImageUrl'] ?? ''}';
-    final me = uid;
-    if (me == null || me.isEmpty) return;
-    final id = _conversationId(doc.id);
-    if (id == null) return;
-    final ref = FirebaseFirestore.instance.collection('conversations').doc(id);
-    final existing = await ref.get();
-    if (!existing.exists) {
-      await ref.set({
-        'participants': [me, doc.id],
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-        'unreadCounts': {me: 0, doc.id: 0},
-      });
-    }
-    if (!sheetContext.mounted) return;
-    Navigator.pop(sheetContext);
-    if (!mounted) return;
-    Navigator.push(context, MaterialPageRoute(builder: (_) => PrivateChatScreen(conversationId: id, otherUid: doc.id, otherName: name, otherPhoto: photo)));
+    final navigator = Navigator.of(context);
+    if (sheetContext.mounted) Navigator.pop(sheetContext);
+    await ProfileActionService.openChatWithNavigator(
+      navigator,
+      otherUid: doc.id,
+      otherName: name,
+      otherPhoto: photo,
+    );
   }
 
   Widget _userTile(BuildContext sheetContext, QueryDocumentSnapshot<Map<String, dynamic>> doc) {
