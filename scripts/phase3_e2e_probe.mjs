@@ -11,7 +11,7 @@ page.on('pageerror', err => console.log('[pageerror]', err.message));
 async function enableAccessibility() {
   const placeholder = page.locator('flt-semantics-placeholder[aria-label="Enable accessibility"]');
   if (await placeholder.count()) {
-    await placeholder.first().click({ force: true });
+    await placeholder.first().evaluate(el => el.click());
     await page.waitForTimeout(400);
   }
 }
