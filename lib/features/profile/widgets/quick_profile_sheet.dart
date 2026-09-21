@@ -181,9 +181,26 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                                         if (mounted) setState(() => _changingFollow = false);
                                       }
                                     },
-                              style: FilledButton.styleFrom(backgroundColor: following ? const Color(0xFF262B38) : const Color(0xFF7B2DFF)),
-                              icon: Icon(following ? Icons.person_remove_alt_1_rounded : Icons.person_add_alt_1_rounded),
-                              label: Text(following ? 'إلغاء المتابعة' : 'متابعة'),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: following ? const Color(0xFF262B38) : const Color(0xFF7B2DFF),
+                                foregroundColor: Colors.white,
+                                disabledForegroundColor: Colors.white54,
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 13),
+                                minimumSize: const Size(0, 48),
+                                textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+                              ),
+                              icon: Icon(
+                                following ? Icons.person_remove_alt_1_rounded : Icons.person_add_alt_1_rounded,
+                                size: 18,
+                              ),
+                              label: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  following ? 'إلغاء المتابعة' : 'متابعة',
+                                  maxLines: 1,
+                                  softWrap: false,
+                                ),
+                              ),
                             );
                           },
                         ),
@@ -200,16 +217,28 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                               otherPhoto: photo,
                             );
                           },
-                          icon: const Icon(Icons.chat_bubble_outline_rounded),
-                          label: const Text('رسالة'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFFFFD54A),
+                            side: const BorderSide(color: Colors.white70),
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 13),
+                            minimumSize: const Size(0, 48),
+                          ),
+                          icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+                          label: const FittedBox(fit: BoxFit.scaleDown, child: Text('رسالة', maxLines: 1)),
                         ),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: OutlinedButton.icon(
                           onPressed: () => _gift(context, name),
-                          icon: const Icon(Icons.card_giftcard_rounded, color: Color(0xFFFFD54A)),
-                          label: const Text('هدية'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFFFFD54A),
+                            side: const BorderSide(color: Colors.white70),
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 13),
+                            minimumSize: const Size(0, 48),
+                          ),
+                          icon: const Icon(Icons.card_giftcard_rounded, size: 18),
+                          label: const FittedBox(fit: BoxFit.scaleDown, child: Text('هدية', maxLines: 1)),
                         ),
                       ),
                     ],
