@@ -1,6 +1,6 @@
 import {getApps,initializeApp,cert} from "firebase-admin/app";
 import {getAuth} from "firebase-admin/auth";
-import {getFirestore,FieldValue} from "firebase-admin/firestore";
+import {getFirestore,FieldValue,Timestamp} from "firebase-admin/firestore";
 
 function parseServiceAccount(raw){
   const text=String(raw||"").trim();
@@ -29,6 +29,10 @@ function cors(req,res){
 }
 
 const out=(res,status,body)=>res.status(status).json(body);
+const bounded=(value,fallback,min,max)=>{
+  const n=Number(value);
+  return Number.isFinite(n)?Math.max(min,Math.min(max,Math.floor(n))):fallback;
+};
 
 export default async function handler(req,res){
   if(cors(req,res))return;
@@ -58,6 +62,7 @@ export default async function handler(req,res){
 
     phase="transaction";
     const db=getFirestore();
+    const nowMs=Date.now();
     const result=await db.runTransaction(async tx=>{
       const opRef=db.collection("message_operations").doc(key);
       const senderRef=db.collection("users").doc(decoded.uid);
@@ -65,17 +70,25 @@ export default async function handler(req,res){
       const conversationRef=db.collection("conversations").doc(conversationId);
       const outgoingFollowRef=db.collection("follows").doc(decoded.uid+"__"+receiverId);
       const incomingFollowRef=db.collection("follows").doc(receiverId+"__"+decoded.uid);
+      const outgoingBlockRef=db.collection("user_blocks").doc(decoded.uid).collection("items").doc(receiverId);
+      const incomingBlockRef=db.collection("user_blocks").doc(receiverId).collection("items").doc(decoded.uid);
       const senderLimitRef=db.collection("dm_limits").doc(conversationId+"__"+decoded.uid);
       const receiverLimitRef=db.collection("dm_limits").doc(conversationId+"__"+receiverId);
+      const rateRef=db.collection("message_rate_limits").doc(decoded.uid);
+      const configRef=db.collection("system_config").doc("messaging");
 
-      const [op,sender,receiver,conversation,outgoingFollow,incomingFollow,senderLimit]=await Promise.all([
+      const [op,sender,receiver,conversation,outgoingFollow,incomingFollow,outgoingBlock,incomingBlock,senderLimit,rate,config]=await Promise.all([
         tx.get(opRef),
         tx.get(senderRef),
         tx.get(receiverRef),
         tx.get(conversationRef),
         tx.get(outgoingFollowRef),
         tx.get(incomingFollowRef),
+        tx.get(outgoingBlockRef),
+        tx.get(incomingBlockRef),
         tx.get(senderLimitRef),
+        tx.get(rateRef),
+        tx.get(configRef),
       ]);
 
       if(op.exists)return {ok:true,code:"duplicate",...(op.data()?.result||{})};
@@ -84,6 +97,21 @@ export default async function handler(req,res){
       const conversationData=conversation.data()||{};
       const participants=Array.isArray(conversationData.participants)?conversationData.participants:[];
       if(participants.length!==2||!participants.includes(decoded.uid)||!participants.includes(receiverId))throw Error("invalid_conversation");
+      if(outgoingBlock.exists||incomingBlock.exists)throw Error("blocked");
+
+      const cfg=config.data()||{};
+      const windowSeconds=bounded(cfg.messageRateWindowSeconds,10,2,60);
+      const maxMessages=bounded(cfg.messageRateMax,8,1,50);
+      const rateData=rate.data()||{};
+      const startedMs=rateData.windowStartedAt?.toMillis?.()||0;
+      const sameWindow=startedMs>0&&(nowMs-startedMs)<windowSeconds*1000;
+      const currentCount=sameWindow?Math.max(0,Number(rateData.count||0)):0;
+      if(currentCount>=maxMessages)throw Error("rate_limited");
+      tx.set(rateRef,{
+        windowStartedAt:Timestamp.fromMillis(sameWindow?startedMs:nowMs),
+        count:currentCount+1,
+        updatedAt:Timestamp.fromMillis(nowMs),
+      },{merge:true});
 
       const mutual=outgoingFollow.exists&&incomingFollow.exists;
       const senderData=sender.data()||{};
@@ -146,9 +174,13 @@ export default async function handler(req,res){
     return out(res,200,result);
   }catch(e){
     const raw=e?.message||"server_error";
-    const known=["not_found","invalid_conversation","follow_required","message_limit_reached"];
+    const known=["not_found","invalid_conversation","follow_required","message_limit_reached","blocked","rate_limited"];
     const code=known.includes(raw)?raw:"server_"+phase+"_failed";
-    const status=raw==="not_found"?404:raw==="follow_required"?403:raw==="message_limit_reached"?429:raw==="invalid_conversation"?409:500;
+    const status=
+      raw==="not_found"?404:
+      raw==="follow_required"||raw==="blocked"?403:
+      raw==="message_limit_reached"||raw==="rate_limited"?429:
+      raw==="invalid_conversation"?409:500;
     return out(res,status,{ok:false,code});
   }
 }

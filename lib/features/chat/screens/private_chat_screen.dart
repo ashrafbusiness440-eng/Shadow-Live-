@@ -11,6 +11,7 @@ import '../../../core/assets/shadow_asset_registry.dart';
 import '../../main/screens/main_shell_screen.dart';
 import '../../profile/services/follow_service.dart';
 import '../../profile/widgets/quick_profile_sheet.dart';
+import '../services/chat_safety_service.dart';
 
 class PrivateChatScreen extends StatefulWidget {
   final String conversationId;
@@ -28,7 +29,9 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   final _controller = TextEditingController();
   final _follow = FollowService();
   final _picker = ImagePicker();
+  final _safety = ChatSafetyService();
   bool _sending = false;
+  bool _changingBlock = false;
   bool _markingRead = false;
   bool _sendingImage = false;
   String? _sendingGiftId;
@@ -78,6 +81,12 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
         case 'invalid_conversation':
           _snack('تعذر التحقق من هذه المحادثة.');
           break;
+        case 'blocked':
+          _snack('لا يمكن إرسال رسائل بينكما حالياً بسبب إعدادات الحظر.');
+          break;
+        case 'rate_limited':
+          _snack('تم الإرسال بسرعة كبيرة. حاول مجددًا بعد لحظات.');
+          break;
         default:
           _snack('تعذر إرسال الرسالة حالياً.');
       }
@@ -88,6 +97,159 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     }
   }
 
+
+  Future<void> _setBlocked(bool blocked) async {
+    if (_changingBlock) return;
+    setState(() => _changingBlock = true);
+    try {
+      await _safety.setBlocked(targetUserId: widget.otherUid, blocked: blocked);
+      if (blocked) {
+        _controller.clear();
+        _snack('تم حظر المستخدم وإيقاف الرسائل والهدايا والصور بينكما.');
+      } else {
+        _snack('تم إلغاء الحظر.');
+      }
+    } catch (_) {
+      _snack('تعذر تحديث الحظر حالياً.');
+    } finally {
+      if (mounted) setState(() => _changingBlock = false);
+    }
+  }
+
+  Future<void> _confirmBlock(bool currentlyBlocked) async {
+    if (currentlyBlocked) {
+      await _setBlocked(false);
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF111522),
+        title: const Text('حظر المستخدم', style: TextStyle(color: Colors.white)),
+        content: const Text(
+          'سيتم إيقاف الرسائل والهدايا والصور بينكما وإلغاء المتابعة المتبادلة.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            child: const Text('حظر'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await _setBlocked(true);
+  }
+
+  Future<void> _reportUser() async {
+    final detailsController = TextEditingController();
+    var reason = 'spam';
+    var sending = false;
+    const labels = <String, String>{
+      'spam': 'رسائل مزعجة / Spam',
+      'harassment': 'مضايقة أو إساءة',
+      'inappropriate_content': 'محتوى غير مناسب',
+      'scam': 'احتيال أو تضليل',
+      'other': 'سبب آخر',
+    };
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: const Color(0xFF111522),
+          title: const Text('الإبلاغ عن المستخدم', style: TextStyle(color: Colors.white)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                value: reason,
+                dropdownColor: const Color(0xFF171C2A),
+                decoration: const InputDecoration(
+                  labelText: 'سبب البلاغ',
+                  labelStyle: TextStyle(color: Colors.white60),
+                ),
+                items: labels.entries
+                    .map((entry) => DropdownMenuItem(
+                          value: entry.key,
+                          child: Text(entry.value, style: const TextStyle(color: Colors.white)),
+                        ))
+                    .toList(),
+                onChanged: sending
+                    ? null
+                    : (value) {
+                        if (value != null) setDialogState(() => reason = value);
+                      },
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: detailsController,
+                maxLength: 500,
+                minLines: 2,
+                maxLines: 4,
+                enabled: !sending,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  hintText: 'تفاصيل إضافية (اختياري)',
+                  hintStyle: TextStyle(color: Colors.white38),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: sending ? null : () => Navigator.pop(dialogContext),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton.icon(
+              onPressed: sending
+                  ? null
+                  : () async {
+                      setDialogState(() => sending = true);
+                      try {
+                        await _safety.reportUser(
+                          targetUserId: widget.otherUid,
+                          conversationId: widget.conversationId,
+                          reason: reason,
+                          details: detailsController.text.trim(),
+                        );
+                        if (dialogContext.mounted) Navigator.pop(dialogContext);
+                        _snack('تم إرسال البلاغ للمراجعة.');
+                      } on StateError catch (error) {
+                        if (error.message == 'rate_limited') {
+                          _snack('تم إرسال عدة بلاغات مؤخرًا. حاول لاحقًا.');
+                        } else {
+                          _snack('تعذر إرسال البلاغ حالياً.');
+                        }
+                        if (dialogContext.mounted) {
+                          setDialogState(() => sending = false);
+                        }
+                      } catch (_) {
+                        _snack('تعذر إرسال البلاغ حالياً.');
+                        if (dialogContext.mounted) {
+                          setDialogState(() => sending = false);
+                        }
+                      }
+                    },
+              icon: sending
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Icon(Icons.flag_outlined),
+              label: const Text('إرسال البلاغ'),
+            ),
+          ],
+        ),
+      ),
+    );
+    detailsController.dispose();
+  }
 
   Future<bool> _storageReady() async {
     try {
@@ -317,6 +479,8 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       if (response.statusCode == 200 && body['ok'] == true) return true;
       if (body['code'] == 'insufficient_balance') {
         _snack('رصيد العملات غير كافٍ لإرسال الهدية.');
+      } else if (body['code'] == 'blocked') {
+        _snack('لا يمكن إرسال هدية بينكما حالياً بسبب إعدادات الحظر.');
       } else {
         _snack('تعذر إرسال الهدية حالياً.');
       }
@@ -444,19 +608,257 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   String _time(dynamic value){if(value is! Timestamp)return '';final d=value.toDate();final hour=d.hour%12==0?12:d.hour%12;final minute=d.minute.toString().padLeft(2,'0');return '$hour:$minute ${d.hour>=12?'م':'ص'}';}
   void _openProfile()=>showQuickProfileSheet(context,userId:widget.otherUid);
 
+  Widget _composer() => SafeArea(
+        top: false,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(6, 8, 6, 10),
+          decoration: const BoxDecoration(
+            color: Color(0xFF0B0D16),
+            border: Border(top: BorderSide(color: Colors.white10)),
+          ),
+          child: Row(
+            children: [
+              IconButton(
+                tooltip: 'هدية',
+                onPressed: _sendingGiftId != null ? null : _openGiftPicker,
+                color: const Color(0xFFFFD54A),
+                icon: const Icon(Icons.card_giftcard_rounded),
+              ),
+              IconButton(
+                tooltip: 'صورة',
+                onPressed: _sendingImage ? null : _sendImage,
+                color: const Color(0xFFB78CFF),
+                icon: _sendingImage
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.image_outlined),
+              ),
+              Expanded(
+                child: TextField(
+                  controller: _controller,
+                  minLines: 1,
+                  maxLines: 5,
+                  maxLength: 2000,
+                  buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText: 'اكتب رسالة...',
+                    hintStyle: const TextStyle(color: Colors.white38),
+                    filled: true,
+                    fillColor: const Color(0xFF151925),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(22),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              IconButton.filled(
+                onPressed: _sending ? null : _send,
+                style: IconButton.styleFrom(
+                  backgroundColor: const Color(0xFF7B2DFF),
+                  foregroundColor: Colors.white,
+                ),
+                icon: _sending
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.send_rounded),
+              ),
+            ],
+          ),
+        ),
+      );
+
+  Widget _blockedComposer() => SafeArea(
+        top: false,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+          decoration: const BoxDecoration(
+            color: Color(0xFF0B0D16),
+            border: Border(top: BorderSide(color: Colors.white10)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.block_rounded, color: Colors.redAccent),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'لقد حظرت هذا المستخدم. الإرسال متوقف.',
+                  style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w700),
+                ),
+              ),
+              TextButton(
+                onPressed: _changingBlock ? null : () => _setBlocked(false),
+                child: const Text('إلغاء الحظر'),
+              ),
+            ],
+          ),
+        ),
+      );
+
   @override
-  Widget build(BuildContext context)=>Directionality(textDirection:TextDirection.rtl,child:WillPopScope(onWillPop:() async{_backToMessages();return false;},child:Scaffold(
-    backgroundColor:const Color(0xFF05060D),
-    appBar:AppBar(automaticallyImplyLeading:false,backgroundColor:const Color(0xFF0B0D16),foregroundColor:Colors.white,titleSpacing:0,leading:IconButton(tooltip:'الرجوع إلى الرسائل',onPressed:_backToMessages,icon:const Icon(Icons.arrow_forward_rounded)),title:StreamBuilder<DocumentSnapshot<Map<String,dynamic>>>(stream:FirebaseFirestore.instance.collection('public_profiles').doc(widget.otherUid).snapshots(),builder:(context,snapshot){final data=snapshot.data?.data();final provider=_avatarProvider(data);final name=(data?['displayName']??widget.otherName).toString();return InkWell(onTap:_openProfile,borderRadius:BorderRadius.circular(12),child:Padding(padding:const EdgeInsets.symmetric(vertical:5),child:Row(children:[CircleAvatar(radius:19,backgroundColor:const Color(0xFF25183F),backgroundImage:provider,child:provider==null?const Icon(Icons.person,color:Color(0xFFFFD54A),size:21):null),const SizedBox(width:10),Expanded(child:Text(name,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:16,fontWeight:FontWeight.w800)))])));})),
-    body:Column(children:[
-      Expanded(child:StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(stream:_conversation.collection('messages').orderBy('createdAt',descending:true).limit(100).snapshots(),builder:(context,snapshot){
-        if(snapshot.hasError)return const Center(child:Text('تعذر تحميل الرسائل',style:TextStyle(color:Colors.white60)));
-        if(!snapshot.hasData)return const Center(child:CircularProgressIndicator(color:Color(0xFF8A3DFF)));
-        WidgetsBinding.instance.addPostFrameCallback((_)=>_markRead());final docs=snapshot.data!.docs;
-        if(docs.isEmpty)return const Center(child:Text('ابدأ المحادثة برسالة 👋',style:TextStyle(color:Colors.white54)));
-        return ListView.builder(reverse:true,padding:const EdgeInsets.all(14),itemCount:docs.length,itemBuilder:(_,index)=>_messageBubble(docs[index].data()));
-      })),
-      SafeArea(top:false,child:Container(padding:const EdgeInsets.fromLTRB(6,8,6,10),decoration:const BoxDecoration(color:Color(0xFF0B0D16),border:Border(top:BorderSide(color:Colors.white10))),child:Row(children:[IconButton(tooltip:'هدية',onPressed:_sendingGiftId!=null?null:_openGiftPicker,color:const Color(0xFFFFD54A),icon:const Icon(Icons.card_giftcard_rounded)),IconButton(tooltip:'صورة',onPressed:_sendingImage?null:_sendImage,color:const Color(0xFFB78CFF),icon:_sendingImage?const SizedBox(width:20,height:20,child:CircularProgressIndicator(strokeWidth:2)):const Icon(Icons.image_outlined)),Expanded(child:TextField(controller:_controller,minLines:1,maxLines:5,maxLength:2000,buildCounter:(_,{required currentLength,required isFocused,maxLength})=>null,style:const TextStyle(color:Colors.white),decoration:InputDecoration(hintText:'اكتب رسالة...',hintStyle:const TextStyle(color:Colors.white38),filled:true,fillColor:const Color(0xFF151925),border:OutlineInputBorder(borderRadius:BorderRadius.circular(22),borderSide:BorderSide.none),contentPadding:const EdgeInsets.symmetric(horizontal:16,vertical:10)))),const SizedBox(width:6),IconButton.filled(onPressed:_sending?null:_send,style:IconButton.styleFrom(backgroundColor:const Color(0xFF7B2DFF),foregroundColor:Colors.white),icon:_sending?const SizedBox(width:18,height:18,child:CircularProgressIndicator(strokeWidth:2,color:Colors.white)):const Icon(Icons.send_rounded))]))),
-    ]),
-   )));
+  Widget build(BuildContext context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: WillPopScope(
+          onWillPop: () async {
+            _backToMessages();
+            return false;
+          },
+          child: Scaffold(
+            backgroundColor: const Color(0xFF05060D),
+            appBar: AppBar(
+              automaticallyImplyLeading: false,
+              backgroundColor: const Color(0xFF0B0D16),
+              foregroundColor: Colors.white,
+              titleSpacing: 0,
+              leading: IconButton(
+                tooltip: 'الرجوع إلى الرسائل',
+                onPressed: _backToMessages,
+                icon: const Icon(Icons.arrow_forward_rounded),
+              ),
+              title: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                stream: FirebaseFirestore.instance
+                    .collection('public_profiles')
+                    .doc(widget.otherUid)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  final data = snapshot.data?.data();
+                  final provider = _avatarProvider(data);
+                  final name = (data?['displayName'] ?? widget.otherName).toString();
+                  return InkWell(
+                    onTap: _openProfile,
+                    borderRadius: BorderRadius.circular(12),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 5),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 19,
+                            backgroundColor: const Color(0xFF25183F),
+                            backgroundImage: provider,
+                            child: provider == null
+                                ? const Icon(Icons.person, color: Color(0xFFFFD54A), size: 21)
+                                : null,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+              actions: [
+                StreamBuilder<bool>(
+                  stream: _safety.watchBlocked(widget.otherUid),
+                  initialData: false,
+                  builder: (context, snapshot) {
+                    final blocked = snapshot.data ?? false;
+                    return PopupMenuButton<String>(
+                      enabled: !_changingBlock,
+                      icon: const Icon(Icons.more_vert_rounded),
+                      color: const Color(0xFF171C2A),
+                      onSelected: (value) {
+                        if (value == 'block') {
+                          _confirmBlock(blocked);
+                        } else if (value == 'report') {
+                          _reportUser();
+                        }
+                      },
+                      itemBuilder: (_) => [
+                        PopupMenuItem(
+                          value: 'block',
+                          child: Row(
+                            children: [
+                              Icon(
+                                blocked ? Icons.lock_open_rounded : Icons.block_rounded,
+                                color: blocked ? const Color(0xFF7ADFA3) : Colors.redAccent,
+                              ),
+                              const SizedBox(width: 10),
+                              Text(
+                                blocked ? 'إلغاء الحظر' : 'حظر المستخدم',
+                                style: const TextStyle(color: Colors.white),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const PopupMenuItem(
+                          value: 'report',
+                          child: Row(
+                            children: [
+                              Icon(Icons.flag_outlined, color: Color(0xFFFFB74D)),
+                              SizedBox(width: 10),
+                              Text('إبلاغ عن المستخدم', style: TextStyle(color: Colors.white)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ],
+            ),
+            body: Column(
+              children: [
+                Expanded(
+                  child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                    stream: _conversation
+                        .collection('messages')
+                        .orderBy('createdAt', descending: true)
+                        .limit(100)
+                        .snapshots(),
+                    builder: (context, snapshot) {
+                      if (snapshot.hasError) {
+                        return const Center(
+                          child: Text('تعذر تحميل الرسائل', style: TextStyle(color: Colors.white60)),
+                        );
+                      }
+                      if (!snapshot.hasData) {
+                        return const Center(
+                          child: CircularProgressIndicator(color: Color(0xFF8A3DFF)),
+                        );
+                      }
+                      WidgetsBinding.instance.addPostFrameCallback((_) => _markRead());
+                      final docs = snapshot.data!.docs;
+                      if (docs.isEmpty) {
+                        return const Center(
+                          child: Text('ابدأ المحادثة برسالة 👋', style: TextStyle(color: Colors.white54)),
+                        );
+                      }
+                      return ListView.builder(
+                        reverse: true,
+                        padding: const EdgeInsets.all(14),
+                        itemCount: docs.length,
+                        itemBuilder: (_, index) => _messageBubble(docs[index].data()),
+                      );
+                    },
+                  ),
+                ),
+                StreamBuilder<bool>(
+                  stream: _safety.watchBlocked(widget.otherUid),
+                  initialData: false,
+                  builder: (_, snapshot) =>
+                      (snapshot.data ?? false) ? _blockedComposer() : _composer(),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
 }

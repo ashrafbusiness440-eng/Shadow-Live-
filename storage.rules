@@ -45,6 +45,11 @@ service firebase.storage {
       return follows(firstUid, secondUid) && follows(secondUid, firstUid);
     }
 
+    function blockedBetween(firstUid, secondUid) {
+      return firestore.exists(/databases/(default)/documents/user_blocks/$(firstUid)/items/$(secondUid))
+        || firestore.exists(/databases/(default)/documents/user_blocks/$(secondUid)/items/$(firstUid));
+    }
+
     match /chat_images/{conversationId}/{senderUid}/{receiverUid}/{fileName} {
       allow read: if signedIn() && request.auth.uid in conversationParticipants(conversationId);
       allow create: if signedIn()
@@ -53,6 +58,7 @@ service firebase.storage {
         && request.auth.uid in conversationParticipants(conversationId)
         && receiverUid in conversationParticipants(conversationId)
         && mutualFollow(senderUid, receiverUid)
+        && !blockedBetween(senderUid, receiverUid)
         && validChatImage();
       allow update: if false;
       allow delete: if signedIn() && request.auth.uid == senderUid;

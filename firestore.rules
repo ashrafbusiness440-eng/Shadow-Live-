@@ -94,6 +94,11 @@ service cloud.firestore {
       return signedIn() && follows(request.auth.uid, otherUid) && follows(otherUid, request.auth.uid);
     }
 
+    function blockedBetween(firstUid, secondUid) {
+      return exists(/databases/$(database)/documents/user_blocks/$(firstUid)/items/$(secondUid))
+        || exists(/databases/$(database)/documents/user_blocks/$(secondUid)/items/$(firstUid));
+    }
+
     match /users/{userId} {
       allow create: if signedIn() && request.auth.uid == userId
         && request.resource.data.role == 'user'
@@ -207,6 +212,7 @@ service cloud.firestore {
         && request.resource.data.followerUid == request.auth.uid
         && request.resource.data.followingUid is string
         && request.resource.data.followingUid != request.auth.uid
+        && !blockedBetween(request.auth.uid, request.resource.data.followingUid)
         && followId == request.auth.uid + '__' + request.resource.data.followingUid
         && request.resource.data.createdAt == request.time;
       allow update: if false;
@@ -229,6 +235,32 @@ service cloud.firestore {
         allow delete: if signedIn() && request.auth.uid == userId;
         allow update: if false;
       }
+    }
+
+    match /user_blocks/{userId} {
+      allow read, write: if false;
+      match /items/{blockedUid} {
+        allow read: if signedIn()
+          && (request.auth.uid == userId || hasCapability('manageUsers'));
+        allow create, update, delete: if false;
+      }
+    }
+
+    match /reports/{reportId} {
+      allow read: if hasCapability('viewReports');
+      allow create, update, delete: if false;
+    }
+
+    match /message_rate_limits/{userId} {
+      allow read, write: if false;
+    }
+
+    match /report_rate_limits/{userId} {
+      allow read, write: if false;
+    }
+
+    match /report_operations/{operationId} {
+      allow read, write: if false;
     }
 
     match /conversations/{conversationId} {
@@ -257,6 +289,7 @@ service cloud.firestore {
           && request.resource.data.receiverId != request.auth.uid
           && request.resource.data.receiverId in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants
           && mutualFollow(request.resource.data.receiverId)
+          && !blockedBetween(request.auth.uid, request.resource.data.receiverId)
           && request.resource.data.imageUrl is string
           && request.resource.data.imageUrl.size() > 0
           && request.resource.data.storagePath is string
