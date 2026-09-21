@@ -47,6 +47,13 @@ try {
   await enableAccessibility();
   await dump('auth-choice');
   await page.screenshot({ path: 'phase3-probe-auth-choice.png', fullPage: true });
+
+  const phoneButton = page.getByRole('button', { name: 'متابعة برقم الهاتف' });
+  await phoneButton.click();
+  await page.waitForTimeout(700);
+  await enableAccessibility();
+  await dump('phone');
+  await page.screenshot({ path: 'phase3-probe-phone.png', fullPage: true });
 } finally {
   await context.close();
   await browser.close();
