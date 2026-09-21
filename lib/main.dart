@@ -35,8 +35,6 @@ import 'screens/room/create_room_screen.dart';
 import 'screens/room/room_list_screen.dart';
 import 'screens/settings/settings_screen.dart';
 import 'services/navigation_service.dart';
-import 'features/voice/services/voice_service.dart';
-import 'features/voice/services/zego_voice_service.dart';
 import 'features/voice/services/voice_room_session_controller.dart';
 import 'features/room/services/room_action_service.dart';
 import 'features/room/services/room_invite_service.dart';
@@ -181,9 +179,7 @@ class MyApp extends StatelessWidget {
                                     ? Text(
                                         supporter.displayName.isEmpty
                                             ? '?'
-                                            : supporter.displayName
-                                                .characters
-                                                .first,
+                                            : supporter.displayName.substring(0, 1),
                                         style: const TextStyle(
                                           color: Colors.white,
                                           fontSize: 11,
