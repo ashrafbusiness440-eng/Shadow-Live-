@@ -249,19 +249,15 @@ service cloud.firestore {
         allow read: if conversationParticipant(conversationId);
         allow create: if conversationParticipant(conversationId)
           && request.resource.data.senderId == request.auth.uid
-          && ((request.resource.data.type == 'text'
-              && request.resource.data.text is string
-              && request.resource.data.text.size() > 0
-              && request.resource.data.text.size() <= 2000)
-            || (request.resource.data.type == 'image'
-              && request.resource.data.receiverId is string
-              && request.resource.data.receiverId != request.auth.uid
-              && request.resource.data.receiverId in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants
-              && mutualFollow(request.resource.data.receiverId)
-              && request.resource.data.imageUrl is string
-              && request.resource.data.imageUrl.size() > 0
-              && request.resource.data.storagePath is string
-              && request.resource.data.storagePath.size() > 0));
+          && request.resource.data.type == 'image'
+          && request.resource.data.receiverId is string
+          && request.resource.data.receiverId != request.auth.uid
+          && request.resource.data.receiverId in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants
+          && mutualFollow(request.resource.data.receiverId)
+          && request.resource.data.imageUrl is string
+          && request.resource.data.imageUrl.size() > 0
+          && request.resource.data.storagePath is string
+          && request.resource.data.storagePath.size() > 0;
         allow update, delete: if false;
       }
     }
