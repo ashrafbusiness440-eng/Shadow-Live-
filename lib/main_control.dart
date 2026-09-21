@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'firebase_options.dart';
 import 'utils/compact_number.dart';
+import 'admin/control_admin_id_override.dart';
 
 
 Future<void> main() async {
@@ -195,6 +196,7 @@ class _ControlShellState extends State<ControlShell> {
       const UsersPage(),
       const RoomsPage(),
       const FinancePage(),
+      const IdManagementPage(),
       const MorePage(),
     ];
     return Scaffold(
@@ -212,6 +214,7 @@ class _ControlShellState extends State<ControlShell> {
         NavigationDestination(icon:Icon(Icons.people_outline),selectedIcon:Icon(Icons.people),label:'المستخدمون'),
         NavigationDestination(icon:Icon(Icons.mic_none),selectedIcon:Icon(Icons.mic),label:'الغرف'),
         NavigationDestination(icon:Icon(Icons.wallet_outlined),selectedIcon:Icon(Icons.wallet),label:'المالية'),
+        NavigationDestination(icon:Icon(Icons.badge_outlined),selectedIcon:Icon(Icons.badge),label:'IDs'),
         NavigationDestination(icon:Icon(Icons.more_horiz),label:'المزيد'),
       ]),
     );
@@ -249,7 +252,8 @@ class DashboardPage extends StatelessWidget {
       ActionChip(label:const Text('المستخدمون'),avatar:const Icon(Icons.manage_accounts_outlined),onPressed:()=>onOpen(1)),
       ActionChip(label:const Text('الغرف'),avatar:const Icon(Icons.mic_none_rounded),onPressed:()=>onOpen(2)),
       ActionChip(label:const Text('السجل المالي'),avatar:const Icon(Icons.receipt_long_outlined),onPressed:()=>onOpen(3)),
-      ActionChip(label:const Text('السجلات والإعدادات'),avatar:const Icon(Icons.history_outlined),onPressed:()=>onOpen(4)),
+      ActionChip(label:const Text('إدارة ID'),avatar:const Icon(Icons.badge_outlined),onPressed:()=>onOpen(4)),
+      ActionChip(label:const Text('السجلات والإعدادات'),avatar:const Icon(Icons.history_outlined),onPressed:()=>onOpen(5)),
     ]),
   ]);
 }
@@ -558,6 +562,203 @@ class AuditLogPage extends StatelessWidget {
         });
       },
     ),
+  );
+}
+
+
+class IdManagementPage extends StatefulWidget {
+  const IdManagementPage({super.key});
+  @override State<IdManagementPage> createState()=>_IdManagementPageState();
+}
+
+class _IdManagementPageState extends State<IdManagementPage> {
+  final oldId=TextEditingController();
+  final newId=TextEditingController();
+  final reason=TextEditingController(text:'تغيير ID إداري');
+  bool checking=false,executing=false;
+  String? targetUid;
+  Map<String,dynamic>? targetData;
+  String? error;
+
+  @override void dispose(){oldId.dispose();newId.dispose();reason.dispose();super.dispose();}
+
+  Future<Map<String,dynamic>?> _actor() async {
+    final user=FirebaseAuth.instance.currentUser;
+    if(user==null)return null;
+    final snap=await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+    return snap.data();
+  }
+
+  Future<void> _lookup() async {
+    final currentId=AdminIdOverridePolicy.normalize(oldId.text);
+    try{AdminIdOverridePolicy.validate(currentId);}catch(_){
+      setState(()=>error='الـID الحالي يجب أن يكون رقمياً من 3 إلى 12 خانة.');return;
+    }
+    setState((){checking=true;error=null;targetUid=null;targetData=null;});
+    try{
+      final idSnap=await FirebaseFirestore.instance.collection('public_ids').doc(currentId).get();
+      final uid=idSnap.data()?['uid']?.toString();
+      if(uid==null||uid.isEmpty){
+        final retired=idSnap.exists&&idSnap.data()?['reserved']==true;
+        throw Exception(retired?'هذا ID متقاعد ومحجوز وليس ID حاليًا.':'لم يتم العثور على حساب بهذا ID.');
+      }
+      final userSnap=await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      if(!userSnap.exists)throw Exception('الحساب المرتبط بالـID غير موجود.');
+      final data=userSnap.data()??<String,dynamic>{};
+      if('${data['publicId']??''}'!=currentId)throw Exception('هذا ID قديم/بديل وليس الـID الحالي للحساب.');
+      if(mounted)setState((){targetUid=uid;targetData=data;});
+    }catch(e){
+      if(mounted)setState(()=>error=e.toString().replaceFirst('Exception: ',''));
+    }finally{
+      if(mounted)setState(()=>checking=false);
+    }
+  }
+
+  String _messageForCode(String code)=>switch(code){
+    'id_taken'=>'الـID الجديد مستخدم أو محجوز مسبقًا.',
+    'not_found'=>'لم يتم العثور على الـID الحالي.',
+    'old_id_retired'=>'الـID الحالي الذي أدخلته متقاعد ومحجوز.',
+    'old_id_not_current'=>'الـID المدخل ليس الـID الحالي لهذا الحساب.',
+    'recent_auth_required'=>'هذه عملية حساسة. سجّل خروج من Shadow Control ثم ادخل من جديد وأعد المحاولة.',
+    'forbidden'=>'هذه الأداة مخصصة لحساب Owner فقط.',
+    'invalid_request'=>'تحقق من الـID القديم والجديد والسبب.',
+    _=>'تعذر تنفيذ العملية: $code',
+  };
+
+  Future<void> _execute() async {
+    final before=AdminIdOverridePolicy.normalize(oldId.text);
+    final after=AdminIdOverridePolicy.normalize(newId.text);
+    try{AdminIdOverridePolicy.validateChange(before,after);}catch(e){
+      setState(()=>error=e.toString().replaceFirst('Invalid argument(s): ',''));return;
+    }
+    if(targetUid==null||targetData==null||'${targetData!['publicId']??''}'!=before){
+      setState(()=>error='تحقق من الحساب باستخدام الـID الحالي أولًا.');return;
+    }
+    final why=reason.text.trim().isEmpty?'تغيير ID إداري من Shadow Control':reason.text.trim();
+    final name='${targetData!['displayName']??targetData!['name']??'مستخدم'}';
+    final confirmed=await showDialog<bool>(
+      context:context,
+      builder:(c)=>AlertDialog(
+        title:const Text('تأكيد تغيير الـID'),
+        content:Text('الحساب: $name\nالقديم: $before\nالجديد: $after\n\nالـID القديم سيتقاعد ويبقى محجوزًا ولن يعود قابلاً للاستخدام أو البحث.'),
+        actions:[
+          TextButton(onPressed:()=>Navigator.pop(c,false),child:const Text('إلغاء')),
+          FilledButton(onPressed:()=>Navigator.pop(c,true),child:const Text('تنفيذ التغيير')),
+        ],
+      ),
+    );
+    if(confirmed!=true||!mounted)return;
+    setState((){executing=true;error=null;});
+    try{
+      final user=FirebaseAuth.instance.currentUser;if(user==null)throw Exception('forbidden');
+      final token=await user.getIdToken().timeout(const Duration(seconds:12));
+      if(token==null||token.isEmpty)throw Exception('forbidden');
+      final key='pid_${DateTime.now().millisecondsSinceEpoch}_${user.uid.substring(0,6)}';
+      final apiUri=Uri(scheme:Uri.base.scheme,host:Uri.base.host,port:Uri.base.hasPort?Uri.base.port:null,path:'/api/change-public-id');
+      final response=await http.post(
+        apiUri,
+        headers:{'Content-Type':'application/json','Authorization':'Bearer $token'},
+        body:jsonEncode({'currentId':before,'newId':after,'reason':why,'idempotencyKey':key}),
+      ).timeout(const Duration(seconds:25));
+      final body=response.body.isEmpty?<String,dynamic>{}:jsonDecode(response.body) as Map<String,dynamic>;
+      if(response.statusCode!=200||body['ok']!=true)throw Exception('${body['code']??'request_failed'}');
+      if(!mounted)return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('تم تغيير ID: $before → $after')));
+      oldId.text=after;newId.clear();targetUid=null;targetData=null;
+      await _lookup();
+    }catch(e){
+      final code=e.toString().replaceFirst('Exception: ','');
+      if(mounted)setState(()=>error=_messageForCode(code));
+    }finally{
+      if(mounted)setState(()=>executing=false);
+    }
+  }
+
+  @override Widget build(BuildContext context)=>FutureBuilder<Map<String,dynamic>?>(
+    future:_actor(),
+    builder:(context,snap){
+      if(snap.connectionState==ConnectionState.waiting)return const Center(child:CircularProgressIndicator());
+      final actor=snap.data;
+      final isOwner=actor?['role']=='owner'&&actor?['adminEnabled']==true;
+      if(!isOwner){
+        return ListView(padding:const EdgeInsets.all(16),children:const[
+          Card(child:ListTile(
+            leading:Icon(Icons.lock_outline,color:Color(0xFFD7B85A)),
+            title:Text('إدارة الـID — Owner فقط',style:TextStyle(fontWeight:FontWeight.w900)),
+            subtitle:Text('تغيير المعرفات إجراء حساس ومقفل على حساب المالك.'),
+          )),
+        ]);
+      }
+      final data=targetData;
+      return ListView(padding:const EdgeInsets.all(16),children:[
+        const Row(children:[
+          Icon(Icons.badge_outlined,size:28,color:Color(0xFFD7B85A)),
+          SizedBox(width:10),
+          Text('إدارة الـID',style:TextStyle(fontSize:25,fontWeight:FontWeight.w900)),
+        ]),
+        const SizedBox(height:6),
+        const Text('تغيير جذري وآمن لأي Public ID مع حجز المعرف القديم وتسجيل العملية.',style:TextStyle(color:Color(0xFFAAA3B8))),
+        const SizedBox(height:16),
+        Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(children:[
+          TextField(
+            controller:oldId,
+            keyboardType:TextInputType.number,
+            decoration:const InputDecoration(labelText:'ID الحالي',hintText:'مثال: 48470239',border:OutlineInputBorder(),prefixIcon:Icon(Icons.search)),
+          ),
+          const SizedBox(height:12),
+          SizedBox(width:double.infinity,child:OutlinedButton.icon(
+            onPressed:checking||executing?null:_lookup,
+            icon:checking?const SizedBox(width:18,height:18,child:CircularProgressIndicator(strokeWidth:2)):const Icon(Icons.person_search_outlined),
+            label:Text(checking?'جار التحقق...':'تحقق من الحساب'),
+          )),
+        ]))),
+        if(data!=null&&targetUid!=null)...[
+          const SizedBox(height:12),
+          Card(child:ListTile(
+            leading:const CircleAvatar(child:Icon(Icons.person)),
+            title:Text('${data['displayName']??data['name']??'مستخدم'}',style:const TextStyle(fontWeight:FontWeight.w900)),
+            subtitle:Text('ID الحالي: ${data['publicId']}\nUID: $targetUid\nالدور: ${data['role']??'user'}'),
+            isThreeLine:true,
+            trailing:const Icon(Icons.verified,color:Color(0xFFD7B85A)),
+          )),
+          const SizedBox(height:12),
+          Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(children:[
+            TextField(
+              controller:newId,
+              keyboardType:TextInputType.number,
+              decoration:const InputDecoration(labelText:'ID الجديد',hintText:'مثال: 1111',border:OutlineInputBorder(),prefixIcon:Icon(Icons.badge_outlined)),
+            ),
+            const SizedBox(height:12),
+            TextField(
+              controller:reason,
+              maxLength:160,
+              decoration:const InputDecoration(labelText:'سبب التغيير',border:OutlineInputBorder()),
+            ),
+            const SizedBox(height:6),
+            const Text('الشروط: أرقام فقط، من 3 إلى 12 خانة، وغير مستخدم أو محجوز. الـID القديم سيتقاعد نهائيًا ويبقى محجوزًا.',style:TextStyle(fontSize:12,color:Color(0xFFAAA3B8))),
+            const SizedBox(height:14),
+            SizedBox(width:double.infinity,child:FilledButton.icon(
+              onPressed:executing?null:_execute,
+              icon:executing?const SizedBox(width:18,height:18,child:CircularProgressIndicator(strokeWidth:2)):const Icon(Icons.swap_horiz_rounded),
+              label:Text(executing?'جار التنفيذ...':'تغيير الـID'),
+            )),
+          ]))),
+        ],
+        if(error!=null)...[
+          const SizedBox(height:12),
+          Card(color:const Color(0xFF2A1015),child:ListTile(
+            leading:const Icon(Icons.error_outline,color:Colors.redAccent),
+            title:Text(error!,style:const TextStyle(color:Colors.redAccent)),
+          )),
+        ],
+        const SizedBox(height:12),
+        const Card(child:ListTile(
+          leading:Icon(Icons.shield_outlined,color:Color(0xFFD7B85A)),
+          title:Text('حماية العملية'),
+          subtitle:Text('Owner-only • Backend موثّق • Transaction واحدة • Audit Log • ID القديم محجوز • لا علاقة لها بميزة VIP IDs.'),
+        )),
+      ]);
+    },
   );
 }
 
