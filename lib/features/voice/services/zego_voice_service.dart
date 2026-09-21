@@ -26,6 +26,7 @@ class ZegoVoiceService implements VoiceService {
   String? _roomId;
   String? _zegoUserId;
   String? _streamId;
+  String? _accessCode;
   int? _seatIndex;
   bool _tokenRenewalInFlight = false;
 
@@ -150,7 +151,10 @@ class ZegoVoiceService implements VoiceService {
         }
 
         try {
-          final session = await _tokenClient.createSession(roomId);
+          final session = await _tokenClient.createSession(
+            roomId,
+            roomPassword: _accessCode,
+          );
           if (!_joined || _roomId != roomId) return;
           if (session.appId != _appId || session.roomId != roomId) {
             throw const VoiceException(
@@ -178,13 +182,18 @@ class ZegoVoiceService implements VoiceService {
     required String userId,
     required String displayName,
     String? token,
+    String? accessCode,
   }) async {
     if (_joined && _roomId == roomId) return;
     if (_joined) await leaveRoom();
 
     _connectionController.add(VoiceConnectionState.connecting);
     try {
-      final session = await _tokenClient.createSession(roomId);
+      _accessCode = accessCode?.trim();
+      final session = await _tokenClient.createSession(
+        roomId,
+        roomPassword: _accessCode,
+      );
       await _ensureEngine(session.appId);
 
       _roomId = roomId;
@@ -243,6 +252,7 @@ class ZegoVoiceService implements VoiceService {
       _roomId = null;
       _zegoUserId = null;
       _streamId = null;
+      _accessCode = null;
       _seatIndex = null;
       _micController.add(VoiceMicState.muted);
       _connectionController.add(VoiceConnectionState.disconnected);
