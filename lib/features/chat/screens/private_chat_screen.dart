@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/assets/shadow_asset_registry.dart';
+import '../../../services/navigation_service.dart';
 import '../../main/screens/main_shell_screen.dart';
 import '../../profile/services/follow_service.dart';
 import '../../profile/widgets/quick_profile_sheet.dart';
@@ -541,6 +542,35 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     return fallback;
   }
 
+  Future<void> _openRoomInvite(Map<String, dynamic> data) async {
+    final roomId = (data['roomId'] ?? '').toString().trim();
+    if (roomId.isEmpty) {
+      _snack('دعوة الغرفة غير صالحة.');
+      return;
+    }
+    try {
+      final room = await FirebaseFirestore.instance
+          .collection('rooms')
+          .doc(roomId)
+          .get();
+      final roomData = room.data();
+      if (!room.exists || roomData == null || roomData['isActive'] == false) {
+        _snack('هذه الغرفة غير متاحة حالياً.');
+        return;
+      }
+      if (!mounted) return;
+      Navigator.of(context).pushNamed(
+        AppRoutes.voiceChatRoom,
+        arguments: {
+          ...roomData,
+          'roomId': roomId,
+        },
+      );
+    } catch (_) {
+      _snack('تعذر فتح الغرفة حالياً.');
+    }
+  }
+
   Widget _messageBubble(Map<String, dynamic> data) {
     final mine = data['senderId'] == _uid;
     final type = (data['type'] ?? 'text').toString();
@@ -573,6 +603,75 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
               ),
             ),
           ),
+        ),
+      );
+    } else if (type == 'room_invite') {
+      final roomName = (data['roomName'] ?? 'غرفة صوتية').toString();
+      final publicId = (data['roomPublicId'] ?? '').toString();
+      content = Container(
+        width: 230,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFF111522),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: const Color(0xFF8A3DFF).withValues(alpha: .55),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(
+                  Icons.graphic_eq_rounded,
+                  color: Color(0xFFFFD54A),
+                ),
+                SizedBox(width: 7),
+                Text(
+                  'دعوة إلى غرفة صوتية',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              roomName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            if (publicId.isNotEmpty) ...[
+              const SizedBox(height: 3),
+              Text(
+                'ID: ' + publicId,
+                style: const TextStyle(
+                  color: Colors.white54,
+                  fontSize: 10,
+                ),
+              ),
+            ],
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () => _openRoomInvite(data),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF6D27D9),
+                  foregroundColor: Colors.white,
+                ),
+                icon: const Icon(Icons.login_rounded, size: 18),
+                label: const Text('دخول الغرفة'),
+              ),
+            ),
+          ],
         ),
       );
     } else if (type == 'gift') {
