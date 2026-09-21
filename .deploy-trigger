@@ -1,3 +1,5 @@
 Trigger preview deployment after profile message navigation fix.
 
 Fix message navigation deploy trigger.
+
+Deploy secure private messaging head after CI success.
