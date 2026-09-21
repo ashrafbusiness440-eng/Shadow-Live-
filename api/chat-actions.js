@@ -221,6 +221,83 @@ async function sendGift(db,uid,body){
   });
 }
 
+async function sendRoomInvite(db,uid,body){
+  const receiverId=text(body.receiverId);
+  const conversationId=text(body.conversationId);
+  const roomId=text(body.roomId);
+  const key=text(body.idempotencyKey);
+  if(!receiverId||receiverId===uid||!conversationId||conversationId.includes("/")||!roomId||roomId.includes("/")||!validKey(key)){
+    throw new ApiError("invalid_request",400);
+  }
+
+  return db.runTransaction(async tx=>{
+    const opRef=db.collection("message_operations").doc(key);
+    const receiverRef=db.collection("users").doc(receiverId);
+    const conversationRef=db.collection("conversations").doc(conversationId);
+    const roomRef=db.collection("rooms").doc(roomId);
+    const outgoingFollowRef=db.collection("follows").doc(uid+"__"+receiverId);
+    const incomingFollowRef=db.collection("follows").doc(receiverId+"__"+uid);
+    const outgoingBlockRef=db.collection("user_blocks").doc(uid).collection("items").doc(receiverId);
+    const incomingBlockRef=db.collection("user_blocks").doc(receiverId).collection("items").doc(uid);
+
+    const [op,receiver,conversation,room,outgoingFollow,incomingFollow,outgoingBlock,incomingBlock]=await Promise.all([
+      tx.get(opRef),tx.get(receiverRef),tx.get(conversationRef),tx.get(roomRef),
+      tx.get(outgoingFollowRef),tx.get(incomingFollowRef),tx.get(outgoingBlockRef),tx.get(incomingBlockRef),
+    ]);
+
+    if(op.exists)return {ok:true,code:"duplicate",...(op.data()?.result||{})};
+    if(!receiver.exists||!conversation.exists||!room.exists)throw new ApiError("not_found",404);
+
+    const conversationData=conversation.data()||{};
+    const participants=Array.isArray(conversationData.participants)?conversationData.participants:[];
+    if(participants.length!==2||!participants.includes(uid)||!participants.includes(receiverId)){
+      throw new ApiError("invalid_conversation",409);
+    }
+    if(outgoingBlock.exists||incomingBlock.exists)throw new ApiError("blocked",403);
+    if(!outgoingFollow.exists||!incomingFollow.exists)throw new ApiError("mutual_follow_required",403);
+
+    const roomData=room.data()||{};
+    if(roomData.isActive===false)throw new ApiError("room_unavailable",409);
+
+    const roomName=String(roomData.name||roomData.title||"غرفة صوتية");
+    const roomPublicId=String(roomData.publicId||"");
+    const now=FieldValue.serverTimestamp();
+    const counts={...(conversationData.unreadCounts||{})};
+    counts[uid]=0;
+    counts[receiverId]=Number(counts[receiverId]||0)+1;
+    const messageRef=conversationRef.collection("messages").doc();
+
+    tx.update(conversationRef,{
+      lastMessage:"🔊 دعوة إلى "+roomName,
+      lastSenderId:uid,
+      updatedAt:now,
+      unreadCounts:counts,
+    });
+    tx.create(messageRef,{
+      senderId:uid,
+      receiverId,
+      type:"room_invite",
+      roomId,
+      roomName,
+      roomPublicId,
+      roomOwnerUid:String(roomData.ownerUid||roomData.ownerId||roomData.hostId||""),
+      createdAt:now,
+    });
+
+    const resultData={messageId:messageRef.id,roomId,roomName};
+    tx.create(opRef,{
+      senderId:uid,
+      receiverId,
+      conversationId,
+      action:"sendRoomInvite",
+      status:"completed",
+      result:resultData,
+      createdAt:now,
+    });
+    return {ok:true,code:"ok",...resultData};
+  });
+}
+
 async function setBlock(db,uid,body){
   const targetUserId=text(body.targetUserId);
   const blocked=body.blocked===true;
@@ -386,6 +463,7 @@ export default async function handler(req,res){
     switch(action){
       case "sendMessage": result=await sendMessage(db,decoded.uid,body); break;
       case "sendGift": result=await sendGift(db,decoded.uid,body); break;
+      case "sendRoomInvite": result=await sendRoomInvite(db,decoded.uid,body); break;
       case "setBlock": result=await setBlock(db,decoded.uid,body); break;
       case "reportUser": result=await reportUser(db,decoded.uid,body); break;
       case "setFollow": result=await setFollow(db,decoded.uid,body); break;
