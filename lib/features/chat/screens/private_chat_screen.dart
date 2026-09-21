@@ -42,13 +42,50 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   Future<void> _markRead() async {if (_markingRead) return;_markingRead = true;try {await _conversation.update({'unreadCounts.$_uid': 0});} catch (_) {} finally {_markingRead = false;}}
 
   Future<void> _send() async {
-    final text = _controller.text.trim();if (text.isEmpty || _sending || text.length > 2000) return;setState(() => _sending = true);
+    final text = _controller.text.trim();
+    if (text.isEmpty || _sending || text.length > 2000) return;
+    setState(() => _sending = true);
     try {
-      final batch = FirebaseFirestore.instance.batch();
-      batch.update(_conversation, {'lastMessage': text,'lastSenderId': _uid,'updatedAt': FieldValue.serverTimestamp(),'unreadCounts.$_uid': 0,'unreadCounts.${widget.otherUid}': FieldValue.increment(1)});
-      batch.set(_conversation.collection('messages').doc(), {'senderId': _uid,'text': text,'type': 'text','createdAt': FieldValue.serverTimestamp()});
-      await batch.commit();_controller.clear();
-    } catch (_) {if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تعذر إرسال الرسالة')));} finally {if (mounted) setState(() => _sending = false);}
+      final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+      if (token == null || token.isEmpty) throw StateError('not_signed_in');
+      final key = [_uid, DateTime.now().microsecondsSinceEpoch.toString(), 'text'].join('_');
+      final response = await http.post(
+        Uri.parse('https://shadow-live-git-feature-shadow-control-foundation-shadow-c916.vercel.app/api/send-message'),
+        headers: {'authorization': 'Bearer ' + token, 'content-type': 'application/json'},
+        body: jsonEncode({
+          'receiverId': widget.otherUid,
+          'conversationId': widget.conversationId,
+          'text': text,
+          'idempotencyKey': key,
+        }),
+      );
+      Map<String, dynamic> body = <String, dynamic>{};
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) body = decoded;
+      } catch (_) {}
+      if (response.statusCode == 200 && body['ok'] == true) {
+        _controller.clear();
+        return;
+      }
+      switch (body['code']) {
+        case 'message_limit_reached':
+          _snack('وصلت للحد: 3 رسائل غير مُجابة حتى تصبح المتابعة متبادلة.');
+          break;
+        case 'follow_required':
+          _snack('يجب متابعة هذا المستخدم أولاً لإرسال رسالة.');
+          break;
+        case 'invalid_conversation':
+          _snack('تعذر التحقق من هذه المحادثة.');
+          break;
+        default:
+          _snack('تعذر إرسال الرسالة حالياً.');
+      }
+    } catch (_) {
+      _snack('تعذر إرسال الرسالة حالياً.');
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
   }
 
 
