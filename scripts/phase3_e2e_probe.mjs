@@ -1,8 +1,9 @@
 import { chromium } from 'playwright';
 
 const baseUrl = process.env.PHASE3_BASE_URL ?? 'http://127.0.0.1:4173';
-const browser = await chromium.launch({ headless: true });
-const page = await browser.newPage({ viewport: { width: 412, height: 915 } });
+const browser = await chromium.launch({ headless: true, args: ['--enable-unsafe-swiftshader'] });
+const context = await browser.newContext({ viewport: { width: 412, height: 915 }, locale: 'ar-AE' });
+const page = await context.newPage();
 
 page.on('console', msg => console.log('[browser]', msg.type(), msg.text()));
 page.on('pageerror', err => console.log('[pageerror]', err.message));
@@ -47,5 +48,6 @@ try {
   await dump('auth-choice');
   await page.screenshot({ path: 'phase3-probe-auth-choice.png', fullPage: true });
 } finally {
+  await context.close();
   await browser.close();
 }
