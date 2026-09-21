@@ -4,9 +4,13 @@ const baseUrl = process.env.PHASE3_BASE_URL ?? 'http://127.0.0.1:4173';
 const browser = await chromium.launch({ headless: true, args: ['--enable-unsafe-swiftshader'] });
 const context = await browser.newContext({ viewport: { width: 412, height: 915 }, locale: 'ar-AE' });
 const page = await context.newPage();
+const pageErrors = [];
 
 page.on('console', msg => console.log('[browser]', msg.type(), msg.text()));
-page.on('pageerror', err => console.log('[pageerror]', err.message));
+page.on('pageerror', err => {
+  pageErrors.push(err.message);
+  console.log('[pageerror]', err.message);
+});
 
 async function enableAccessibility() {
   const placeholder = page.locator('flt-semantics-placeholder[aria-label="Enable accessibility"]');
