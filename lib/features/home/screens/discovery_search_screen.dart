@@ -352,10 +352,74 @@ class _DiscoverySearchScreenState extends State<DiscoverySearchScreen> {
     return asset != null && asset.isNotEmpty ? AssetImage(asset) : null;
   }
 
-  void _openRoom(Map<String, dynamic> room) {
+  Future<String?> _askRoomPassword(String roomName) async {
+    final controller = TextEditingController();
+    final value = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          backgroundColor: const Color(0xFF101827),
+          title: Text(
+            roomName,
+            style: const TextStyle(color: Colors.white),
+          ),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            obscureText: true,
+            style: const TextStyle(color: Colors.white),
+            decoration: const InputDecoration(
+              labelText: 'كلمة مرور الغرفة',
+              labelStyle: TextStyle(color: Colors.white60),
+              prefixIcon: Icon(
+                Icons.lock_rounded,
+                color: Color(0xFFFFD54A),
+              ),
+            ),
+            onSubmitted: (password) {
+              if (password.trim().isNotEmpty) {
+                Navigator.pop(dialogContext, password);
+              }
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (controller.text.trim().isEmpty) return;
+                Navigator.pop(dialogContext, controller.text);
+              },
+              child: const Text('دخول'),
+            ),
+          ],
+        ),
+      ),
+    );
+    controller.dispose();
+    return value;
+  }
+
+  Future<void> _openRoom(Map<String, dynamic> room) async {
+    final args = Map<String, dynamic>.from(room);
+    final visibility = (room['visibility'] ?? 'public').toString();
+    final ownerUid =
+        (room['ownerUid'] ?? room['ownerId'] ?? room['hostId'] ?? '').toString();
+    final isOwner = ownerUid == _uid;
+    if (visibility == 'password' && !isOwner) {
+      final password = await _askRoomPassword(
+        (room['name'] ?? room['title'] ?? 'غرفة').toString(),
+      );
+      if (!mounted || password == null) return;
+      args['roomPassword'] = password;
+    }
+
     NavigationService.navigateTo(
       AppRoutes.voiceChatRoom,
-      arguments: room,
+      arguments: args,
     );
   }
 
@@ -448,9 +512,13 @@ class _DiscoverySearchScreenState extends State<DiscoverySearchScreen> {
           ].join(' • '),
           style: const TextStyle(color: Colors.white54),
         ),
-        trailing: const Icon(
-          Icons.login_rounded,
-          color: Color(0xFF8A3DFF),
+        trailing: Icon(
+          (room['visibility'] ?? '').toString() == 'password'
+              ? Icons.lock_rounded
+              : Icons.login_rounded,
+          color: (room['visibility'] ?? '').toString() == 'password'
+              ? const Color(0xFFFFD54A)
+              : const Color(0xFF8A3DFF),
         ),
       ),
     );
