@@ -141,7 +141,13 @@ class DiscoveryService {
       userData = userSnapshot.data();
     }
 
-    final rooms = await loadRooms();
+    var rooms = <DiscoveryRoom>[];
+    try {
+      rooms = await loadRooms();
+    } catch (_) {
+      // Live Firebase may still be on the previous ruleset while Phase 4
+      // rules are awaiting deployment. Keep the rest of Home usable.
+    }
 
     final people = <DiscoveryPerson>[];
     try {
