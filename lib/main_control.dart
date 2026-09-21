@@ -206,7 +206,36 @@ class _ControlShellState extends State<ControlShell> {
           Text('Shadow Control',style:TextStyle(fontWeight:FontWeight.w800)),
           Text('بيئة تجريبية • Firebase متصل',style:TextStyle(fontSize:11,color:Color(0xFFD7B85A))),
         ]),
-        actions:[Padding(padding:const EdgeInsets.symmetric(horizontal:14),child:CircleAvatar(child:Icon(FirebaseAuth.instance.currentUser==null?Icons.admin_panel_settings_outlined:Icons.verified_user_outlined)))],
+        actions:[
+          IconButton(
+            tooltip:'تسجيل الخروج',
+            onPressed:() async {
+              final ok=await showDialog<bool>(
+                context:context,
+                builder:(dialogContext)=>AlertDialog(
+                  title:const Text('تسجيل الخروج'),
+                  content:const Text('هل تريد تسجيل الخروج من Shadow Control؟'),
+                  actions:[
+                    TextButton(onPressed:()=>Navigator.pop(dialogContext,false),child:const Text('إلغاء')),
+                    FilledButton(onPressed:()=>Navigator.pop(dialogContext,true),child:const Text('تسجيل الخروج')),
+                  ],
+                ),
+              );
+              if(ok==true)await FirebaseAuth.instance.signOut();
+            },
+            icon:const Icon(Icons.logout_rounded),
+          ),
+          Padding(
+            padding:const EdgeInsets.symmetric(horizontal:14),
+            child:CircleAvatar(
+              child:Icon(
+                FirebaseAuth.instance.currentUser==null
+                  ? Icons.admin_panel_settings_outlined
+                  : Icons.verified_user_outlined,
+              ),
+            ),
+          ),
+        ],
       ),
       body: IndexedStack(index:index,children:pages),
       bottomNavigationBar:NavigationBar(selectedIndex:index,onDestinationSelected:(v)=>setState(()=>index=v),destinations:const[
