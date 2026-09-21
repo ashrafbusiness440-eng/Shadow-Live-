@@ -11,6 +11,10 @@ class PersonalRoomInfo {
     required this.ownerUid,
     required this.roomType,
     required this.category,
+    required this.description,
+    required this.tags,
+    required this.visibility,
+    required this.passwordProtected,
     required this.isActive,
   });
 
@@ -20,6 +24,10 @@ class PersonalRoomInfo {
   final String ownerUid;
   final String roomType;
   final String category;
+  final String description;
+  final List<String> tags;
+  final String visibility;
+  final bool passwordProtected;
   final bool isActive;
 
   Map<String, dynamic> toNavigationArguments() => {
@@ -30,6 +38,10 @@ class PersonalRoomInfo {
         'hostId': ownerUid,
         'roomType': roomType,
         'category': category,
+        'description': description,
+        'tags': tags,
+        'visibility': visibility,
+        'passwordProtected': passwordProtected,
         'isActive': isActive,
       };
 
@@ -46,6 +58,13 @@ class PersonalRoomInfo {
       ownerUid: ownerUid,
       roomType: (json['roomType'] ?? 'personal').toString(),
       category: (json['category'] ?? 'دردشة').toString(),
+      description: (json['description'] ?? '').toString(),
+      tags: json['tags'] is List
+          ? (json['tags'] as List).map((value) => value.toString()).toList()
+          : const [],
+      visibility: (json['visibility'] ?? 'public').toString(),
+      passwordProtected: json['passwordProtected'] == true ||
+          (json['visibility'] ?? '').toString() == 'password',
       isActive: json['isActive'] != false,
     );
   }
@@ -99,6 +118,30 @@ class RoomActionService {
     final room = body['room'];
     if (room is! Map) throw const FormatException('invalid_personal_room');
     return PersonalRoomInfo.fromJson(Map<String, dynamic>.from(room));
+  }
+
+  Future<Map<String, dynamic>> updateRoomSettings({
+    required String roomId,
+    required String name,
+    required String description,
+    required String category,
+    required List<String> tags,
+    required String visibility,
+    String? password,
+  }) async {
+    final body = await _post({
+      'action': 'updateRoomSettings',
+      'roomId': roomId,
+      'name': name,
+      'description': description,
+      'category': category,
+      'tags': tags,
+      'visibility': visibility,
+      if (password != null && password.isNotEmpty) 'password': password,
+    });
+    final room = body['room'];
+    if (room is! Map) throw const FormatException('invalid_room_settings');
+    return Map<String, dynamic>.from(room);
   }
 
   Future<void> closePersonalRoom(String roomId) async {
