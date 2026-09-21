@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -12,8 +15,9 @@ import '../../../utils/compact_number.dart';
 
 class ProfileScreen extends StatefulWidget{const ProfileScreen({super.key});@override State<ProfileScreen> createState()=>_ProfileScreenState();}
 class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderStateMixin{
- late final TabController _tabs;bool _loggingOut=false;@override void initState(){super.initState();_tabs=TabController(length:3,vsync:this);WidgetsBinding.instance.addPostFrameCallback((_)=>_load());}@override void dispose(){_tabs.dispose();super.dispose();}
+ late final TabController _tabs;bool _loggingOut=false;StreamSubscription<DocumentSnapshot<Map<String,dynamic>>>? _profileSub;@override void initState(){super.initState();_tabs=TabController(length:3,vsync:this);WidgetsBinding.instance.addPostFrameCallback((_){_watchProfile();_load();});}@override void dispose(){_profileSub?.cancel();_tabs.dispose();super.dispose();}
  bool get _guest{final u=FirebaseAuth.instance.currentUser;if(u?.isAnonymous==true){return true;}final a=context.read<AuthBloc>().state;return a is Authenticated&&(a.user.isAnonymous||a.userData?['isGuest']==true);}
+ void _watchProfile(){if(!mounted||_guest)return;final uid=FirebaseAuth.instance.currentUser?.uid;if(uid==null||uid.isEmpty)return;_profileSub?.cancel();_profileSub=FirebaseFirestore.instance.collection('users').doc(uid).snapshots().skip(1).listen((_){if(mounted)_load();});}
  void _load(){if(!mounted||_guest)return;final firebaseUser=FirebaseAuth.instance.currentUser;String? id=firebaseUser?.uid;if(id==null){final a=context.read<AuthBloc>().state;if(a is Authenticated)id=a.user.uid;}if(id!=null&&id.isNotEmpty){context.read<UserBloc>().add(LoadUserProfile(id));}}
  Future<void> _edit()async{final changed=await Navigator.of(context).pushNamed(AppRoutes.editProfile);if(changed==true&&mounted)_load();}
  Future<void> _recharge(int tab)async{await Navigator.push(context,MaterialPageRoute(builder:(_)=>RechargeScreen(initialTab:tab)));if(mounted)_load();}

@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../screens/room/room_list_screen.dart';
+import '../../auth/bloc/auth_bloc.dart';
 import '../../chat/screens/chat_list_screen.dart';
 import '../../home/screens/home_screen.dart';
 import '../../user/screens/profile_screen.dart';
@@ -20,7 +24,7 @@ class _MainShellScreenState extends State<MainShellScreen>{
 
   Future<void> _guestGuard()async{
     final create=await showDialog<bool>(context:context,builder:(dialogContext)=>Directionality(textDirection:TextDirection.rtl,child:AlertDialog(backgroundColor:const Color(0xFF101522),shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(22),side:BorderSide(color:const Color(0xFF8A3DFF).withValues(alpha:.45))),title:const Row(children:[Icon(Icons.lock_person_rounded,color:Color(0xFFFFD54A)),SizedBox(width:10),Expanded(child:Text('هذه الميزة تحتاج حساباً',style:TextStyle(color:Colors.white,fontWeight:FontWeight.w900)))]),content:const Text('يمكنك كضيف تصفح Shadow Live والغرف والإعدادات، لكن المراسلة والكتابة والتفاعل مع المستخدمين تتطلب حساباً حقيقياً.',style:TextStyle(color:Colors.white70,height:1.6)),actions:[TextButton(onPressed:()=>Navigator.pop(dialogContext,false),child:const Text('إلغاء',style:TextStyle(color:Colors.white70))),FilledButton(onPressed:()=>Navigator.pop(dialogContext,true),style:FilledButton.styleFrom(backgroundColor:const Color(0xFF7B2DFF)),child:const Text('متابعة لإنشاء حساب'))])));
-    if(create==true&&mounted){await FirebaseAuth.instance.signOut();if(mounted)Navigator.of(context).pushNamedAndRemoveUntil('/auth-choice',(route)=>false);}
+    if(create==true&&mounted){final authBloc=context.read<AuthBloc>();final result=authBloc.stream.firstWhere((state)=>state is Unauthenticated||state is AuthError).timeout(const Duration(seconds:12));authBloc.add(SignOutRequested());try{final state=await result;if(!mounted)return;if(state is Unauthenticated){Navigator.of(context).pushNamedAndRemoveUntil('/auth-choice',(route)=>false);}else if(state is AuthError){ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(state.message)));}}on TimeoutException{if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('تعذر تسجيل الخروج الآن. حاول مرة أخرى.')));}}
   }
 
   void _changePage(int index){
