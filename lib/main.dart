@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'widgets/bottom_nav_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -34,6 +35,8 @@ import 'screens/room/create_room_screen.dart';
 import 'screens/room/room_list_screen.dart';
 import 'screens/settings/settings_screen.dart';
 import 'services/navigation_service.dart';
+import 'features/voice/services/voice_service.dart';
+import 'features/voice/services/zego_voice_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -108,8 +111,104 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class VoiceChatRoom extends StatelessWidget {
+class VoiceChatRoom extends StatefulWidget {
   const VoiceChatRoom({super.key});
+
+  @override
+  State<VoiceChatRoom> createState() => _VoiceChatRoomState();
+}
+
+class _VoiceChatRoomState extends State<VoiceChatRoom> {
+  final VoiceService _voiceService = ZegoVoiceService();
+  bool _voiceStarted = false;
+  bool _voiceJoining = true;
+  bool _voiceMicMuted = true;
+  String? _voiceError;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_voiceStarted) return;
+    _voiceStarted = true;
+    unawaited(_connectVoice());
+  }
+
+  Future<void> _connectVoice() async {
+    final raw = ModalRoute.of(context)?.settings.arguments;
+    final args = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+    final roomId = (args['roomId'] ?? '').toString().trim();
+    final user = FirebaseAuth.instance.currentUser;
+    if (roomId.isEmpty || user == null) {
+      if (mounted) {
+        setState(() {
+          _voiceJoining = false;
+          _voiceError = roomId.isEmpty ? 'room_id_missing' : 'not_signed_in';
+        });
+      }
+      return;
+    }
+
+    final displayName = (user.displayName ??
+            args['displayName'] ??
+            args['hostName'] ??
+            'Shadow Live')
+        .toString()
+        .trim();
+
+    try {
+      await _voiceService.initialize();
+      await _voiceService.joinRoom(
+        roomId: roomId,
+        userId: user.uid,
+        displayName: displayName.isEmpty ? 'Shadow Live' : displayName,
+      );
+      if (mounted) {
+        setState(() {
+          _voiceJoining = false;
+          _voiceError = null;
+          _voiceMicMuted = true;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _voiceJoining = false;
+          _voiceError = error.toString();
+        });
+      }
+    }
+  }
+
+  Future<void> _toggleVoiceMic() async {
+    if (_voiceJoining || _voiceError != null) return;
+    try {
+      if (_voiceMicMuted) {
+        await _voiceService.unmuteMic();
+      } else {
+        await _voiceService.muteMic();
+      }
+      if (mounted) {
+        setState(() => _voiceMicMuted = !_voiceMicMuted);
+      }
+    } catch (error) {
+      if (mounted) setState(() => _voiceError = error.toString());
+    }
+  }
+
+  Future<void> _leaveVoiceRoom() async {
+    try {
+      await _voiceService.leaveRoom();
+    } catch (_) {}
+    if (mounted) {
+      NavigationService.navigateToReplacement(AppRoutes.roomList);
+    }
+  }
+
+  @override
+  void dispose() {
+    unawaited(_voiceService.dispose());
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -242,7 +341,7 @@ class VoiceChatRoom extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Row(children: [Icon(Icons.star, color: Colors.yellow[400]), const SizedBox(width: 16), const Icon(Icons.sentiment_satisfied_alt), const SizedBox(width: 16), const Icon(Icons.list)]),
-                      Row(children: [GestureDetector(onTap: () => NavigationService.navigateToReplacement(AppRoutes.roomList), child: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.red[600], shape: BoxShape.circle), child: const Icon(Icons.call_end))), const SizedBox(width: 16), Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.grey[800], shape: BoxShape.circle), child: const Icon(Icons.mic_off))]),
+                      Row(children: [GestureDetector(onTap: _leaveVoiceRoom, child: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.red[600], shape: BoxShape.circle), child: const Icon(Icons.call_end))), const SizedBox(width: 16), GestureDetector(onTap: _voiceJoining || _voiceError != null ? null : _toggleVoiceMic, child: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: _voiceError != null ? Colors.red[900] : Colors.grey[800], shape: BoxShape.circle), child: Icon(_voiceMicMuted ? Icons.mic_off : Icons.mic)))]),
                     ],
                   ),
                 ),
