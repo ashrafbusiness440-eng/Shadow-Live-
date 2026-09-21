@@ -2127,6 +2127,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       visibility = 'public';
     }
     var saving = false;
+    var chatEnabled = _roomArguments['chatEnabled'] != false;
 
     await showModalBottomSheet<void>(
       context: context,
@@ -2276,6 +2277,36 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                           ),
                         ),
                       ),
+                    const SizedBox(height: 8),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: chatEnabled,
+                      onChanged: saving
+                          ? null
+                          : (value) {
+                              setSheetState(
+                                () => chatEnabled = value,
+                              );
+                            },
+                      activeThumbColor: Colors.white,
+                      activeTrackColor: const Color(0xFF6D27D9),
+                      title: const Text(
+                        'دردشة الغرفة',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      subtitle: Text(
+                        chatEnabled
+                            ? 'الأعضاء يستطيعون إرسال الرسائل'
+                            : 'الشات متوقف للأعضاء — صاحب الغرفة فقط',
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 18),
                     SizedBox(
                       width: double.infinity,
@@ -2334,6 +2365,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                         : category,
                                     tags: tags,
                                     visibility: visibility,
+                                    chatEnabled: chatEnabled,
                                     password:
                                         passwordController.text.isEmpty
                                             ? null
