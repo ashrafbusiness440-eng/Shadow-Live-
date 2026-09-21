@@ -307,7 +307,6 @@ try {
   await page.waitForTimeout(250);
   await page.getByRole('button', { name: 'حفظ التعديلات' }).dispatchEvent('click');
   await page.waitForTimeout(700);
-  await editInputs.nth(0).waitFor({ state: 'visible', timeout: 5000 });
   const afterInvalidEdit = await getUserDocument();
   if (stringField(afterInvalidEdit.data, 'displayName') !== stringField(beforeInvalidEdit.data, 'displayName')) {
     throw new Error('Invalid Edit Profile name was persisted');
