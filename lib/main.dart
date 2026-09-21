@@ -76,6 +76,241 @@ Future<void> main() async {
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
+  Widget _buildRoomInsightsBar() {
+    final insights = _roomInsights;
+    if (insights == null) {
+      return _loadingRoomInsights
+          ? const Padding(
+              padding: EdgeInsets.only(top: 10),
+              child: LinearProgressIndicator(
+                minHeight: 2,
+                color: Color(0xFF8A3DFF),
+                backgroundColor: Colors.transparent,
+              ),
+            )
+          : const SizedBox.shrink();
+    }
+
+    final top = insights.supporters.take(3).toList();
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF111522).withValues(alpha: .88),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'LV.' + insights.level.toString(),
+                      style: const TextStyle(
+                        color: Color(0xFFFFD54A),
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    LinearProgressIndicator(
+                      value: insights.levelProgress,
+                      minHeight: 4,
+                      borderRadius: BorderRadius.circular(99),
+                      color: const Color(0xFF8A3DFF),
+                      backgroundColor: Colors.white12,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      insights.levelPoints.toString() +
+                          '/' +
+                          insights.levelTarget.toString(),
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 9,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 9),
+            InkWell(
+              onTap: _showSupportersSheet,
+              borderRadius: BorderRadius.circular(18),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 7,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF111522).withValues(alpha: .88),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: Row(
+                  children: List.generate(3, (index) {
+                    final supporter =
+                        index < top.length ? top[index] : null;
+                    return Padding(
+                      padding: EdgeInsetsDirectional.only(
+                        start: index == 0 ? 0 : 4,
+                      ),
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          CircleAvatar(
+                            radius: 16,
+                            backgroundColor: const Color(0xFF25183F),
+                            backgroundImage: supporter == null ||
+                                    supporter.profileImageUrl.isEmpty
+                                ? null
+                                : NetworkImage(
+                                    supporter.profileImageUrl,
+                                  ),
+                            child: supporter == null
+                                ? const Icon(
+                                    Icons.person_outline_rounded,
+                                    color: Colors.white24,
+                                    size: 17,
+                                  )
+                                : supporter.profileImageUrl.isEmpty
+                                    ? Text(
+                                        supporter.displayName.isEmpty
+                                            ? '?'
+                                            : supporter.displayName
+                                                .characters
+                                                .first,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      )
+                                    : null,
+                          ),
+                          Positioned(
+                            right: -2,
+                            top: -5,
+                            child: Container(
+                              width: 15,
+                              height: 15,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: index == 0
+                                    ? const Color(0xFFFFD54A)
+                                    : index == 1
+                                        ? const Color(0xFFC7D0D9)
+                                        : const Color(0xFFDE9C73),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Text(
+                                (index + 1).toString(),
+                                style: const TextStyle(
+                                  color: Colors.black,
+                                  fontSize: 8,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: InkWell(
+                onTap: _showRoomRankingSheet,
+                borderRadius: BorderRadius.circular(999),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF111522).withValues(alpha: .88),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: Colors.white12),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.emoji_events_rounded,
+                        color: Color(0xFFFFD54A),
+                        size: 17,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        insights.dailyRank == null
+                            ? 'الترتيب اليومي'
+                            : 'TOP ' +
+                                insights.dailyRank.toString() +
+                                ' اليومي',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            FilledButton.icon(
+              onPressed:
+                  _changingRoomFollow ? null : _toggleRoomFollow,
+              style: FilledButton.styleFrom(
+                backgroundColor: insights.followed
+                    ? const Color(0xFF202534)
+                    : const Color(0xFF5A20FF),
+                foregroundColor: Colors.white,
+                visualDensity: VisualDensity.compact,
+              ),
+              icon: _changingRoomFollow
+                  ? const SizedBox(
+                      width: 13,
+                      height: 13,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : Icon(
+                      insights.followed
+                          ? Icons.favorite_rounded
+                          : Icons.favorite_border_rounded,
+                      size: 16,
+                    ),
+              label: Text(
+                insights.followed
+                    ? 'متابَع'
+                    : 'متابعة',
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -1024,7 +1259,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Column(
                     children: [
-                      const SizedBox(height: 120),
+                      const SizedBox(height: 205),
                       const HostSection(),
                       const SizedBox(height: 32),
                       Container(
@@ -1098,8 +1333,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                               Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text('Enrique Pemala', style: TextStyle(fontWeight: FontWeight.bold)),
-                                  Row(children: [Icon(Icons.star, color: Colors.yellow[400], size: 16), const Text('8811M', style: TextStyle(color: Colors.grey, fontSize: 12))]),
+                                  Text((_roomArguments['name'] ?? _roomArguments['title'] ?? 'غرفة صوتية').toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)),
+                                  Row(children: [Icon(Icons.tag_rounded, color: Colors.yellow[400], size: 16), Text('ID: ' + (_roomArguments['publicId'] ?? '—').toString(), style: const TextStyle(color: Colors.grey, fontSize: 12))]),
                                 ],
                               ),
                             ],
@@ -1111,7 +1346,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                 onPressed: _showShareRoomSheet,
                                 tooltip: 'مشاركة الغرفة',
                               ),
-                              Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(20)), child: const Text('387')),
+                              Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(20)), child: Text((_roomArguments['onlineCount'] ?? 0).toString())),
                               IconButton(
                                 icon: const Icon(Icons.more_horiz_rounded),
                                 onPressed: _showRoomMenu,
@@ -1121,18 +1356,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 16),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                            decoration: BoxDecoration(color: Colors.yellow[500], borderRadius: BorderRadius.circular(20)),
-                            child: const Row(children: [Icon(Icons.military_tech, color: Colors.black, size: 16), SizedBox(width: 4), Text('Top Score', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 12))]),
-                          ),
-                          const Row(children: [Text('For You', style: TextStyle(color: Colors.grey, fontSize: 14)), Icon(Icons.chevron_right, color: Colors.grey, size: 20)]),
-                        ],
-                      ),
+                      const SizedBox(height: 12),
+                      _buildRoomInsightsBar(),
                     ],
                   ),
                 ),
