@@ -17,6 +17,7 @@ abstract interface class VoiceService {
 
   Future<void> muteMic();
   Future<void> unmuteMic();
+  Future<void> setPlaybackEnabled(bool enabled);
 
   Future<void> takeMicSeat(int seatIndex);
   Future<void> leaveMicSeat();
