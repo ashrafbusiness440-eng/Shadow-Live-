@@ -203,6 +203,16 @@ service cloud.firestore {
     match /rooms/{roomId} {
       allow read: if signedIn();
       allow create, update, delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if signedIn();
+        allow create, update, delete: if false;
+      }
+
+      match /supporters/{supporterId} {
+        allow read: if signedIn();
+        allow create, update, delete: if false;
+      }
     }
 
     match /follows/{followId} {
