@@ -466,14 +466,83 @@ async function roomSeatAction(db,uid,body){
   });
 }
 
+async function recordRoomVisit(db,uid,roomId){
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+  const roomRef=db.collection("rooms").doc(roomId);
+  const visitRef=db.collection("room_visits").doc(uid).collection("items").doc(roomId);
+  const roomSnap=await roomRef.get();
+  if(!roomSnap.exists||roomSnap.data()?.isActive===false)throw new ApiError("room_unavailable",404);
+  const room=roomSnap.data()||{};
+  await visitRef.set({
+    roomId,
+    name:clean(room.name||room.title||"غرفة صوتية"),
+    publicId:clean(room.publicId),
+    ownerUid:clean(room.ownerUid||room.ownerId||room.hostId),
+    lastVisitedAt:FieldValue.serverTimestamp(),
+    visitCount:FieldValue.increment(1),
+  },{merge:true});
+  return {ok:true,roomId};
+}
+
+async function setRoomFavorite(db,uid,roomId,favorite){
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+  const roomRef=db.collection("rooms").doc(roomId);
+  const favoriteRef=db.collection("room_favorites").doc(uid).collection("items").doc(roomId);
+  const roomSnap=await roomRef.get();
+  if(!roomSnap.exists||roomSnap.data()?.isActive===false)throw new ApiError("room_unavailable",404);
+  const room=roomSnap.data()||{};
+  if(favorite){
+    await favoriteRef.set({
+      roomId,
+      name:clean(room.name||room.title||"غرفة صوتية"),
+      publicId:clean(room.publicId),
+      ownerUid:clean(room.ownerUid||room.ownerId||room.hostId),
+      updatedAt:FieldValue.serverTimestamp(),
+      createdAt:FieldValue.serverTimestamp(),
+    },{merge:true});
+  }else{
+    await favoriteRef.delete();
+  }
+  return {ok:true,roomId,favorite};
+}
+
+async function roomLibrary(db,uid){
+  const [favoritesSnap,visitsSnap]=await Promise.all([
+    db.collection("room_favorites").doc(uid).collection("items").orderBy("updatedAt","desc").limit(60).get(),
+    db.collection("room_visits").doc(uid).collection("items").orderBy("lastVisitedAt","desc").limit(60).get(),
+  ]);
+
+  async function hydrate(snapshot){
+    const result=[];
+    for(const entry of snapshot.docs){
+      const roomId=clean(entry.data()?.roomId||entry.id);
+      if(!roomId)continue;
+      const roomSnap=await db.collection("rooms").doc(roomId).get();
+      if(!roomSnap.exists)continue;
+      const data=roomSnap.data()||{};
+      if(data.isActive===false||data.isHidden===true||clean(data.visibility)==="hidden")continue;
+      result.push(roomResponse(roomId,data));
+    }
+    return result;
+  }
+
+  const [favorites,history]=await Promise.all([
+    hydrate(favoritesSnap),
+    hydrate(visitsSnap),
+  ]);
+  return {ok:true,favorites,history};
+}
+
 async function roomInsights(db,uid,roomId){
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
   const roomRef=db.collection("rooms").doc(roomId);
   const followRef=db.collection("room_follows").doc(roomId).collection("users").doc(uid);
 
-  const [roomSnap,followSnap,activeRooms,supportersSnap]=await Promise.all([
+  const favoriteRef=db.collection("room_favorites").doc(uid).collection("items").doc(roomId);
+  const [roomSnap,followSnap,favoriteSnap,activeRooms,supportersSnap]=await Promise.all([
     roomRef.get(),
     followRef.get(),
+    favoriteRef.get(),
     db.collection("rooms").where("isActive","==",true).limit(200).get(),
     roomRef.collection("supporters").orderBy("totalSupport","desc").limit(50).get(),
   ]);
@@ -505,6 +574,7 @@ async function roomInsights(db,uid,roomId){
     levelTarget:Math.max(1,Number(room.levelTarget||1000)),
     followerCount:Math.max(0,Number(room.followerCount||0)),
     followed:followSnap.exists,
+    favorited:favoriteSnap.exists,
     dailySupport:Math.max(0,Number(room.dailySupport||0)),
     dailyRank:rankIndex>=0?rankIndex+1:null,
     supporters,
@@ -599,6 +669,18 @@ export default async function handler(req,res){
       const roomId=clean(req.body?.roomId);
       const following=req.body?.following===true;
       return out(res,200,await setRoomFollow(getFirestore(),decoded.uid,roomId,following));
+    }
+    if(action==="recordRoomVisit"){
+      const roomId=clean(req.body?.roomId);
+      return out(res,200,await recordRoomVisit(getFirestore(),decoded.uid,roomId));
+    }
+    if(action==="setRoomFavorite"){
+      const roomId=clean(req.body?.roomId);
+      const favorite=req.body?.favorite===true;
+      return out(res,200,await setRoomFavorite(getFirestore(),decoded.uid,roomId,favorite));
+    }
+    if(action==="roomLibrary"){
+      return out(res,200,await roomLibrary(getFirestore(),decoded.uid));
     }
     if(action==="roomSeatState"){
       const roomId=clean(req.body?.roomId);
