@@ -90,6 +90,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   bool _voiceJoining = true;
   bool _voiceMicMuted = true;
   String? _voiceError;
+  VoiceConnectionState _voiceConnectionState = VoiceConnectionState.idle;
+  StreamSubscription<VoiceConnectionState>? _voiceConnectionSubscription;
 
   @override
   void didChangeDependencies() {
@@ -124,6 +126,11 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         .trim();
 
     try {
+      _voiceConnectionSubscription ??=
+          _voiceService.connectionStates.listen((state) {
+        if (!mounted) return;
+        setState(() => _voiceConnectionState = state);
+      });
       await _voiceService.initialize();
       await _voiceService.joinRoom(
         roomId: roomId,
@@ -148,7 +155,11 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   }
 
   Future<void> _toggleVoiceMic() async {
-    if (_voiceJoining || _voiceError != null) return;
+    if (_voiceJoining ||
+        _voiceError != null ||
+        _voiceConnectionState != VoiceConnectionState.connected) {
+      return;
+    }
     try {
       if (_voiceMicMuted) {
         await _voiceService.unmuteMic();
@@ -174,6 +185,10 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
 
   @override
   void dispose() {
+    final subscription = _voiceConnectionSubscription;
+    if (subscription != null) {
+      unawaited(subscription.cancel());
+    }
     unawaited(_voiceService.dispose());
     super.dispose();
   }
@@ -232,7 +247,10 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                     ),
                   ),
                 ),
-                if (_voiceJoining || _voiceError != null)
+                if (_voiceJoining ||
+                    _voiceConnectionState == VoiceConnectionState.reconnecting ||
+                    _voiceConnectionState == VoiceConnectionState.failed ||
+                    _voiceError != null)
                   Positioned(
                     top: 24,
                     left: 16,
@@ -248,14 +266,21 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
-                          _voiceJoining
-                              ? 'جاري الاتصال بالصوت...'
-                              : 'تعذر الاتصال بالصوت',
+                          _voiceError != null ||
+                                  _voiceConnectionState ==
+                                      VoiceConnectionState.failed
+                              ? 'تعذر الاتصال بالصوت'
+                              : _voiceConnectionState ==
+                                      VoiceConnectionState.reconnecting
+                                  ? 'جاري إعادة الاتصال بالصوت...'
+                                  : 'جاري الاتصال بالصوت...',
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            color: _voiceError == null
-                                ? Colors.white70
-                                : Colors.redAccent,
+                            color: _voiceError != null ||
+                                    _voiceConnectionState ==
+                                        VoiceConnectionState.failed
+                                ? Colors.redAccent
+                                : Colors.white70,
                           ),
                         ),
                       ),
@@ -272,7 +297,10 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         GestureDetector(
-                          onTap: _voiceJoining || _voiceError != null
+                          onTap: _voiceJoining ||
+                                  _voiceError != null ||
+                                  _voiceConnectionState !=
+                                      VoiceConnectionState.connected
                               ? null
                               : _toggleVoiceMic,
                           child: Container(
