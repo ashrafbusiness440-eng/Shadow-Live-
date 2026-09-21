@@ -13,7 +13,6 @@ dependencies:
   google_fonts: ^8.2.1
   material_design_icons_flutter: ^7.0.7296
   cached_network_image: ^4.0.0
-  agora_rtc_engine: ^6.6.4
   firebase_core: ^4.14.0
   firebase_auth: ^6.6.1
   cloud_firestore: ^6.9.0
