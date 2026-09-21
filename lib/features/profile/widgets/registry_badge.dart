@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-
 import '../../../core/assets/shadow_asset_registry.dart';
 
 class RegistryBadge extends StatelessWidget {
@@ -46,14 +45,7 @@ class RegistryBadge extends StatelessWidget {
                       ),
               ),
               const SizedBox(width: 5),
-              Text(
-                label,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
+              Text(label, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)),
             ],
           ),
         );
@@ -62,17 +54,15 @@ class RegistryBadge extends StatelessWidget {
   }
 }
 
-String publicBadgeLabel(String key) {
-  return switch (key) {
-    'badge.verified' || 'verified' => 'موثّق',
-    'badge.official' || 'official' => 'رسمي',
-    'badge.support_team' || 'support_team' => 'فريق الدعم',
-    'role.owner' || 'owner' => 'OWNER',
-    'role.admin' || 'admin' => 'ADMIN',
-    'role.moderator' || 'moderator' => 'MOD',
-    _ => key.replaceAll('_', ' '),
-  };
-}
+String publicBadgeLabel(String key) => switch (key) {
+      'badge.verified' || 'verified' => 'موثّق',
+      'badge.official' || 'official' => 'رسمي',
+      'badge.support_team' || 'support_team' => 'فريق الدعم',
+      'role.owner' || 'owner' => 'OWNER',
+      'role.admin' || 'admin' => 'ADMIN',
+      'role.moderator' || 'moderator' => 'MOD',
+      _ => key.replaceAll('_', ' '),
+    };
 
 String normalizePublicBadgeKey(String key) {
   if (key.contains('.')) return key;

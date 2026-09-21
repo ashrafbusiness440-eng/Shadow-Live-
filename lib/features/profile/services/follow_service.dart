@@ -4,7 +4,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 class FollowCounts {
   final int followers;
   final int following;
-
   const FollowCounts({required this.followers, required this.following});
 }
 
@@ -17,7 +16,7 @@ class FollowService {
   final FirebaseAuth _auth;
 
   static String relationId(String followerUid, String followingUid) =>
-      '\${followerUid}__\${followingUid}';
+      '${followerUid}__${followingUid}';
 
   CollectionReference<Map<String, dynamic>> get _follows =>
       _firestore.collection('follows');
