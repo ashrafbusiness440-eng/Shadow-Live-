@@ -55,10 +55,10 @@ jobs:
           });
 
           await expectFirestoreDenied('PHASE3_LIVE_FIRESTORE_DELETE_DENIED', async () => {
-            await deleteDoc(doc(db, 'users', '__phase3_live_probe_missing__'));
+            await deleteDoc(doc(db, 'users', 'phase3-live-probe-missing'));
           });
 
-          const objectName = encodeURIComponent('profile_images/__phase3_live_probe_missing__.jpg');
+          const objectName = encodeURIComponent('profile_images/phase3-live-probe-missing.jpg');
           const base = 'https://firebasestorage.googleapis.com/v0/b/shadow-live.firebasestorage.app/o/' + objectName;
 
           for (const [label, method] of [
