@@ -27,6 +27,7 @@ class ZegoVoiceService implements VoiceService {
   String? _zegoUserId;
   String? _streamId;
   int? _seatIndex;
+  bool _tokenRenewalInFlight = false;
 
   @override
   Stream<VoiceConnectionState> get connectionStates =>
@@ -82,6 +83,93 @@ class ZegoVoiceService implements VoiceService {
         }
       }
     };
+
+    ZegoExpressEngine.onRoomStateChanged = (
+      String roomID,
+      ZegoRoomStateChangedReason reason,
+      int errorCode,
+      Map<String, dynamic> extendedData,
+    ) {
+      if (roomID != _roomId) return;
+
+      switch (reason) {
+        case ZegoRoomStateChangedReason.Logining:
+          _connectionController.add(VoiceConnectionState.connecting);
+          break;
+        case ZegoRoomStateChangedReason.Logined:
+          _connectionController.add(VoiceConnectionState.connected);
+          break;
+        case ZegoRoomStateChangedReason.LoginFailed:
+          _connectionController.add(VoiceConnectionState.failed);
+          break;
+        case ZegoRoomStateChangedReason.Reconnecting:
+          _connectionController.add(VoiceConnectionState.reconnecting);
+          break;
+        case ZegoRoomStateChangedReason.Reconnected:
+          _connectionController.add(VoiceConnectionState.connected);
+          unawaited(_renewRoomToken(roomID));
+          break;
+        case ZegoRoomStateChangedReason.ReconnectFailed:
+          _connectionController.add(VoiceConnectionState.failed);
+          break;
+        case ZegoRoomStateChangedReason.KickOut:
+          _joined = false;
+          _publishing = false;
+          _micController.add(VoiceMicState.muted);
+          _connectionController.add(VoiceConnectionState.disconnected);
+          break;
+        case ZegoRoomStateChangedReason.Logout:
+          _connectionController.add(VoiceConnectionState.disconnected);
+          break;
+        case ZegoRoomStateChangedReason.LogoutFailed:
+          _connectionController.add(VoiceConnectionState.failed);
+          break;
+      }
+    };
+
+    ZegoExpressEngine.onRoomTokenWillExpire = (
+      String roomID,
+      int remainTimeInSecond,
+    ) {
+      if (roomID != _roomId || !_joined) return;
+      unawaited(_renewRoomToken(roomID));
+    };
+  }
+
+
+  Future<void> _renewRoomToken(String roomId) async {
+    if (_tokenRenewalInFlight || !_joined || _roomId != roomId) return;
+
+    _tokenRenewalInFlight = true;
+    try {
+      for (var attempt = 0; attempt < 3; attempt++) {
+        if (!_joined || _roomId != roomId) return;
+        if (attempt > 0) {
+          await Future<void>.delayed(Duration(seconds: attempt * 2));
+          if (!_joined || _roomId != roomId) return;
+        }
+
+        try {
+          final session = await _tokenClient.createSession(roomId);
+          if (!_joined || _roomId != roomId) return;
+          if (session.appId != _appId || session.roomId != roomId) {
+            throw const VoiceException(
+              'token_session_mismatch',
+              'Voice token session does not match the active room.',
+            );
+          }
+
+          await ZegoExpressEngine.instance.renewToken(roomId, session.token);
+          return;
+        } catch (_) {
+          if (attempt == 2 && _joined && _roomId == roomId) {
+            _connectionController.add(VoiceConnectionState.failed);
+          }
+        }
+      }
+    } finally {
+      _tokenRenewalInFlight = false;
+    }
   }
 
   @override
@@ -228,6 +316,8 @@ class ZegoVoiceService implements VoiceService {
     if (_joined) await leaveRoom();
     if (_engineCreated) {
       ZegoExpressEngine.onRoomStreamUpdate = null;
+      ZegoExpressEngine.onRoomStateChanged = null;
+      ZegoExpressEngine.onRoomTokenWillExpire = null;
       await ZegoExpressEngine.destroyEngine();
       _engineCreated = false;
       _appId = null;
