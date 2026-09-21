@@ -31,6 +31,7 @@ dependencies:
   crop_your_image: ^2.0.0
   crypto: ^3.0.6
   http: ^1.5.0
+  zego_express_engine: ^3.25.0
 
 dev_dependencies:
   flutter_test:
