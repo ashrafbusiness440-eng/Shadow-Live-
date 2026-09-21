@@ -12,14 +12,22 @@ import '../../home/screens/home_screen.dart';
 import '../../user/screens/profile_screen.dart';
 
 class MainShellScreen extends StatefulWidget {
-  const MainShellScreen({super.key});
+  const MainShellScreen({super.key, this.initialNavIndex = 0});
+
+  final int initialNavIndex;
 
   @override
   State<MainShellScreen> createState() => _MainShellScreenState();
 }
 
 class _MainShellScreenState extends State<MainShellScreen> {
-  int _currentNavIndex = 0;
+  late int _currentNavIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentNavIndex = widget.initialNavIndex;
+  }
 
   final List<Widget> _pages = const [
     HomeScreen(),

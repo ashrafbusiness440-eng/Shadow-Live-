@@ -27,6 +27,28 @@ service firebase.storage {
       allow delete: if ownsJpg(fileName);
     }
 
+    function validChatImage() {
+      return request.resource != null
+        && request.resource.size < 8 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    function conversationParticipants(conversationId) {
+      return firestore.get(/databases/(default)/documents/conversations/$(conversationId)).data.participants;
+    }
+
+    match /chat_images/{conversationId}/{senderUid}/{receiverUid}/{fileName} {
+      allow read: if signedIn() && request.auth.uid in conversationParticipants(conversationId);
+      allow create: if signedIn()
+        && request.auth.uid == senderUid
+        && receiverUid != request.auth.uid
+        && request.auth.uid in conversationParticipants(conversationId)
+        && receiverUid in conversationParticipants(conversationId)
+        && validChatImage();
+      allow update: if false;
+      allow delete: if signedIn() && request.auth.uid == senderUid;
+    }
+
     match /{allPaths=**} {
       allow read, write: if false;
     }

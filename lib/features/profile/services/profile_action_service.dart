@@ -38,6 +38,15 @@ abstract final class ProfileActionService {
       });
     }
 
+    try {
+      await FirebaseFirestore.instance
+          .collection('conversation_hides')
+          .doc(me)
+          .collection('items')
+          .doc(id)
+          .delete();
+    } catch (_) {}
+
     return id;
   }
 

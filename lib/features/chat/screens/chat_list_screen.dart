@@ -235,20 +235,41 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   builder: (context, snapshot) {
                     if (snapshot.hasError) return _state(Icons.error_outline, 'تعذر تحميل المحادثات');
                     if (!snapshot.hasData) return const Center(child: CircularProgressIndicator(color: Color(0xFF8A3DFF)));
-                    final docs = [...snapshot.data!.docs]
+                    final allDocs = [...snapshot.data!.docs]
                       ..sort((a, b) => ((b.data()['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0).compareTo((a.data()['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0));
-                    if (docs.isEmpty) return _state(Icons.forum_outlined, 'لا توجد محادثات بعد\nاضغط + لبدء محادثة');
-                    return ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 20),
-                      itemCount: docs.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 8),
-                      itemBuilder: (_, index) {
-                        final doc = docs[index];
-                        final data = doc.data();
-                        final participants = List<String>.from(data['participants'] ?? const []);
-                        final other = participants.firstWhere((id) => id != me, orElse: () => '');
-                        final unread = ((data['unreadCounts'] as Map?)?[me] as num?)?.toInt() ?? 0;
-                        return _ConversationTile(id: doc.id, otherUid: other, lastMessage: '${data['lastMessage'] ?? ''}', unread: unread, updatedAt: data['updatedAt']);
+                    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                      stream: FirebaseFirestore.instance
+                          .collection('conversation_hides')
+                          .doc(me)
+                          .collection('items')
+                          .snapshots(),
+                      builder: (context, hiddenSnapshot) {
+                        final hidden = hiddenSnapshot.data?.docs.map((d) => d.id).toSet() ?? <String>{};
+                        final docs = allDocs.where((doc) {
+                          final unread = ((doc.data()['unreadCounts'] as Map?)?[me] as num?)?.toInt() ?? 0;
+                          return !hidden.contains(doc.id) || unread > 0;
+                        }).toList();
+                        if (docs.isEmpty) return _state(Icons.forum_outlined, 'لا توجد محادثات بعد\nاضغط + لبدء محادثة');
+                        return ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(12, 4, 12, 20),
+                          itemCount: docs.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 8),
+                          itemBuilder: (_, index) {
+                            final doc = docs[index];
+                            final data = doc.data();
+                            final participants = List<String>.from(data['participants'] ?? const []);
+                            final other = participants.firstWhere((id) => id != me, orElse: () => '');
+                            final unread = ((data['unreadCounts'] as Map?)?[me] as num?)?.toInt() ?? 0;
+                            return _ConversationTile(
+                              id: doc.id,
+                              otherUid: other,
+                              lastMessage: '${data['lastMessage'] ?? ''}',
+                              unread: unread,
+                              updatedAt: data['updatedAt'],
+                              onDelete: () => _hideConversation(doc.id),
+                            );
+                          },
+                        );
                       },
                     );
                   },
@@ -259,6 +280,31 @@ class _ChatListScreenState extends State<ChatListScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _hideConversation(String conversationId) async {
+    final me = uid;
+    if (me == null || me.isEmpty) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          backgroundColor: const Color(0xFF101522),
+          title: const Text('حذف المحادثة؟', style: TextStyle(color: Colors.white)),
+          content: const Text('سيتم حذفها من قائمة رسائلك فقط. إذا وصلتك رسالة جديدة ستظهر المحادثة مرة أخرى.', style: TextStyle(color: Colors.white70, height: 1.5)),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('إلغاء')),
+            FilledButton(onPressed: () => Navigator.pop(dialogContext, true), style: FilledButton.styleFrom(backgroundColor: Colors.redAccent), child: const Text('حذف')),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true) return;
+    final batch = FirebaseFirestore.instance.batch();
+    batch.set(FirebaseFirestore.instance.collection('conversation_hides').doc(me).collection('items').doc(conversationId), {'hiddenAt': FieldValue.serverTimestamp()});
+    batch.update(FirebaseFirestore.instance.collection('conversations').doc(conversationId), {'unreadCounts.$me': 0});
+    await batch.commit();
   }
 
   static Widget _state(IconData icon, String text) => Center(
@@ -279,8 +325,9 @@ class _ConversationTile extends StatelessWidget {
   final String lastMessage;
   final int unread;
   final dynamic updatedAt;
+  final VoidCallback onDelete;
 
-  const _ConversationTile({required this.id, required this.otherUid, required this.lastMessage, required this.unread, required this.updatedAt});
+  const _ConversationTile({required this.id, required this.otherUid, required this.lastMessage, required this.unread, required this.updatedAt, required this.onDelete});
 
   String _time(dynamic value) {
     if (value is! Timestamp) return '';
@@ -339,6 +386,12 @@ class _ConversationTile extends StatelessWidget {
                         Navigator.pop(sheetContext);
                         showQuickProfileSheet(context, userId: otherUid);
                       },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
+                      title: const Text('حذف المحادثة', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w800)),
+                      subtitle: const Text('حذفها من قائمتي فقط', style: TextStyle(color: Colors.white38)),
+                      onTap: () { Navigator.pop(sheetContext); onDelete(); },
                     ),
                     ListTile(
                       leading: const Icon(Icons.close_rounded, color: Colors.white54),

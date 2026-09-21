@@ -86,6 +86,14 @@ service cloud.firestore {
       return signedIn() && request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants;
     }
 
+    function follows(fromUid, toUid) {
+      return exists(/databases/$(database)/documents/follows/$(fromUid + '__' + toUid));
+    }
+
+    function mutualFollow(otherUid) {
+      return signedIn() && follows(request.auth.uid, otherUid) && follows(otherUid, request.auth.uid);
+    }
+
     match /users/{userId} {
       allow create: if signedIn() && request.auth.uid == userId
         && request.resource.data.role == 'user'
@@ -210,6 +218,14 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    match /conversation_hides/{userId} {
+      allow read, write: if false;
+      match /items/{conversationId} {
+        allow read, create, delete: if signedIn() && request.auth.uid == userId;
+        allow update: if false;
+      }
+    }
+
     match /conversations/{conversationId} {
       allow read: if signedIn() && request.auth.uid in resource.data.participants;
       allow create: if signedIn()
@@ -228,10 +244,19 @@ service cloud.firestore {
         allow read: if conversationParticipant(conversationId);
         allow create: if conversationParticipant(conversationId)
           && request.resource.data.senderId == request.auth.uid
-          && request.resource.data.type == 'text'
-          && request.resource.data.text is string
-          && request.resource.data.text.size() > 0
-          && request.resource.data.text.size() <= 2000;
+          && ((request.resource.data.type == 'text'
+              && request.resource.data.text is string
+              && request.resource.data.text.size() > 0
+              && request.resource.data.text.size() <= 2000)
+            || (request.resource.data.type == 'image'
+              && request.resource.data.receiverId is string
+              && request.resource.data.receiverId != request.auth.uid
+              && request.resource.data.receiverId in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants
+              && mutualFollow(request.resource.data.receiverId)
+              && request.resource.data.imageUrl is string
+              && request.resource.data.imageUrl.size() > 0
+              && request.resource.data.storagePath is string
+              && request.resource.data.storagePath.size() > 0));
         allow update, delete: if false;
       }
     }
