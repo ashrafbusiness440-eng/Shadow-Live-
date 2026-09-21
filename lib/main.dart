@@ -215,6 +215,13 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     }
   }
 
+  bool get _currentUserCanSpeak {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final state = _roomSeatState;
+    if (state?.isOwner == true) return true;
+    return state?.seats.any((seat) => seat.uid == uid) == true;
+  }
+
   Future<void> _toggleVoiceMic() async {
     if (_voiceJoining || _voiceError != null) return;
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
@@ -558,9 +565,31 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         backgroundColor: Color(0xFF25183F),
                         child: Icon(Icons.mic_rounded, color: Color(0xFFFFD54A)),
                       ),
-                      title: Text(
-                        uid.length > 10 ? uid.substring(0, 10) + '…' : uid,
-                        style: const TextStyle(color: Colors.white),
+                      title: FutureBuilder<
+                          DocumentSnapshot<Map<String, dynamic>>>(
+                        future: FirebaseFirestore.instance
+                            .collection('public_profiles')
+                            .doc(uid)
+                            .get(),
+                        builder: (context, snapshot) {
+                          final data = snapshot.data?.data();
+                          final name = (data?['displayName'] ??
+                                  data?['username'] ??
+                                  '')
+                              .toString()
+                              .trim();
+                          return Text(
+                            name.isNotEmpty
+                                ? name
+                                : (uid.length > 10
+                                    ? uid.substring(0, 10) + '…'
+                                    : uid),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          );
+                        },
                       ),
                       trailing: Wrap(
                         spacing: 6,
@@ -735,30 +764,67 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           borderRadius: BorderRadius.circular(18),
           child: Column(
             children: [
-              Container(
-                width: 54,
-                height: 54,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: const Color(0xFF151B29),
-                  border: Border.all(
-                    color: seat.occupied
-                        ? const Color(0xFF8A3DFF)
-                        : Colors.white12,
-                    width: seat.occupied ? 2 : 1,
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    width: 54,
+                    height: 54,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFF151B29),
+                      border: Border.all(
+                        color: seat.occupied
+                            ? const Color(0xFF8A3DFF)
+                            : Colors.white12,
+                        width: seat.occupied ? 2 : 1,
+                      ),
+                      image: seat.profileImageUrl.isEmpty
+                          ? null
+                          : DecorationImage(
+                              image: NetworkImage(seat.profileImageUrl),
+                              fit: BoxFit.cover,
+                            ),
+                    ),
+                    child: seat.occupied
+                        ? (seat.profileImageUrl.isEmpty
+                            ? const Icon(
+                                Icons.person_rounded,
+                                color: Colors.white70,
+                              )
+                            : null)
+                        : const Icon(
+                            Icons.add_rounded,
+                            color: Colors.white38,
+                          ),
                   ),
-                  image: seat.profileImageUrl.isEmpty
-                      ? null
-                      : DecorationImage(
-                          image: NetworkImage(seat.profileImageUrl),
-                          fit: BoxFit.cover,
+                  if (seat.occupied)
+                    Positioned(
+                      right: -2,
+                      bottom: -2,
+                      child: Container(
+                        width: 20,
+                        height: 20,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: seat.muted
+                              ? const Color(0xFF2A2F3A)
+                              : const Color(0xFF39D98A),
+                          border: Border.all(
+                            color: const Color(0xFF05060D),
+                            width: 2,
+                          ),
                         ),
-                ),
-                child: seat.occupied
-                    ? (seat.profileImageUrl.isEmpty
-                        ? const Icon(Icons.person_rounded, color: Colors.white70)
-                        : null)
-                    : const Icon(Icons.add_rounded, color: Colors.white38),
+                        child: Icon(
+                          seat.muted
+                              ? Icons.mic_off_rounded
+                              : Icons.mic_rounded,
+                          size: 11,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                ],
               ),
               const SizedBox(height: 5),
               Text(
@@ -2015,7 +2081,11 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                 shape: BoxShape.circle,
                               ),
                               child: Icon(
-                                _voiceMicMuted ? Icons.mic_off : Icons.mic,
+                                _currentUserCanSpeak
+                                    ? (_voiceMicMuted
+                                        ? Icons.mic_off_rounded
+                                        : Icons.mic_rounded)
+                                    : Icons.front_hand_rounded,
                               ),
                             ),
                           ),
