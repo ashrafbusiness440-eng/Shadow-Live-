@@ -244,10 +244,16 @@ class _ChatListScreenState extends State<ChatListScreen> {
                           .collection('items')
                           .snapshots(),
                       builder: (context, hiddenSnapshot) {
-                        final hidden = hiddenSnapshot.data?.docs.map((d) => d.id).toSet() ?? <String>{};
+                        final hidden = <String, Timestamp?>{
+                          for (final d in hiddenSnapshot.data?.docs ?? const <QueryDocumentSnapshot<Map<String, dynamic>>>[])
+                            d.id: d.data()['hiddenAt'] as Timestamp?,
+                        };
                         final docs = allDocs.where((doc) {
-                          final unread = ((doc.data()['unreadCounts'] as Map?)?[me] as num?)?.toInt() ?? 0;
-                          return !hidden.contains(doc.id) || unread > 0;
+                          final hiddenAt = hidden[doc.id];
+                          if (hiddenAt == null) return true;
+                          final updatedAt = doc.data()['updatedAt'] as Timestamp?;
+                          return updatedAt != null &&
+                              updatedAt.millisecondsSinceEpoch > hiddenAt.millisecondsSinceEpoch;
                         }).toList();
                         if (docs.isEmpty) return _state(Icons.forum_outlined, 'لا توجد محادثات بعد\nاضغط + لبدء محادثة');
                         return ListView.separated(

@@ -52,11 +52,28 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   }
 
 
+  Future<bool> _storageReady() async {
+    try {
+      final response = await http.get(
+        Uri.parse('https://shadow-live-git-feature-shadow-control-foundation-shadow-c916.vercel.app/api/storage-health'),
+      );
+      if (response.statusCode != 200) return false;
+      final body = jsonDecode(response.body);
+      return body is Map<String, dynamic> && body['ok'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> _sendImage() async {
     if (_sendingImage) return;
     final mutual = await _follow.isMutual(widget.otherUid);
     if (!mutual) {
       _snack('إرسال الصور متاح فقط عند وجود متابعة متبادلة بينكما.');
+      return;
+    }
+    if (!await _storageReady()) {
+      _snack('إرسال الصور جاهز، لكن Firebase Storage غير مفعّل على المشروع حالياً.');
       return;
     }
     final picked = await _picker.pickImage(
