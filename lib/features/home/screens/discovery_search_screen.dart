@@ -25,7 +25,7 @@ class _DiscoverySearchScreenState extends State<DiscoverySearchScreen>{
       final id=await FirebaseFirestore.instance.collection('public_ids').doc(q).get();
       if(id.exists){final targetUid=id.data()?['uid']?.toString();if(targetUid!=null&&targetUid!=_uid){final u=await FirebaseFirestore.instance.collection('public_profiles').doc(targetUid).get();if(u.exists)people.add({...?u.data(),'uid':targetUid});}}
       try{final users=await FirebaseFirestore.instance.collection('public_profiles').orderBy('displayName').startAt([q]).endAt(['$q\uf8ff']).limit(12).get();for(final d in users.docs){if(d.id!=_uid&&!people.any((x)=>x['uid']==d.id))people.add({...d.data(),'uid':d.id});}}catch(_){}
-      try{final rs=await FirebaseFirestore.instance.collection('rooms').orderBy('name').startAt([q]).endAt(['$q\uf8ff']).limit(12).get();for(final d in rs.docs){final room=DiscoveryRoom(id:d.id,data:d.data());if(room.isActive&&!room.isHidden)rooms.add(room.toNavigationArguments());}}catch(_){}
+      try{final exact=await FirebaseFirestore.instance.collection('rooms').doc(q).get();if(exact.exists){final room=DiscoveryRoom(id:exact.id,data:exact.data()!);if(room.isActive&&!room.isHidden)rooms.add(room.toNavigationArguments());}final rs=await FirebaseFirestore.instance.collection('rooms').orderBy('name').startAt([q]).endAt(['$q\uf8ff']).limit(12).get();for(final d in rs.docs){final room=DiscoveryRoom(id:d.id,data:d.data());if(room.isActive&&!room.isHidden&&!rooms.any((item)=>item['roomId']==room.id))rooms.add(room.toNavigationArguments());}}catch(_){}
       if(mounted)setState((){_people=people;_rooms=rooms;});
     }catch(_){if(mounted)setState(()=>_error='تعذر البحث حالياً. حاول مرة أخرى.');}
     finally{if(mounted)setState(()=>_loading=false);}
