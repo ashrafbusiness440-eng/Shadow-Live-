@@ -19,6 +19,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
   StreamSubscription<VoiceMicState>? _micSubscription;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
       _roomLifecycleSubscription;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+      _roomBanSubscription;
 
   bool _serviceInitialized = false;
   bool _joining = false;
@@ -80,6 +82,45 @@ class VoiceRoomSessionController extends ChangeNotifier {
     });
     await _voiceService.initialize();
     _serviceInitialized = true;
+  }
+
+  void _watchRoomBan(String targetRoomId) {
+    unawaited(_roomBanSubscription?.cancel());
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (uid.isEmpty) return;
+
+    _roomBanSubscription = FirebaseFirestore.instance
+        .collection('room_bans')
+        .doc(targetRoomId)
+        .collection('users')
+        .doc(uid)
+        .snapshots()
+        .listen((snapshot) {
+      if (!snapshot.exists || !_active || roomId != targetRoomId) return;
+      final data = snapshot.data() ?? <String, dynamic>{};
+      final permanent = data['permanent'] == true;
+      final expires = data['expiresAt'];
+      final expiresAt =
+          expires is Timestamp ? expires.millisecondsSinceEpoch : 0;
+      if (permanent || expiresAt > DateTime.now().millisecondsSinceEpoch) {
+        unawaited(_leaveBannedRoom());
+      }
+    });
+  }
+
+  Future<void> _leaveBannedRoom() async {
+    if (_serviceInitialized) {
+      try {
+        await _voiceService.leaveRoom();
+      } catch (_) {}
+    }
+    _active = false;
+    _joining = false;
+    _minimized = false;
+    _micMuted = true;
+    _error = 'room_banned';
+    _connectionState = VoiceConnectionState.disconnected;
+    notifyListeners();
   }
 
   void _watchRoomLifecycle(String targetRoomId) {
@@ -173,6 +214,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
       _micMuted = true;
       _connectionState = VoiceConnectionState.connected;
       _watchRoomLifecycle(targetRoomId);
+      _watchRoomBan(targetRoomId);
     } catch (error) {
       _active = false;
       _joining = false;
@@ -228,6 +270,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
   Future<void> leave() async {
     await _roomLifecycleSubscription?.cancel();
     _roomLifecycleSubscription = null;
+    await _roomBanSubscription?.cancel();
+    _roomBanSubscription = null;
     if (_serviceInitialized) {
       try {
         await _voiceService.leaveRoom();
@@ -248,6 +292,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
     await _connectionSubscription?.cancel();
     await _micSubscription?.cancel();
     await _roomLifecycleSubscription?.cancel();
+    await _roomBanSubscription?.cancel();
     if (_serviceInitialized) {
       await _voiceService.dispose();
     }
