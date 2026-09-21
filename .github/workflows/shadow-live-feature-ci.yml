@@ -35,7 +35,7 @@ jobs:
         run: flutter analyze --no-fatal-infos --no-fatal-warnings lib
 
       - name: Test app routing, shared formatters, and Phase 4 discovery
-        run: flutter test test/auth/setup_route_test.dart test/utils/compact_number_test.dart test/home/discovery_service_test.dart
+        run: flutter test test/auth/setup_route_test.dart test/utils/compact_number_test.dart test/utils/search_index_test.dart test/home/discovery_service_test.dart
 
       - name: Build Shadow Live web
         run: flutter build web --release
