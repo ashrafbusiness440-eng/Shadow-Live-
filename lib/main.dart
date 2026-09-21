@@ -1009,8 +1009,13 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         child: StatefulBuilder(
           builder: (context, setSheetState) {
             void toggleRoomSound(bool value) {
+              setState(() => _roomSoundEnabled = value);
               setSheetState(() {});
-              unawaited(_setRoomAudioEnabled(value));
+              unawaited(
+                _setRoomAudioEnabled(value).whenComplete(() {
+                  if (sheetContext.mounted) setSheetState(() {});
+                }),
+              );
             }
 
             void toggleEffectSound(bool value) {
