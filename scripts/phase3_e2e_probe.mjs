@@ -301,8 +301,11 @@ try {
   const editInputs = page.getByRole('textbox');
   if (await editInputs.count() < 2) throw new Error('Edit Profile text fields were not exposed');
   const beforeInvalidEdit = await getUserDocument();
-  await editInputs.nth(0).fill('12');
-  await page.getByRole('button', { name: 'حفظ التعديلات' }).click({ force: true });
+  await editInputs.nth(0).click({ force: true });
+  await page.keyboard.press('Control+A');
+  await page.keyboard.type('12');
+  await page.waitForTimeout(250);
+  await page.getByRole('button', { name: 'حفظ التعديلات' }).dispatchEvent('click');
   await page.waitForTimeout(700);
   await editInputs.nth(0).waitFor({ state: 'visible', timeout: 5000 });
   const afterInvalidEdit = await getUserDocument();
@@ -311,9 +314,14 @@ try {
   }
   console.log('PHASE3_EDIT_PROFILE_VALIDATION_ERROR_OK');
 
-  await editInputs.nth(0).fill('اختبار شادو معدل');
-  await editInputs.nth(1).fill('تحديث Phase 3');
-  await page.getByRole('button', { name: 'حفظ التعديلات' }).click({ force: true });
+  await editInputs.nth(0).click({ force: true });
+  await page.keyboard.press('Control+A');
+  await page.keyboard.type('اختبار شادو معدل');
+  await editInputs.nth(1).click({ force: true });
+  await page.keyboard.press('Control+A');
+  await page.keyboard.type('تحديث Phase 3');
+  await page.waitForTimeout(350);
+  await page.getByRole('button', { name: 'حفظ التعديلات' }).dispatchEvent('click');
   const editedUser = await waitForUserField(
     'displayName',
     value => value === 'اختبار شادو معدل',
