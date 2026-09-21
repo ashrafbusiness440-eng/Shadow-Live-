@@ -1,15 +1,16 @@
 import {createCipheriv,randomBytes,randomInt,createHash} from "crypto";
 import {getApps,initializeApp,cert} from "firebase-admin/app";
 import {getAuth} from "firebase-admin/auth";
+import {getFirestore,FieldValue} from "firebase-admin/firestore";
 
 class ApiError extends Error {
   constructor(code,status=400){super(code);this.code=code;this.status=status;}
 }
 
 function parseServiceAccount(raw){
-  const text=String(raw||"").trim();
-  if(!text)throw new ApiError("server_not_configured",500);
-  let sa=JSON.parse(text);
+  const value=String(raw||"").trim();
+  if(!value)throw new ApiError("server_not_configured",500);
+  let sa=JSON.parse(value);
   if(typeof sa==="string")sa=JSON.parse(sa);
   const projectId=sa.project_id||sa.projectId;
   const clientEmail=sa.client_email||sa.clientEmail;
@@ -80,6 +81,141 @@ function config(){
   };
 }
 
+function searchTokens(name,publicId){
+  const values=new Set([publicId]);
+  const normalized=clean(name).toLowerCase().replace(/\s+/g," ");
+  if(normalized){
+    values.add(normalized);
+    for(const word of normalized.split(" ")){
+      for(let i=1;i<=Math.min(word.length,24);i++)values.add(word.slice(0,i));
+    }
+  }
+  return [...values].slice(0,128);
+}
+
+function roomResponse(roomId,data){
+  return {
+    roomId,
+    name:clean(data.name||data.title||"غرفتي"),
+    publicId:clean(data.publicId),
+    ownerUid:clean(data.ownerUid||data.hostId),
+    roomType:clean(data.roomType||"personal"),
+    category:clean(data.category||"دردشة"),
+    isActive:data.isActive!==false,
+  };
+}
+
+async function openPersonalRoom(db,uid){
+  const roomId="personal_"+uid;
+  const roomRef=db.collection("rooms").doc(roomId);
+  const userRef=db.collection("users").doc(uid);
+
+  const existing=await roomRef.get();
+  if(existing.exists){
+    const data=existing.data()||{};
+    if(clean(data.ownerUid||data.hostId)!==uid)throw new ApiError("room_owner_mismatch",409);
+    await Promise.all([
+      roomRef.set({
+        isActive:true,
+        closedAt:FieldValue.delete(),
+        updatedAt:FieldValue.serverTimestamp(),
+      },{merge:true}),
+      userRef.set({personalRoomId:roomId},{merge:true}),
+    ]);
+    return roomResponse(roomId,{...data,isActive:true});
+  }
+
+  const userSnap=await userRef.get();
+  if(!userSnap.exists)throw new ApiError("user_not_found",404);
+  const user=userSnap.data()||{};
+  const displayName=clean(user.displayName||user.username||"مستخدم Shadow Live");
+
+  for(let attempt=0;attempt<40;attempt++){
+    const publicId=String(randomInt(100000,1000000));
+    try{
+      const result=await db.runTransaction(async tx=>{
+        const publicRef=db.collection("room_ids").doc(publicId);
+        const userPublicRef=db.collection("public_ids").doc(publicId);
+        const [roomNow,roomIdCollision,userIdCollision]=await Promise.all([
+          tx.get(roomRef),tx.get(publicRef),tx.get(userPublicRef),
+        ]);
+
+        if(roomNow.exists){
+          const data=roomNow.data()||{};
+          if(clean(data.ownerUid||data.hostId)!==uid)throw new ApiError("room_owner_mismatch",409);
+          tx.set(roomRef,{
+            isActive:true,
+            closedAt:FieldValue.delete(),
+            updatedAt:FieldValue.serverTimestamp(),
+          },{merge:true});
+          tx.set(userRef,{personalRoomId:roomId},{merge:true});
+          return roomResponse(roomId,{...data,isActive:true});
+        }
+        if(roomIdCollision.exists||userIdCollision.exists){
+          throw new ApiError("room_public_id_taken",409);
+        }
+
+        const name=displayName+" — الغرفة";
+        const now=FieldValue.serverTimestamp();
+        const data={
+          name,
+          title:name,
+          ownerUid:uid,
+          hostId:uid,
+          roomType:"personal",
+          type:"personal",
+          category:"دردشة",
+          visibility:"public",
+          isHidden:false,
+          isActive:true,
+          isFeatured:false,
+          onlineCount:0,
+          participantsCount:0,
+          publicId,
+          searchTokens:searchTokens(name,publicId),
+          createdAt:now,
+          updatedAt:now,
+        };
+        tx.create(roomRef,data);
+        tx.create(publicRef,{
+          roomId,
+          ownerUid:uid,
+          source:"personalRoom",
+          createdAt:now,
+        });
+        tx.set(userRef,{personalRoomId:roomId},{merge:true});
+        return roomResponse(roomId,data);
+      });
+      return result;
+    }catch(error){
+      if(error instanceof ApiError&&error.code==="room_public_id_taken")continue;
+      throw error;
+    }
+  }
+  throw new ApiError("room_public_id_exhausted",503);
+}
+
+async function closePersonalRoom(db,uid,roomId){
+  if(!/^personal_[A-Za-z0-9:_-]{1,160}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+  const ref=db.collection("rooms").doc(roomId);
+  await db.runTransaction(async tx=>{
+    const snap=await tx.get(ref);
+    if(!snap.exists)throw new ApiError("room_not_found",404);
+    const data=snap.data()||{};
+    if(clean(data.ownerUid||data.hostId)!==uid||clean(data.roomType||data.type)!=="personal"){
+      throw new ApiError("forbidden",403);
+    }
+    tx.update(ref,{
+      isActive:false,
+      onlineCount:0,
+      participantsCount:0,
+      closedAt:FieldValue.serverTimestamp(),
+      updatedAt:FieldValue.serverTimestamp(),
+    });
+  });
+  return {ok:true,roomId,isActive:false};
+}
+
 export default async function handler(req,res){
   if(cors(req,res))return;
   const cfg=config();
@@ -97,13 +233,30 @@ export default async function handler(req,res){
   if(req.method!=="POST")return out(res,405,{ok:false,code:"method_not_allowed"});
 
   try{
-    if(!cfg.appId||!cfg.secretValid)throw new ApiError("zego_not_configured",503);
     initFirebase();
     const authorization=clean(req.headers.authorization);
     if(!authorization.startsWith("Bearer "))throw new ApiError("unauthorized",401);
     const decoded=await getAuth().verifyIdToken(authorization.slice(7));
+    if(decoded.firebase?.sign_in_provider==="anonymous")throw new ApiError("account_required",403);
+
+    const action=clean(req.body?.action)||"token";
+    if(action==="personalRoom"){
+      const room=await openPersonalRoom(getFirestore(),decoded.uid);
+      return out(res,200,{ok:true,room});
+    }
+    if(action==="closePersonalRoom"){
+      const roomId=clean(req.body?.roomId);
+      const result=await closePersonalRoom(getFirestore(),decoded.uid,roomId);
+      return out(res,200,result);
+    }
+    if(action!=="token")throw new ApiError("invalid_action",400);
+
+    if(!cfg.appId||!cfg.secretValid)throw new ApiError("zego_not_configured",503);
     const roomId=clean(req.body?.roomId);
-    if(!/^[A-Za-z0-9_-]{1,96}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+    if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+
+    const roomSnap=await getFirestore().collection("rooms").doc(roomId).get();
+    if(!roomSnap.exists||roomSnap.data()?.isActive===false)throw new ApiError("room_unavailable",404);
 
     const effectiveSeconds=1800;
     const userId=zegoUserId(decoded.uid);
