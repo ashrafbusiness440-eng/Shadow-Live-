@@ -92,6 +92,15 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Phase 4: room discovery is read-only from the client.
+    // Anonymous guests are authenticated by Firebase Auth, so signedIn()
+    // intentionally includes them. Room creation/moderation stays closed until
+    // the dedicated Voice Rooms phase defines its server-side contract.
+    match /rooms/{roomId} {
+      allow read: if signedIn();
+      allow create, update, delete: if false;
+    }
+
     match /conversations/{conversationId} {
       allow read: if signedIn() && request.auth.uid in resource.data.participants;
       allow create: if signedIn()
