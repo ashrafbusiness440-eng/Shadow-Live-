@@ -113,6 +113,31 @@ function boolField(doc, key) {
   return typeof value === 'boolean' ? value : null;
 }
 
+async function waitForUserField(key, predicate, timeoutMs = 20000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const doc = await getUserDocument();
+    const value = doc.data?.[key];
+    if (predicate(value, doc.data)) return { ...doc, value };
+    await page.waitForTimeout(300);
+  }
+  throw new Error('Timed out waiting for user field ' + key);
+}
+
+async function assertUnauthStorageDenied(uid) {
+  const name = encodeURIComponent('profile_images/' + uid + '-unauth.jpg');
+  const response = await fetch(
+    'http://127.0.0.1:9199/v0/b/shadow-live.firebasestorage.app/o?uploadType=media&name=' + name,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'image/jpeg' },
+      body: Buffer.from([0xff, 0xd8, 0xff, 0xd9]),
+    },
+  );
+  if (response.ok) throw new Error('Storage rules allowed unauthenticated profile image upload');
+  console.log('PHASE3_STORAGE_UNAUTH_DENIED_OK', response.status);
+}
+
 try {
   await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: 60000 });
   await page.waitForTimeout(4200);
@@ -153,6 +178,11 @@ try {
   const profileInputCount = await profileInputs.count();
   console.log('PROFILE_TEXTBOX_COUNT', profileInputCount);
   if (profileInputCount < 2) throw new Error(`Expected profile text fields, found ${profileInputCount}`);
+  const initialContinue = page.getByRole('button', { name: 'متابعة' });
+  if (await initialContinue.getAttribute('aria-disabled') !== 'true') {
+    throw new Error('Profile Setup continue button should be disabled before required fields are filled');
+  }
+  console.log('PHASE3_PROFILE_REQUIRED_FIELDS_GUARD_OK');
   await profileInputs.nth(0).fill('اختبار شادو');
 
   await page.getByRole('button', { name: 'اختر تاريخ الميلاد' }).click();
@@ -248,9 +278,89 @@ try {
   }
   if (boolField(afterRelogin.data, 'isOnline') !== true) throw new Error('User was not marked online after re-login');
   console.log('PHASE3_LOGOUT_LOGIN_MAIN_OK');
-  console.log('PHASE3_FULL_E2E_OK');
+  console.log('PHASE3_CORE_E2E_OK');
+
+  // Edit profile validation + public_profiles sync.
+  await page.getByRole('button', { name: 'الملف الشخصي' }).dispatchEvent('click');
+  await page.waitForTimeout(700);
+  await enableAccessibility();
+  const editButton = page.getByRole('button', { name: 'تعديل الملف الشخصي' });
+  await editButton.waitFor({ timeout: 8000 });
+  await editButton.dispatchEvent('click');
+  await page.getByText('تعديل الملف الشخصي', { exact: true }).waitFor({ timeout: 8000 });
+  await enableAccessibility();
+  const editInputs = page.getByRole('textbox');
+  if (await editInputs.count() < 2) throw new Error('Edit Profile text fields were not exposed');
+  await editInputs.nth(0).fill('12');
+  await page.getByRole('button', { name: 'حفظ التعديلات' }).click({ force: true });
+  await page.getByText('الاسم يجب أن يكون 3 أحرف على الأقل', { exact: true }).waitFor({ timeout: 5000 });
+  console.log('PHASE3_EDIT_PROFILE_VALIDATION_ERROR_OK');
+
+  await editInputs.nth(0).fill('اختبار شادو معدل');
+  await editInputs.nth(1).fill('تحديث Phase 3');
+  await page.getByRole('button', { name: 'حفظ التعديلات' }).click({ force: true });
+  await page.getByText('اختبار شادو معدل', { exact: true }).waitFor({ timeout: 10000 });
+  const editedUser = await getUserDocument();
+  const editedPublic = await getPublicProfile(uid);
+  if (stringField(editedUser.data, 'displayName') !== 'اختبار شادو معدل') throw new Error('users displayName did not update');
+  if (stringField(editedUser.data, 'bio') !== 'تحديث Phase 3') throw new Error('users bio did not update');
+  if (stringField(editedPublic, 'displayName') !== 'اختبار شادو معدل') throw new Error('public_profiles displayName did not sync');
+  if (stringField(editedPublic, 'bio') !== 'تحديث Phase 3') throw new Error('public_profiles bio did not sync');
+  console.log('PHASE3_EDIT_PROFILE_PUBLIC_SYNC_OK');
+  await screenshot('edit-profile-synced');
+
+  // Upload a real image through the app UI, exercising authenticated Storage rules.
+  await page.getByRole('button', { name: 'تعديل الملف الشخصي' }).dispatchEvent('click');
+  await page.getByText('تعديل الملف الشخصي', { exact: true }).waitFor({ timeout: 8000 });
+  await enableAccessibility();
+  const chooserPromise = page.waitForEvent('filechooser', { timeout: 10000 });
+  await page.getByRole('button', { name: 'اختيار من الهاتف' }).click({ force: true });
+  const chooser = await chooserPromise;
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=', 'base64');
+  await chooser.setFiles({ name: 'phase3-avatar.png', mimeType: 'image/png', buffer: png });
+  await page.getByText('ضبط الصورة', { exact: true }).waitFor({ timeout: 10000 });
+  await page.getByRole('button', { name: 'اعتماد الصورة' }).click({ force: true });
+  await page.getByText('تعديل الملف الشخصي', { exact: true }).waitFor({ timeout: 10000 });
+  await page.getByRole('button', { name: 'حفظ التعديلات' }).click({ force: true });
+  await page.getByText('اختبار شادو معدل', { exact: true }).waitFor({ timeout: 10000 });
+
+  const imageUser = await waitForUserField(
+    'profileImageUrl',
+    value => typeof value === 'string' && value.includes('profile_images'),
+    25000,
+  );
+  const imageUrl = stringField(imageUser.data, 'profileImageUrl');
+  const imagePublic = await getPublicProfile(uid);
+  if (!imageUrl) throw new Error('Profile image URL was not stored');
+  if (stringField(imagePublic, 'profileImageUrl') !== imageUrl) throw new Error('public_profiles image URL did not sync');
+  console.log('PHASE3_PROFILE_IMAGE_UPLOAD_OK');
+  await assertUnauthStorageDenied(uid);
+  await screenshot('profile-image-uploaded');
+
+  // Guest route + restricted-feature guard + return to login.
+  const settingsAfterImage = page.getByRole('button', { name: 'الإعدادات' });
+  await settingsAfterImage.dispatchEvent('click');
+  await page.getByText('إدارة معلومات الحساب والإعدادات', { exact: true }).waitFor({ timeout: 8000 });
+  await page.getByRole('button', { name: 'تسجيل الخروج' }).first().dispatchEvent('click');
+  await page.getByRole('button', { name: 'تسجيل الخروج' }).last().click();
+  await page.getByText('تسجيل الدخول / إنشاء حساب', { exact: true }).waitFor({ timeout: 12000 });
+
+  await page.getByRole('button', { name: 'متابعة كضيف' }).click();
+  await page.getByRole('button', { name: 'الملف الشخصي' }).waitFor({ timeout: 12000 });
+  await page.getByRole('button', { name: 'الرسائل' }).click();
+  await page.getByText('هذه الميزة تحتاج حساباً', { exact: true }).waitFor({ timeout: 5000 });
+  await page.getByRole('button', { name: 'إلغاء' }).click();
+  console.log('PHASE3_GUEST_RESTRICTED_FEATURE_GUARD_OK');
+
+  await page.getByRole('button', { name: 'الملف الشخصي' }).click();
+  await page.getByText('أنت داخل كضيف', { exact: true }).waitFor({ timeout: 8000 });
+  await page.getByRole('button', { name: 'العودة لتسجيل الدخول' }).click();
+  await page.getByText('تسجيل الدخول / إنشاء حساب', { exact: true }).waitFor({ timeout: 12000 });
+  console.log('PHASE3_GUEST_RETURN_TO_LOGIN_OK');
+  await screenshot('guest-returned-to-login');
 
   if (pageErrors.length) throw new Error(`Flutter page error(s): ${pageErrors.join(' | ')}`);
+  console.log('PHASE3_FULL_E2E_OK');
 } finally {
   await context.close();
   await browser.close();
