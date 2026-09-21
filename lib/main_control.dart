@@ -371,6 +371,8 @@ class UserReadOnlyPage extends StatelessWidget {
         const SizedBox(height:10),
         _RolePolicyCard(role:t(data['role']??'user'),adminEnabled:data['adminEnabled']==true,capabilities:caps),
         const SizedBox(height:10),
+        _OwnerIdPermissionCard(uid:uid,targetRole:t(data['role']??'user'),capabilities:caps),
+        const SizedBox(height:10),
         _OwnerEconomyCard(uid:uid,coins:data['coins'],diamonds:data['diamonds']),
         const SizedBox(height:10),
         const Card(child:ListTile(
@@ -468,7 +470,7 @@ class _RolePolicyCard extends StatelessWidget {
     'viewUsers':'عرض المستخدمين','manageUsers':'إدارة المستخدمين','manageRooms':'إدارة الغرف',
     'reviewReports':'مراجعة البلاغات','manageEconomy':'إدارة الاقتصاد','manageWithdrawals':'إدارة السحب',
     'manageSettlements':'إدارة التسويات','manageRoles':'إدارة الأدوار','manageCapabilities':'إدارة الصلاحيات',
-    'manageSystem':'إدارة النظام',
+    'manageSystem':'إدارة النظام','manageIds':'إدارة IDs المستخدمين والغرف',
   };
   @override Widget build(BuildContext context){
     final isOwner=role=='owner';
@@ -595,12 +597,327 @@ class AuditLogPage extends StatelessWidget {
 }
 
 
+
 class IdManagementPage extends StatefulWidget {
   const IdManagementPage({super.key});
-  @override State<IdManagementPage> createState()=>_IdManagementPageState();
+  @override State<IdManagementPage> createState()=>_IdManagementHubState();
 }
 
-class _IdManagementPageState extends State<IdManagementPage> {
+class _IdManagementHubState extends State<IdManagementPage> {
+  int mode=0;
+  @override Widget build(BuildContext context)=>Column(children:[
+    Padding(
+      padding:const EdgeInsets.fromLTRB(16,16,16,4),
+      child:SegmentedButton<int>(
+        segments:const[
+          ButtonSegment(value:0,label:Text('المستخدمون'),icon:Icon(Icons.person_outline)),
+          ButtonSegment(value:1,label:Text('الغرف'),icon:Icon(Icons.mic_none_rounded)),
+        ],
+        selected:{mode},
+        onSelectionChanged:(value)=>setState(()=>mode=value.first),
+      ),
+    ),
+    Expanded(child:IndexedStack(index:mode,children:const[
+      UserIdManagementPage(),
+      RoomIdManagementPage(),
+    ])),
+  ]);
+}
+
+class RoomIdManagementPage extends StatefulWidget {
+  const RoomIdManagementPage({super.key});
+  @override State<RoomIdManagementPage> createState()=>_RoomIdManagementPageState();
+}
+
+class _RoomIdManagementPageState extends State<RoomIdManagementPage> {
+  final oldId=TextEditingController();
+  final newId=TextEditingController();
+  final reason=TextEditingController(text:'تغيير ID غرفة إداري');
+  bool checking=false,executing=false;
+  String? roomDocId;
+  Map<String,dynamic>? roomData;
+  String? error;
+
+  @override void dispose(){oldId.dispose();newId.dispose();reason.dispose();super.dispose();}
+
+  Future<Map<String,dynamic>?> _actor() async {
+    final user=FirebaseAuth.instance.currentUser;
+    if(user==null)return null;
+    final snap=await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+    return snap.data();
+  }
+
+  Future<void> _lookup() async {
+    final currentId=AdminIdOverridePolicy.normalize(oldId.text);
+    try{AdminIdOverridePolicy.validate(currentId);}catch(_){
+      setState(()=>error='ID الغرفة الحالي يجب أن يكون رقمياً من 3 إلى 12 خانة.');return;
+    }
+    setState((){checking=true;error=null;roomDocId=null;roomData=null;});
+    try{
+      final idSnap=await FirebaseFirestore.instance.collection('room_ids').doc(currentId).get();
+      final target=idSnap.data()?['roomId']?.toString();
+      if(target==null||target.isEmpty){
+        final retired=idSnap.exists&&idSnap.data()?['reserved']==true;
+        throw Exception(retired?'هذا ID غرفة متقاعد ومحجوز.':'لم يتم العثور على غرفة بهذا ID.');
+      }
+      final roomSnap=await FirebaseFirestore.instance.collection('rooms').doc(target).get();
+      if(!roomSnap.exists)throw Exception('الغرفة المرتبطة بالـID غير موجودة.');
+      final data=roomSnap.data()??<String,dynamic>{};
+      if('${data['publicId']??''}'!=currentId)throw Exception('هذا ID قديم وليس ID الغرفة الحالي.');
+      if(mounted)setState((){roomDocId=target;roomData=data;});
+    }catch(e){
+      if(mounted)setState(()=>error=e.toString().replaceFirst('Exception: ',''));
+    }finally{
+      if(mounted)setState(()=>checking=false);
+    }
+  }
+
+  String _messageForCode(String code)=>switch(code){
+    'id_taken'=>'الـID الجديد مستخدم أو محجوز لمستخدم أو غرفة أخرى.',
+    'not_found'=>'لم يتم العثور على ID الغرفة الحالي.',
+    'old_id_retired'=>'ID الغرفة الحالي متقاعد ومحجوز.',
+    'old_id_not_current'=>'الـID المدخل ليس ID الغرفة الحالي.',
+    'recent_auth_required'=>'هذه عملية حساسة. سجّل خروج من Shadow Control ثم ادخل من جديد وأعد المحاولة.',
+    'forbidden'=>'هذه العملية تتطلب Owner أو صلاحية manageIds.',
+    'invalid_request'=>'تحقق من الـID القديم والجديد والسبب.',
+    _=>'تعذر تنفيذ العملية: $code',
+  };
+
+  Future<void> _execute() async {
+    final before=AdminIdOverridePolicy.normalize(oldId.text);
+    final after=AdminIdOverridePolicy.normalize(newId.text);
+    try{AdminIdOverridePolicy.validateChange(before,after);}catch(e){
+      setState(()=>error=e.toString().replaceFirst('Invalid argument(s): ',''));return;
+    }
+    if(roomDocId==null||roomData==null||'${roomData!['publicId']??''}'!=before){
+      setState(()=>error='تحقق من الغرفة باستخدام الـID الحالي أولًا.');return;
+    }
+    final why=reason.text.trim().isEmpty?'تغيير ID غرفة من Shadow Control':reason.text.trim();
+    final name='${roomData!['name']??roomData!['title']??'غرفة'}';
+    final confirmed=await showDialog<bool>(
+      context:context,
+      builder:(c)=>AlertDialog(
+        title:const Text('تأكيد تغيير ID الغرفة'),
+        content:Text('الغرفة: $name\\nالقديم: $before\\nالجديد: $after\\n\\nالـID القديم سيتقاعد ويبقى محجوزًا نهائيًا.'),
+        actions:[
+          TextButton(onPressed:()=>Navigator.pop(c,false),child:const Text('إلغاء')),
+          FilledButton(onPressed:()=>Navigator.pop(c,true),child:const Text('تنفيذ التغيير')),
+        ],
+      ),
+    );
+    if(confirmed!=true||!mounted)return;
+    setState((){executing=true;error=null;});
+    try{
+      final user=FirebaseAuth.instance.currentUser;if(user==null)throw Exception('forbidden');
+      final token=await user.getIdToken().timeout(const Duration(seconds:12));
+      if(token==null||token.isEmpty)throw Exception('forbidden');
+      final key='rid_${DateTime.now().millisecondsSinceEpoch}_${user.uid.substring(0,6)}';
+      final apiUri=Uri(scheme:Uri.base.scheme,host:Uri.base.host,port:Uri.base.hasPort?Uri.base.port:null,path:'/api/change-room-id');
+      final response=await http.post(
+        apiUri,
+        headers:{'Content-Type':'application/json','Authorization':'Bearer $token'},
+        body:jsonEncode({'currentId':before,'newId':after,'reason':why,'idempotencyKey':key}),
+      ).timeout(const Duration(seconds:25));
+      final body=response.body.isEmpty?<String,dynamic>{}:jsonDecode(response.body) as Map<String,dynamic>;
+      if(response.statusCode!=200||body['ok']!=true)throw Exception('${body['code']??'request_failed'}');
+      if(!mounted)return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('تم تغيير ID الغرفة: $before → $after')));
+      oldId.text=after;newId.clear();roomDocId=null;roomData=null;
+      await _lookup();
+    }catch(e){
+      final code=e.toString().replaceFirst('Exception: ','');
+      if(mounted)setState(()=>error=_messageForCode(code));
+    }finally{
+      if(mounted)setState(()=>executing=false);
+    }
+  }
+
+  @override Widget build(BuildContext context)=>FutureBuilder<Map<String,dynamic>?>(
+    future:_actor(),
+    builder:(context,snap){
+      if(snap.connectionState==ConnectionState.waiting)return const Center(child:CircularProgressIndicator());
+      final actor=snap.data;
+      final caps=actor?['capabilities'] is List?(actor!['capabilities'] as List).map((e)=>'$e').toSet():<String>{};
+      final canManageIds=actor?['adminEnabled']==true&&(actor?['role']=='owner'||caps.contains('manageIds'));
+      if(!canManageIds){
+        return ListView(padding:const EdgeInsets.all(16),children:const[
+          Card(child:ListTile(
+            leading:Icon(Icons.lock_outline,color:Color(0xFFD7B85A)),
+            title:Text('IDs الغرف — صلاحية مطلوبة',style:TextStyle(fontWeight:FontWeight.w900)),
+            subtitle:Text('متاحة للـOwner أو للحساب الإداري الذي منحه الـOwner صلاحية manageIds.'),
+          )),
+        ]);
+      }
+      final data=roomData;
+      return ListView(padding:const EdgeInsets.all(16),children:[
+        const Row(children:[
+          Icon(Icons.mic_none_rounded,size:28,color:Color(0xFFD7B85A)),
+          SizedBox(width:10),
+          Text('IDs الغرف',style:TextStyle(fontSize:25,fontWeight:FontWeight.w900)),
+        ]),
+        const SizedBox(height:6),
+        const Text('Public ID للغرفة منفصل عن Firestore document ID الداخلي حتى لا يتأثر التنقل أو بيانات الغرفة.',style:TextStyle(color:Color(0xFFAAA3B8))),
+        const SizedBox(height:16),
+        Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(children:[
+          TextField(
+            controller:oldId,
+            keyboardType:TextInputType.number,
+            decoration:const InputDecoration(labelText:'ID الغرفة الحالي',hintText:'مثال: 654321',border:OutlineInputBorder(),prefixIcon:Icon(Icons.search)),
+          ),
+          const SizedBox(height:12),
+          SizedBox(width:double.infinity,child:OutlinedButton.icon(
+            onPressed:checking||executing?null:_lookup,
+            icon:checking?const SizedBox(width:18,height:18,child:CircularProgressIndicator(strokeWidth:2)):const Icon(Icons.meeting_room_outlined),
+            label:Text(checking?'جار التحقق...':'تحقق من الغرفة'),
+          )),
+        ]))),
+        if(data!=null&&roomDocId!=null)...[
+          const SizedBox(height:12),
+          Card(child:ListTile(
+            leading:const CircleAvatar(child:Icon(Icons.mic_none_rounded)),
+            title:Text('${data['name']??data['title']??'غرفة'}',style:const TextStyle(fontWeight:FontWeight.w900)),
+            subtitle:Text('Public ID: ${data['publicId']}\\nRoom document: $roomDocId'),
+            isThreeLine:true,
+            trailing:const Icon(Icons.verified,color:Color(0xFFD7B85A)),
+          )),
+          const SizedBox(height:12),
+          Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(children:[
+            TextField(
+              controller:newId,
+              keyboardType:TextInputType.number,
+              decoration:const InputDecoration(labelText:'ID الغرفة الجديد',hintText:'مثال: 2222',border:OutlineInputBorder(),prefixIcon:Icon(Icons.badge_outlined)),
+            ),
+            const SizedBox(height:12),
+            TextField(controller:reason,maxLength:160,decoration:const InputDecoration(labelText:'سبب التغيير',border:OutlineInputBorder())),
+            const SizedBox(height:6),
+            const Text('IDs المستخدمين والغرف تشترك في مساحة واحدة: لا يمكن أن يحمل مستخدم وغرفة نفس الرقم. القديم يتقاعد ويبقى محجوزًا.',style:TextStyle(fontSize:12,color:Color(0xFFAAA3B8))),
+            const SizedBox(height:14),
+            SizedBox(width:double.infinity,child:FilledButton.icon(
+              onPressed:executing?null:_execute,
+              icon:executing?const SizedBox(width:18,height:18,child:CircularProgressIndicator(strokeWidth:2)):const Icon(Icons.swap_horiz_rounded),
+              label:Text(executing?'جار التنفيذ...':'تغيير ID الغرفة'),
+            )),
+          ]))),
+        ],
+        if(error!=null)...[
+          const SizedBox(height:12),
+          Card(color:const Color(0xFF2A1015),child:ListTile(
+            leading:const Icon(Icons.error_outline,color:Colors.redAccent),
+            title:Text(error!,style:const TextStyle(color:Colors.redAccent)),
+          )),
+        ],
+        const SizedBox(height:12),
+        const Card(child:ListTile(
+          leading:Icon(Icons.shield_outlined,color:Color(0xFFD7B85A)),
+          title:Text('حماية العملية'),
+          subtitle:Text('Owner أو manageIds • Backend موثّق • Transaction • Audit Log • ID القديم محجوز.'),
+        )),
+      ]);
+    },
+  );
+}
+
+class _OwnerIdPermissionCard extends StatefulWidget {
+  const _OwnerIdPermissionCard({required this.uid,required this.targetRole,required this.capabilities});
+  final String uid,targetRole;
+  final List<String> capabilities;
+  @override State<_OwnerIdPermissionCard> createState()=>_OwnerIdPermissionCardState();
+}
+
+class _OwnerIdPermissionCardState extends State<_OwnerIdPermissionCard> {
+  late bool enabled;
+  bool busy=false;
+
+  @override void initState(){super.initState();enabled=widget.capabilities.contains('manageIds');}
+
+  Future<bool> _isOwner() async {
+    final current=FirebaseAuth.instance.currentUser;
+    if(current==null)return false;
+    final snap=await FirebaseFirestore.instance.collection('users').doc(current.uid).get();
+    return snap.data()?['role']=='owner'&&snap.data()?['adminEnabled']==true;
+  }
+
+  Future<void> _change() async {
+    final next=!enabled;
+    final reason=next?'منح صلاحية إدارة IDs من Shadow Control':'سحب صلاحية إدارة IDs من Shadow Control';
+    final ok=await showDialog<bool>(
+      context:context,
+      builder:(c)=>AlertDialog(
+        title:Text(next?'منح صلاحية إدارة IDs':'سحب صلاحية إدارة IDs'),
+        content:Text(next
+          ?'سيتمكن هذا الحساب من تغيير IDs المستخدمين والغرف فقط عبر الـBackend الموثّق.'
+          :'سيتم سحب صلاحية تغيير IDs المستخدمين والغرف من هذا الحساب.'),
+        actions:[
+          TextButton(onPressed:()=>Navigator.pop(c,false),child:const Text('إلغاء')),
+          FilledButton(onPressed:()=>Navigator.pop(c,true),child:Text(next?'منح الصلاحية':'سحب الصلاحية')),
+        ],
+      ),
+    );
+    if(ok!=true||!mounted)return;
+    setState(()=>busy=true);
+    try{
+      final user=FirebaseAuth.instance.currentUser;if(user==null)throw Exception('not_signed_in');
+      final token=await user.getIdToken().timeout(const Duration(seconds:12));
+      if(token==null||token.isEmpty)throw Exception('empty_token');
+      final key='idcap_${DateTime.now().millisecondsSinceEpoch}_${user.uid.substring(0,6)}';
+      final apiUri=Uri(scheme:Uri.base.scheme,host:Uri.base.host,port:Uri.base.hasPort?Uri.base.port:null,path:'/api/set-id-management-permission');
+      final response=await http.post(
+        apiUri,
+        headers:{'Content-Type':'application/json','Authorization':'Bearer $token'},
+        body:jsonEncode({'targetUid':widget.uid,'enabled':next,'reason':reason,'idempotencyKey':key}),
+      ).timeout(const Duration(seconds:25));
+      final body=response.body.isEmpty?<String,dynamic>{}:jsonDecode(response.body) as Map<String,dynamic>;
+      if(response.statusCode!=200||body['ok']!=true)throw Exception('${body['code']??'request_failed'}');
+      if(mounted){
+        setState(()=>enabled=next);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(next?'تم منح صلاحية إدارة IDs':'تم سحب صلاحية إدارة IDs')));
+      }
+    }catch(e){
+      if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('تعذر تعديل الصلاحية: $e')));
+    }finally{
+      if(mounted)setState(()=>busy=false);
+    }
+  }
+
+  @override Widget build(BuildContext context){
+    if(widget.targetRole=='owner'){
+      return const Card(child:ListTile(
+        leading:Icon(Icons.badge_outlined,color:Color(0xFFD7B85A)),
+        title:Text('صلاحية إدارة IDs'),
+        subtitle:Text('الـOwner يمتلك صلاحية إدارة IDs تلقائيًا ولا يمكن سحبها.'),
+      ));
+    }
+    return FutureBuilder<bool>(
+      future:_isOwner(),
+      builder:(context,snap){
+        if(snap.data!=true)return const SizedBox.shrink();
+        return Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+          Row(children:[
+            const Icon(Icons.badge_outlined,color:Color(0xFFD7B85A)),
+            const SizedBox(width:8),
+            const Expanded(child:Text('صلاحية إدارة IDs',style:TextStyle(fontWeight:FontWeight.w900))),
+            Chip(label:Text(enabled?'ممنوحة':'غير ممنوحة')),
+          ]),
+          const SizedBox(height:8),
+          const Text('تسمح بتغيير IDs المستخدمين والغرف فقط. لا تمنح صلاحيات مالية أو Owner.'),
+          const SizedBox(height:12),
+          FilledButton.icon(
+            onPressed:busy?null:_change,
+            icon:Icon(enabled?Icons.remove_moderator_outlined:Icons.add_moderator_outlined),
+            label:Text(busy?'جار التنفيذ...':(enabled?'سحب الصلاحية':'منح الصلاحية')),
+          ),
+        ])));
+      },
+    );
+  }
+}
+
+class UserIdManagementPage extends StatefulWidget {
+  const UserIdManagementPage({super.key});
+  @override State<UserIdManagementPage> createState()=>_IdManagementPageState();
+}
+
+class _IdManagementPageState extends State<UserIdManagementPage> {
   final oldId=TextEditingController();
   final newId=TextEditingController();
   final reason=TextEditingController(text:'تغيير ID إداري');
@@ -631,7 +948,7 @@ class _IdManagementPageState extends State<IdManagementPage> {
         final retired=idSnap.exists&&idSnap.data()?['reserved']==true;
         throw Exception(retired?'هذا ID متقاعد ومحجوز وليس ID حاليًا.':'لم يتم العثور على حساب بهذا ID.');
       }
-      final userSnap=await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final userSnap=await FirebaseFirestore.instance.collection('public_profiles').doc(uid).get();
       if(!userSnap.exists)throw Exception('الحساب المرتبط بالـID غير موجود.');
       final data=userSnap.data()??<String,dynamic>{};
       if('${data['publicId']??''}'!=currentId)throw Exception('هذا ID قديم/بديل وليس الـID الحالي للحساب.');
@@ -649,7 +966,7 @@ class _IdManagementPageState extends State<IdManagementPage> {
     'old_id_retired'=>'الـID الحالي الذي أدخلته متقاعد ومحجوز.',
     'old_id_not_current'=>'الـID المدخل ليس الـID الحالي لهذا الحساب.',
     'recent_auth_required'=>'هذه عملية حساسة. سجّل خروج من Shadow Control ثم ادخل من جديد وأعد المحاولة.',
-    'forbidden'=>'هذه الأداة مخصصة لحساب Owner فقط.',
+    'forbidden'=>'هذه العملية تتطلب Owner أو صلاحية manageIds.',
     'invalid_request'=>'تحقق من الـID القديم والجديد والسبب.',
     _=>'تعذر تنفيذ العملية: $code',
   };
@@ -708,13 +1025,14 @@ class _IdManagementPageState extends State<IdManagementPage> {
     builder:(context,snap){
       if(snap.connectionState==ConnectionState.waiting)return const Center(child:CircularProgressIndicator());
       final actor=snap.data;
-      final isOwner=actor?['role']=='owner'&&actor?['adminEnabled']==true;
-      if(!isOwner){
+      final caps=actor?['capabilities'] is List?(actor!['capabilities'] as List).map((e)=>'$e').toSet():<String>{};
+      final canManageIds=actor?['adminEnabled']==true&&(actor?['role']=='owner'||caps.contains('manageIds'));
+      if(!canManageIds){
         return ListView(padding:const EdgeInsets.all(16),children:const[
           Card(child:ListTile(
             leading:Icon(Icons.lock_outline,color:Color(0xFFD7B85A)),
-            title:Text('إدارة الـID — Owner فقط',style:TextStyle(fontWeight:FontWeight.w900)),
-            subtitle:Text('تغيير المعرفات إجراء حساس ومقفل على حساب المالك.'),
+            title:Text('إدارة الـID — صلاحية مطلوبة',style:TextStyle(fontWeight:FontWeight.w900)),
+            subtitle:Text('متاحة للـOwner أو للحساب الإداري الذي منحه الـOwner صلاحية manageIds.'),
           )),
         ]);
       }
@@ -723,10 +1041,10 @@ class _IdManagementPageState extends State<IdManagementPage> {
         const Row(children:[
           Icon(Icons.badge_outlined,size:28,color:Color(0xFFD7B85A)),
           SizedBox(width:10),
-          Text('إدارة الـID',style:TextStyle(fontSize:25,fontWeight:FontWeight.w900)),
+          Text('IDs المستخدمين',style:TextStyle(fontSize:25,fontWeight:FontWeight.w900)),
         ]),
         const SizedBox(height:6),
-        const Text('تغيير جذري وآمن لأي Public ID مع حجز المعرف القديم وتسجيل العملية.',style:TextStyle(color:Color(0xFFAAA3B8))),
+        const Text('تغيير Public ID للمستخدم مع حجز المعرف القديم وتسجيل العملية.',style:TextStyle(color:Color(0xFFAAA3B8))),
         const SizedBox(height:16),
         Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(children:[
           TextField(
@@ -746,7 +1064,7 @@ class _IdManagementPageState extends State<IdManagementPage> {
           Card(child:ListTile(
             leading:const CircleAvatar(child:Icon(Icons.person)),
             title:Text('${data['displayName']??data['name']??'مستخدم'}',style:const TextStyle(fontWeight:FontWeight.w900)),
-            subtitle:Text('ID الحالي: ${data['publicId']}\nUID: $targetUid\nالدور: ${data['role']??'user'}'),
+            subtitle:Text('ID الحالي: ${data['publicId']}\nUID: $targetUid'),
             isThreeLine:true,
             trailing:const Icon(Icons.verified,color:Color(0xFFD7B85A)),
           )),
@@ -784,7 +1102,7 @@ class _IdManagementPageState extends State<IdManagementPage> {
         const Card(child:ListTile(
           leading:Icon(Icons.shield_outlined,color:Color(0xFFD7B85A)),
           title:Text('حماية العملية'),
-          subtitle:Text('Owner-only • Backend موثّق • Transaction واحدة • Audit Log • ID القديم محجوز • لا علاقة لها بميزة VIP IDs.'),
+          subtitle:Text('Owner أو manageIds • Backend موثّق • Transaction واحدة • Audit Log • ID القديم محجوز • لا علاقة لها بميزة VIP IDs.'),
         )),
       ]);
     },

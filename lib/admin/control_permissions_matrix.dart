@@ -10,7 +10,7 @@ abstract final class ControlPermissionsMatrix {
     ControlCapabilities.viewReports,ControlCapabilities.reviewReports,ControlCapabilities.muteUsers,
     ControlCapabilities.suspendUsers,ControlCapabilities.permanentBan,ControlCapabilities.manageRooms,
     ControlCapabilities.globalRoomControl,ControlCapabilities.manageAgencies,ControlCapabilities.manageVip,
-    ControlCapabilities.manageSpecialIds,ControlCapabilities.manageStore,ControlCapabilities.manageGames,
+    ControlCapabilities.manageSpecialIds,ControlCapabilities.manageIds,ControlCapabilities.manageStore,ControlCapabilities.manageGames,
     ControlCapabilities.manageEconomy,ControlCapabilities.manageWithdrawals,ControlCapabilities.manageSettlements,
     ControlCapabilities.manageCampaigns,ControlCapabilities.manageRoles,ControlCapabilities.viewAuditLog,
     ControlCapabilities.emergencyLock,

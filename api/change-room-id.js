@@ -46,7 +46,8 @@ function buildSearchTokens(values,maxSubstringLength=8,maxTokens=512){
   add(normalized);const chars=Array.from(normalized);
   for(let end=1;end<=chars.length&&tokens.size<maxTokens;end++)add(chars.slice(0,end).join(""));
   for(const word of normalized.split(" ")){
-   const w=Array.from(word);for(let end=1;end<=w.length&&tokens.size<maxTokens;end++)add(w.slice(0,end).join(""));
+   const w=Array.from(word);
+   for(let end=1;end<=w.length&&tokens.size<maxTokens;end++)add(w.slice(0,end).join(""));
    if(tokens.size>=maxTokens)break;
   }
   for(let start=0;start<chars.length&&tokens.size<maxTokens;start++){
@@ -88,43 +89,40 @@ export default async function handler(req,res){
   phase="transaction";
   const result=await db.runTransaction(async tx=>{
    const opRef=db.collection("control_operations").doc(key);
-   const oldRef=db.collection("public_ids").doc(currentId);
-   const newRef=db.collection("public_ids").doc(newId);
-   const roomCollisionRef=db.collection("room_ids").doc(newId);
-   const [op,oldSnap,newSnap,roomCollision]=await Promise.all([
-    tx.get(opRef),tx.get(oldRef),tx.get(newRef),tx.get(roomCollisionRef)
+   const oldRef=db.collection("room_ids").doc(currentId);
+   const newRef=db.collection("room_ids").doc(newId);
+   const userCollisionRef=db.collection("public_ids").doc(newId);
+   const [op,oldSnap,newSnap,userCollision]=await Promise.all([
+    tx.get(opRef),tx.get(oldRef),tx.get(newRef),tx.get(userCollisionRef)
    ]);
    if(op.exists)return {ok:true,code:"duplicate",operationId:key,...(op.data()?.result||{})};
    if(!oldSnap.exists)throw Error("not_found");
-   const targetUid=String(oldSnap.data()?.uid||"");
-   if(!targetUid)throw Error("old_id_retired");
-   if(newSnap.exists||roomCollision.exists)throw Error("id_taken");
+   const roomId=String(oldSnap.data()?.roomId||"");
+   if(!roomId)throw Error("old_id_retired");
+   if(newSnap.exists||userCollision.exists)throw Error("id_taken");
 
-   const userRef=db.collection("users").doc(targetUid);
-   const publicRef=db.collection("public_profiles").doc(targetUid);
-   const [userSnap,publicSnap]=await Promise.all([tx.get(userRef),tx.get(publicRef)]);
-   if(!userSnap.exists)throw Error("not_found");
-   const user=userSnap.data()||{};
-   if(String(user.publicId||"")!==currentId)throw Error("old_id_not_current");
+   const roomRef=db.collection("rooms").doc(roomId);
+   const roomSnap=await tx.get(roomRef);
+   if(!roomSnap.exists)throw Error("not_found");
+   const room=roomSnap.data()||{};
+   if(String(room.publicId||"")!==currentId)throw Error("old_id_not_current");
 
-   const profile=publicSnap.data()||{};
-   const displayName=profile.displayName??user.displayName??user.name??"";
-   const username=profile.username??user.username??"";
-   const searchTokens=buildSearchTokens([displayName,username,newId]);
+   const title=room.name??room.title??"";
+   const searchTokens=buildSearchTokens([title,newId]);
    const now=FieldValue.serverTimestamp();
 
-   tx.update(userRef,{
+   tx.update(roomRef,{
     publicId:newId,
     publicIdHistory:FieldValue.arrayUnion(currentId),
     publicIdUpdatedAt:now,
     publicIdUpdatedBy:decoded.uid,
+    searchTokens,
     updatedAt:now,
    });
-   tx.set(publicRef,{publicId:newId,searchTokens,updatedAt:now},{merge:true});
-   tx.create(newRef,{uid:targetUid,createdAt:now,source:"adminOverride",createdBy:decoded.uid});
+   tx.create(newRef,{roomId,createdAt:now,source:"adminOverride",createdBy:decoded.uid});
    tx.set(oldRef,{
     reserved:true,
-    retiredFromUid:targetUid,
+    retiredFromRoomId:roomId,
     retiredAt:now,
     retiredBy:decoded.uid,
     currentPublicId:newId,
@@ -133,10 +131,9 @@ export default async function handler(req,res){
    const auditRef=db.collection("admin_audit_logs").doc();
    tx.create(auditRef,{
     actorUid:decoded.uid,
-    action:"changePublicId",
-    targetType:"user",
-    targetId:targetUid,
-    targetUid,
+    action:"changeRoomPublicId",
+    targetType:"room",
+    targetId:roomId,
     reason,
     before:{publicId:currentId},
     after:{publicId:newId},
@@ -144,11 +141,11 @@ export default async function handler(req,res){
     createdAt:now,
    });
 
-   const resultData={targetUid,before:currentId,after:newId};
+   const resultData={roomId,before:currentId,after:newId};
    tx.create(opRef,{
-    action:"changePublicId",
+    action:"changeRoomPublicId",
     actorUid:decoded.uid,
-    targetId:targetUid,
+    targetId:roomId,
     status:"completed",
     result:resultData,
     createdAt:now,

@@ -257,6 +257,309 @@ class _DiscoverySearchScreenState extends State<DiscoverySearchScreen> {
 
     final results = <String, DiscoveryRoom>{};
 
+    if (RegExp(r'^\d{3,12}
+      final indexed = await FirebaseFirestore.instance
+          .collection('rooms')
+          .where('searchTokens', arrayContains: query)
+          .limit(30)
+          .get();
+      for (final document in indexed.docs) {
+        final room = DiscoveryRoom(
+          id: document.id,
+          data: document.data(),
+        );
+        if (room.isActive && !room.isHidden) {
+          results[room.id] = room;
+        }
+      }
+    } catch (_) {
+      // Future Phase 6 rooms will carry searchTokens. Legacy/current room
+      // documents continue through the local cache fallback below.
+    }
+
+    for (final room in _roomCache) {
+      if (searchTextMatches(room.title, query)) {
+        results[room.id] = room;
+      }
+    }
+
+    if (rawQuery.length >= 4 && !rawQuery.contains('/')) {
+      try {
+        final exact = await FirebaseFirestore.instance
+            .collection('rooms')
+            .doc(rawQuery)
+            .get();
+        if (exact.exists) {
+          final room = DiscoveryRoom(id: exact.id, data: exact.data()!);
+          if (room.isActive && !room.isHidden) {
+            results[room.id] = room;
+          }
+        }
+      } catch (_) {}
+    }
+
+    final rooms = results.values.toList()
+      ..sort((a, b) {
+        final rankCompare =
+            searchMatchRank(a.title, query).compareTo(searchMatchRank(b.title, query));
+        if (rankCompare != 0) return rankCompare;
+        return b.onlineCount.compareTo(a.onlineCount);
+      });
+
+    return rooms
+        .take(30)
+        .map((room) => room.toNavigationArguments())
+        .toList(growable: false);
+  }
+
+  ImageProvider? _avatar(Map<String, dynamic> person) {
+    final url =
+        (person['profileImageUrl'] ?? person['avatarUrl'])?.toString().trim();
+    if (url != null && url.isNotEmpty) return NetworkImage(url);
+
+    final asset = person['profileAvatarAsset']?.toString().trim();
+    return asset != null && asset.isNotEmpty ? AssetImage(asset) : null;
+  }
+
+  void _openRoom(Map<String, dynamic> room) {
+    NavigationService.navigateTo(
+      AppRoutes.voiceChatRoom,
+      arguments: room,
+    );
+  }
+
+  void _openPerson(Map<String, dynamic> person) {
+    final targetUid = (person['uid'] ?? '').toString();
+    if (targetUid.isEmpty) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PublicProfileScreen(userId: targetUid),
+      ),
+    );
+  }
+
+  Widget _personCard(Map<String, dynamic> person) {
+    final avatar = _avatar(person);
+    final isOnline = person['isOnline'] == true;
+
+    return Card(
+      color: const Color(0xFF101827),
+      child: ListTile(
+        onTap: () => _openPerson(person),
+        leading: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            CircleAvatar(
+              backgroundImage: avatar,
+              child: avatar == null ? const Icon(Icons.person) : null,
+            ),
+            if (isOnline)
+              PositionedDirectional(
+                end: -1,
+                bottom: -1,
+                child: Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF42D77D),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: const Color(0xFF101827),
+                      width: 2,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        title: Text(
+          (person['displayName'] ?? 'مستخدم Shadow Live').toString(),
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        subtitle: Text(
+          'ID: ${person['publicId'] ?? '—'}',
+          style: const TextStyle(color: Colors.white54),
+        ),
+        trailing: const Icon(
+          Icons.chevron_left_rounded,
+          color: Colors.white38,
+        ),
+      ),
+    );
+  }
+
+  Widget _roomCard(Map<String, dynamic> room) {
+    return Card(
+      color: const Color(0xFF101827),
+      child: ListTile(
+        onTap: () => _openRoom(room),
+        leading: const CircleAvatar(
+          backgroundColor: Color(0xFF372064),
+          child: Icon(Icons.mic, color: Color(0xFFFFD54A)),
+        ),
+        title: Text(
+          (room['name'] ?? room['title'] ?? 'غرفة').toString(),
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        subtitle: Text(
+          [
+            if ((room['publicId'] ?? '').toString().isNotEmpty)
+              'ID: ${room['publicId']}',
+            '${room['onlineCount'] ?? room['memberCount'] ?? room['participantsCount'] ?? 0} متصل',
+          ].join(' • '),
+          style: const TextStyle(color: Colors.white54),
+        ),
+        trailing: const Icon(
+          Icons.login_rounded,
+          color: Color(0xFF8A3DFF),
+        ),
+      ),
+    );
+  }
+
+  Widget _results() {
+    if (_error != null) {
+      return Center(
+        child: Text(
+          _error!,
+          style: const TextStyle(color: Colors.white60),
+        ),
+      );
+    }
+
+    if (normalizeSearchText(_controller.text).isEmpty) {
+      return const Center(
+        child: Text(
+          'اكتب حرفاً، جزءاً من الاسم أو إيموجي للبحث',
+          style: TextStyle(color: Colors.white38),
+        ),
+      );
+    }
+
+    if (_people.isEmpty && _rooms.isEmpty && !_loading) {
+      return const Center(
+        child: Text(
+          'لا توجد نتائج مطابقة',
+          style: TextStyle(color: Colors.white54),
+        ),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      children: [
+        if (_people.isNotEmpty) ...[
+          const _Heading('أشخاص'),
+          ..._people.map(_personCard),
+        ],
+        if (_rooms.isNotEmpty) ...[
+          const _Heading('غرف'),
+          ..._rooms.map(_roomCard),
+        ],
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: const Color(0xFF05060D),
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF0A1020),
+          title: const Text('البحث والاستكشاف'),
+        ),
+        body: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: TextField(
+                controller: _controller,
+                onChanged: _changed,
+                autofocus: true,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  hintText: 'اسم، جزء من الاسم، إيموجي، ID أو غرفة',
+                  hintStyle: const TextStyle(color: Colors.white38),
+                  prefixIcon: const Icon(
+                    Icons.search,
+                    color: Color(0xFF8A3DFF),
+                  ),
+                  filled: true,
+                  fillColor: const Color(0xFF111827),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(18),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+            ),
+            if (_loading)
+              const LinearProgressIndicator(
+                color: Color(0xFF8A3DFF),
+              ),
+            Expanded(child: _results()),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Heading extends StatelessWidget {
+  const _Heading(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 18, 4, 8),
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: Color(0xFFFFD54A),
+          fontSize: 18,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+).hasMatch(query)) {
+      try {
+        final id = await FirebaseFirestore.instance
+            .collection('room_ids')
+            .doc(query)
+            .get();
+        final targetRoomId = id.data()?['roomId']?.toString();
+        if (targetRoomId != null && targetRoomId.isNotEmpty) {
+          final roomDoc = await FirebaseFirestore.instance
+              .collection('rooms')
+              .doc(targetRoomId)
+              .get();
+          if (roomDoc.exists) {
+            final room = DiscoveryRoom(
+              id: roomDoc.id,
+              data: roomDoc.data()!,
+            );
+            if (room.isActive && !room.isHidden) {
+              results[room.id] = room;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
     try {
       final indexed = await FirebaseFirestore.instance
           .collection('rooms')

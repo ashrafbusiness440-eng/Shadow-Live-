@@ -2,6 +2,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_chat_room/features/home/services/discovery_service.dart';
 
 void main() {
+  test('room exposes public ID without replacing internal document ID', () {
+    const room = DiscoveryRoom(id: 'firestore-doc', data: {'name': 'Test', 'publicId': '2222'});
+    expect(room.id, 'firestore-doc');
+    expect(room.publicId, '2222');
+    expect(room.toNavigationArguments()['roomId'], 'firestore-doc');
+    expect(room.toNavigationArguments()['publicId'], '2222');
+  });
+
   test('suggested rooms prefer featured rooms then activity', () {
     const data = HomeDiscoveryData(
       userData: null,

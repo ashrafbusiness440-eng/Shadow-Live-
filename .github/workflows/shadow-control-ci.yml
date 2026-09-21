@@ -32,6 +32,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Validate Vercel admin API syntax
+        run: node --check api/change-public-id.js && node --check api/change-room-id.js && node --check api/set-id-management-permission.js
       - working-directory: functions
         run: npm install
       - working-directory: functions

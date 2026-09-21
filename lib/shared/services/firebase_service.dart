@@ -55,7 +55,9 @@ class FirebaseService {
    try{
     final result=await _firestore.runTransaction<String>((tx)async{
      final userSnap=await tx.get(userRef);final already=userSnap.data()?['publicId']?.toString();if(already!=null&&already.isNotEmpty)return already;
-     final idSnap=await tx.get(idRef);if(idSnap.exists)throw StateError('collision');
+     final roomIdRef=_firestore.collection('room_ids').doc(id);
+     final idSnap=await tx.get(idRef);final roomIdSnap=await tx.get(roomIdRef);
+     if(idSnap.exists||roomIdSnap.exists)throw StateError('collision');
      tx.set(idRef,{'uid':userId,'createdAt':FieldValue.serverTimestamp()});
      tx.set(userRef,{'publicId':id,'updatedAt':FieldValue.serverTimestamp()},SetOptions(merge:true));return id;
     });
@@ -71,7 +73,8 @@ class FirebaseService {
  Future<void> updateSetupStep(String userId,String step,{bool complete=false})=>updateUserProfile(userId,{'setupStep':step,'setupComplete':complete});
  Map<String,dynamic> _roomSearchData(Map<String,dynamic> roomData){
   final name=(roomData['name']??roomData['title']??'').toString();
-  return {...roomData,'searchTokens':buildSearchTokens([name])};
+  final publicId=(roomData['publicId']??'').toString();
+  return {...roomData,'searchTokens':buildSearchTokens([name,publicId])};
  }
  Future<String> createRoom(Map<String,dynamic> roomData)async{try{return(await _firestore.collection('rooms').add(_roomSearchData(roomData))).id;}catch(e){throw Exception('Failed to create room: $e');}}
  Stream<QuerySnapshot> getRooms()=>_firestore.collection('rooms').where('isActive',isEqualTo:true).orderBy('createdAt',descending:true).snapshots();Future<void> updateRoom(String roomId,Map<String,dynamic> data)async{try{final payload=(data.containsKey('name')||data.containsKey('title'))?_roomSearchData(data):data;await _firestore.collection('rooms').doc(roomId).update(payload);}catch(e){throw Exception('Failed to update room: $e');}}

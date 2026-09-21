@@ -12,6 +12,12 @@ void main(){
   final x=ControlPermissionsMatrix.effective(role:'owner',explicit:{});
   expect(x.contains(ControlCapabilities.manageRoles),isTrue);
   expect(x.contains(ControlCapabilities.emergencyLock),isTrue);
+  expect(x.contains(ControlCapabilities.manageIds),isTrue);
+ });
+ test('manageIds is explicit for non-owner admins',(){
+  final x=ControlPermissionsMatrix.effective(role:'admin',explicit:{ControlCapabilities.manageIds});
+  expect(x.contains(ControlCapabilities.manageIds),isTrue);
+  expect(x.contains(ControlCapabilities.manageEconomy),isFalse);
  });
  test('withdrawal reservation locks funds',(){
   const r=FinancialReservation(available:150,reserved:0);

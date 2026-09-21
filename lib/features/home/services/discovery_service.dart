@@ -12,6 +12,8 @@ class DiscoveryRoom {
 
   String get title => (data['name'] ?? data['title'] ?? 'غرفة صوتية').toString();
 
+  String get publicId => (data['publicId'] ?? '').toString();
+
   int get onlineCount {
     final value =
         data['onlineCount'] ?? data['memberCount'] ?? data['participantsCount'] ?? 0;
