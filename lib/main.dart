@@ -14,10 +14,7 @@ import 'shared/services/firebase_service.dart' as shared_fb;
 import 'shared/services/storage_service.dart';
 
 import 'package:google_fonts/google_fonts.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'widgets/host_section.dart';
-import 'widgets/participant_grid.dart';
-import 'widgets/notifications_section.dart';
 import 'features/auth/screens/login_screen.dart';
 import 'features/auth/screens/email_login_screen.dart';
 import 'features/auth/screens/profile_setup_screen.dart';
@@ -149,6 +146,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   bool _voiceMicMuted = true;
   String? _voiceError;
   Map<String, dynamic> _roomArguments = <String, dynamic>{};
+  String _ownerDisplayName = 'صاحب الغرفة';
+  String _ownerPhotoUrl = '';
   bool _roomSoundEnabled = true;
   bool _effectSoundEnabled = true;
   bool _roomEffectsEnabled = true;
@@ -171,6 +170,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     final raw = ModalRoute.of(context)?.settings.arguments;
     final args = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
     _roomArguments = args;
+    unawaited(_loadOwnerProfile(args));
     final roomId = (args['roomId'] ?? '').toString().trim();
     final user = FirebaseAuth.instance.currentUser;
     if (roomId.isEmpty || user == null) {
@@ -306,6 +306,42 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         const SnackBar(content: Text('تعذر إغلاق الغرفة حالياً.')),
       );
     }
+  }
+
+  Future<void> _loadOwnerProfile(
+    Map<String, dynamic> args,
+  ) async {
+    final ownerUid = (args['ownerUid'] ??
+            args['ownerId'] ??
+            args['hostId'] ??
+            '')
+        .toString()
+        .trim();
+    final current = FirebaseAuth.instance.currentUser;
+    var fallback = (args['hostName'] ?? args['ownerName'] ?? '').toString();
+    if (fallback.trim().isEmpty && current?.uid == ownerUid) {
+      fallback = current?.displayName ?? '';
+    }
+    if (fallback.trim().isNotEmpty && mounted) {
+      setState(() => _ownerDisplayName = fallback.trim());
+    }
+    if (ownerUid.isEmpty) return;
+
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('public_profiles')
+          .doc(ownerUid)
+          .get();
+      final data = snap.data();
+      if (!mounted || data == null) return;
+      setState(() {
+        final name =
+            (data['displayName'] ?? data['username'] ?? '').toString().trim();
+        if (name.isNotEmpty) _ownerDisplayName = name;
+        _ownerPhotoUrl =
+            (data['profileImageUrl'] ?? data['photoUrl'] ?? '').toString();
+      });
+    } catch (_) {}
   }
 
   Future<void> _loadRoomInsights(String roomId) async {
@@ -1475,6 +1511,83 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     super.dispose();
   }
 
+  Widget _buildRoomSupportBox() {
+    final insights = _roomInsights;
+    final support = insights?.dailySupport ?? 0;
+    final followers = insights?.followerCount ?? 0;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF101522),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: const Color(0xFF8A3DFF).withValues(alpha: .24),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xFFFFD54A).withValues(alpha: .12),
+            ),
+            child: const Icon(
+              Icons.savings_rounded,
+              color: Color(0xFFFFD54A),
+            ),
+          ),
+          const SizedBox(width: 11),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'صندوق الغرفة',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13,
+                  ),
+                ),
+                SizedBox(height: 3),
+                Text(
+                  'الدعم والمتابعة الخاصة بهذه الغرفة',
+                  style: TextStyle(
+                    color: Colors.white54,
+                    fontSize: 10,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                support.toString(),
+                style: const TextStyle(
+                  color: Color(0xFFFFD54A),
+                  fontWeight: FontWeight.w900,
+                  fontSize: 14,
+                ),
+              ),
+              Text(
+                followers.toString() + ' متابع',
+                style: const TextStyle(
+                  color: Colors.white54,
+                  fontSize: 9,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildRoomInsightsBar() {
     final insights = _roomInsights;
     if (insights == null) {
@@ -1722,48 +1835,44 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Column(
                     children: [
-                      const SizedBox(height: 205),
-                      const HostSection(),
-                      const SizedBox(height: 32),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.grey[800]!.withValues(alpha: 0.5),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(8),
-                                image: const DecorationImage(
-                                  image: CachedNetworkImageProvider('https://example.com/gift.jpg'),
-                                  fit: BoxFit.cover,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            const Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('Wish List', style: TextStyle(fontWeight: FontWeight.bold)),
-                                  Text('Send her a wish gift', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                                ],
-                              ),
-                            ),
-                            TextButton(
-                              onPressed: () => NavigationService.navigateTo(AppRoutes.settings),
-                              child: Text('Send', style: TextStyle(color: Colors.yellow[400], fontWeight: FontWeight.bold)),
-                            ),
-                          ],
-                        ),
+                      const SizedBox(height: 178),
+                      HostSection(
+                        name: _ownerDisplayName,
+                        imageUrl: _ownerPhotoUrl,
+                        onTap: (_roomArguments['ownerUid'] ??
+                                    _roomArguments['ownerId'] ??
+                                    _roomArguments['hostId'])
+                                .toString() ==
+                            (FirebaseAuth.instance.currentUser?.uid ?? '')
+                            ? () => NavigationService.navigateTo(
+                                  AppRoutes.profile,
+                                )
+                            : null,
                       ),
-                      const SizedBox(height: 32),
-                      const ParticipantGrid(),
-                      const SizedBox(height: 100),
+                      const SizedBox(height: 18),
+                      _buildRoomSupportBox(),
+                      const SizedBox(height: 18),
+                      _buildMicStatusBanner(),
+                      _buildVoiceSeats(),
+                      if (_roomSeatState?.isOwner == true) ...[
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: AlignmentDirectional.centerStart,
+                          child: TextButton.icon(
+                            onPressed: _showMicRequestsSheet,
+                            icon: const Icon(
+                              Icons.mic_external_on_rounded,
+                            ),
+                            label: Text(
+                              'طلبات المايك (' +
+                                  (_roomSeatState?.micRequests.length ?? 0)
+                                      .toString() +
+                                  ')',
+                            ),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 190),
                     ],
                   ),
                 ),
@@ -1788,9 +1897,18 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         children: [
                           Row(
                             children: [
-                              GestureDetector(
-                                onTap: () => NavigationService.navigateTo(AppRoutes.profile),
-                                child: const CircleAvatar(radius: 20, backgroundImage: CachedNetworkImageProvider('https://example.com/avatar.jpg')),
+                              CircleAvatar(
+                                radius: 20,
+                                backgroundColor: const Color(0xFF171D2B),
+                                backgroundImage: _ownerPhotoUrl.trim().isEmpty
+                                    ? null
+                                    : NetworkImage(_ownerPhotoUrl),
+                                child: _ownerPhotoUrl.trim().isEmpty
+                                    ? const Icon(
+                                        Icons.person_rounded,
+                                        color: Colors.white54,
+                                      )
+                                    : null,
                               ),
                               const SizedBox(width: 8),
                               Column(
@@ -1821,29 +1939,10 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       ),
                       const SizedBox(height: 12),
                       _buildRoomInsightsBar(),
-                      const SizedBox(height: 16),
-                      _buildMicStatusBanner(),
-                      _buildVoiceSeats(),
-                      if (_roomSeatState?.isOwner == true) ...[
-                        const SizedBox(height: 8),
-                        Align(
-                          alignment: AlignmentDirectional.centerStart,
-                          child: TextButton.icon(
-                            onPressed: _showMicRequestsSheet,
-                            icon: const Icon(Icons.mic_external_on_rounded),
-                            label: Text(
-                              'طلبات المايك (' +
-                                  (_roomSeatState?.micRequests.length ?? 0).toString() +
-                                  ')',
-                            ),
-                          ),
-                        ),
-                      ],
                     ],
                   ),
                 ),
               ),
-              const NotificationsSection(),
               Positioned(
                 bottom: 80,
                 left: 0,
