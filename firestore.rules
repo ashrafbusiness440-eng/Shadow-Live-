@@ -67,6 +67,8 @@ service cloud.firestore {
       allow create, update: if signedIn()
         && request.auth.uid == userId
         && request.resource.data.uid == request.auth.uid
+        && request.resource.data.searchTokens is list
+        && request.resource.data.searchTokens.size() <= 512
         && request.resource.data.keys().hasOnly([
           'uid','displayName','username','publicId','searchTokens','profileImageUrl','profileAvatarAsset',
           'bio','location','level','vipLevel','isOnline','createdAt','updatedAt'
