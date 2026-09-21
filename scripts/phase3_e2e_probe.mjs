@@ -87,10 +87,10 @@ async function openPhoneAndRequestOtp() {
 }
 
 async function getUserDocument() {
-  const snap = await adminDb.collection('users').limit(1).get();
-  if (snap.empty) throw new Error('No user document found in Firestore emulator');
+  const snap = await adminDb.collection('users').where('phone', '==', phoneNumber).limit(1).get();
+  if (snap.empty) throw new Error('Phase 3 test user document was not found in Firestore emulator');
   const doc = snap.docs[0];
-  return { __uid: doc.id, ...doc.data() };
+  return { id: doc.id, data: doc.data() };
 }
 
 async function getPublicProfile(uid) {
