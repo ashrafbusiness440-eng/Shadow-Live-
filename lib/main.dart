@@ -2323,83 +2323,6 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     super.dispose();
   }
 
-  Widget _buildRoomSupportBox() {
-    final insights = _roomInsights;
-    final support = insights?.dailySupport ?? 0;
-    final followers = insights?.followerCount ?? 0;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF101522),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: const Color(0xFF8A3DFF).withValues(alpha: .24),
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: const Color(0xFFFFD54A).withValues(alpha: .12),
-            ),
-            child: const Icon(
-              Icons.savings_rounded,
-              color: Color(0xFFFFD54A),
-            ),
-          ),
-          const SizedBox(width: 11),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'صندوق الغرفة',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 13,
-                  ),
-                ),
-                SizedBox(height: 3),
-                Text(
-                  'الدعم والمتابعة الخاصة بهذه الغرفة',
-                  style: TextStyle(
-                    color: Colors.white54,
-                    fontSize: 10,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                support.toString(),
-                style: const TextStyle(
-                  color: Color(0xFFFFD54A),
-                  fontWeight: FontWeight.w900,
-                  fontSize: 14,
-                ),
-              ),
-              Text(
-                followers.toString() + ' متابع',
-                style: const TextStyle(
-                  color: Colors.white54,
-                  fontSize: 9,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildRoomInsightsBar() {
     final insights = _roomInsights;
     if (insights == null) {
@@ -2677,7 +2600,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Column(
                     children: [
-                      const SizedBox(height: 178),
+                      const SizedBox(height: 210),
                       HostSection(
                         name: _ownerDisplayName,
                         imageUrl: _ownerPhotoUrl,
@@ -2691,8 +2614,6 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                 )
                             : null,
                       ),
-                      const SizedBox(height: 18),
-                      _buildRoomSupportBox(),
                       const SizedBox(height: 18),
                       _buildMicStatusBanner(),
                       _buildVoiceSeats(),
