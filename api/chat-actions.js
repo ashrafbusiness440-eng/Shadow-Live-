@@ -246,15 +246,18 @@ async function sendRoomInvite(db,uid,body){
     ]);
 
     if(op.exists)return {ok:true,code:"duplicate",...(op.data()?.result||{})};
-    if(!receiver.exists||!conversation.exists||!room.exists)throw new ApiError("not_found",404);
+    if(!receiver.exists||!room.exists)throw new ApiError("not_found",404);
 
-    const conversationData=conversation.data()||{};
-    const participants=Array.isArray(conversationData.participants)?conversationData.participants:[];
-    if(participants.length!==2||!participants.includes(uid)||!participants.includes(receiverId)){
-      throw new ApiError("invalid_conversation",409);
-    }
     if(outgoingBlock.exists||incomingBlock.exists)throw new ApiError("blocked",403);
     if(!outgoingFollow.exists||!incomingFollow.exists)throw new ApiError("mutual_follow_required",403);
+
+    const conversationData=conversation.exists?(conversation.data()||{}):{};
+    if(conversation.exists){
+      const participants=Array.isArray(conversationData.participants)?conversationData.participants:[];
+      if(participants.length!==2||!participants.includes(uid)||!participants.includes(receiverId)){
+        throw new ApiError("invalid_conversation",409);
+      }
+    }
 
     const roomData=room.data()||{};
     if(roomData.isActive===false)throw new ApiError("room_unavailable",409);
@@ -267,12 +270,23 @@ async function sendRoomInvite(db,uid,body){
     counts[receiverId]=Number(counts[receiverId]||0)+1;
     const messageRef=conversationRef.collection("messages").doc();
 
-    tx.update(conversationRef,{
-      lastMessage:"🔊 دعوة إلى "+roomName,
-      lastSenderId:uid,
-      updatedAt:now,
-      unreadCounts:counts,
-    });
+    if(conversation.exists){
+      tx.update(conversationRef,{
+        lastMessage:"🔊 دعوة إلى "+roomName,
+        lastSenderId:uid,
+        updatedAt:now,
+        unreadCounts:counts,
+      });
+    }else{
+      tx.create(conversationRef,{
+        participants:[uid,receiverId].sort(),
+        createdAt:now,
+        updatedAt:now,
+        lastMessage:"🔊 دعوة إلى "+roomName,
+        lastSenderId:uid,
+        unreadCounts:counts,
+      });
+    }
     tx.create(messageRef,{
       senderId:uid,
       receiverId,
