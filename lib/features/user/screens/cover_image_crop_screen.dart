@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:crop_your_image/crop_your_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 class CoverImageCropScreen extends StatefulWidget {
   final Uint8List imageData;
@@ -52,7 +53,7 @@ class _CoverImageCropScreenState extends State<CoverImageCropScreen> {
         Padding(
           padding: const EdgeInsets.all(18),
           child: SizedBox(width: double.infinity, child: FilledButton.icon(
-            onPressed: _cropping ? null : () { setState(() => _cropping = true); _controller.crop(); },
+            onPressed: _cropping ? null : () { if (kIsWeb) { Navigator.pop(context, widget.imageData); return; } setState(() => _cropping = true); _controller.crop(); },
             style: FilledButton.styleFrom(backgroundColor: const Color(0xFF8B5CF6), padding: const EdgeInsets.symmetric(vertical: 16)),
             icon: const Icon(Icons.crop_rounded),
             label: Text(_cropping ? 'جارٍ تجهيز الغلاف...' : 'اعتماد الغلاف'),
