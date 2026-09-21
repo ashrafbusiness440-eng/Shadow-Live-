@@ -25,6 +25,17 @@ function parseServiceAccount(raw){
 function init(){
  if(!getApps().length){const sa=parseServiceAccount(process.env.FIREBASE_SERVICE_ACCOUNT);initializeApp({credential:cert(sa),projectId:sa.projectId});}
 }
+function applyCors(req,res){
+ const origin=String(req.headers.origin||"");
+ const allowed=new Set([
+  "https://ashrafbusiness440-eng.github.io",
+  "https://shadow-live-git-feature-shadow-control-foundation-shadow-c916.vercel.app"
+ ]);
+ if(allowed.has(origin))res.setHeader("access-control-allow-origin",origin);
+ res.setHeader("vary","Origin");
+ res.setHeader("access-control-allow-methods","GET,POST,OPTIONS");
+ res.setHeader("access-control-allow-headers","Authorization, Content-Type");
+}
 const out=(res,status,body)=>res.status(status).json(body);
 function normalizeDirectory(value){
  let text=String(value||"").trim().replace(/\\/g,"/");
@@ -76,6 +87,8 @@ async function github(url,options={}){
 }
 
 export default async function handler(req,res){
+ applyCors(req,res);
+ if(req.method==="OPTIONS")return res.status(204).end();
  let phase="init";
  try{
   if(req.method!=="GET"&&req.method!=="POST")return out(res,405,{ok:false,code:"method_not_allowed"});
