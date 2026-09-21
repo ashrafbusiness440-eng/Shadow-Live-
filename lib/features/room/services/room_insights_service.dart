@@ -31,6 +31,30 @@ class RoomSupporter {
       );
 }
 
+class RoomRankEntry {
+  const RoomRankEntry({
+    required this.roomId,
+    required this.rank,
+    required this.name,
+    required this.publicId,
+    required this.dailySupport,
+  });
+
+  final String roomId;
+  final int rank;
+  final String name;
+  final String publicId;
+  final num dailySupport;
+
+  factory RoomRankEntry.fromJson(Map<String, dynamic> json) => RoomRankEntry(
+        roomId: (json['roomId'] ?? '').toString(),
+        rank: (json['rank'] as num?)?.toInt() ?? 0,
+        name: (json['name'] ?? 'غرفة صوتية').toString(),
+        publicId: (json['publicId'] ?? '').toString(),
+        dailySupport: (json['dailySupport'] as num?) ?? 0,
+      );
+}
+
 class RoomInsights {
   const RoomInsights({
     required this.roomId,
@@ -42,6 +66,7 @@ class RoomInsights {
     required this.dailySupport,
     required this.dailyRank,
     required this.supporters,
+    required this.ranking,
   });
 
   final String roomId;
@@ -53,6 +78,7 @@ class RoomInsights {
   final num dailySupport;
   final int? dailyRank;
   final List<RoomSupporter> supporters;
+  final List<RoomRankEntry> ranking;
 
   double get levelProgress {
     if (levelTarget <= 0) return 0;
@@ -61,6 +87,7 @@ class RoomInsights {
 
   factory RoomInsights.fromJson(Map<String, dynamic> json) {
     final rawSupporters = json['supporters'];
+    final rawRanking = json['ranking'];
     return RoomInsights(
       roomId: (json['roomId'] ?? '').toString(),
       level: (json['level'] as num?)?.toInt() ?? 1,
@@ -75,6 +102,16 @@ class RoomInsights {
               .whereType<Map>()
               .map(
                 (item) => RoomSupporter.fromJson(
+                  Map<String, dynamic>.from(item),
+                ),
+              )
+              .toList()
+          : const [],
+      ranking: rawRanking is List
+          ? rawRanking
+              .whereType<Map>()
+              .map(
+                (item) => RoomRankEntry.fromJson(
                   Map<String, dynamic>.from(item),
                 ),
               )
