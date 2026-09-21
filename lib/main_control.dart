@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'firebase_options.dart';
 import 'utils/compact_number.dart';
 import 'admin/control_admin_id_override.dart';
+import 'admin/control_asset_manager_page.dart';
 
 
 Future<void> main() async {
@@ -1116,6 +1117,7 @@ class MorePage extends StatelessWidget {
     ControlItem('الوكالات','إدارة الوكالات والمضيفين والتسويات',Icons.apartment_outlined),
     ControlItem('التقارير','واجهة جاهزة؛ القراءة الحقيقية تنتظر Rules محددة لـ reports بدل فتح Firestore بشكل واسع',Icons.flag_outlined),
     ControlItem('VIP و IDs الخاصة','إدارة VIP والمعرّفات الخاصة',Icons.workspace_premium_outlined),
+    ControlItem('إدارة أصول التطبيق','Owner فقط • رفع/استبدال صور المشروع + Asset Registry + Audit Log',Icons.image_outlined),
     ControlItem('إعدادات النظام','system_config — قراءة فقط، وEmergency Lock يبقى Backend فقط',Icons.settings_outlined),
     ControlItem('سجل الإدارة','Audit Log للعمليات الحساسة — قراءة فقط',Icons.history_outlined),
   ]);
@@ -1134,7 +1136,7 @@ class ControlList extends StatelessWidget {
     ...items.map((item)=>Card(child:ListTile(
       leading:Icon(item.icon,color:const Color(0xFFD7B85A)),trailing:const Icon(Icons.chevron_left),
       title:Text(item.title,style:const TextStyle(fontWeight:FontWeight.w700)),subtitle:Text(item.subtitle),
-      onTap:()=>Navigator.of(context).push(MaterialPageRoute(builder:(_)=>item.title=='سجل الإدارة'?const AuditLogPage():(item.title=='إعدادات النظام'?const SystemConfigPage():DetailPage(item:item)))),
+      onTap:()=>Navigator.of(context).push(MaterialPageRoute(builder:(_)=>item.title=='سجل الإدارة'?const AuditLogPage():(item.title=='إعدادات النظام'?const SystemConfigPage():(item.title=='إدارة أصول التطبيق'?const ControlAssetManagerPage():DetailPage(item:item))))),
     ))),
   ]);
 }
