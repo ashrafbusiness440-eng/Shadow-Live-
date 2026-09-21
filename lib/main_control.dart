@@ -1113,14 +1113,29 @@ class _IdManagementPageState extends State<UserIdManagementPage> {
 
 class MorePage extends StatelessWidget {
   const MorePage({super.key});
-  @override Widget build(BuildContext context)=>const ControlList(title:'المزيد',icon:Icons.grid_view_rounded,items:[
-    ControlItem('الوكالات','إدارة الوكالات والمضيفين والتسويات',Icons.apartment_outlined),
-    ControlItem('التقارير','واجهة جاهزة؛ القراءة الحقيقية تنتظر Rules محددة لـ reports بدل فتح Firestore بشكل واسع',Icons.flag_outlined),
-    ControlItem('VIP و IDs الخاصة','إدارة VIP والمعرّفات الخاصة',Icons.workspace_premium_outlined),
-    ControlItem('إدارة أصول التطبيق','Owner فقط • رفع/استبدال صور المشروع + Asset Registry + Audit Log',Icons.image_outlined),
-    ControlItem('إعدادات النظام','system_config — قراءة فقط، وEmergency Lock يبقى Backend فقط',Icons.settings_outlined),
-    ControlItem('سجل الإدارة','Audit Log للعمليات الحساسة — قراءة فقط',Icons.history_outlined),
-  ]);
+
+  @override
+  Widget build(BuildContext context) {
+    final uid=FirebaseAuth.instance.currentUser?.uid;
+    if(uid==null)return const Center(child:CircularProgressIndicator());
+    return FutureBuilder<DocumentSnapshot<Map<String,dynamic>>>(
+      future:FirebaseFirestore.instance.collection('users').doc(uid).get(),
+      builder:(context,snap){
+        if(!snap.hasData)return const Center(child:CircularProgressIndicator());
+        final isOwner=snap.data?.data()?['role']=='owner';
+        final items=<ControlItem>[
+          const ControlItem('الوكالات','إدارة الوكالات والمضيفين والتسويات',Icons.apartment_outlined),
+          const ControlItem('التقارير','واجهة جاهزة؛ القراءة الحقيقية تنتظر Rules محددة لـ reports بدل فتح Firestore بشكل واسع',Icons.flag_outlined),
+          const ControlItem('VIP و IDs الخاصة','إدارة VIP والمعرّفات الخاصة',Icons.workspace_premium_outlined),
+          if(isOwner)
+            const ControlItem('إدارة أصول التطبيق','Owner فقط • رفع/استبدال صور المشروع + Asset Registry + Audit Log',Icons.image_outlined),
+          const ControlItem('إعدادات النظام','system_config — قراءة فقط، وEmergency Lock يبقى Backend فقط',Icons.settings_outlined),
+          const ControlItem('سجل الإدارة','Audit Log للعمليات الحساسة — قراءة فقط',Icons.history_outlined),
+        ];
+        return ControlList(title:'المزيد',icon:Icons.grid_view_rounded,items:items);
+      },
+    );
+  }
 }
 
 class ControlItem {
