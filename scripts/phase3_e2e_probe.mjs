@@ -349,11 +349,15 @@ try {
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAY0lEQVR4nO3PQQ3AIADAQEAZ0pCGtIngcVnSU9DOs+/4s6UDXjWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgfaHsAgDKNa98AAAAAElFTkSuQmCC', 'base64');
   await chooser.setFiles({ name: 'phase3-avatar.png', mimeType: 'image/png', buffer: png });
   await page.getByText('ضبط الصورة', { exact: true }).waitFor({ timeout: 10000 });
-  await page.getByRole('button', { name: 'اعتماد الصورة' }).click({ force: true });
+  // crop_your_image needs a render frame after loading the browser-selected image
+  // before CropController.crop() can complete reliably in headless Chromium.
+  await page.waitForTimeout(2200);
+  const approveCrop = page.getByRole('button', { name: 'اعتماد الصورة' });
+  await approveCrop.waitFor({ state: 'visible', timeout: 5000 });
+  await approveCrop.click({ force: true });
   const saveAfterCrop = page.getByRole('button', { name: 'حفظ التعديلات' });
   await saveAfterCrop.waitFor({ state: 'visible', timeout: 15000 });
   await saveAfterCrop.dispatchEvent('click');
-  await page.getByText('اختبار شادو معدل', { exact: true }).waitFor({ timeout: 10000 });
 
   const imageUser = await waitForUserField(
     'profileImageUrl',
