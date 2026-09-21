@@ -353,7 +353,7 @@ try {
   await page.waitForTimeout(2200);
   const approveCrop = page.getByRole('button', { name: 'اعتماد الصورة' });
   await approveCrop.waitFor({ state: 'visible', timeout: 5000 });
-  await approveCrop.click({ force: true });
+  await approveCrop.dispatchEvent('click');
   const saveAfterCrop = page.getByRole('button', { name: 'حفظ التعديلات' });
   await saveAfterCrop.waitFor({ state: 'visible', timeout: 15000 });
   await saveAfterCrop.dispatchEvent('click');
