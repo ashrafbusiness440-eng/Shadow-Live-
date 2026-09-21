@@ -196,8 +196,16 @@ try {
   await page.keyboard.press('Enter');
   await page.waitForTimeout(500);
 
+  // Re-dispatch the display-name change after the dropdown closes so Flutter
+  // recomputes the Profile Setup readiness state deterministically in web semantics.
+  await profileInputs.nth(0).fill('اختبار شادو');
+  await page.waitForTimeout(300);
+
   const continueButton = page.getByRole('button', { name: 'متابعة' });
   await continueButton.waitFor({ state: 'visible', timeout: 5000 });
+  for (let attempt = 0; attempt < 20 && await continueButton.getAttribute('aria-disabled') === 'true'; attempt++) {
+    await page.waitForTimeout(150);
+  }
   if (await continueButton.getAttribute('aria-disabled') === 'true') {
     await dump('profile-setup-country-selection-failed');
     throw new Error('Profile Setup continue button stayed disabled after selecting UAE');
