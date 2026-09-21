@@ -306,9 +306,16 @@ try {
   await editInputs.nth(0).fill('اختبار شادو معدل');
   await editInputs.nth(1).fill('تحديث Phase 3');
   await page.getByRole('button', { name: 'حفظ التعديلات' }).click({ force: true });
-  await page.getByText('اختبار شادو معدل', { exact: true }).waitFor({ timeout: 10000 });
-  const editedUser = await getUserDocument();
-  const editedPublic = await getPublicProfile(uid);
+  const editedUser = await waitForUserField(
+    'displayName',
+    value => value === 'اختبار شادو معدل',
+    15000,
+  );
+  let editedPublic = await getPublicProfile(uid);
+  for (let attempt = 0; attempt < 30 && stringField(editedPublic, 'displayName') !== 'اختبار شادو معدل'; attempt++) {
+    await page.waitForTimeout(250);
+    editedPublic = await getPublicProfile(uid);
+  }
   if (stringField(editedUser.data, 'displayName') !== 'اختبار شادو معدل') throw new Error('users displayName did not update');
   if (stringField(editedUser.data, 'bio') !== 'تحديث Phase 3') throw new Error('users bio did not update');
   if (stringField(editedPublic, 'displayName') !== 'اختبار شادو معدل') throw new Error('public_profiles displayName did not sync');
