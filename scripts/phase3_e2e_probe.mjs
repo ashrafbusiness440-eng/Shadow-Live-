@@ -200,7 +200,7 @@ try {
   if (stringField(publicProfile, 'uid') !== uid) throw new Error('public_profiles did not sync the user UID');
   console.log('PHASE3_FIRESTORE_SETUP_COMPLETE_OK', uid);
 
-  await page.getByText('الملف الشخصي', { exact: true }).last().click();
+  await page.getByText('الملف الشخصي', { exact: true }).last().click({ force: true });
   await page.waitForTimeout(900);
   await enableAccessibility();
   await dump('profile');
