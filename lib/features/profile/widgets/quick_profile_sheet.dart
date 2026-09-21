@@ -69,8 +69,9 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
   }
 
   void _openFull() {
+    final navigator = Navigator.of(context);
     Navigator.pop(context);
-    Navigator.of(this.context).push(MaterialPageRoute(builder: (_) => PublicProfileScreen(userId: widget.userId)));
+    navigator.push(MaterialPageRoute(builder: (_) => PublicProfileScreen(userId: widget.userId)));
   }
 
   @override
@@ -209,9 +210,10 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                       Expanded(
                         child: OutlinedButton.icon(
                           onPressed: () async {
+                            final navigator = Navigator.of(context);
                             Navigator.pop(context);
-                            await ProfileActionService.openChat(
-                              this.context,
+                            await ProfileActionService.openChatWithNavigator(
+                              navigator,
                               otherUid: widget.userId,
                               otherName: name,
                               otherPhoto: photo,
