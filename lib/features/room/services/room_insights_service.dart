@@ -63,6 +63,7 @@ class RoomInsights {
     required this.levelTarget,
     required this.followerCount,
     required this.followed,
+    required this.favorited,
     required this.dailySupport,
     required this.dailyRank,
     required this.supporters,
@@ -75,6 +76,7 @@ class RoomInsights {
   final num levelTarget;
   final int followerCount;
   final bool followed;
+  final bool favorited;
   final num dailySupport;
   final int? dailyRank;
   final List<RoomSupporter> supporters;
@@ -95,6 +97,7 @@ class RoomInsights {
       levelTarget: (json['levelTarget'] as num?) ?? 1000,
       followerCount: (json['followerCount'] as num?)?.toInt() ?? 0,
       followed: json['followed'] == true,
+      favorited: json['favorited'] == true,
       dailySupport: (json['dailySupport'] as num?) ?? 0,
       dailyRank: (json['dailyRank'] as num?)?.toInt(),
       supporters: rawSupporters is List
@@ -169,6 +172,18 @@ class RoomInsightsService {
       'roomId': roomId,
     });
     return RoomInsights.fromJson(body);
+  }
+
+  Future<RoomInsights> setFavorite({
+    required String roomId,
+    required bool favorite,
+  }) async {
+    await _post({
+      'action': 'setRoomFavorite',
+      'roomId': roomId,
+      'favorite': favorite,
+    });
+    return load(roomId);
   }
 
   Future<RoomInsights> setFollowing({
