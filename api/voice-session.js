@@ -1,4 +1,4 @@
-import {createCipheriv,randomBytes,randomInt,createHash} from "crypto";
+import {createCipheriv,randomBytes,randomInt,createHash,scryptSync,timingSafeEqual} from "crypto";
 import {getApps,initializeApp,cert} from "firebase-admin/app";
 import {getAuth} from "firebase-admin/auth";
 import {getFirestore,FieldValue} from "firebase-admin/firestore";
@@ -93,6 +93,32 @@ function searchTokens(name,publicId){
   return [...values].slice(0,128);
 }
 
+function hashRoomPassword(password){
+  const salt=randomBytes(16).toString("hex");
+  const hash=scryptSync(password,salt,64).toString("hex");
+  return {salt,hash};
+}
+
+function verifyRoomPassword(room,password){
+  const salt=clean(room.passwordSalt);
+  const expectedHex=clean(room.passwordHash);
+  if(!salt||!/^[a-f0-9]{128}$/i.test(expectedHex))return false;
+  const expected=Buffer.from(expectedHex,"hex");
+  const actual=scryptSync(password,salt,64);
+  return expected.length===actual.length&&timingSafeEqual(expected,actual);
+}
+
+function roomPermissions(user){
+  const data=user||{};
+  const capabilities=Array.isArray(data.capabilities)?data.capabilities:[];
+  const role=clean(data.role);
+  return {
+    appOwner:role==="owner",
+    manageRooms:role==="owner"||(data.adminEnabled===true&&capabilities.includes("manage_rooms")),
+    hidden:role==="owner"||(data.adminEnabled===true&&capabilities.includes("canCreateHiddenRoom")),
+  };
+}
+
 function roomResponse(roomId,data){
   return {
     roomId,
@@ -101,6 +127,11 @@ function roomResponse(roomId,data){
     ownerUid:clean(data.ownerUid||data.hostId),
     roomType:clean(data.roomType||"personal"),
     category:clean(data.category||"دردشة"),
+    description:clean(data.description),
+    tags:Array.isArray(data.tags)?data.tags.map(clean).filter(Boolean).slice(0,8):[],
+    visibility:clean(data.visibility||"public"),
+    isHidden:data.isHidden===true||clean(data.visibility)==="hidden",
+    passwordProtected:clean(data.visibility)==="password",
     isActive:data.isActive!==false,
   };
 }
@@ -203,6 +234,73 @@ async function openPersonalRoom(db,uid){
     }
   }
   throw new ApiError("room_public_id_exhausted",503);
+}
+
+async function updateRoomSettings(db,uid,body){
+  const roomId=clean(body.roomId);
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+
+  const name=clean(body.name);
+  const description=clean(body.description);
+  const category=clean(body.category)||"دردشة";
+  const visibility=clean(body.visibility)||"public";
+  const password=String(body.password??"");
+  const tags=Array.isArray(body.tags)
+    ? [...new Set(body.tags.map(clean).filter(Boolean))].slice(0,8)
+    : [];
+
+  if(name.length<2||name.length>60)throw new ApiError("invalid_room_name",400);
+  if(description.length>240)throw new ApiError("invalid_room_description",400);
+  if(category.length>30)throw new ApiError("invalid_room_category",400);
+  if(tags.some(tag=>tag.length>24))throw new ApiError("invalid_room_tags",400);
+  if(!["public","password","hidden"].includes(visibility))throw new ApiError("invalid_visibility",400);
+  if(visibility==="password"&&password&&password.length<4)throw new ApiError("room_password_too_short",400);
+  if(password.length>32)throw new ApiError("room_password_too_long",400);
+
+  const roomRef=db.collection("rooms").doc(roomId);
+  const userRef=db.collection("users").doc(uid);
+
+  return db.runTransaction(async tx=>{
+    const [roomSnap,userSnap]=await Promise.all([tx.get(roomRef),tx.get(userRef)]);
+    if(!roomSnap.exists)throw new ApiError("room_not_found",404);
+    const room=roomSnap.data()||{};
+    const user=userSnap.data()||{};
+    const permissions=roomPermissions(user);
+    const ownerUid=clean(room.ownerUid||room.ownerId||room.hostId);
+    if(ownerUid!==uid&&!permissions.manageRooms)throw new ApiError("forbidden",403);
+    if(visibility==="hidden"&&!permissions.hidden)throw new ApiError("hidden_room_forbidden",403);
+
+    const update={
+      name,
+      title:name,
+      description,
+      category,
+      tags,
+      visibility,
+      isHidden:visibility==="hidden",
+      searchTokens:searchTokens(name+" "+tags.join(" "),clean(room.publicId)),
+      updatedAt:FieldValue.serverTimestamp(),
+    };
+
+    if(visibility==="password"){
+      if(password){
+        const protectedValue=hashRoomPassword(password);
+        update.passwordSalt=protectedValue.salt;
+        update.passwordHash=protectedValue.hash;
+      }else if(!room.passwordSalt||!room.passwordHash){
+        throw new ApiError("room_password_required",400);
+      }
+    }else{
+      update.passwordSalt=FieldValue.delete();
+      update.passwordHash=FieldValue.delete();
+    }
+
+    tx.update(roomRef,update);
+    return {
+      ok:true,
+      room:roomResponse(roomId,{...room,...update}),
+    };
+  });
 }
 
 async function closePersonalRoom(db,uid,roomId){
@@ -490,6 +588,9 @@ export default async function handler(req,res){
       const result=await closePersonalRoom(getFirestore(),decoded.uid,roomId);
       return out(res,200,result);
     }
+    if(action==="updateRoomSettings"){
+      return out(res,200,await updateRoomSettings(getFirestore(),decoded.uid,req.body||{}));
+    }
     if(action==="roomInsights"){
       const roomId=clean(req.body?.roomId);
       return out(res,200,await roomInsights(getFirestore(),decoded.uid,roomId));
@@ -514,6 +615,13 @@ export default async function handler(req,res){
 
     const roomSnap=await getFirestore().collection("rooms").doc(roomId).get();
     if(!roomSnap.exists||roomSnap.data()?.isActive===false)throw new ApiError("room_unavailable",404);
+    const roomData=roomSnap.data()||{};
+    const roomOwnerUid=clean(roomData.ownerUid||roomData.ownerId||roomData.hostId);
+    if(clean(roomData.visibility)==="password"&&roomOwnerUid!==decoded.uid){
+      const suppliedPassword=String(req.body?.roomPassword??"");
+      if(!suppliedPassword)throw new ApiError("room_password_required",403);
+      if(!verifyRoomPassword(roomData,suppliedPassword))throw new ApiError("room_password_invalid",403);
+    }
 
     const effectiveSeconds=1800;
     const userId=zegoUserId(decoded.uid);
