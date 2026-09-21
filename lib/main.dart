@@ -171,6 +171,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   RoomInsights? _roomInsights;
   bool _loadingRoomInsights = false;
   bool _changingRoomFollow = false;
+  bool _changingRoomFavorite = false;
   RoomSeatState? _roomSeatState;
   bool _changingSeat = false;
   StreamSubscription<RoomSeatState>? _roomSeatSubscription;
@@ -221,6 +222,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           _voiceMicMuted = _voiceSession.micMuted;
         });
       }
+      unawaited(_roomActions.recordRoomVisit(roomId));
       unawaited(_loadRoomInsights(roomId));
       unawaited(_loadRoomSeatState(roomId));
     } catch (error) {
@@ -417,6 +419,35 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       // Voice remains available even if non-critical room insights fail.
     } finally {
       if (mounted) setState(() => _loadingRoomInsights = false);
+    }
+  }
+
+  Future<void> _toggleRoomFavorite() async {
+    final roomId = (_roomArguments['roomId'] ?? '').toString().trim();
+    final current = _roomInsights;
+    if (roomId.isEmpty ||
+        current == null ||
+        _changingRoomFavorite) {
+      return;
+    }
+
+    setState(() => _changingRoomFavorite = true);
+    try {
+      final updated = await _roomInsightsService.setFavorite(
+        roomId: roomId,
+        favorite: !current.favorited,
+      );
+      if (mounted) setState(() => _roomInsights = updated);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تعذر تحديث مفضلة الغرفة حالياً.'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _changingRoomFavorite = false);
     }
   }
 
@@ -2244,6 +2275,36 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                   ),
                 ),
               ),
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              onPressed: _changingRoomFavorite
+                  ? null
+                  : _toggleRoomFavorite,
+              tooltip: insights.favorited
+                  ? 'إزالة من المفضلة'
+                  : 'إضافة للمفضلة',
+              style: IconButton.styleFrom(
+                backgroundColor: const Color(0xFF111522),
+                side: const BorderSide(color: Colors.white12),
+                visualDensity: VisualDensity.compact,
+              ),
+              icon: _changingRoomFavorite
+                  ? const SizedBox(
+                      width: 15,
+                      height: 15,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Color(0xFFFFD54A),
+                      ),
+                    )
+                  : Icon(
+                      insights.favorited
+                          ? Icons.star_rounded
+                          : Icons.star_border_rounded,
+                      color: const Color(0xFFFFD54A),
+                      size: 19,
+                    ),
             ),
             const SizedBox(width: 8),
             FilledButton.icon(
