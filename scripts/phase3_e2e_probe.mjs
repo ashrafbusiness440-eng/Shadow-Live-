@@ -152,9 +152,9 @@ try {
   await page.waitForTimeout(300);
 
   await page.getByRole('button', { name: 'اختر الدولة (مطلوب)' }).click();
-  const uae = page.getByText('🇦🇪 الإمارات العربية المتحدة', { exact: true }).last();
-  await uae.waitFor({ timeout: 5000 });
-  await uae.click();
+  await page.waitForTimeout(300);
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
   await page.waitForTimeout(400);
 
   await page.getByRole('button', { name: 'متابعة' }).click();
