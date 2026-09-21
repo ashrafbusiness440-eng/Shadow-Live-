@@ -1,6 +1,8 @@
 import { chromium } from 'playwright';
 
 const baseUrl = process.env.PHASE3_BASE_URL ?? 'http://127.0.0.1:4173';
+const phoneNumber = '+971501234567';
+const phoneDigits = '501234567';
 const browser = await chromium.launch({ headless: true, args: ['--enable-unsafe-swiftshader'] });
 const context = await browser.newContext({ viewport: { width: 412, height: 915 }, locale: 'ar-AE' });
 const page = await context.newPage();
@@ -22,204 +24,219 @@ async function enableAccessibility() {
 
 async function dump(tag) {
   const rows = await page.locator('flt-semantics').evaluateAll(nodes =>
-    nodes.slice(0, 120).map(n => ({
+    nodes.slice(0, 160).map(n => ({
       label: n.getAttribute('aria-label'),
       role: n.getAttribute('role'),
       value: n.getAttribute('aria-valuetext'),
-      text: (n.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 120),
+      text: (n.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 140),
     })).filter(x => x.label || x.text || x.role)
   );
   console.log(`SEMANTICS ${tag}: ${JSON.stringify(rows, null, 2)}`);
 }
 
+async function screenshot(tag) {
+  await page.screenshot({ path: `phase3-${tag}.png`, fullPage: true });
+}
+
+async function verificationCodes() {
+  const response = await fetch('http://127.0.0.1:9099/emulator/v1/projects/shadow-live/verificationCodes');
+  if (!response.ok) return [];
+  const body = await response.json();
+  return body.verificationCodes ?? [];
+}
+
+async function waitForSmsCode(previousCode = null) {
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const codes = await verificationCodes();
+    const matches = codes.filter(x => x.phoneNumber === phoneNumber);
+    const latest = matches.at(-1) ?? codes.at(-1);
+    const code = latest?.sessionCode ?? latest?.code ?? latest?.verificationCode ?? null;
+    if (code && code !== previousCode) return String(code);
+    await page.waitForTimeout(250);
+  }
+  throw new Error('Auth Emulator did not expose a fresh SMS verification code');
+}
+
+async function enterOtp(code) {
+  await enableAccessibility();
+  const otpInputs = page.getByRole('textbox');
+  const count = await otpInputs.count();
+  console.log('OTP_TEXTBOX_COUNT', count);
+  if (count < 6) throw new Error(`Expected 6 OTP textboxes, found ${count}`);
+  for (let i = 0; i < 6; i++) {
+    await otpInputs.nth(i).fill(String(code)[i]);
+    await page.waitForTimeout(180);
+  }
+}
+
+async function openPhoneAndRequestOtp() {
+  await page.getByRole('button', { name: 'متابعة برقم الهاتف' }).click();
+  await page.waitForTimeout(700);
+  await enableAccessibility();
+  await page.mouse.click(282, 505);
+  await page.keyboard.press('Control+A');
+  await page.keyboard.type(phoneDigits);
+  await page.getByRole('button', { name: 'إرسال عبر SMS' }).click();
+  await page.waitForTimeout(900);
+  await enableAccessibility();
+  await page.getByText('رمز التحقق', { exact: true }).waitFor({ timeout: 10000 });
+}
+
+async function getUserDocument() {
+  const res = await fetch('http://127.0.0.1:8080/v1/projects/shadow-live/databases/(default)/documents/users');
+  if (!res.ok) throw new Error(`Failed to read users from Firestore emulator: ${res.status}`);
+  const body = await res.json();
+  const docs = body.documents ?? [];
+  if (!docs.length) throw new Error('No user document found in Firestore emulator');
+  return docs[0];
+}
+
+async function getPublicProfile(uid) {
+  const res = await fetch(`http://127.0.0.1:8080/v1/projects/shadow-live/databases/(default)/documents/public_profiles/${uid}`);
+  if (!res.ok) throw new Error(`Public profile missing for ${uid}: ${res.status}`);
+  return res.json();
+}
+
+function stringField(doc, key) {
+  return doc?.fields?.[key]?.stringValue ?? null;
+}
+
+function boolField(doc, key) {
+  return doc?.fields?.[key]?.booleanValue ?? null;
+}
+
 try {
   await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: 60000 });
   await page.waitForTimeout(4200);
-  if (pageErrors.length) {
-    throw new Error(`Flutter page error: ${pageErrors.join(' | ')}`);
-  }
+  if (pageErrors.length) throw new Error(`Flutter page error: ${pageErrors.join(' | ')}`);
+
   await enableAccessibility();
-  await dump('onboarding');
   const flutterViewCount = await page.locator('flutter-view').count();
   const canvasCount = await page.locator('canvas').count();
-  const bodyText = (await page.locator('body').innerText().catch(() => '')).trim();
-  console.log('PROBE DOM:', { flutterViewCount, canvasCount, bodyTextLength: bodyText.length });
-  if (flutterViewCount === 0 && canvasCount === 0) {
-    throw new Error('Flutter root/canvas not found in browser DOM');
-  }
-  await page.screenshot({ path: 'phase3-probe-onboarding.png', fullPage: true });
+  if (flutterViewCount === 0 && canvasCount === 0) throw new Error('Flutter root/canvas not found in browser DOM');
+  await dump('onboarding');
+  await screenshot('onboarding');
 
   let skip = page.locator('flt-semantics[aria-label="تخطي"]').first();
   if (!(await skip.count())) skip = page.getByText('تخطي', { exact: true }).first();
-  if (await skip.count()) {
-    await skip.click({ force: true });
-    await page.waitForTimeout(800);
-  } else {
-    console.log('PROBE: skip control not found');
-  }
-
-  await enableAccessibility();
-  await dump('auth-choice');
-  await page.screenshot({ path: 'phase3-probe-auth-choice.png', fullPage: true });
-
-  const phoneButton = page.getByRole('button', { name: 'متابعة برقم الهاتف' });
-  await phoneButton.click();
+  if (!(await skip.count())) throw new Error('Onboarding skip control not found');
+  await skip.click({ force: true });
   await page.waitForTimeout(700);
+
   await enableAccessibility();
-  await dump('phone');
-  await page.screenshot({ path: 'phase3-probe-phone.png', fullPage: true });
+  await page.getByText('تسجيل الدخول / إنشاء حساب', { exact: true }).waitFor({ timeout: 10000 });
+  await dump('auth-choice');
+  await screenshot('auth-choice');
 
-  // Flutter web keeps the editable surface separate from the semantics button
-  // tree. Click the visible phone field and type a fictional UAE test number.
-  await page.mouse.click(282, 505);
-  await page.keyboard.type('501234567');
-  await page.getByRole('button', { name: 'إرسال عبر SMS' }).click();
+  await openPhoneAndRequestOtp();
+  await dump('otp-first');
+  await screenshot('otp-first');
+  const firstSmsCode = await waitForSmsCode();
+  console.log('OTP_EMULATOR_CODE_RETRIEVED_FIRST');
+  await enterOtp(firstSmsCode);
 
-  await page.waitForTimeout(900);
-  await enableAccessibility();
-  await dump('otp');
-  await page.screenshot({ path: 'phase3-probe-otp.png', fullPage: true });
-
-  let smsCode = null;
-  for (let attempt = 0; attempt < 20 && !smsCode; attempt++) {
-    const response = await fetch('http://127.0.0.1:9099/emulator/v1/projects/shadow-live/verificationCodes');
-    if (response.ok) {
-      const body = await response.json();
-      const codes = body.verificationCodes ?? [];
-      const latest = codes.find(x => x.phoneNumber === '+971501234567') ?? codes.at(-1);
-      smsCode = latest?.sessionCode ?? latest?.code ?? latest?.verificationCode ?? null;
-    }
-    if (!smsCode) await page.waitForTimeout(250);
-  }
-  if (!smsCode) throw new Error('Auth Emulator did not expose an SMS verification code');
-  console.log('OTP_EMULATOR_CODE_RETRIEVED');
-
-  // The six OTP boxes are Flutter text fields. Fill them through their
-  // semantics-backed textbox nodes so this follows the same onChanged path as
-  // a real user without relying on viewport coordinates.
-  const otpInputs = page.getByRole('textbox');
-  const otpInputCount = await otpInputs.count();
-  console.log('OTP_TEXTBOX_COUNT', otpInputCount);
-  if (otpInputCount < 6) {
-    throw new Error(`Expected 6 OTP textboxes, found ${otpInputCount}`);
-  }
-  for (let i = 0; i < 6; i++) {
-    await otpInputs.nth(i).fill(String(smsCode)[i]);
-    await page.waitForTimeout(180);
-  }
-  // LoginScreen auto-submits as soon as the sixth digit is entered.
-  // Do not click "تحقق" again because the route can already be transitioning.
-  let profileReached = false;
-  try {
-    await page.getByText('إنشاء الملف الشخصي', { exact: true }).waitFor({ timeout: 15000 });
-    profileReached = true;
-  } catch (_) {
-    const authRes = await fetch('http://127.0.0.1:9099/emulator/v1/projects/shadow-live/accounts');
-    const authBody = authRes.ok ? await authRes.json() : { status: authRes.status };
-    console.log('AUTH_EMULATOR_STATE', JSON.stringify(authBody));
-    const fsRes = await fetch('http://127.0.0.1:8080/v1/projects/shadow-live/databases/(default)/documents/users');
-    const fsBody = fsRes.ok ? await fsRes.json() : { status: fsRes.status };
-    console.log('FIRESTORE_USERS_STATE', JSON.stringify(fsBody));
-  }
+  await page.getByText('إنشاء الملف الشخصي', { exact: true }).waitFor({ timeout: 15000 });
   await enableAccessibility();
   await dump('profile-setup');
-  await page.screenshot({ path: 'phase3-probe-profile-setup.png', fullPage: true });
-
-  if (!profileReached) throw new Error('OTP completed but Profile Setup was not reached within 15s');
+  await screenshot('profile-setup');
   console.log('PHASE3_PHONE_OTP_TO_PROFILE_SETUP_OK');
 
-  // Complete the required Phase 3 setup journey through Main.
   const profileInputs = page.getByRole('textbox');
   const profileInputCount = await profileInputs.count();
   console.log('PROFILE_TEXTBOX_COUNT', profileInputCount);
-  if (profileInputCount < 2) {
-    throw new Error(`Expected profile name/bio textboxes, found ${profileInputCount}`);
-  }
+  if (profileInputCount < 2) throw new Error(`Expected profile text fields, found ${profileInputCount}`);
   await profileInputs.nth(0).fill('اختبار شادو');
 
-  await page.getByRole('button', { name: 'اختر تاريخ الميلاد' }).click({ force: true });
-  await page.getByRole('button', { name: 'اختيار' }).waitFor({ timeout: 5000 });
-  await page.getByRole('button', { name: 'اختيار' }).click({ force: true });
+  await page.getByRole('button', { name: 'اختر تاريخ الميلاد' }).click();
+  await page.getByRole('button', { name: 'اختيار' }).click();
+  await page.waitForTimeout(300);
 
-  await page.getByRole('button', { name: 'اختر الدولة (مطلوب)' }).click({ force: true });
-  const uaeOption = page.getByText('🇦🇪 الإمارات العربية المتحدة', { exact: true }).last();
-  await uaeOption.waitFor({ timeout: 5000 });
-  await uaeOption.click({ force: true });
+  await page.getByRole('button', { name: 'اختر الدولة (مطلوب)' }).click();
+  const uae = page.getByText('🇦🇪 الإمارات العربية المتحدة', { exact: true }).last();
+  await uae.waitFor({ timeout: 5000 });
+  await uae.click();
+  await page.waitForTimeout(400);
 
-  await page.getByRole('button', { name: 'متابعة' }).click({ force: true });
-  await page.getByText('تم إنشاء حسابك بنجاح! 🎉', { exact: true }).waitFor({ timeout: 20000 });
+  await page.getByRole('button', { name: 'متابعة' }).click();
+  await page.getByText('تم إنشاء حسابك بنجاح! 🎉', { exact: true }).waitFor({ timeout: 15000 });
   await enableAccessibility();
-  await dump('account-success');
-  await page.screenshot({ path: 'phase3-probe-account-success.png', fullPage: true });
+  await dump('success');
+  await screenshot('success');
   console.log('PHASE3_PROFILE_TO_SUCCESS_OK');
 
-  const nextButton = page.getByRole('button', { name: 'التالي' });
-  await nextButton.waitFor({ timeout: 15000 });
-  await nextButton.click({ force: true });
-  await page.getByText('ربط الحسابات (اختياري)', { exact: true }).waitFor({ timeout: 15000 });
-  await enableAccessibility();
-  await dump('account-linking');
-  await page.screenshot({ path: 'phase3-probe-account-linking.png', fullPage: true });
+  await page.getByRole('button', { name: 'التالي' }).click();
+  await page.getByText('ربط الحسابات (اختياري)', { exact: true }).waitFor({ timeout: 12000 });
+  await screenshot('linking');
+  console.log('PHASE3_SUCCESS_TO_LINKING_OK');
 
-  await page.getByRole('button', { name: 'لاحقاً' }).click({ force: true });
-  await page.getByText('أنت الآن جاهز!', { exact: true }).waitFor({ timeout: 15000 });
-  await enableAccessibility();
-  await dump('account-ready');
-  await page.screenshot({ path: 'phase3-probe-account-ready.png', fullPage: true });
+  await page.getByRole('button', { name: 'لاحقاً' }).click();
+  await page.getByText('أنت الآن جاهز!', { exact: true }).waitFor({ timeout: 12000 });
+  await screenshot('ready');
+  console.log('PHASE3_LINKING_TO_READY_OK');
 
-  await page.getByRole('button', { name: 'ابدأ الاستكشاف' }).click({ force: true });
-  await page.getByText('صوتك يجمعنا', { exact: true }).waitFor({ timeout: 20000 });
+  await page.getByRole('button', { name: 'ابدأ الاستكشاف' }).click();
+  await page.getByText('الملف الشخصي', { exact: true }).last().waitFor({ timeout: 15000 });
   await enableAccessibility();
   await dump('main');
-  await page.screenshot({ path: 'phase3-probe-main.png', fullPage: true });
-  console.log('PHASE3_SETUP_TO_MAIN_OK');
+  await screenshot('main');
+  console.log('PHASE3_READY_TO_MAIN_OK');
 
-  // Verify logout and that the same completed account returns directly to Main.
-  await page.getByText('الملف الشخصي', { exact: true }).last().click({ force: true });
-  await page.getByText('اختبار شادو', { exact: true }).waitFor({ timeout: 15000 });
-  await page.getByRole('button', { name: 'الإعدادات' }).click({ force: true });
-  await page.getByText('حسابي', { exact: true }).waitFor({ timeout: 10000 });
+  const userDoc = await getUserDocument();
+  const uid = userDoc.name.split('/').at(-1);
+  const setupStep = stringField(userDoc, 'setupStep');
+  const setupComplete = boolField(userDoc, 'setupComplete');
+  if (setupStep !== 'complete' || setupComplete !== true) {
+    throw new Error(`Unexpected setup state after Ready: step=${setupStep} complete=${setupComplete}`);
+  }
+  const publicProfile = await getPublicProfile(uid);
+  if (stringField(publicProfile, 'uid') !== uid) throw new Error('public_profiles did not sync the user UID');
+  console.log('PHASE3_FIRESTORE_SETUP_COMPLETE_OK', uid);
 
-  await page.getByRole('button', { name: 'تسجيل الخروج', exact: true }).first().click({ force: true });
-  const logoutButtons = page.getByRole('button', { name: 'تسجيل الخروج', exact: true });
-  await logoutButtons.last().waitFor({ timeout: 5000 });
-  await logoutButtons.last().click({ force: true });
-  await page.getByRole('button', { name: 'متابعة برقم الهاتف' }).waitFor({ timeout: 15000 });
-  console.log('PHASE3_LOGOUT_OK');
-
-  await page.getByRole('button', { name: 'متابعة برقم الهاتف' }).click({ force: true });
-  await page.waitForTimeout(700);
-  await page.mouse.click(282, 505);
-  await page.keyboard.type('501234567');
-  await page.getByRole('button', { name: 'إرسال عبر SMS' }).click();
+  await page.getByText('الملف الشخصي', { exact: true }).last().click();
   await page.waitForTimeout(900);
+  await enableAccessibility();
+  await dump('profile');
+  await screenshot('profile');
 
-  let secondSmsCode = null;
-  for (let attempt = 0; attempt < 20 && !secondSmsCode; attempt++) {
-    const response = await fetch('http://127.0.0.1:9099/emulator/v1/projects/shadow-live/verificationCodes');
-    if (response.ok) {
-      const body = await response.json();
-      const matches = (body.verificationCodes ?? []).filter(x => x.phoneNumber === '+971501234567');
-      const latest = matches.at(-1);
-      secondSmsCode = latest?.sessionCode ?? latest?.code ?? latest?.verificationCode ?? null;
-      if (secondSmsCode === smsCode) secondSmsCode = null;
-    }
-    if (!secondSmsCode) await page.waitForTimeout(250);
+  const settingsButton = page.getByRole('button', { name: 'الإعدادات' });
+  await settingsButton.waitFor({ timeout: 8000 });
+  await settingsButton.click();
+  await page.getByText('إدارة معلومات الحساب والإعدادات', { exact: true }).waitFor({ timeout: 8000 });
+  await screenshot('settings');
+
+  await page.getByRole('button', { name: 'تسجيل الخروج' }).first().click();
+  await page.getByText('هل أنت متأكد أنك تريد تسجيل الخروج من حسابك؟', { exact: true }).waitFor({ timeout: 5000 });
+  await page.getByRole('button', { name: 'تسجيل الخروج' }).last().click();
+  await page.getByText('تسجيل الدخول / إنشاء حساب', { exact: true }).waitFor({ timeout: 15000 });
+  await screenshot('logged-out');
+  console.log('PHASE3_LOGOUT_TO_AUTH_CHOICE_OK');
+
+  const afterLogout = await getUserDocument();
+  if (boolField(afterLogout, 'isOnline') !== false) throw new Error('User remained online after logout');
+  const publicAfterLogout = await getPublicProfile(uid);
+  if (boolField(publicAfterLogout, 'isOnline') !== false) throw new Error('Public profile remained online after logout');
+  console.log('PHASE3_OFFLINE_SYNC_OK');
+
+  await openPhoneAndRequestOtp();
+  await screenshot('otp-second');
+  const secondSmsCode = await waitForSmsCode(firstSmsCode);
+  console.log('OTP_EMULATOR_CODE_RETRIEVED_SECOND');
+  await enterOtp(secondSmsCode);
+
+  await page.getByText('الملف الشخصي', { exact: true }).last().waitFor({ timeout: 15000 });
+  if (await page.getByText('إنشاء الملف الشخصي', { exact: true }).count()) {
+    throw new Error('Completed account was incorrectly routed back to Profile Setup');
   }
-  if (!secondSmsCode) throw new Error('Auth Emulator did not expose a fresh SMS code for relogin');
-
-  const secondOtpInputs = page.getByRole('textbox');
-  const secondOtpCount = await secondOtpInputs.count();
-  if (secondOtpCount < 6) throw new Error(`Expected 6 OTP textboxes on relogin, found ${secondOtpCount}`);
-  for (let i = 0; i < 6; i++) {
-    await secondOtpInputs.nth(i).fill(String(secondSmsCode)[i]);
-    await page.waitForTimeout(180);
+  await screenshot('main-after-relogin');
+  const afterRelogin = await getUserDocument();
+  if (boolField(afterRelogin, 'setupComplete') !== true || stringField(afterRelogin, 'setupStep') !== 'complete') {
+    throw new Error('Completed setup state was not preserved after re-login');
   }
-
-  await page.getByText('صوتك يجمعنا', { exact: true }).waitFor({ timeout: 20000 });
-  await page.screenshot({ path: 'phase3-probe-relogin-main.png', fullPage: true });
+  if (boolField(afterRelogin, 'isOnline') !== true) throw new Error('User was not marked online after re-login');
   console.log('PHASE3_LOGOUT_LOGIN_MAIN_OK');
-  console.log('PHASE3_FULL_ACCOUNT_JOURNEY_OK');
+  console.log('PHASE3_FULL_E2E_OK');
+
+  if (pageErrors.length) throw new Error(`Flutter page error(s): ${pageErrors.join(' | ')}`);
 } finally {
   await context.close();
   await browser.close();
