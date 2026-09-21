@@ -613,14 +613,25 @@ export default async function handler(req,res){
     const roomId=clean(req.body?.roomId);
     if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
 
-    const roomSnap=await getFirestore().collection("rooms").doc(roomId).get();
+    const db=getFirestore();
+    const roomSnap=await db.collection("rooms").doc(roomId).get();
     if(!roomSnap.exists||roomSnap.data()?.isActive===false)throw new ApiError("room_unavailable",404);
     const roomData=roomSnap.data()||{};
     const roomOwnerUid=clean(roomData.ownerUid||roomData.ownerId||roomData.hostId);
     if(clean(roomData.visibility)==="password"&&roomOwnerUid!==decoded.uid){
-      const suppliedPassword=String(req.body?.roomPassword??"");
-      if(!suppliedPassword)throw new ApiError("room_password_required",403);
-      if(!verifyRoomPassword(roomData,suppliedPassword))throw new ApiError("room_password_invalid",403);
+      const inviteSnap=await db
+        .collection("room_invites")
+        .doc(roomId)
+        .collection("users")
+        .doc(decoded.uid)
+        .get();
+      const inviteExpiry=inviteSnap.data()?.expiresAt?.toMillis?.()||0;
+      const inviteValid=inviteSnap.exists&&inviteExpiry>Date.now();
+      if(!inviteValid){
+        const suppliedPassword=String(req.body?.roomPassword??"");
+        if(!suppliedPassword)throw new ApiError("room_password_required",403);
+        if(!verifyRoomPassword(roomData,suppliedPassword))throw new ApiError("room_password_invalid",403);
+      }
     }
 
     const effectiveSeconds=1800;
