@@ -1504,6 +1504,335 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     );
   }
 
+  Future<void> _showRoomSettingsSheet() async {
+    final roomId = (_roomArguments['roomId'] ?? '').toString().trim();
+    if (roomId.isEmpty || !_voiceSession.isOwner) return;
+
+    final nameController = TextEditingController(
+      text: (_roomArguments['name'] ??
+              _roomArguments['title'] ??
+              'غرفتي')
+          .toString(),
+    );
+    final descriptionController = TextEditingController(
+      text: (_roomArguments['description'] ?? '').toString(),
+    );
+    final categoryController = TextEditingController(
+      text: (_roomArguments['category'] ?? 'دردشة').toString(),
+    );
+    final tagsController = TextEditingController(
+      text: _roomArguments['tags'] is List
+          ? (_roomArguments['tags'] as List)
+              .map((value) => value.toString())
+              .join('، ')
+          : '',
+    );
+    final passwordController = TextEditingController();
+    var visibility =
+        (_roomArguments['visibility'] ?? 'public').toString();
+    if (!const {'public', 'password', 'hidden'}.contains(visibility)) {
+      visibility = 'public';
+    }
+    var saving = false;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF0C101A),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      ),
+      builder: (sheetContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: StatefulBuilder(
+          builder: (context, setSheetState) => SafeArea(
+            child: Padding(
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 14,
+                bottom: MediaQuery.viewInsetsOf(context).bottom + 18,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    const Row(
+                      children: [
+                        Icon(
+                          Icons.tune_rounded,
+                          color: Color(0xFFFFD54A),
+                        ),
+                        SizedBox(width: 8),
+                        Text(
+                          'إعدادات الغرفة',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: nameController,
+                      maxLength: 60,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: const InputDecoration(
+                        labelText: 'اسم الغرفة',
+                        labelStyle: TextStyle(color: Colors.white60),
+                      ),
+                    ),
+                    TextField(
+                      controller: descriptionController,
+                      maxLength: 240,
+                      maxLines: 2,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: const InputDecoration(
+                        labelText: 'وصف الغرفة',
+                        labelStyle: TextStyle(color: Colors.white60),
+                      ),
+                    ),
+                    TextField(
+                      controller: categoryController,
+                      maxLength: 30,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: const InputDecoration(
+                        labelText: 'التصنيف',
+                        labelStyle: TextStyle(color: Colors.white60),
+                      ),
+                    ),
+                    TextField(
+                      controller: tagsController,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: const InputDecoration(
+                        labelText: 'الوسوم — افصل بينها بفاصلة',
+                        labelStyle: TextStyle(color: Colors.white60),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      initialValue: visibility,
+                      dropdownColor: const Color(0xFF171D2B),
+                      style: const TextStyle(color: Colors.white),
+                      decoration: const InputDecoration(
+                        labelText: 'خصوصية الغرفة',
+                        labelStyle: TextStyle(color: Colors.white60),
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'public',
+                          child: Text('عامة'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'password',
+                          child: Text('بكلمة مرور'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'hidden',
+                          child: Text('مخفية'),
+                        ),
+                      ],
+                      onChanged: saving
+                          ? null
+                          : (value) {
+                              if (value == null) return;
+                              setSheetState(() => visibility = value);
+                            },
+                    ),
+                    if (visibility == 'password') ...[
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: passwordController,
+                        obscureText: true,
+                        maxLength: 32,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          labelText:
+                              (_roomArguments['visibility'] ?? '').toString() ==
+                                      'password'
+                                  ? 'كلمة مرور جديدة — اتركها فارغة للإبقاء الحالية'
+                                  : 'كلمة مرور الغرفة',
+                          labelStyle:
+                              const TextStyle(color: Colors.white60),
+                          prefixIcon: const Icon(
+                            Icons.lock_rounded,
+                            color: Color(0xFFFFD54A),
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (visibility == 'hidden')
+                      const Padding(
+                        padding: EdgeInsets.only(top: 8),
+                        child: Text(
+                          'الغرفة المخفية لا تظهر في الاستكشاف وتتطلب صلاحية خاصة.',
+                          style: TextStyle(
+                            color: Colors.white54,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 18),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: saving
+                            ? null
+                            : () async {
+                                final name = nameController.text.trim();
+                                final description =
+                                    descriptionController.text.trim();
+                                final category =
+                                    categoryController.text.trim();
+                                final tags = tagsController.text
+                                    .split(RegExp(r'[,،]'))
+                                    .map((value) => value.trim())
+                                    .where((value) => value.isNotEmpty)
+                                    .take(8)
+                                    .toList();
+
+                                if (name.length < 2) {
+                                  ScaffoldMessenger.of(sheetContext)
+                                      .showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'اسم الغرفة يجب أن يكون حرفين على الأقل.',
+                                      ),
+                                    ),
+                                  );
+                                  return;
+                                }
+                                if (visibility == 'password' &&
+                                    (_roomArguments['visibility'] ?? '')
+                                            .toString() !=
+                                        'password' &&
+                                    passwordController.text.length < 4) {
+                                  ScaffoldMessenger.of(sheetContext)
+                                      .showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'كلمة المرور يجب أن تكون 4 أحرف على الأقل.',
+                                      ),
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                setSheetState(() => saving = true);
+                                try {
+                                  final updated =
+                                      await _roomActions.updateRoomSettings(
+                                    roomId: roomId,
+                                    name: name,
+                                    description: description,
+                                    category: category.isEmpty
+                                        ? 'دردشة'
+                                        : category,
+                                    tags: tags,
+                                    visibility: visibility,
+                                    password:
+                                        passwordController.text.isEmpty
+                                            ? null
+                                            : passwordController.text,
+                                  );
+                                  if (!mounted) return;
+                                  setState(() {
+                                    _roomArguments = {
+                                      ..._roomArguments,
+                                      ...updated,
+                                    };
+                                  });
+                                  if (sheetContext.mounted) {
+                                    Navigator.pop(sheetContext);
+                                    ScaffoldMessenger.of(context)
+                                        .showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'تم حفظ إعدادات الغرفة.',
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                } on StateError catch (error) {
+                                  if (!sheetContext.mounted) return;
+                                  String message =
+                                      'تعذر حفظ إعدادات الغرفة حالياً.';
+                                  if (error.message ==
+                                      'hidden_room_forbidden') {
+                                    message =
+                                        'لا تملك صلاحية إنشاء غرفة مخفية.';
+                                  } else if (error.message ==
+                                      'room_password_required') {
+                                    message =
+                                        'أدخل كلمة مرور للغرفة.';
+                                  }
+                                  ScaffoldMessenger.of(sheetContext)
+                                      .showSnackBar(
+                                    SnackBar(content: Text(message)),
+                                  );
+                                } catch (_) {
+                                  if (sheetContext.mounted) {
+                                    ScaffoldMessenger.of(sheetContext)
+                                        .showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'تعذر حفظ إعدادات الغرفة حالياً.',
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                } finally {
+                                  if (sheetContext.mounted) {
+                                    setSheetState(() => saving = false);
+                                  }
+                                }
+                              },
+                        icon: saving
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.save_rounded),
+                        label: const Text('حفظ التعديلات'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF6D27D9),
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 13,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    nameController.dispose();
+    descriptionController.dispose();
+    categoryController.dispose();
+    tagsController.dispose();
+    passwordController.dispose();
+  }
+
   Future<void> _showRoomMenu() async {
     final personal = (_roomArguments['roomType'] ?? '').toString() == 'personal';
     final owner = _voiceSession.isOwner;
@@ -1530,6 +1859,21 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                   ),
                 ),
                 const SizedBox(height: 14),
+                if (owner)
+                  ListTile(
+                    leading: const Icon(
+                      Icons.tune_rounded,
+                      color: Color(0xFFBFA5FF),
+                    ),
+                    title: const Text(
+                      'إعدادات الغرفة',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      _showRoomSettingsSheet();
+                    },
+                  ),
                 ListTile(
                   leading: const Icon(
                     Icons.picture_in_picture_alt_rounded,
