@@ -97,8 +97,12 @@ try {
   // LoginScreen automatically focuses the first OTP field. Its onChanged
   // handler advances focus after every digit, so typing the six digits follows
   // the same path as a real user.
-  await page.keyboard.type(smsCode);
-  await page.waitForTimeout(2200);
+  await page.mouse.click(44, 578);
+  for (const digit of String(smsCode)) {
+    await page.keyboard.press(digit);
+    await page.waitForTimeout(180);
+  }
+  await page.waitForTimeout(2600);
   await enableAccessibility();
   await dump('profile-setup');
   await page.screenshot({ path: 'phase3-probe-profile-setup.png', fullPage: true });
