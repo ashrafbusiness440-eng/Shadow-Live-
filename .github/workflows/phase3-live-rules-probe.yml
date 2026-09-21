@@ -58,20 +58,31 @@ jobs:
             await deleteDoc(doc(db, 'users', 'phase3-live-probe-missing'));
           });
 
-          const objectName = encodeURIComponent('profile_images/phase3-live-probe-missing.jpg');
-          const base = 'https://firebasestorage.googleapis.com/v0/b/shadow-live.firebasestorage.app/o/' + objectName;
+          const storageBase = 'https://firebasestorage.googleapis.com/v0/b/shadow-live.firebasestorage.app/o';
 
-          for (const [label, method] of [
-            ['PHASE3_LIVE_STORAGE_READ_DENIED', 'GET'],
-            ['PHASE3_LIVE_STORAGE_DELETE_DENIED', 'DELETE'],
-          ]) {
-            const response = await fetch(base, { method });
-            if (response.status !== 403) {
-              const body = await response.text();
-              throw new Error(label + ' expected HTTP 403, got ' + response.status + ': ' + body.slice(0, 300));
-            }
-            console.log(label + '_OK');
+          const listResponse = await fetch(storageBase + '?prefix=profile_images%2F&maxResults=1');
+          if (listResponse.status !== 403) {
+            const body = await listResponse.text();
+            throw new Error('PHASE3_LIVE_STORAGE_LIST_DENIED expected HTTP 403, got ' + listResponse.status + ': ' + body.slice(0, 300));
           }
+          console.log('PHASE3_LIVE_STORAGE_LIST_DENIED_OK');
+
+          const uploadResponse = await fetch(
+            storageBase + '?uploadType=resumable&name=profile_images%2Fphase3-live-probe-missing.jpg',
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json; charset=UTF-8',
+                'X-Upload-Content-Type': 'image/jpeg',
+              },
+              body: '{}',
+            },
+          );
+          if (uploadResponse.status !== 403) {
+            const body = await uploadResponse.text();
+            throw new Error('PHASE3_LIVE_STORAGE_UPLOAD_DENIED expected HTTP 403, got ' + uploadResponse.status + ': ' + body.slice(0, 300));
+          }
+          console.log('PHASE3_LIVE_STORAGE_UPLOAD_DENIED_OK');
 
           console.log('PHASE3_LIVE_RULES_PROBE_OK');
           NODE
