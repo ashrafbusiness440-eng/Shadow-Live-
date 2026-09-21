@@ -157,6 +157,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   bool _changingRoomFollow = false;
   RoomSeatState? _roomSeatState;
   bool _changingSeat = false;
+  StreamSubscription<RoomSeatState>? _roomSeatSubscription;
 
   @override
   void didChangeDependencies() {
@@ -216,10 +217,42 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
 
   Future<void> _toggleVoiceMic() async {
     if (_voiceJoining || _voiceError != null) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final state = _roomSeatState;
+    final roomId = (_roomArguments['roomId'] ?? '').toString();
+    final hasSeat =
+        state?.seats.any((seat) => seat.uid == uid) == true;
+    final canSpeak = state?.isOwner == true || hasSeat;
+
+    if (!canSpeak) {
+      if (state?.requested(uid) == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('طلب المايك ما زال قيد الانتظار.')),
+        );
+      } else {
+        await _runSeatAction(() => _roomSeatService.requestMic(roomId));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('تم إرسال طلب المايك لصاحب الغرفة.')),
+          );
+        }
+      }
+      return;
+    }
+
     try {
       await _voiceSession.toggleMic();
+      final muted = _voiceSession.micMuted;
+      if (hasSeat && roomId.isNotEmpty) {
+        await _runSeatAction(
+          () => _roomSeatService.setSeatMuted(
+            roomId: roomId,
+            muted: muted,
+          ),
+        );
+      }
       if (mounted) {
-        setState(() => _voiceMicMuted = _voiceSession.micMuted);
+        setState(() => _voiceMicMuted = muted);
       }
     } catch (error) {
       if (mounted) setState(() => _voiceError = error.toString());
@@ -227,6 +260,15 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   }
 
   Future<void> _leaveVoiceRoom() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final roomId = (_roomArguments['roomId'] ?? '').toString();
+    final hasSeat =
+        _roomSeatState?.seats.any((seat) => seat.uid == uid) == true;
+    if (hasSeat && roomId.isNotEmpty) {
+      try {
+        await _roomSeatService.leaveSeat(roomId);
+      } catch (_) {}
+    }
     await _voiceSession.leave();
     if (mounted) {
       Navigator.of(context).pushAndRemoveUntil(
@@ -304,6 +346,28 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
 
   Future<void> _loadRoomSeatState(String roomId) async {
     if (roomId.isEmpty) return;
+    await _roomSeatSubscription?.cancel();
+    _roomSeatSubscription = _roomSeatService.watch(roomId).listen(
+      (state) {
+        if (!mounted) return;
+        setState(() => _roomSeatState = state);
+
+        final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+        final hasSeat = state.seats.any((seat) => seat.uid == uid);
+        if (!state.isOwner &&
+            !hasSeat &&
+            !_voiceSession.micMuted &&
+            _voiceSession.active) {
+          unawaited(_voiceSession.setMicMuted(true));
+        }
+
+        if (!state.isActive && _voiceSession.active) {
+          unawaited(_voiceSession.leave());
+        }
+      },
+      onError: (_) {},
+    );
+
     try {
       final state = await _roomSeatService.load(roomId);
       if (mounted) setState(() => _roomSeatState = state);
@@ -505,6 +569,104 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         ),
       ),
     );
+  }
+
+  Widget _buildMicStatusBanner() {
+    final state = _roomSeatState;
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final roomId = (_roomArguments['roomId'] ?? '').toString();
+    if (state == null || uid.isEmpty || state.isOwner) {
+      return const SizedBox.shrink();
+    }
+
+    final hasSeat = state.seats.any((seat) => seat.uid == uid);
+    if (hasSeat) return const SizedBox.shrink();
+
+    if (state.invited(uid)) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        decoration: BoxDecoration(
+          color: const Color(0xFF39D98A).withValues(alpha: .12),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: const Color(0xFF39D98A).withValues(alpha: .35),
+          ),
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.mic_rounded,
+              color: Color(0xFF39D98A),
+              size: 20,
+            ),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                'تمت دعوتك للمايك — اختر مقعداً فارغاً',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: _changingSeat
+                  ? null
+                  : () => _runSeatAction(
+                        () => _roomSeatService.declineMicInvite(roomId),
+                      ),
+              child: const Text('رفض'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (state.requested(uid)) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFD54A).withValues(alpha: .10),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: const Color(0xFFFFD54A).withValues(alpha: .30),
+          ),
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.hourglass_top_rounded,
+              color: Color(0xFFFFD54A),
+              size: 19,
+            ),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                'طلب المايك قيد الانتظار',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: _changingSeat
+                  ? null
+                  : () => _runSeatAction(
+                        () => _roomSeatService.cancelMicRequest(roomId),
+                      ),
+              child: const Text('إلغاء'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return const SizedBox.shrink();
   }
 
   Widget _buildVoiceSeats() {
@@ -1660,6 +1822,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       const SizedBox(height: 12),
                       _buildRoomInsightsBar(),
                       const SizedBox(height: 16),
+                      _buildMicStatusBanner(),
                       _buildVoiceSeats(),
                       if (_roomSeatState?.isOwner == true) ...[
                         const SizedBox(height: 8),
