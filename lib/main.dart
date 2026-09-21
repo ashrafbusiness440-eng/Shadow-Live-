@@ -36,6 +36,7 @@ import 'features/voice/services/voice_room_session_controller.dart';
 import 'features/room/services/room_action_service.dart';
 import 'features/room/services/room_invite_service.dart';
 import 'features/room/services/room_insights_service.dart';
+import 'features/room/services/room_moderation_service.dart';
 import 'features/room/widgets/room_chat_panel.dart';
 import 'features/room/services/room_seat_service.dart';
 
@@ -125,6 +126,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   final RoomActionService _roomActions = RoomActionService();
   final RoomInviteService _roomInvites = RoomInviteService();
   final RoomInsightsService _roomInsightsService = RoomInsightsService();
+  final RoomModerationService _roomModeration = RoomModerationService();
   final RoomSeatService _roomSeatService = RoomSeatService();
   bool _voiceStarted = false;
 
@@ -137,17 +139,24 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   void _syncVoiceSession() {
     if (!mounted) return;
     final roomClosed = _voiceSession.error == 'room_closed';
+    final roomBanned = _voiceSession.error == 'room_banned';
     setState(() {
       _voiceJoining = _voiceSession.joining;
       _voiceMicMuted = _voiceSession.micMuted;
       _voiceError = _voiceSession.error;
     });
-    if (roomClosed && !_roomClosedHandled) {
+    if ((roomClosed || roomBanned) && !_roomClosedHandled) {
       _roomClosedHandled = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تم إغلاق الغرفة من صاحبها.')),
+          SnackBar(
+            content: Text(
+              roomBanned
+                  ? 'تم إخراجك من الغرفة.'
+                  : 'تم إغلاق الغرفة من صاحبها.',
+            ),
+          ),
         );
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(
@@ -587,28 +596,318 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       await showModalBottomSheet<void>(
         context: context,
         backgroundColor: const Color(0xFF111522),
-        builder: (sheetContext) => SafeArea(
-          child: ListTile(
-            leading: const Icon(Icons.person_remove_rounded, color: Colors.redAccent),
-            title: Text(
-              'إنزال ' + (seat.displayName.isEmpty ? 'المستخدم' : seat.displayName) + ' من المايك',
-              style: const TextStyle(color: Colors.white),
-            ),
-            onTap: () {
-              Navigator.pop(sheetContext);
-              unawaited(
-                _runSeatAction(
-                  () => _roomSeatService.removeFromMic(
-                    roomId: roomId,
-                    targetUid: seat.uid,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        builder: (sheetContext) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(
+                    Icons.person_remove_rounded,
+                    color: Colors.orangeAccent,
                   ),
+                  title: Text(
+                    'إنزال ' +
+                        (seat.displayName.isEmpty
+                            ? 'المستخدم'
+                            : seat.displayName) +
+                        ' من المايك',
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    unawaited(
+                      _runSeatAction(
+                        () => _roomSeatService.removeFromMic(
+                          roomId: roomId,
+                          targetUid: seat.uid,
+                        ),
+                      ),
+                    );
+                  },
                 ),
-              );
-            },
+                ListTile(
+                  leading: const Icon(
+                    Icons.block_rounded,
+                    color: Colors.redAccent,
+                  ),
+                  title: const Text(
+                    'طرد / حظر من الغرفة',
+                    style: TextStyle(
+                      color: Colors.redAccent,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _showKickOptions(seat);
+                  },
+                ),
+              ],
+            ),
           ),
         ),
       );
     }
+  }
+
+  Future<void> _showKickOptions(VoiceSeat seat) async {
+    final roomId = (_roomArguments['roomId'] ?? '').toString();
+    if (roomId.isEmpty || seat.uid.isEmpty) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF111522),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'طرد ' +
+                      (seat.displayName.isEmpty
+                          ? 'المستخدم'
+                          : seat.displayName),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 18,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                ...const [
+                  ('1', 'دقيقة واحدة'),
+                  ('5', '5 دقائق'),
+                  ('15', '15 دقيقة'),
+                  ('30', '30 دقيقة'),
+                  ('10080', 'أسبوع'),
+                  ('permanent', 'نهائي'),
+                ].map(
+                  (option) => ListTile(
+                    leading: Icon(
+                      option.$1 == 'permanent'
+                          ? Icons.block_rounded
+                          : Icons.timer_outlined,
+                      color: option.$1 == 'permanent'
+                          ? Colors.redAccent
+                          : const Color(0xFFFFD54A),
+                    ),
+                    title: Text(
+                      option.$2,
+                      style: TextStyle(
+                        color: option.$1 == 'permanent'
+                            ? Colors.redAccent
+                            : Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    onTap: () async {
+                      Navigator.pop(sheetContext);
+                      try {
+                        await _roomModeration.kick(
+                          roomId: roomId,
+                          targetUid: seat.uid,
+                          duration: option.$1,
+                        );
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'تم طرد المستخدم لمدة ' + option.$2 + '.',
+                              ),
+                            ),
+                          );
+                        }
+                      } on StateError catch (error) {
+                        if (!mounted) return;
+                        final code = error.message.toString();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              code == 'owner_protected'
+                                  ? 'لا يمكن طرد صاحب الغرفة.'
+                                  : 'تعذر طرد المستخدم حالياً.',
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showRoomBansSheet() async {
+    final roomId = (_roomArguments['roomId'] ?? '').toString();
+    if (roomId.isEmpty || !_voiceSession.isOwner) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF0C101A),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      ),
+      builder: (sheetContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: SafeArea(
+          child: SizedBox(
+            height: MediaQuery.of(sheetContext).size.height * .62,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+              child: Column(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  const Row(
+                    children: [
+                      Icon(
+                        Icons.block_rounded,
+                        color: Colors.redAccent,
+                      ),
+                      SizedBox(width: 8),
+                      Text(
+                        'المحظورون من الغرفة',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 19,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: FutureBuilder<List<RoomBanEntry>>(
+                      future: _roomModeration.loadBans(roomId),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState !=
+                            ConnectionState.done) {
+                          return const Center(
+                            child: CircularProgressIndicator(
+                              color: Color(0xFF8A3DFF),
+                            ),
+                          );
+                        }
+                        final bans = snapshot.data ?? const [];
+                        if (bans.isEmpty) {
+                          return const Center(
+                            child: Text(
+                              'لا يوجد مستخدمون محظورون حالياً',
+                              style: TextStyle(color: Colors.white54),
+                            ),
+                          );
+                        }
+                        return ListView.separated(
+                          itemCount: bans.length,
+                          separatorBuilder: (_, __) =>
+                              const Divider(color: Colors.white10),
+                          itemBuilder: (_, index) {
+                            final ban = bans[index];
+                            return ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: CircleAvatar(
+                                backgroundColor:
+                                    const Color(0xFF25183F),
+                                backgroundImage:
+                                    ban.profileImageUrl.isEmpty
+                                        ? null
+                                        : NetworkImage(
+                                            ban.profileImageUrl,
+                                          ),
+                                child: ban.profileImageUrl.isEmpty
+                                    ? const Icon(
+                                        Icons.person_rounded,
+                                        color: Colors.white54,
+                                      )
+                                    : null,
+                              ),
+                              title: Text(
+                                ban.displayName,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              subtitle: Text(
+                                ban.permanent
+                                    ? 'حظر نهائي'
+                                    : 'حظر مؤقت',
+                                style: const TextStyle(
+                                  color: Colors.white54,
+                                  fontSize: 10,
+                                ),
+                              ),
+                              trailing: TextButton(
+                                onPressed: () async {
+                                  try {
+                                    await _roomModeration.unban(
+                                      roomId: roomId,
+                                      targetUid: ban.uid,
+                                    );
+                                    if (sheetContext.mounted) {
+                                      Navigator.pop(sheetContext);
+                                    }
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'تم فك الحظر عن المستخدم.',
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  } catch (_) {
+                                    if (sheetContext.mounted) {
+                                      ScaffoldMessenger.of(sheetContext)
+                                          .showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'تعذر فك الحظر حالياً.',
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  }
+                                },
+                                child: const Text('فك الحظر'),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _showMicRequestsSheet() async {
@@ -1930,6 +2229,21 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                   ),
                 ),
                 const SizedBox(height: 14),
+                if (owner)
+                  ListTile(
+                    leading: const Icon(
+                      Icons.block_rounded,
+                      color: Colors.redAccent,
+                    ),
+                    title: const Text(
+                      'المحظورون',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      _showRoomBansSheet();
+                    },
+                  ),
                 if (owner)
                   ListTile(
                     leading: const Icon(
