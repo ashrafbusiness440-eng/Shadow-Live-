@@ -31,8 +31,18 @@ async function dump(tag) {
 try {
   await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: 60000 });
   await page.waitForTimeout(4200);
+  if (pageErrors.length) {
+    throw new Error(`Flutter page error: ${pageErrors.join(' | ')}`);
+  }
   await enableAccessibility();
   await dump('onboarding');
+  const flutterViewCount = await page.locator('flutter-view').count();
+  const canvasCount = await page.locator('canvas').count();
+  const bodyText = (await page.locator('body').innerText().catch(() => '')).trim();
+  console.log('PROBE DOM:', { flutterViewCount, canvasCount, bodyTextLength: bodyText.length });
+  if (flutterViewCount === 0 && canvasCount === 0) {
+    throw new Error('Flutter root/canvas not found in browser DOM');
+  }
   await page.screenshot({ path: 'phase3-probe-onboarding.png', fullPage: true });
 
   let skip = page.locator('flt-semantics[aria-label="تخطي"]').first();
