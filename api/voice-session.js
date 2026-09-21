@@ -254,6 +254,7 @@ async function roomSeatState(db,uid,roomId){
     micInvites:Array.isArray(room.micInvites)?room.micInvites:[],
     micRequests:Array.isArray(room.micRequests)?room.micRequests:[],
     isOwner:String(room.ownerUid||room.ownerId||room.hostId||"")===uid,
+    isActive:room.isActive!==false,
   };
 }
 
@@ -323,6 +324,10 @@ async function roomSeatAction(db,uid,body){
       };
       invites=invites.filter(id=>id!==uid);
       requests=requests.filter(id=>id!==uid);
+    }else if(action==="muteSeat"||action==="unmuteSeat"){
+      const seatIndex=seats.findIndex(seat=>seat.uid===uid);
+      if(seatIndex<0)throw new ApiError("speaker_seat_required",403);
+      seats[seatIndex]={...seats[seatIndex],muted:action==="muteSeat"};
     }else if(action==="leaveSeat"){
       clearUserSeat(uid);
     }else if(action==="removeFromMic"){
