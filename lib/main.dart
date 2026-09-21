@@ -40,6 +40,7 @@ import 'features/voice/services/zego_voice_service.dart';
 import 'features/voice/services/voice_room_session_controller.dart';
 import 'features/room/services/room_action_service.dart';
 import 'features/room/services/room_invite_service.dart';
+import 'features/room/services/room_insights_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -126,6 +127,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       VoiceRoomSessionController.instance;
   final RoomActionService _roomActions = RoomActionService();
   final RoomInviteService _roomInvites = RoomInviteService();
+  final RoomInsightsService _roomInsightsService = RoomInsightsService();
   bool _voiceStarted = false;
 
   @override
@@ -150,6 +152,9 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   bool _roomSoundEnabled = true;
   bool _effectSoundEnabled = true;
   bool _roomEffectsEnabled = true;
+  RoomInsights? _roomInsights;
+  bool _loadingRoomInsights = false;
+  bool _changingRoomFollow = false;
 
   @override
   void didChangeDependencies() {
@@ -195,6 +200,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           _voiceMicMuted = _voiceSession.micMuted;
         });
       }
+      unawaited(_loadRoomInsights(roomId));
     } catch (error) {
       if (mounted) {
         setState(() {
@@ -254,6 +260,42 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تعذر إغلاق الغرفة حالياً.')),
       );
+    }
+  }
+
+  Future<void> _loadRoomInsights(String roomId) async {
+    if (roomId.isEmpty || _loadingRoomInsights) return;
+    if (mounted) setState(() => _loadingRoomInsights = true);
+    try {
+      final insights = await _roomInsightsService.load(roomId);
+      if (mounted) setState(() => _roomInsights = insights);
+    } catch (_) {
+      // Voice remains available even if non-critical room insights fail.
+    } finally {
+      if (mounted) setState(() => _loadingRoomInsights = false);
+    }
+  }
+
+  Future<void> _toggleRoomFollow() async {
+    final roomId = (_roomArguments['roomId'] ?? '').toString().trim();
+    final current = _roomInsights;
+    if (roomId.isEmpty || current == null || _changingRoomFollow) return;
+
+    setState(() => _changingRoomFollow = true);
+    try {
+      final updated = await _roomInsightsService.setFollowing(
+        roomId: roomId,
+        following: !current.followed,
+      );
+      if (mounted) setState(() => _roomInsights = updated);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تعذر تحديث متابعة الغرفة حالياً.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _changingRoomFollow = false);
     }
   }
 
@@ -727,6 +769,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     _voiceSession.removeListener(_syncVoiceSession);
     _roomActions.close();
     _roomInvites.close();
+    _roomInsightsService.close();
     super.dispose();
   }
 
