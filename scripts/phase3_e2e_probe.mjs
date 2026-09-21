@@ -364,8 +364,12 @@ try {
     25000,
   );
   const imageUrl = stringField(imageUser.data, 'profileImageUrl');
-  const imagePublic = await getPublicProfile(uid);
   if (!imageUrl) throw new Error('Profile image URL was not stored');
+  let imagePublic = await getPublicProfile(uid);
+  for (let attempt = 0; attempt < 40 && stringField(imagePublic, 'profileImageUrl') !== imageUrl; attempt++) {
+    await page.waitForTimeout(250);
+    imagePublic = await getPublicProfile(uid);
+  }
   if (stringField(imagePublic, 'profileImageUrl') !== imageUrl) throw new Error('public_profiles image URL did not sync');
   console.log('PHASE3_PROFILE_IMAGE_UPLOAD_OK');
   await assertUnauthStorageDenied(uid);
