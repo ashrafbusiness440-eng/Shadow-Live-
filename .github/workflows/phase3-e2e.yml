@@ -58,5 +58,7 @@ jobs:
             phase3-probe-onboarding.png
             phase3-probe-auth-choice.png
             phase3-probe-phone.png
+            phase3-probe-otp.png
+            phase3-probe-profile-setup.png
           if-no-files-found: warn
           retention-days: 7

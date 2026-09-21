@@ -54,6 +54,44 @@ try {
   await enableAccessibility();
   await dump('phone');
   await page.screenshot({ path: 'phase3-probe-phone.png', fullPage: true });
+
+  // Flutter web keeps the editable surface separate from the semantics button
+  // tree. Click the visible phone field and type a fictional UAE test number.
+  await page.mouse.click(282, 505);
+  await page.keyboard.type('501234567');
+  await page.getByRole('button', { name: 'إرسال عبر SMS' }).click();
+
+  await page.waitForTimeout(900);
+  await enableAccessibility();
+  await dump('otp');
+  await page.screenshot({ path: 'phase3-probe-otp.png', fullPage: true });
+
+  let smsCode = null;
+  for (let attempt = 0; attempt < 20 && !smsCode; attempt++) {
+    const response = await fetch('http://127.0.0.1:9099/emulator/v1/projects/shadow-live/verificationCodes');
+    if (response.ok) {
+      const body = await response.json();
+      const codes = body.verificationCodes ?? [];
+      const latest = codes.find(x => x.phoneNumber === '+971501234567') ?? codes.at(-1);
+      smsCode = latest?.sessionCode ?? null;
+    }
+    if (!smsCode) await page.waitForTimeout(250);
+  }
+  if (!smsCode) throw new Error('Auth Emulator did not expose an SMS verification code');
+  console.log('OTP_EMULATOR_CODE_RETRIEVED');
+
+  // LoginScreen automatically focuses the first OTP field. Its onChanged
+  // handler advances focus after every digit, so typing the six digits follows
+  // the same path as a real user.
+  await page.keyboard.type(smsCode);
+  await page.waitForTimeout(2200);
+  await enableAccessibility();
+  await dump('profile-setup');
+  await page.screenshot({ path: 'phase3-probe-profile-setup.png', fullPage: true });
+
+  const profileSetupVisible = await page.getByText('إنشاء الملف الشخصي', { exact: true }).count();
+  if (!profileSetupVisible) throw new Error('OTP completed but Profile Setup was not reached');
+  console.log('PHASE3_PHONE_OTP_TO_PROFILE_SETUP_OK');
 } finally {
   await context.close();
   await browser.close();
