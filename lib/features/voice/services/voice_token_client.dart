@@ -64,7 +64,10 @@ class VoiceTokenClient {
   final Future<String?> Function() _idTokenProvider;
   final String _baseUrl;
 
-  Future<VoiceSessionCredentials> createSession(String roomId) async {
+  Future<VoiceSessionCredentials> createSession(
+    String roomId, {
+    String? roomPassword,
+  }) async {
     final idToken = await _idTokenProvider();
     if (idToken == null || idToken.isEmpty) {
       throw StateError('not_signed_in');
@@ -75,7 +78,11 @@ class VoiceTokenClient {
         'authorization': 'Bearer $idToken',
         'content-type': 'application/json',
       },
-      body: jsonEncode({'roomId': roomId}),
+      body: jsonEncode({
+        'roomId': roomId,
+        if (roomPassword != null && roomPassword.isNotEmpty)
+          'roomPassword': roomPassword,
+      }),
     );
     Map<String, dynamic> body = <String, dynamic>{};
     try {
