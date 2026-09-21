@@ -1,6 +1,7 @@
 import { chromium } from 'playwright';
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import { getAuth } from 'firebase-admin/auth';
 
 const baseUrl = process.env.PHASE3_BASE_URL ?? 'http://127.0.0.1:4173';
 const phoneNumber = '+971501234567';
@@ -11,6 +12,7 @@ const page = await context.newPage();
 const pageErrors = [];
 const adminApp = initializeApp({ projectId: 'shadow-live' }, 'phase3-e2e');
 const adminDb = getFirestore(adminApp);
+const adminAuth = getAuth(adminApp);
 
 page.on('console', msg => console.log('[browser]', msg.type(), msg.text()));
 page.on('pageerror', err => {
@@ -87,10 +89,12 @@ async function openPhoneAndRequestOtp() {
 }
 
 async function getUserDocument() {
-  const snap = await adminDb.collection('users').where('phone', '==', phoneNumber).limit(1).get();
-  if (snap.empty) throw new Error('Phase 3 test user document was not found in Firestore emulator');
-  const doc = snap.docs[0];
-  return { id: doc.id, data: doc.data() };
+  const listed = await adminAuth.listUsers(100);
+  const authUser = listed.users.find(u => u.phoneNumber === phoneNumber);
+  if (!authUser) throw new Error('Authenticated phone user not found in Auth Emulator');
+  const snap = await adminDb.collection('users').doc(authUser.uid).get();
+  if (!snap.exists) throw new Error('Matching user document not found for authenticated UID');
+  return { __uid: authUser.uid, ...snap.data() };
 }
 
 async function getPublicProfile(uid) {
