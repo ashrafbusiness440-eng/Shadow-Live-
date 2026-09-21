@@ -73,6 +73,7 @@ jobs:
           const storageResult = await page.evaluate(async (config) => {
             const app = firebase.initializeApp(config);
             const storage = firebase.storage(app);
+            storage.setMaxOperationRetryTime(5000);
 
             async function probe(label, fn) {
               try {
