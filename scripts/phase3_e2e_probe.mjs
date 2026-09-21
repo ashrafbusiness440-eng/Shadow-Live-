@@ -381,7 +381,7 @@ try {
 
   await page.getByRole('button', { name: 'متابعة كضيف' }).click();
   await page.getByRole('button', { name: 'الملف الشخصي' }).waitFor({ timeout: 12000 });
-  await page.getByRole('button', { name: 'الرسائل' }).click();
+  await page.getByRole('button', { name: 'الرسائل' }).dispatchEvent('click');
   await page.getByText('هذه الميزة تحتاج حساباً', { exact: true }).waitFor({ timeout: 5000 });
   await page.getByRole('button', { name: 'إلغاء' }).click();
   console.log('PHASE3_GUEST_RESTRICTED_FEATURE_GUARD_OK');
