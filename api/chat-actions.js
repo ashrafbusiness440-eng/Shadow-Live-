@@ -269,6 +269,11 @@ async function sendRoomInvite(db,uid,body){
     counts[uid]=0;
     counts[receiverId]=Number(counts[receiverId]||0)+1;
     const messageRef=conversationRef.collection("messages").doc();
+    const roomInviteAccessRef=db
+      .collection("room_invites")
+      .doc(roomId)
+      .collection("users")
+      .doc(receiverId);
 
     if(conversation.exists){
       tx.update(conversationRef,{
@@ -297,6 +302,13 @@ async function sendRoomInvite(db,uid,body){
       roomOwnerUid:String(roomData.ownerUid||roomData.ownerId||roomData.hostId||""),
       createdAt:now,
     });
+    tx.set(roomInviteAccessRef,{
+      roomId,
+      userId:receiverId,
+      invitedBy:uid,
+      createdAt:now,
+      expiresAt:Timestamp.fromMillis(Date.now()+12*60*60*1000),
+    },{merge:true});
 
     const resultData={messageId:messageRef.id,roomId,roomName};
     tx.create(opRef,{
