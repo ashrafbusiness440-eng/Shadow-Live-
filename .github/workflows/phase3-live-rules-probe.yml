@@ -65,6 +65,12 @@ jobs:
               await fn();
               throw new Error(label + ' unexpectedly succeeded');
             } catch (error) {
+              const detail = {
+                code: error?.code ?? null,
+                message: error?.message ?? String(error),
+                customData: error?.customData ?? null,
+              };
+              console.log(label + '_DETAIL', JSON.stringify(detail));
               if (error?.code !== 'storage/unauthorized') {
                 throw new Error(label + ' expected storage/unauthorized, got ' + (error?.code ?? error));
               }
