@@ -127,6 +127,9 @@ function roomResponse(roomId,data){
     ownerUid:clean(data.ownerUid||data.hostId),
     roomType:clean(data.roomType||"personal"),
     category:clean(data.category||"دردشة"),
+    ownerName:clean(data.ownerName),
+    ownerLocation:clean(data.ownerLocation),
+    chatEnabled:data.chatEnabled!==false,
     description:clean(data.description),
     tags:Array.isArray(data.tags)?data.tags.map(clean).filter(Boolean).slice(0,8):[],
     visibility:clean(data.visibility||"public"),
@@ -144,25 +147,34 @@ async function openPersonalRoom(db,uid){
   const roomRef=db.collection("rooms").doc(roomId);
   const userRef=db.collection("users").doc(uid);
 
-  const existing=await roomRef.get();
-  if(existing.exists){
-    const data=existing.data()||{};
-    if(clean(data.ownerUid||data.hostId)!==uid)throw new ApiError("room_owner_mismatch",409);
-    await Promise.all([
-      roomRef.set({
-        isActive:true,
-        closedAt:FieldValue.delete(),
-        updatedAt:FieldValue.serverTimestamp(),
-      },{merge:true}),
-      userRef.set({personalRoomId:roomId},{merge:true}),
-    ]);
-    return roomResponse(roomId,{...data,isActive:true});
-  }
-
   const userSnap=await userRef.get();
   if(!userSnap.exists)throw new ApiError("user_not_found",404);
   const user=userSnap.data()||{};
   const displayName=clean(user.displayName||user.username||"مستخدم Shadow Live");
+  const ownerLocation=clean(user.location);
+
+  const existing=await roomRef.get();
+  if(existing.exists){
+    const data=existing.data()||{};
+    if(clean(data.ownerUid||data.hostId)!==uid)throw new ApiError("room_owner_mismatch",409);
+    const synced={
+      isActive:true,
+      ownerName:displayName,
+      ownerLocation,
+      chatEnabled:data.chatEnabled!==false,
+      closedAt:FieldValue.delete(),
+      searchTokens:searchTokens(
+        clean(data.name||data.title||"غرفتي")+" "+displayName+" "+ownerLocation+" "+clean(data.category),
+        clean(data.publicId),
+      ),
+      updatedAt:FieldValue.serverTimestamp(),
+    };
+    await Promise.all([
+      roomRef.set(synced,{merge:true}),
+      userRef.set({personalRoomId:roomId},{merge:true}),
+    ]);
+    return roomResponse(roomId,{...data,...synced});
+  }
 
   for(let attempt=0;attempt<40;attempt++){
     const publicId=String(randomInt(100000,1000000));
@@ -199,6 +211,9 @@ async function openPersonalRoom(db,uid){
           roomType:"personal",
           type:"personal",
           category:"دردشة",
+          ownerName:displayName,
+          ownerLocation,
+          chatEnabled:true,
           visibility:"public",
           isHidden:false,
           isActive:true,
@@ -216,7 +231,7 @@ async function openPersonalRoom(db,uid){
           micInvites:[],
           micRequests:[],
           publicId,
-          searchTokens:searchTokens(name,publicId),
+          searchTokens:searchTokens(name+" "+displayName+" "+ownerLocation+" دردشة",publicId),
           createdAt:now,
           updatedAt:now,
         };
@@ -248,6 +263,7 @@ async function updateRoomSettings(db,uid,body){
   const category=clean(body.category)||"دردشة";
   const visibility=clean(body.visibility)||"public";
   const password=String(body.password??"");
+  const chatEnabled=body.chatEnabled!==false;
   const tags=Array.isArray(body.tags)
     ? [...new Set(body.tags.map(clean).filter(Boolean))].slice(0,8)
     : [];
@@ -281,7 +297,11 @@ async function updateRoomSettings(db,uid,body){
       tags,
       visibility,
       isHidden:visibility==="hidden",
-      searchTokens:searchTokens(name+" "+tags.join(" "),clean(room.publicId)),
+      chatEnabled,
+      searchTokens:searchTokens(
+        name+" "+tags.join(" ")+" "+category+" "+clean(room.ownerName)+" "+clean(room.ownerLocation),
+        clean(room.publicId),
+      ),
       updatedAt:FieldValue.serverTimestamp(),
     };
 
@@ -500,6 +520,9 @@ async function sendRoomChat(db,uid,body){
     const replySnap=replyRef?snapshots[4]:null;
 
     if(!roomSnap.exists||roomSnap.data()?.isActive===false)throw new ApiError("room_unavailable",404);
+    const roomData=roomSnap.data()||{};
+    const ownerUid=clean(roomData.ownerUid||roomData.ownerId||roomData.hostId);
+    if(roomData.chatEnabled===false&&ownerUid!==uid)throw new ApiError("room_chat_disabled",403);
     if(banSnap.exists){
       const ban=banSnap.data()||{};
       const expiresAt=ban.expiresAt?.toMillis?.()||0;
