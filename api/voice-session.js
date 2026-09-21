@@ -469,6 +469,87 @@ async function roomSeatAction(db,uid,body){
   });
 }
 
+async function sendRoomChat(db,uid,body){
+  const roomId=clean(body.roomId);
+  const message=String(body.text??"").trim();
+  const replyTo=clean(body.replyTo);
+  const mentions=Array.isArray(body.mentionUids)
+    ? [...new Set(body.mentionUids.map(clean).filter(Boolean))].slice(0,10)
+    : [];
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+  if(!message||message.length>500)throw new ApiError("invalid_room_message",400);
+
+  const roomRef=db.collection("rooms").doc(roomId);
+  const profileRef=db.collection("public_profiles").doc(uid);
+  const rateRef=db.collection("room_chat_rate_limits").doc(roomId+"__"+uid);
+  const banRef=db.collection("room_bans").doc(roomId).collection("users").doc(uid);
+
+  return db.runTransaction(async tx=>{
+    const refs=[roomRef,profileRef,rateRef,banRef];
+    let replyRef=null;
+    if(replyTo){
+      if(replyTo.includes("/"))throw new ApiError("invalid_reply",400);
+      replyRef=roomRef.collection("messages").doc(replyTo);
+      refs.push(replyRef);
+    }
+    const snapshots=await Promise.all(refs.map(ref=>tx.get(ref)));
+    const roomSnap=snapshots[0];
+    const profileSnap=snapshots[1];
+    const rateSnap=snapshots[2];
+    const banSnap=snapshots[3];
+    const replySnap=replyRef?snapshots[4]:null;
+
+    if(!roomSnap.exists||roomSnap.data()?.isActive===false)throw new ApiError("room_unavailable",404);
+    if(banSnap.exists){
+      const ban=banSnap.data()||{};
+      const expiresAt=ban.expiresAt?.toMillis?.()||0;
+      const permanent=ban.permanent===true;
+      if(permanent||expiresAt>Date.now())throw new ApiError("room_banned",403);
+    }
+
+    const nowMs=Date.now();
+    const rate=rateSnap.data()||{};
+    const started=rate.windowStartedAt?.toMillis?.()||0;
+    const sameWindow=started>0&&(nowMs-started)<10000;
+    const count=sameWindow?Math.max(0,Number(rate.count||0)):0;
+    if(count>=8)throw new ApiError("rate_limited",429);
+    tx.set(rateRef,{
+      windowStartedAt:new Date(sameWindow?started:nowMs),
+      count:count+1,
+      updatedAt:new Date(nowMs),
+    },{merge:true});
+
+    let replyPreview=null;
+    let replySenderUid=null;
+    if(replyRef){
+      if(!replySnap?.exists)throw new ApiError("reply_not_found",404);
+      const reply=replySnap.data()||{};
+      replyPreview=String(reply.text||reply.systemText||"").slice(0,120);
+      replySenderUid=clean(reply.senderUid);
+    }
+
+    const profile=profileSnap.data()||{};
+    const messageRef=roomRef.collection("messages").doc();
+    tx.create(messageRef,{
+      type:"text",
+      senderUid:uid,
+      displayName:clean(profile.displayName||profile.username||"مستخدم Shadow Live"),
+      profileImageUrl:clean(profile.profileImageUrl),
+      text:message,
+      mentionUids:mentions,
+      replyTo:replyTo||null,
+      replyPreview,
+      replySenderUid,
+      createdAt:FieldValue.serverTimestamp(),
+    });
+    tx.update(roomRef,{
+      lastChatAt:FieldValue.serverTimestamp(),
+      updatedAt:FieldValue.serverTimestamp(),
+    });
+    return {ok:true,messageId:messageRef.id};
+  });
+}
+
 async function recordRoomVisit(db,uid,roomId){
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
   const roomRef=db.collection("rooms").doc(roomId);
@@ -684,6 +765,9 @@ export default async function handler(req,res){
     }
     if(action==="roomLibrary"){
       return out(res,200,await roomLibrary(getFirestore(),decoded.uid));
+    }
+    if(action==="sendRoomChat"){
+      return out(res,200,await sendRoomChat(getFirestore(),decoded.uid,req.body||{}));
     }
     if(action==="roomSeatState"){
       const roomId=clean(req.body?.roomId);
