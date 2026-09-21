@@ -207,16 +207,7 @@ service cloud.firestore {
 
     match /follows/{followId} {
       allow read: if signedIn();
-      allow create: if signedIn()
-        && request.resource.data.keys().hasOnly(['followerUid','followingUid','createdAt'])
-        && request.resource.data.followerUid == request.auth.uid
-        && request.resource.data.followingUid is string
-        && request.resource.data.followingUid != request.auth.uid
-        && !blockedBetween(request.auth.uid, request.resource.data.followingUid)
-        && followId == request.auth.uid + '__' + request.resource.data.followingUid
-        && request.resource.data.createdAt == request.time;
-      allow update: if false;
-      allow delete: if signedIn() && resource.data.followerUid == request.auth.uid;
+      allow create, update, delete: if false;
     }
 
     match /gifts/{giftId} {

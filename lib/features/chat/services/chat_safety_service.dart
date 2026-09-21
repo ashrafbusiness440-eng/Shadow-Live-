@@ -1,8 +1,19 @@
 import 'dart:convert';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
+
+class ChatSafetyStatus {
+  const ChatSafetyStatus({
+    required this.blocked,
+    required this.blockedByMe,
+    required this.blockedByOther,
+  });
+
+  final bool blocked;
+  final bool blockedByMe;
+  final bool blockedByOther;
+}
 
 class ChatSafetyService {
   static const _baseUrl =
@@ -10,15 +21,27 @@ class ChatSafetyService {
 
   String get _uid => FirebaseAuth.instance.currentUser!.uid;
 
-  DocumentReference<Map<String, dynamic>> blockRef(String otherUid) =>
-      FirebaseFirestore.instance
-          .collection('user_blocks')
-          .doc(_uid)
-          .collection('items')
-          .doc(otherUid);
-
-  Stream<bool> watchBlocked(String otherUid) =>
-      blockRef(otherUid).snapshots().map((snapshot) => snapshot.exists);
+  Future<ChatSafetyStatus> status(String targetUserId) async {
+    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+    if (token == null || token.isEmpty) throw StateError('not_signed_in');
+    final response = await http.post(
+      Uri.parse(_baseUrl + '/chat-safety-status'),
+      headers: {
+        'authorization': 'Bearer ' + token,
+        'content-type': 'application/json',
+      },
+      body: jsonEncode({'targetUserId': targetUserId}),
+    );
+    final body = _body(response.body);
+    if (response.statusCode == 200 && body['ok'] == true) {
+      return ChatSafetyStatus(
+        blocked: body['blocked'] == true,
+        blockedByMe: body['blockedByMe'] == true,
+        blockedByOther: body['blockedByOther'] == true,
+      );
+    }
+    throw StateError((body['code'] ?? 'status_failed').toString());
+  }
 
   Future<void> setBlocked({
     required String targetUserId,

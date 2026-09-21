@@ -32,6 +32,12 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   final _safety = ChatSafetyService();
   bool _sending = false;
   bool _changingBlock = false;
+  bool _loadingSafety = true;
+  ChatSafetyStatus _safetyStatus = const ChatSafetyStatus(
+    blocked: false,
+    blockedByMe: false,
+    blockedByOther: false,
+  );
   bool _markingRead = false;
   bool _sendingImage = false;
   String? _sendingGiftId;
@@ -40,7 +46,25 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   DocumentReference<Map<String, dynamic>> get _conversation => FirebaseFirestore.instance.collection('conversations').doc(widget.conversationId);
 
   @override
-  void initState() {super.initState();_markRead();}
+  void initState() {
+    super.initState();
+    _markRead();
+    _loadSafetyStatus();
+  }
+
+  Future<void> _loadSafetyStatus() async {
+    try {
+      final status = await _safety.status(widget.otherUid);
+      if (mounted) {
+        setState(() {
+          _safetyStatus = status;
+          _loadingSafety = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingSafety = false);
+    }
+  }
 
   Future<void> _markRead() async {if (_markingRead) return;_markingRead = true;try {await _conversation.update({'unreadCounts.$_uid': 0});} catch (_) {} finally {_markingRead = false;}}
 
@@ -103,6 +127,10 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     setState(() => _changingBlock = true);
     try {
       await _safety.setBlocked(targetUserId: widget.otherUid, blocked: blocked);
+      final status = await _safety.status(widget.otherUid);
+      if (mounted) {
+        setState(() => _safetyStatus = status);
+      }
       if (blocked) {
         _controller.clear();
         _snack('تم حظر المستخدم وإيقاف الرسائل والهدايا والصور بينكما.');
@@ -690,16 +718,19 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
             children: [
               const Icon(Icons.block_rounded, color: Colors.redAccent),
               const SizedBox(width: 10),
-              const Expanded(
+              Expanded(
                 child: Text(
-                  'لقد حظرت هذا المستخدم. الإرسال متوقف.',
-                  style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w700),
+                  _safetyStatus.blockedByMe
+                      ? 'لقد حظرت هذا المستخدم. الإرسال متوقف.'
+                      : 'لا يمكن الإرسال في هذه المحادثة حالياً.',
+                  style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.w700),
                 ),
               ),
-              TextButton(
-                onPressed: _changingBlock ? null : () => _setBlocked(false),
-                child: const Text('إلغاء الحظر'),
-              ),
+              if (_safetyStatus.blockedByMe)
+                TextButton(
+                  onPressed: _changingBlock ? null : () => _setBlocked(false),
+                  child: const Text('إلغاء الحظر'),
+                ),
             ],
           ),
         ),
@@ -765,52 +796,51 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                 },
               ),
               actions: [
-                StreamBuilder<bool>(
-                  stream: _safety.watchBlocked(widget.otherUid),
-                  initialData: false,
-                  builder: (context, snapshot) {
-                    final blocked = snapshot.data ?? false;
-                    return PopupMenuButton<String>(
-                      enabled: !_changingBlock,
-                      icon: const Icon(Icons.more_vert_rounded),
-                      color: const Color(0xFF171C2A),
-                      onSelected: (value) {
-                        if (value == 'block') {
-                          _confirmBlock(blocked);
-                        } else if (value == 'report') {
-                          _reportUser();
-                        }
-                      },
-                      itemBuilder: (_) => [
-                        PopupMenuItem(
-                          value: 'block',
-                          child: Row(
-                            children: [
-                              Icon(
-                                blocked ? Icons.lock_open_rounded : Icons.block_rounded,
-                                color: blocked ? const Color(0xFF7ADFA3) : Colors.redAccent,
-                              ),
-                              const SizedBox(width: 10),
-                              Text(
-                                blocked ? 'إلغاء الحظر' : 'حظر المستخدم',
-                                style: const TextStyle(color: Colors.white),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const PopupMenuItem(
-                          value: 'report',
-                          child: Row(
-                            children: [
-                              Icon(Icons.flag_outlined, color: Color(0xFFFFB74D)),
-                              SizedBox(width: 10),
-                              Text('إبلاغ عن المستخدم', style: TextStyle(color: Colors.white)),
-                            ],
-                          ),
-                        ),
-                      ],
-                    );
+                PopupMenuButton<String>(
+                  enabled: !_changingBlock && !_loadingSafety,
+                  icon: const Icon(Icons.more_vert_rounded),
+                  color: const Color(0xFF171C2A),
+                  onSelected: (value) {
+                    if (value == 'block') {
+                      _confirmBlock(_safetyStatus.blockedByMe);
+                    } else if (value == 'report') {
+                      _reportUser();
+                    }
                   },
+                  itemBuilder: (_) => [
+                    PopupMenuItem(
+                      value: 'block',
+                      child: Row(
+                        children: [
+                          Icon(
+                            _safetyStatus.blockedByMe
+                                ? Icons.lock_open_rounded
+                                : Icons.block_rounded,
+                            color: _safetyStatus.blockedByMe
+                                ? const Color(0xFF7ADFA3)
+                                : Colors.redAccent,
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            _safetyStatus.blockedByMe
+                                ? 'إلغاء الحظر'
+                                : 'حظر المستخدم',
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'report',
+                      child: Row(
+                        children: [
+                          Icon(Icons.flag_outlined, color: Color(0xFFFFB74D)),
+                          SizedBox(width: 10),
+                          Text('إبلاغ عن المستخدم', style: TextStyle(color: Colors.white)),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -850,12 +880,24 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                     },
                   ),
                 ),
-                StreamBuilder<bool>(
-                  stream: _safety.watchBlocked(widget.otherUid),
-                  initialData: false,
-                  builder: (_, snapshot) =>
-                      (snapshot.data ?? false) ? _blockedComposer() : _composer(),
-                ),
+                if (_loadingSafety)
+                  const SafeArea(
+                    top: false,
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 14),
+                      child: Center(
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+                    ),
+                  )
+                else if (_safetyStatus.blocked)
+                  _blockedComposer()
+                else
+                  _composer(),
               ],
             ),
           ),

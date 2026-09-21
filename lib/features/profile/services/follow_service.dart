@@ -1,5 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:convert';
+
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
 
 class FollowCounts {
   final int followers;
@@ -33,15 +36,28 @@ class FollowService {
     final me = _auth.currentUser?.uid;
     if (me == null || me.isEmpty) throw StateError('not_signed_in');
     if (me == targetUid) throw StateError('cannot_follow_self');
-    final ref = _follows.doc(relationId(me, targetUid));
-    if (value) {
-      await ref.set({
-        'followerUid': me,
-        'followingUid': targetUid,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-    } else {
-      await ref.delete();
+    final token = await _auth.currentUser?.getIdToken();
+    if (token == null || token.isEmpty) throw StateError('not_signed_in');
+    final response = await http.post(
+      Uri.parse(
+        'https://shadow-live-git-feature-shadow-control-foundation-shadow-c916.vercel.app/api/set-follow',
+      ),
+      headers: {
+        'authorization': 'Bearer ' + token,
+        'content-type': 'application/json',
+      },
+      body: jsonEncode({
+        'targetUserId': targetUid,
+        'following': value,
+      }),
+    );
+    Map<String, dynamic> body = <String, dynamic>{};
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) body = decoded;
+    } catch (_) {}
+    if (response.statusCode != 200 || body['ok'] != true) {
+      throw StateError((body['code'] ?? 'follow_failed').toString());
     }
   }
 
