@@ -1,0 +1,77 @@
+name: Phase 3 Live Rules Probe
+
+on:
+  push:
+    branches:
+      - feature/shadow-control-foundation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-rules:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Firebase web SDK
+        run: npm install --no-save firebase
+
+      - name: Verify production Firestore and Storage deny unauthenticated access
+        run: |
+          node --input-type=module <<'NODE'
+          import { initializeApp } from 'firebase/app';
+          import { getFirestore, collection, query, limit, getDocs, doc, deleteDoc } from 'firebase/firestore';
+
+          const app = initializeApp({
+            apiKey: 'AIzaSyAjDi9RdObZXHF16ecWt4J4zj2_1rdDmf8',
+            appId: '1:463485983128:web:88c4953fa80d566c7a73ed',
+            messagingSenderId: '463485983128',
+            projectId: 'shadow-live',
+            storageBucket: 'shadow-live.firebasestorage.app',
+          });
+          const db = getFirestore(app);
+
+          async function expectFirestoreDenied(label, fn) {
+            try {
+              await fn();
+              throw new Error(label + ' unexpectedly succeeded');
+            } catch (error) {
+              if (error?.code !== 'permission-denied') {
+                throw new Error(label + ' expected permission-denied, got ' + (error?.code ?? error));
+              }
+              console.log(label + '_OK');
+            }
+          }
+
+          await expectFirestoreDenied('PHASE3_LIVE_FIRESTORE_READ_DENIED', async () => {
+            await getDocs(query(collection(db, 'users'), limit(1)));
+          });
+
+          await expectFirestoreDenied('PHASE3_LIVE_FIRESTORE_DELETE_DENIED', async () => {
+            await deleteDoc(doc(db, 'users', '__phase3_live_probe_missing__'));
+          });
+
+          const objectName = encodeURIComponent('profile_images/__phase3_live_probe_missing__.jpg');
+          const base = 'https://firebasestorage.googleapis.com/v0/b/shadow-live.firebasestorage.app/o/' + objectName;
+
+          for (const [label, method] of [
+            ['PHASE3_LIVE_STORAGE_READ_DENIED', 'GET'],
+            ['PHASE3_LIVE_STORAGE_DELETE_DENIED', 'DELETE'],
+          ]) {
+            const response = await fetch(base, { method });
+            if (response.status !== 403) {
+              const body = await response.text();
+              throw new Error(label + ' expected HTTP 403, got ' + response.status + ': ' + body.slice(0, 300));
+            }
+            console.log(label + '_OK');
+          }
+
+          console.log('PHASE3_LIVE_RULES_PROBE_OK');
+          NODE
