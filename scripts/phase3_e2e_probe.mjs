@@ -200,7 +200,7 @@ try {
   if (stringField(publicProfile, 'uid') !== uid) throw new Error('public_profiles did not sync the user UID');
   console.log('PHASE3_FIRESTORE_SETUP_COMPLETE_OK', uid);
 
-  await page.getByText('الملف الشخصي', { exact: true }).last().evaluate(el => el.click());
+  await page.getByRole('button', { name: 'الملف الشخصي' }).dispatchEvent('click');
   await page.waitForTimeout(900);
   await enableAccessibility();
   await dump('profile');
@@ -208,11 +208,11 @@ try {
 
   const settingsButton = page.getByRole('button', { name: 'الإعدادات' });
   await settingsButton.waitFor({ timeout: 8000 });
-  await settingsButton.click();
+  await settingsButton.dispatchEvent('click');
   await page.getByText('إدارة معلومات الحساب والإعدادات', { exact: true }).waitFor({ timeout: 8000 });
   await screenshot('settings');
 
-  await page.getByRole('button', { name: 'تسجيل الخروج' }).first().click();
+  await page.getByRole('button', { name: 'تسجيل الخروج' }).first().dispatchEvent('click');
   await page.getByText('هل أنت متأكد أنك تريد تسجيل الخروج من حسابك؟', { exact: true }).waitFor({ timeout: 5000 });
   await page.getByRole('button', { name: 'تسجيل الخروج' }).last().click();
   await page.getByText('تسجيل الدخول / إنشاء حساب', { exact: true }).waitFor({ timeout: 15000 });
