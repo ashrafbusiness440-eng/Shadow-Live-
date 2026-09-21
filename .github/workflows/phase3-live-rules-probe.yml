@@ -58,15 +58,32 @@ jobs:
             await deleteDoc(doc(db, 'users', 'phase3-live-probe-missing'));
           });
 
-          const storageBase = 'https://firebasestorage.googleapis.com/v0/b/shadow-live.firebasestorage.app/o';
+          const bucketCandidates = [
+            'shadow-live.firebasestorage.app',
+            'shadow-live.appspot.com',
+          ];
+          let protectedBucket = null;
 
-          const listResponse = await fetch(storageBase + '?prefix=profile_images%2F&maxResults=1');
-          if (listResponse.status !== 403) {
-            const body = await listResponse.text();
-            throw new Error('PHASE3_LIVE_STORAGE_LIST_DENIED expected HTTP 403, got ' + listResponse.status + ': ' + body.slice(0, 300));
+          for (const bucket of bucketCandidates) {
+            const storageBase = 'https://firebasestorage.googleapis.com/v0/b/' + bucket + '/o';
+            const response = await fetch(storageBase + '?prefix=profile_images%2F&maxResults=1');
+            console.log('PHASE3_LIVE_STORAGE_BUCKET_STATUS', bucket, response.status);
+            if (response.status === 403) {
+              protectedBucket = bucket;
+              break;
+            }
+            if (response.status !== 404) {
+              const body = await response.text();
+              throw new Error('Unexpected Storage bucket probe status for ' + bucket + ': ' + response.status + ': ' + body.slice(0, 300));
+            }
           }
-          console.log('PHASE3_LIVE_STORAGE_LIST_DENIED_OK');
 
+          if (!protectedBucket) {
+            throw new Error('No protected Firebase Storage bucket was found for shadow-live');
+          }
+          console.log('PHASE3_LIVE_STORAGE_LIST_DENIED_OK', protectedBucket);
+
+          const storageBase = 'https://firebasestorage.googleapis.com/v0/b/' + protectedBucket + '/o';
           const uploadResponse = await fetch(
             storageBase + '?uploadType=resumable&name=profile_images%2Fphase3-live-probe-missing.jpg',
             {
@@ -82,7 +99,7 @@ jobs:
             const body = await uploadResponse.text();
             throw new Error('PHASE3_LIVE_STORAGE_UPLOAD_DENIED expected HTTP 403, got ' + uploadResponse.status + ': ' + body.slice(0, 300));
           }
-          console.log('PHASE3_LIVE_STORAGE_UPLOAD_DENIED_OK');
+          console.log('PHASE3_LIVE_STORAGE_UPLOAD_DENIED_OK', protectedBucket);
 
           console.log('PHASE3_LIVE_RULES_PROBE_OK');
           NODE
