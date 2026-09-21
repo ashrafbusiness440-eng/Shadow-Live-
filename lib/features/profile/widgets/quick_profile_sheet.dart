@@ -29,8 +29,8 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
   bool _changingFollow = false;
 
   ImageProvider? _avatar(Map<String, dynamic> data) {
-    final photo = '${data['profileImageUrl'] ?? ''}'.trim();
-    final asset = '${data['profileAvatarAsset'] ?? ''}'.trim();
+    final photo = (data['profileImageUrl'] ?? '').toString().trim();
+    final asset = (data['profileAvatarAsset'] ?? '').toString().trim();
     if (photo.isNotEmpty) return NetworkImage(photo);
     if (asset.isNotEmpty) return AssetImage(asset);
     return null;
@@ -88,9 +88,9 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
             if (data == null) {
               return const SizedBox(height: 240, child: Center(child: Text('هذا الملف غير متاح', style: TextStyle(color: Colors.white60))));
             }
-            final name = '${data['displayName'] ?? 'مستخدم Shadow Live'}';
-            final photo = '${data['profileImageUrl'] ?? ''}';
-            final publicId = '${data['publicId'] ?? '—'}';
+            final name = (data['displayName'] ?? 'مستخدم Shadow Live').toString();
+            final photo = (data['profileImageUrl'] ?? '').toString();
+            final publicId = (data['publicId'] ?? '—').toString();
             final level = (data['level'] as num?)?.toInt() ?? 0;
             final vip = (data['vipLevel'] as num?)?.toInt() ?? 0;
             final online = data['isOnline'] == true;
