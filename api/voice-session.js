@@ -226,10 +226,20 @@ async function closePersonalRoom(db,uid,roomId){
   return {ok:true,roomId,isActive:false};
 }
 
+function roomSeatCapacity(room){
+  const level=Math.max(1,Math.min(6,Number(room.level||1)));
+  const type=clean(room.roomType||room.type||"personal");
+  if(type==="customer_service")return 5;
+  const agency=[10,12,14,16,20,22];
+  const normal=[8,10,12,15,20,20];
+  return (type==="agency"?agency:normal)[level-1];
+}
+
 function normalizeSeats(room){
   const source=Array.isArray(room.seats)?room.seats:[];
   const seats=[];
-  for(let index=0;index<8;index++){
+  const capacity=roomSeatCapacity(room);
+  for(let index=0;index<capacity;index++){
     const found=source.find(item=>Number(item?.index)===index)||{};
     seats.push({
       index,
@@ -307,7 +317,7 @@ async function roomSeatAction(db,uid,body){
     }else if(action==="declineMicInvite"){
       invites=invites.filter(id=>id!==uid);
     }else if(action==="takeSeat"||action==="switchSeat"){
-      if(!Number.isInteger(seatIndex)||seatIndex<0||seatIndex>7)throw new ApiError("invalid_seat",400);
+      if(!Number.isInteger(seatIndex)||seatIndex<0||seatIndex>=seats.length)throw new ApiError("invalid_seat",400);
       const seat=seats[seatIndex];
       if(seat.uid&&seat.uid!==uid)throw new ApiError("seat_occupied",409);
       if(!isOwner&&!invites.includes(uid))throw new ApiError("mic_invite_required",403);
