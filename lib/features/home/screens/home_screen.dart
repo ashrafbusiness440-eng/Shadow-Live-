@@ -175,6 +175,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 12),
                   _peopleRail(_data?.suggestedPeople ?? const []),
                   const SizedBox(height: 24),
+                  _sectionHeader('الفعاليات', 'أبرز ما يحدث في Shadow Live'),
+                  const SizedBox(height: 12),
+                  _eventRail(_data?.events ?? const []),
+                  const SizedBox(height: 24),
+                  _sectionHeader('الترتيب', 'معاينة من بيانات الإدارة'),
+                  const SizedBox(height: 12),
+                  _rankingPreview(_data?.rankingPreview ?? const []),
+                  const SizedBox(height: 24),
                   _sectionHeader('استكشف Shadow Live', 'كل شيء من مكان واحد'),
                   const SizedBox(height: 12),
                   GridView.count(
@@ -326,6 +334,247 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             )
             .toList(),
+      ),
+    );
+  }
+
+  Widget _eventRail(List<Map<String, dynamic>> events) {
+    if (events.isEmpty) {
+      return _remoteEmpty(
+        icon: Icons.celebration_outlined,
+        text: 'لا توجد فعاليات منشورة حالياً',
+      );
+    }
+
+    return SizedBox(
+      height: 122,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        children: events.take(8).map((event) {
+          final title = (event['title'] ?? 'فعالية Shadow Live').toString();
+          final subtitle = (event['subtitle'] ?? event['description'] ?? '')
+              .toString()
+              .trim();
+          final imageUrl = (event['imageUrl'] ?? '').toString().trim();
+          final badge = (event['badge'] ?? '').toString().trim();
+          return Container(
+            width: 250,
+            margin: const EdgeInsetsDirectional.only(end: 10),
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: _card,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.white10),
+            ),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (imageUrl.isNotEmpty)
+                  CachedNetworkImage(
+                    imageUrl: imageUrl,
+                    fit: BoxFit.cover,
+                    errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                  ),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                      colors: [
+                        const Color(0xEE111321),
+                        imageUrl.isNotEmpty
+                            ? const Color(0x55111321)
+                            : const Color(0xFF281847),
+                      ],
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      if (badge.isNotEmpty)
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 6),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _purple.withValues(alpha: .25),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            badge,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      if (subtitle.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white60,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _rankingPreview(List<Map<String, dynamic>> entries) {
+    if (entries.isEmpty) {
+      return _remoteEmpty(
+        icon: Icons.emoji_events_outlined,
+        text: 'سيظهر ترتيب المجتمع عند نشره من لوحة الإدارة',
+      );
+    }
+
+    return Column(
+      children: entries.take(3).toList().asMap().entries.map((item) {
+        final index = item.key;
+        final entry = item.value;
+        final name = (entry['displayName'] ?? entry['name'] ?? 'مستخدم')
+            .toString();
+        final value = (entry['value'] ?? entry['score'] ?? '—').toString();
+        final label = (entry['label'] ?? '').toString();
+        final avatarUrl = (entry['avatarUrl'] ?? entry['imageUrl'] ?? '')
+            .toString()
+            .trim();
+
+        return Container(
+          margin: EdgeInsets.only(bottom: index == 2 ? 0 : 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: _card,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white10),
+          ),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 26,
+                child: Text(
+                  '#${index + 1}',
+                  style: const TextStyle(
+                    color: _gold,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              Container(
+                width: 40,
+                height: 40,
+                clipBehavior: Clip.antiAlias,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Color(0xFF281847),
+                ),
+                child: avatarUrl.isNotEmpty
+                    ? CachedNetworkImage(
+                        imageUrl: avatarUrl,
+                        fit: BoxFit.cover,
+                        errorWidget: (_, __, ___) => const Icon(
+                          Icons.person_rounded,
+                          color: Colors.white54,
+                        ),
+                      )
+                    : const Icon(
+                        Icons.person_rounded,
+                        color: Colors.white54,
+                      ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    value,
+                    style: const TextStyle(
+                      color: _gold,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  if (label.isNotEmpty)
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        color: Colors.white38,
+                        fontSize: 9,
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _remoteEmpty({
+    required IconData icon,
+    required String text,
+  }) {
+    return Container(
+      height: 78,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: _card,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: Colors.white30),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                color: Colors.white54,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
