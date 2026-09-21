@@ -62,6 +62,25 @@ void main() {
     ]);
   });
 
+  test('remote discovery config exposes event and ranking lists safely', () {
+    const data = HomeDiscoveryData(
+      userData: null,
+      rooms: [],
+      people: [],
+      config: {
+        'events': [
+          {'title': 'Event A'}
+        ],
+        'rankingPreview': [
+          {'displayName': 'User A', 'value': '10K'}
+        ],
+      },
+    );
+
+    expect(data.events.single['title'], 'Event A');
+    expect(data.rankingPreview.single['displayName'], 'User A');
+  });
+
   test('room policy helpers keep hidden and inactive rooms identifiable', () {
     const hidden = DiscoveryRoom(
       id: 'hidden',
