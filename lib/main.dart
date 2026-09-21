@@ -299,6 +299,243 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     }
   }
 
+  Future<void> _showSupportersSheet() async {
+    final supporters = _roomInsights?.supporters ?? const <RoomSupporter>[];
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF0C101A),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      ),
+      builder: (sheetContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: SafeArea(
+          child: SizedBox(
+            height: MediaQuery.of(sheetContext).size.height * .68,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+              child: Column(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  const Row(
+                    children: [
+                      Icon(
+                        Icons.workspace_premium_rounded,
+                        color: Color(0xFFFFD54A),
+                      ),
+                      SizedBox(width: 8),
+                      Text(
+                        'داعمو الغرفة',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 21,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Expanded(
+                    child: supporters.isEmpty
+                        ? const Center(
+                            child: Text(
+                              'لا يوجد دعم مسجل لهذه الغرفة بعد',
+                              style: TextStyle(color: Colors.white54),
+                            ),
+                          )
+                        : ListView.separated(
+                            itemCount: supporters.length,
+                            separatorBuilder: (_, __) =>
+                                const Divider(color: Colors.white10),
+                            itemBuilder: (_, index) {
+                              final supporter = supporters[index];
+                              return ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: CircleAvatar(
+                                  backgroundColor:
+                                      const Color(0xFF25183F),
+                                  backgroundImage:
+                                      supporter.profileImageUrl.isEmpty
+                                          ? null
+                                          : NetworkImage(
+                                              supporter.profileImageUrl,
+                                            ),
+                                  child: supporter.profileImageUrl.isEmpty
+                                      ? Text(
+                                          supporter.rank.toString(),
+                                          style: const TextStyle(
+                                            color: Color(0xFFFFD54A),
+                                            fontWeight: FontWeight.w900,
+                                          ),
+                                        )
+                                      : null,
+                                ),
+                                title: Text(
+                                  supporter.displayName,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  'المركز ' + supporter.rank.toString(),
+                                  style: const TextStyle(
+                                    color: Colors.white54,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                                trailing: Text(
+                                  supporter.totalSupport.toString(),
+                                  style: const TextStyle(
+                                    color: Color(0xFFFFD54A),
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showRoomRankingSheet() async {
+    final ranking = _roomInsights?.ranking ?? const <RoomRankEntry>[];
+    final currentRoomId = (_roomArguments['roomId'] ?? '').toString();
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF0C101A),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      ),
+      builder: (sheetContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: SafeArea(
+          child: SizedBox(
+            height: MediaQuery.of(sheetContext).size.height * .72,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+              child: Column(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  const Row(
+                    children: [
+                      Icon(
+                        Icons.emoji_events_rounded,
+                        color: Color(0xFFFFD54A),
+                      ),
+                      SizedBox(width: 8),
+                      Text(
+                        'ترتيب الغرف اليومي',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 21,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Expanded(
+                    child: ranking.isEmpty
+                        ? const Center(
+                            child: Text(
+                              'لا توجد بيانات ترتيب حالياً',
+                              style: TextStyle(color: Colors.white54),
+                            ),
+                          )
+                        : ListView.separated(
+                            itemCount: ranking.length,
+                            separatorBuilder: (_, __) =>
+                                const Divider(color: Colors.white10),
+                            itemBuilder: (_, index) {
+                              final entry = ranking[index];
+                              final current = entry.roomId == currentRoomId;
+                              return Container(
+                                decoration: BoxDecoration(
+                                  color: current
+                                      ? const Color(0xFF8A3DFF)
+                                          .withValues(alpha: .13)
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                child: ListTile(
+                                  leading: CircleAvatar(
+                                    backgroundColor: entry.rank <= 3
+                                        ? const Color(0xFFFFD54A)
+                                        : const Color(0xFF202534),
+                                    child: Text(
+                                      entry.rank.toString(),
+                                      style: TextStyle(
+                                        color: entry.rank <= 3
+                                            ? Colors.black
+                                            : Colors.white,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ),
+                                  title: Text(
+                                    entry.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  subtitle: entry.publicId.isEmpty
+                                      ? null
+                                      : Text(
+                                          'ID: ' + entry.publicId,
+                                          style: const TextStyle(
+                                            color: Colors.white38,
+                                            fontSize: 10,
+                                          ),
+                                        ),
+                                  trailing: Text(
+                                    entry.dailySupport.toString(),
+                                    style: const TextStyle(
+                                      color: Color(0xFFFFD54A),
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _showShareRoomSheet() async {
     final roomId = (_roomArguments['roomId'] ?? '').toString().trim();
     if (roomId.isEmpty) return;
