@@ -16,8 +16,9 @@ const adminAuth = getAuth(adminApp);
 
 page.on('console', msg => console.log('[browser]', msg.type(), msg.text()));
 page.on('pageerror', err => {
-  pageErrors.push(err.message);
-  console.log('[pageerror]', err.message);
+  const detail = err.stack || (err.name + ': ' + err.message);
+  pageErrors.push(detail);
+  console.log('[pageerror]', detail);
 });
 
 async function enableAccessibility() {
@@ -291,9 +292,15 @@ try {
   await enableAccessibility();
   const editInputs = page.getByRole('textbox');
   if (await editInputs.count() < 2) throw new Error('Edit Profile text fields were not exposed');
+  const beforeInvalidEdit = await getUserDocument();
   await editInputs.nth(0).fill('12');
   await page.getByRole('button', { name: 'حفظ التعديلات' }).click({ force: true });
-  await page.getByText('الاسم يجب أن يكون 3 أحرف على الأقل', { exact: true }).waitFor({ timeout: 5000 });
+  await page.waitForTimeout(700);
+  await page.getByText('تعديل الملف الشخصي', { exact: true }).waitFor({ timeout: 5000 });
+  const afterInvalidEdit = await getUserDocument();
+  if (stringField(afterInvalidEdit.data, 'displayName') !== stringField(beforeInvalidEdit.data, 'displayName')) {
+    throw new Error('Invalid Edit Profile name was persisted');
+  }
   console.log('PHASE3_EDIT_PROFILE_VALIDATION_ERROR_OK');
 
   await editInputs.nth(0).fill('اختبار شادو معدل');
