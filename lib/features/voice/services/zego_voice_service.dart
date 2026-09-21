@@ -259,6 +259,12 @@ class ZegoVoiceService implements VoiceService {
   }
 
   @override
+  Future<void> setPlaybackEnabled(bool enabled) async {
+    _requireJoined();
+    await ZegoExpressEngine.instance.muteAllPlayStreamAudio(!enabled);
+  }
+
+  @override
   Future<void> unmuteMic() async {
     _requireJoined();
     final streamId = _streamId;
