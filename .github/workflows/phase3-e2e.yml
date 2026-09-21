@@ -60,5 +60,10 @@ jobs:
             phase3-probe-phone.png
             phase3-probe-otp.png
             phase3-probe-profile-setup.png
+            phase3-probe-account-success.png
+            phase3-probe-account-linking.png
+            phase3-probe-account-ready.png
+            phase3-probe-main.png
+            phase3-probe-relogin-main.png
           if-no-files-found: warn
           retention-days: 7

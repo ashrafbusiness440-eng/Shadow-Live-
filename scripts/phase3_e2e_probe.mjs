@@ -127,6 +127,99 @@ try {
 
   if (!profileReached) throw new Error('OTP completed but Profile Setup was not reached within 15s');
   console.log('PHASE3_PHONE_OTP_TO_PROFILE_SETUP_OK');
+
+  // Complete the required Phase 3 setup journey through Main.
+  const profileInputs = page.getByRole('textbox');
+  const profileInputCount = await profileInputs.count();
+  console.log('PROFILE_TEXTBOX_COUNT', profileInputCount);
+  if (profileInputCount < 2) {
+    throw new Error(`Expected profile name/bio textboxes, found ${profileInputCount}`);
+  }
+  await profileInputs.nth(0).fill('اختبار شادو');
+
+  await page.getByRole('button', { name: 'اختر تاريخ الميلاد' }).click({ force: true });
+  await page.getByRole('button', { name: 'اختيار' }).waitFor({ timeout: 5000 });
+  await page.getByRole('button', { name: 'اختيار' }).click({ force: true });
+
+  await page.getByRole('button', { name: 'اختر الدولة (مطلوب)' }).click({ force: true });
+  const uaeOption = page.getByText('🇦🇪 الإمارات العربية المتحدة', { exact: true }).last();
+  await uaeOption.waitFor({ timeout: 5000 });
+  await uaeOption.click({ force: true });
+
+  await page.getByRole('button', { name: 'متابعة' }).click({ force: true });
+  await page.getByText('تم إنشاء حسابك بنجاح! 🎉', { exact: true }).waitFor({ timeout: 20000 });
+  await enableAccessibility();
+  await dump('account-success');
+  await page.screenshot({ path: 'phase3-probe-account-success.png', fullPage: true });
+  console.log('PHASE3_PROFILE_TO_SUCCESS_OK');
+
+  const nextButton = page.getByRole('button', { name: 'التالي' });
+  await nextButton.waitFor({ timeout: 15000 });
+  await nextButton.click({ force: true });
+  await page.getByText('ربط الحسابات (اختياري)', { exact: true }).waitFor({ timeout: 15000 });
+  await enableAccessibility();
+  await dump('account-linking');
+  await page.screenshot({ path: 'phase3-probe-account-linking.png', fullPage: true });
+
+  await page.getByRole('button', { name: 'لاحقاً' }).click({ force: true });
+  await page.getByText('أنت الآن جاهز!', { exact: true }).waitFor({ timeout: 15000 });
+  await enableAccessibility();
+  await dump('account-ready');
+  await page.screenshot({ path: 'phase3-probe-account-ready.png', fullPage: true });
+
+  await page.getByRole('button', { name: 'ابدأ الاستكشاف' }).click({ force: true });
+  await page.getByText('صوتك يجمعنا', { exact: true }).waitFor({ timeout: 20000 });
+  await enableAccessibility();
+  await dump('main');
+  await page.screenshot({ path: 'phase3-probe-main.png', fullPage: true });
+  console.log('PHASE3_SETUP_TO_MAIN_OK');
+
+  // Verify logout and that the same completed account returns directly to Main.
+  await page.getByText('الملف الشخصي', { exact: true }).last().click({ force: true });
+  await page.getByText('اختبار شادو', { exact: true }).waitFor({ timeout: 15000 });
+  await page.getByRole('button', { name: 'الإعدادات' }).click({ force: true });
+  await page.getByText('حسابي', { exact: true }).waitFor({ timeout: 10000 });
+
+  await page.getByRole('button', { name: 'تسجيل الخروج', exact: true }).first().click({ force: true });
+  const logoutButtons = page.getByRole('button', { name: 'تسجيل الخروج', exact: true });
+  await logoutButtons.last().waitFor({ timeout: 5000 });
+  await logoutButtons.last().click({ force: true });
+  await page.getByRole('button', { name: 'متابعة برقم الهاتف' }).waitFor({ timeout: 15000 });
+  console.log('PHASE3_LOGOUT_OK');
+
+  await page.getByRole('button', { name: 'متابعة برقم الهاتف' }).click({ force: true });
+  await page.waitForTimeout(700);
+  await page.mouse.click(282, 505);
+  await page.keyboard.type('501234567');
+  await page.getByRole('button', { name: 'إرسال عبر SMS' }).click();
+  await page.waitForTimeout(900);
+
+  let secondSmsCode = null;
+  for (let attempt = 0; attempt < 20 && !secondSmsCode; attempt++) {
+    const response = await fetch('http://127.0.0.1:9099/emulator/v1/projects/shadow-live/verificationCodes');
+    if (response.ok) {
+      const body = await response.json();
+      const matches = (body.verificationCodes ?? []).filter(x => x.phoneNumber === '+971501234567');
+      const latest = matches.at(-1);
+      secondSmsCode = latest?.sessionCode ?? latest?.code ?? latest?.verificationCode ?? null;
+      if (secondSmsCode === smsCode) secondSmsCode = null;
+    }
+    if (!secondSmsCode) await page.waitForTimeout(250);
+  }
+  if (!secondSmsCode) throw new Error('Auth Emulator did not expose a fresh SMS code for relogin');
+
+  const secondOtpInputs = page.getByRole('textbox');
+  const secondOtpCount = await secondOtpInputs.count();
+  if (secondOtpCount < 6) throw new Error(`Expected 6 OTP textboxes on relogin, found ${secondOtpCount}`);
+  for (let i = 0; i < 6; i++) {
+    await secondOtpInputs.nth(i).fill(String(secondSmsCode)[i]);
+    await page.waitForTimeout(180);
+  }
+
+  await page.getByText('صوتك يجمعنا', { exact: true }).waitFor({ timeout: 20000 });
+  await page.screenshot({ path: 'phase3-probe-relogin-main.png', fullPage: true });
+  console.log('PHASE3_LOGOUT_LOGIN_MAIN_OK');
+  console.log('PHASE3_FULL_ACCOUNT_JOURNEY_OK');
 } finally {
   await context.close();
   await browser.close();
