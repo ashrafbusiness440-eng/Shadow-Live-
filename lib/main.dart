@@ -982,6 +982,20 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     );
   }
 
+  Future<void> _setRoomAudioEnabled(bool value) async {
+    final previous = _roomSoundEnabled;
+    if (mounted) setState(() => _roomSoundEnabled = value);
+    try {
+      await _voiceSession.setRoomAudioEnabled(value);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _roomSoundEnabled = previous);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر تغيير صوت الغرفة حالياً.')),
+      );
+    }
+  }
+
   Future<void> _showToolsSheet() async {
     await showModalBottomSheet<void>(
       context: context,
@@ -995,8 +1009,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         child: StatefulBuilder(
           builder: (context, setSheetState) {
             void toggleRoomSound(bool value) {
-              setState(() => _roomSoundEnabled = value);
               setSheetState(() {});
+              unawaited(_setRoomAudioEnabled(value));
             }
 
             void toggleEffectSound(bool value) {
