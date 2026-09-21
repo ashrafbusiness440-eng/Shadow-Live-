@@ -86,7 +86,10 @@ export default async function handler(req,res){
       if(participants.length!==2||!participants.includes(decoded.uid)||!participants.includes(receiverId))throw Error("invalid_conversation");
 
       const mutual=outgoingFollow.exists&&incomingFollow.exists;
-      const assignedModerator=String(conversationData.customerServiceModeratorUid||"")===decoded.uid;
+      const senderData=sender.data()||{};
+      const assignedModerator=
+        String(conversationData.customerServiceModeratorUid||"")===decoded.uid &&
+        String(senderData.role||"")==="moderator";
       if(!mutual&&!assignedModerator&&!outgoingFollow.exists)throw Error("follow_required");
 
       const unanswered=Math.max(0,Number(senderLimit.data()?.unansweredCount||0));
