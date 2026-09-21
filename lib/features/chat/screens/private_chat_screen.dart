@@ -2,7 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../../profile/screens/profile_preview_sheet.dart';
+import '../../profile/widgets/quick_profile_sheet.dart';
 
 class PrivateChatScreen extends StatefulWidget {
   final String conversationId;
@@ -41,7 +41,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
 
   @override void dispose(){_controller.dispose();super.dispose();}
   String _time(dynamic value){if(value is! Timestamp)return '';final d=value.toDate();final hour=d.hour%12==0?12:d.hour%12;final minute=d.minute.toString().padLeft(2,'0');return '$hour:$minute ${d.hour>=12?'م':'ص'}';}
-  void _openProfile()=>showProfilePreviewSheet(context,userId:widget.otherUid);
+  void _openProfile()=>showQuickProfileSheet(context,userId:widget.otherUid);
 
   @override
   Widget build(BuildContext context)=>Directionality(textDirection:TextDirection.rtl,child:Scaffold(
