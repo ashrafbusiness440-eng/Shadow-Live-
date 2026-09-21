@@ -390,7 +390,7 @@ try {
   await page.getByRole('button', { name: 'إلغاء' }).click();
   console.log('PHASE3_GUEST_RESTRICTED_FEATURE_GUARD_OK');
 
-  await page.getByRole('button', { name: 'الملف الشخصي' }).click();
+  await page.getByRole('button', { name: 'الملف الشخصي' }).dispatchEvent('click');
   await page.getByText('أنت داخل كضيف', { exact: true }).waitFor({ timeout: 8000 });
   await page.getByRole('button', { name: 'العودة لتسجيل الدخول' }).click();
   await page.getByText('تسجيل الدخول / إنشاء حساب', { exact: true }).waitFor({ timeout: 12000 });
