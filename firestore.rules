@@ -149,18 +149,6 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    match /follows/{followId} {
-      allow read: if signedIn();
-      allow create: if signedIn()
-        && request.resource.data.keys().hasOnly(['followerUid','followingUid','createdAt'])
-        && request.resource.data.followerUid == request.auth.uid
-        && request.resource.data.followingUid is string
-        && request.resource.data.followingUid != request.auth.uid
-        && followId == request.auth.uid + '__' + request.resource.data.followingUid;
-      allow update: if false;
-      allow delete: if signedIn() && resource.data.followerUid == request.auth.uid;
-    }
-
     match /public_gift_showcases/{userId} {
       allow read: if signedIn();
       allow create, update, delete: if false;
@@ -218,11 +206,6 @@ service cloud.firestore {
     }
 
     match /gifts/{giftId} {
-      allow read: if signedIn();
-      allow create, update, delete: if false;
-    }
-
-    match /public_gifts/{userId}/items/{receiptId} {
       allow read: if signedIn();
       allow create, update, delete: if false;
     }

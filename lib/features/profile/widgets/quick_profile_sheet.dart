@@ -94,8 +94,8 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
             final level = (data['level'] as num?)?.toInt() ?? 0;
             final vip = (data['vipLevel'] as num?)?.toInt() ?? 0;
             final online = data['isOnline'] == true;
-            final badges = data['publicBadges'] is List
-                ? (data['publicBadges'] as List).map((e) => e.toString()).where((e) => e.isNotEmpty).toList()
+            final badges = data['badges'] is List
+                ? (data['badges'] as List).map((e) => e.toString()).where((e) => e.isNotEmpty).toList()
                 : <String>[];
             final provider = _avatar(data);
 
