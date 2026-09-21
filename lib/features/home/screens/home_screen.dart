@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../services/navigation_service.dart';
 import '../../../utils/compact_number.dart';
 import '../../wallet/screens/recharge_screen.dart';
+import '../../profile/screens/public_profile_screen.dart';
 import '../services/discovery_service.dart';
 import 'discovery_search_screen.dart';
 
@@ -91,6 +92,15 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _openPerson(DiscoveryPerson person) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PublicProfileScreen(userId: person.id),
+      ),
+    );
+  }
+
   void _soon(String title) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('$title سيتم تفعيله في مرحلته القادمة')),
@@ -160,6 +170,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   _sectionHeader('الأكثر تفاعلاً', 'الغرف الأكثر نشاطاً'),
                   const SizedBox(height: 12),
                   _activityRail(_data?.mostActive ?? const []),
+                  const SizedBox(height: 24),
+                  _sectionHeader('أشخاص مقترحون', 'اكتشف أعضاء جدد'),
+                  const SizedBox(height: 12),
+                  _peopleRail(_data?.suggestedPeople ?? const []),
                   const SizedBox(height: 24),
                   _sectionHeader('استكشف Shadow Live', 'كل شيء من مكان واحد'),
                   const SizedBox(height: 12),
@@ -267,6 +281,48 @@ class _HomeScreenState extends State<HomeScreen> {
               (room) => _ActiveRoomChip(
                 room: room,
                 onTap: () => _openRoom(room),
+              ),
+            )
+            .toList(),
+      ),
+    );
+  }
+
+  Widget _peopleRail(List<DiscoveryPerson> people) {
+    if (people.isEmpty) {
+      return Container(
+        height: 86,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: _card,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.white10),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.people_outline_rounded, color: Colors.white30),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'ستظهر اقتراحات المجتمع هنا عند توفر ملفات عامة',
+                style: TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: 132,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        children: people
+            .take(10)
+            .map(
+              (person) => _PersonCard(
+                person: person,
+                onTap: () => _openPerson(person),
               ),
             )
             .toList(),
@@ -653,6 +709,108 @@ class _ActiveRoomChip extends StatelessWidget {
                     style: const TextStyle(color: Colors.white54, fontSize: 11),
                   ),
                 ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PersonCard extends StatelessWidget {
+  const _PersonCard({
+    required this.person,
+    required this.onTap,
+  });
+
+  final DiscoveryPerson person;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        width: 112,
+        margin: const EdgeInsetsDirectional.only(end: 10),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFF111321),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.white10),
+        ),
+        child: Column(
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  clipBehavior: Clip.antiAlias,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Color(0xFF281847),
+                  ),
+                  child: person.avatarUrl.isNotEmpty
+                      ? CachedNetworkImage(
+                          imageUrl: person.avatarUrl,
+                          fit: BoxFit.cover,
+                          errorWidget: (_, __, ___) => const Icon(
+                            Icons.person_rounded,
+                            color: Colors.white54,
+                          ),
+                        )
+                      : const Icon(
+                          Icons.person_rounded,
+                          color: Colors.white54,
+                        ),
+                ),
+                if (person.isOnline)
+                  PositionedDirectional(
+                    end: -1,
+                    bottom: 1,
+                    child: Container(
+                      width: 13,
+                      height: 13,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF42D77D),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: const Color(0xFF111321),
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              person.displayName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              person.vipLevel > 0
+                  ? 'VIP ${person.vipLevel} • LV.${person.level}'
+                  : 'LV.${person.level}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: person.vipLevel > 0
+                    ? const Color(0xFFFFD54A)
+                    : Colors.white38,
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ],
