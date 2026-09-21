@@ -37,8 +37,8 @@ class _ProfilePreviewSheetState extends State<ProfilePreviewSheet> {
   bool _followBusy = false;
 
   ImageProvider? _avatar(Map<String, dynamic> data) {
-    final photo = '\${data['profileImageUrl'] ?? ''}';
-    final asset = '\${data['profileAvatarAsset'] ?? ''}';
+    final photo = '${data['profileImageUrl'] ?? ''}';
+    final asset = '${data['profileAvatarAsset'] ?? ''}';
     if (photo.isNotEmpty) return NetworkImage(photo);
     if (asset.isNotEmpty) return AssetImage(asset);
     return null;
@@ -78,8 +78,8 @@ class _ProfilePreviewSheetState extends State<ProfilePreviewSheet> {
 
   Future<void> _openChat(Map<String, dynamic> data) async {
     final navigator = Navigator.of(context);
-    final name = '\${data['displayName'] ?? 'مستخدم Shadow Live'}';
-    final photo = '\${data['profileImageUrl'] ?? ''}';
+    final name = '${data['displayName'] ?? 'مستخدم Shadow Live'}';
+    final photo = '${data['profileImageUrl'] ?? ''}';
     navigator.pop();
     await ProfileActionService.openChat(
       navigator.context,
@@ -122,8 +122,8 @@ class _ProfilePreviewSheetState extends State<ProfilePreviewSheet> {
               );
             }
 
-            final name = '\${data['displayName'] ?? 'مستخدم Shadow Live'}';
-            final publicId = '\${data['publicId'] ?? '—'}';
+            final name = '${data['displayName'] ?? 'مستخدم Shadow Live'}';
+            final publicId = '${data['publicId'] ?? '—'}';
             final level = (data['level'] as num?)?.toInt() ?? 0;
             final vip = (data['vipLevel'] as num?)?.toInt() ?? 0;
             final online = data['isOnline'] == true;

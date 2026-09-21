@@ -113,9 +113,9 @@ class _ProfileGiftSheet extends StatelessWidget {
                       itemBuilder: (_, index) {
                         final doc = docs[index];
                         final data = doc.data();
-                        final name = '\${data['name'] ?? data['title'] ?? 'هدية'}';
+                        final name = '${data['name'] ?? data['title'] ?? 'هدية'}';
                         final price = (data['price'] as num?)?.toInt() ?? 0;
-                        final imageUrl = '\${data['imageUrl'] ?? ''}';
+                        final imageUrl = '${data['imageUrl'] ?? ''}';
                         return InkWell(
                           borderRadius: BorderRadius.circular(18),
                           onTap: () {
@@ -234,8 +234,8 @@ class PublicReceivedGiftsTab extends StatelessWidget {
           itemCount: docs.length,
           itemBuilder: (_, index) {
             final data = docs[index].data();
-            final name = '\${data['giftName'] ?? 'هدية'}';
-            final imageUrl = '\${data['imageUrl'] ?? ''}';
+            final name = '${data['giftName'] ?? 'هدية'}';
+            final imageUrl = '${data['imageUrl'] ?? ''}';
             final quantity = (data['quantity'] as num?)?.toInt() ?? 1;
             return Container(
               padding: const EdgeInsets.all(10),
