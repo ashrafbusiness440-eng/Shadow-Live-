@@ -37,7 +37,6 @@ class _DiscoverySearchScreenState extends State<DiscoverySearchScreen> {
   void initState() {
     super.initState();
     _warmRoomCache();
-    _warmLegacyPeopleCache();
   }
 
   @override
@@ -181,7 +180,9 @@ class _DiscoverySearchScreenState extends State<DiscoverySearchScreen> {
       // profile sync. Prefix fallback below keeps them discoverable.
     }
 
-    await _warmLegacyPeopleCache();
+    if (results.length < 5) {
+      await _warmLegacyPeopleCache();
+    }
     for (final profile in _legacyPeopleCache) {
       final uid = (profile['uid'] ?? '').toString();
       if (uid.isEmpty || uid == _uid) continue;
