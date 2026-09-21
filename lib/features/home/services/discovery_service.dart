@@ -31,15 +31,46 @@ class DiscoveryRoom {
       };
 }
 
+class DiscoveryPerson {
+  const DiscoveryPerson({
+    required this.id,
+    required this.data,
+  });
+
+  final String id;
+  final Map<String, dynamic> data;
+
+  String get displayName =>
+      (data['displayName'] ?? data['username'] ?? 'مستخدم Shadow Live').toString();
+
+  String get publicId => (data['publicId'] ?? '').toString();
+
+  String get avatarUrl => (data['profileImageUrl'] ?? '').toString().trim();
+
+  int get level {
+    final value = data['level'] ?? 0;
+    return value is num ? value.toInt() : int.tryParse(value.toString()) ?? 0;
+  }
+
+  int get vipLevel {
+    final value = data['vipLevel'] ?? 0;
+    return value is num ? value.toInt() : int.tryParse(value.toString()) ?? 0;
+  }
+
+  bool get isOnline => data['isOnline'] == true;
+}
+
 class HomeDiscoveryData {
   const HomeDiscoveryData({
     required this.userData,
     required this.rooms,
+    required this.people,
     required this.config,
   });
 
   final Map<String, dynamic>? userData;
   final List<DiscoveryRoom> rooms;
+  final List<DiscoveryPerson> people;
   final Map<String, dynamic> config;
 
   List<DiscoveryRoom> get suggested {
@@ -54,6 +85,17 @@ class HomeDiscoveryData {
   List<DiscoveryRoom> get mostActive {
     final result = rooms.where((room) => room.onlineCount > 0).toList()
       ..sort((a, b) => b.onlineCount.compareTo(a.onlineCount));
+    return result;
+  }
+
+  List<DiscoveryPerson> get suggestedPeople {
+    final result = [...people]
+      ..sort((a, b) {
+        if (a.isOnline != b.isOnline) return a.isOnline ? -1 : 1;
+        final vipCompare = b.vipLevel.compareTo(a.vipLevel);
+        if (vipCompare != 0) return vipCompare;
+        return b.level.compareTo(a.level);
+      });
     return result;
   }
 }
@@ -84,6 +126,19 @@ class DiscoveryService {
         .where((room) => room.isActive && !room.isHidden)
         .toList();
 
+    final people = <DiscoveryPerson>[];
+    try {
+      final peopleSnapshot =
+          await _firestore.collection('public_profiles').limit(24).get();
+      for (final doc in peopleSnapshot.docs) {
+        if (doc.id == currentUser?.uid) continue;
+        people.add(DiscoveryPerson(id: doc.id, data: doc.data()));
+      }
+    } catch (_) {
+      // People discovery is optional. Room discovery and the rest of Home
+      // should still render when public profiles are unavailable.
+    }
+
     Map<String, dynamic> config = const {};
     try {
       final configSnapshot =
@@ -97,6 +152,7 @@ class DiscoveryService {
     return HomeDiscoveryData(
       userData: userData,
       rooms: rooms,
+      people: people,
       config: config,
     );
   }
