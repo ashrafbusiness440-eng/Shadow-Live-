@@ -11,6 +11,7 @@ abstract interface class VoiceService {
     required String userId,
     required String displayName,
     String? token,
+    String? accessCode,
   });
 
   Future<void> leaveRoom();
