@@ -3,7 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import 'private_chat_screen.dart';
-import '../../profile/screens/public_profile_screen.dart';
+import '../../profile/screens/profile_preview_sheet.dart';
 
 class ChatListScreen extends StatefulWidget {
   const ChatListScreen({super.key});
@@ -102,7 +102,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
       ),
       title: Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
       subtitle: Text('ID: ${user['publicId'] ?? doc.id}', style: const TextStyle(color: Colors.white54)),
-      trailing: IconButton(tooltip:'فتح الملف الشخصي',icon:const Icon(Icons.person_outline_rounded,color:Colors.white54),onPressed:(){Navigator.pop(sheetContext);Navigator.push(context,MaterialPageRoute(builder:(_)=>PublicProfileScreen(userId:doc.id)));}),
+      trailing: IconButton(tooltip:'فتح بطاقة الملف',icon:const Icon(Icons.person_outline_rounded,color:Colors.white54),onPressed:(){Navigator.pop(sheetContext);showProfilePreviewSheet(context,userId:doc.id);}),
       onTap: () => _openChat(sheetContext, doc),
     );
   }
@@ -346,7 +346,7 @@ class _ConversationTile extends StatelessWidget {
                       title: const Text('عرض الملف الشخصي', style: TextStyle(color: Colors.white)),
                       onTap: () {
                         Navigator.pop(sheetContext);
-                        Navigator.push(context, MaterialPageRoute(builder: (_) => PublicProfileScreen(userId: otherUid)));
+                        showProfilePreviewSheet(context, userId: otherUid);
                       },
                     ),
                     ListTile(

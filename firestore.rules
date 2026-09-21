@@ -43,6 +43,27 @@ service cloud.firestore {
         && (!('diamonds' in resource.data) && !('diamonds' in request.resource.data)
           || ('diamonds' in resource.data) && ('diamonds' in request.resource.data)
              && request.resource.data.diamonds == resource.data.diamonds)
+        && (!('balance' in resource.data) && !('balance' in request.resource.data)
+          || ('balance' in resource.data) && ('balance' in request.resource.data)
+             && request.resource.data.balance == resource.data.balance)
+        && (!('level' in resource.data) && !('level' in request.resource.data)
+          || ('level' in resource.data) && ('level' in request.resource.data)
+             && request.resource.data.level == resource.data.level)
+        && (!('vipLevel' in resource.data) && !('vipLevel' in request.resource.data)
+          || ('vipLevel' in resource.data) && ('vipLevel' in request.resource.data)
+             && request.resource.data.vipLevel == resource.data.vipLevel)
+        && (!('publicBadges' in resource.data) && !('publicBadges' in request.resource.data)
+          || ('publicBadges' in resource.data) && ('publicBadges' in request.resource.data)
+             && request.resource.data.publicBadges == resource.data.publicBadges)
+        && (!('totalGiftsSent' in resource.data) && !('totalGiftsSent' in request.resource.data)
+          || ('totalGiftsSent' in resource.data) && ('totalGiftsSent' in request.resource.data)
+             && request.resource.data.totalGiftsSent == resource.data.totalGiftsSent)
+        && (!('totalGiftsReceived' in resource.data) && !('totalGiftsReceived' in request.resource.data)
+          || ('totalGiftsReceived' in resource.data) && ('totalGiftsReceived' in request.resource.data)
+             && request.resource.data.totalGiftsReceived == resource.data.totalGiftsReceived)
+        && (!('totalValueReceived' in resource.data) && !('totalValueReceived' in request.resource.data)
+          || ('totalValueReceived' in resource.data) && ('totalValueReceived' in request.resource.data)
+             && request.resource.data.totalValueReceived == resource.data.totalValueReceived)
         && (!('publicIdHistory' in resource.data) && !('publicIdHistory' in request.resource.data)
           || ('publicIdHistory' in resource.data) && ('publicIdHistory' in request.resource.data)
              && request.resource.data.publicIdHistory == resource.data.publicIdHistory)
@@ -54,6 +75,13 @@ service cloud.firestore {
              && request.resource.data.publicIdUpdatedBy == resource.data.publicIdUpdatedBy);
     }
 
+    function publicProfileAuthoritativeFieldsMatch(userId) {
+      let source = get(/databases/$(database)/documents/users/$(userId)).data;
+      return request.resource.data.level == source.get('level', 0)
+        && request.resource.data.vipLevel == source.get('vipLevel', 0)
+        && request.resource.data.badges == source.get('publicBadges', []);
+    }
+
     function conversationParticipant(conversationId) {
       return signedIn() && request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants;
     }
@@ -63,6 +91,13 @@ service cloud.firestore {
         && request.resource.data.role == 'user'
         && request.resource.data.coins == 0
         && request.resource.data.diamonds == 0
+        && (!('balance' in request.resource.data) || request.resource.data.balance == 0)
+        && (!('level' in request.resource.data) || request.resource.data.level == 0)
+        && (!('vipLevel' in request.resource.data) || request.resource.data.vipLevel == 0)
+        && !('publicBadges' in request.resource.data)
+        && !('totalGiftsSent' in request.resource.data)
+        && !('totalGiftsReceived' in request.resource.data)
+        && !('totalValueReceived' in request.resource.data)
         && !('publicId' in request.resource.data)
         && !('publicIdHistory' in request.resource.data)
         && !('publicIdUpdatedAt' in request.resource.data)
@@ -102,9 +137,14 @@ service cloud.firestore {
         && request.resource.data.publicId == get(/databases/$(database)/documents/users/$(userId)).data.get('publicId', '')
         && request.resource.data.searchTokens is list
         && request.resource.data.searchTokens.size() <= 512
+        && request.resource.data.interests is list
+        && request.resource.data.interests.size() <= 30
+        && request.resource.data.badges is list
+        && request.resource.data.badges.size() <= 20
+        && publicProfileAuthoritativeFieldsMatch(userId)
         && request.resource.data.keys().hasOnly([
           'uid','displayName','username','publicId','searchTokens','profileImageUrl','profileAvatarAsset',
-          'bio','location','level','vipLevel','isOnline','createdAt','updatedAt'
+          'coverImageUrl','bio','location','interests','level','vipLevel','badges','isOnline','createdAt','updatedAt'
         ]);
       allow delete: if false;
     }
@@ -138,6 +178,29 @@ service cloud.firestore {
     }
 
     match /rooms/{roomId} {
+      allow read: if signedIn();
+      allow create, update, delete: if false;
+    }
+
+    match /follows/{followId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['followerUid','followingUid','createdAt'])
+        && request.resource.data.followerUid == request.auth.uid
+        && request.resource.data.followingUid is string
+        && request.resource.data.followingUid != request.auth.uid
+        && followId == request.auth.uid + '__' + request.resource.data.followingUid
+        && request.resource.data.createdAt == request.time;
+      allow update: if false;
+      allow delete: if signedIn() && resource.data.followerUid == request.auth.uid;
+    }
+
+    match /gifts/{giftId} {
+      allow read: if signedIn();
+      allow create, update, delete: if false;
+    }
+
+    match /public_gifts/{userId}/items/{receiptId} {
       allow read: if signedIn();
       allow create, update, delete: if false;
     }

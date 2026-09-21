@@ -3,13 +3,21 @@ import 'package:http/http.dart' as http;
 
 abstract final class ShadowAssetRegistry {
   static const apiBase = String.fromEnvironment('SHADOW_ASSET_API_BASE');
+  static const fallbackApiBase = 'https://shadow-live-git-feature-shadow-control-foundation-shadow-c916.vercel.app';
+  static final Map<String, Future<Uri?>> _cache = <String, Future<Uri?>>{};
 
   static Uri _endpoint(String key) {
-    final base = apiBase.trim().isEmpty ? Uri.base : Uri.parse(apiBase);
+    final base = Uri.parse(apiBase.trim().isEmpty ? fallbackApiBase : apiBase);
     return base.resolve('/api/app-assets?key=${Uri.encodeQueryComponent(key)}');
   }
 
-  static Future<Uri?> remoteUrl(String key, {http.Client? client}) async {
+  static Future<Uri?> remoteUrl(String key, {http.Client? client, bool refresh = false}) {
+    if (refresh) _cache.remove(key);
+    if (client != null) return _loadRemoteUrl(key, client: client);
+    return _cache.putIfAbsent(key, () => _loadRemoteUrl(key));
+  }
+
+  static Future<Uri?> _loadRemoteUrl(String key, {http.Client? client}) async {
     final ownClient = client == null;
     final c = client ?? http.Client();
     try {

@@ -27,10 +27,13 @@ class FirebaseService {
    'searchTokens':buildSearchTokens([displayName,username,publicId]),
    'profileImageUrl':data['profileImageUrl']??data['photoUrl']??data['avatarUrl']??'',
    'profileAvatarAsset':data['profileAvatarAsset']??'',
+   'coverImageUrl':data['coverImageUrl']??'',
    'bio':data['bio']??'',
    'location':data['location']??'',
+   'interests':data['interests'] is List ? data['interests'] : const [],
    'level':data['level']??0,
    'vipLevel':data['vipLevel']??0,
+   'badges':data['publicBadges'] is List ? data['publicBadges'] : const [],
    'isOnline':data['isOnline']??false,
   };
  }
