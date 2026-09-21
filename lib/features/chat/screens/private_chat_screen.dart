@@ -77,9 +77,10 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       if (token == null || token.isEmpty) throw StateError('not_signed_in');
       final key = [_uid, DateTime.now().microsecondsSinceEpoch.toString(), 'text'].join('_');
       final response = await http.post(
-        Uri.parse('https://shadow-live-git-feature-shadow-control-foundation-shadow-c916.vercel.app/api/send-message'),
+        Uri.parse('https://shadow-live-git-feature-shadow-control-foundation-shadow-c916.vercel.app/api/chat-actions'),
         headers: {'authorization': 'Bearer ' + token, 'content-type': 'application/json'},
         body: jsonEncode({
+          'action': 'sendMessage',
           'receiverId': widget.otherUid,
           'conversationId': widget.conversationId,
           'text': text,
@@ -493,9 +494,10 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       if (token == null || token.isEmpty) throw StateError('not_signed_in');
       final key = [_uid, DateTime.now().microsecondsSinceEpoch.toString(), giftId].join('_');
       final response = await http.post(
-        Uri.parse('https://shadow-live-git-feature-shadow-control-foundation-shadow-c916.vercel.app/api/send-gift'),
+        Uri.parse('https://shadow-live-git-feature-shadow-control-foundation-shadow-c916.vercel.app/api/chat-actions'),
         headers: {'authorization': 'Bearer ' + token, 'content-type': 'application/json'},
         body: jsonEncode({
+          'action': 'sendGift',
           'receiverId': widget.otherUid,
           'giftId': giftId,
           'quantity': quantity,

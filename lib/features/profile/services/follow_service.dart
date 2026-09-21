@@ -40,13 +40,14 @@ class FollowService {
     if (token == null || token.isEmpty) throw StateError('not_signed_in');
     final response = await http.post(
       Uri.parse(
-        'https://shadow-live-git-feature-shadow-control-foundation-shadow-c916.vercel.app/api/set-follow',
+        'https://shadow-live-git-feature-shadow-control-foundation-shadow-c916.vercel.app/api/chat-actions',
       ),
       headers: {
         'authorization': 'Bearer ' + token,
         'content-type': 'application/json',
       },
       body: jsonEncode({
+        'action': 'setFollow',
         'targetUserId': targetUid,
         'following': value,
       }),

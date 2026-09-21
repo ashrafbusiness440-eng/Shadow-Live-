@@ -25,12 +25,12 @@ class ChatSafetyService {
     final token = await FirebaseAuth.instance.currentUser?.getIdToken();
     if (token == null || token.isEmpty) throw StateError('not_signed_in');
     final response = await http.post(
-      Uri.parse(_baseUrl + '/chat-safety-status'),
+      Uri.parse(_baseUrl + '/chat-actions'),
       headers: {
         'authorization': 'Bearer ' + token,
         'content-type': 'application/json',
       },
-      body: jsonEncode({'targetUserId': targetUserId}),
+      body: jsonEncode({'action': 'safetyStatus', 'targetUserId': targetUserId}),
     );
     final body = _body(response.body);
     if (response.statusCode == 200 && body['ok'] == true) {
@@ -50,12 +50,13 @@ class ChatSafetyService {
     final token = await FirebaseAuth.instance.currentUser?.getIdToken();
     if (token == null || token.isEmpty) throw StateError('not_signed_in');
     final response = await http.post(
-      Uri.parse(_baseUrl + '/set-user-block'),
+      Uri.parse(_baseUrl + '/chat-actions'),
       headers: {
         'authorization': 'Bearer ' + token,
         'content-type': 'application/json',
       },
       body: jsonEncode({
+        'action': 'setBlock',
         'targetUserId': targetUserId,
         'blocked': blocked,
       }),
@@ -77,12 +78,13 @@ class ChatSafetyService {
     final idempotencyKey =
         _uid + '_' + DateTime.now().microsecondsSinceEpoch.toString() + '_report';
     final response = await http.post(
-      Uri.parse(_baseUrl + '/report-user'),
+      Uri.parse(_baseUrl + '/chat-actions'),
       headers: {
         'authorization': 'Bearer ' + token,
         'content-type': 'application/json',
       },
       body: jsonEncode({
+        'action': 'reportUser',
         'targetUserId': targetUserId,
         'conversationId': conversationId,
         'reason': reason,
