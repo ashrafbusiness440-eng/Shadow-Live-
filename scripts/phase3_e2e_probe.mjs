@@ -94,7 +94,7 @@ async function getUserDocument() {
   if (!authUser) throw new Error('Authenticated phone user not found in Auth Emulator');
   const snap = await adminDb.collection('users').doc(authUser.uid).get();
   if (!snap.exists) throw new Error('Matching user document not found for authenticated UID');
-  return { __uid: authUser.uid, ...snap.data() };
+  return { id: authUser.uid, data: snap.data() };
 }
 
 async function getPublicProfile(uid) {
