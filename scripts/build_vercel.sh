@@ -1,3 +1,4 @@
+# Phase 4 final verification deploy
 set -e
 rm -rf /tmp/shadow-live-app
 cp web/index.html /tmp/control-index.html
