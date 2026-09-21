@@ -263,6 +263,13 @@ async function roomInsights(db,uid,roomId){
     dailySupport:Math.max(0,Number(room.dailySupport||0)),
     dailyRank:rankIndex>=0?rankIndex+1:null,
     supporters,
+    ranking:ranked.slice(0,100).map((item,index)=>({
+      roomId:item.id,
+      rank:index+1,
+      name:String(item.name||item.title||"غرفة صوتية"),
+      publicId:String(item.publicId||""),
+      dailySupport:Number(item.dailySupport||0),
+    })),
   };
 }
 
