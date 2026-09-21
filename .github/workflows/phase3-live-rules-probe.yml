@@ -20,15 +20,18 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install Firebase web SDK
-        run: npm install --no-save firebase
+      - name: Install Firebase web SDK and Playwright
+        run: |
+          npm install --no-save firebase playwright@1.55.0
+          npx playwright install --with-deps chromium
 
       - name: Verify production Firestore and Storage deny unauthenticated access
         run: |
           node --input-type=module <<'NODE'
           import { initializeApp } from 'firebase/app';
+          import { readFile } from 'node:fs/promises';
+          import { chromium } from 'playwright';
           import { getFirestore, collection, query, limit, getDocs, doc, deleteDoc } from 'firebase/firestore';
-          import { getStorage, ref as storageRef, list, deleteObject } from 'firebase/storage';
 
           const app = initializeApp({
             apiKey: 'AIzaSyAjDi9RdObZXHF16ecWt4J4zj2_1rdDmf8',
@@ -38,7 +41,6 @@ jobs:
             storageBucket: 'shadow-live.firebasestorage.app',
           });
           const db = getFirestore(app);
-          const storage = getStorage(app);
 
           async function expectFirestoreDenied(label, fn) {
             try {
@@ -60,31 +62,59 @@ jobs:
             await deleteDoc(doc(db, 'users', 'phase3-live-probe-missing'));
           });
 
-          async function expectStorageDenied(label, fn) {
-            try {
-              await fn();
-              throw new Error(label + ' unexpectedly succeeded');
-            } catch (error) {
-              const detail = {
-                code: error?.code ?? null,
-                message: error?.message ?? String(error),
-                customData: error?.customData ?? null,
-              };
-              console.log(label + '_DETAIL', JSON.stringify(detail));
-              if (error?.code !== 'storage/unauthorized') {
-                throw new Error(label + ' expected storage/unauthorized, got ' + (error?.code ?? error));
+          const firebasePackage = JSON.parse(await readFile('./node_modules/firebase/package.json', 'utf8'));
+          const firebaseVersion = firebasePackage.version;
+          const browser = await chromium.launch({ headless: true });
+          const page = await browser.newPage();
+          await page.goto('about:blank');
+          await page.addScriptTag({ url: 'https://www.gstatic.com/firebasejs/' + firebaseVersion + '/firebase-app-compat.js' });
+          await page.addScriptTag({ url: 'https://www.gstatic.com/firebasejs/' + firebaseVersion + '/firebase-storage-compat.js' });
+
+          const storageResult = await page.evaluate(async (config) => {
+            const app = firebase.initializeApp(config);
+            const storage = firebase.storage(app);
+
+            async function probe(label, fn) {
+              try {
+                await fn();
+                return { label, ok: false, code: 'unexpected-success', message: 'operation unexpectedly succeeded' };
+              } catch (error) {
+                return {
+                  label,
+                  ok: error?.code === 'storage/unauthorized',
+                  code: error?.code ?? null,
+                  message: error?.message ?? String(error),
+                };
               }
-              console.log(label + '_OK');
             }
+
+            const listProbe = await probe('PHASE3_LIVE_STORAGE_LIST_DENIED', async () => {
+              await storage.ref('profile_images').list({ maxResults: 1 });
+            });
+            const deleteProbe = await probe('PHASE3_LIVE_STORAGE_DELETE_DENIED', async () => {
+              await storage.ref('profile_images/phase3-live-probe-missing.jpg').delete();
+            });
+
+            return { listProbe, deleteProbe };
+          }, {
+            apiKey: 'AIzaSyAjDi9RdObZXHF16ecWt4J4zj2_1rdDmf8',
+            appId: '1:463485983128:web:88c4953fa80d566c7a73ed',
+            messagingSenderId: '463485983128',
+            projectId: 'shadow-live',
+            storageBucket: 'shadow-live.firebasestorage.app',
+          });
+
+          await browser.close();
+
+          console.log('PHASE3_LIVE_STORAGE_BROWSER_RESULT', JSON.stringify(storageResult));
+          if (!storageResult.listProbe.ok) {
+            throw new Error('Storage list probe failed: ' + JSON.stringify(storageResult.listProbe));
           }
-
-          await expectStorageDenied('PHASE3_LIVE_STORAGE_LIST_DENIED', async () => {
-            await list(storageRef(storage, 'profile_images'), { maxResults: 1 });
-          });
-
-          await expectStorageDenied('PHASE3_LIVE_STORAGE_DELETE_DENIED', async () => {
-            await deleteObject(storageRef(storage, 'profile_images/phase3-live-probe-missing.jpg'));
-          });
+          if (!storageResult.deleteProbe.ok) {
+            throw new Error('Storage delete probe failed: ' + JSON.stringify(storageResult.deleteProbe));
+          }
+          console.log('PHASE3_LIVE_STORAGE_LIST_DENIED_OK');
+          console.log('PHASE3_LIVE_STORAGE_DELETE_DENIED_OK');
 
           console.log('PHASE3_LIVE_RULES_PROBE_OK');
           NODE
