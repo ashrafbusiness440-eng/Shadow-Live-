@@ -6,6 +6,7 @@ void main() {
     const data = HomeDiscoveryData(
       userData: null,
       config: {},
+      people: [],
       rooms: [
         DiscoveryRoom(
           id: 'busy',
@@ -30,6 +31,34 @@ void main() {
     expect(data.mostActive.map((room) => room.id).toList(), [
       'busy',
       'featured',
+    ]);
+  });
+
+  test('suggested people prefer online then VIP and level', () {
+    const data = HomeDiscoveryData(
+      userData: null,
+      config: {},
+      rooms: [],
+      people: [
+        DiscoveryPerson(
+          id: 'offline-vip',
+          data: {'displayName': 'A', 'vipLevel': 9, 'level': 50},
+        ),
+        DiscoveryPerson(
+          id: 'online-basic',
+          data: {'displayName': 'B', 'isOnline': true, 'level': 3},
+        ),
+        DiscoveryPerson(
+          id: 'online-vip',
+          data: {'displayName': 'C', 'isOnline': true, 'vipLevel': 2, 'level': 1},
+        ),
+      ],
+    );
+
+    expect(data.suggestedPeople.map((person) => person.id).toList(), [
+      'online-vip',
+      'online-basic',
+      'offline-vip',
     ]);
   });
 
