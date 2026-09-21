@@ -120,6 +120,34 @@ class RoomActionService {
     return PersonalRoomInfo.fromJson(Map<String, dynamic>.from(room));
   }
 
+  Future<void> recordRoomVisit(String roomId) async {
+    await _post({
+      'action': 'recordRoomVisit',
+      'roomId': roomId,
+    });
+  }
+
+  Future<({
+    List<Map<String, dynamic>> favorites,
+    List<Map<String, dynamic>> history,
+  })> loadRoomLibrary() async {
+    final body = await _post({'action': 'roomLibrary'});
+
+    List<Map<String, dynamic>> parse(String key) {
+      final value = body[key];
+      if (value is! List) return const [];
+      return value
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList(growable: false);
+    }
+
+    return (
+      favorites: parse('favorites'),
+      history: parse('history'),
+    );
+  }
+
   Future<Map<String, dynamic>> updateRoomSettings({
     required String roomId,
     required String name,
