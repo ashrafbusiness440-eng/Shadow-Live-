@@ -416,6 +416,97 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     }
   }
 
+  Future<void> _showMicRequestsSheet() async {
+    final state = _roomSeatState;
+    if (state == null || !state.isOwner) return;
+    final roomId = (_roomArguments['roomId'] ?? '').toString();
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF111522),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'طلبات المايك',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 19,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (state.micRequests.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(22),
+                    child: Text(
+                      'لا توجد طلبات حالياً',
+                      style: TextStyle(color: Colors.white54),
+                    ),
+                  )
+                else
+                  ...state.micRequests.map(
+                    (uid) => ListTile(
+                      leading: const CircleAvatar(
+                        backgroundColor: Color(0xFF25183F),
+                        child: Icon(Icons.mic_rounded, color: Color(0xFFFFD54A)),
+                      ),
+                      title: Text(
+                        uid.length > 10 ? uid.substring(0, 10) + '…' : uid,
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                      trailing: Wrap(
+                        spacing: 6,
+                        children: [
+                          IconButton(
+                            tooltip: 'رفض',
+                            onPressed: () {
+                              Navigator.pop(sheetContext);
+                              unawaited(
+                                _runSeatAction(
+                                  () => _roomSeatService.rejectMicRequest(
+                                    roomId: roomId,
+                                    targetUid: uid,
+                                  ),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.close_rounded, color: Colors.redAccent),
+                          ),
+                          IconButton(
+                            tooltip: 'قبول',
+                            onPressed: () {
+                              Navigator.pop(sheetContext);
+                              unawaited(
+                                _runSeatAction(
+                                  () => _roomSeatService.approveMicRequest(
+                                    roomId: roomId,
+                                    targetUid: uid,
+                                  ),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.check_rounded, color: Color(0xFF39D98A)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildVoiceSeats() {
     final state = _roomSeatState;
     final seats = state?.seats ??
@@ -1570,6 +1661,21 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       _buildRoomInsightsBar(),
                       const SizedBox(height: 16),
                       _buildVoiceSeats(),
+                      if (_roomSeatState?.isOwner == true) ...[
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: AlignmentDirectional.centerStart,
+                          child: TextButton.icon(
+                            onPressed: _showMicRequestsSheet,
+                            icon: const Icon(Icons.mic_external_on_rounded),
+                            label: Text(
+                              'طلبات المايك (' +
+                                  (_roomSeatState?.micRequests.length ?? 0).toString() +
+                                  ')',
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
