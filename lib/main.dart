@@ -36,6 +36,7 @@ import 'features/voice/services/voice_room_session_controller.dart';
 import 'features/room/services/room_action_service.dart';
 import 'features/room/services/room_invite_service.dart';
 import 'features/room/services/room_insights_service.dart';
+import 'features/room/widgets/room_chat_panel.dart';
 import 'features/room/services/room_seat_service.dart';
 
 Future<void> main() async {
@@ -2399,6 +2400,11 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                           ),
                         ),
                       ],
+                      const SizedBox(height: 14),
+                      RoomChatPanel(
+                        roomId:
+                            (_roomArguments['roomId'] ?? '').toString(),
+                      ),
                       const SizedBox(height: 190),
                     ],
                   ),
