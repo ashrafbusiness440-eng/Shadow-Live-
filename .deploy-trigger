@@ -3,3 +3,5 @@ Trigger preview deployment after profile message navigation fix.
 Fix message navigation deploy trigger.
 
 Deploy secure private messaging head after CI success.
+
+Deploy Phase 6 ZEGOCLOUD voice integration after successful web build.
