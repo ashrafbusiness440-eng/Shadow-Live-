@@ -94,14 +94,20 @@ try {
   if (!smsCode) throw new Error('Auth Emulator did not expose an SMS verification code');
   console.log('OTP_EMULATOR_CODE_RETRIEVED');
 
-  // LoginScreen automatically focuses the first OTP field. Its onChanged
-  // handler advances focus after every digit, so typing the six digits follows
-  // the same path as a real user.
-  await page.mouse.click(44, 578);
-  for (const digit of String(smsCode)) {
-    await page.keyboard.press(digit);
+  // The six OTP boxes are Flutter text fields. Fill them through their
+  // semantics-backed textbox nodes so this follows the same onChanged path as
+  // a real user without relying on viewport coordinates.
+  const otpInputs = page.getByRole('textbox');
+  const otpInputCount = await otpInputs.count();
+  console.log('OTP_TEXTBOX_COUNT', otpInputCount);
+  if (otpInputCount < 6) {
+    throw new Error(`Expected 6 OTP textboxes, found ${otpInputCount}`);
+  }
+  for (let i = 0; i < 6; i++) {
+    await otpInputs.nth(i).fill(String(smsCode)[i]);
     await page.waitForTimeout(180);
   }
+  await page.getByRole('button', { name: 'تحقق' }).click({ force: true });
   let profileReached = false;
   try {
     await page.getByText('إنشاء الملف الشخصي', { exact: true }).waitFor({ timeout: 15000 });
