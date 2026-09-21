@@ -49,7 +49,10 @@ class VoiceTokenClient {
     String? baseUrl,
   })  : _client = client ?? http.Client(),
         _idTokenProvider = idTokenProvider ??
-            (() => FirebaseAuth.instance.currentUser?.getIdToken()),
+            (() async {
+              final user = FirebaseAuth.instance.currentUser;
+              return user == null ? null : await user.getIdToken();
+            }),
         _baseUrl = baseUrl ??
             const String.fromEnvironment(
               'SHADOW_API_BASE_URL',
