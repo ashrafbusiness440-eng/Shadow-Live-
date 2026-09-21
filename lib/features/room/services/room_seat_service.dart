@@ -159,6 +159,26 @@ class RoomSeatService {
   Future<RoomSeatState> declineMicInvite(String roomId) =>
       _action(roomId: roomId, seatAction: 'declineMicInvite');
 
+  Future<RoomSeatState> approveMicRequest({
+    required String roomId,
+    required String targetUid,
+  }) =>
+      _action(
+        roomId: roomId,
+        seatAction: 'approveMicRequest',
+        targetUid: targetUid,
+      );
+
+  Future<RoomSeatState> rejectMicRequest({
+    required String roomId,
+    required String targetUid,
+  }) =>
+      _action(
+        roomId: roomId,
+        seatAction: 'rejectMicRequest',
+        targetUid: targetUid,
+      );
+
   Future<RoomSeatState> takeSeat({
     required String roomId,
     required int seatIndex,
