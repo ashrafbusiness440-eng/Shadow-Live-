@@ -32,8 +32,8 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
   }
 
   ImageProvider? _avatar(Map<String, dynamic> data) {
-    final photo = '${data['profileImageUrl'] ?? ''}'.trim();
-    final asset = '${data['profileAvatarAsset'] ?? ''}'.trim();
+    final photo = (data['profileImageUrl'] ?? '').toString().trim();
+    final asset = (data['profileAvatarAsset'] ?? '').toString().trim();
     if (photo.isNotEmpty) return NetworkImage(photo);
     if (asset.isNotEmpty) return AssetImage(asset);
     return null;
@@ -91,12 +91,12 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
               return const Center(child: Text('هذا الملف غير متاح', style: TextStyle(color: Colors.white60)));
             }
 
-            final name = '${data['displayName'] ?? 'مستخدم Shadow Live'}';
-            final photo = '${data['profileImageUrl'] ?? ''}';
-            final cover = '${data['coverImageUrl'] ?? ''}';
-            final publicId = '${data['publicId'] ?? '—'}';
-            final bio = '${data['bio'] ?? ''}';
-            final location = '${data['location'] ?? ''}';
+            final name = (data['displayName'] ?? 'مستخدم Shadow Live').toString();
+            final photo = (data['profileImageUrl'] ?? '').toString();
+            final cover = (data['coverImageUrl'] ?? '').toString();
+            final publicId = (data['publicId'] ?? '—').toString();
+            final bio = (data['bio'] ?? '').toString();
+            final location = (data['location'] ?? '').toString();
             final level = (data['level'] as num?)?.toInt() ?? 0;
             final vip = (data['vipLevel'] as num?)?.toInt() ?? 0;
             final online = data['isOnline'] == true;
@@ -434,10 +434,10 @@ class _GiftTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final name = '${data['name'] ?? data['giftName'] ?? 'هدية'}';
+    final name = (data['name'] ?? data['giftName'] ?? 'هدية').toString();
     final count = (data['count'] as num?)?.toInt() ?? 1;
-    final imageUrl = '${data['imageUrl'] ?? ''}'.trim();
-    final assetKey = '${data['assetKey'] ?? ''}'.trim();
+    final imageUrl = (data['imageUrl'] ?? '').toString().trim();
+    final assetKey = (data['assetKey'] ?? '').toString().trim();
 
     Widget fallback() => const Icon(Icons.card_giftcard_rounded, color: Color(0xFFFFD54A), size: 42);
 
