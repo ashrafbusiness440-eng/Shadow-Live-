@@ -110,6 +110,14 @@ class DiscoveryService {
   final FirebaseFirestore _firestore;
   final FirebaseAuth _auth;
 
+  Future<List<DiscoveryRoom>> loadRooms() async {
+    final roomSnapshot = await _firestore.collection('rooms').limit(60).get();
+    return roomSnapshot.docs
+        .map((doc) => DiscoveryRoom(id: doc.id, data: doc.data()))
+        .where((room) => room.isActive && !room.isHidden)
+        .toList();
+  }
+
   Future<HomeDiscoveryData> loadHome() async {
     final currentUser = _auth.currentUser;
 
@@ -120,11 +128,7 @@ class DiscoveryService {
       userData = userSnapshot.data();
     }
 
-    final roomSnapshot = await _firestore.collection('rooms').limit(40).get();
-    final rooms = roomSnapshot.docs
-        .map((doc) => DiscoveryRoom(id: doc.id, data: doc.data()))
-        .where((room) => room.isActive && !room.isHidden)
-        .toList();
+    final rooms = await loadRooms();
 
     final people = <DiscoveryPerson>[];
     try {
