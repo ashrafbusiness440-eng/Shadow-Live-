@@ -96,36 +96,15 @@ class RoomInviteService {
     return friends;
   }
 
-  Future<String> _ensureConversation(String otherUid) async {
-    final me = _uid;
-    final id = conversationId(me, otherUid);
-    final ref = _firestore.collection('conversations').doc(id);
-
-    var exists = false;
-    try {
-      exists = (await ref.get()).exists;
-    } on FirebaseException catch (error) {
-      if (error.code != 'permission-denied') rethrow;
-    }
-
-    if (!exists) {
-      final participants = [me, otherUid]..sort();
-      await ref.set({
-        'participants': participants,
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-        'unreadCounts': {me: 0, otherUid: 0},
-      });
-    }
-    return id;
-  }
+  String _conversationIdFor(String otherUid) =>
+      conversationId(_uid, otherUid);
 
   Future<void> sendInvite({
     required String friendUid,
     required String roomId,
   }) async {
     final me = _uid;
-    final conversationId = await _ensureConversation(friendUid);
+    final conversationId = _conversationIdFor(friendUid);
     final token = await _auth.currentUser?.getIdToken();
     if (token == null || token.isEmpty) throw StateError('not_signed_in');
     final key = [
