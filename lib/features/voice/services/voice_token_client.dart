@@ -57,7 +57,7 @@ class VoiceTokenClient {
             const String.fromEnvironment(
               'SHADOW_API_BASE_URL',
               defaultValue:
-                  'https://shadow-live-git-feature-shadow-control-foundation-shadow-c916.vercel.app/api',
+                  'https://shadow-live-six.vercel.app/api',
             );
 
   final http.Client _client;
