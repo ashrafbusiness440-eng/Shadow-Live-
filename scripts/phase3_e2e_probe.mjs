@@ -73,7 +73,7 @@ try {
       const body = await response.json();
       const codes = body.verificationCodes ?? [];
       const latest = codes.find(x => x.phoneNumber === '+971501234567') ?? codes.at(-1);
-      smsCode = latest?.sessionCode ?? null;
+      smsCode = latest?.sessionCode ?? latest?.code ?? latest?.verificationCode ?? null;
     }
     if (!smsCode) await page.waitForTimeout(250);
   }
