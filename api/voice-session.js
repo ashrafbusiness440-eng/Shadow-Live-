@@ -132,6 +132,9 @@ function roomResponse(roomId,data){
     visibility:clean(data.visibility||"public"),
     isHidden:data.isHidden===true||clean(data.visibility)==="hidden",
     passwordProtected:clean(data.visibility)==="password",
+    coverImageUrl:clean(data.coverImageUrl||data.imageUrl),
+    onlineCount:Math.max(0,Number(data.onlineCount||data.participantsCount||0)),
+    level:Math.max(1,Number(data.level||1)),
     isActive:data.isActive!==false,
   };
 }
