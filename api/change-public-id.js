@@ -105,6 +105,7 @@ export default async function handler(req,res){
    const [userSnap,publicSnap]=await Promise.all([tx.get(userRef),tx.get(publicRef)]);
    if(!userSnap.exists)throw Error("not_found");
    const user=userSnap.data()||{};
+   if(user.role==="owner"&&actor.role!=="owner")throw Error("owner_protected");
    if(String(user.publicId||"")!==currentId)throw Error("old_id_not_current");
 
    const profile=publicSnap.data()||{};
@@ -158,7 +159,7 @@ export default async function handler(req,res){
   return out(res,200,result);
  }catch(e){
   const raw=e?.message||"server_error";
-  const conflict=["old_id_retired","old_id_not_current","id_taken"];
+  const conflict=["old_id_retired","old_id_not_current","id_taken","owner_protected"];
   const code=["not_found",...conflict].includes(raw)?raw:"server_"+phase+"_failed";
   const status=raw==="not_found"?404:conflict.includes(raw)?409:500;
   return out(res,status,{ok:false,code});

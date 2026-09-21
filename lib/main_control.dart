@@ -965,6 +965,7 @@ class _IdManagementPageState extends State<UserIdManagementPage> {
     'not_found'=>'لم يتم العثور على الـID الحالي.',
     'old_id_retired'=>'الـID الحالي الذي أدخلته متقاعد ومحجوز.',
     'old_id_not_current'=>'الـID المدخل ليس الـID الحالي لهذا الحساب.',
+    'owner_protected'=>'لا يمكن لحساب إداري آخر تغيير ID حساب الـOwner.',
     'recent_auth_required'=>'هذه عملية حساسة. سجّل خروج من Shadow Control ثم ادخل من جديد وأعد المحاولة.',
     'forbidden'=>'هذه العملية تتطلب Owner أو صلاحية manageIds.',
     'invalid_request'=>'تحقق من الـID القديم والجديد والسبب.',
