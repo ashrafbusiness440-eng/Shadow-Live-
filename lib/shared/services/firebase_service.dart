@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import '../../utils/search_index.dart';
 
 class FirebaseService {
  final FirebaseAuth _auth=FirebaseAuth.instance;final FirebaseFirestore _firestore=FirebaseFirestore.instance;final FirebaseStorage _storage=FirebaseStorage.instance;
@@ -14,19 +15,25 @@ class FirebaseService {
  Future<void> signOut()=>_auth.signOut();Future<void> resetPassword(String email)async{try{await _auth.sendPasswordResetEmail(email:email.trim());}catch(e){throw _handleAuthError(e);}}
  Future<void> touchLastLogin(String userId)=>updateUserProfile(userId,{'lastLoginAt':FieldValue.serverTimestamp(),'isOnline':true});
 
- Map<String,dynamic> _publicProfileData(String userId,Map<String,dynamic> data)=>{
-  'uid':userId,
-  'displayName':data['displayName']??data['name']??'',
-  'username':data['username']??'',
-  'publicId':data['publicId']??'',
-  'profileImageUrl':data['profileImageUrl']??data['photoUrl']??data['avatarUrl']??'',
-  'profileAvatarAsset':data['profileAvatarAsset']??'',
-  'bio':data['bio']??'',
-  'location':data['location']??'',
-  'level':data['level']??0,
-  'vipLevel':data['vipLevel']??0,
-  'isOnline':data['isOnline']??false,
- };
+ Map<String,dynamic> _publicProfileData(String userId,Map<String,dynamic> data){
+  final displayName=(data['displayName']??data['name']??'').toString();
+  final username=(data['username']??'').toString();
+  final publicId=(data['publicId']??'').toString();
+  return {
+   'uid':userId,
+   'displayName':displayName,
+   'username':username,
+   'publicId':publicId,
+   'searchTokens':buildSearchTokens([displayName,username,publicId]),
+   'profileImageUrl':data['profileImageUrl']??data['photoUrl']??data['avatarUrl']??'',
+   'profileAvatarAsset':data['profileAvatarAsset']??'',
+   'bio':data['bio']??'',
+   'location':data['location']??'',
+   'level':data['level']??0,
+   'vipLevel':data['vipLevel']??0,
+   'isOnline':data['isOnline']??false,
+  };
+ }
 
  Future<void> _syncPublicProfile(String userId)async{
   final user=await _firestore.collection('users').doc(userId).get();
