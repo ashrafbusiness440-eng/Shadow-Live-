@@ -18,6 +18,9 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final DiscoveryService _discoveryService = DiscoveryService();
+  final ScrollController _scrollController = ScrollController();
+  final GlobalKey _eventsKey = GlobalKey();
+  final GlobalKey _rankingKey = GlobalKey();
 
   HomeDiscoveryData? _data;
   bool _loading = true;
@@ -32,6 +35,12 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -101,6 +110,17 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _scrollTo(GlobalKey key) async {
+    final targetContext = key.currentContext;
+    if (targetContext == null) return;
+    await Scrollable.ensureVisible(
+      targetContext,
+      duration: const Duration(milliseconds: 420),
+      curve: Curves.easeOutCubic,
+      alignment: .08,
+    );
+  }
+
   void _soon(String title) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('$title سيتم تفعيله في مرحلته القادمة')),
@@ -136,6 +156,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: RefreshIndicator(
               onRefresh: _load,
               child: ListView(
+                controller: _scrollController,
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
                 children: [
                   _header(name, level, coins, diamonds),
@@ -175,11 +196,23 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 12),
                   _peopleRail(_data?.suggestedPeople ?? const []),
                   const SizedBox(height: 24),
-                  _sectionHeader('الفعاليات', 'أبرز ما يحدث في Shadow Live'),
+                  KeyedSubtree(
+                    key: _eventsKey,
+                    child: _sectionHeader(
+                      'الفعاليات',
+                      'أبرز ما يحدث في Shadow Live',
+                    ),
+                  ),
                   const SizedBox(height: 12),
                   _eventRail(_data?.events ?? const []),
                   const SizedBox(height: 24),
-                  _sectionHeader('الترتيب', 'معاينة من بيانات الإدارة'),
+                  KeyedSubtree(
+                    key: _rankingKey,
+                    child: _sectionHeader(
+                      'الترتيب',
+                      'معاينة من بيانات الإدارة',
+                    ),
+                  ),
                   const SizedBox(height: 12),
                   _rankingPreview(_data?.rankingPreview ?? const []),
                   const SizedBox(height: 24),
@@ -209,13 +242,13 @@ class _HomeScreenState extends State<HomeScreen> {
                         'الفعاليات',
                         'لا تفوّت الجديد',
                         Icons.celebration_rounded,
-                        () => _soon('الفعاليات'),
+                        () => _scrollTo(_eventsKey),
                       ),
                       _Feature(
                         'الترتيب',
                         'نجوم المجتمع',
                         Icons.emoji_events_rounded,
-                        () => _soon('الترتيب'),
+                        () => _scrollTo(_rankingKey),
                       ),
                     ],
                   ),
