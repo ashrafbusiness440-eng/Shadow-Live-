@@ -256,6 +256,26 @@ class _DiscoverySearchScreenState extends State<DiscoverySearchScreen> {
 
     final results = <String, DiscoveryRoom>{};
 
+    try {
+      final indexed = await FirebaseFirestore.instance
+          .collection('rooms')
+          .where('searchTokens', arrayContains: query)
+          .limit(30)
+          .get();
+      for (final document in indexed.docs) {
+        final room = DiscoveryRoom(
+          id: document.id,
+          data: document.data(),
+        );
+        if (room.isActive && !room.isHidden) {
+          results[room.id] = room;
+        }
+      }
+    } catch (_) {
+      // Future Phase 6 rooms will carry searchTokens. Legacy/current room
+      // documents continue through the local cache fallback below.
+    }
+
     for (final room in _roomCache) {
       if (searchTextMatches(room.title, query)) {
         results[room.id] = room;
