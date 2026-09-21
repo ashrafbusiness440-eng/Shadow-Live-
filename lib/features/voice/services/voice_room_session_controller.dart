@@ -93,6 +93,23 @@ class VoiceRoomSessionController extends ChangeNotifier {
       final unavailable = !snapshot.exists || data?['isActive'] == false;
       if (unavailable && _active && roomId == targetRoomId) {
         unawaited(_leaveClosedRoom());
+        return;
+      }
+
+      if (data != null && _active && roomId == targetRoomId) {
+        final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+        final ownerUid =
+            (data['ownerUid'] ?? data['ownerId'] ?? data['hostId'] ?? '')
+                .toString();
+        final rawSeats = data['seats'];
+        final hasSeat = rawSeats is List &&
+            rawSeats.whereType<Map>().any(
+                  (seat) => (seat['uid'] ?? '').toString() == uid,
+                );
+        final isOwner = uid.isNotEmpty && ownerUid == uid;
+        if (!isOwner && !hasSeat && !_micMuted) {
+          unawaited(setMicMuted(true));
+        }
       }
     });
   }
