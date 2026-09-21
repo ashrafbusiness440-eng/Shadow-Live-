@@ -161,11 +161,19 @@ try {
 
   await page.getByRole('button', { name: 'اختر الدولة (مطلوب)' }).click();
   await page.waitForTimeout(300);
-  await page.keyboard.press('ArrowDown');
-  await page.keyboard.press('Enter');
+  await enableAccessibility();
+  const uaeOption = page.getByText('🇦🇪 الإمارات العربية المتحدة', { exact: true }).last();
+  await uaeOption.waitFor({ timeout: 5000 });
+  await uaeOption.dispatchEvent('click');
   await page.waitForTimeout(400);
 
-  await page.getByRole('button', { name: 'متابعة' }).click();
+  const continueButton = page.getByRole('button', { name: 'متابعة' });
+  await continueButton.waitFor({ state: 'visible', timeout: 5000 });
+  if (await continueButton.getAttribute('aria-disabled') === 'true') {
+    await dump('profile-setup-country-selection-failed');
+    throw new Error('Profile Setup continue button stayed disabled after selecting UAE');
+  }
+  await continueButton.click({ force: true });
   await page.getByText('تم إنشاء حسابك بنجاح! 🎉', { exact: true }).waitFor({ timeout: 15000 });
   await enableAccessibility();
   await dump('success');
