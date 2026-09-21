@@ -23,6 +23,10 @@ class _RoomListScreenState extends State<RoomListScreen> {
   bool _openingPersonalRoom = false;
   String? _error;
   String _category = 'الكل';
+  String _viewMode = 'all';
+  bool _libraryLoading = false;
+  List<DiscoveryRoom> _favoriteRooms = const [];
+  List<DiscoveryRoom> _historyRooms = const [];
 
   static const _bg = Color(0xFF05060D);
   static const _card = Color(0xFF111321);
@@ -62,16 +66,73 @@ class _RoomListScreenState extends State<RoomListScreen> {
 
   List<String> get _categories {
     final values = <String>{};
-    for (final room in _rooms) {
+    for (final room in _sourceRooms) {
       values.add(_roomCategory(room));
     }
     final result = values.toList()..sort();
     return ['الكل', ...result];
   }
 
+  List<DiscoveryRoom> get _sourceRooms {
+    switch (_viewMode) {
+      case 'favorites':
+        return _favoriteRooms;
+      case 'history':
+        return _historyRooms;
+      default:
+        return _rooms;
+    }
+  }
+
   List<DiscoveryRoom> get _visibleRooms {
-    if (_category == 'الكل') return _rooms;
-    return _rooms.where((room) => _roomCategory(room) == _category).toList();
+    final source = _sourceRooms;
+    if (_category == 'الكل') return source;
+    return source.where((room) => _roomCategory(room) == _category).toList();
+  }
+
+  Future<void> _loadRoomLibrary() async {
+    if (_libraryLoading) return;
+    setState(() => _libraryLoading = true);
+    try {
+      final library = await _roomActions.loadRoomLibrary();
+
+      DiscoveryRoom parse(Map<String, dynamic> room) {
+        final id = (room['roomId'] ?? '').toString();
+        return DiscoveryRoom(id: id, data: room);
+      }
+
+      if (mounted) {
+        setState(() {
+          _favoriteRooms = library.favorites
+              .where((room) => (room['roomId'] ?? '').toString().isNotEmpty)
+              .map(parse)
+              .toList(growable: false);
+          _historyRooms = library.history
+              .where((room) => (room['roomId'] ?? '').toString().isNotEmpty)
+              .map(parse)
+              .toList(growable: false);
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تعذر تحميل مفضلة وسجل الغرف حالياً.'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _libraryLoading = false);
+    }
+  }
+
+  Future<void> _selectViewMode(String mode) async {
+    if (_viewMode == mode) return;
+    setState(() {
+      _viewMode = mode;
+      _category = 'الكل';
+    });
+    if (mode != 'all') await _loadRoomLibrary();
   }
 
   Future<String?> _askRoomPassword(String roomName) async {
@@ -285,6 +346,46 @@ class _RoomListScreenState extends State<RoomListScreen> {
                       ),
                     ),
                   ),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                  sliver: SliverToBoxAdapter(
+                    child: Row(
+                      children: [
+                        _RoomViewChip(
+                          label: 'الكل',
+                          icon: Icons.grid_view_rounded,
+                          selected: _viewMode == 'all',
+                          onTap: () => _selectViewMode('all'),
+                        ),
+                        const SizedBox(width: 8),
+                        _RoomViewChip(
+                          label: 'المفضلة',
+                          icon: Icons.star_rounded,
+                          selected: _viewMode == 'favorites',
+                          onTap: () => _selectViewMode('favorites'),
+                        ),
+                        const SizedBox(width: 8),
+                        _RoomViewChip(
+                          label: 'السجل',
+                          icon: Icons.history_rounded,
+                          selected: _viewMode == 'history',
+                          onTap: () => _selectViewMode('history'),
+                        ),
+                        if (_libraryLoading) ...[
+                          const SizedBox(width: 10),
+                          const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: _gold,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
                 if (_error != null)
                   SliverPadding(
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -566,6 +667,64 @@ class _MetaPill extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+
+class _RoomViewChip extends StatelessWidget {
+  const _RoomViewChip({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected
+              ? const Color(0xFF8A3DFF)
+              : Colors.white.withValues(alpha: .05),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected
+                ? const Color(0xFF8A3DFF)
+                : Colors.white10,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 15,
+              color: selected
+                  ? Colors.white
+                  : const Color(0xFFFFD54A),
+            ),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? Colors.white : Colors.white60,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
