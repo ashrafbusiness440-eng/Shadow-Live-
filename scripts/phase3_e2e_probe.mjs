@@ -346,12 +346,13 @@ try {
   const chooserPromise = page.waitForEvent('filechooser', { timeout: 10000 });
   await page.getByRole('button', { name: 'اختيار من الهاتف' }).click({ force: true });
   const chooser = await chooserPromise;
-  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=', 'base64');
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAY0lEQVR4nO3PQQ3AIADAQEAZ0pCGtIngcVnSU9DOs+/4s6UDXjWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgfaHsAgDKNa98AAAAAElFTkSuQmCC', 'base64');
   await chooser.setFiles({ name: 'phase3-avatar.png', mimeType: 'image/png', buffer: png });
   await page.getByText('ضبط الصورة', { exact: true }).waitFor({ timeout: 10000 });
   await page.getByRole('button', { name: 'اعتماد الصورة' }).click({ force: true });
-  await page.getByText('تعديل الملف الشخصي', { exact: true }).waitFor({ timeout: 10000 });
-  await page.getByRole('button', { name: 'حفظ التعديلات' }).click({ force: true });
+  const saveAfterCrop = page.getByRole('button', { name: 'حفظ التعديلات' });
+  await saveAfterCrop.waitFor({ state: 'visible', timeout: 15000 });
+  await saveAfterCrop.dispatchEvent('click');
   await page.getByText('اختبار شادو معدل', { exact: true }).waitFor({ timeout: 10000 });
 
   const imageUser = await waitForUserField(
