@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 
@@ -36,6 +37,7 @@ class RoomSeatState {
     required this.micInvites,
     required this.micRequests,
     required this.isOwner,
+    required this.isActive,
   });
 
   final String roomId;
@@ -43,6 +45,7 @@ class RoomSeatState {
   final List<String> micInvites;
   final List<String> micRequests;
   final bool isOwner;
+  final bool isActive;
 
   bool invited(String uid) => micInvites.contains(uid);
   bool requested(String uid) => micRequests.contains(uid);
@@ -70,6 +73,7 @@ class RoomSeatState {
           ? rawRequests.map((item) => item.toString()).toList()
           : const [],
       isOwner: json['isOwner'] == true,
+      isActive: json['isActive'] != false,
     );
   }
 }
@@ -78,9 +82,11 @@ class RoomSeatService {
   RoomSeatService({
     http.Client? client,
     FirebaseAuth? auth,
+    FirebaseFirestore? firestore,
     String? baseUrl,
   })  : _client = client ?? http.Client(),
         _auth = auth ?? FirebaseAuth.instance,
+        _firestore = firestore ?? FirebaseFirestore.instance,
         _baseUrl = baseUrl ??
             const String.fromEnvironment(
               'SHADOW_API_BASE_URL',
@@ -89,6 +95,7 @@ class RoomSeatService {
 
   final http.Client _client;
   final FirebaseAuth _auth;
+  final FirebaseFirestore _firestore;
   final String _baseUrl;
 
   Future<Map<String, dynamic>> _post(Map<String, dynamic> body) async {
@@ -114,6 +121,21 @@ class RoomSeatService {
       throw StateError((decoded['code'] ?? 'room_seat_failed').toString());
     }
     return decoded;
+  }
+
+  Stream<RoomSeatState> watch(String roomId) {
+    final uid = _auth.currentUser?.uid ?? '';
+    return _firestore.collection('rooms').doc(roomId).snapshots().map((snapshot) {
+      final data = snapshot.data() ?? <String, dynamic>{};
+      final ownerUid =
+          (data['ownerUid'] ?? data['ownerId'] ?? data['hostId'] ?? '').toString();
+      return RoomSeatState.fromJson({
+        ...data,
+        'roomId': roomId,
+        'isOwner': uid.isNotEmpty && ownerUid == uid,
+        'isActive': snapshot.exists && data['isActive'] != false,
+      });
+    });
   }
 
   Future<RoomSeatState> load(String roomId) async {
@@ -197,6 +219,15 @@ class RoomSeatService {
         roomId: roomId,
         seatAction: 'switchSeat',
         seatIndex: seatIndex,
+      );
+
+  Future<RoomSeatState> setSeatMuted({
+    required String roomId,
+    required bool muted,
+  }) =>
+      _action(
+        roomId: roomId,
+        seatAction: muted ? 'muteSeat' : 'unmuteSeat',
       );
 
   Future<RoomSeatState> leaveSeat(String roomId) =>
