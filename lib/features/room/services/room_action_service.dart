@@ -11,6 +11,9 @@ class PersonalRoomInfo {
     required this.ownerUid,
     required this.roomType,
     required this.category,
+    required this.ownerName,
+    required this.ownerLocation,
+    required this.chatEnabled,
     required this.description,
     required this.tags,
     required this.visibility,
@@ -24,6 +27,9 @@ class PersonalRoomInfo {
   final String ownerUid;
   final String roomType;
   final String category;
+  final String ownerName;
+  final String ownerLocation;
+  final bool chatEnabled;
   final String description;
   final List<String> tags;
   final String visibility;
@@ -38,6 +44,9 @@ class PersonalRoomInfo {
         'hostId': ownerUid,
         'roomType': roomType,
         'category': category,
+        'ownerName': ownerName,
+        'ownerLocation': ownerLocation,
+        'chatEnabled': chatEnabled,
         'description': description,
         'tags': tags,
         'visibility': visibility,
@@ -58,6 +67,9 @@ class PersonalRoomInfo {
       ownerUid: ownerUid,
       roomType: (json['roomType'] ?? 'personal').toString(),
       category: (json['category'] ?? 'دردشة').toString(),
+      ownerName: (json['ownerName'] ?? '').toString(),
+      ownerLocation: (json['ownerLocation'] ?? '').toString(),
+      chatEnabled: json['chatEnabled'] != false,
       description: (json['description'] ?? '').toString(),
       tags: json['tags'] is List
           ? (json['tags'] as List).map((value) => value.toString()).toList()
@@ -155,6 +167,7 @@ class RoomActionService {
     required String category,
     required List<String> tags,
     required String visibility,
+    required bool chatEnabled,
     String? password,
   }) async {
     final body = await _post({
@@ -165,6 +178,7 @@ class RoomActionService {
       'category': category,
       'tags': tags,
       'visibility': visibility,
+      'chatEnabled': chatEnabled,
       if (password != null && password.isNotEmpty) 'password': password,
     });
     final room = body['room'];
