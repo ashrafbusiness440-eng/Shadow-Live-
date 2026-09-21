@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'widgets/bottom_nav_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'firebase_options.dart';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -31,6 +33,8 @@ import 'screens/room/create_room_screen.dart';
 import 'screens/room/room_list_screen.dart';
 import 'screens/settings/settings_screen.dart';
 import 'services/navigation_service.dart';
+import 'features/voice/services/voice_service.dart';
+import 'features/voice/services/zego_voice_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -73,22 +77,246 @@ class MyApp extends StatelessWidget {
   );
 }
 
-class VoiceChatRoom extends StatelessWidget {
+class VoiceChatRoom extends StatefulWidget {
   const VoiceChatRoom({super.key});
+
+  @override
+  State<VoiceChatRoom> createState() => _VoiceChatRoomState();
+}
+
+class _VoiceChatRoomState extends State<VoiceChatRoom> {
+  final VoiceService _voiceService = ZegoVoiceService();
+  bool _voiceStarted = false;
+  bool _voiceJoining = true;
+  bool _voiceMicMuted = true;
+  String? _voiceError;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_voiceStarted) return;
+    _voiceStarted = true;
+    unawaited(_connectVoice());
+  }
+
+  Future<void> _connectVoice() async {
+    final raw = ModalRoute.of(context)?.settings.arguments;
+    final args =
+        raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+    final roomId = (args['roomId'] ?? '').toString().trim();
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (roomId.isEmpty || user == null) {
+      if (mounted) {
+        setState(() {
+          _voiceJoining = false;
+          _voiceError = roomId.isEmpty ? 'room_id_missing' : 'not_signed_in';
+        });
+      }
+      return;
+    }
+
+    final displayName = (user.displayName ??
+            args['displayName'] ??
+            args['hostName'] ??
+            'Shadow Live')
+        .toString()
+        .trim();
+
+    try {
+      await _voiceService.initialize();
+      await _voiceService.joinRoom(
+        roomId: roomId,
+        userId: user.uid,
+        displayName: displayName.isEmpty ? 'Shadow Live' : displayName,
+      );
+      if (mounted) {
+        setState(() {
+          _voiceJoining = false;
+          _voiceError = null;
+          _voiceMicMuted = true;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _voiceJoining = false;
+          _voiceError = error.toString();
+        });
+      }
+    }
+  }
+
+  Future<void> _toggleVoiceMic() async {
+    if (_voiceJoining || _voiceError != null) return;
+    try {
+      if (_voiceMicMuted) {
+        await _voiceService.unmuteMic();
+      } else {
+        await _voiceService.muteMic();
+      }
+      if (mounted) {
+        setState(() => _voiceMicMuted = !_voiceMicMuted);
+      }
+    } catch (error) {
+      if (mounted) setState(() => _voiceError = error.toString());
+    }
+  }
+
+  Future<void> _leaveVoiceRoom() async {
+    try {
+      await _voiceService.leaveRoom();
+    } catch (_) {}
+    if (mounted) {
+      NavigationService.navigateToReplacement(AppRoutes.roomList);
+    }
+  }
+
+  @override
+  void dispose() {
+    unawaited(_voiceService.dispose());
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: Colors.black,
-    body: Center(child: Container(constraints: const BoxConstraints(maxWidth: 400), child: Stack(children: [
-      SingleChildScrollView(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Column(children: [
-        const SizedBox(height: 120), const HostSection(), const SizedBox(height: 32),
-        Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.grey[800]!.withValues(alpha: .5), borderRadius: BorderRadius.circular(12)), child: Row(children: [
-          Container(width: 40, height: 40, decoration: const BoxDecoration(image: DecorationImage(image: CachedNetworkImageProvider('https://example.com/gift.jpg'), fit: BoxFit.cover))),
-          const SizedBox(width: 12), const Expanded(child: Text('Wish List')), TextButton(onPressed: () => NavigationService.navigateTo(AppRoutes.settings), child: const Text('Send')),
-        ])),
-        const SizedBox(height: 32), const ParticipantGrid(), const SizedBox(height: 100),
-      ]))),
-      const NotificationsSection(),
-      const Positioned(bottom: 0, left: 0, right: 0, child: BottomNavBar(currentIndex: 1)),
-    ]))),
-  );
+        backgroundColor: Colors.black,
+        body: Center(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 400),
+            child: Stack(
+              children: [
+                SingleChildScrollView(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 120),
+                        const HostSection(),
+                        const SizedBox(height: 32),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[800]!.withValues(alpha: .5),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 40,
+                                height: 40,
+                                decoration: const BoxDecoration(
+                                  image: DecorationImage(
+                                    image: CachedNetworkImageProvider(
+                                      'https://example.com/gift.jpg',
+                                    ),
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              const Expanded(child: Text('Wish List')),
+                              TextButton(
+                                onPressed: () => NavigationService.navigateTo(
+                                  AppRoutes.settings,
+                                ),
+                                child: const Text('Send'),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 32),
+                        const ParticipantGrid(),
+                        const SizedBox(height: 140),
+                      ],
+                    ),
+                  ),
+                ),
+                if (_voiceJoining || _voiceError != null)
+                  Positioned(
+                    top: 24,
+                    left: 16,
+                    right: 16,
+                    child: SafeArea(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: .65),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          _voiceJoining
+                              ? 'جاري الاتصال بالصوت...'
+                              : 'تعذر الاتصال بالصوت',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: _voiceError == null
+                                ? Colors.white70
+                                : Colors.redAccent,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                const NotificationsSection(),
+                Positioned(
+                  bottom: 76,
+                  left: 16,
+                  right: 16,
+                  child: SafeArea(
+                    top: false,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        GestureDetector(
+                          onTap: _voiceJoining || _voiceError != null
+                              ? null
+                              : _toggleVoiceMic,
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: _voiceError != null
+                                  ? Colors.red[900]
+                                  : Colors.grey[850],
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              _voiceMicMuted ? Icons.mic_off : Icons.mic,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        GestureDetector(
+                          onTap: _leaveVoiceRoom,
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.red[700],
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.call_end,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: BottomNavBar(currentIndex: 1),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
 }

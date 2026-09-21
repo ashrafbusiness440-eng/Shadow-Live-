@@ -28,6 +28,8 @@ dependencies:
   flutter_bloc: ^9.1.1
   permission_handler: ^13.0.2
   image_picker: ^1.2.3
+  http: ^1.5.0
+  zego_express_engine: ^3.25.0
 
 dev_dependencies:
   flutter_test:
