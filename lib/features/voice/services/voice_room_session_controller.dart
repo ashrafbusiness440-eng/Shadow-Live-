@@ -166,6 +166,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
         roomId: targetRoomId,
         userId: user.uid,
         displayName: displayName.isEmpty ? 'Shadow Live' : displayName,
+        accessCode: (arguments['roomPassword'] ?? '').toString(),
       );
       _active = true;
       _joining = false;
