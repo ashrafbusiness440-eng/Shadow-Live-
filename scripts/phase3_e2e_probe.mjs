@@ -107,7 +107,8 @@ try {
     await otpInputs.nth(i).fill(String(smsCode)[i]);
     await page.waitForTimeout(180);
   }
-  await page.getByRole('button', { name: 'تحقق' }).click({ force: true });
+  // LoginScreen auto-submits as soon as the sixth digit is entered.
+  // Do not click "تحقق" again because the route can already be transitioning.
   let profileReached = false;
   try {
     await page.getByText('إنشاء الملف الشخصي', { exact: true }).waitFor({ timeout: 15000 });
