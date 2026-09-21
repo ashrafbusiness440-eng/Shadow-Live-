@@ -37,6 +37,8 @@ import 'screens/settings/settings_screen.dart';
 import 'services/navigation_service.dart';
 import 'features/voice/services/voice_service.dart';
 import 'features/voice/services/zego_voice_service.dart';
+import 'features/voice/services/voice_room_session_controller.dart';
+import 'features/room/services/room_action_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -119,11 +121,30 @@ class VoiceChatRoom extends StatefulWidget {
 }
 
 class _VoiceChatRoomState extends State<VoiceChatRoom> {
-  final VoiceService _voiceService = ZegoVoiceService();
+  final VoiceRoomSessionController _voiceSession =
+      VoiceRoomSessionController.instance;
+  final RoomActionService _roomActions = RoomActionService();
   bool _voiceStarted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _voiceSession.addListener(_syncVoiceSession);
+  }
+
+  void _syncVoiceSession() {
+    if (!mounted) return;
+    setState(() {
+      _voiceJoining = _voiceSession.joining;
+      _voiceMicMuted = _voiceSession.micMuted;
+      _voiceError = _voiceSession.error;
+    });
+  }
+
   bool _voiceJoining = true;
   bool _voiceMicMuted = true;
   String? _voiceError;
+  Map<String, dynamic> _roomArguments = <String, dynamic>{};
 
   @override
   void didChangeDependencies() {
@@ -136,6 +157,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   Future<void> _connectVoice() async {
     final raw = ModalRoute.of(context)?.settings.arguments;
     final args = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+    _roomArguments = args;
     final roomId = (args['roomId'] ?? '').toString().trim();
     final user = FirebaseAuth.instance.currentUser;
     if (roomId.isEmpty || user == null) {
@@ -156,17 +178,16 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         .trim();
 
     try {
-      await _voiceService.initialize();
-      await _voiceService.joinRoom(
-        roomId: roomId,
-        userId: user.uid,
-        displayName: displayName.isEmpty ? 'Shadow Live' : displayName,
-      );
+      await _voiceSession.join({
+        ...args,
+        'roomId': roomId,
+        'displayName': displayName.isEmpty ? 'Shadow Live' : displayName,
+      });
       if (mounted) {
         setState(() {
-          _voiceJoining = false;
-          _voiceError = null;
-          _voiceMicMuted = true;
+          _voiceJoining = _voiceSession.joining;
+          _voiceError = _voiceSession.error;
+          _voiceMicMuted = _voiceSession.micMuted;
         });
       }
     } catch (error) {
@@ -182,13 +203,9 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   Future<void> _toggleVoiceMic() async {
     if (_voiceJoining || _voiceError != null) return;
     try {
-      if (_voiceMicMuted) {
-        await _voiceService.unmuteMic();
-      } else {
-        await _voiceService.muteMic();
-      }
+      await _voiceSession.toggleMic();
       if (mounted) {
-        setState(() => _voiceMicMuted = !_voiceMicMuted);
+        setState(() => _voiceMicMuted = _voiceSession.micMuted);
       }
     } catch (error) {
       if (mounted) setState(() => _voiceError = error.toString());
@@ -196,17 +213,129 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   }
 
   Future<void> _leaveVoiceRoom() async {
-    try {
-      await _voiceService.leaveRoom();
-    } catch (_) {}
+    await _voiceSession.leave();
     if (mounted) {
-      NavigationService.navigateToReplacement(AppRoutes.roomList);
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => const MainShellScreen(initialNavIndex: 1),
+        ),
+        (_) => false,
+      );
     }
+  }
+
+  Future<void> _minimizeVoiceRoom({int destinationNavIndex = 1}) async {
+    if (!_voiceSession.active) return;
+    _voiceSession.minimize();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => MainShellScreen(
+          initialNavIndex: destinationNavIndex,
+        ),
+      ),
+      (_) => false,
+    );
+  }
+
+  Future<void> _closePersonalRoom() async {
+    final roomId = (_roomArguments['roomId'] ?? '').toString();
+    if (roomId.isEmpty) return;
+    try {
+      await _roomActions.closePersonalRoom(roomId);
+      await _leaveVoiceRoom();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر إغلاق الغرفة حالياً.')),
+      );
+    }
+  }
+
+  Future<void> _showRoomMenu() async {
+    final personal = (_roomArguments['roomType'] ?? '').toString() == 'personal';
+    final owner = _voiceSession.isOwner;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF111522),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Directionality(
+          textDirection: TextDirection.rtl,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 44,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                ListTile(
+                  leading: const Icon(
+                    Icons.picture_in_picture_alt_rounded,
+                    color: Color(0xFFFFD54A),
+                  ),
+                  title: const Text(
+                    'تصغير الغرفة',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _minimizeVoiceRoom();
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(
+                    Icons.logout_rounded,
+                    color: Colors.orangeAccent,
+                  ),
+                  title: const Text(
+                    'مغادرة الغرفة',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _leaveVoiceRoom();
+                  },
+                ),
+                if (personal && owner)
+                  ListTile(
+                    leading: const Icon(
+                      Icons.power_settings_new_rounded,
+                      color: Colors.redAccent,
+                    ),
+                    title: const Text(
+                      'إغلاق الغرفة',
+                      style: TextStyle(
+                        color: Colors.redAccent,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      _closePersonalRoom();
+                    },
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
   void dispose() {
-    unawaited(_voiceService.dispose());
+    _voiceSession.removeListener(_syncVoiceSession);
+    _roomActions.close();
     super.dispose();
   }
 
@@ -306,9 +435,17 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                           ),
                           Row(
                             children: [
-                              IconButton(icon: const Icon(Icons.share), onPressed: () {}),
+                              IconButton(
+                                icon: const Icon(Icons.share_rounded),
+                                onPressed: () {},
+                                tooltip: 'مشاركة الغرفة',
+                              ),
                               Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(20)), child: const Text('387')),
-                              IconButton(icon: const Icon(Icons.settings), onPressed: () => NavigationService.navigateTo(AppRoutes.settings)),
+                              IconButton(
+                                icon: const Icon(Icons.more_horiz_rounded),
+                                onPressed: _showRoomMenu,
+                                tooltip: 'خيارات الغرفة',
+                              ),
                             ],
                           ),
                         ],
@@ -340,8 +477,74 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Row(children: [Icon(Icons.star, color: Colors.yellow[400]), const SizedBox(width: 16), const Icon(Icons.sentiment_satisfied_alt), const SizedBox(width: 16), const Icon(Icons.list)]),
-                      Row(children: [GestureDetector(onTap: _leaveVoiceRoom, child: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.red[600], shape: BoxShape.circle), child: const Icon(Icons.call_end))), const SizedBox(width: 16), GestureDetector(onTap: _voiceJoining || _voiceError != null ? null : _toggleVoiceMic, child: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: _voiceError != null ? Colors.red[900] : Colors.grey[800], shape: BoxShape.circle), child: Icon(_voiceMicMuted ? Icons.mic_off : Icons.mic)))]),
+                      Row(
+                        children: [
+                          IconButton(
+                            onPressed: () {},
+                            tooltip: 'الهدايا',
+                            icon: Icon(
+                              Icons.card_giftcard_rounded,
+                              color: Colors.yellow[400],
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          IconButton(
+                            onPressed: () {},
+                            tooltip: 'الأدوات',
+                            icon: const Icon(Icons.grid_view_rounded),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        children: [
+                          GestureDetector(
+                            onTap: _leaveVoiceRoom,
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.red[600],
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.call_end),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          GestureDetector(
+                            onTap: () => _minimizeVoiceRoom(
+                              destinationNavIndex: 4,
+                            ),
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF6D27D9),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.chat_bubble_rounded,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          GestureDetector(
+                            onTap: _voiceJoining || _voiceError != null
+                                ? null
+                                : _toggleVoiceMic,
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: _voiceError != null
+                                    ? Colors.red[900]
+                                    : Colors.grey[800],
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                _voiceMicMuted ? Icons.mic_off : Icons.mic,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
