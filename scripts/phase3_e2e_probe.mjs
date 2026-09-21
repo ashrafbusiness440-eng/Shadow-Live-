@@ -102,13 +102,23 @@ try {
     await page.keyboard.press(digit);
     await page.waitForTimeout(180);
   }
-  await page.waitForTimeout(2600);
+  let profileReached = false;
+  try {
+    await page.getByText('إنشاء الملف الشخصي', { exact: true }).waitFor({ timeout: 15000 });
+    profileReached = true;
+  } catch (_) {
+    const authRes = await fetch('http://127.0.0.1:9099/emulator/v1/projects/shadow-live/accounts');
+    const authBody = authRes.ok ? await authRes.json() : { status: authRes.status };
+    console.log('AUTH_EMULATOR_STATE', JSON.stringify(authBody));
+    const fsRes = await fetch('http://127.0.0.1:8080/v1/projects/shadow-live/databases/(default)/documents/users');
+    const fsBody = fsRes.ok ? await fsRes.json() : { status: fsRes.status };
+    console.log('FIRESTORE_USERS_STATE', JSON.stringify(fsBody));
+  }
   await enableAccessibility();
   await dump('profile-setup');
   await page.screenshot({ path: 'phase3-probe-profile-setup.png', fullPage: true });
 
-  const profileSetupVisible = await page.getByText('إنشاء الملف الشخصي', { exact: true }).count();
-  if (!profileSetupVisible) throw new Error('OTP completed but Profile Setup was not reached');
+  if (!profileReached) throw new Error('OTP completed but Profile Setup was not reached within 15s');
   console.log('PHASE3_PHONE_OTP_TO_PROFILE_SETUP_OK');
 } finally {
   await context.close();
