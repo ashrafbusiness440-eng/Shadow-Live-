@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
@@ -16,6 +17,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
 
   StreamSubscription<VoiceConnectionState>? _connectionSubscription;
   StreamSubscription<VoiceMicState>? _micSubscription;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+      _roomLifecycleSubscription;
 
   bool _serviceInitialized = false;
   bool _joining = false;
@@ -79,6 +82,36 @@ class VoiceRoomSessionController extends ChangeNotifier {
     _serviceInitialized = true;
   }
 
+  void _watchRoomLifecycle(String targetRoomId) {
+    unawaited(_roomLifecycleSubscription?.cancel());
+    _roomLifecycleSubscription = FirebaseFirestore.instance
+        .collection('rooms')
+        .doc(targetRoomId)
+        .snapshots()
+        .listen((snapshot) {
+      final data = snapshot.data();
+      final unavailable = !snapshot.exists || data?['isActive'] == false;
+      if (unavailable && _active && roomId == targetRoomId) {
+        unawaited(_leaveClosedRoom());
+      }
+    });
+  }
+
+  Future<void> _leaveClosedRoom() async {
+    if (_serviceInitialized) {
+      try {
+        await _voiceService.leaveRoom();
+      } catch (_) {}
+    }
+    _active = false;
+    _joining = false;
+    _minimized = false;
+    _micMuted = true;
+    _error = 'room_closed';
+    _connectionState = VoiceConnectionState.disconnected;
+    notifyListeners();
+  }
+
   Future<void> join(Map<String, dynamic> arguments) async {
     final user = FirebaseAuth.instance.currentUser;
     final targetRoomId = (arguments['roomId'] ?? '').toString().trim();
@@ -121,6 +154,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
       _joining = false;
       _micMuted = true;
       _connectionState = VoiceConnectionState.connected;
+      _watchRoomLifecycle(targetRoomId);
     } catch (error) {
       _active = false;
       _joining = false;
@@ -174,6 +208,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
   }
 
   Future<void> leave() async {
+    await _roomLifecycleSubscription?.cancel();
+    _roomLifecycleSubscription = null;
     if (_serviceInitialized) {
       try {
         await _voiceService.leaveRoom();
@@ -193,6 +229,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
     await leave();
     await _connectionSubscription?.cancel();
     await _micSubscription?.cancel();
+    await _roomLifecycleSubscription?.cancel();
     if (_serviceInitialized) {
       await _voiceService.dispose();
     }
