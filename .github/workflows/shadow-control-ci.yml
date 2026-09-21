@@ -18,7 +18,7 @@ jobs:
       - name: Validate Shadow Live Phase 4 app
         run: |
           flutter analyze --no-fatal-infos --no-fatal-warnings lib
-          flutter test test/auth/setup_route_test.dart test/utils/compact_number_test.dart test/utils/search_index_test.dart test/home/discovery_service_test.dart
+          flutter test test/auth/setup_route_test.dart test/utils/compact_number_test.dart test/utils/search_index_test.dart test/home/discovery_service_test.dart test/voice/voice_service_test.dart
           flutter build web --release --target lib/main.dart --base-href /app/
       - name: Upload Shadow Live web artifact
         uses: actions/upload-artifact@v4
