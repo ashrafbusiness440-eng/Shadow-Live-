@@ -164,6 +164,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   Map<String, dynamic> _roomArguments = <String, dynamic>{};
   String _ownerDisplayName = 'صاحب الغرفة';
   String _ownerPhotoUrl = '';
+  String _ownerLocation = '';
   bool _roomSoundEnabled = true;
   bool _effectSoundEnabled = true;
   bool _roomEffectsEnabled = true;
@@ -224,10 +225,37 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       unawaited(_loadRoomSeatState(roomId));
     } catch (error) {
       if (mounted) {
+        final code = error.toString();
         setState(() {
           _voiceJoining = false;
-          _voiceError = error.toString();
+          _voiceError = code;
         });
+        if (code.contains('room_password_invalid') ||
+            code.contains('room_password_required')) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  code.contains('room_password_invalid')
+                      ? 'كلمة مرور الغرفة غير صحيحة.'
+                      : 'هذه الغرفة تحتاج كلمة مرور.',
+                ),
+              ),
+            );
+            Navigator.of(context).maybePop();
+          });
+        } else if (code.contains('room_unavailable')) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('هذه الغرفة غير متاحة حالياً.'),
+              ),
+            );
+            Navigator.of(context).maybePop();
+          });
+        }
       }
     }
   }
@@ -332,6 +360,16 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     }
   }
 
+  String get _ownerFlag {
+    final location = _ownerLocation.trim();
+    if (location.isEmpty) return '';
+    final match = RegExp(
+      r'^[\u{1F1E6}-\u{1F1FF}]{2}',
+      unicode: true,
+    ).firstMatch(location);
+    return match?.group(0) ?? '';
+  }
+
   Future<void> _loadOwnerProfile(
     Map<String, dynamic> args,
   ) async {
@@ -364,6 +402,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         if (name.isNotEmpty) _ownerDisplayName = name;
         _ownerPhotoUrl =
             (data['profileImageUrl'] ?? data['photoUrl'] ?? '').toString();
+        _ownerLocation = (data['location'] ?? '').toString();
       });
     } catch (_) {}
   }
@@ -2341,7 +2380,31 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                               Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text((_roomArguments['name'] ?? _roomArguments['title'] ?? 'غرفة صوتية').toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)),
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          (_roomArguments['name'] ??
+                                                  _roomArguments['title'] ??
+                                                  'غرفة صوتية')
+                                              .toString(),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                      if (_ownerFlag.isNotEmpty) ...[
+                                        const SizedBox(width: 5),
+                                        Text(
+                                          _ownerFlag,
+                                          style: const TextStyle(fontSize: 15),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
                                   Row(children: [Icon(Icons.tag_rounded, color: Colors.yellow[400], size: 16), Text('ID: ' + (_roomArguments['publicId'] ?? '—').toString(), style: const TextStyle(color: Colors.grey, fontSize: 12))]),
                                 ],
                               ),
