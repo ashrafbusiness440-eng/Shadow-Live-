@@ -143,6 +143,13 @@ class VoiceRoomSessionController extends ChangeNotifier {
     }
   }
 
+  Future<void> setRoomAudioEnabled(bool enabled) async {
+    if (!_active || _connectionState != VoiceConnectionState.connected) {
+      return;
+    }
+    await _voiceService.setPlaybackEnabled(enabled);
+  }
+
   Future<void> setMicMuted(bool muted) async {
     if (!_active || _connectionState != VoiceConnectionState.connected) {
       return;
