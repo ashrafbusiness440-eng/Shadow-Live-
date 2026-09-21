@@ -39,6 +39,7 @@ import 'features/voice/services/voice_room_session_controller.dart';
 import 'features/room/services/room_action_service.dart';
 import 'features/room/services/room_invite_service.dart';
 import 'features/room/services/room_insights_service.dart';
+import 'features/room/services/room_seat_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -126,6 +127,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   final RoomActionService _roomActions = RoomActionService();
   final RoomInviteService _roomInvites = RoomInviteService();
   final RoomInsightsService _roomInsightsService = RoomInsightsService();
+  final RoomSeatService _roomSeatService = RoomSeatService();
   bool _voiceStarted = false;
 
   @override
@@ -153,6 +155,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   RoomInsights? _roomInsights;
   bool _loadingRoomInsights = false;
   bool _changingRoomFollow = false;
+  RoomSeatState? _roomSeatState;
+  bool _changingSeat = false;
 
   @override
   void didChangeDependencies() {
@@ -199,6 +203,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         });
       }
       unawaited(_loadRoomInsights(roomId));
+      unawaited(_loadRoomSeatState(roomId));
     } catch (error) {
       if (mounted) {
         setState(() {
@@ -295,6 +300,195 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     } finally {
       if (mounted) setState(() => _changingRoomFollow = false);
     }
+  }
+
+  Future<void> _loadRoomSeatState(String roomId) async {
+    if (roomId.isEmpty) return;
+    try {
+      final state = await _roomSeatService.load(roomId);
+      if (mounted) setState(() => _roomSeatState = state);
+    } catch (_) {}
+  }
+
+  Future<void> _runSeatAction(
+    Future<RoomSeatState> Function() action,
+  ) async {
+    if (_changingSeat) return;
+    setState(() => _changingSeat = true);
+    try {
+      final state = await action();
+      if (mounted) setState(() => _roomSeatState = state);
+    } on StateError catch (error) {
+      if (!mounted) return;
+      final code = error.message.toString();
+      final message = code == 'mic_invite_required'
+          ? 'لازم صاحب الغرفة يقبل طلب المايك أولاً.'
+          : code == 'seat_occupied'
+              ? 'هذا المقعد مستخدم حالياً.'
+              : 'تعذر تنفيذ العملية حالياً.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } finally {
+      if (mounted) setState(() => _changingSeat = false);
+    }
+  }
+
+  Future<void> _handleSeatTap(VoiceSeat seat) async {
+    final roomId = (_roomArguments['roomId'] ?? '').toString();
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final state = _roomSeatState;
+    if (roomId.isEmpty || uid.isEmpty || state == null) return;
+
+    if (!seat.occupied) {
+      if (state.isOwner || state.invited(uid)) {
+        await _runSeatAction(
+          () => _roomSeatService.takeSeat(
+            roomId: roomId,
+            seatIndex: seat.index,
+          ),
+        );
+      } else if (state.requested(uid)) {
+        await _runSeatAction(
+          () => _roomSeatService.cancelMicRequest(roomId),
+        );
+      } else {
+        await _runSeatAction(
+          () => _roomSeatService.requestMic(roomId),
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('تم إرسال طلب المايك لصاحب الغرفة.')),
+          );
+        }
+      }
+      return;
+    }
+
+    if (seat.uid == uid) {
+      await showModalBottomSheet<void>(
+        context: context,
+        backgroundColor: const Color(0xFF111522),
+        builder: (sheetContext) => SafeArea(
+          child: ListTile(
+            leading: const Icon(Icons.mic_off_rounded, color: Colors.redAccent),
+            title: const Text(
+              'النزول من المايك',
+              style: TextStyle(color: Colors.white),
+            ),
+            onTap: () {
+              Navigator.pop(sheetContext);
+              unawaited(
+                _runSeatAction(() => _roomSeatService.leaveSeat(roomId)),
+              );
+            },
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (state.isOwner) {
+      await showModalBottomSheet<void>(
+        context: context,
+        backgroundColor: const Color(0xFF111522),
+        builder: (sheetContext) => SafeArea(
+          child: ListTile(
+            leading: const Icon(Icons.person_remove_rounded, color: Colors.redAccent),
+            title: Text(
+              'إنزال ' + (seat.displayName.isEmpty ? 'المستخدم' : seat.displayName) + ' من المايك',
+              style: const TextStyle(color: Colors.white),
+            ),
+            onTap: () {
+              Navigator.pop(sheetContext);
+              unawaited(
+                _runSeatAction(
+                  () => _roomSeatService.removeFromMic(
+                    roomId: roomId,
+                    targetUid: seat.uid,
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+    }
+  }
+
+  Widget _buildVoiceSeats() {
+    final state = _roomSeatState;
+    final seats = state?.seats ??
+        List.generate(
+          8,
+          (index) => VoiceSeat(
+            index: index,
+            uid: '',
+            displayName: '',
+            profileImageUrl: '',
+            muted: true,
+          ),
+        );
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: seats.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 4,
+        mainAxisSpacing: 14,
+        crossAxisSpacing: 10,
+        childAspectRatio: .78,
+      ),
+      itemBuilder: (_, index) {
+        final seat = seats[index];
+        return InkWell(
+          onTap: _changingSeat ? null : () => _handleSeatTap(seat),
+          borderRadius: BorderRadius.circular(18),
+          child: Column(
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFF151B29),
+                  border: Border.all(
+                    color: seat.occupied
+                        ? const Color(0xFF8A3DFF)
+                        : Colors.white12,
+                    width: seat.occupied ? 2 : 1,
+                  ),
+                  image: seat.profileImageUrl.isEmpty
+                      ? null
+                      : DecorationImage(
+                          image: NetworkImage(seat.profileImageUrl),
+                          fit: BoxFit.cover,
+                        ),
+                ),
+                child: seat.occupied
+                    ? (seat.profileImageUrl.isEmpty
+                        ? const Icon(Icons.person_rounded, color: Colors.white70)
+                        : null)
+                    : const Icon(Icons.add_rounded, color: Colors.white38),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                seat.occupied
+                    ? (seat.displayName.isEmpty ? 'متحدث' : seat.displayName)
+                    : 'مقعد ' + (seat.index + 1).toString(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: seat.occupied ? Colors.white70 : Colors.white38,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _showSupportersSheet() async {
@@ -1024,6 +1218,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     _roomActions.close();
     _roomInvites.close();
     _roomInsightsService.close();
+    _roomSeatService.close();
     super.dispose();
   }
 
@@ -1373,6 +1568,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       ),
                       const SizedBox(height: 12),
                       _buildRoomInsightsBar(),
+                      const SizedBox(height: 16),
+                      _buildVoiceSeats(),
                     ],
                   ),
                 ),
