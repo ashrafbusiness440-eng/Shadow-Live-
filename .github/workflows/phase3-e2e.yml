@@ -43,7 +43,7 @@ jobs:
 
       - name: Install Playwright
         run: |
-          npm install --no-save playwright@1.55.0
+          npm install --no-save playwright@1.55.0 firebase-admin@13.5.0
           npx playwright install --with-deps chromium
 
       - name: Probe Flutter browser semantics with Firebase emulators

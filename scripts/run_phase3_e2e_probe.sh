@@ -15,4 +15,7 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 
-PHASE3_BASE_URL=http://127.0.0.1:4173 node scripts/phase3_e2e_probe.mjs
+FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 \
+GCLOUD_PROJECT=shadow-live \
+PHASE3_BASE_URL=http://127.0.0.1:4173 \
+node scripts/phase3_e2e_probe.mjs

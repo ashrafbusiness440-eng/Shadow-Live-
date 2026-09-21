@@ -1,4 +1,6 @@
 import { chromium } from 'playwright';
+import { initializeApp } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
 
 const baseUrl = process.env.PHASE3_BASE_URL ?? 'http://127.0.0.1:4173';
 const phoneNumber = '+971501234567';
@@ -7,6 +9,8 @@ const browser = await chromium.launch({ headless: true, args: ['--enable-unsafe-
 const context = await browser.newContext({ viewport: { width: 412, height: 915 }, locale: 'ar-AE' });
 const page = await context.newPage();
 const pageErrors = [];
+const adminApp = initializeApp({ projectId: 'shadow-live' }, 'phase3-e2e');
+const adminDb = getFirestore(adminApp);
 
 page.on('console', msg => console.log('[browser]', msg.type(), msg.text()));
 page.on('pageerror', err => {
@@ -83,26 +87,25 @@ async function openPhoneAndRequestOtp() {
 }
 
 async function getUserDocument() {
-  const res = await fetch('http://127.0.0.1:8080/v1/projects/shadow-live/databases/(default)/documents/users');
-  if (!res.ok) throw new Error(`Failed to read users from Firestore emulator: ${res.status}`);
-  const body = await res.json();
-  const docs = body.documents ?? [];
-  if (!docs.length) throw new Error('No user document found in Firestore emulator');
-  return docs[0];
+  const snap = await adminDb.collection('users').limit(1).get();
+  if (snap.empty) throw new Error('No user document found in Firestore emulator');
+  const doc = snap.docs[0];
+  return { id: doc.id, data: doc.data() };
 }
 
 async function getPublicProfile(uid) {
-  const res = await fetch(`http://127.0.0.1:8080/v1/projects/shadow-live/databases/(default)/documents/public_profiles/${uid}`);
-  if (!res.ok) throw new Error(`Public profile missing for ${uid}: ${res.status}`);
-  return res.json();
+  const snap = await adminDb.collection('public_profiles').doc(uid).get();
+  if (!snap.exists) throw new Error(`Public profile missing for ${uid}`);
+  return snap.data();
 }
 
-function stringField(doc, key) {
-  return doc?.fields?.[key]?.stringValue ?? null;
+function stringField(data, key) {
+  const value = data?.[key];
+  return value == null ? null : String(value);
 }
 
-function boolField(doc, key) {
-  return doc?.fields?.[key]?.booleanValue ?? null;
+function boolField(data, key) {
+  return data?.[key] === true;
 }
 
 try {
@@ -182,9 +185,9 @@ try {
   console.log('PHASE3_READY_TO_MAIN_OK');
 
   const userDoc = await getUserDocument();
-  const uid = userDoc.name.split('/').at(-1);
-  const setupStep = stringField(userDoc, 'setupStep');
-  const setupComplete = boolField(userDoc, 'setupComplete');
+  const uid = userDoc.id;
+  const setupStep = stringField(userDoc.data, 'setupStep');
+  const setupComplete = boolField(userDoc.data, 'setupComplete');
   if (setupStep !== 'complete' || setupComplete !== true) {
     throw new Error(`Unexpected setup state after Ready: step=${setupStep} complete=${setupComplete}`);
   }
@@ -212,7 +215,7 @@ try {
   console.log('PHASE3_LOGOUT_TO_AUTH_CHOICE_OK');
 
   const afterLogout = await getUserDocument();
-  if (boolField(afterLogout, 'isOnline') !== false) throw new Error('User remained online after logout');
+  if (boolField(afterLogout.data, 'isOnline') !== false) throw new Error('User remained online after logout');
   const publicAfterLogout = await getPublicProfile(uid);
   if (boolField(publicAfterLogout, 'isOnline') !== false) throw new Error('Public profile remained online after logout');
   console.log('PHASE3_OFFLINE_SYNC_OK');
@@ -229,10 +232,10 @@ try {
   }
   await screenshot('main-after-relogin');
   const afterRelogin = await getUserDocument();
-  if (boolField(afterRelogin, 'setupComplete') !== true || stringField(afterRelogin, 'setupStep') !== 'complete') {
+  if (boolField(afterRelogin.data, 'setupComplete') !== true || stringField(afterRelogin.data, 'setupStep') !== 'complete') {
     throw new Error('Completed setup state was not preserved after re-login');
   }
-  if (boolField(afterRelogin, 'isOnline') !== true) throw new Error('User was not marked online after re-login');
+  if (boolField(afterRelogin.data, 'isOnline') !== true) throw new Error('User was not marked online after re-login');
   console.log('PHASE3_LOGOUT_LOGIN_MAIN_OK');
   console.log('PHASE3_FULL_E2E_OK');
 
