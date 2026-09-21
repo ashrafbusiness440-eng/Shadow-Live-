@@ -28,8 +28,8 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - name: Validate Firestore rules compile
-        run: npx --yes firebase-tools@15.1.0 emulators:exec --only firestore --project shadow-control-ci "echo Firestore rules compiled"
+      - name: Validate Firebase rules compile
+        run: npx --yes firebase-tools@15.1.0 emulators:exec --only firestore,storage --project shadow-control-ci "echo Firestore and Storage rules compiled"
       - name: Build Shadow Control web
         run: flutter build web --release --target lib/main_control.dart --base-href /Shadow-Live-/control/
       - name: Upload Shadow Control web artifact
