@@ -17,3 +17,10 @@ Isolated groups:
 - Apple iPhone 16 Pro Max mockups
 
 Do not import runtime code from this directory. If a legacy asset or implementation is needed later, restore only the specific required file into the active project.
+
+
+Second-pass Dart quarantine:
+- 26 statically unreachable Dart files moved from lib/.
+- Reachability roots: lib/main.dart and lib/main_control.dart.
+- lib/admin/** was intentionally NOT quarantined even where currently unreachable, because it belongs to Shadow Control and may be wired later.
+- Active lib/core/assets/shadow_asset_registry.dart was retained because it is reachable.
