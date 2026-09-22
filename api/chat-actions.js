@@ -168,17 +168,17 @@ async function sendGift(db,uid,body){
     const opRef=db.collection("gift_operations").doc(key);
     const senderRef=db.collection("users").doc(uid);
     const receiverRef=db.collection("users").doc(receiverId);
-    const giftRef=db.collection("gifts").doc(giftId);
+    const catalogRef=db.collection("system_config").doc("gift_catalog");
     const conversationRef=db.collection("conversations").doc(conversationId);
     const outgoingBlockRef=db.collection("user_blocks").doc(uid).collection("items").doc(receiverId);
     const incomingBlockRef=db.collection("user_blocks").doc(receiverId).collection("items").doc(uid);
-    const [op,sender,receiver,gift,conversation,outgoingBlock,incomingBlock]=await Promise.all([
-      tx.get(opRef),tx.get(senderRef),tx.get(receiverRef),tx.get(giftRef),
+    const [op,sender,receiver,catalog,conversation,outgoingBlock,incomingBlock]=await Promise.all([
+      tx.get(opRef),tx.get(senderRef),tx.get(receiverRef),tx.get(catalogRef),
       tx.get(conversationRef),tx.get(outgoingBlockRef),tx.get(incomingBlockRef),
     ]);
 
     if(op.exists)return {ok:true,code:"duplicate",...(op.data()?.result||{})};
-    if(!sender.exists||!receiver.exists||!gift.exists||!conversation.exists)throw new ApiError("not_found",404);
+    if(!sender.exists||!receiver.exists||!conversation.exists)throw new ApiError("not_found",404);
     const conversationData=conversation.data()||{};
     const participants=Array.isArray(conversationData.participants)?conversationData.participants:[];
     if(participants.length!==2||!participants.includes(uid)||!participants.includes(receiverId)){
@@ -186,19 +186,37 @@ async function sendGift(db,uid,body){
     }
     if(outgoingBlock.exists||incomingBlock.exists)throw new ApiError("blocked",403);
 
-    const giftData=gift.data()||{};
-    if(giftData.isActive!==true)throw new ApiError("gift_inactive",409);
-    const unitCoins=Number(giftData.price??giftData.coins??giftData.unitCoins??0);
-    if(!Number.isFinite(unitCoins)||unitCoins<=0)throw new ApiError("invalid_gift_price",409);
+    const fallback=[
+      {id:"rose",nameAr:"وردة",priceCoins:100,enabled:true,assetKey:"gifts.placeholder.default"},
+      {id:"coffee",nameAr:"قهوة",priceCoins:300,enabled:true,assetKey:"gifts.placeholder.default"},
+      {id:"heart",nameAr:"قلب",priceCoins:500,enabled:true,assetKey:"gifts.placeholder.default"},
+      {id:"chocolate",nameAr:"شوكولا",priceCoins:1000,enabled:true,assetKey:"gifts.placeholder.default"},
+      {id:"crown",nameAr:"تاج",priceCoins:2500,enabled:true,assetKey:"gifts.placeholder.default"},
+      {id:"ring",nameAr:"خاتم ألماس",priceCoins:5000,enabled:true,assetKey:"gifts.placeholder.default"},
+      {id:"sports_car",nameAr:"سيارة رياضية",priceCoins:10000,enabled:true,assetKey:"gifts.placeholder.default"},
+      {id:"yacht",nameAr:"يخت فاخر",priceCoins:25000,enabled:true,assetKey:"gifts.placeholder.default"},
+      {id:"private_jet",nameAr:"طائرة خاصة",priceCoins:50000,enabled:true,assetKey:"gifts.placeholder.default"},
+      {id:"castle",nameAr:"قصر ملكي",priceCoins:100000,enabled:true,assetKey:"gifts.placeholder.default"},
+      {id:"golden_dragon",nameAr:"التنين الذهبي",priceCoins:250000,enabled:true,assetKey:"gifts.placeholder.default"},
+      {id:"galaxy",nameAr:"مجرة شادو",priceCoins:500000,enabled:true,assetKey:"gifts.placeholder.default"},
+    ];
+    const rawCatalog=catalog.exists&&Array.isArray(catalog.data()?.gifts)?catalog.data().gifts:fallback;
+    const giftData=rawCatalog.find(item=>String(item?.id||"")===giftId);
+    if(!giftData)throw new ApiError("not_found",404);
+    if(giftData.enabled===false)throw new ApiError("gift_inactive",409);
+    const unitCoins=Number(giftData.priceCoins||0);
+    if(!Number.isSafeInteger(unitCoins)||unitCoins<=0)throw new ApiError("invalid_gift_price",409);
+
     const totalCost=unitCoins*quantity;
+    if(!Number.isSafeInteger(totalCost)||totalCost<=0)throw new ApiError("invalid_gift_price",409);
     const before=Number(sender.data()?.coins||0);
     if(before<totalCost)throw new ApiError("insufficient_balance",409);
 
     const after=before-totalCost;
     const now=FieldValue.serverTimestamp();
-    const giftName=String(giftData.name??giftData.title??"هدية");
-    const imageUrl=String(giftData.imageUrl??"");
-    const assetKey=String(giftData.assetKey??"");
+    const giftName=String(giftData.nameAr||"هدية");
+    const imageUrl=String(giftData.imageUrl||"");
+    const assetKey=String(giftData.assetKey||"gifts.placeholder.default");
     const messageRef=conversationRef.collection("messages").doc();
     const transactionRef=db.collection("gift_transactions").doc(key);
     const ledgerRef=db.collection("financial_ledger").doc("gift_"+key);
@@ -211,7 +229,10 @@ async function sendGift(db,uid,body){
     tx.update(receiverRef,{totalGiftsReceived:FieldValue.increment(quantity),totalValueReceived:FieldValue.increment(totalCost)});
     tx.update(conversationRef,{lastMessage:"🎁 "+giftName+" ×"+quantity,lastSenderId:uid,updatedAt:now,unreadCounts:counts});
     tx.create(messageRef,{senderId:uid,receiverId,type:"gift",giftId,giftName,quantity,unitCoins,totalCost,imageUrl,assetKey,createdAt:now});
-    tx.create(transactionRef,{senderId:uid,receiverId,conversationId,giftId,giftName,quantity,unitCoins,totalCost,createdAt:now});
+    tx.create(transactionRef,{
+      senderId:uid,receiverId,contextType:"chat",conversationId,giftId,giftName,quantity,unitCoins,totalCost,
+      assetKey,earningsStatus:"pending_policy",createdAt:now
+    });
     tx.create(ledgerRef,{userId:uid,asset:"coins",delta:-totalCost,openingBalance:before,closingBalance:after,reason:"gift_send",sourceType:"gift",sourceId:key,actorUid:uid,idempotencyKey:key,createdAt:now});
     tx.set(showcaseRef,{giftId,name:giftName,imageUrl,assetKey,count:FieldValue.increment(quantity),updatedAt:now},{merge:true});
 
