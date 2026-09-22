@@ -254,17 +254,21 @@ class RoomPkService {
     });
   }
 
-  Future<void> accept(String roomId) =>
-      _post({'action': 'acceptPk', 'roomId': roomId});
+  Future<void> accept(String roomId) async {
+    await _post({'action': 'acceptPk', 'roomId': roomId});
+  }
 
-  Future<void> decline(String roomId) =>
-      _post({'action': 'declinePk', 'roomId': roomId});
+  Future<void> decline(String roomId) async {
+    await _post({'action': 'declinePk', 'roomId': roomId});
+  }
 
-  Future<void> cancel(String roomId) =>
-      _post({'action': 'cancelPk', 'roomId': roomId});
+  Future<void> cancel(String roomId) async {
+    await _post({'action': 'cancelPk', 'roomId': roomId});
+  }
 
-  Future<void> sync(String roomId) =>
-      _post({'action': 'syncPk', 'roomId': roomId});
+  Future<void> sync(String roomId) async {
+    await _post({'action': 'syncPk', 'roomId': roomId});
+  }
 
   void close() => _client.close();
 }
