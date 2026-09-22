@@ -299,6 +299,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           followed: true,
           favorited: true,
           dailySupport: 18500,
+          weeklySupport: 64200,
+          monthlySupport: 241000,
           activityScore: 950,
           dailyRank: 4,
           supporters: [
@@ -3812,6 +3814,106 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         ),
                       ],
                     ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF151A27),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Column(
+                            children: [
+                              const Text(
+                                'اليوم',
+                                style: TextStyle(
+                                  color: Colors.white54,
+                                  fontSize: 10,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                insights.dailySupport.toString(),
+                                style: const TextStyle(
+                                  color: Color(0xFFFFD54A),
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 7),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF151A27),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Column(
+                            children: [
+                              const Text(
+                                'الأسبوع',
+                                style: TextStyle(
+                                  color: Colors.white54,
+                                  fontSize: 10,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                insights.weeklySupport.toString(),
+                                style: const TextStyle(
+                                  color: Color(0xFFC9B8FF),
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 7),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF151A27),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Column(
+                            children: [
+                              const Text(
+                                'الشهر',
+                                style: TextStyle(
+                                  color: Colors.white54,
+                                  fontSize: 10,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                insights.monthlySupport.toString(),
+                                style: const TextStyle(
+                                  color: Color(0xFF72D572),
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 14),
                   const Align(
