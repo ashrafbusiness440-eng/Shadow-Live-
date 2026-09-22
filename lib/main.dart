@@ -2894,6 +2894,9 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       RoomChatPanel(
                         roomId:
                             (_roomArguments['roomId'] ?? '').toString(),
+                        chatEnabled:
+                            _roomArguments['chatEnabled'] != false,
+                        isOwner: _voiceSession.isOwner,
                       ),
                       const SizedBox(height: 190),
                     ],
