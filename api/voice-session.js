@@ -1232,6 +1232,13 @@ async function roomMusicCommand(db,uid,body){
       if(!access.canAddOrPlay)throw new ApiError("music_permission_required",403);
       const track=queue.find(item=>item.id===trackId);
       if(!track)throw new ApiError("music_track_not_found",404);
+      const sourcePresence=await tx.get(
+        db.collection("room_presence").doc(roomId).collection("users").doc(track.sourceOwnerUid),
+      );
+      const sourceLastSeen=Number(sourcePresence.data()?.lastSeenAtMs||0);
+      if(!sourcePresence.exists||Date.now()-sourceLastSeen>90000){
+        throw new ApiError("music_source_offline",409);
+      }
       nextState={
         status:"playing",
         currentTrackId:track.id,
@@ -1256,6 +1263,15 @@ async function roomMusicCommand(db,uid,body){
       if(!access.manage)throw new ApiError("forbidden",403);
       const currentIndex=queue.findIndex(item=>item.id===state.currentTrackId);
       const nextTrack=currentIndex>=0&&currentIndex+1<queue.length?queue[currentIndex+1]:null;
+      if(nextTrack){
+        const sourcePresence=await tx.get(
+          db.collection("room_presence").doc(roomId).collection("users").doc(nextTrack.sourceOwnerUid),
+        );
+        const sourceLastSeen=Number(sourcePresence.data()?.lastSeenAtMs||0);
+        if(!sourcePresence.exists||Date.now()-sourceLastSeen>90000){
+          throw new ApiError("music_source_offline",409);
+        }
+      }
       nextState=nextTrack
         ? {
             status:"playing",
