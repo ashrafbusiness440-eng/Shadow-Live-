@@ -229,20 +229,26 @@ async function roomModeratorState(db,uid,roomId){
   if(!roomSnap.exists)throw new ApiError("room_not_found",404);
   const room=roomSnap.data()||{};
   const actor=actorSnap.data()||{};
-  const ownerUid=clean(room.ownerUid||room.ownerId||room.hostId);
+  const ownerUid=roomOwnerUid(room);
+  const hostUid=roomHostUid(room);
   const global=roomPermissions(actor);
   const myModerator=roomModeratorEntry(room,uid);
+  const hostCapabilities=isOfficialRoom(room)&&hostUid===uid
+    ? OFFICIAL_HOST_CAPABILITIES
+    : [];
   return {
     ok:true,
     roomId,
     ownerUid,
-    isOwner:ownerUid===uid,
-    canManage:ownerUid===uid||global.manageRooms,
+    hostUid,
+    isOwner:!isOfficialRoom(room)&&ownerUid===uid,
+    isHost:isOfficialRoom(room)&&hostUid===uid,
+    canManage:(!isOfficialRoom(room)&&ownerUid===uid)||global.manageRooms||hostCapabilities.length>0,
     limit:roomModeratorLimit(room),
     capabilities:ROOM_MODERATOR_CAPABILITIES,
-    myCapabilities:ownerUid===uid
+    myCapabilities:!isOfficialRoom(room)&&ownerUid===uid
       ? ROOM_MODERATOR_CAPABILITIES
-      : (myModerator?.capabilities||[]),
+      : [...new Set([...hostCapabilities,...(myModerator?.capabilities||[])])],
     moderators:normalizeRoomModerators(room),
   };
 }
@@ -278,10 +284,11 @@ async function setRoomModerator(db,uid,body){
     if(!profileSnap.exists)throw new ApiError("target_not_found",404);
     const room=roomSnap.data()||{};
     const actor=actorSnap.data()||{};
-    const ownerUid=clean(room.ownerUid||room.ownerId||room.hostId);
+    const ownerUid=roomOwnerUid(room);
     const global=roomPermissions(actor);
-    if(ownerUid!==uid&&!global.manageRooms)throw new ApiError("forbidden",403);
-    if(targetUid===ownerUid)throw new ApiError("owner_already_full_access",409);
+    if((isOfficialRoom(room)||ownerUid!==uid)&&!global.manageRooms)throw new ApiError("forbidden",403);
+    if(ownerUid&&targetUid===ownerUid)throw new ApiError("owner_already_full_access",409);
+    if(isOfficialRoom(room)&&targetUid===roomHostUid(room))throw new ApiError("host_session_role_managed_by_control",409);
 
     let moderators=normalizeRoomModerators(room);
     const previous=moderators.find(item=>item.uid===targetUid)||null;
@@ -332,7 +339,8 @@ function roomResponse(roomId,data){
     roomId,
     name:clean(data.name||data.title||"غرفتي"),
     publicId:clean(data.publicId),
-    ownerUid:clean(data.ownerUid||data.hostId),
+    ownerUid:clean(data.ownerUid||data.ownerId),
+    hostUid:clean(data.hostUid||data.hostId),
     roomType:clean(data.roomType||"personal"),
     category:clean(data.category||"دردشة"),
     ownerName:clean(data.ownerName),
@@ -928,6 +936,10 @@ async function roomSeatState(db,uid,roomId){
   const snap=await db.collection("rooms").doc(roomId).get();
   if(!snap.exists)throw new ApiError("room_not_found",404);
   const room=snap.data()||{};
+  const actorSnap=await db.collection("users").doc(uid).get();
+  const actor=actorSnap.data()||{};
+  const isOwner=!isOfficialRoom(room)&&roomOwnerUid(room)===uid;
+  const isHost=isOfficialRoom(room)&&roomHostUid(room)===uid;
   return {
     ok:true,
     roomId,
@@ -936,7 +948,9 @@ async function roomSeatState(db,uid,roomId){
     micRequests:Array.isArray(room.micRequests)?room.micRequests:[],
     micInviteOnly:room.micInviteOnly===true,
     starBattleActive:activeStarBattle(room)!=null,
-    isOwner:String(room.ownerUid||room.ownerId||room.hostId||"")===uid,
+    isOwner,
+    isHost,
+    canManageMic:canManageRoomAction(room,actor,uid,"manageMic"),
     isActive:room.isActive!==false,
     onlineCount:Math.max(0,Number(room.onlineCount||0)),
   };
@@ -958,8 +972,9 @@ async function roomSeatAction(db,uid,body){
     const room=roomSnap.data()||{};
     if(room.isActive===false)throw new ApiError("room_unavailable",409);
 
-    const ownerUid=String(room.ownerUid||room.ownerId||room.hostId||"");
-    const isOwner=ownerUid===uid;
+    const ownerUid=roomOwnerUid(room);
+    const isOwner=!isOfficialRoom(room)&&ownerUid===uid;
+    const isHost=isOfficialRoom(room)&&roomHostUid(room)===uid;
     const actorSnap=await tx.get(db.collection("users").doc(uid));
     const actor=actorSnap.data()||{};
     const canManageMic=canManageRoomAction(room,actor,uid,"manageMic");
@@ -1008,25 +1023,6 @@ async function roomSeatAction(db,uid,body){
       requests=requests.filter(id=>id!==targetUid);
     }else if(action==="declineMicInvite"){
       invites=invites.filter(id=>id!==uid);
-    }else if(action==="setMicInviteOnly"){
-      if(!canManageMic)throw new ApiError("forbidden",403);
-      const enabled=body.enabled===true;
-      tx.update(roomRef,{
-        micInviteOnly:enabled,
-        ...(enabled?{}:{micRequests:[]}),
-        updatedAt:FieldValue.serverTimestamp(),
-      });
-      return {
-        ok:true,
-        roomId,
-        seats,
-        micInvites:invites,
-        micRequests:enabled?requests:[],
-        micInviteOnly:enabled,
-        isOwner,
-        isActive:true,
-        onlineCount:Math.max(0,Number(room.onlineCount||0)),
-      };
     }else if(action==="takeSeat"||action==="switchSeat"){
       if(!Number.isInteger(seatIndex)||seatIndex<0||seatIndex>=seats.length)throw new ApiError("invalid_seat",400);
       const currentSeatIndex=seats.findIndex(item=>item.uid===uid);
@@ -1038,7 +1034,7 @@ async function roomSeatAction(db,uid,body){
       if(reserved&&reserved.uid!==uid)throw new ApiError("pk_seat_reserved",409);
       if(mine&&mine.seatIndex!==seatIndex)throw new ApiError("pk_original_seat_required",409);
       if(seat.uid&&seat.uid!==uid)throw new ApiError("seat_occupied",409);
-      if(micInviteOnly&&!isOwner&&!invites.includes(uid)&&!mine&&currentSeatIndex<0)throw new ApiError("mic_invite_required",403);
+      if(micInviteOnly&&!isOwner&&!isHost&&!canManageMic&&!invites.includes(uid)&&!mine&&currentSeatIndex<0)throw new ApiError("mic_invite_required",403);
 
       const profileSnap=await tx.get(myProfileRef);
       const profile=profileSnap.data()||{};
@@ -1067,15 +1063,6 @@ async function roomSeatAction(db,uid,body){
       };
     }else if(action==="leaveSeat"){
       clearUserSeat(uid);
-    }else if(action==="muteTargetSeat"||action==="unmuteTargetSeat"){
-      if(!canManageMic)throw new ApiError("forbidden",403);
-      if(!targetUid||targetUid===uid)throw new ApiError("invalid_target",400);
-      const targetSeatIndex=seats.findIndex(seat=>seat.uid===targetUid);
-      if(targetSeatIndex<0)throw new ApiError("speaker_seat_required",403);
-      seats[targetSeatIndex]={
-        ...seats[targetSeatIndex],
-        muted:action==="muteTargetSeat",
-      };
     }else if(action==="removeFromMic"){
       if(!canManageMic)throw new ApiError("forbidden",403);
       if(!targetUid)throw new ApiError("invalid_target",400);
@@ -1103,6 +1090,8 @@ async function roomSeatAction(db,uid,body){
       micInviteOnly,
       starBattleActive:activeStarBattle({...room,starBattleState:room.starBattleState})!=null,
       isOwner,
+      isHost,
+      canManageMic,
       isActive:true,
       onlineCount:Math.max(0,Number(room.onlineCount||0)),
     };
