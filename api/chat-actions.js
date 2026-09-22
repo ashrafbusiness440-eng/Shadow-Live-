@@ -235,13 +235,16 @@ async function sendRoomInvite(db,uid,body){
     const receiverRef=db.collection("users").doc(receiverId);
     const conversationRef=db.collection("conversations").doc(conversationId);
     const roomRef=db.collection("rooms").doc(roomId);
+    const senderPresenceRef=db.collection("room_presence").doc(roomId).collection("users").doc(uid);
+    const inviteRateRef=db.collection("room_invite_rate_limits").doc(roomId+"__"+uid+"__"+receiverId);
     const outgoingFollowRef=db.collection("follows").doc(uid+"__"+receiverId);
     const incomingFollowRef=db.collection("follows").doc(receiverId+"__"+uid);
     const outgoingBlockRef=db.collection("user_blocks").doc(uid).collection("items").doc(receiverId);
     const incomingBlockRef=db.collection("user_blocks").doc(receiverId).collection("items").doc(uid);
 
-    const [op,receiver,conversation,room,outgoingFollow,incomingFollow,outgoingBlock,incomingBlock]=await Promise.all([
+    const [op,receiver,conversation,room,senderPresence,inviteRate,outgoingFollow,incomingFollow,outgoingBlock,incomingBlock]=await Promise.all([
       tx.get(opRef),tx.get(receiverRef),tx.get(conversationRef),tx.get(roomRef),
+      tx.get(senderPresenceRef),tx.get(inviteRateRef),
       tx.get(outgoingFollowRef),tx.get(incomingFollowRef),tx.get(outgoingBlockRef),tx.get(incomingBlockRef),
     ]);
 
@@ -261,6 +264,15 @@ async function sendRoomInvite(db,uid,body){
 
     const roomData=room.data()||{};
     if(roomData.isActive===false)throw new ApiError("room_unavailable",409);
+
+    const roomOwnerUid=String(roomData.ownerUid||roomData.ownerId||roomData.hostId||"");
+    const presenceLastSeen=Number(senderPresence.data()?.lastSeenAtMs||0);
+    const senderPresent=senderPresence.exists&&(Date.now()-presenceLastSeen)<=90000;
+    if(roomOwnerUid!==uid&&!senderPresent)throw new ApiError("not_in_room",403);
+
+    const nowMs=Date.now();
+    const lastInviteMs=inviteRate.data()?.lastSentAt?.toMillis?.()||0;
+    if(lastInviteMs>0&&nowMs-lastInviteMs<30000)throw new ApiError("rate_limited",429);
 
     const roomName=String(roomData.name||roomData.title||"غرفة صوتية");
     const roomPublicId=String(roomData.publicId||"");
@@ -308,6 +320,13 @@ async function sendRoomInvite(db,uid,body){
       invitedBy:uid,
       createdAt:now,
       expiresAt:Timestamp.fromMillis(Date.now()+12*60*60*1000),
+    },{merge:true});
+    tx.set(inviteRateRef,{
+      roomId,
+      senderUid:uid,
+      receiverUid:receiverId,
+      lastSentAt:Timestamp.fromMillis(nowMs),
+      updatedAt:now,
     },{merge:true});
 
     const resultData={messageId:messageRef.id,roomId,roomName};
