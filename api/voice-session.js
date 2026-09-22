@@ -38,6 +38,52 @@ function cors(req,res){
 const out=(res,status,body)=>res.status(status).json(body);
 const clean=(v)=>String(v??"").trim();
 
+function utcActivityKeys(ms=Date.now()){
+  const day=new Date(ms).toISOString().slice(0,10);
+  return {day,month:day.slice(0,7)};
+}
+
+async function recordMicActivity(tx,db,userId,seat,endedAtMs=Date.now()){
+  const startedAtMs=Number(seat?.micStartedAtMs||0);
+  if(!userId||!Number.isFinite(startedAtMs)||startedAtMs<=0||endedAtMs<=startedAtMs)return;
+  const seconds=Math.max(0,Math.floor((endedAtMs-startedAtMs)/1000));
+  if(seconds<=0)return;
+
+  const {day,month}=utcActivityKeys(endedAtMs);
+  const activityRef=db.collection("host_mic_activity").doc(userId).collection("days").doc(day);
+  const userRef=db.collection("users").doc(userId);
+  const economyRef=db.collection("system_config").doc("gift_economy");
+  const [activitySnap,userSnap,economySnap]=await Promise.all([
+    tx.get(activityRef),tx.get(userRef),tx.get(economyRef),
+  ]);
+  const activity=activitySnap.data()||{};
+  const user=userSnap.data()||{};
+  const economy=economySnap.data()||{};
+  const requiredMinutes=Math.max(1,Math.min(1440,Number(economy.hostBonusMinutesPerQualifiedDay||120)));
+  const thresholdSeconds=requiredMinutes*60;
+  const previousSeconds=Math.max(0,Number(activity.micSeconds||0));
+  const nextSeconds=previousSeconds+seconds;
+  const wasQualified=activity.qualified===true||previousSeconds>=thresholdSeconds;
+  const qualified=nextSeconds>=thresholdSeconds;
+  const sameMonth=String(user.giftHostActivityMonth||"")===month;
+  const previousMonthSeconds=sameMonth?Math.max(0,Number(user.giftHostMicSecondsMonth||0)):0;
+  const previousQualifiedDays=sameMonth?Math.max(0,Number(user.giftHostQualifiedDays||0)):0;
+
+  tx.set(activityRef,{
+    day,
+    micSeconds:nextSeconds,
+    qualified,
+    requiredMinutes,
+    updatedAt:FieldValue.serverTimestamp(),
+  },{merge:true});
+  tx.set(userRef,{
+    giftHostActivityMonth:month,
+    giftHostMicSecondsMonth:previousMonthSeconds+seconds,
+    giftHostQualifiedDays:previousQualifiedDays+(!wasQualified&&qualified?1:0),
+    giftHostActivityUpdatedAt:FieldValue.serverTimestamp(),
+  },{merge:true});
+}
+
 function zegoUserId(firebaseUid){
   const digest=createHash("sha256").update(firebaseUid).digest("hex");
   return "u_"+digest.slice(0,40);
@@ -1221,6 +1267,10 @@ async function roomSeatAction(db,uid,body){
 
       const profileSnap=await tx.get(myProfileRef);
       const profile=profileSnap.data()||{};
+      const existingSeat=currentSeatIndex>=0?seats[currentSeatIndex]:null;
+      const micStartedAtMs=Number(existingSeat?.micStartedAtMs||0)>0
+        ? Number(existingSeat.micStartedAtMs)
+        : Date.now();
       clearUserSeat(uid);
       seats[seatIndex]={
         index:seatIndex,
@@ -1228,6 +1278,7 @@ async function roomSeatAction(db,uid,body){
         displayName:String(profile.displayName||profile.username||"مستخدم Shadow Live"),
         profileImageUrl:String(profile.profileImageUrl||""),
         muted:true,
+        micStartedAtMs,
       };
       invites=invites.filter(id=>id!==uid);
       requests=requests.filter(id=>id!==uid);
@@ -1245,10 +1296,14 @@ async function roomSeatAction(db,uid,body){
         muted:action==="muteTargetSeat",
       };
     }else if(action==="leaveSeat"){
+      const mySeat=seats.find(seat=>seat.uid===uid);
+      if(mySeat)await recordMicActivity(tx,db,uid,mySeat);
       clearUserSeat(uid);
     }else if(action==="removeFromMic"){
       if(!canManageMic)throw new ApiError("forbidden",403);
       if(!targetUid)throw new ApiError("invalid_target",400);
+      const targetSeat=seats.find(seat=>seat.uid===targetUid);
+      if(targetSeat)await recordMicActivity(tx,db,targetUid,targetSeat);
       clearUserSeat(targetUid);
       invites=invites.filter(id=>id!==targetUid);
       requests=requests.filter(id=>id!==targetUid);
@@ -2016,6 +2071,21 @@ async function roomPresenceHeartbeat(db,uid,roomId){
 
 async function roomPresenceLeave(db,uid,roomId){
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+  const roomRef=db.collection("rooms").doc(roomId);
+  await db.runTransaction(async tx=>{
+    const roomSnap=await tx.get(roomRef);
+    if(!roomSnap.exists)return;
+    const room=roomSnap.data()||{};
+    let seats=normalizeSeats(room);
+    const seat=seats.find(item=>item.uid===uid);
+    if(seat){
+      await recordMicActivity(tx,db,uid,seat);
+      seats=seats.map(item=>item.uid===uid
+        ? {...item,uid:"",displayName:"",profileImageUrl:"",muted:true,micStartedAtMs:0}
+        : item);
+      tx.update(roomRef,{seats,updatedAt:FieldValue.serverTimestamp()});
+    }
+  });
   await db.collection("room_presence").doc(roomId).collection("users").doc(uid).delete();
   const participants=await refreshRoomPresenceSummary(db,roomId);
   return {ok:true,roomId,onlineCount:participants.length};
