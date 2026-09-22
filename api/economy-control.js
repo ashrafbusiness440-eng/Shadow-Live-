@@ -2,6 +2,7 @@ import { getApps, initializeApp, cert } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { calculateAgencyCycleSettlement, convertPayableCoinsToDiamonds } from "./economy-policy.js";
+import { economyPermissions } from "./economy-permissions.js";
 
 function clean(value){return String(value??"").trim();}
 function parseServiceAccount(raw){
@@ -38,13 +39,15 @@ async function actor(req){
   const snap=await db.collection("users").doc(decoded.uid).get();
   if(!snap.exists)throw Error("forbidden");
   const user=snap.data()||{};
-  const caps=Array.isArray(user.capabilities)?user.capabilities:[];
-  const isOwner=user.role==="owner";
-  const canEconomy=isOwner||(user.adminEnabled===true&&caps.includes("manageEconomy"));
-  if(!canEconomy)throw Error("forbidden");
-  const canAdjustBalances=isOwner||(user.adminEnabled===true&&caps.includes("adjustBalances"));
-  const canManageSettlements=isOwner||(user.adminEnabled===true&&caps.includes("manageSettlements"));
-  return {uid:decoded.uid,db,isOwner,canAdjustBalances,canManageSettlements};
+  const permissions=economyPermissions(user);
+  if(!permissions.canEconomy)throw Error("forbidden");
+  return {
+    uid:decoded.uid,
+    db,
+    isOwner:permissions.isOwner,
+    canAdjustBalances:permissions.canAdjustBalances,
+    canManageSettlements:permissions.canManageSettlements,
+  };
 }
 
 function normalizeLock(data={}){
