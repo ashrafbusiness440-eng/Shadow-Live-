@@ -767,9 +767,9 @@ function roomControlPolicySnapshot(room){
 }
 
 async function controlRoomPolicy(db,uid,body){
-  const roomId=clean(body.roomId);
+  let roomId=clean(body.roomId);
+  const roomPublicId=clean(body.roomPublicId);
   const controlAction=clean(body.controlAction||"state");
-  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
 
   const actorSnap=await db.collection("users").doc(uid).get();
   const actor=actorSnap.data()||{};
@@ -781,6 +781,13 @@ async function controlRoomPolicy(db,uid,body){
   );
   const canGlobal=isOwner||(actor.adminEnabled===true&&capabilities.includes("globalRoomControl"));
   if(!actorSnap.exists||!canManage)throw new ApiError("forbidden",403);
+
+  if(!roomId&&roomPublicId){
+    if(!/^\d{3,12}$/.test(roomPublicId))throw new ApiError("invalid_room_public_id",400);
+    const idSnap=await db.collection("room_ids").doc(roomPublicId).get();
+    roomId=clean(idSnap.data()?.roomId);
+  }
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
 
   const roomRef=db.collection("rooms").doc(roomId);
   if(controlAction==="state"){
