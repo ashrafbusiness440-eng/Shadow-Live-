@@ -1425,12 +1425,31 @@ async function refreshRoomPresenceSummary(db,roomId){
     for(const ref of stale.slice(0,450))batch.delete(ref);
     await batch.commit();
   }
-  await db.collection("rooms").doc(roomId).set({
+  const roomRef=db.collection("rooms").doc(roomId);
+  const roomSnap=await roomRef.get();
+  const room=roomSnap.data()||{};
+  const update={
     onlineCount:active.length,
     participantsCount:active.length,
     lastPresenceAtMs:now,
     updatedAt:FieldValue.serverTimestamp(),
-  },{merge:true});
+  };
+  const musicState=normalizeRoomMusicState(room);
+  const activeUids=new Set(active.map(item=>item.uid));
+  if(musicState.status==="playing"&&
+      musicState.sourceOwnerUid&&
+      !activeUids.has(musicState.sourceOwnerUid)){
+    update.musicState={
+      ...musicState,
+      status:"stopped",
+      currentTrackId:"",
+      sourceOwnerUid:"",
+      requestedBy:"system_source_left",
+      startedAtMs:0,
+      commandRevision:musicState.commandRevision+1,
+    };
+  }
+  await roomRef.set(update,{merge:true});
   active.sort((a,b)=>a.joinedAtMs-b.joinedAtMs);
   return active;
 }
