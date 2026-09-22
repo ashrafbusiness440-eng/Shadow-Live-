@@ -138,6 +138,35 @@ async function searchOperations(db,query){
   return results.slice(0,50);
 }
 
+async function recentIssues(db){
+  const [purchases,giftOps,walletOps]=await Promise.all([
+    db.collection("google_play_purchases").limit(50).get(),
+    db.collection("gift_operations").limit(50).get(),
+    db.collection("wallet_operations").limit(50).get(),
+  ]);
+  const issues=[];
+  for(const doc of purchases.docs){
+    const data=doc.data()||{};
+    const status=clean(data.status);
+    if(
+      (status&&status!=="credited") ||
+      data.consumeRetryRequired===true ||
+      (clean(data.refundState)&&clean(data.refundState)!=="none") ||
+      (clean(data.disputeState)&&clean(data.disputeState)!=="none")
+    ){
+      issues.push({collection:"google_play_purchases",id:doc.id,data});
+    }
+  }
+  for(const [collection,snap] of [["gift_operations",giftOps],["wallet_operations",walletOps]]){
+    for(const doc of snap.docs){
+      const data=doc.data()||{};
+      const status=clean(data.status);
+      if(status&&status!=="completed")issues.push({collection,id:doc.id,data});
+    }
+  }
+  return issues.slice(0,50);
+}
+
 export default async function handler(req,res){
   if(cors(req,res))return;
   if(req.method!=="POST")return out(res,405,{ok:false,code:"method_not_allowed"});
@@ -204,6 +233,11 @@ export default async function handler(req,res){
     if(action==="searchOperation"){
       const operations=await searchOperations(db,req.body?.query);
       return out(res,200,{ok:true,operations});
+    }
+
+    if(action==="recentIssues"){
+      const issues=await recentIssues(db);
+      return out(res,200,{ok:true,issues});
     }
 
     return out(res,400,{ok:false,code:"invalid_action"});
