@@ -116,6 +116,7 @@ function roomPermissions(user){
     appOwner:role==="owner",
     manageRooms:role==="owner"||(data.adminEnabled===true&&capabilities.includes("manage_rooms")),
     hidden:role==="owner"||(data.adminEnabled===true&&capabilities.includes("canCreateHiddenRoom")),
+    manageIds:role==="owner"||(data.adminEnabled===true&&(capabilities.includes("manageIds")||capabilities.includes("manage_ids"))),
   };
 }
 
@@ -426,6 +427,79 @@ async function openPersonalRoom(db,uid){
     }
   }
   throw new ApiError("room_public_id_exhausted",503);
+}
+
+async function changeRoomPublicId(db,uid,body){
+  const roomId=clean(body.roomId);
+  const newPublicId=clean(body.publicId);
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+  if(!/^[0-9]{6}$/.test(newPublicId))throw new ApiError("invalid_public_id",400);
+
+  const roomRef=db.collection("rooms").doc(roomId);
+  const userRef=db.collection("users").doc(uid);
+  const newRoomIdRef=db.collection("room_ids").doc(newPublicId);
+  const userIdRef=db.collection("public_ids").doc(newPublicId);
+  const auditRef=db.collection("room_audit_logs").doc(roomId).collection("items").doc();
+
+  return db.runTransaction(async tx=>{
+    const [roomSnap,userSnap,newRoomIdSnap,userIdSnap]=await Promise.all([
+      tx.get(roomRef),tx.get(userRef),tx.get(newRoomIdRef),tx.get(userIdRef),
+    ]);
+    if(!roomSnap.exists)throw new ApiError("room_not_found",404);
+    const room=roomSnap.data()||{};
+    const user=userSnap.data()||{};
+    const ownerUid=clean(room.ownerUid||room.ownerId||room.hostId);
+    const permissions=roomPermissions(user);
+    if(ownerUid!==uid&&!permissions.manageIds)throw new ApiError("forbidden",403);
+
+    const oldPublicId=clean(room.publicId);
+    if(oldPublicId===newPublicId){
+      return {ok:true,roomId,publicId:newPublicId,unchanged:true};
+    }
+    if(newRoomIdSnap.exists||userIdSnap.exists)throw new ApiError("public_id_taken",409);
+
+    const now=FieldValue.serverTimestamp();
+    tx.create(newRoomIdRef,{
+      roomId,
+      ownerUid,
+      source:"roomIdChange",
+      active:true,
+      reserved:true,
+      createdAt:now,
+    });
+
+    if(oldPublicId){
+      const oldRef=db.collection("room_ids").doc(oldPublicId);
+      tx.set(oldRef,{
+        roomId,
+        ownerUid,
+        active:false,
+        reserved:true,
+        replacedBy:newPublicId,
+        updatedAt:now,
+      },{merge:true});
+    }
+
+    const name=clean(room.name||room.title||"غرفتي");
+    tx.update(roomRef,{
+      publicId:newPublicId,
+      searchTokens:searchTokens(
+        name+" "+(Array.isArray(room.tags)?room.tags.map(clean).join(" "):"")+" "+
+        clean(room.category)+" "+clean(room.ownerName)+" "+clean(room.ownerLocation),
+        newPublicId,
+      ),
+      updatedAt:now,
+    });
+    tx.create(auditRef,{
+      action:"changeRoomPublicId",
+      actorUid:uid,
+      before:{publicId:oldPublicId},
+      after:{publicId:newPublicId},
+      createdAt:now,
+    });
+
+    return {ok:true,roomId,publicId:newPublicId,oldPublicId};
+  });
 }
 
 async function updateRoomSettings(db,uid,body){
@@ -1664,6 +1738,9 @@ export default async function handler(req,res){
     }
     if(action==="updateRoomSettings"){
       return out(res,200,await updateRoomSettings(getFirestore(),decoded.uid,req.body||{}));
+    }
+    if(action==="changeRoomPublicId"){
+      return out(res,200,await changeRoomPublicId(getFirestore(),decoded.uid,req.body||{}));
     }
     if(action==="roomInsights"){
       const roomId=clean(req.body?.roomId);
