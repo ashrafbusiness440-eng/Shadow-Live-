@@ -34,6 +34,9 @@ jobs:
             node --check "$file"
           done
 
+      - name: Run economy and mic policy unit tests
+        run: node --test api/__tests__/*.test.js
+
       - name: Audit Dart reachability
         run: python3 .github/scripts/find_unreachable_dart.py
 
