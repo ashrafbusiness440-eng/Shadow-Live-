@@ -33,7 +33,7 @@ jobs:
         with:
           node-version: '22'
       - name: Validate Vercel admin API syntax
-        run: node --check api/change-public-id.js && node --check api/change-room-id.js && node --check api/set-id-management-permission.js && node --check api/manage-app-asset.js && node --check api/app-assets.js && node --check api/chat-actions.js
+        run: node --check api/change-public-id.js && node --check api/set-id-management-permission.js && node --check api/manage-app-asset.js && node --check api/app-assets.js && node --check api/chat-actions.js && node --check api/gift-economy-config.js && node --check api/room-gift.js && node --check api/voice-session.js
       - working-directory: functions
         run: npm install
       - working-directory: functions
