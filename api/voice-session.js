@@ -659,6 +659,14 @@ async function roomSeatAction(db,uid,body){
     const actorSnap=await tx.get(db.collection("users").doc(uid));
     const actor=actorSnap.data()||{};
     const canManageMic=canManageRoomAction(room,actor,uid,"manageMic");
+    const assertTargetPresent=async targetUserId=>{
+      const presenceRef=db.collection("room_presence").doc(roomId).collection("users").doc(targetUserId);
+      const presenceSnap=await tx.get(presenceRef);
+      const lastSeenAtMs=Number(presenceSnap.data()?.lastSeenAtMs||0);
+      if(!presenceSnap.exists||Date.now()-lastSeenAtMs>90000){
+        throw new ApiError("target_not_in_room",409);
+      }
+    };
     let seats=normalizeSeats(room);
     let invites=Array.isArray(room.micInvites)?[...room.micInvites]:[];
     let requests=Array.isArray(room.micRequests)?[...room.micRequests]:[];
@@ -676,11 +684,13 @@ async function roomSeatAction(db,uid,body){
     }else if(action==="inviteToMic"){
       if(!canManageMic)throw new ApiError("forbidden",403);
       if(!targetUid||targetUid===uid)throw new ApiError("invalid_target",400);
+      await assertTargetPresent(targetUid);
       if(!invites.includes(targetUid))invites.push(targetUid);
     }else if(action==="approveMicRequest"){
       if(!canManageMic)throw new ApiError("forbidden",403);
       if(!targetUid||targetUid===uid)throw new ApiError("invalid_target",400);
       if(!requests.includes(targetUid))throw new ApiError("mic_request_not_found",404);
+      await assertTargetPresent(targetUid);
       requests=requests.filter(id=>id!==targetUid);
       if(!invites.includes(targetUid))invites.push(targetUid);
     }else if(action==="rejectMicRequest"){

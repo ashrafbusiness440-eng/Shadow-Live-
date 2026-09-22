@@ -1320,6 +1320,31 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             TextButton(
               onPressed: _changingSeat
                   ? null
+                  : () {
+                      final emptySeats =
+                          state.seats.where((seat) => !seat.occupied).toList();
+                      if (emptySeats.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('لا يوجد مقعد فارغ حالياً.'),
+                          ),
+                        );
+                        return;
+                      }
+                      unawaited(
+                        _runSeatAction(
+                          () => _roomSeatService.takeSeat(
+                            roomId: roomId,
+                            seatIndex: emptySeats.first.index,
+                          ),
+                        ),
+                      );
+                    },
+              child: const Text('قبول'),
+            ),
+            TextButton(
+              onPressed: _changingSeat
+                  ? null
                   : () => _runSeatAction(
                         () => _roomSeatService.declineMicInvite(roomId),
                       ),
