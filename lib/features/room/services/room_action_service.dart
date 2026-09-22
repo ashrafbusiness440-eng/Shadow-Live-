@@ -160,6 +160,20 @@ class RoomActionService {
     );
   }
 
+  Future<String> changeRoomPublicId({
+    required String roomId,
+    required String publicId,
+  }) async {
+    final body = await _post({
+      'action': 'changeRoomPublicId',
+      'roomId': roomId,
+      'publicId': publicId,
+    });
+    final value = (body['publicId'] ?? '').toString();
+    if (value.isEmpty) throw const FormatException('invalid_public_id');
+    return value;
+  }
+
   Future<Map<String, dynamic>> updateRoomSettings({
     required String roomId,
     required String name,
