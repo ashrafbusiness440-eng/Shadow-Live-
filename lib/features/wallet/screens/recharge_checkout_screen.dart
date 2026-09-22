@@ -14,7 +14,9 @@ class _RechargeCheckoutScreenState extends State<RechargeCheckoutScreen> {
   @override
   Widget build(BuildContext context) {
     final args = (ModalRoute.of(context)?.settings.arguments as Map?) ?? const {};
-    final coins = args['coins'] ?? 1200;
+    final coins = (args['coins'] ?? 1200) as num;
+    final baseCoins = (args['baseCoins'] ?? coins) as num;
+    final bonusCoins = (args['bonusCoins'] ?? 0) as num;
     final price = (args['price'] ?? 9.99) as num;
     const methods = [
       ('بطاقة ائتمان / خصم مباشر', 'Visa, Mastercard, Maestro', Icons.credit_card_rounded),
@@ -56,7 +58,9 @@ class _RechargeCheckoutScreenState extends State<RechargeCheckoutScreen> {
               const Text('🧾  تفاصيل الطلب', style: TextStyle(color: Color(0xFFC9B8FF), fontSize: 18, fontWeight: FontWeight.w900)),
               const SizedBox(height: 10),
               _card(child: Column(children: [
-                _row('الباقة المختارة', '${formatCompactAmount(coins)} عملة ذهبية'),
+                _row('Coins الأساسية', '${formatCompactAmount(baseCoins)} عملة'),
+                if (bonusCoins > 0) _row('Bonus', '+${formatCompactAmount(bonusCoins)} عملة'),
+                _row('المجموع المستلم', '${formatCompactAmount(coins)} عملة ذهبية'),
                 _row('السعر', '\$ ${price.toStringAsFixed(2)}'),
                 _row('الرسوم', '\$ 0.00'),
                 const Divider(color: Colors.white12, height: 28),
