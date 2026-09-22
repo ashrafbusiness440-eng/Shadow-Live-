@@ -200,6 +200,19 @@ class RoomActionService {
     return Map<String, dynamic>.from(room);
   }
 
+  Future<bool> loadGhostMode() async {
+    final body = await _post({'action': 'roomGhostState'});
+    return body['ghostMode'] == true;
+  }
+
+  Future<bool> setGhostMode(bool enabled) async {
+    final body = await _post({
+      'action': 'setRoomGhostMode',
+      'enabled': enabled,
+    });
+    return body['ghostMode'] == true;
+  }
+
   Future<void> closePersonalRoom(String roomId) async {
     await _post({
       'action': 'closePersonalRoom',

@@ -2947,6 +2947,11 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   Future<void> _showRoomMenu() async {
     final personal = (_roomArguments['roomType'] ?? '').toString() == 'personal';
     final owner = _voiceSession.isOwner;
+    var ghostMode = false;
+    try {
+      ghostMode = await _roomActions.loadGhostMode();
+    } catch (_) {}
+    if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: const Color(0xFF111522),
@@ -3030,6 +3035,62 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       _showChangeRoomIdSheet();
                     },
                   ),
+                ListTile(
+                  leading: Icon(
+                    ghostMode
+                        ? Icons.visibility_off_rounded
+                        : Icons.visibility_rounded,
+                    color: ghostMode
+                        ? const Color(0xFFBFA5FF)
+                        : Colors.white54,
+                  ),
+                  title: const Text(
+                    'Ghost Mode',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  subtitle: Text(
+                    ghostMode
+                        ? 'مفعّل — لن يظهر إشعار دخولك للغرفة.'
+                        : 'متوقف — يظهر إشعار دخولك بشكل طبيعي.',
+                    style: const TextStyle(
+                      color: Colors.white54,
+                      fontSize: 10,
+                    ),
+                  ),
+                  trailing: Switch(
+                    value: ghostMode,
+                    onChanged: null,
+                  ),
+                  onTap: () async {
+                    try {
+                      final next = await _roomActions.setGhostMode(!ghostMode);
+                      if (sheetContext.mounted) {
+                        Navigator.pop(sheetContext);
+                      }
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              next
+                                  ? 'تم تفعيل Ghost Mode.'
+                                  : 'تم إيقاف Ghost Mode.',
+                            ),
+                          ),
+                        );
+                      }
+                    } catch (_) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'تعذر تحديث Ghost Mode حالياً.',
+                            ),
+                          ),
+                        );
+                      }
+                    }
+                  },
+                ),
                 ListTile(
                   leading: const Icon(
                     Icons.picture_in_picture_alt_rounded,

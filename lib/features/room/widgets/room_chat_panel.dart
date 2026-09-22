@@ -145,21 +145,69 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
 
   Widget _bubble(RoomChatMessage message) {
     if (message.type == 'system') {
+      final vipEntry =
+          message.systemKind == 'room_join' && message.vipLevel > 0;
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Center(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: .05),
-              borderRadius: BorderRadius.circular(999),
+          child: TweenAnimationBuilder<double>(
+            tween: Tween<double>(begin: .96, end: 1),
+            duration: const Duration(milliseconds: 320),
+            builder: (context, scale, child) => Transform.scale(
+              scale: scale,
+              child: child,
             ),
-            child: Text(
-              message.text,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.white54,
-                fontSize: 10,
+            child: Container(
+              padding: EdgeInsets.symmetric(
+                horizontal: vipEntry ? 14 : 10,
+                vertical: vipEntry ? 7 : 5,
+              ),
+              decoration: BoxDecoration(
+                gradient: vipEntry
+                    ? const LinearGradient(
+                        colors: [
+                          Color(0xFF6D27D9),
+                          Color(0xFFB57A18),
+                        ],
+                      )
+                    : null,
+                color: vipEntry
+                    ? null
+                    : Colors.white.withValues(alpha: .05),
+                borderRadius: BorderRadius.circular(999),
+                border: vipEntry
+                    ? Border.all(
+                        color: const Color(0xFFFFD54A)
+                            .withValues(alpha: .55),
+                      )
+                    : null,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (vipEntry) ...[
+                    const Icon(
+                      Icons.workspace_premium_rounded,
+                      color: Color(0xFFFFE08A),
+                      size: 15,
+                    ),
+                    const SizedBox(width: 5),
+                  ],
+                  Flexible(
+                    child: Text(
+                      message.text,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color:
+                            vipEntry ? Colors.white : Colors.white54,
+                        fontSize: vipEntry ? 11 : 10,
+                        fontWeight: vipEntry
+                            ? FontWeight.w800
+                            : FontWeight.w400,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

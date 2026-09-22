@@ -17,6 +17,9 @@ class RoomChatMessage {
     required this.replyPreview,
     required this.replySenderUid,
     required this.createdAt,
+    required this.systemKind,
+    required this.vipLevel,
+    required this.entryEffectKey,
   });
 
   final String id;
@@ -30,6 +33,9 @@ class RoomChatMessage {
   final String? replyPreview;
   final String? replySenderUid;
   final DateTime? createdAt;
+  final String systemKind;
+  final int vipLevel;
+  final String entryEffectKey;
 
   factory RoomChatMessage.fromDoc(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
@@ -53,6 +59,9 @@ class RoomChatMessage {
       replyPreview: data['replyPreview']?.toString(),
       replySenderUid: data['replySenderUid']?.toString(),
       createdAt: timestamp is Timestamp ? timestamp.toDate() : null,
+      systemKind: (data['systemKind'] ?? '').toString(),
+      vipLevel: (data['vipLevel'] as num?)?.toInt() ?? 0,
+      entryEffectKey: (data['entryEffectKey'] ?? '').toString(),
     );
   }
 }

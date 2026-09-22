@@ -1366,6 +1366,22 @@ async function roomMusicCommand(db,uid,body){
   });
 }
 
+async function roomGhostState(db,uid){
+  const snap=await db.collection("users").doc(uid).get();
+  const data=snap.data()||{};
+  const privacy=data.privacy&&typeof data.privacy==="object"?data.privacy:{};
+  return {ok:true,ghostMode:data.roomGhostMode===true||privacy.ghostMode===true};
+}
+
+async function setRoomGhostMode(db,uid,body){
+  const enabled=body.enabled===true;
+  await db.collection("users").doc(uid).set({
+    roomGhostMode:enabled,
+    updatedAt:FieldValue.serverTimestamp(),
+  },{merge:true});
+  return {ok:true,ghostMode:enabled};
+}
+
 async function refreshRoomPresenceSummary(db,roomId){
   const now=Date.now();
   const cutoff=now-90000;
@@ -1408,20 +1424,53 @@ async function roomPresenceJoin(db,uid,roomId){
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
   const roomRef=db.collection("rooms").doc(roomId);
   const profileRef=db.collection("public_profiles").doc(uid);
+  const userRef=db.collection("users").doc(uid);
   const presenceRef=db.collection("room_presence").doc(roomId).collection("users").doc(uid);
-  const [roomSnap,profileSnap,presenceSnap]=await Promise.all([
-    roomRef.get(),profileRef.get(),presenceRef.get(),
+  const [roomSnap,profileSnap,userSnap,presenceSnap]=await Promise.all([
+    roomRef.get(),profileRef.get(),userRef.get(),presenceRef.get(),
   ]);
   if(!roomSnap.exists||roomSnap.data()?.isActive===false)throw new ApiError("room_unavailable",404);
   const profile=profileSnap.data()||{};
+  const user=userSnap.data()||{};
+  const privacy=user.privacy&&typeof user.privacy==="object"?user.privacy:{};
+  const ghostMode=user.roomGhostMode===true||privacy.ghostMode===true;
+  const vipObject=user.vip&&typeof user.vip==="object"?user.vip:{};
+  const vipLevel=Math.max(0,Math.min(99,Number(
+    user.vipLevel??profile.vipLevel??vipObject.level??0
+  )||0));
+  const entryEffectKey=clean(
+    user.vipEntryEffectKey||profile.vipEntryEffectKey||vipObject.entryEffectKey
+  );
+  const displayName=clean(profile.displayName||profile.username||user.displayName||user.username||"مستخدم Shadow Live");
+  const profileImageUrl=clean(profile.profileImageUrl||user.profileImageUrl);
   const now=Date.now();
   await presenceRef.set({
     uid,
-    displayName:clean(profile.displayName||profile.username||"مستخدم Shadow Live"),
-    profileImageUrl:clean(profile.profileImageUrl),
+    displayName,
+    profileImageUrl,
     joinedAtMs:presenceSnap.exists?Number(presenceSnap.data()?.joinedAtMs||now):now,
     lastSeenAtMs:now,
+    ghostMode,
+    vipLevel,
   },{merge:true});
+
+  if(!presenceSnap.exists&&!ghostMode){
+    const messageRef=roomRef.collection("messages").doc();
+    await messageRef.set({
+      type:"system",
+      systemKind:"room_join",
+      senderUid:uid,
+      displayName,
+      profileImageUrl,
+      text:vipLevel>0
+        ? displayName+" دخل الغرفة — VIP "+String(vipLevel)
+        : displayName+" دخل الغرفة",
+      vipLevel,
+      entryEffectKey,
+      createdAt:FieldValue.serverTimestamp(),
+    });
+  }
+
   const participants=await refreshRoomPresenceSummary(db,roomId);
   return {ok:true,roomId,onlineCount:participants.length,participants};
 }
@@ -1880,6 +1929,12 @@ export default async function handler(req,res){
     }
     if(action==="roomMusicCommand"){
       return out(res,200,await roomMusicCommand(getFirestore(),decoded.uid,req.body||{}));
+    }
+    if(action==="roomGhostState"){
+      return out(res,200,await roomGhostState(getFirestore(),decoded.uid));
+    }
+    if(action==="setRoomGhostMode"){
+      return out(res,200,await setRoomGhostMode(getFirestore(),decoded.uid,req.body||{}));
     }
     if(action==="roomPresenceJoin"){
       const roomId=clean(req.body?.roomId);
