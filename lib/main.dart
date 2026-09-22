@@ -3586,6 +3586,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         chatEnabled:
                             _roomArguments['chatEnabled'] != false,
                         isOwner: _canModerateChat,
+                        roomEffectsEnabled: _roomEffectsEnabled,
+                        effectSoundEnabled: _effectSoundEnabled,
                       ),
                       const SizedBox(height: 190),
                     ],

@@ -95,6 +95,7 @@ class _RoomMusicSheetState extends State<RoomMusicSheet> {
     try {
       final files = await FilePicker.pickFiles(
         type: FileType.audio,
+        allowMultiple: true,
       );
       if (!mounted || files.isEmpty) return;
       setState(() {

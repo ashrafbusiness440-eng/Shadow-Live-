@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../services/room_chat_service.dart';
 
@@ -11,11 +12,15 @@ class RoomChatPanel extends StatefulWidget {
     required this.roomId,
     required this.chatEnabled,
     required this.isOwner,
+    required this.roomEffectsEnabled,
+    required this.effectSoundEnabled,
   });
 
   final String roomId;
   final bool chatEnabled;
   final bool isOwner;
+  final bool roomEffectsEnabled;
+  final bool effectSoundEnabled;
 
   @override
   State<RoomChatPanel> createState() => _RoomChatPanelState();
@@ -29,6 +34,8 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
   RoomChatMessage? _replyingTo;
   String? _mentionUid;
   bool _sending = false;
+  bool _effectSoundInitialized = false;
+  String _lastEffectMessageId = '';
 
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
   bool get _canSend => widget.chatEnabled || widget.isOwner;
@@ -145,8 +152,9 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
 
   Widget _bubble(RoomChatMessage message) {
     if (message.type == 'system') {
-      final vipEntry =
-          message.systemKind == 'room_join' && message.vipLevel > 0;
+      final vipEntry = widget.roomEffectsEnabled &&
+          message.systemKind == 'room_join' &&
+          message.vipLevel > 0;
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Center(
@@ -368,6 +376,24 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
                   );
                 }
                 final messages = snapshot.data!;
+                if (messages.isNotEmpty) {
+                  final latest = messages.first;
+                  if (!_effectSoundInitialized) {
+                    _effectSoundInitialized = true;
+                    _lastEffectMessageId = latest.id;
+                  } else if (latest.id != _lastEffectMessageId) {
+                    _lastEffectMessageId = latest.id;
+                    final shouldPlayEffectSound =
+                        widget.effectSoundEnabled &&
+                            latest.systemKind == 'room_join' &&
+                            latest.vipLevel > 0;
+                    if (shouldPlayEffectSound) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        SystemSound.play(SystemSoundType.click);
+                      });
+                    }
+                  }
+                }
                 if (messages.isEmpty) {
                   return const Center(
                     child: Text(
