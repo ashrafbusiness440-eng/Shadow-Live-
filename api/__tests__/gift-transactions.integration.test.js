@@ -74,6 +74,7 @@ test("room gift debits once and records transaction ledger agency link and accru
   const receiverId="receiver_"+suffix;
   const roomId="room_"+suffix;
   const agencyId="agency_"+suffix;
+  const roomAgencyId="other_room_agency_"+suffix;
   const key="roomgift_integration_"+suffix;
 
   await Promise.all([
@@ -88,7 +89,7 @@ test("room gift debits once and records transaction ledger agency link and accru
       pendingGiftEarningCoins:0,
     }),
     db.collection("rooms").doc(roomId).set({
-      isActive:true,agencyId,totalSupport:0,
+      isActive:true,agencyId:roomAgencyId,totalSupport:0,
     }),
     db.collection("room_presence").doc(roomId).collection("users").doc(senderId).set({
       lastSeenAtMs:Date.now(),displayName:"Sender",
@@ -127,6 +128,7 @@ test("room gift debits once and records transaction ledger agency link and accru
   assert.equal(receiver.data().pendingAgencyGiftEarningCoins,55000);
   assert.equal(transaction.data().contextType,"room");
   assert.equal(transaction.data().agencyId,agencyId);
+  assert.notEqual(transaction.data().agencyId,roomAgencyId);
   assert.equal(transaction.data().recipientShareCoins,55000);
   assert.equal(transaction.data().agencyShareCoins,5000);
   assert.equal(transaction.data().platformShareCoins,40000);
