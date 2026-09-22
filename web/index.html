@@ -4,21 +4,21 @@
   <base href="$FLUTTER_BASE_HREF">
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="Shadow Live Control - لوحة إدارة شادو لايف">
-  <meta name="theme-color" content="#D7B85A">
+  <meta name="description" content="Shadow Live - تطبيق اجتماعي صوتي">
+  <meta name="theme-color" content="#8A00FF">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="Shadow Control">
+  <meta name="apple-mobile-web-app-title" content="Shadow Live">
   <link rel="apple-touch-icon" href="assets/assets/images/app_icon.png">
   <link rel="icon" type="image/png" href="assets/assets/images/app_icon.png"/>
-  <title>Shadow Control</title>
+  <title>Shadow Live</title>
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
   <script>
-    // Shadow Control is an admin PWA. Always prefer the newest deployed build
-    // so privileged UI/API fixes are not held by an old Flutter service worker.
+    // Recovery deploy: remove any stale Shadow Control / old Flutter PWA cache
+    // before loading the current Shadow Live production bundle.
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', async () => {
         const regs = await navigator.serviceWorker.getRegistrations();
@@ -30,6 +30,6 @@
       });
     }
   </script>
-  <script src="flutter_bootstrap.js?v=control-20260920-2" async></script>
+  <script src="flutter_bootstrap.js?v=shadow-live-20260922-recovery" async></script>
 </body>
 </html>
