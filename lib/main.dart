@@ -3675,73 +3675,83 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           : const SizedBox.shrink();
     }
 
-    return Row(
+    final levelBox = Container(
+      width: 118,
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111522).withValues(alpha: .86),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Row(
+        children: [
+          Text(
+            'LV.${insights.level}',
+            style: const TextStyle(
+              color: Color(0xFFFFD54A),
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: LinearProgressIndicator(
+              value: insights.levelProgress,
+              minHeight: 3,
+              borderRadius: BorderRadius.circular(99),
+              color: const Color(0xFF8A3DFF),
+              backgroundColor: Colors.white12,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return Column(
       children: [
-        InkWell(
-          onTap: _showRoomRankingSheet,
-          borderRadius: BorderRadius.circular(999),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-            decoration: BoxDecoration(
-              color: const Color(0xFF111522).withValues(alpha: .86),
+        Row(
+          children: [
+            InkWell(
+              onTap: _showRoomRankingSheet,
               borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: Colors.white10),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.emoji_events_rounded,
-                  color: Color(0xFFFFD54A),
-                  size: 14,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF111522).withValues(alpha: .86),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: Colors.white10),
                 ),
-                const SizedBox(width: 4),
-                Text(
-                  insights.dailyRank == null
-                      ? 'الترتيب اليومي'
-                      : 'TOP ${insights.dailyRank} اليومي',
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 9,
-                    fontWeight: FontWeight.w800,
-                  ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.emoji_events_rounded,
+                      color: Color(0xFFFFD54A),
+                      size: 14,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      insights.dailyRank == null
+                          ? 'الترتيب اليومي'
+                          : 'TOP ${insights.dailyRank} اليومي',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
-          ),
+            const Spacer(),
+            _buildSupporterCluster(),
+          ],
         ),
-        const Spacer(),
-        Container(
-          constraints: const BoxConstraints(maxWidth: 118),
-          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-          decoration: BoxDecoration(
-            color: const Color(0xFF111522).withValues(alpha: .86),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white10),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'LV.${insights.level}',
-                style: const TextStyle(
-                  color: Color(0xFFFFD54A),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(width: 6),
-              Flexible(
-                child: LinearProgressIndicator(
-                  value: insights.levelProgress,
-                  minHeight: 3,
-                  borderRadius: BorderRadius.circular(99),
-                  color: const Color(0xFF8A3DFF),
-                  backgroundColor: Colors.white12,
-                ),
-              ),
-            ],
-          ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: levelBox,
         ),
       ],
     );
@@ -3896,8 +3906,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final height = constraints.maxHeight;
-                  final micTop = min(205.0, height * .26);
-                  final micHeight = max(300.0, height * .46);
+                  final micTop = min(165.0, height * .21);
+                  final micHeight = max(320.0, height * .50);
                   final feedTop = min(height - 145, micTop + micHeight - 6);
 
                   return Stack(
@@ -4083,58 +4093,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                               ),
                               const SizedBox(height: 6),
                               _buildRoomInsightsBar(),
-                              const SizedBox(height: 7),
-                              InkWell(
-                                onTap: ownerUid ==
-                                        (FirebaseAuth.instance.currentUser?.uid ??
-                                            '')
-                                    ? () => NavigationService.navigateTo(
-                                          AppRoutes.profile,
-                                        )
-                                    : () {
-                                        if (ownerUid.isNotEmpty) {
-                                          showQuickProfileSheet(
-                                            context,
-                                            userId: ownerUid,
-                                          );
-                                        }
-                                      },
-                                borderRadius: BorderRadius.circular(999),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 9,
-                                    vertical: 5,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF6D27D9)
-                                        .withValues(alpha: .42),
-                                    borderRadius: BorderRadius.circular(999),
-                                    border: Border.all(
-                                      color: const Color(0xFFFFD54A)
-                                          .withValues(alpha: .35),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Icon(
-                                        Icons.workspace_premium_rounded,
-                                        size: 13,
-                                        color: Color(0xFFFFD54A),
-                                      ),
-                                      const SizedBox(width: 5),
-                                      Text(
-                                        _ownerDisplayName,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
+                              const SizedBox(height: 4),
                               _buildMicStatusBanner(),
                             ],
                           ),
