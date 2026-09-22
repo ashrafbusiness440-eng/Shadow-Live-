@@ -22,8 +22,11 @@ def resolve(src, spec):
         return "lib/" + spec[len(prefix):]
     if spec.startswith("package:"):
         return None
-    if spec.startswith("."):
-        return (Path(src).parent / spec).resolve().relative_to(root.resolve()).as_posix()
+    if not spec.startswith("package:"):
+        try:
+            return (Path(src).parent / spec).resolve().relative_to(root.resolve()).as_posix()
+        except ValueError:
+            return None
     return None
 
 for p in files:
