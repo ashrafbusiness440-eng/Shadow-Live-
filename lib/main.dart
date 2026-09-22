@@ -241,6 +241,21 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         _voiceJoining = false;
         _voiceMicMuted = true;
         _voiceError = null;
+        _roomModeratorState = const RoomModeratorState(
+          roomId: 'e2e_room',
+          isOwner: true,
+          limit: 5,
+          myCapabilities: {
+            'manageMic',
+            'moderateUsers',
+            'moderateChat',
+            'manageMusic',
+            'manageMusicPolicy',
+            'managePk',
+            'manageIds',
+          },
+          moderators: [],
+        );
         _roomSeatState = RoomSeatState(
           roomId: 'e2e_room',
           seats: const [
