@@ -2402,18 +2402,36 @@ function roomActivityScore(room){
   );
 }
 
+function utcSupportPeriods(date=new Date()){
+  const day=date.toISOString().slice(0,10);
+  const month=day.slice(0,7);
+  const d=new Date(Date.UTC(date.getUTCFullYear(),date.getUTCMonth(),date.getUTCDate()));
+  const weekday=d.getUTCDay()||7;
+  d.setUTCDate(d.getUTCDate()+4-weekday);
+  const yearStart=new Date(Date.UTC(d.getUTCFullYear(),0,1));
+  const week=Math.ceil((((d-yearStart)/86400000)+1)/7);
+  return {
+    day,
+    week:d.getUTCFullYear().toString()+"-W"+week.toString().padStart(2,"0"),
+    month,
+  };
+}
+
 async function roomInsights(db,uid,roomId){
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
   const roomRef=db.collection("rooms").doc(roomId);
   const followRef=db.collection("room_follows").doc(roomId).collection("users").doc(uid);
 
   const favoriteRef=db.collection("room_favorites").doc(uid).collection("items").doc(roomId);
-  const [roomSnap,followSnap,favoriteSnap,activeRooms,supportersSnap]=await Promise.all([
+  const periods=utcSupportPeriods();
+  const dailySupportRef=roomRef.collection("support_daily").doc(periods.day);
+  const [roomSnap,followSnap,favoriteSnap,activeRooms,dailySupportSnap,supportersSnap]=await Promise.all([
     roomRef.get(),
     followRef.get(),
     favoriteRef.get(),
     db.collection("rooms").where("isActive","==",true).limit(200).get(),
-    roomRef.collection("supporters").orderBy("dailySupport","desc").limit(50).get(),
+    dailySupportRef.get(),
+    dailySupportRef.collection("users").limit(200).get(),
   ]);
   if(!roomSnap.exists)throw new ApiError("room_not_found",404);
 
@@ -2429,17 +2447,30 @@ async function roomInsights(db,uid,roomId){
     });
   const rankIndex=ranked.findIndex(item=>item.id===roomId);
 
-  const supporters=supportersSnap.docs.map((doc,index)=>{
-    const data=doc.data()||{};
-    return {
-      uid:doc.id,
-      rank:index+1,
-      displayName:String(data.displayName||data.username||"مستخدم Shadow Live"),
-      profileImageUrl:String(data.profileImageUrl||""),
-      totalSupport:Number(data.totalSupport||0),
-      dailySupport:Number(data.dailySupport||0),
-    };
-  });
+  const supporters=supportersSnap.docs
+    .map(doc=>{
+      const data=doc.data()||{};
+      return {
+        uid:doc.id,
+        displayName:String(data.displayName||data.username||"مستخدم Shadow Live"),
+        profileImageUrl:String(data.profileImageUrl||""),
+        dailySupport:Math.max(0,Number(data.supportCoins||0)),
+        giftCount:Math.max(0,Number(data.giftCount||0)),
+      };
+    })
+    .sort((a,b)=>b.dailySupport-a.dailySupport)
+    .slice(0,50)
+    .map((item,index)=>({...item,rank:index+1,totalSupport:item.dailySupport}));
+
+  const dailySupport=room.dailySupportDate===periods.day
+    ?Math.max(0,Number(room.dailySupport||0))
+    :Math.max(0,Number(dailySupportSnap.data()?.supportCoins||0));
+  const weeklySupport=room.weeklySupportKey===periods.week
+    ?Math.max(0,Number(room.weeklySupport||0))
+    :0;
+  const monthlySupport=room.monthlySupportKey===periods.month
+    ?Math.max(0,Number(room.monthlySupport||0))
+    :0;
 
   return {
     ok:true,
@@ -2450,7 +2481,10 @@ async function roomInsights(db,uid,roomId){
     followerCount:Math.max(0,Number(room.followerCount||0)),
     followed:followSnap.exists,
     favorited:favoriteSnap.exists,
-    dailySupport:Math.max(0,Number(room.dailySupport||0)),
+    dailySupport,
+    weeklySupport,
+    monthlySupport,
+    supportPeriods:periods,
     activityScore:roomActivityScore(room),
     dailyRank:rankIndex>=0?rankIndex+1:null,
     supporters,
@@ -2460,7 +2494,9 @@ async function roomInsights(db,uid,roomId){
       name:String(item.name||item.title||"غرفة صوتية"),
       publicId:String(item.publicId||""),
       activityScore:Number(item.activityScore||0),
-      dailySupport:Number(item.dailySupport||0),
+      dailySupport:item.dailySupportDate===periods.day?Number(item.dailySupport||0):0,
+      weeklySupport:item.weeklySupportKey===periods.week?Number(item.weeklySupport||0):0,
+      monthlySupport:item.monthlySupportKey===periods.month?Number(item.monthlySupport||0):0,
     })),
   };
 }
