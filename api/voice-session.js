@@ -959,6 +959,14 @@ function normalizePkState(room){
     winner:clean(raw.winner),
     cancelledBy:clean(raw.cancelledBy),
     finishedAtMs:Number(raw.finishedAtMs||0),
+    supporters:Array.isArray(raw.supporters)
+      ? raw.supporters.map(item=>({
+          uid:clean(item?.uid),
+          displayName:clean(item?.displayName||"مستخدم Shadow Live"),
+          profileImageUrl:clean(item?.profileImageUrl),
+          coins:Math.max(0,Number(item?.coins||0)),
+        })).filter(item=>item.uid).sort((a,b)=>b.coins-a.coins).slice(0,3)
+      : [],
   };
 }
 
@@ -1035,6 +1043,8 @@ async function createPk(db,uid,body){
       winner:"",
       cancelledBy:"",
       finishedAtMs:0,
+      supporters:[],
+      giftCount:0,
     };
     tx.update(roomRef,{pkState:pk,updatedAt:FieldValue.serverTimestamp()});
     return {ok:true,roomId,pk:normalizePkState({pkState:pk})};
