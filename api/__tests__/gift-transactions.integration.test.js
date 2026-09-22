@@ -1,0 +1,299 @@
+import assert from "node:assert/strict";
+import {after, test} from "node:test";
+import {deleteApp, getApps, initializeApp} from "firebase-admin/app";
+import {getFirestore} from "firebase-admin/firestore";
+
+import {sendGift as sendChatGift} from "../chat-actions.js";
+import {settleAgencyCycle} from "../economy-control.js";
+import {sendRoomGift} from "../room-gift.js";
+
+const app=getApps()[0]||initializeApp({projectId:"shadow-live-economy-test"});
+const db=getFirestore(app);
+
+after(async()=>{await deleteApp(app);});
+
+function periodKeys(date=new Date()){
+  const day=date.toISOString().slice(0,10);
+  const month=day.slice(0,7);
+  return {
+    day,
+    month,
+    cycle:month+"-"+(date.getUTCDate()<=15?"C1":"C2"),
+  };
+}
+
+const approvedPolicy={
+  enabled:true,
+  policyMode:"tiered_host_agency",
+  coinsPerUsd:10000,
+  coinsPerDiamond:10000,
+  hostPerformanceBonusBps:200,
+  agencyPerformanceBonusBps:200,
+  hostBonusQualifiedDays:9,
+  hostBonusMinutesPerQualifiedDay:120,
+  agencyBonusActiveHosts:10,
+  activityPayoutBpsByQualifiedDays:{
+    "0":0,"1":0,"2":0,"3":2500,"4":4000,
+    "5":5500,"6":7000,"7":8000,"8":9000,"9":10000,
+  },
+  tiers:[
+    {id:"starter",nameAr:"Starter",minGiftCoins:0,hostShareBps:5500,agencyShareBps:500},
+    {id:"bronze",nameAr:"Bronze",minGiftCoins:1000000,hostShareBps:5700,agencyShareBps:600},
+    {id:"silver",nameAr:"Silver",minGiftCoins:5000000,hostShareBps:6000,agencyShareBps:800},
+    {id:"gold",nameAr:"Gold",minGiftCoins:20000000,hostShareBps:6200,agencyShareBps:900},
+    {id:"diamond",nameAr:"Diamond",minGiftCoins:50000000,hostShareBps:6300,agencyShareBps:1000},
+  ],
+};
+
+async function seedSharedConfig(){
+  await Promise.all([
+    db.collection("system_config").doc("gift_catalog").set({
+      gifts:[{
+        id:"integration_gift",
+        nameAr:"هدية اختبار",
+        priceCoins:100000,
+        enabled:true,
+        assetKey:"gifts.placeholder.default",
+      }],
+    }),
+    db.collection("system_config").doc("gift_economy").set(approvedPolicy),
+    db.collection("system_config").doc("emergency_lock").set({
+      enabled:false,economyLocked:false,giftsLocked:false,
+    }),
+  ]);
+}
+
+test("room gift debits once and records transaction ledger agency link and accrual",async()=>{
+  await seedSharedConfig();
+  const periods=periodKeys();
+  const suffix=Date.now().toString()+"_room";
+  const senderId="sender_"+suffix;
+  const receiverId="receiver_"+suffix;
+  const roomId="room_"+suffix;
+  const agencyId="agency_"+suffix;
+  const key="roomgift_integration_"+suffix;
+
+  await Promise.all([
+    db.collection("users").doc(senderId).set({
+      coins:1000000,diamonds:0,role:"user",
+    }),
+    db.collection("users").doc(receiverId).set({
+      coins:0,diamonds:0,role:"user",agencyId,
+      giftHostActivityMonth:periods.month,
+      giftHostQualifiedDays:0,
+      pendingAgencyGiftEarningCoins:0,
+      pendingGiftEarningCoins:0,
+    }),
+    db.collection("rooms").doc(roomId).set({
+      isActive:true,agencyId,totalSupport:0,
+    }),
+    db.collection("room_presence").doc(roomId).collection("users").doc(senderId).set({
+      lastSeenAtMs:Date.now(),displayName:"Sender",
+    }),
+    db.collection("room_presence").doc(roomId).collection("users").doc(receiverId).set({
+      lastSeenAtMs:Date.now(),displayName:"Host",
+    }),
+    db.collection("agency_support_stats").doc(agencyId).collection("monthly").doc(periods.month).set({
+      activeHostIds:[],
+    }),
+  ]);
+
+  const body={
+    roomId,receiverId,giftId:"integration_gift",quantity:1,idempotencyKey:key,
+  };
+  const first=await sendRoomGift(db,senderId,body);
+  assert.equal(first.ok,true);
+  assert.equal(first.code,"ok");
+  assert.equal(first.totalCost,100000);
+  assert.equal(first.recipientShareCoins,55000);
+  assert.equal(first.agencyShareCoins,5000);
+  assert.equal(first.platformShareCoins,40000);
+  assert.equal(first.earningsStatus,"accrued_for_cycle");
+
+  const [sender,receiver,transaction,ledger,operation,accrual]=await Promise.all([
+    db.collection("users").doc(senderId).get(),
+    db.collection("users").doc(receiverId).get(),
+    db.collection("gift_transactions").doc(key).get(),
+    db.collection("financial_ledger").doc("gift_"+key).get(),
+    db.collection("gift_operations").doc(key).get(),
+    db.collection("agency_settlement_accruals").doc(
+      agencyId+"__"+periods.cycle+"__"+receiverId,
+    ).get(),
+  ]);
+  assert.equal(sender.data().coins,900000);
+  assert.equal(receiver.data().pendingAgencyGiftEarningCoins,55000);
+  assert.equal(transaction.data().contextType,"room");
+  assert.equal(transaction.data().agencyId,agencyId);
+  assert.equal(transaction.data().recipientShareCoins,55000);
+  assert.equal(transaction.data().agencyShareCoins,5000);
+  assert.equal(transaction.data().platformShareCoins,40000);
+  assert.equal(ledger.data().delta,-100000);
+  assert.equal(operation.data().status,"completed");
+  assert.equal(accrual.data().supportCoins,100000);
+  assert.equal(accrual.data().hostGrossEarningCoins,55000);
+  assert.equal(accrual.data().agencyGrossEarningCoins,5000);
+  assert.equal(accrual.data().platformShareCoins,40000);
+
+  const duplicate=await sendRoomGift(db,senderId,body);
+  assert.equal(duplicate.code,"duplicate");
+  const [senderAfter,accrualAfter]=await Promise.all([
+    db.collection("users").doc(senderId).get(),
+    db.collection("agency_settlement_accruals").doc(
+      agencyId+"__"+periods.cycle+"__"+receiverId,
+    ).get(),
+  ]);
+  assert.equal(senderAfter.data().coins,900000);
+  assert.equal(accrualAfter.data().supportCoins,100000);
+});
+
+test("chat gift uses the same economy shares and duplicate protection as room gifts",async()=>{
+  await seedSharedConfig();
+  const periods=periodKeys();
+  const suffix=Date.now().toString()+"_chat";
+  const senderId="sender_"+suffix;
+  const receiverId="receiver_"+suffix;
+  const conversationId="conversation_"+suffix;
+  const agencyId="agency_"+suffix;
+  const key="chatgift_integration_"+suffix;
+
+  await Promise.all([
+    db.collection("users").doc(senderId).set({
+      coins:1000000,diamonds:0,role:"user",
+    }),
+    db.collection("users").doc(receiverId).set({
+      coins:0,diamonds:0,role:"user",agencyId,
+      giftHostActivityMonth:periods.month,
+      giftHostQualifiedDays:0,
+      pendingAgencyGiftEarningCoins:0,
+      pendingGiftEarningCoins:0,
+    }),
+    db.collection("conversations").doc(conversationId).set({
+      participants:[senderId,receiverId],
+      unreadCounts:{[senderId]:0,[receiverId]:0},
+    }),
+    db.collection("agency_support_stats").doc(agencyId).collection("monthly").doc(periods.month).set({
+      activeHostIds:[],
+    }),
+  ]);
+
+  const body={
+    receiverId,giftId:"integration_gift",quantity:1,
+    conversationId,idempotencyKey:key,
+  };
+  const first=await sendChatGift(db,senderId,body);
+  assert.equal(first.ok,true);
+  assert.equal(first.code,"ok");
+  assert.equal(first.totalCost,100000);
+  assert.equal(first.recipientShareCoins,55000);
+  assert.equal(first.agencyShareCoins,5000);
+  assert.equal(first.platformShareCoins,40000);
+
+  const [sender,transaction,ledger,accrual]=await Promise.all([
+    db.collection("users").doc(senderId).get(),
+    db.collection("gift_transactions").doc(key).get(),
+    db.collection("financial_ledger").doc("gift_"+key).get(),
+    db.collection("agency_settlement_accruals").doc(
+      agencyId+"__"+periods.cycle+"__"+receiverId,
+    ).get(),
+  ]);
+  assert.equal(sender.data().coins,900000);
+  assert.equal(transaction.data().contextType,"chat");
+  assert.equal(transaction.data().agencyId,agencyId);
+  assert.equal(transaction.data().recipientShareCoins,55000);
+  assert.equal(transaction.data().agencyShareCoins,5000);
+  assert.equal(transaction.data().platformShareCoins,40000);
+  assert.equal(ledger.data().delta,-100000);
+  assert.equal(accrual.data().hostGrossEarningCoins,55000);
+
+  const duplicate=await sendChatGift(db,senderId,body);
+  assert.equal(duplicate.code,"duplicate");
+  const senderAfter=await db.collection("users").doc(senderId).get();
+  assert.equal(senderAfter.data().coins,900000);
+});
+
+test("cycle settlement pays final monthly tier and bonuses even above provisional accrual, then stays idempotent",async()=>{
+  await seedSharedConfig();
+  const periods=periodKeys();
+  const suffix=Date.now().toString()+"_settlement";
+  const hostUid="host_"+suffix;
+  const agencyId="agency_"+suffix;
+  const actorUid="owner_"+suffix;
+  const accrualId=agencyId+"__"+periods.cycle+"__"+hostUid;
+  const cycleStart=new Date().getUTCDate()<=15?1:16;
+
+  const activityWrites=[];
+  for(let i=0;i<9;i++){
+    const day=periods.month+"-"+String(cycleStart+i).padStart(2,"0");
+    activityWrites.push(
+      db.collection("host_mic_activity").doc(hostUid).collection("days").doc(day).set({
+        day,micSeconds:7200,qualified:true,requiredMinutes:120,
+      }),
+    );
+  }
+
+  await Promise.all([
+    ...activityWrites,
+    db.collection("users").doc(hostUid).set({
+      coins:0,
+      diamonds:0,
+      role:"user",
+      agencyId,
+      giftRevenueMonth:periods.month,
+      giftRevenueMonthCoins:1000000,
+      pendingAgencyGiftEarningCoins:550000,
+      pendingGiftEarningCoins:1500,
+      giftDiamondsLifetime:0,
+    }),
+    db.collection("agency_support_stats").doc(agencyId).collection("monthly").doc(periods.month).set({
+      activeHostIds:Array.from({length:10},(_,i)=>"active_"+i),
+    }),
+    db.collection("agency_settlement_accruals").doc(accrualId).set({
+      agencyId,
+      hostUid,
+      cycleKey:periods.cycle,
+      month:periods.month,
+      supportCoins:1000000,
+      hostGrossEarningCoins:550000,
+      agencyGrossEarningCoins:50000,
+      platformShareCoins:400000,
+      giftCount:10,
+      status:"open",
+    }),
+  ]);
+
+  const first=await settleAgencyCycle(db,actorUid,accrualId);
+  assert.equal(first.alreadySettled,false);
+  const settlement=first.settlement;
+  assert.equal(settlement.tierId,"bronze");
+  assert.equal(settlement.qualifiedDays,9);
+  assert.equal(settlement.activityPayoutBps,10000);
+  assert.equal(settlement.hostShareBps,5900);
+  assert.equal(settlement.agencyShareBps,800);
+  assert.equal(settlement.hostPayableCoins,590000);
+  assert.equal(settlement.agencyPayableCoins,80000);
+  assert.equal(settlement.platformCoins,330000);
+  assert.equal(settlement.provisionalHostAccruedCoins,550000);
+  assert.equal(settlement.hostAccrualAdjustmentCoins,40000);
+  assert.equal(settlement.hostDiamonds,59);
+  assert.equal(settlement.hostRemainderCoins,1500);
+
+  const [host,stored,accrual,ledger]=await Promise.all([
+    db.collection("users").doc(hostUid).get(),
+    db.collection("agency_settlements").doc(accrualId).get(),
+    db.collection("agency_settlement_accruals").doc(accrualId).get(),
+    db.collection("financial_ledger").doc("agency_settlement_"+accrualId).get(),
+  ]);
+  assert.equal(host.data().pendingAgencyGiftEarningCoins,0);
+  assert.equal(host.data().pendingGiftEarningCoins,1500);
+  assert.equal(host.data().diamonds,59);
+  assert.equal(stored.data().hostPayableCoins,590000);
+  assert.equal(accrual.data().status,"settled");
+  assert.equal(ledger.data().delta,59);
+  assert.equal(ledger.data().payableCoins,590000);
+
+  const second=await settleAgencyCycle(db,actorUid,accrualId);
+  assert.equal(second.alreadySettled,true);
+  const hostAfter=await db.collection("users").doc(hostUid).get();
+  assert.equal(hostAfter.data().diamonds,59);
+  assert.equal(hostAfter.data().pendingGiftEarningCoins,1500);
+});
