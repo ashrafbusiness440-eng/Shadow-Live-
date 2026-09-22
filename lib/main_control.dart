@@ -975,11 +975,17 @@ class _RoomIdManagementPageState extends State<RoomIdManagementPage> {
       final token=await user.getIdToken().timeout(const Duration(seconds:12));
       if(token==null||token.isEmpty)throw Exception('forbidden');
       final key='rid_${DateTime.now().millisecondsSinceEpoch}_${user.uid.substring(0,6)}';
-      final apiUri=Uri(scheme:Uri.base.scheme,host:Uri.base.host,port:Uri.base.hasPort?Uri.base.port:null,path:'/api/change-room-id');
+      final apiUri=Uri(scheme:Uri.base.scheme,host:Uri.base.host,port:Uri.base.hasPort?Uri.base.port:null,path:'/api/voice-session');
       final response=await http.post(
         apiUri,
         headers:{'Content-Type':'application/json','Authorization':'Bearer $token'},
-        body:jsonEncode({'currentId':before,'newId':after,'reason':why,'idempotencyKey':key}),
+        body:jsonEncode({
+          'action':'changeRoomPublicId',
+          'roomId':roomDocId,
+          'publicId':after,
+          'reason':why,
+          'idempotencyKey':key,
+        }),
       ).timeout(const Duration(seconds:25));
       final body=response.body.isEmpty?<String,dynamic>{}:jsonDecode(response.body) as Map<String,dynamic>;
       if(response.statusCode!=200||body['ok']!=true)throw Exception('${body['code']??'request_failed'}');
