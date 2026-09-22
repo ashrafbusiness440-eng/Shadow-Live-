@@ -89,6 +89,56 @@ function utcPeriodKeys(date = new Date()) {
   return { day, week: weekKey, month };
 }
 
+
+function revenueTiers(economy){
+  const fallback=[
+    {id:"starter",nameAr:"Starter",minGiftCoins:0,hostShareBps:5500,agencyShareBps:500},
+    {id:"bronze",nameAr:"Bronze",minGiftCoins:1000000,hostShareBps:5700,agencyShareBps:600},
+    {id:"silver",nameAr:"Silver",minGiftCoins:5000000,hostShareBps:6000,agencyShareBps:800},
+    {id:"gold",nameAr:"Gold",minGiftCoins:20000000,hostShareBps:6200,agencyShareBps:900},
+    {id:"diamond",nameAr:"Diamond",minGiftCoins:50000000,hostShareBps:6300,agencyShareBps:1000},
+  ];
+  const raw=Array.isArray(economy?.tiers)&&economy.tiers.length?economy.tiers:fallback;
+  return raw.map((item,index)=>({
+    id:clean(item?.id||("tier_"+String(index+1))),
+    nameAr:clean(item?.nameAr||item?.id||("Tier "+String(index+1))),
+    minGiftCoins:Math.max(0,Number(item?.minGiftCoins||0)),
+    hostShareBps:Math.max(0,Math.min(10000,Number(item?.hostShareBps??economy?.recipientShareBps??0))),
+    agencyShareBps:Math.max(0,Math.min(10000,Number(item?.agencyShareBps||0))),
+  })).sort((a,b)=>a.minGiftCoins-b.minGiftCoins);
+}
+
+function resolveRevenuePolicy(economy,receiverData,monthlyGrossCoins,agencyId,monthKey){
+  const tiers=revenueTiers(economy);
+  let tier=tiers[0];
+  for(const item of tiers){
+    if(monthlyGrossCoins>=item.minGiftCoins)tier=item;
+  }
+  const activityMonth=clean(receiverData?.giftHostActivityMonth);
+  const qualifiedDays=activityMonth===monthKey
+    ?Math.max(0,Number(receiverData?.giftHostQualifiedDays||0))
+    :0;
+  const requiredDays=Math.max(1,Math.min(31,Number(economy?.hostBonusQualifiedDays||9)));
+  const configuredHostBonus=Math.max(0,Math.min(3000,Number(economy?.hostPerformanceBonusBps||0)));
+  const hostBonusBps=qualifiedDays>=requiredDays?configuredHostBonus:0;
+  const hostShareBps=Math.max(0,Math.min(10000,tier.hostShareBps+hostBonusBps));
+  const agencyShareBps=agencyId?Math.max(0,Math.min(10000,tier.agencyShareBps)):0;
+  const platformShareBps=Math.max(0,10000-hostShareBps-agencyShareBps);
+  return {
+    tierId:tier.id,
+    tierName:tier.nameAr,
+    tierMinGiftCoins:tier.minGiftCoins,
+    hostBaseShareBps:tier.hostShareBps,
+    hostBonusBps,
+    hostShareBps,
+    agencyShareBps,
+    agencyBonusBpsPending:agencyId?Math.max(0,Math.min(3000,Number(economy?.agencyPerformanceBonusBps||0))):0,
+    platformShareBps,
+    qualifiedDays,
+    requiredDays,
+  };
+}
+
 export default async function handler(req, res) {
   if (cors(req, res)) return;
   if (req.method !== "POST") {
@@ -226,13 +276,17 @@ export default async function handler(req, res) {
       const receiver = receiverSnap.data() || {};
       const room = roomSnap.data() || {};
       const economy = economySnap.exists ? (economySnap.data() || {}) : {};
-      const earningsEnabled =
-        economy.enabled === true &&
-        Number.isSafeInteger(Number(economy.recipientShareBps || 0)) &&
-        Number(economy.recipientShareBps || 0) > 0;
-      const recipientShareBps = earningsEnabled
-        ? Math.max(0, Math.min(10000, Number(economy.recipientShareBps || 0)))
-        : 0;
+      const agencyId = clean(room.agencyId || receiver.agencyId || "");
+      const previousMonthCoins =
+        clean(receiver.giftRevenueMonth) === periods.month
+          ? Math.max(0, Number(receiver.giftRevenueMonthCoins || 0))
+          : 0;
+      const monthlyGrossCoins = previousMonthCoins + totalCost;
+      const revenue = resolveRevenuePolicy(
+        economy, receiver, monthlyGrossCoins, agencyId, periods.month
+      );
+      const earningsEnabled = economy.enabled === true && revenue.hostShareBps > 0;
+      const recipientShareBps = earningsEnabled ? revenue.hostShareBps : 0;
       const before = Number(sender.coins ?? sender.balance ?? 0);
       if (!Number.isFinite(before) || before < 0) {
         throw Error("invalid_wallet_state");
@@ -243,6 +297,12 @@ export default async function handler(req, res) {
       const recipientShareCoins = earningsEnabled
         ? Math.floor((totalCost * recipientShareBps) / 10000)
         : 0;
+      const agencyShareCoins = economy.enabled === true && agencyId
+        ? Math.floor((totalCost * revenue.agencyShareBps) / 10000)
+        : 0;
+      const platformShareCoins = economy.enabled === true
+        ? Math.max(0, totalCost - recipientShareCoins - agencyShareCoins)
+        : totalCost;
       const previousPendingGiftCoins = Math.max(
         0,
         Number(receiver.pendingGiftEarningCoins || 0),
@@ -307,7 +367,6 @@ export default async function handler(req, res) {
         .doc(receiverId)
         .collection("monthly")
         .doc(periods.month);
-      const agencyId = clean(room.agencyId || receiver.agencyId || "");
       const showcaseRef = db
         .collection("public_gift_showcases")
         .doc(receiverId)
@@ -323,6 +382,9 @@ export default async function handler(req, res) {
         totalGiftsReceived: FieldValue.increment(quantity),
         totalValueReceived: FieldValue.increment(totalCost),
         giftSupportReceivedCoins: FieldValue.increment(totalCost),
+        giftRevenueMonth: periods.month,
+        giftRevenueMonthCoins: monthlyGrossCoins,
+        currentGiftRevenueTier: revenue.tierId,
         ...(earningsEnabled
           ? {
               diamonds: closingDiamonds,
@@ -386,19 +448,25 @@ export default async function handler(req, res) {
 
       if (agencyId) {
         const agencyRootRef = db.collection("agency_support_stats").doc(agencyId);
+        const agencySummary = {
+          ...supportSummary,
+          hostEarningCoins: FieldValue.increment(recipientShareCoins),
+          agencyEarningCoins: FieldValue.increment(agencyShareCoins),
+          platformShareCoins: FieldValue.increment(platformShareCoins),
+        };
         tx.set(
           agencyRootRef.collection("daily").doc(periods.day),
-          supportSummary,
+          agencySummary,
           { merge: true },
         );
         tx.set(
           agencyRootRef.collection("weekly").doc(periods.week),
-          supportSummary,
+          agencySummary,
           { merge: true },
         );
         tx.set(
           agencyRootRef.collection("monthly").doc(periods.month),
-          supportSummary,
+          agencySummary,
           { merge: true },
         );
       }
@@ -459,8 +527,22 @@ export default async function handler(req, res) {
         unitCoins,
         totalCost,
         assetKey,
+        policyMode: clean(economy.policyMode || "legacy"),
+        revenueTierId: revenue.tierId,
+        revenueTierName: revenue.tierName,
+        revenueTierMinGiftCoins: revenue.tierMinGiftCoins,
+        monthlyGrossCoins,
         recipientShareBps,
         recipientShareCoins,
+        hostBaseShareBps: revenue.hostBaseShareBps,
+        hostBonusBps: revenue.hostBonusBps,
+        agencyShareBps: revenue.agencyShareBps,
+        agencyShareCoins,
+        agencyBonusBpsPending: revenue.agencyBonusBpsPending,
+        platformShareBps: revenue.platformShareBps,
+        platformShareCoins,
+        qualifiedDays: revenue.qualifiedDays,
+        requiredQualifiedDays: revenue.requiredDays,
         diamondsEarned,
         pendingGiftEarningCoins,
         earningsStatus: earningsEnabled ? "applied" : "pending_policy",
@@ -506,7 +588,10 @@ export default async function handler(req, res) {
         quantity,
         totalCost,
         balance: after,
+        revenueTierId: revenue.tierId,
         recipientShareCoins,
+        agencyShareCoins,
+        platformShareCoins,
         diamondsEarned,
         earningsApplied: earningsEnabled,
         messageId: messageRef.id,
