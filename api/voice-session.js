@@ -1580,6 +1580,116 @@ async function roomPresenceState(db,roomId){
   return {ok:true,roomId,onlineCount:participants.length,participants};
 }
 
+function normalizeStarBattleState(room){
+  const raw=room.starBattleState;
+  if(!raw||typeof raw!=="object")return null;
+  const scores=raw.scores&&typeof raw.scores==="object"?raw.scores:{};
+  const leaders=Object.entries(scores).map(([uid,value])=>{
+    const item=value&&typeof value==="object"?value:{};
+    return {
+      uid:clean(uid),
+      displayName:clean(item.displayName||"مستخدم Shadow Live"),
+      profileImageUrl:clean(item.profileImageUrl),
+      coins:Math.max(0,Math.floor(Number(item.coins||0))),
+    };
+  }).filter(item=>item.uid).sort((a,b)=>b.coins-a.coins).slice(0,99);
+  return {
+    id:clean(raw.id),
+    status:clean(raw.status||"idle"),
+    durationMinutes:Number(raw.durationMinutes||0),
+    createdBy:clean(raw.createdBy),
+    createdAtMs:Number(raw.createdAtMs||0),
+    endsAtMs:Number(raw.endsAtMs||0),
+    finishedAtMs:Number(raw.finishedAtMs||0),
+    endedBy:clean(raw.endedBy),
+    leaders,
+  };
+}
+
+function activeStarBattle(room){
+  const battle=normalizeStarBattleState(room);
+  return battle&&battle.status==="active"?battle:null;
+}
+
+async function createStarBattle(db,uid,body){
+  const roomId=clean(body.roomId);
+  const durationMinutes=Number(body.durationMinutes);
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+  if(![5,10,15,30,60].includes(durationMinutes))throw new ApiError("invalid_star_battle_duration",400);
+  const roomRef=db.collection("rooms").doc(roomId);
+  const actorRef=db.collection("users").doc(uid);
+  const auditRef=db.collection("room_audit_logs").doc(roomId).collection("items").doc();
+  return db.runTransaction(async tx=>{
+    const [roomSnap,actorSnap]=await Promise.all([tx.get(roomRef),tx.get(actorRef)]);
+    if(!roomSnap.exists||roomSnap.data()?.isActive===false)throw new ApiError("room_unavailable",404);
+    const room=roomSnap.data()||{};
+    if(!canManageRoomAction(room,actorSnap.data()||{},uid,"managePk"))throw new ApiError("forbidden",403);
+    if(activeStarBattle(room))throw new ApiError("star_battle_already_active",409);
+    const now=Date.now();
+    const battle={
+      id:"star_"+now+"_"+randomInt(100000,999999),
+      status:"active",
+      durationMinutes,
+      createdBy:uid,
+      createdAtMs:now,
+      endsAtMs:now+durationMinutes*60*1000,
+      finishedAtMs:0,
+      endedBy:"",
+      scores:{},
+    };
+    tx.update(roomRef,{starBattleState:battle,updatedAt:FieldValue.serverTimestamp()});
+    tx.create(auditRef,{action:"createStarBattle",actorUid:uid,after:{id:battle.id,durationMinutes},createdAt:FieldValue.serverTimestamp()});
+    return {ok:true,roomId,battle:normalizeStarBattleState({starBattleState:battle})};
+  });
+}
+
+async function finishStarBattle(db,uid,body,{allowSystem=false}={}){
+  const roomId=clean(body.roomId);
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+  const roomRef=db.collection("rooms").doc(roomId);
+  const actorRef=db.collection("users").doc(uid);
+  return db.runTransaction(async tx=>{
+    const [roomSnap,actorSnap]=await Promise.all([tx.get(roomRef),tx.get(actorRef)]);
+    if(!roomSnap.exists)throw new ApiError("room_not_found",404);
+    const room=roomSnap.data()||{};
+    const battle=activeStarBattle(room);
+    if(!battle)return {ok:true,roomId,battle:normalizeStarBattleState(room)};
+    const now=Date.now();
+    const expired=battle.endsAtMs>0&&now>=battle.endsAtMs;
+    if(!expired&&!allowSystem&&!canManageRoomAction(room,actorSnap.data()||{},uid,"managePk")){
+      throw new ApiError("forbidden",403);
+    }
+    const raw=room.starBattleState&&typeof room.starBattleState==="object"?room.starBattleState:{};
+    const finished={...raw,status:"finished",finishedAtMs:now,endedBy:expired?"system":uid};
+    const result=normalizeStarBattleState({starBattleState:finished});
+    const historyRef=roomRef.collection("star_battle_history").doc(clean(result?.id)||("star_"+now));
+    tx.update(roomRef,{starBattleState:finished,updatedAt:FieldValue.serverTimestamp()});
+    tx.set(historyRef,{...result,createdAt:FieldValue.serverTimestamp()});
+    const auditRef=db.collection("room_audit_logs").doc(roomId).collection("items").doc();
+    tx.create(auditRef,{action:"finishStarBattle",actorUid:expired?"system":uid,after:{id:result?.id||"",leaderCount:result?.leaders?.length||0},createdAt:FieldValue.serverTimestamp()});
+    return {ok:true,roomId,battle:result};
+  });
+}
+
+async function syncStarBattle(db,uid,body){
+  const roomId=clean(body.roomId);
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+  const snap=await db.collection("rooms").doc(roomId).get();
+  if(!snap.exists)throw new ApiError("room_not_found",404);
+  const battle=activeStarBattle(snap.data()||{});
+  if(battle&&battle.endsAtMs>0&&Date.now()>=battle.endsAtMs){
+    return finishStarBattle(db,uid,{roomId},{allowSystem:true});
+  }
+  return {ok:true,roomId,battle:normalizeStarBattleState(snap.data()||{})};
+}
+
+async function starBattleHistory(db,roomId){
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+  const snap=await db.collection("rooms").doc(roomId).collection("star_battle_history")
+    .orderBy("finishedAtMs","desc").limit(100).get();
+  return {ok:true,roomId,history:snap.docs.map(doc=>doc.data())};
+}
+
 function normalizePkState(room){
   const raw=room.pkState;
   if(!raw||typeof raw!=="object")return null;
@@ -2063,6 +2173,19 @@ export default async function handler(req,res){
     if(action==="pkState"){
       const roomId=clean(req.body?.roomId);
       return out(res,200,await pkState(getFirestore(),roomId));
+    }
+    if(action==="createStarBattle"){
+      return out(res,200,await createStarBattle(getFirestore(),decoded.uid,req.body||{}));
+    }
+    if(action==="finishStarBattle"){
+      return out(res,200,await finishStarBattle(getFirestore(),decoded.uid,req.body||{}));
+    }
+    if(action==="syncStarBattle"){
+      return out(res,200,await syncStarBattle(getFirestore(),decoded.uid,req.body||{}));
+    }
+    if(action==="starBattleHistory"){
+      const roomId=clean(req.body?.roomId);
+      return out(res,200,await starBattleHistory(getFirestore(),roomId));
     }
     if(action==="createPk"){
       return out(res,200,await createPk(getFirestore(),decoded.uid,req.body||{}));
