@@ -29,6 +29,7 @@ class _RoomModeratorManagerSheetState
     'moderateUsers': 'الطرد والحظر',
     'moderateChat': 'إدارة الشات',
     'manageMusic': 'الموسيقى',
+    'manageMusicPolicy': 'سياسة الموسيقى',
     'managePk': 'PK',
   };
 
