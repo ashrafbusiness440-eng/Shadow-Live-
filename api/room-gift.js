@@ -247,7 +247,12 @@ export default async function handler(req, res) {
       if (senderBlock.exists || receiverBlock.exists) {
         throw Error("blocked");
       }
-      if (lockSnap.exists && lockSnap.data()?.enabled === true) {
+      const economyLock = lockSnap.exists ? (lockSnap.data() || {}) : {};
+      if (
+        economyLock.enabled === true ||
+        economyLock.economyLocked === true ||
+        economyLock.giftsLocked === true
+      ) {
         throw Error("emergency_locked");
       }
 
