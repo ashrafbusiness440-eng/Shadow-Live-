@@ -2421,6 +2421,12 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     final descriptionController = TextEditingController(
       text: (_roomArguments['description'] ?? '').toString(),
     );
+    final coverController = TextEditingController(
+      text: (_roomArguments['coverImageUrl'] ??
+              _roomArguments['imageUrl'] ??
+              '')
+          .toString(),
+    );
     final categoryController = TextEditingController(
       text: (_roomArguments['category'] ?? 'دردشة').toString(),
     );
@@ -2506,6 +2512,20 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       decoration: const InputDecoration(
                         labelText: 'وصف الغرفة',
                         labelStyle: TextStyle(color: Colors.white60),
+                      ),
+                    ),
+                    TextField(
+                      controller: coverController,
+                      keyboardType: TextInputType.url,
+                      maxLength: 1200,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: const InputDecoration(
+                        labelText: 'غلاف الغرفة — رابط صورة',
+                        labelStyle: TextStyle(color: Colors.white60),
+                        prefixIcon: Icon(
+                          Icons.image_rounded,
+                          color: Color(0xFFFFD54A),
+                        ),
                       ),
                     ),
                     TextField(
@@ -2630,6 +2650,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                     descriptionController.text.trim();
                                 final category =
                                     categoryController.text.trim();
+                                final coverImageUrl =
+                                    coverController.text.trim();
                                 final tags = tagsController.text
                                     .split(RegExp(r'[,،]'))
                                     .map((value) => value.trim())
@@ -2677,6 +2699,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                     tags: tags,
                                     visibility: visibility,
                                     chatEnabled: chatEnabled,
+                                    coverImageUrl: coverImageUrl,
                                     password:
                                         passwordController.text.isEmpty
                                             ? null
@@ -2764,6 +2787,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
 
     nameController.dispose();
     descriptionController.dispose();
+    coverController.dispose();
     categoryController.dispose();
     tagsController.dispose();
     passwordController.dispose();
@@ -3424,6 +3448,11 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
 
   @override
   Widget build(BuildContext context) {
+    final coverImageUrl = (_roomArguments['coverImageUrl'] ??
+            _roomArguments['imageUrl'] ??
+            '')
+        .toString()
+        .trim();
     return Scaffold(
       backgroundColor: Colors.black,
       body: Center(
@@ -3431,6 +3460,41 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           constraints: const BoxConstraints(maxWidth: 400),
           child: Stack(
             children: [
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 210,
+                child: coverImageUrl.isEmpty
+                    ? Container(
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Color(0xFF24123D),
+                              Colors.black,
+                            ],
+                          ),
+                        ),
+                      )
+                    : Image.network(
+                        coverImageUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          decoration: const BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Color(0xFF24123D),
+                                Colors.black,
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+              ),
               SingleChildScrollView(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),

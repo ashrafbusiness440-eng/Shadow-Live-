@@ -514,6 +514,7 @@ async function updateRoomSettings(db,uid,body){
   const visibility=clean(body.visibility)||"public";
   const password=String(body.password??"");
   const chatEnabled=body.chatEnabled!==false;
+  const coverImageUrl=clean(body.coverImageUrl);
   const tags=Array.isArray(body.tags)
     ? [...new Set(body.tags.map(clean).filter(Boolean))].slice(0,8)
     : [];
@@ -525,6 +526,9 @@ async function updateRoomSettings(db,uid,body){
   if(!["public","password","hidden"].includes(visibility))throw new ApiError("invalid_visibility",400);
   if(visibility==="password"&&password&&password.length<4)throw new ApiError("room_password_too_short",400);
   if(password.length>32)throw new ApiError("room_password_too_long",400);
+  if(coverImageUrl&&(!/^https?:\/\//i.test(coverImageUrl)||coverImageUrl.length>1200)){
+    throw new ApiError("invalid_room_cover",400);
+  }
 
   const roomRef=db.collection("rooms").doc(roomId);
   const userRef=db.collection("users").doc(uid);
@@ -549,6 +553,7 @@ async function updateRoomSettings(db,uid,body){
       visibility,
       isHidden:visibility==="hidden",
       chatEnabled,
+      coverImageUrl,
       searchTokens:searchTokens(
         name+" "+tags.join(" ")+" "+category+" "+clean(room.ownerName)+" "+clean(room.ownerLocation),
         clean(room.publicId),
@@ -580,6 +585,7 @@ async function updateRoomSettings(db,uid,body){
         tags:Array.isArray(room.tags)?room.tags.map(clean):[],
         visibility:clean(room.visibility||"public"),
         chatEnabled:room.chatEnabled!==false,
+        coverImageUrl:clean(room.coverImageUrl||room.imageUrl),
         passwordProtected:Boolean(room.passwordSalt&&room.passwordHash),
       },
       after:{
@@ -589,6 +595,7 @@ async function updateRoomSettings(db,uid,body){
         tags,
         visibility,
         chatEnabled,
+        coverImageUrl,
         passwordProtected:visibility==="password",
       },
       createdAt:FieldValue.serverTimestamp(),
