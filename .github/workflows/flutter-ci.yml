@@ -34,6 +34,21 @@ jobs:
             node --check "$file"
           done
 
+      - name: Run economy and mic policy unit tests
+        run: node --test api/__tests__/economy-policy.test.js api/__tests__/mic-activity.test.js api/__tests__/economy-permissions.test.js
+
+      - name: Set up Java for Firestore emulator
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install API integration test dependencies
+        run: npm install --no-save firebase-admin@13.5.0 firebase@12.19.0 @firebase/rules-unit-testing@5.0.2
+
+      - name: Run gift and settlement Firestore integration tests
+        run: npx --yes firebase-tools@15.1.0 emulators:exec --only firestore --project shadow-live-economy-test "node --test api/__tests__/gift-transactions.integration.test.js api/__tests__/firestore-security.integration.test.js"
+
       - name: Audit Dart reachability
         run: python3 .github/scripts/find_unreachable_dart.py
 

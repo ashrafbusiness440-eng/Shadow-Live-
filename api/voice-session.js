@@ -2,6 +2,7 @@ import {createCipheriv,randomBytes,randomInt,createHash,scryptSync,timingSafeEqu
 import {getApps,initializeApp,cert} from "firebase-admin/app";
 import {getAuth} from "firebase-admin/auth";
 import {getFirestore,FieldValue} from "firebase-admin/firestore";
+import {activeMicSegments} from "./mic-activity.js";
 
 class ApiError extends Error {
   constructor(code,status=400){super(code);this.code=code;this.status=status;}
@@ -38,57 +39,89 @@ function cors(req,res){
 const out=(res,status,body)=>res.status(status).json(body);
 const clean=(v)=>String(v??"").trim();
 
-function utcActivityKeys(ms=Date.now()){
-  const day=new Date(ms).toISOString().slice(0,10);
-  return {day,month:day.slice(0,7)};
-}
+export async function recordMicActivity(tx,db,userId,seat,endedAtMs=Date.now()){
+  const segments=activeMicSegments(seat,endedAtMs);
+  if(!userId||segments.length===0)return;
 
-async function recordMicActivity(tx,db,userId,seat,endedAtMs=Date.now()){
-  const startedAtMs=Number(seat?.micStartedAtMs||0);
-  if(!userId||!Number.isFinite(startedAtMs)||startedAtMs<=0||endedAtMs<=startedAtMs)return;
-  const seconds=Math.max(0,Math.floor((endedAtMs-startedAtMs)/1000));
-  if(seconds<=0)return;
-
-  const {day,month}=utcActivityKeys(endedAtMs);
-  const activityRef=db.collection("host_mic_activity").doc(userId).collection("days").doc(day);
   const userRef=db.collection("users").doc(userId);
   const economyRef=db.collection("system_config").doc("gift_economy");
-  const [activitySnap,userSnap,economySnap]=await Promise.all([
-    tx.get(activityRef),tx.get(userRef),tx.get(economyRef),
+  const dayRefs=segments.map(segment=>
+    db.collection("host_mic_activity").doc(userId).collection("days").doc(segment.day)
+  );
+  const [userSnap,economySnap,...daySnaps]=await Promise.all([
+    tx.get(userRef),
+    tx.get(economyRef),
+    ...dayRefs.map(ref=>tx.get(ref)),
   ]);
-  const activity=activitySnap.data()||{};
+  if(!userSnap.exists)return;
+
   const user=userSnap.data()||{};
   const economy=economySnap.data()||{};
-  const requiredMinutes=Math.max(1,Math.min(1440,Number(economy.hostBonusMinutesPerQualifiedDay||120)));
+  const requiredMinutes=Math.max(
+    1,
+    Math.min(1440,Number(economy.hostBonusMinutesPerQualifiedDay||120)),
+  );
   const thresholdSeconds=requiredMinutes*60;
-  const previousSeconds=Math.max(0,Number(activity.micSeconds||0));
-  const nextSeconds=previousSeconds+seconds;
-  const wasQualified=activity.qualified===true||previousSeconds>=thresholdSeconds;
-  const qualified=nextSeconds>=thresholdSeconds;
-  const sameMonth=String(user.giftHostActivityMonth||"")===month;
-  const previousMonthSeconds=sameMonth?Math.max(0,Number(user.giftHostMicSecondsMonth||0)):0;
-  const previousQualifiedDays=sameMonth?Math.max(0,Number(user.giftHostQualifiedDays||0)):0;
+  const newlyQualifiedByMonth=new Map();
+  const addedSecondsByMonth=new Map();
 
-  tx.set(activityRef,{
-    day,
-    micSeconds:nextSeconds,
-    qualified,
-    requiredMinutes,
-    updatedAt:FieldValue.serverTimestamp(),
-  },{merge:true});
-  tx.set(userRef,{
-    giftHostActivityMonth:month,
-    giftHostMicSecondsMonth:previousMonthSeconds+seconds,
-    giftHostQualifiedDays:previousQualifiedDays+(!wasQualified&&qualified?1:0),
-    giftHostActivityUpdatedAt:FieldValue.serverTimestamp(),
-  },{merge:true});
-  const agencyId=clean(user.agencyId);
-  if(!wasQualified&&qualified&&agencyId){
-    const agencyMonthRef=db.collection("agency_support_stats").doc(agencyId).collection("monthly").doc(month);
-    tx.set(agencyMonthRef,{
-      activeHostIds:FieldValue.arrayUnion(userId),
+  for(let index=0;index<segments.length;index++){
+    const segment=segments[index];
+    const activity=daySnaps[index].data()||{};
+    const previousSeconds=Math.max(0,Number(activity.micSeconds||0));
+    const nextSeconds=previousSeconds+segment.seconds;
+    const wasQualified=activity.qualified===true||previousSeconds>=thresholdSeconds;
+    const qualified=nextSeconds>=thresholdSeconds;
+    if(!wasQualified&&qualified){
+      newlyQualifiedByMonth.set(
+        segment.month,
+        (newlyQualifiedByMonth.get(segment.month)||0)+1,
+      );
+    }
+    addedSecondsByMonth.set(
+      segment.month,
+      (addedSecondsByMonth.get(segment.month)||0)+segment.seconds,
+    );
+    tx.set(dayRefs[index],{
+      day:segment.day,
+      micSeconds:nextSeconds,
+      qualified,
+      requiredMinutes,
       updatedAt:FieldValue.serverTimestamp(),
     },{merge:true});
+  }
+
+  const currentMonth=segments[segments.length-1].month;
+  const sameMonth=String(user.giftHostActivityMonth||"")===currentMonth;
+  const previousMonthSeconds=sameMonth
+    ?Math.max(0,Number(user.giftHostMicSecondsMonth||0))
+    :0;
+  const previousQualifiedDays=sameMonth
+    ?Math.max(0,Number(user.giftHostQualifiedDays||0))
+    :0;
+  tx.set(userRef,{
+    giftHostActivityMonth:currentMonth,
+    giftHostMicSecondsMonth:
+      previousMonthSeconds+(addedSecondsByMonth.get(currentMonth)||0),
+    giftHostQualifiedDays:
+      previousQualifiedDays+(newlyQualifiedByMonth.get(currentMonth)||0),
+    giftHostActivityUpdatedAt:FieldValue.serverTimestamp(),
+  },{merge:true});
+
+  const agencyId=clean(user.agencyId);
+  if(agencyId){
+    for(const [month,count] of newlyQualifiedByMonth.entries()){
+      if(count<=0)continue;
+      const agencyMonthRef=db
+        .collection("agency_support_stats")
+        .doc(agencyId)
+        .collection("monthly")
+        .doc(month);
+      tx.set(agencyMonthRef,{
+        activeHostIds:FieldValue.arrayUnion(userId),
+        updatedAt:FieldValue.serverTimestamp(),
+      },{merge:true});
+    }
   }
 }
 
@@ -1276,16 +1309,18 @@ async function roomSeatAction(db,uid,body){
       const profileSnap=await tx.get(myProfileRef);
       const profile=profileSnap.data()||{};
       const existingSeat=currentSeatIndex>=0?seats[currentSeatIndex]:null;
-      const micStartedAtMs=Number(existingSeat?.micStartedAtMs||0)>0
-        ? Number(existingSeat.micStartedAtMs)
-        : Date.now();
+      const keepMicActive=
+        existingSeat?.muted===false&&Number(existingSeat?.micStartedAtMs||0)>0;
+      const micStartedAtMs=keepMicActive
+        ?Number(existingSeat.micStartedAtMs)
+        :0;
       clearUserSeat(uid);
       seats[seatIndex]={
         index:seatIndex,
         uid,
         displayName:String(profile.displayName||profile.username||"مستخدم Shadow Live"),
         profileImageUrl:String(profile.profileImageUrl||""),
-        muted:true,
+        muted:!keepMicActive,
         micStartedAtMs,
       };
       invites=invites.filter(id=>id!==uid);
@@ -1293,16 +1328,41 @@ async function roomSeatAction(db,uid,body){
     }else if(action==="muteSeat"||action==="unmuteSeat"){
       const seatIndex=seats.findIndex(seat=>seat.uid===uid);
       if(seatIndex<0)throw new ApiError("speaker_seat_required",403);
-      seats[seatIndex]={...seats[seatIndex],muted:action==="muteSeat"};
+      const currentSeat=seats[seatIndex];
+      if(action==="muteSeat"){
+        if(currentSeat.muted===false)await recordMicActivity(tx,db,uid,currentSeat);
+        seats[seatIndex]={...currentSeat,muted:true,micStartedAtMs:0};
+      }else{
+        seats[seatIndex]={
+          ...currentSeat,
+          muted:false,
+          micStartedAtMs:
+            currentSeat.muted===false&&Number(currentSeat.micStartedAtMs||0)>0
+              ?Number(currentSeat.micStartedAtMs)
+              :Date.now(),
+        };
+      }
     }else if(action==="muteTargetSeat"||action==="unmuteTargetSeat"){
       if(!canManageMic)throw new ApiError("forbidden",403);
       if(!targetUid||targetUid===uid)throw new ApiError("invalid_target",400);
       const targetSeatIndex=seats.findIndex(seat=>seat.uid===targetUid);
       if(targetSeatIndex<0)throw new ApiError("speaker_seat_required",403);
-      seats[targetSeatIndex]={
-        ...seats[targetSeatIndex],
-        muted:action==="muteTargetSeat",
-      };
+      const targetSeat=seats[targetSeatIndex];
+      if(action==="muteTargetSeat"){
+        if(targetSeat.muted===false){
+          await recordMicActivity(tx,db,targetUid,targetSeat);
+        }
+        seats[targetSeatIndex]={...targetSeat,muted:true,micStartedAtMs:0};
+      }else{
+        seats[targetSeatIndex]={
+          ...targetSeat,
+          muted:false,
+          micStartedAtMs:
+            targetSeat.muted===false&&Number(targetSeat.micStartedAtMs||0)>0
+              ?Number(targetSeat.micStartedAtMs)
+              :Date.now(),
+        };
+      }
     }else if(action==="leaveSeat"){
       const mySeat=seats.find(seat=>seat.uid===uid);
       if(mySeat)await recordMicActivity(tx,db,uid,mySeat);
