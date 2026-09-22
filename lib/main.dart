@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'widgets/bottom_nav_bar.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -3657,6 +3658,250 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     super.dispose();
   }
 
+  Future<void> _copyRoomPublicId(String publicId) async {
+    final value = publicId.trim();
+    if (value.isEmpty || value == '—') return;
+    await Clipboard.setData(ClipboardData(text: value));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('تم نسخ ID الغرفة.'),
+        duration: Duration(milliseconds: 1400),
+      ),
+    );
+  }
+
+  Future<void> _showRoomLevelSheet() async {
+    final insights = _roomInsights;
+    if (insights == null) return;
+
+    final rawType = (_roomArguments['roomType'] ??
+            _roomArguments['type'] ??
+            'personal')
+        .toString();
+    final isAgency = rawType == 'agency';
+    final isCustomerService = rawType == 'customer_service';
+
+    final seatByLevel = isCustomerService
+        ? const <int>[5, 5, 5, 5, 5, 5]
+        : isAgency
+            ? const <int>[10, 12, 14, 16, 20, 22]
+            : const <int>[8, 10, 12, 15, 20, 20];
+    final moderatorByLevel = isCustomerService
+        ? const <int>[2, 2, 2, 2, 2, 2]
+        : isAgency
+            ? const <int>[5, 6, 7, 9, 11, 14]
+            : const <int>[3, 4, 5, 7, 9, 12];
+
+    final remaining = max<num>(
+      0,
+      insights.levelTarget - insights.levelPoints,
+    );
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF0D1019),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      ),
+      builder: (sheetContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: SafeArea(
+          child: SizedBox(
+            height: MediaQuery.of(sheetContext).size.height * .68,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+              child: Column(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.workspace_premium_rounded,
+                        color: Color(0xFFFFD54A),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'مستوى الغرفة — LV.${insights.level}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF151A27),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: Colors.white10),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${insights.levelPoints} / ${insights.levelTarget} نقطة',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 9),
+                        LinearProgressIndicator(
+                          value: insights.levelProgress,
+                          minHeight: 7,
+                          borderRadius: BorderRadius.circular(99),
+                          color: const Color(0xFF8A3DFF),
+                          backgroundColor: Colors.white12,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          insights.level >= 6
+                              ? 'وصلت الغرفة إلى أعلى Level حاليًا.'
+                              : 'باقي $remaining نقطة للوصول إلى LV.${insights.level + 1}',
+                          style: const TextStyle(
+                            color: Colors.white60,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  const Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      'ميزات المستويات',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: ListView.separated(
+                      itemCount: 6,
+                      separatorBuilder: (_, __) =>
+                          const Divider(color: Colors.white10, height: 1),
+                      itemBuilder: (_, index) {
+                        final level = index + 1;
+                        final current = level == insights.level;
+                        final reached = level <= insights.level;
+                        return Container(
+                          color: current
+                              ? const Color(0xFF8A3DFF).withValues(alpha: .12)
+                              : Colors.transparent,
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              radius: 18,
+                              backgroundColor: reached
+                                  ? const Color(0xFFFFD54A)
+                                  : const Color(0xFF202534),
+                              child: Text(
+                                level.toString(),
+                                style: TextStyle(
+                                  color: reached ? Colors.black : Colors.white60,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                            title: Text(
+                              'LV.$level',
+                              style: TextStyle(
+                                color: current
+                                    ? const Color(0xFFFFD54A)
+                                    : Colors.white,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            subtitle: Text(
+                              '${seatByLevel[index]} مايك • حتى ${moderatorByLevel[index]} مشرف',
+                              style: const TextStyle(
+                                color: Colors.white60,
+                                fontSize: 11,
+                              ),
+                            ),
+                            trailing: current
+                                ? const Chip(label: Text('الحالي'))
+                                : reached
+                                    ? const Icon(
+                                        Icons.check_circle_rounded,
+                                        color: Color(0xFF72D572),
+                                      )
+                                    : const Icon(
+                                        Icons.lock_outline_rounded,
+                                        color: Colors.white30,
+                                      ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRoomRocketButton() {
+    return Tooltip(
+      message: 'صاروخ الغرفة',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('تم تثبيت مكان صاروخ الغرفة. ربط وظيفة الصاروخ سيتم على نظامه المعتمد.'),
+              ),
+            );
+          },
+          child: Container(
+            width: 48,
+            height: 48,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: const Color(0xFF25183F).withValues(alpha: .94),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0x66FFD54A)),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x33000000),
+                  blurRadius: 12,
+                  offset: Offset(0, 5),
+                ),
+              ],
+            ),
+            child: const Icon(
+              Icons.rocket_launch_rounded,
+              color: Color(0xFFFFD54A),
+              size: 27,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildSupporterCluster() {
     final top = (_roomInsights?.supporters ?? const <RoomSupporter>[])
         .take(3)
@@ -3739,83 +3984,86 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           : const SizedBox.shrink();
     }
 
-    final levelBox = Container(
-      width: 118,
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: const Color(0xFF111522).withValues(alpha: .86),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white10),
-      ),
-      child: Row(
-        children: [
-          Text(
-            'LV.${insights.level}',
-            style: const TextStyle(
-              color: Color(0xFFFFD54A),
-              fontSize: 11,
-              fontWeight: FontWeight.w900,
+    final levelBox = InkWell(
+      onTap: _showRoomLevelSheet,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: 118,
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+        decoration: BoxDecoration(
+          color: const Color(0xFF111522).withValues(alpha: .86),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white10),
+        ),
+        child: Row(
+          children: [
+            Text(
+              'LV.${insights.level}',
+              style: const TextStyle(
+                color: Color(0xFFFFD54A),
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+              ),
             ),
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: LinearProgressIndicator(
-              value: insights.levelProgress,
-              minHeight: 3,
-              borderRadius: BorderRadius.circular(99),
-              color: const Color(0xFF8A3DFF),
-              backgroundColor: Colors.white12,
+            const SizedBox(width: 6),
+            Expanded(
+              child: LinearProgressIndicator(
+                value: insights.levelProgress,
+                minHeight: 3,
+                borderRadius: BorderRadius.circular(99),
+                color: const Color(0xFF8A3DFF),
+                backgroundColor: Colors.white12,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
 
-    return Column(
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        Row(
-          children: [
-            InkWell(
-              onTap: _showRoomRankingSheet,
+        InkWell(
+          onTap: _showRoomRankingSheet,
+          borderRadius: BorderRadius.circular(999),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+            decoration: BoxDecoration(
+              color: const Color(0xFF111522).withValues(alpha: .86),
               borderRadius: BorderRadius.circular(999),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF111522).withValues(alpha: .86),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: Colors.white10),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.emoji_events_rounded,
-                      color: Color(0xFFFFD54A),
-                      size: 14,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      insights.dailyRank == null
-                          ? 'الترتيب اليومي'
-                          : 'TOP ${insights.dailyRank} اليومي',
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              border: Border.all(color: Colors.white10),
             ),
-            const Spacer(),
-            _buildSupporterCluster(),
-          ],
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.emoji_events_rounded,
+                  color: Color(0xFFFFD54A),
+                  size: 14,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  insights.dailyRank == null
+                      ? 'الترتيب اليومي'
+                      : 'TOP ${insights.dailyRank} اليومي',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
-        const SizedBox(height: 8),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: levelBox,
+        const Spacer(),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildSupporterCluster(),
+            const SizedBox(height: 6),
+            levelBox,
+          ],
         ),
       ],
     );
@@ -4090,19 +4338,36 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                           ],
                                         ),
                                         const SizedBox(height: 2),
-                                        Text(
-                                          '# ID: $roomPublicId',
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
                                           textDirection: TextDirection.ltr,
-                                          style: const TextStyle(
-                                            color: Colors.white54,
-                                            fontSize: 10,
-                                          ),
+                                          children: [
+                                            InkWell(
+                                              onTap: () => _copyRoomPublicId(roomPublicId),
+                                              borderRadius: BorderRadius.circular(99),
+                                              child: const Padding(
+                                                padding: EdgeInsets.all(2),
+                                                child: Icon(
+                                                  Icons.copy_rounded,
+                                                  size: 13,
+                                                  color: Colors.white54,
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              '# ID: $roomPublicId',
+                                              textDirection: TextDirection.ltr,
+                                              style: const TextStyle(
+                                                color: Colors.white54,
+                                                fontSize: 10,
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ],
                                     ),
                                   ),
-                                  _buildSupporterCluster(),
-                                  const SizedBox(width: 4),
                                   IconButton(
                                     visualDensity: VisualDensity.compact,
                                     onPressed: _showShareRoomSheet,
@@ -4191,9 +4456,11 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                               ),
                               border: Border.all(color: Colors.white10),
                             ),
-                            child: Column(
+                            child: Stack(
                               children: [
-                                const SizedBox(height: 7),
+                                Column(
+                                  children: [
+                                    const SizedBox(height: 7),
                                 Container(
                                   width: 42,
                                   height: 4,
@@ -4231,6 +4498,13 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                           effectSoundEnabled: _effectSoundEnabled,
                                           scrollController: scrollController,
                                         ),
+                                ),
+                                  ],
+                                ),
+                                Positioned(
+                                  left: 12,
+                                  top: 22,
+                                  child: _buildRoomRocketButton(),
                                 ),
                               ],
                             ),
