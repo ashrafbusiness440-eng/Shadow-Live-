@@ -37,7 +37,9 @@ import 'features/room/services/room_action_service.dart';
 import 'features/room/services/room_invite_service.dart';
 import 'features/room/services/room_insights_service.dart';
 import 'features/room/services/room_moderation_service.dart';
+import 'features/room/services/room_moderator_service.dart';
 import 'features/room/widgets/room_chat_panel.dart';
+import 'features/room/widgets/room_moderator_manager_sheet.dart';
 import 'features/room/services/room_seat_service.dart';
 
 Future<void> main() async {
@@ -127,6 +129,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   final RoomInviteService _roomInvites = RoomInviteService();
   final RoomInsightsService _roomInsightsService = RoomInsightsService();
   final RoomModerationService _roomModeration = RoomModerationService();
+  final RoomModeratorService _roomModeratorService = RoomModeratorService();
   final RoomSeatService _roomSeatService = RoomSeatService();
   bool _voiceStarted = false;
 
@@ -185,6 +188,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   RoomSeatState? _roomSeatState;
   bool _changingSeat = false;
   StreamSubscription<RoomSeatState>? _roomSeatSubscription;
+  RoomModeratorState? _roomModeratorState;
+  StreamSubscription<RoomModeratorState>? _roomModeratorSubscription;
   bool _roomClosedHandled = false;
 
   @override
@@ -235,6 +240,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       unawaited(_roomActions.recordRoomVisit(roomId));
       unawaited(_loadRoomInsights(roomId));
       unawaited(_loadRoomSeatState(roomId));
+      unawaited(_watchRoomModerators(roomId));
     } catch (error) {
       if (mounted) {
         final code = error.toString();
@@ -482,6 +488,52 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     } finally {
       if (mounted) setState(() => _changingRoomFollow = false);
     }
+  }
+
+  Future<void> _watchRoomModerators(String roomId) async {
+    if (roomId.isEmpty) return;
+    await _roomModeratorSubscription?.cancel();
+    _roomModeratorSubscription =
+        _roomModeratorService.watch(roomId).listen(
+      (state) {
+        if (mounted) setState(() => _roomModeratorState = state);
+      },
+      onError: (_) {},
+    );
+  }
+
+  bool get _canManageMic =>
+      _voiceSession.isOwner ||
+      (_roomModeratorState?.has('manageMic') ?? false);
+
+  bool get _canModerateUsers =>
+      _voiceSession.isOwner ||
+      (_roomModeratorState?.has('moderateUsers') ?? false);
+
+  bool get _canModerateChat =>
+      _voiceSession.isOwner ||
+      (_roomModeratorState?.has('moderateChat') ?? false);
+
+  bool get _canManageMusic =>
+      _voiceSession.isOwner ||
+      (_roomModeratorState?.has('manageMusic') ?? false);
+
+  bool get _canManagePk =>
+      _voiceSession.isOwner ||
+      (_roomModeratorState?.has('managePk') ?? false);
+
+  Future<void> _showRoomModeratorsSheet() async {
+    final roomId = (_roomArguments['roomId'] ?? '').toString().trim();
+    if (roomId.isEmpty) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF0C101A),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      ),
+      builder: (_) => RoomModeratorManagerSheet(roomId: roomId),
+    );
   }
 
   Future<void> _loadRoomSeatState(String roomId) async {
