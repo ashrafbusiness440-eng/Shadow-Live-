@@ -93,11 +93,9 @@ class _RoomMusicSheetState extends State<RoomMusicSheet> {
   Future<void> _pickAudio() async {
     if (!_canAddOrPlay || _busy) return;
     try {
-      final result = await FilePicker.platform.pickFiles(
+      final files = await FilePicker.pickFiles(
         type: FileType.audio,
-        allowMultiple: true,
       );
-      final files = result?.files ?? const <PlatformFile>[];
       if (!mounted || files.isEmpty) return;
       setState(() {
         _pending = files.take(20).toList(growable: false);
