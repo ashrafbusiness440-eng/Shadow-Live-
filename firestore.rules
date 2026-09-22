@@ -72,7 +72,15 @@ service cloud.firestore {
              && request.resource.data.publicIdUpdatedAt == resource.data.publicIdUpdatedAt)
         && (!('publicIdUpdatedBy' in resource.data) && !('publicIdUpdatedBy' in request.resource.data)
           || ('publicIdUpdatedBy' in resource.data) && ('publicIdUpdatedBy' in request.resource.data)
-             && request.resource.data.publicIdUpdatedBy == resource.data.publicIdUpdatedBy);
+             && request.resource.data.publicIdUpdatedBy == resource.data.publicIdUpdatedBy)
+        && (!('diamondPasswordSet' in resource.data) && !('diamondPasswordSet' in request.resource.data)
+          || ('diamondPasswordSet' in resource.data) && ('diamondPasswordSet' in request.resource.data)
+             && request.resource.data.diamondPasswordSet == resource.data.diamondPasswordSet)
+        && (!('diamondPasswordUpdatedAt' in resource.data) && !('diamondPasswordUpdatedAt' in request.resource.data)
+          || ('diamondPasswordUpdatedAt' in resource.data) && ('diamondPasswordUpdatedAt' in request.resource.data)
+             && request.resource.data.diamondPasswordUpdatedAt == resource.data.diamondPasswordUpdatedAt)
+        && !('diamondPasswordHash' in request.resource.data)
+        && !('diamondPasswordSalt' in request.resource.data);
     }
 
     function publicProfileAuthoritativeFieldsMatch(userId) {
@@ -130,6 +138,18 @@ service cloud.firestore {
     match /financial_ledger/{entryId} {
       allow read: if isOwner() || hasCapability('manageEconomy') || hasCapability('manageSettlements');
       allow create, update, delete: if false;
+    }
+
+    match /wallet_private/{userId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /wallet_operations/{operationId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /wallet_transfers/{transferId} {
+      allow read, create, update, delete: if false;
     }
 
     match /system_config/{configId} {
