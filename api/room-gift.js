@@ -328,18 +328,26 @@ export default async function handler(req, res) {
       const platformShareCoins = policyEnabled
         ? Math.max(0, totalCost - recipientShareCoins - agencyShareCoins)
         : totalCost;
+      const agencySettlementPending = Boolean(agencyId);
       const previousPendingGiftCoins = Math.max(
         0,
         Number(receiver.pendingGiftEarningCoins || 0),
       );
       const accumulatedGiftCoins =
         previousPendingGiftCoins + recipientShareCoins;
-      const diamondsEarned = earningsEnabled
+      const diamondsEarned = earningsEnabled && !agencySettlementPending
         ? Math.floor(accumulatedGiftCoins / 10000)
         : 0;
-      const pendingGiftEarningCoins = earningsEnabled
+      const pendingGiftEarningCoins = earningsEnabled && !agencySettlementPending
         ? accumulatedGiftCoins % 10000
         : previousPendingGiftCoins;
+      const pendingAgencyBefore = Math.max(
+        0,
+        Number(receiver.pendingAgencyGiftEarningCoins || 0),
+      );
+      const pendingAgencyAfter = agencySettlementPending && earningsEnabled
+        ? pendingAgencyBefore + recipientShareCoins
+        : pendingAgencyBefore;
       const openingDiamonds = Math.max(0, Number(receiver.diamonds || 0));
       const closingDiamonds = openingDiamonds + diamondsEarned;
 
@@ -392,6 +400,10 @@ export default async function handler(req, res) {
         .doc(receiverId)
         .collection("monthly")
         .doc(periods.month);
+      const agencyAccrualRef = agencyId
+        ? db.collection("agency_settlement_accruals")
+            .doc(agencyId + "__" + periods.cycle + "__" + receiverId)
+        : null;
       const showcaseRef = db
         .collection("public_gift_showcases")
         .doc(receiverId)
@@ -412,10 +424,16 @@ export default async function handler(req, res) {
         currentGiftRevenueTier: revenue.tierId,
         ...(earningsEnabled
           ? {
-              diamonds: closingDiamonds,
-              pendingGiftEarningCoins,
               giftEarningCoinsLifetime: FieldValue.increment(recipientShareCoins),
-              giftDiamondsLifetime: FieldValue.increment(diamondsEarned),
+              ...(agencySettlementPending
+                ? {
+                    pendingAgencyGiftEarningCoins: pendingAgencyAfter,
+                  }
+                : {
+                    diamonds: closingDiamonds,
+                    pendingGiftEarningCoins,
+                    giftDiamondsLifetime: FieldValue.increment(diamondsEarned),
+                  }),
             }
           : {}),
       });
@@ -495,9 +513,45 @@ export default async function handler(req, res) {
           agencySummary,
           { merge: true },
         );
+        if (agencyAccrualRef) {
+          tx.set(
+            agencyAccrualRef,
+            {
+              agencyId,
+              hostUid: receiverId,
+              cycleKey: periods.cycle,
+              month: periods.month,
+              supportCoins: FieldValue.increment(totalCost),
+              hostGrossEarningCoins: FieldValue.increment(recipientShareCoins),
+              agencyGrossEarningCoins: FieldValue.increment(agencyShareCoins),
+              platformShareCoins: FieldValue.increment(platformShareCoins),
+              giftCount: FieldValue.increment(quantity),
+              status: "open",
+              updatedAt: now,
+            },
+            { merge: true },
+          );
+        }
       }
 
-      if (earningsEnabled && diamondsEarned > 0) {
+      if (earningsEnabled && agencySettlementPending && recipientShareCoins > 0) {
+        tx.create(earningsLedgerRef, {
+          userId: receiverId,
+          asset: "pendingAgencyGiftEarningCoins",
+          delta: recipientShareCoins,
+          openingBalance: pendingAgencyBefore,
+          closingBalance: pendingAgencyAfter,
+          reason: "agency_gift_earning_accrual",
+          sourceType: "gift",
+          sourceId: key,
+          actorUid: decoded.uid,
+          counterpartyUid: decoded.uid,
+          roomId,
+          settlementCycleKey: periods.cycle,
+          idempotencyKey: key + "_earnings",
+          createdAt: now,
+        });
+      } else if (earningsEnabled && diamondsEarned > 0) {
         tx.create(earningsLedgerRef, {
           userId: receiverId,
           asset: "diamonds",
@@ -574,7 +628,14 @@ export default async function handler(req, res) {
         requiredQualifiedDays: revenue.requiredDays,
         diamondsEarned,
         pendingGiftEarningCoins,
-        earningsStatus: earningsEnabled ? "applied" : "pending_policy",
+        pendingAgencyGiftEarningCoins: pendingAgencyAfter,
+        settlementMode: agencySettlementPending ? "agency_cycle" : "immediate",
+        settlementCycleKey: agencySettlementPending ? periods.cycle : null,
+        earningsStatus: !earningsEnabled
+          ? "disabled"
+          : agencySettlementPending
+            ? "accrued_for_cycle"
+            : "applied",
         periods,
         agencyId: agencyId || null,
         createdAt: now,
@@ -623,6 +684,12 @@ export default async function handler(req, res) {
         platformShareCoins,
         diamondsEarned,
         earningsApplied: earningsEnabled,
+        earningsStatus: !earningsEnabled
+          ? "disabled"
+          : agencySettlementPending
+            ? "accrued_for_cycle"
+            : "applied",
+        settlementCycleKey: agencySettlementPending ? periods.cycle : null,
         messageId: messageRef.id,
       };
 
