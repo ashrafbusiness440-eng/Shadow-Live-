@@ -174,7 +174,7 @@ async function recentIssues(db){
 
 
 async function cycleQualifiedDays(db,hostUid,cycleKey){
-  const parts=clean(cycleKey).match(/^(\\d{4}-\\d{2})-C([12])$/);
+  const parts=clean(cycleKey).match(/^(\d{4}-\d{2})-C([12])$/);
   if(!parts)throw Error("invalid_cycle");
   const month=parts[1], cycle=parts[2];
   const start=month+"-"+(cycle==="1"?"01":"16");
