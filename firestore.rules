@@ -156,6 +156,19 @@ service cloud.firestore {
       allow read, create, update, delete: if false;
     }
 
+    match /gift_transactions/{transactionId} {
+      allow read: if signedIn()
+        && (resource.data.senderId == request.auth.uid
+          || resource.data.receiverId == request.auth.uid
+          || isOwner()
+          || hasCapability('manageEconomy'));
+      allow create, update, delete: if false;
+    }
+
+    match /gift_operations/{operationId} {
+      allow read, create, update, delete: if false;
+    }
+
     match /google_play_purchases/{purchaseId} {
       allow read, create, update, delete: if false;
     }
