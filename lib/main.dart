@@ -3456,266 +3456,274 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     super.dispose();
   }
 
+  Widget _buildSupporterCluster() {
+    final top = (_roomInsights?.supporters ?? const <RoomSupporter>[])
+        .take(3)
+        .toList();
+    if (top.isEmpty) return const SizedBox.shrink();
+
+    return InkWell(
+      onTap: _showSupportersSheet,
+      borderRadius: BorderRadius.circular(999),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: List.generate(top.length, (index) {
+          final supporter = top[index];
+          return Transform.translate(
+            offset: Offset(index * 5.0, 0),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                CircleAvatar(
+                  radius: 14,
+                  backgroundColor: const Color(0xFF25183F),
+                  backgroundImage: supporter.profileImageUrl.isEmpty
+                      ? null
+                      : NetworkImage(supporter.profileImageUrl),
+                  child: supporter.profileImageUrl.isEmpty
+                      ? Text(
+                          supporter.displayName.isEmpty
+                              ? '?'
+                              : supporter.displayName.substring(0, 1),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        )
+                      : null,
+                ),
+                Positioned(
+                  right: -2,
+                  top: -4,
+                  child: Container(
+                    width: 14,
+                    height: 14,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: index == 0
+                          ? const Color(0xFFFFD54A)
+                          : index == 1
+                              ? const Color(0xFFC7D0D9)
+                              : const Color(0xFFDE9C73),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(
+                      (index + 1).toString(),
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontSize: 7,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
   Widget _buildRoomInsightsBar() {
     final insights = _roomInsights;
     if (insights == null) {
       return _loadingRoomInsights
-          ? const Padding(
-              padding: EdgeInsets.only(top: 10),
-              child: LinearProgressIndicator(
-                minHeight: 2,
-                color: Color(0xFF8A3DFF),
-                backgroundColor: Colors.transparent,
-              ),
+          ? const LinearProgressIndicator(
+              minHeight: 2,
+              color: Color(0xFF8A3DFF),
+              backgroundColor: Colors.transparent,
             )
           : const SizedBox.shrink();
     }
 
-    final top = insights.supporters.take(3).toList();
-    return Column(
+    return Row(
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF111522).withValues(alpha: .88),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: Colors.white12),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'LV.' + insights.level.toString(),
-                      style: const TextStyle(
-                        color: Color(0xFFFFD54A),
-                        fontWeight: FontWeight.w900,
-                        fontSize: 15,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    LinearProgressIndicator(
-                      value: insights.levelProgress,
-                      minHeight: 4,
-                      borderRadius: BorderRadius.circular(99),
-                      color: const Color(0xFF8A3DFF),
-                      backgroundColor: Colors.white12,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      insights.levelPoints.toString() +
-                          '/' +
-                          insights.levelTarget.toString(),
-                      style: const TextStyle(
-                        color: Colors.white54,
-                        fontSize: 9,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+        InkWell(
+          onTap: _showRoomRankingSheet,
+          borderRadius: BorderRadius.circular(999),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+            decoration: BoxDecoration(
+              color: const Color(0xFF111522).withValues(alpha: .86),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: Colors.white10),
             ),
-            const SizedBox(width: 9),
-            InkWell(
-              onTap: _showSupportersSheet,
-              borderRadius: BorderRadius.circular(18),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 7,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.emoji_events_rounded,
+                  color: Color(0xFFFFD54A),
+                  size: 14,
                 ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF111522).withValues(alpha: .88),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: Colors.white12),
+                const SizedBox(width: 4),
+                Text(
+                  insights.dailyRank == null
+                      ? 'الترتيب اليومي'
+                      : 'TOP ${insights.dailyRank} اليومي',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
-                child: Row(
-                  children: List.generate(3, (index) {
-                    final supporter =
-                        index < top.length ? top[index] : null;
-                    return Padding(
-                      padding: EdgeInsetsDirectional.only(
-                        start: index == 0 ? 0 : 4,
-                      ),
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          CircleAvatar(
-                            radius: 16,
-                            backgroundColor: const Color(0xFF25183F),
-                            backgroundImage: supporter == null ||
-                                    supporter.profileImageUrl.isEmpty
-                                ? null
-                                : NetworkImage(
-                                    supporter.profileImageUrl,
-                                  ),
-                            child: supporter == null
-                                ? const Icon(
-                                    Icons.person_outline_rounded,
-                                    color: Colors.white24,
-                                    size: 17,
-                                  )
-                                : supporter.profileImageUrl.isEmpty
-                                    ? Text(
-                                        supporter.displayName.isEmpty
-                                            ? '?'
-                                            : supporter.displayName.substring(0, 1),
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w900,
-                                        ),
-                                      )
-                                    : null,
-                          ),
-                          Positioned(
-                            right: -2,
-                            top: -5,
-                            child: Container(
-                              width: 15,
-                              height: 15,
-                              alignment: Alignment.center,
-                              decoration: BoxDecoration(
-                                color: index == 0
-                                    ? const Color(0xFFFFD54A)
-                                    : index == 1
-                                        ? const Color(0xFFC7D0D9)
-                                        : const Color(0xFFDE9C73),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Text(
-                                (index + 1).toString(),
-                                style: const TextStyle(
-                                  color: Colors.black,
-                                  fontSize: 8,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }),
-                ),
-              ),
+              ],
             ),
-          ],
+          ),
         ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: InkWell(
-                onTap: _showRoomRankingSheet,
-                borderRadius: BorderRadius.circular(999),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF111522).withValues(alpha: .88),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: Colors.white12),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(
-                        Icons.emoji_events_rounded,
-                        color: Color(0xFFFFD54A),
-                        size: 17,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        insights.dailyRank == null
-                            ? 'الترتيب اليومي'
-                            : 'TOP ' +
-                                insights.dailyRank.toString() +
-                                ' اليومي',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            IconButton(
-              onPressed: _changingRoomFavorite
-                  ? null
-                  : _toggleRoomFavorite,
-              tooltip: insights.favorited
-                  ? 'إزالة من المفضلة'
-                  : 'إضافة للمفضلة',
-              style: IconButton.styleFrom(
-                backgroundColor: const Color(0xFF111522),
-                side: const BorderSide(color: Colors.white12),
-                visualDensity: VisualDensity.compact,
-              ),
-              icon: _changingRoomFavorite
-                  ? const SizedBox(
-                      width: 15,
-                      height: 15,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Color(0xFFFFD54A),
-                      ),
-                    )
-                  : Icon(
-                      insights.favorited
-                          ? Icons.star_rounded
-                          : Icons.star_border_rounded,
-                      color: const Color(0xFFFFD54A),
-                      size: 19,
-                    ),
-            ),
-            const SizedBox(width: 8),
-            FilledButton.icon(
-              onPressed:
-                  _changingRoomFollow ? null : _toggleRoomFollow,
-              style: FilledButton.styleFrom(
-                backgroundColor: insights.followed
-                    ? const Color(0xFF202534)
-                    : const Color(0xFF5A20FF),
-                foregroundColor: Colors.white,
-                visualDensity: VisualDensity.compact,
-              ),
-              icon: _changingRoomFollow
-                  ? const SizedBox(
-                      width: 13,
-                      height: 13,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : Icon(
-                      insights.followed
-                          ? Icons.favorite_rounded
-                          : Icons.favorite_border_rounded,
-                      size: 16,
-                    ),
-              label: Text(
-                insights.followed
-                    ? 'متابَع'
-                    : 'متابعة',
+        const Spacer(),
+        Container(
+          constraints: const BoxConstraints(maxWidth: 118),
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+          decoration: BoxDecoration(
+            color: const Color(0xFF111522).withValues(alpha: .86),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white10),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'LV.${insights.level}',
                 style: const TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
+                  color: Color(0xFFFFD54A),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
-            ),
-          ],
+              const SizedBox(width: 6),
+              Flexible(
+                child: LinearProgressIndicator(
+                  value: insights.levelProgress,
+                  minHeight: 3,
+                  borderRadius: BorderRadius.circular(99),
+                  color: const Color(0xFF8A3DFF),
+                  backgroundColor: Colors.white12,
+                ),
+              ),
+            ],
+          ),
         ),
       ],
+    );
+  }
+
+  Widget _buildRoomBottomBar() {
+    final roomId = (_roomArguments['roomId'] ?? '').toString();
+    final requestCount = _roomSeatState?.micRequests.length ?? 0;
+
+    Widget circleButton({
+      required IconData icon,
+      required String tooltip,
+      required VoidCallback? onPressed,
+      Color color = Colors.white,
+    }) {
+      return SizedBox(
+        width: 38,
+        height: 38,
+        child: IconButton(
+          tooltip: tooltip,
+          onPressed: onPressed,
+          padding: EdgeInsets.zero,
+          visualDensity: VisualDensity.compact,
+          style: IconButton.styleFrom(
+            backgroundColor: Colors.white.withValues(alpha: .06),
+          ),
+          icon: Icon(icon, color: color, size: 21),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(8, 7, 8, 7),
+      decoration: BoxDecoration(
+        color: const Color(0xFF090B12).withValues(alpha: .98),
+        border: const Border(top: BorderSide(color: Colors.white10)),
+      ),
+      child: Row(
+        children: [
+          circleButton(
+            icon: _voiceMicMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
+            tooltip: 'كتم / تشغيل المايك',
+            onPressed: _voiceJoining || _voiceError != null
+                ? null
+                : _toggleVoiceMic,
+            color: _voiceMicMuted ? Colors.white54 : const Color(0xFFFFD54A),
+          ),
+          if (_canManageMic) ...[
+            const SizedBox(width: 5),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                circleButton(
+                  icon: Icons.front_hand_rounded,
+                  tooltip: 'طلبات المايك',
+                  onPressed: _showMicRequestsSheet,
+                  color: const Color(0xFFFFD54A),
+                ),
+                if (requestCount > 0)
+                  Positioned(
+                    top: -4,
+                    left: -2,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: const BoxDecoration(
+                        color: Colors.redAccent,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text(
+                        requestCount > 9 ? '9+' : requestCount.toString(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 8,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+          const SizedBox(width: 6),
+          Expanded(
+            child: RoomChatComposer(
+              roomId: roomId,
+              chatEnabled: _roomArguments['chatEnabled'] != false,
+              isOwner: _canModerateChat,
+            ),
+          ),
+          const SizedBox(width: 5),
+          circleButton(
+            icon: Icons.card_giftcard_rounded,
+            tooltip: 'الهدايا',
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'اختيار الهدايا سيستخدم نظام اقتصاد Shadow Live المعتمد.',
+                  ),
+                ),
+              );
+            },
+            color: const Color(0xFFFFD54A),
+          ),
+          const SizedBox(width: 5),
+          circleButton(
+            icon: Icons.chat_bubble_rounded,
+            tooltip: 'الرسائل',
+            onPressed: () => _minimizeVoiceRoom(destinationNavIndex: 4),
+            color: const Color(0xFFBFA5FF),
+          ),
+          const SizedBox(width: 5),
+          circleButton(
+            icon: Icons.grid_view_rounded,
+            tooltip: 'الأدوات',
+            onPressed: _showToolsSheet,
+          ),
+        ],
+      ),
     );
   }
 
