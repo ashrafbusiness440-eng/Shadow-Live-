@@ -3729,316 +3729,335 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
 
   @override
   Widget build(BuildContext context) {
+    final roomId = (_roomArguments['roomId'] ?? '').toString();
     final coverImageUrl = (_roomArguments['coverImageUrl'] ??
             _roomArguments['imageUrl'] ??
             '')
         .toString()
         .trim();
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Center(
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 400),
-          child: Stack(
-            children: [
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                height: 210,
-                child: coverImageUrl.isEmpty
-                    ? Container(
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Color(0xFF24123D),
-                              Colors.black,
-                            ],
-                          ),
-                        ),
-                      )
-                    : Image.network(
-                        coverImageUrl,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          decoration: const BoxDecoration(
+    final roomTitle = (_roomArguments['name'] ??
+            _roomArguments['title'] ??
+            'غرفة صوتية')
+        .toString();
+    final roomPublicId = (_roomArguments['publicId'] ?? '—').toString();
+    final ownerUid = (_roomArguments['ownerUid'] ??
+            _roomArguments['ownerId'] ??
+            _roomArguments['hostId'] ??
+            '')
+        .toString();
+    final insights = _roomInsights;
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        resizeToAvoidBottomInset: true,
+        body: SafeArea(
+          child: Center(
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 430),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final height = constraints.maxHeight;
+                  final micTop = min(205.0, height * .26);
+                  final micHeight = max(280.0, height * .40);
+                  final feedTop = min(height - 145, micTop + micHeight - 6);
+
+                  return Stack(
+                    children: [
+                      Positioned.fill(
+                        child: coverImageUrl.isEmpty
+                            ? const DecoratedBox(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      Color(0xFF24123D),
+                                      Color(0xFF080A10),
+                                      Colors.black,
+                                    ],
+                                  ),
+                                ),
+                              )
+                            : Image.network(
+                                coverImageUrl,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) =>
+                                    const ColoredBox(color: Colors.black),
+                              ),
+                      ),
+                      Positioned.fill(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
                             gradient: LinearGradient(
                               begin: Alignment.topCenter,
                               end: Alignment.bottomCenter,
                               colors: [
-                                Color(0xFF24123D),
+                                Colors.black.withValues(alpha: .42),
+                                Colors.black.withValues(alpha: .72),
                                 Colors.black,
                               ],
                             ),
                           ),
                         ),
                       ),
-              ),
-              SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 210),
-                      HostSection(
-                        name: _ownerDisplayName,
-                        imageUrl: _ownerPhotoUrl,
-                        onTap: (_roomArguments['ownerUid'] ??
-                                    _roomArguments['ownerId'] ??
-                                    _roomArguments['hostId'])
-                                .toString() ==
-                            (FirebaseAuth.instance.currentUser?.uid ?? '')
-                            ? () => NavigationService.navigateTo(
-                                  AppRoutes.profile,
-                                )
-                            : null,
-                      ),
-                      const SizedBox(height: 18),
-                      _buildMicStatusBanner(),
-                      _buildVoiceSeats(),
-                      if (_canManageMic) ...[
-                        const SizedBox(height: 8),
-                        Align(
-                          alignment: AlignmentDirectional.centerStart,
-                          child: Wrap(
-                            spacing: 6,
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                          child: Column(
                             children: [
-                              TextButton.icon(
-                                onPressed: _showMicRequestsSheet,
-                                icon: const Icon(
-                                  Icons.front_hand_rounded,
-                                ),
-                                label: Text(
-                                  'طلبات المايك (' +
-                                      (_roomSeatState?.micRequests.length ?? 0)
-                                          .toString() +
-                                      ')',
+                              Row(
+                                children: [
+                                  GestureDetector(
+                                    onTap: _showRoomInfoSheet,
+                                    child: CircleAvatar(
+                                      radius: 22,
+                                      backgroundColor: const Color(0xFF171D2B),
+                                      backgroundImage: _ownerPhotoUrl.isEmpty
+                                          ? null
+                                          : NetworkImage(_ownerPhotoUrl),
+                                      child: _ownerPhotoUrl.isEmpty
+                                          ? const Icon(
+                                              Icons.person_rounded,
+                                              color: Colors.white54,
+                                            )
+                                          : null,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Flexible(
+                                              child: Text(
+                                                roomTitle,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 15,
+                                                  fontWeight: FontWeight.w900,
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 5),
+                                            InkWell(
+                                              onTap: _changingRoomFollow ||
+                                                      insights == null
+                                                  ? null
+                                                  : _toggleRoomFollow,
+                                              child: Icon(
+                                                insights?.followed == true
+                                                    ? Icons.favorite_rounded
+                                                    : Icons.favorite_border_rounded,
+                                                size: 18,
+                                                color: const Color(0xFFBFA5FF),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 5),
+                                            InkWell(
+                                              onTap: _changingRoomFavorite ||
+                                                      insights == null
+                                                  ? null
+                                                  : _toggleRoomFavorite,
+                                              child: Icon(
+                                                insights?.favorited == true
+                                                    ? Icons.star_rounded
+                                                    : Icons.star_border_rounded,
+                                                size: 18,
+                                                color: const Color(0xFFFFD54A),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          '# ID: $roomPublicId',
+                                          textDirection: TextDirection.ltr,
+                                          style: const TextStyle(
+                                            color: Colors.white54,
+                                            fontSize: 10,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  _buildSupporterCluster(),
+                                  const SizedBox(width: 4),
+                                  IconButton(
+                                    visualDensity: VisualDensity.compact,
+                                    onPressed: _showShareRoomSheet,
+                                    icon: const Icon(
+                                      Icons.share_rounded,
+                                      size: 20,
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 5,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withValues(alpha: .45),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      (_roomArguments['onlineCount'] ?? 0)
+                                          .toString(),
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                  IconButton(
+                                    visualDensity: VisualDensity.compact,
+                                    onPressed: _showRoomMenu,
+                                    icon: const Icon(
+                                      Icons.more_horiz_rounded,
+                                      size: 22,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              _buildRoomInsightsBar(),
+                              const SizedBox(height: 7),
+                              InkWell(
+                                onTap: ownerUid ==
+                                        (FirebaseAuth.instance.currentUser?.uid ??
+                                            '')
+                                    ? () => NavigationService.navigateTo(
+                                          AppRoutes.profile,
+                                        )
+                                    : () {
+                                        if (ownerUid.isNotEmpty) {
+                                          showQuickProfileSheet(
+                                            context,
+                                            userId: ownerUid,
+                                          );
+                                        }
+                                      },
+                                borderRadius: BorderRadius.circular(999),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 9,
+                                    vertical: 5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF6D27D9)
+                                        .withValues(alpha: .42),
+                                    borderRadius: BorderRadius.circular(999),
+                                    border: Border.all(
+                                      color: const Color(0xFFFFD54A)
+                                          .withValues(alpha: .35),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(
+                                        Icons.workspace_premium_rounded,
+                                        size: 13,
+                                        color: Color(0xFFFFD54A),
+                                      ),
+                                      const SizedBox(width: 5),
+                                      Text(
+                                        _ownerDisplayName,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
-                              TextButton.icon(
-                                onPressed: _showInviteToMicSheet,
-                                icon: const Icon(
-                                  Icons.person_add_alt_1_rounded,
-                                ),
-                                label: const Text('دعوة للمايك'),
-                              ),
+                              _buildMicStatusBanner(),
                             ],
                           ),
                         ),
-                      ],
-                      const SizedBox(height: 14),
-                      RoomPkPanel(
-                        roomId:
-                            (_roomArguments['roomId'] ?? '').toString(),
-                        canManage: _canManagePk,
                       ),
-                      const SizedBox(height: 14),
-                      RoomChatPanel(
-                        roomId:
-                            (_roomArguments['roomId'] ?? '').toString(),
-                        chatEnabled:
-                            _roomArguments['chatEnabled'] != false,
-                        isOwner: _canModerateChat,
-                        roomEffectsEnabled: _roomEffectsEnabled,
-                        effectSoundEnabled: _effectSoundEnabled,
+                      Positioned(
+                        top: micTop,
+                        left: 10,
+                        right: 10,
+                        height: micHeight,
+                        child: SingleChildScrollView(
+                          physics: const BouncingScrollPhysics(),
+                          child: _buildVoiceSeats(),
+                        ),
                       ),
-                      const SizedBox(height: 190),
-                    ],
-                  ),
-                ),
-              ),
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Colors.black.withValues(alpha: 0.8), Colors.transparent],
-                    ),
-                  ),
-                  child: Column(
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          GestureDetector(
-                            onTap: _showRoomInfoSheet,
-                            behavior: HitTestBehavior.opaque,
-                            child: Row(
-                            children: [
-                              CircleAvatar(
-                                radius: 20,
-                                backgroundColor: const Color(0xFF171D2B),
-                                backgroundImage: _ownerPhotoUrl.trim().isEmpty
-                                    ? null
-                                    : NetworkImage(_ownerPhotoUrl),
-                                child: _ownerPhotoUrl.trim().isEmpty
-                                    ? const Icon(
-                                        Icons.person_rounded,
-                                        color: Colors.white54,
-                                      )
-                                    : null,
+                      Positioned.fill(
+                        top: feedTop,
+                        bottom: 57,
+                        child: DraggableScrollableSheet(
+                          initialChildSize: .56,
+                          minChildSize: .22,
+                          maxChildSize: 1,
+                          snap: true,
+                          snapSizes: const [.22, .56, 1],
+                          builder: (context, scrollController) => Container(
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF090C13)
+                                  .withValues(alpha: .94),
+                              borderRadius: const BorderRadius.vertical(
+                                top: Radius.circular(22),
                               ),
-                              const SizedBox(width: 8),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Flexible(
-                                        child: Text(
-                                          (_roomArguments['name'] ??
-                                                  _roomArguments['title'] ??
-                                                  'غرفة صوتية')
-                                              .toString(),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                      if (_ownerFlag.isNotEmpty) ...[
-                                        const SizedBox(width: 5),
-                                        Text(
-                                          _ownerFlag,
-                                          style: const TextStyle(fontSize: 15),
-                                        ),
-                                      ],
-                                    ],
+                              border: Border.all(color: Colors.white10),
+                            ),
+                            child: Column(
+                              children: [
+                                const SizedBox(height: 7),
+                                Container(
+                                  width: 42,
+                                  height: 4,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white24,
+                                    borderRadius: BorderRadius.circular(99),
                                   ),
-                                  Row(children: [Icon(Icons.tag_rounded, color: Colors.yellow[400], size: 16), Text('ID: ' + (_roomArguments['publicId'] ?? '—').toString(), style: const TextStyle(color: Colors.grey, fontSize: 12))]),
-                                ],
-                              ),
-                            ],
+                                ),
+                                const SizedBox(height: 4),
+                                Expanded(
+                                  child: RoomChatFeed(
+                                    roomId: roomId,
+                                    roomEffectsEnabled: _roomEffectsEnabled,
+                                    effectSoundEnabled: _effectSoundEnabled,
+                                    scrollController: scrollController,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-
-                          ),
-                          Row(
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.share_rounded),
-                                onPressed: _showShareRoomSheet,
-                                tooltip: 'مشاركة الغرفة',
-                              ),
-                              Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(20)), child: Text((_roomArguments['onlineCount'] ?? 0).toString())),
-                              IconButton(
-                                icon: const Icon(Icons.more_horiz_rounded),
-                                onPressed: _showRoomMenu,
-                                tooltip: 'خيارات الغرفة',
-                              ),
-                            ],
-                          ),
-                        ],
+                        ),
                       ),
-                      const SizedBox(height: 12),
-                      _buildRoomInsightsBar(),
-                    ],
-                  ),
-                ),
-              ),
-              Positioned(
-                bottom: 80,
-                left: 0,
-                right: 0,
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.8), borderRadius: const BorderRadius.vertical(top: Radius.circular(20))),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          IconButton(
-                            onPressed: () {},
-                            tooltip: 'الهدايا',
-                            icon: Icon(
-                              Icons.card_giftcard_rounded,
-                              color: Colors.yellow[400],
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          IconButton(
-                            onPressed: _showToolsSheet,
-                            tooltip: 'الأدوات',
-                            icon: const Icon(Icons.grid_view_rounded),
-                          ),
-                        ],
-                      ),
-                      Row(
-                        children: [
-                          GestureDetector(
-                            onTap: _leaveVoiceRoom,
-                            child: Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: Colors.red[600],
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(Icons.call_end),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          GestureDetector(
-                            onTap: () => _minimizeVoiceRoom(
-                              destinationNavIndex: 4,
-                            ),
-                            child: Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF6D27D9),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(
-                                Icons.chat_bubble_rounded,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          GestureDetector(
-                            onTap: _voiceJoining || _voiceError != null
-                                ? null
-                                : _toggleVoiceMic,
-                            child: Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: _voiceError != null
-                                    ? Colors.red[900]
-                                    : Colors.grey[800],
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                _currentUserCanSpeak
-                                    ? (_voiceMicMuted
-                                        ? Icons.mic_off_rounded
-                                        : Icons.mic_rounded)
-                                    : Icons.front_hand_rounded,
-                              ),
-                            ),
-                          ),
-                        ],
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: _buildRoomBottomBar(),
                       ),
                     ],
-                  ),
-                ),
+                  );
+                },
               ),
-              const Positioned(bottom: 0, left: 0, right: 0, child: BottomNavBar(currentIndex: 1)),
-            ],
+            ),
           ),
         ),
       ),
     );
   }
 }
-
 
 class _RoomToolToggle extends StatelessWidget {
   const _RoomToolToggle({
