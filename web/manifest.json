@@ -1,15 +1,20 @@
 {
-  "name": "Shadow Control",
-  "short_name": "Shadow Control",
+  "name": "Shadow Live",
+  "short_name": "Shadow Live",
   "start_url": ".",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#07050D",
-  "theme_color": "#D7B85A",
-  "description": "Shadow Live Control - لوحة إدارة شادو لايف",
+  "background_color": "#020711",
+  "theme_color": "#8A00FF",
+  "description": "Shadow Live - تطبيق اجتماعي صوتي",
   "orientation": "portrait-primary",
   "prefer_related_applications": false,
   "icons": [
-    {"src":"assets/assets/images/app_icon.png","sizes":"any","type":"image/png","purpose":"any maskable"}
+    {
+      "src": "assets/assets/images/app_icon.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
   ]
 }
