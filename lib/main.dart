@@ -1114,14 +1114,10 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     );
   }
 
-  Future<void> _showInviteToMicSheet() async {
+  Future<void> _showRoomParticipantsSheet() async {
     final roomId = (_roomArguments['roomId'] ?? '').toString();
-    if (roomId.isEmpty || !_canManageMic) return;
+    if (roomId.isEmpty) return;
     final me = FirebaseAuth.instance.currentUser?.uid ?? '';
-    final occupied = (_roomSeatState?.seats ?? const <VoiceSeat>[])
-        .where((seat) => seat.uid.isNotEmpty)
-        .map((seat) => seat.uid)
-        .toSet();
 
     await showModalBottomSheet<void>(
       context: context,
@@ -1151,12 +1147,12 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                   const Row(
                     children: [
                       Icon(
-                        Icons.mic_external_on_rounded,
+                        Icons.people_alt_rounded,
                         color: Color(0xFFFFD54A),
                       ),
                       SizedBox(width: 8),
                       Text(
-                        'دعوة للمايك',
+                        'الموجودون في الغرفة',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 19,
@@ -1179,16 +1175,12 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                           );
                         }
                         final users = (snapshot.data ?? const [])
-                            .where(
-                              (user) =>
-                                  user.uid != me &&
-                                  !occupied.contains(user.uid),
-                            )
+                            .where((user) => user.uid != me)
                             .toList();
                         if (users.isEmpty) {
                           return const Center(
                             child: Text(
-                              'لا يوجد مستمعون متاحون للدعوة حالياً',
+                              'لا يوجد مستخدمون آخرون داخل الغرفة حالياً',
                               style: TextStyle(color: Colors.white54),
                             ),
                           );
@@ -1199,10 +1191,88 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                               const Divider(color: Colors.white10),
                           itemBuilder: (_, index) {
                             final user = users[index];
+                            final seat = (_roomSeatState?.seats ??
+                                    const <VoiceSeat>[])
+                                .where((item) => item.uid == user.uid)
+                                .fold<VoiceSeat?>(
+                                  null,
+                                  (found, item) => found ?? item,
+                                );
+                            final onMic = seat != null;
                             final invited =
                                 _roomSeatState?.invited(user.uid) == true;
+                            final adminActions = <QuickProfileAction>[];
+                            if (_canManageMic) {
+                              if (!onMic) {
+                                adminActions.add(
+                                  QuickProfileAction(
+                                    icon: Icons.mic_external_on_rounded,
+                                    label: invited ? 'تمت دعوته للمايك' : 'دعوة إلى المايك',
+                                    color: const Color(0xFFFFD54A),
+                                    onTap: invited
+                                        ? () {}
+                                        : () {
+                                            unawaited(
+                                              _runSeatAction(
+                                                () => _roomSeatService.inviteToMic(
+                                                  roomId: roomId,
+                                                  targetUid: user.uid,
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                  ),
+                                );
+                              } else {
+                                adminActions.addAll([
+                                  QuickProfileAction(
+                                    icon: seat.muted
+                                        ? Icons.mic_rounded
+                                        : Icons.mic_off_rounded,
+                                    label: seat.muted
+                                        ? 'إزالة كتم المايك'
+                                        : 'كتم المايك',
+                                    color: const Color(0xFFFFD54A),
+                                    onTap: () {
+                                      unawaited(
+                                        _runSeatAction(
+                                          () => _roomSeatService.setTargetSeatMuted(
+                                            roomId: roomId,
+                                            targetUid: user.uid,
+                                            muted: !seat.muted,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                  QuickProfileAction(
+                                    icon: Icons.person_remove_rounded,
+                                    label: 'إنزال من المايك',
+                                    color: Colors.orangeAccent,
+                                    onTap: () {
+                                      unawaited(
+                                        _runSeatAction(
+                                          () => _roomSeatService.removeFromMic(
+                                            roomId: roomId,
+                                            targetUid: user.uid,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ]);
+                              }
+                            }
                             return ListTile(
                               contentPadding: EdgeInsets.zero,
+                              onTap: () {
+                                Navigator.pop(sheetContext);
+                                showQuickProfileSheet(
+                                  context,
+                                  userId: user.uid,
+                                  adminActions: adminActions,
+                                );
+                              },
                               leading: CircleAvatar(
                                 backgroundColor:
                                     const Color(0xFF25183F),
@@ -1233,58 +1303,41 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                   fontSize: 10,
                                 ),
                               ),
-                              trailing: FilledButton(
-                                onPressed: invited
-                                    ? null
-                                    : () async {
-                                        try {
-                                          final state =
-                                              await _roomSeatService.inviteToMic(
-                                            roomId: roomId,
-                                            targetUid: user.uid,
-                                          );
-                                          if (mounted) {
-                                            setState(
-                                              () => _roomSeatState = state,
-                                            );
-                                          }
-                                          if (sheetContext.mounted) {
-                                            Navigator.pop(sheetContext);
-                                          }
-                                          if (mounted) {
-                                            ScaffoldMessenger.of(context)
-                                                .showSnackBar(
-                                              SnackBar(
-                                                content: Text(
-                                                  'تمت دعوة ' +
-                                                      user.displayName +
-                                                      ' للمايك.',
-                                                ),
-                                              ),
-                                            );
-                                          }
-                                        } catch (_) {
-                                          if (sheetContext.mounted) {
-                                            ScaffoldMessenger.of(
-                                              sheetContext,
-                                            ).showSnackBar(
-                                              const SnackBar(
-                                                content: Text(
-                                                  'تعذر إرسال دعوة المايك حالياً.',
-                                                ),
-                                              ),
-                                            );
-                                          }
-                                        }
-                                      },
-                                style: FilledButton.styleFrom(
-                                  backgroundColor:
-                                      const Color(0xFF6D27D9),
-                                ),
-                                child: Text(
-                                  invited ? 'مدعو' : 'دعوة',
-                                ),
-                              ),
+                              trailing: _canManageMic
+                                  ? onMic
+                                      ? const Chip(
+                                          label: Text('على المايك'),
+                                          visualDensity: VisualDensity.compact,
+                                        )
+                                      : FilledButton(
+                                          onPressed: invited
+                                              ? null
+                                              : () async {
+                                                  try {
+                                                    final state =
+                                                        await _roomSeatService.inviteToMic(
+                                                      roomId: roomId,
+                                                      targetUid: user.uid,
+                                                    );
+                                                    if (mounted) {
+                                                      setState(
+                                                        () => _roomSeatState = state,
+                                                      );
+                                                    }
+                                                  } catch (_) {}
+                                                },
+                                          style: FilledButton.styleFrom(
+                                            backgroundColor:
+                                                const Color(0xFF6D27D9),
+                                          ),
+                                          child: Text(
+                                            invited ? 'مدعو' : 'دعوة',
+                                          ),
+                                        )
+                                  : const Icon(
+                                      Icons.chevron_left_rounded,
+                                      color: Colors.white38,
+                                    ),
                             );
                           },
                         );
@@ -3984,22 +4037,37 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                       size: 20,
                                     ),
                                   ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 5,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black.withValues(alpha: .45),
-                                      borderRadius: BorderRadius.circular(999),
-                                    ),
-                                    child: Text(
-                                      (_roomArguments['onlineCount'] ?? 0)
-                                          .toString(),
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w800,
+                                  InkWell(
+                                    onTap: _showRoomParticipantsSheet,
+                                    borderRadius: BorderRadius.circular(999),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 5,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withValues(alpha: .45),
+                                        borderRadius: BorderRadius.circular(999),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(
+                                            Icons.people_alt_rounded,
+                                            size: 12,
+                                            color: Colors.white70,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            (_roomArguments['onlineCount'] ?? 0)
+                                                .toString(),
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ),
