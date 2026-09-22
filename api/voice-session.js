@@ -134,11 +134,14 @@ function roomControlOverrides(room){
   const raw=room.controlOverrides&&typeof room.controlOverrides==="object"
     ? room.controlOverrides
     : {};
-  const seats=Number(raw.seats);
-  const moderators=Number(raw.moderators);
+  const parseOptionalInt=(value,min,max)=>{
+    if(value===null||value===undefined||value==="")return null;
+    const parsed=Number(value);
+    return Number.isInteger(parsed)&&parsed>=min&&parsed<=max?parsed:null;
+  };
   return {
-    seats:Number.isInteger(seats)&&seats>=1&&seats<=50?seats:null,
-    moderators:Number.isInteger(moderators)&&moderators>=0&&moderators<=30?moderators:null,
+    seats:parseOptionalInt(raw.seats,1,50),
+    moderators:parseOptionalInt(raw.moderators,0,30),
     bypassLevelCapacity:raw.bypassLevelCapacity===true,
   };
 }
@@ -156,6 +159,7 @@ function roomModeratorLimit(room){
   if((isOfficialRoom(room)||overrides.bypassLevelCapacity)&&overrides.moderators!==null){
     return overrides.moderators;
   }
+  if(type==="customer_service")return 2;
   const agency=[5,6,7,9,11,14];
   const normal=[3,4,5,7,9,12];
   return (type==="agency"?agency:normal)[level-1];
@@ -759,8 +763,12 @@ function roomControlPolicySnapshot(room){
   const normalSeats=[8,10,12,15,20,20];
   const agencyMods=[5,6,7,9,11,14];
   const normalMods=[3,4,5,7,9,12];
-  const baseSeats=(type==="agency"?agencySeats:normalSeats)[level-1];
-  const baseModerators=(type==="agency"?agencyMods:normalMods)[level-1];
+  const baseSeats=type==="customer_service"
+    ? 5
+    : (type==="agency"?agencySeats:normalSeats)[level-1];
+  const baseModerators=type==="customer_service"
+    ? 2
+    : (type==="agency"?agencyMods:normalMods)[level-1];
   const manual=isOfficialRoom(room)||overrides.bypassLevelCapacity;
   return {
     level,
