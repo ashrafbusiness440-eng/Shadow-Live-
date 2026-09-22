@@ -549,6 +549,7 @@ async function roomSeatState(db,uid,roomId){
     micRequests:Array.isArray(room.micRequests)?room.micRequests:[],
     isOwner:String(room.ownerUid||room.ownerId||room.hostId||"")===uid,
     isActive:room.isActive!==false,
+    onlineCount:Math.max(0,Number(room.onlineCount||0)),
   };
 }
 
@@ -656,6 +657,8 @@ async function roomSeatAction(db,uid,body){
       micInvites:invites,
       micRequests:requests,
       isOwner,
+      isActive:true,
+      onlineCount:Math.max(0,Number(room.onlineCount||0)),
     };
   });
 }
