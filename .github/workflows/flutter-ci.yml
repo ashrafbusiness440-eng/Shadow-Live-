@@ -28,6 +28,12 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Check API JavaScript syntax
+        run: |
+          for file in api/*.js; do
+            node --check "$file"
+          done
+
       - name: Audit Dart reachability
         run: python3 .github/scripts/find_unreachable_dart.py
 
@@ -44,6 +50,20 @@ jobs:
 
       - name: Test
         run: flutter test
+
+      - name: Build Shadow Control web
+        run: |
+          flutter build web --target lib/main_control.dart
+          rm -rf build/control-web
+          cp -R build/web build/control-web
+
+      - name: Upload Shadow Control build
+        uses: actions/upload-artifact@v4
+        with:
+          name: shadow-control-web
+          path: build/control-web
+          if-no-files-found: error
+          retention-days: 3
 
       - name: Build web
         run: flutter build web
@@ -112,5 +132,32 @@ jobs:
         with:
           name: shadow-live-room-e2e
           path: room-e2e-screenshots
+          if-no-files-found: warn
+          retention-days: 3
+
+      - name: Build Shadow Control E2E web
+        run: flutter build web --target lib/main_control.dart --dart-define=CONTROL_E2E_TEST=true
+
+      - name: Start Shadow Control E2E server
+        run: |
+          python3 -m http.server 8090 --directory build/web > /tmp/shadow-control-e2e-server.log 2>&1 &
+          for i in {1..20}; do
+            if curl -fsS http://127.0.0.1:8090 >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/shadow-control-e2e-server.log
+          exit 1
+
+      - name: Run Shadow Control browser E2E
+        run: node .github/scripts/e2e_control_rooms.mjs
+
+      - name: Upload Shadow Control E2E screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shadow-control-room-e2e
+          path: control-e2e-screenshots
           if-no-files-found: warn
           retention-days: 3
