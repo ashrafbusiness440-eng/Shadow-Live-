@@ -254,7 +254,7 @@ class _ControlShellState extends State<ControlShell> {
       bottomNavigationBar:NavigationBar(selectedIndex:index,onDestinationSelected:(v)=>setState(()=>index=v),destinations:const[
         NavigationDestination(icon:Icon(Icons.dashboard_outlined),selectedIcon:Icon(Icons.dashboard),label:'الرئيسية'),
         NavigationDestination(icon:Icon(Icons.people_outline),selectedIcon:Icon(Icons.people),label:'المستخدمون'),
-        NavigationDestination(icon:Icon(Icons.mic_none),selectedIcon:Icon(Icons.mic),label:'الغرف'),
+        NavigationDestination(icon:Icon(Icons.mic_none),selectedIcon:Icon(Icons.mic),label:'إدارة الغرف'),
         NavigationDestination(icon:Icon(Icons.wallet_outlined),selectedIcon:Icon(Icons.wallet),label:'المالية'),
         NavigationDestination(icon:Icon(Icons.badge_outlined),selectedIcon:Icon(Icons.badge),label:'IDs'),
         NavigationDestination(icon:Icon(Icons.more_horiz),label:'المزيد'),
@@ -292,7 +292,7 @@ class DashboardPage extends StatelessWidget {
     const SizedBox(height:12),const Text('اختصارات آمنة',style:TextStyle(fontSize:18,fontWeight:FontWeight.w800)),const SizedBox(height:8),
     Wrap(spacing:8,runSpacing:8,children:[
       ActionChip(label:const Text('المستخدمون'),avatar:const Icon(Icons.manage_accounts_outlined),onPressed:()=>onOpen(1)),
-      ActionChip(label:const Text('الغرف'),avatar:const Icon(Icons.mic_none_rounded),onPressed:()=>onOpen(2)),
+      ActionChip(label:const Text('إدارة الغرف'),avatar:const Icon(Icons.mic_none_rounded),onPressed:()=>onOpen(2)),
       ActionChip(label:const Text('السجل المالي'),avatar:const Icon(Icons.receipt_long_outlined),onPressed:()=>onOpen(3)),
       ActionChip(label:const Text('إدارة ID'),avatar:const Icon(Icons.badge_outlined),onPressed:()=>onOpen(4)),
       ActionChip(label:const Text('السجلات والإعدادات'),avatar:const Icon(Icons.history_outlined),onPressed:()=>onOpen(5)),
@@ -556,8 +556,13 @@ class _RoomsPageState extends State<RoomsPage> {
     'level_unchanged'=>'الغرفة موجودة بالفعل على هذا المستوى.',
     'invalid_seat_override'=>'عدد المايكات يجب أن يكون بين 1 و50.',
     'invalid_moderator_override'=>'عدد المشرفين يجب أن يكون بين 0 و30.',
-    'global_room_control_required'=>'تحويل الغرفة إلى رسمية يتطلب Owner أو globalRoomControl.',
+    'global_room_control_required'=>'إنشاء/إدارة الغرف الرسمية يتطلب Owner أو globalRoomControl.',
     'host_not_found'=>'حساب الـHost غير موجود.',
+    'invalid_room_name'=>'اسم الغرفة يجب أن يكون بين حرفين و80 حرفًا.',
+    'room_public_id_taken'=>'Room ID مستخدم مسبقًا.',
+    'invalid_official_room_type'=>'نوع الغرفة الرسمية غير صالح.',
+    'invalid_room_visibility'=>'خصوصية الغرفة الرسمية غير صالحة.',
+    'room_public_id_exhausted'=>'تعذر حجز Room ID تلقائيًا. حاول مرة أخرى.',
     _=>'تعذر تنفيذ العملية: '+code,
   };
 
@@ -625,6 +630,154 @@ class _RoomsPageState extends State<RoomsPage> {
     'bypassLevelCapacity':bypassLevelCapacity,
   });
 
+  Future<void> showCreateOfficialRoom() async {
+    final nameController=TextEditingController();
+    final roomIdController=TextEditingController();
+    final createHostController=TextEditingController();
+    final createSeatsController=TextEditingController(text:'8');
+    final createModeratorsController=TextEditingController(text:'3');
+    final categoryController=TextEditingController(text:'رسمية');
+    final descriptionController=TextEditingController();
+    final coverController=TextEditingController();
+    final tagsController=TextEditingController();
+    var officialType='official';
+    var hidden=false;
+    var creating=false;
+
+    await showModalBottomSheet<void>(
+      context:context,
+      isScrollControlled:true,
+      backgroundColor:const Color(0xFF0D0917),
+      shape:const RoundedRectangleBorder(borderRadius:BorderRadius.vertical(top:Radius.circular(26))),
+      builder:(sheetContext)=>Directionality(
+        textDirection:TextDirection.rtl,
+        child:StatefulBuilder(builder:(context,setSheetState)=>SafeArea(
+          child:Padding(
+            padding:EdgeInsets.fromLTRB(16,14,16,MediaQuery.viewInsetsOf(context).bottom+18),
+            child:SingleChildScrollView(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+              Center(child:Container(width:44,height:4,decoration:BoxDecoration(color:Colors.white24,borderRadius:BorderRadius.circular(99)))),
+              const SizedBox(height:14),
+              const Row(children:[
+                Icon(Icons.add_business_rounded,color:Color(0xFFD7B85A)),
+                SizedBox(width:8),
+                Expanded(child:Text('إنشاء غرفة رسمية',style:TextStyle(fontSize:21,fontWeight:FontWeight.w900))),
+              ]),
+              const SizedBox(height:4),
+              const Text('الغرفة ستكون ملك Shadow Live. الـHost يدير الجلسة فقط ولا يصبح Owner.',style:TextStyle(color:Color(0xFFAAA3B8),fontSize:12)),
+              const SizedBox(height:14),
+              TextField(controller:nameController,decoration:const InputDecoration(labelText:'اسم الغرفة *',border:OutlineInputBorder())),
+              const SizedBox(height:10),
+              TextField(
+                controller:roomIdController,
+                keyboardType:TextInputType.number,
+                decoration:const InputDecoration(labelText:'Room ID — اختياري',hintText:'اتركه فارغًا لتوليد ID تلقائي',border:OutlineInputBorder()),
+              ),
+              const SizedBox(height:10),
+              DropdownButtonFormField<String>(
+                initialValue:officialType,
+                decoration:const InputDecoration(labelText:'نوع الغرفة',border:OutlineInputBorder()),
+                items:const[
+                  DropdownMenuItem(value:'official',child:Text('رسمية')),
+                  DropdownMenuItem(value:'administrative',child:Text('إدارية')),
+                  DropdownMenuItem(value:'customer_service',child:Text('خدمة عملاء')),
+                ],
+                onChanged:creating?null:(v){if(v!=null)setSheetState(()=>officialType=v);},
+              ),
+              const SizedBox(height:10),
+              TextField(controller:createHostController,decoration:const InputDecoration(labelText:'Host UID — اختياري',border:OutlineInputBorder(),prefixIcon:Icon(Icons.record_voice_over_outlined))),
+              const SizedBox(height:10),
+              Row(children:[
+                Expanded(child:TextField(
+                  controller:createSeatsController,
+                  keyboardType:TextInputType.number,
+                  decoration:const InputDecoration(labelText:'عدد المايكات',hintText:'1 - 50',border:OutlineInputBorder()),
+                )),
+                const SizedBox(width:10),
+                Expanded(child:TextField(
+                  controller:createModeratorsController,
+                  keyboardType:TextInputType.number,
+                  decoration:const InputDecoration(labelText:'عدد المشرفين',hintText:'0 - 30',border:OutlineInputBorder()),
+                )),
+              ]),
+              const SizedBox(height:10),
+              TextField(controller:categoryController,decoration:const InputDecoration(labelText:'التصنيف',border:OutlineInputBorder())),
+              const SizedBox(height:10),
+              TextField(controller:descriptionController,maxLines:2,decoration:const InputDecoration(labelText:'وصف الغرفة',border:OutlineInputBorder())),
+              const SizedBox(height:10),
+              TextField(controller:coverController,decoration:const InputDecoration(labelText:'رابط صورة / غلاف الغرفة',border:OutlineInputBorder())),
+              const SizedBox(height:10),
+              TextField(controller:tagsController,decoration:const InputDecoration(labelText:'وسوم — افصل بينها بفاصلة',border:OutlineInputBorder())),
+              SwitchListTile(
+                contentPadding:EdgeInsets.zero,
+                title:const Text('غرفة مخفية'),
+                subtitle:const Text('لا تظهر في الاكتشاف العام.'),
+                value:hidden,
+                onChanged:creating?null:(v)=>setSheetState(()=>hidden=v),
+              ),
+              const SizedBox(height:8),
+              SizedBox(width:double.infinity,child:FilledButton.icon(
+                onPressed:creating?null:() async {
+                  final user=FirebaseAuth.instance.currentUser;
+                  if(user==null)return;
+                  final prefix=user.uid.length>=6?user.uid.substring(0,6):user.uid;
+                  final key='roomcreate_'+DateTime.now().millisecondsSinceEpoch.toString()+'_'+prefix;
+                  setSheetState(()=>creating=true);
+                  try{
+                    final data=await post({
+                      'controlAction':'createOfficialRoom',
+                      'name':nameController.text.trim(),
+                      'publicId':roomIdController.text.trim(),
+                      'hostUid':createHostController.text.trim(),
+                      'officialType':officialType,
+                      'seats':int.tryParse(createSeatsController.text.trim()),
+                      'moderators':int.tryParse(createModeratorsController.text.trim()),
+                      'category':categoryController.text.trim(),
+                      'description':descriptionController.text.trim(),
+                      'coverImageUrl':coverController.text.trim(),
+                      'tags':tagsController.text.split(',').map((e)=>e.trim()).where((e)=>e.isNotEmpty).toList(),
+                      'visibility':hidden?'hidden':'public',
+                      'reason':'إنشاء غرفة رسمية من Shadow Control',
+                      'idempotencyKey':key,
+                    });
+                    final createdPublicId=(data['publicId']??'').toString();
+                    if(createdPublicId.isNotEmpty)publicId.text=createdPublicId;
+                    if(sheetContext.mounted)Navigator.pop(sheetContext);
+                    if(createdPublicId.isNotEmpty)await lookup();
+                    if(mounted){
+                      ScaffoldMessenger.of(this.context).showSnackBar(
+                        SnackBar(content:Text('تم إنشاء الغرفة الرسمية — Room ID: '+createdPublicId)),
+                      );
+                    }
+                  }catch(e){
+                    if(sheetContext.mounted){
+                      final code=e.toString().replaceFirst('Exception: ','');
+                      ScaffoldMessenger.of(sheetContext).showSnackBar(SnackBar(content:Text(message(code))));
+                      setSheetState(()=>creating=false);
+                    }
+                  }
+                },
+                icon:creating
+                    ? const SizedBox(width:18,height:18,child:CircularProgressIndicator(strokeWidth:2))
+                    : const Icon(Icons.add_business_rounded),
+                label:Text(creating?'جار الإنشاء...':'إنشاء الغرفة الرسمية وحفظها'),
+              )),
+            ])),
+          ),
+        )),
+      ),
+    );
+
+    nameController.dispose();
+    roomIdController.dispose();
+    createHostController.dispose();
+    createSeatsController.dispose();
+    createModeratorsController.dispose();
+    categoryController.dispose();
+    descriptionController.dispose();
+    coverController.dispose();
+    tagsController.dispose();
+  }
+
   @override Widget build(BuildContext context){
     final data=room;
     final policy=data?['policy'] is Map<String,dynamic>?data!['policy'] as Map<String,dynamic>:<String,dynamic>{};
@@ -642,7 +795,13 @@ class _RoomsPageState extends State<RoomsPage> {
         Text('إدارة الغرف',style:TextStyle(fontSize:25,fontWeight:FontWeight.w900)),
       ]),
       const SizedBox(height:6),
-      const Text('Room Level + Overrides — التعديلات الحساسة تمر عبر Backend وAudit Log.',style:TextStyle(color:Color(0xFFAAA3B8))),
+      const Text('إنشاء وإدارة الغرف الرسمية + Room Level + Overrides — كل التعديلات الحساسة تمر عبر Backend وAudit Log.',style:TextStyle(color:Color(0xFFAAA3B8))),
+      const SizedBox(height:12),
+      SizedBox(width:double.infinity,child:FilledButton.icon(
+        onPressed:busy?null:showCreateOfficialRoom,
+        icon:const Icon(Icons.add_business_rounded),
+        label:const Text('+ إنشاء غرفة رسمية'),
+      )),
       const SizedBox(height:16),
       Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(children:[
         TextField(
@@ -779,6 +938,30 @@ class _RoomsPageState extends State<RoomsPage> {
         TextField(
           controller:reason,maxLength:160,
           decoration:const InputDecoration(labelText:'سبب التعديل — يسجل في Audit Log',border:OutlineInputBorder(),prefixIcon:Icon(Icons.history_edu_outlined)),
+        ),
+        const SizedBox(height:8),
+        SizedBox(
+          width:double.infinity,
+          child:FilledButton.icon(
+            onPressed:busy?null:() async {
+              await saveOverrides();
+              if(!mounted||room==null)return;
+              final currentPolicy=room!['policy'] is Map<String,dynamic>
+                  ? room!['policy'] as Map<String,dynamic>
+                  : <String,dynamic>{};
+              if(currentPolicy['official']==true){
+                await execute('setOfficialRoom',extra:{
+                  'enabled':true,
+                  'officialType':(currentPolicy['officialType']??'official').toString(),
+                  'hostUid':hostUid.text.trim(),
+                });
+              }
+            },
+            icon:busy
+                ? const SizedBox(width:18,height:18,child:CircularProgressIndicator(strokeWidth:2))
+                : const Icon(Icons.save_rounded),
+            label:Text(busy?'جار الحفظ...':'حفظ جميع التغييرات'),
+          ),
         ),
       ],
     ]);
