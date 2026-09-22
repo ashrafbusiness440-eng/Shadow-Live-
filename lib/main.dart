@@ -530,6 +530,10 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       _voiceSession.isOwner ||
       (_roomModeratorState?.has('managePk') ?? false);
 
+  bool get _canManageIds =>
+      _voiceSession.isOwner ||
+      (_roomModeratorState?.has('manageIds') ?? false);
+
   Future<void> _showRoomModeratorsSheet() async {
     final roomId = (_roomArguments['roomId'] ?? '').toString().trim();
     if (roomId.isEmpty) return;
@@ -2810,7 +2814,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
 
   Future<void> _showChangeRoomIdSheet() async {
     final roomId = (_roomArguments['roomId'] ?? '').toString().trim();
-    if (roomId.isEmpty || !_voiceSession.isOwner) return;
+    if (roomId.isEmpty || !_canManageIds) return;
     final controller = TextEditingController(
       text: (_roomArguments['publicId'] ?? '').toString(),
     );
@@ -3059,7 +3063,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       _showRoomSettingsSheet();
                     },
                   ),
-                if (owner)
+                if (_canManageIds)
                   ListTile(
                     leading: const Icon(
                       Icons.tag_rounded,
