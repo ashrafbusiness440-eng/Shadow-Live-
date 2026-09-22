@@ -210,11 +210,15 @@ export default async function handler(req, res) {
 
     const externalAccountId = clean(verified.obfuscatedExternalAccountId);
     const expectedAccountId = accountHash(decoded.uid);
-    if (
-      externalAccountId &&
-      externalAccountId !== expectedAccountId
-    ) {
+    if (!externalAccountId || externalAccountId !== expectedAccountId) {
       throw Error("account_mismatch");
+    }
+
+    const consumptionState = clean(
+      lineItem?.productOfferDetails?.consumptionState,
+    );
+    if (consumptionState === "CONSUMPTION_STATE_CONSUMED") {
+      throw Error("purchase_already_consumed");
     }
 
     const quantityRaw = Number(lineItem?.productOfferDetails?.quantity || 1);
@@ -339,6 +343,7 @@ export default async function handler(req, res) {
       "purchase_not_valid",
       "product_mismatch",
       "account_mismatch",
+      "purchase_already_consumed",
       "user_not_found",
       "emergency_locked",
       "invalid_wallet_state",
@@ -353,6 +358,7 @@ export default async function handler(req, res) {
         "purchase_not_valid",
         "product_mismatch",
         "account_mismatch",
+        "purchase_already_consumed",
         "invalid_wallet_state",
       ].includes(code) ? 400 : 500;
 
