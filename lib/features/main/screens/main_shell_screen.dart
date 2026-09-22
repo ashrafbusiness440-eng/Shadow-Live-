@@ -30,34 +30,26 @@ class _MainShellScreenState extends State<MainShellScreen> {
     _currentNavIndex = widget.initialNavIndex;
   }
 
-  final List<Widget> _pages = const [
-    HomeScreen(),
-    RoomListScreen(),
-    _ComingSoonPage(
-      title: 'الألعاب',
-      icon: Icons.sports_esports_rounded,
-    ),
-    ChatListScreen(),
-    ProfileScreen(),
-  ];
-
   bool get _guest => FirebaseAuth.instance.currentUser?.isAnonymous == true;
 
-  int _pageForNav(int navIndex) {
-    switch (navIndex) {
+  Widget _buildCurrentPage() {
+    switch (_currentNavIndex) {
       case 0:
-        return 0;
+        return const HomeScreen();
       case 1:
       case 2:
-        return 1;
+        return const RoomListScreen();
       case 3:
-        return 2;
+        return const _ComingSoonPage(
+          title: 'الألعاب',
+          icon: Icons.sports_esports_rounded,
+        );
       case 4:
-        return 3;
+        return const ChatListScreen();
       case 5:
-        return 4;
+        return const ProfileScreen();
       default:
-        return 0;
+        return const HomeScreen();
     }
   }
 
@@ -172,10 +164,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
         body: Stack(
           children: [
             Positioned.fill(
-              child: KeyedSubtree(
-                key: ValueKey<int>(_pageForNav(_currentNavIndex)),
-                child: _pages[_pageForNav(_currentNavIndex)],
-              ),
+              child: _buildCurrentPage(),
             ),
             const MiniVoiceRoomOverlay(),
           ],
