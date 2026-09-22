@@ -6,7 +6,6 @@ class AppConstants {
   static const String appPackageName = 'com.example.voice_chat_room';
 
   // API Endpoints and Keys
-  static const String agoraAppId = 'YOUR_AGORA_APP_ID';
   static const String firebaseProjectId = 'YOUR_FIREBASE_PROJECT_ID';
   static const String androidAppId = 'YOUR_ANDROID_APP_ID';
   static const String iosAppId = 'YOUR_IOS_APP_ID';
