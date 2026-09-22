@@ -130,9 +130,32 @@ const ROOM_MODERATOR_CAPABILITIES=[
   "manageIds",
 ];
 
+function roomControlOverrides(room){
+  const raw=room.controlOverrides&&typeof room.controlOverrides==="object"
+    ? room.controlOverrides
+    : {};
+  const seats=Number(raw.seats);
+  const moderators=Number(raw.moderators);
+  return {
+    seats:Number.isInteger(seats)&&seats>=1&&seats<=50?seats:null,
+    moderators:Number.isInteger(moderators)&&moderators>=0&&moderators<=30?moderators:null,
+    bypassLevelCapacity:raw.bypassLevelCapacity===true,
+  };
+}
+
+function isOfficialRoom(room){
+  const type=clean(room.roomType||room.type||"personal");
+  return room.systemOwned===true||room.officialRoom===true||
+    type==="official"||type==="administrative"||type==="customer_service";
+}
+
 function roomModeratorLimit(room){
   const level=Math.max(1,Math.min(6,Number(room.level||1)));
   const type=clean(room.roomType||room.type||"personal");
+  const overrides=roomControlOverrides(room);
+  if((isOfficialRoom(room)||overrides.bypassLevelCapacity)&&overrides.moderators!==null){
+    return overrides.moderators;
+  }
   const agency=[5,6,7,9,11,14];
   const normal=[3,4,5,7,9,12];
   return (type==="agency"?agency:normal)[level-1];
@@ -163,16 +186,36 @@ function roomModeratorEntry(room,uid){
   return normalizeRoomModerators(room).find(item=>item.uid===uid)||null;
 }
 
+const OFFICIAL_HOST_CAPABILITIES=[
+  "manageMic",
+  "moderateUsers",
+  "moderateChat",
+  "manageMusic",
+  "manageMusicPolicy",
+  "managePk",
+];
+
+function roomOwnerUid(room){
+  return clean(room.ownerUid||room.ownerId);
+}
+
+function roomHostUid(room){
+  return clean(room.hostUid||room.hostId);
+}
+
 function hasRoomCapability(room,uid,capability){
-  const ownerUid=clean(room.ownerUid||room.ownerId||room.hostId);
-  if(ownerUid===uid)return true;
+  const ownerUid=roomOwnerUid(room);
+  if(!isOfficialRoom(room)&&ownerUid===uid)return true;
+  if(isOfficialRoom(room)&&roomHostUid(room)===uid&&OFFICIAL_HOST_CAPABILITIES.includes(capability)){
+    return true;
+  }
   const moderator=roomModeratorEntry(room,uid);
   return Boolean(moderator&&moderator.capabilities.includes(capability));
 }
 
 function canManageRoomAction(room,actor,uid,capability){
   const global=roomPermissions(actor);
-  return clean(room.ownerUid||room.ownerId||room.hostId)===uid
+  return (!isOfficialRoom(room)&&roomOwnerUid(room)===uid)
     ||global.manageRooms
     ||hasRoomCapability(room,uid,capability);
 }
@@ -670,6 +713,10 @@ async function closePersonalRoom(db,uid,roomId){
 function roomSeatCapacity(room){
   const level=Math.max(1,Math.min(6,Number(room.level||1)));
   const type=clean(room.roomType||room.type||"personal");
+  const overrides=roomControlOverrides(room);
+  if((isOfficialRoom(room)||overrides.bypassLevelCapacity)&&overrides.seats!==null){
+    return overrides.seats;
+  }
   if(type==="customer_service")return 5;
   const agency=[10,12,14,16,20,22];
   const normal=[8,10,12,15,20,20];
@@ -691,6 +738,179 @@ function normalizeSeats(room){
     });
   }
   return seats;
+}
+
+function roomControlPolicySnapshot(room){
+  const level=Math.max(1,Math.min(6,Number(room.level||1)));
+  const type=clean(room.roomType||room.type||"personal");
+  const overrides=roomControlOverrides(room);
+  const agencySeats=[10,12,14,16,20,22];
+  const normalSeats=[8,10,12,15,20,20];
+  const agencyMods=[5,6,7,9,11,14];
+  const normalMods=[3,4,5,7,9,12];
+  const baseSeats=(type==="agency"?agencySeats:normalSeats)[level-1];
+  const baseModerators=(type==="agency"?agencyMods:normalMods)[level-1];
+  const manual=isOfficialRoom(room)||overrides.bypassLevelCapacity;
+  return {
+    level,
+    type,
+    official:isOfficialRoom(room),
+    systemOwned:room.systemOwned===true,
+    hostUid:roomHostUid(room),
+    baseSeats,
+    baseModerators,
+    overrides,
+    effectiveSeats:manual&&overrides.seats!==null?overrides.seats:baseSeats,
+    effectiveModerators:manual&&overrides.moderators!==null?overrides.moderators:baseModerators,
+    capacityMode:manual?"manual":"level",
+  };
+}
+
+async function controlRoomPolicy(db,uid,body){
+  const roomId=clean(body.roomId);
+  const controlAction=clean(body.controlAction||"state");
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+
+  const actorSnap=await db.collection("users").doc(uid).get();
+  const actor=actorSnap.data()||{};
+  const global=roomPermissions(actor);
+  const capabilities=Array.isArray(actor.capabilities)?actor.capabilities.map(clean):[];
+  const isOwner=actor.adminEnabled===true&&actor.role==="owner";
+  const canManage=actor.adminEnabled===true&&(
+    isOwner||global.manageRooms||capabilities.includes("globalRoomControl")
+  );
+  const canGlobal=isOwner||(actor.adminEnabled===true&&capabilities.includes("globalRoomControl"));
+  if(!actorSnap.exists||!canManage)throw new ApiError("forbidden",403);
+
+  const roomRef=db.collection("rooms").doc(roomId);
+  if(controlAction==="state"){
+    const roomSnap=await roomRef.get();
+    if(!roomSnap.exists)throw new ApiError("room_not_found",404);
+    const room=roomSnap.data()||{};
+    return {
+      ok:true,
+      roomId,
+      publicId:clean(room.publicId),
+      name:clean(room.name||room.title||"غرفة صوتية"),
+      ownerUid:roomOwnerUid(room),
+      policy:roomControlPolicySnapshot(room),
+    };
+  }
+
+  const reason=clean(body.reason);
+  const operationId=clean(body.idempotencyKey);
+  if(reason.length<3||reason.length>160||!/^[A-Za-z0-9_-]{12,160}$/.test(operationId)){
+    throw new ApiError("invalid_request",400);
+  }
+
+  return db.runTransaction(async tx=>{
+    const opRef=db.collection("control_operations").doc(operationId);
+    const [opSnap,roomSnap]=await Promise.all([tx.get(opRef),tx.get(roomRef)]);
+    if(opSnap.exists){
+      return {ok:true,code:"duplicate",operationId,...(opSnap.data()?.result||{})};
+    }
+    if(!roomSnap.exists)throw new ApiError("room_not_found",404);
+    const room=roomSnap.data()||{};
+    const before=roomControlPolicySnapshot(room);
+    const now=FieldValue.serverTimestamp();
+    let patch={};
+
+    if(["setLevel","raiseLevel","lowerLevel"].includes(controlAction)){
+      let next=before.level;
+      if(controlAction==="setLevel"){
+        next=Number(body.level);
+        if(!Number.isInteger(next)||next<1||next>6)throw new ApiError("invalid_room_level",400);
+      }else if(controlAction==="raiseLevel"){
+        next=Math.min(6,before.level+1);
+      }else{
+        next=Math.max(1,before.level-1);
+      }
+      if(next===before.level)throw new ApiError("level_unchanged",409);
+      patch={level:next,levelUpdatedAt:now,levelUpdatedBy:uid,updatedAt:now};
+    }else if(controlAction==="setOverrides"){
+      const current=roomControlOverrides(room);
+      const parseBounded=(value,min,max,code)=>{
+        if(value===null||value===undefined||value==="")return null;
+        const n=Number(value);
+        if(!Number.isInteger(n)||n<min||n>max)throw new ApiError(code,400);
+        return n;
+      };
+      const seats=Object.prototype.hasOwnProperty.call(body,"seats")
+        ? parseBounded(body.seats,1,50,"invalid_seat_override")
+        : current.seats;
+      const moderators=Object.prototype.hasOwnProperty.call(body,"moderators")
+        ? parseBounded(body.moderators,0,30,"invalid_moderator_override")
+        : current.moderators;
+      patch={
+        controlOverrides:{
+          seats,
+          moderators,
+          bypassLevelCapacity:Object.prototype.hasOwnProperty.call(body,"bypassLevelCapacity")
+            ? body.bypassLevelCapacity===true
+            : current.bypassLevelCapacity,
+          updatedBy:uid,
+        },
+        overrideUpdatedAt:now,
+        updatedAt:now,
+      };
+    }else if(controlAction==="resetOverrides"){
+      patch={
+        controlOverrides:{seats:null,moderators:null,bypassLevelCapacity:false,updatedBy:uid},
+        overrideUpdatedAt:now,
+        updatedAt:now,
+      };
+    }else if(controlAction==="setOfficialRoom"){
+      if(!canGlobal)throw new ApiError("global_room_control_required",403);
+      const enabled=body.enabled===true;
+      const hostUid=clean(body.hostUid);
+      const officialType=clean(body.officialType||"official");
+      if(enabled&&!["official","administrative","customer_service"].includes(officialType)){
+        throw new ApiError("invalid_official_room_type",400);
+      }
+      if(enabled&&hostUid){
+        const hostSnap=await tx.get(db.collection("users").doc(hostUid));
+        if(!hostSnap.exists)throw new ApiError("host_not_found",404);
+      }
+      patch={
+        systemOwned:enabled,
+        officialRoom:enabled,
+        roomType:enabled?officialType:clean(room.previousRoomType||room.roomType||room.type||"personal"),
+        hostUid:enabled?hostUid:"",
+        ...(enabled?{previousRoomType:clean(room.roomType||room.type||"personal")}:{previousRoomType:FieldValue.delete()}),
+        officialUpdatedAt:now,
+        officialUpdatedBy:uid,
+        updatedAt:now,
+      };
+    }else{
+      throw new ApiError("invalid_control_room_action",400);
+    }
+
+    const after=roomControlPolicySnapshot({...room,...patch});
+    tx.update(roomRef,patch);
+    const auditRef=db.collection("admin_audit_logs").doc();
+    tx.create(auditRef,{
+      actorUid:uid,
+      action:controlAction,
+      targetType:"room",
+      targetId:roomId,
+      reason,
+      before,
+      after,
+      operationId,
+      createdAt:now,
+    });
+    const resultData={roomId,before,after};
+    tx.create(opRef,{
+      action:controlAction,
+      actorUid:uid,
+      targetType:"room",
+      targetId:roomId,
+      status:"completed",
+      result:resultData,
+      createdAt:now,
+    });
+    return {ok:true,code:"ok",operationId,...resultData};
+  });
 }
 
 async function roomSeatState(db,uid,roomId){
@@ -2262,6 +2482,9 @@ export default async function handler(req,res){
     }
     if(action==="roomSeatAction"){
       return out(res,200,await roomSeatAction(getFirestore(),decoded.uid,req.body||{}));
+    }
+    if(action==="controlRoomPolicy"){
+      return out(res,200,await controlRoomPolicy(getFirestore(),decoded.uid,req.body||{}));
     }
     if(action!=="token")throw new ApiError("invalid_action",400);
 
