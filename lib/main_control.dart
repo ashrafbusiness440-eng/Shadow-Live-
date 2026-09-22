@@ -993,8 +993,8 @@ class FinancePage extends StatelessWidget {
     Card(child:ListTile(
       leading:const Icon(Icons.diamond_rounded,color:Color(0xFFD7B85A)),
       trailing:const Icon(Icons.chevron_left),
-      title:const Text('سياسة أرباح الهدايا',style:TextStyle(fontWeight:FontWeight.w800)),
-      subtitle:const Text('تفعيل ونسبة تحويل قيمة الهدايا إلى Diamonds'),
+      title:const Text('نِسَب المضيف والوكالة',style:TextStyle(fontWeight:FontWeight.w800)),
+      subtitle:const Text('تعديل مستويات المضيف والوكالة وحصة Shadow Live بدون إعادة برمجة'),
       onTap:()=>Navigator.of(context).push(MaterialPageRoute(builder:(_)=>const GiftEconomyControlPage())),
     )),
     _AdminCollectionTile(title:'السجل المالي',subtitle:'financial_ledger — قراءة فقط',icon:Icons.receipt_long_outlined,collection:'financial_ledger'),
