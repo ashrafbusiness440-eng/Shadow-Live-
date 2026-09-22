@@ -72,6 +72,23 @@ function validKey(value) {
   return /^[A-Za-z0-9_-]{12,220}$/.test(clean(value));
 }
 
+function utcPeriodKeys(date = new Date()) {
+  const day = date.toISOString().slice(0, 10);
+  const month = day.slice(0, 7);
+  const d = new Date(Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate(),
+  ));
+  const weekday = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - weekday);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const week = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  const weekKey = d.getUTCFullYear().toString() + '-W' +
+    week.toString().padStart(2, '0');
+  return { day, week: weekKey, month };
+}
+
 export default async function handler(req, res) {
   if (cors(req, res)) return;
   if (req.method !== "POST") {
@@ -124,8 +141,10 @@ export default async function handler(req, res) {
       .collection("items")
       .doc(decoded.uid);
     const catalogRef = db.collection("system_config").doc("gift_catalog");
+    const economyRef = db.collection("system_config").doc("gift_economy");
     const opRef = db.collection("gift_operations").doc(key);
     const lockRef = db.collection("system_config").doc("emergency_lock");
+    const periods = utcPeriodKeys();
 
     const result = await db.runTransaction(async (tx) => {
       const [
@@ -137,6 +156,7 @@ export default async function handler(req, res) {
         senderBlock,
         receiverBlock,
         catalogSnap,
+        economySnap,
         opSnap,
         lockSnap,
       ] = await Promise.all([
@@ -148,6 +168,7 @@ export default async function handler(req, res) {
         tx.get(senderBlockRef),
         tx.get(receiverBlockRef),
         tx.get(catalogRef),
+        tx.get(economyRef),
         tx.get(opRef),
         tx.get(lockRef),
       ]);
@@ -203,12 +224,39 @@ export default async function handler(req, res) {
 
       const sender = senderSnap.data() || {};
       const receiver = receiverSnap.data() || {};
+      const room = roomSnap.data() || {};
+      const economy = economySnap.exists ? (economySnap.data() || {}) : {};
+      const earningsEnabled =
+        economy.enabled === true &&
+        Number.isSafeInteger(Number(economy.recipientShareBps || 0)) &&
+        Number(economy.recipientShareBps || 0) > 0;
+      const recipientShareBps = earningsEnabled
+        ? Math.max(0, Math.min(10000, Number(economy.recipientShareBps || 0)))
+        : 0;
       const before = Number(sender.coins ?? sender.balance ?? 0);
       if (!Number.isFinite(before) || before < 0) {
         throw Error("invalid_wallet_state");
       }
       if (before < totalCost) throw Error("insufficient_balance");
       const after = before - totalCost;
+
+      const recipientShareCoins = earningsEnabled
+        ? Math.floor((totalCost * recipientShareBps) / 10000)
+        : 0;
+      const previousPendingGiftCoins = Math.max(
+        0,
+        Number(receiver.pendingGiftEarningCoins || 0),
+      );
+      const accumulatedGiftCoins =
+        previousPendingGiftCoins + recipientShareCoins;
+      const diamondsEarned = earningsEnabled
+        ? Math.floor(accumulatedGiftCoins / 10000)
+        : 0;
+      const pendingGiftEarningCoins = earningsEnabled
+        ? accumulatedGiftCoins % 10000
+        : previousPendingGiftCoins;
+      const openingDiamonds = Math.max(0, Number(receiver.diamonds || 0));
+      const closingDiamonds = openingDiamonds + diamondsEarned;
 
       const senderPresenceData = senderPresence.data() || {};
       const receiverPresenceData = receiverPresence.data() || {};
@@ -235,6 +283,31 @@ export default async function handler(req, res) {
       const messageRef = roomRef.collection("messages").doc();
       const transactionRef = db.collection("gift_transactions").doc(key);
       const ledgerRef = db.collection("financial_ledger").doc("gift_" + key);
+      const earningsLedgerRef = db
+        .collection("financial_ledger")
+        .doc("gift_earnings_" + key);
+      const roomDailyRef = roomRef.collection("support_daily").doc(periods.day);
+      const roomWeeklyRef = roomRef.collection("support_weekly").doc(periods.week);
+      const roomMonthlyRef = roomRef.collection("support_monthly").doc(periods.month);
+      const roomDailyUserRef = roomDailyRef.collection("users").doc(decoded.uid);
+      const roomWeeklyUserRef = roomWeeklyRef.collection("users").doc(decoded.uid);
+      const roomMonthlyUserRef = roomMonthlyRef.collection("users").doc(decoded.uid);
+      const userDailyRef = db
+        .collection("gift_user_stats")
+        .doc(receiverId)
+        .collection("daily")
+        .doc(periods.day);
+      const userWeeklyRef = db
+        .collection("gift_user_stats")
+        .doc(receiverId)
+        .collection("weekly")
+        .doc(periods.week);
+      const userMonthlyRef = db
+        .collection("gift_user_stats")
+        .doc(receiverId)
+        .collection("monthly")
+        .doc(periods.month);
+      const agencyId = clean(room.agencyId || receiver.agencyId || "");
       const showcaseRef = db
         .collection("public_gift_showcases")
         .doc(receiverId)
@@ -249,7 +322,104 @@ export default async function handler(req, res) {
       tx.update(receiverRef, {
         totalGiftsReceived: FieldValue.increment(quantity),
         totalValueReceived: FieldValue.increment(totalCost),
+        giftSupportReceivedCoins: FieldValue.increment(totalCost),
+        ...(earningsEnabled
+          ? {
+              diamonds: closingDiamonds,
+              pendingGiftEarningCoins,
+              giftEarningCoinsLifetime: FieldValue.increment(recipientShareCoins),
+              giftDiamondsLifetime: FieldValue.increment(diamondsEarned),
+            }
+          : {}),
       });
+
+      const roomDailySupport =
+        room.dailySupportDate === periods.day
+          ? Math.max(0, Number(room.dailySupport || 0)) + totalCost
+          : totalCost;
+      const roomWeeklySupport =
+        room.weeklySupportKey === periods.week
+          ? Math.max(0, Number(room.weeklySupport || 0)) + totalCost
+          : totalCost;
+      const roomMonthlySupport =
+        room.monthlySupportKey === periods.month
+          ? Math.max(0, Number(room.monthlySupport || 0)) + totalCost
+          : totalCost;
+      tx.update(roomRef, {
+        dailySupport: roomDailySupport,
+        dailySupportDate: periods.day,
+        weeklySupport: roomWeeklySupport,
+        weeklySupportKey: periods.week,
+        monthlySupport: roomMonthlySupport,
+        monthlySupportKey: periods.month,
+        totalSupport: FieldValue.increment(totalCost),
+      });
+
+      const supportSummary = {
+        supportCoins: FieldValue.increment(totalCost),
+        giftCount: FieldValue.increment(quantity),
+        updatedAt: now,
+      };
+      const supporterSummary = {
+        ...supportSummary,
+        uid: decoded.uid,
+        displayName: senderName,
+        profileImageUrl: senderPhoto,
+      };
+      tx.set(roomDailyRef, supportSummary, { merge: true });
+      tx.set(roomWeeklyRef, supportSummary, { merge: true });
+      tx.set(roomMonthlyRef, supportSummary, { merge: true });
+      tx.set(roomDailyUserRef, supporterSummary, { merge: true });
+      tx.set(roomWeeklyUserRef, supporterSummary, { merge: true });
+      tx.set(roomMonthlyUserRef, supporterSummary, { merge: true });
+
+      const receiverPeriodStats = {
+        receivedCoins: FieldValue.increment(totalCost),
+        giftCount: FieldValue.increment(quantity),
+        diamondsEarned: FieldValue.increment(diamondsEarned),
+        earningCoins: FieldValue.increment(recipientShareCoins),
+        updatedAt: now,
+      };
+      tx.set(userDailyRef, receiverPeriodStats, { merge: true });
+      tx.set(userWeeklyRef, receiverPeriodStats, { merge: true });
+      tx.set(userMonthlyRef, receiverPeriodStats, { merge: true });
+
+      if (agencyId) {
+        const agencyRootRef = db.collection("agency_support_stats").doc(agencyId);
+        tx.set(
+          agencyRootRef.collection("daily").doc(periods.day),
+          supportSummary,
+          { merge: true },
+        );
+        tx.set(
+          agencyRootRef.collection("weekly").doc(periods.week),
+          supportSummary,
+          { merge: true },
+        );
+        tx.set(
+          agencyRootRef.collection("monthly").doc(periods.month),
+          supportSummary,
+          { merge: true },
+        );
+      }
+
+      if (earningsEnabled && diamondsEarned > 0) {
+        tx.create(earningsLedgerRef, {
+          userId: receiverId,
+          asset: "diamonds",
+          delta: diamondsEarned,
+          openingBalance: openingDiamonds,
+          closingBalance: closingDiamonds,
+          reason: "gift_earnings",
+          sourceType: "gift",
+          sourceId: key,
+          actorUid: decoded.uid,
+          counterpartyUid: decoded.uid,
+          roomId,
+          idempotencyKey: key + "_earnings",
+          createdAt: now,
+        });
+      }
 
       tx.create(messageRef, {
         type: "gift",
@@ -289,7 +459,13 @@ export default async function handler(req, res) {
         unitCoins,
         totalCost,
         assetKey,
-        earningsStatus: "pending_policy",
+        recipientShareBps,
+        recipientShareCoins,
+        diamondsEarned,
+        pendingGiftEarningCoins,
+        earningsStatus: earningsEnabled ? "applied" : "pending_policy",
+        periods,
+        agencyId: agencyId || null,
         createdAt: now,
       });
 
@@ -330,6 +506,9 @@ export default async function handler(req, res) {
         quantity,
         totalCost,
         balance: after,
+        recipientShareCoins,
+        diamondsEarned,
+        earningsApplied: earningsEnabled,
         messageId: messageRef.id,
       };
 
