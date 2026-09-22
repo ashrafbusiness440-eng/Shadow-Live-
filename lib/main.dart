@@ -41,6 +41,7 @@ import 'features/room/services/room_moderator_service.dart';
 import 'features/room/services/room_presence_service.dart';
 import 'features/room/widgets/room_chat_panel.dart';
 import 'features/room/widgets/room_moderator_manager_sheet.dart';
+import 'features/room/widgets/room_music_sheet.dart';
 import 'features/room/widgets/room_pk_panel.dart';
 import 'features/room/services/room_seat_service.dart';
 
@@ -520,6 +521,10 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   bool get _canManageMusic =>
       _voiceSession.isOwner ||
       (_roomModeratorState?.has('manageMusic') ?? false);
+
+  bool get _canManageMusicPolicy =>
+      _voiceSession.isOwner ||
+      (_roomModeratorState?.has('manageMusicPolicy') ?? false);
 
   bool get _canManagePk =>
       _voiceSession.isOwner ||
@@ -1948,6 +1953,24 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     }
   }
 
+  Future<void> _showRoomMusicSheet() async {
+    final roomId = (_roomArguments['roomId'] ?? '').toString().trim();
+    if (roomId.isEmpty) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF0C101A),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      ),
+      builder: (_) => RoomMusicSheet(
+        roomId: roomId,
+        canManage: _canManageMusic,
+        canManagePolicy: _canManageMusicPolicy,
+      ),
+    );
+  }
+
   Future<void> _showToolsSheet() async {
     await showModalBottomSheet<void>(
       context: context,
@@ -2084,7 +2107,10 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         tool(
                           icon: Icons.music_note_rounded,
                           label: 'الأغاني',
-                          onTap: () => comingSoon('الأغاني'),
+                          onTap: () {
+                            Navigator.pop(sheetContext);
+                            _showRoomMusicSheet();
+                          },
                           iconColor: const Color(0xFFF48FB1),
                         ),
                         tool(
