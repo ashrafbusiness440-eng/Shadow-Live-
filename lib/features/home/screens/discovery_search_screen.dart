@@ -303,8 +303,20 @@ class _DiscoverySearchScreenState extends State<DiscoverySearchScreen> {
     }
 
     for (final room in _roomCache) {
+      final ownerName =
+          (room.data['ownerName'] ?? room.data['hostName'] ?? '').toString();
+      final ownerLocation =
+          (room.data['ownerLocation'] ?? room.data['country'] ?? '').toString();
+      final category = (room.data['category'] ?? '').toString();
+      final tags = room.data['tags'] is List
+          ? (room.data['tags'] as List).map((value) => value.toString()).join(' ')
+          : '';
       if (searchTextMatches(room.title, query) ||
-          normalizeSearchText(room.publicId) == query) {
+          normalizeSearchText(room.publicId) == query ||
+          searchTextMatches(ownerName, query) ||
+          searchTextMatches(ownerLocation, query) ||
+          searchTextMatches(category, query) ||
+          searchTextMatches(tags, query)) {
         results[room.id] = room;
       }
     }
