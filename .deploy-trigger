@@ -1,1 +1,2 @@
-Trigger Vercel production deployment for latest main with ZEGOCLOUD voice endpoint.
+Trigger Vercel production deployment for Phase 6 E2E.
+Backend main head before trigger: c86683a5e772f2ead89899d587fd3740d7ed19f8
