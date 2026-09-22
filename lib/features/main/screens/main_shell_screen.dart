@@ -172,9 +172,9 @@ class _MainShellScreenState extends State<MainShellScreen> {
         body: Stack(
           children: [
             Positioned.fill(
-              child: IndexedStack(
-                index: _pageForNav(_currentNavIndex),
-                children: _pages,
+              child: KeyedSubtree(
+                key: ValueKey<int>(_pageForNav(_currentNavIndex)),
+                child: _pages[_pageForNav(_currentNavIndex)],
               ),
             ),
             const MiniVoiceRoomOverlay(),
