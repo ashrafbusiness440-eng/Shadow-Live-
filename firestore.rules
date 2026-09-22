@@ -84,7 +84,19 @@ service cloud.firestore {
              && request.resource.data.diamondPasswordHash == resource.data.diamondPasswordHash)
         && (!('diamondPasswordSalt' in resource.data) && !('diamondPasswordSalt' in request.resource.data)
           || ('diamondPasswordSalt' in resource.data) && ('diamondPasswordSalt' in request.resource.data)
-             && request.resource.data.diamondPasswordSalt == resource.data.diamondPasswordSalt);
+             && request.resource.data.diamondPasswordSalt == resource.data.diamondPasswordSalt)
+        && (!('pendingGiftEarningCoins' in resource.data) && !('pendingGiftEarningCoins' in request.resource.data)
+          || ('pendingGiftEarningCoins' in resource.data) && ('pendingGiftEarningCoins' in request.resource.data)
+             && request.resource.data.pendingGiftEarningCoins == resource.data.pendingGiftEarningCoins)
+        && (!('giftEarningCoinsLifetime' in resource.data) && !('giftEarningCoinsLifetime' in request.resource.data)
+          || ('giftEarningCoinsLifetime' in resource.data) && ('giftEarningCoinsLifetime' in request.resource.data)
+             && request.resource.data.giftEarningCoinsLifetime == resource.data.giftEarningCoinsLifetime)
+        && (!('giftDiamondsLifetime' in resource.data) && !('giftDiamondsLifetime' in request.resource.data)
+          || ('giftDiamondsLifetime' in resource.data) && ('giftDiamondsLifetime' in request.resource.data)
+             && request.resource.data.giftDiamondsLifetime == resource.data.giftDiamondsLifetime)
+        && (!('giftSupportReceivedCoins' in resource.data) && !('giftSupportReceivedCoins' in request.resource.data)
+          || ('giftSupportReceivedCoins' in resource.data) && ('giftSupportReceivedCoins' in request.resource.data)
+             && request.resource.data.giftSupportReceivedCoins == resource.data.giftSupportReceivedCoins);
     }
 
     function publicProfileAuthoritativeFieldsMatch(userId) {
@@ -169,6 +181,21 @@ service cloud.firestore {
       allow read, create, update, delete: if false;
     }
 
+    match /gift_user_stats/{userId}/{document=**} {
+      allow read: if signedIn()
+        && (request.auth.uid == userId
+          || isOwner()
+          || hasCapability('manageEconomy'));
+      allow create, update, delete: if false;
+    }
+
+    match /agency_support_stats/{agencyId}/{document=**} {
+      allow read: if isOwner()
+        || hasCapability('manageEconomy')
+        || hasCapability('manageAgencies');
+      allow create, update, delete: if false;
+    }
+
     match /google_play_purchases/{purchaseId} {
       allow read, create, update, delete: if false;
     }
@@ -251,6 +278,21 @@ service cloud.firestore {
       }
 
       match /supporters/{supporterId} {
+        allow read: if signedIn();
+        allow create, update, delete: if false;
+      }
+
+      match /support_daily/{periodId}/{document=**} {
+        allow read: if signedIn();
+        allow create, update, delete: if false;
+      }
+
+      match /support_weekly/{periodId}/{document=**} {
+        allow read: if signedIn();
+        allow create, update, delete: if false;
+      }
+
+      match /support_monthly/{periodId}/{document=**} {
         allow read: if signedIn();
         allow create, update, delete: if false;
       }
