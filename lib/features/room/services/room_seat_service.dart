@@ -40,6 +40,7 @@ class RoomSeatState {
     required this.micInvites,
     required this.micRequests,
     required this.micInviteOnly,
+    required this.starBattleActive,
     required this.isOwner,
     required this.isActive,
     required this.onlineCount,
@@ -50,6 +51,7 @@ class RoomSeatState {
   final List<String> micInvites;
   final List<String> micRequests;
   final bool micInviteOnly;
+  final bool starBattleActive;
   final bool isOwner;
   final bool isActive;
   final int onlineCount;
@@ -80,6 +82,7 @@ class RoomSeatState {
           ? rawRequests.map((item) => item.toString()).toList()
           : const [],
       micInviteOnly: json['micInviteOnly'] == true,
+      starBattleActive: json['starBattleActive'] == true,
       isOwner: json['isOwner'] == true,
       isActive: json['isActive'] != false,
       onlineCount: (json['onlineCount'] as num?)?.toInt() ?? 0,
@@ -167,6 +170,7 @@ class RoomSeatService {
         ...data,
         'seats': seats,
         'roomId': roomId,
+        'starBattleActive': battle['status'] == 'active',
         'isOwner': uid.isNotEmpty && ownerUid == uid,
         'isActive': snapshot.exists && data['isActive'] != false,
       });
