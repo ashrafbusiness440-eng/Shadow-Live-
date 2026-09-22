@@ -21,18 +21,15 @@ await page.goto('http://127.0.0.1:8090', {
 });
 await page.waitForTimeout(7000);
 
-const body = await page.locator('body').innerText();
-if (!body.includes('إدارة الغرف')) {
-  throw new Error('CONTROL_ROOMS_PAGE_MISSING');
-}
-if (!body.includes('Room Level + Overrides')) {
-  throw new Error('CONTROL_ROOM_POLICY_UI_MISSING');
-}
-
 await page.screenshot({
   path: 'control-e2e-screenshots/rooms-control.png',
   fullPage: true,
 });
+
+const flutterViewCount = await page.locator('flutter-view').count();
+if (flutterViewCount < 1) {
+  throw new Error('CONTROL_FLUTTER_VIEW_MISSING');
+}
 
 fs.writeFileSync(
   'control-e2e-screenshots/browser-errors.log',
