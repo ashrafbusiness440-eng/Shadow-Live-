@@ -926,6 +926,105 @@ async function roomLibrary(db,uid){
   return {ok:true,favorites,history};
 }
 
+async function refreshRoomPresenceSummary(db,roomId){
+  const now=Date.now();
+  const cutoff=now-90000;
+  const collection=db.collection("room_presence").doc(roomId).collection("users");
+  const snapshot=await collection.limit(500).get();
+  const active=[];
+  const stale=[];
+  for(const doc of snapshot.docs){
+    const data=doc.data()||{};
+    const lastSeenAtMs=Number(data.lastSeenAtMs||0);
+    if(lastSeenAtMs>=cutoff){
+      active.push({
+        uid:doc.id,
+        displayName:clean(data.displayName||"مستخدم Shadow Live"),
+        profileImageUrl:clean(data.profileImageUrl),
+        joinedAtMs:Number(data.joinedAtMs||0),
+        lastSeenAtMs,
+      });
+    }else{
+      stale.push(doc.ref);
+    }
+  }
+
+  if(stale.length){
+    const batch=db.batch();
+    for(const ref of stale.slice(0,450))batch.delete(ref);
+    await batch.commit();
+  }
+  await db.collection("rooms").doc(roomId).set({
+    onlineCount:active.length,
+    participantsCount:active.length,
+    lastPresenceAtMs:now,
+    updatedAt:FieldValue.serverTimestamp(),
+  },{merge:true});
+  active.sort((a,b)=>a.joinedAtMs-b.joinedAtMs);
+  return active;
+}
+
+async function roomPresenceJoin(db,uid,roomId){
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+  const roomRef=db.collection("rooms").doc(roomId);
+  const profileRef=db.collection("public_profiles").doc(uid);
+  const presenceRef=db.collection("room_presence").doc(roomId).collection("users").doc(uid);
+  const [roomSnap,profileSnap,presenceSnap]=await Promise.all([
+    roomRef.get(),profileRef.get(),presenceRef.get(),
+  ]);
+  if(!roomSnap.exists||roomSnap.data()?.isActive===false)throw new ApiError("room_unavailable",404);
+  const profile=profileSnap.data()||{};
+  const now=Date.now();
+  await presenceRef.set({
+    uid,
+    displayName:clean(profile.displayName||profile.username||"مستخدم Shadow Live"),
+    profileImageUrl:clean(profile.profileImageUrl),
+    joinedAtMs:presenceSnap.exists?Number(presenceSnap.data()?.joinedAtMs||now):now,
+    lastSeenAtMs:now,
+  },{merge:true});
+  const participants=await refreshRoomPresenceSummary(db,roomId);
+  return {ok:true,roomId,onlineCount:participants.length,participants};
+}
+
+async function roomPresenceHeartbeat(db,uid,roomId){
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+  const roomSnap=await db.collection("rooms").doc(roomId).get();
+  if(!roomSnap.exists||roomSnap.data()?.isActive===false)throw new ApiError("room_unavailable",404);
+  const presenceRef=db.collection("room_presence").doc(roomId).collection("users").doc(uid);
+  const snap=await presenceRef.get();
+  const now=Date.now();
+  if(snap.exists){
+    await presenceRef.set({lastSeenAtMs:now},{merge:true});
+  }else{
+    const profile=await db.collection("public_profiles").doc(uid).get();
+    const data=profile.data()||{};
+    await presenceRef.set({
+      uid,
+      displayName:clean(data.displayName||data.username||"مستخدم Shadow Live"),
+      profileImageUrl:clean(data.profileImageUrl),
+      joinedAtMs:now,
+      lastSeenAtMs:now,
+    });
+  }
+  const participants=await refreshRoomPresenceSummary(db,roomId);
+  return {ok:true,roomId,onlineCount:participants.length};
+}
+
+async function roomPresenceLeave(db,uid,roomId){
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+  await db.collection("room_presence").doc(roomId).collection("users").doc(uid).delete();
+  const participants=await refreshRoomPresenceSummary(db,roomId);
+  return {ok:true,roomId,onlineCount:participants.length};
+}
+
+async function roomPresenceState(db,roomId){
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+  const roomSnap=await db.collection("rooms").doc(roomId).get();
+  if(!roomSnap.exists)throw new ApiError("room_not_found",404);
+  const participants=await refreshRoomPresenceSummary(db,roomId);
+  return {ok:true,roomId,onlineCount:participants.length,participants};
+}
+
 function normalizePkState(room){
   const raw=room.pkState;
   if(!raw||typeof raw!=="object")return null;
@@ -1319,6 +1418,22 @@ export default async function handler(req,res){
     if(action==="roomBanList"){
       const roomId=clean(req.body?.roomId);
       return out(res,200,await roomBanList(getFirestore(),decoded.uid,roomId));
+    }
+    if(action==="roomPresenceJoin"){
+      const roomId=clean(req.body?.roomId);
+      return out(res,200,await roomPresenceJoin(getFirestore(),decoded.uid,roomId));
+    }
+    if(action==="roomPresenceHeartbeat"){
+      const roomId=clean(req.body?.roomId);
+      return out(res,200,await roomPresenceHeartbeat(getFirestore(),decoded.uid,roomId));
+    }
+    if(action==="roomPresenceLeave"){
+      const roomId=clean(req.body?.roomId);
+      return out(res,200,await roomPresenceLeave(getFirestore(),decoded.uid,roomId));
+    }
+    if(action==="roomPresenceState"){
+      const roomId=clean(req.body?.roomId);
+      return out(res,200,await roomPresenceState(getFirestore(),roomId));
     }
     if(action==="pkState"){
       const roomId=clean(req.body?.roomId);
