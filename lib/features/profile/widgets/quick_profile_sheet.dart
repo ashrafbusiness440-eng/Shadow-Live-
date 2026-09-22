@@ -292,6 +292,62 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                       ),
                     ),
                   ],
+                  if (widget.canManageMic) ...[
+                    const SizedBox(height: 12),
+                    const Divider(color: Colors.white10),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        if (!widget.userOnMic && widget.onInviteToMic != null)
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () {
+                                Navigator.pop(context);
+                                widget.onInviteToMic?.call();
+                              },
+                              icon: const Icon(Icons.mic_external_on_rounded),
+                              label: const Text('دعوة للمايك'),
+                            ),
+                          ),
+                        if (widget.userOnMic && widget.onRemoveFromMic != null) ...[
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () {
+                                Navigator.pop(context);
+                                widget.onRemoveFromMic?.call();
+                              },
+                              icon: const Icon(Icons.person_remove_rounded),
+                              label: const Text('إنزال'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                        ],
+                        if (widget.userOnMic)
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () {
+                                Navigator.pop(context);
+                                if (widget.userMuted) {
+                                  widget.onUnmuteMic?.call();
+                                } else {
+                                  widget.onMuteMic?.call();
+                                }
+                              },
+                              icon: Icon(
+                                widget.userMuted
+                                    ? Icons.mic_rounded
+                                    : Icons.mic_off_rounded,
+                              ),
+                              label: Text(
+                                widget.userMuted
+                                    ? 'إزالة الكتم'
+                                    : 'كتم المايك',
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   TextButton.icon(onPressed: _openFull, icon: const Icon(Icons.open_in_new_rounded), label: const Text('عرض الملف الشخصي الكامل')),
                 ],
