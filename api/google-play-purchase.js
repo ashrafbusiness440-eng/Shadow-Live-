@@ -241,7 +241,12 @@ export default async function handler(req, res) {
       ]);
 
       if (!userSnap.exists) throw Error("user_not_found");
-      if (lockSnap.exists && lockSnap.data()?.enabled === true) {
+      const economyLock = lockSnap.exists ? (lockSnap.data() || {}) : {};
+      if (
+        economyLock.enabled === true ||
+        economyLock.economyLocked === true ||
+        economyLock.rechargeLocked === true
+      ) {
         throw Error("emergency_locked");
       }
 
