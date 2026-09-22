@@ -55,7 +55,8 @@ Future<void> main() async {
   );
 
   const e2eTest = bool.fromEnvironment('E2E_TEST');
-  if (e2eTest && FirebaseAuth.instance.currentUser == null) {
+  const e2eRoomTest = bool.fromEnvironment('E2E_ROOM_TEST');
+  if ((e2eTest || e2eRoomTest) && FirebaseAuth.instance.currentUser == null) {
     try {
       await FirebaseAuth.instance.signInAnonymously();
     } catch (_) {
@@ -106,9 +107,11 @@ class MyApp extends StatelessWidget {
           Theme.of(context).textTheme,
         ).apply(bodyColor: Colors.white),
       ),
-      initialRoute: const bool.fromEnvironment('E2E_TEST')
-          ? AppRoutes.main
-          : AppRoutes.splash,
+      initialRoute: const bool.fromEnvironment('E2E_ROOM_TEST')
+          ? AppRoutes.voiceChatRoom
+          : const bool.fromEnvironment('E2E_TEST')
+              ? AppRoutes.main
+              : AppRoutes.splash,
       routes: {
         AppRoutes.splash: (context) => const SplashScreen(),
         AppRoutes.onboarding: (context) => const OnboardingScreen(),
@@ -219,6 +222,66 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   }
 
   Future<void> _connectVoice() async {
+    if (const bool.fromEnvironment('E2E_ROOM_TEST')) {
+      if (!mounted) return;
+      setState(() {
+        _roomArguments = <String, dynamic>{
+          'roomId': 'e2e_room',
+          'publicId': '123456',
+          'name': 'غرفة Shadow التجريبية',
+          'title': 'غرفة Shadow التجريبية',
+          'ownerUid': 'owner_e2e',
+          'onlineCount': 18,
+          'chatEnabled': true,
+          'level': 3,
+        };
+        _ownerDisplayName = 'Ashraf';
+        _ownerPhotoUrl = '';
+        _ownerLocation = 'AE';
+        _voiceJoining = false;
+        _voiceMicMuted = true;
+        _voiceError = null;
+        _roomSeatState = RoomSeatState(
+          roomId: 'e2e_room',
+          seats: const [
+            VoiceSeat(index: 0, uid: 'u1', displayName: 'Shadow', profileImageUrl: '', muted: false, starBattleCoins: 12000),
+            VoiceSeat(index: 1, uid: 'u2', displayName: 'Ashraf', profileImageUrl: '', muted: true, starBattleCoins: 8400),
+            VoiceSeat(index: 2, uid: 'u3', displayName: 'Lina', profileImageUrl: '', muted: false, starBattleCoins: 2200),
+            VoiceSeat(index: 3, uid: '', displayName: '', profileImageUrl: '', muted: true),
+            VoiceSeat(index: 4, uid: '', displayName: '', profileImageUrl: '', muted: true),
+            VoiceSeat(index: 5, uid: '', displayName: '', profileImageUrl: '', muted: true),
+            VoiceSeat(index: 6, uid: '', displayName: '', profileImageUrl: '', muted: true),
+            VoiceSeat(index: 7, uid: '', displayName: '', profileImageUrl: '', muted: true),
+          ],
+          micInvites: const [],
+          micRequests: const ['request_1', 'request_2'],
+          micInviteOnly: true,
+          starBattleActive: true,
+          isOwner: true,
+          isActive: true,
+          onlineCount: 18,
+        );
+        _roomInsights = const RoomInsights(
+          roomId: 'e2e_room',
+          level: 3,
+          levelPoints: 4600,
+          levelTarget: 7000,
+          followerCount: 320,
+          followed: true,
+          favorited: true,
+          dailySupport: 18500,
+          activityScore: 950,
+          dailyRank: 4,
+          supporters: [
+            RoomSupporter(uid: 's1', rank: 1, displayName: 'A', profileImageUrl: '', totalSupport: 10000, dailySupport: 10000),
+            RoomSupporter(uid: 's2', rank: 2, displayName: 'B', profileImageUrl: '', totalSupport: 6000, dailySupport: 6000),
+            RoomSupporter(uid: 's3', rank: 3, displayName: 'C', profileImageUrl: '', totalSupport: 2500, dailySupport: 2500),
+          ],
+          ranking: [],
+        );
+      });
+      return;
+    }
     final raw = ModalRoute.of(context)?.settings.arguments;
     final args = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
     _roomArguments = args;
@@ -4035,12 +4098,33 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                 ),
                                 const SizedBox(height: 4),
                                 Expanded(
-                                  child: RoomChatFeed(
-                                    roomId: roomId,
-                                    roomEffectsEnabled: _roomEffectsEnabled,
-                                    effectSoundEnabled: _effectSoundEnabled,
-                                    scrollController: scrollController,
-                                  ),
+                                  child: const bool.fromEnvironment('E2E_ROOM_TEST')
+                                      ? ListView(
+                                          controller: scrollController,
+                                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                                          children: const [
+                                            Text(
+                                              'Shadow دخل إلى الغرفة',
+                                              style: TextStyle(color: Colors.white60, fontSize: 11),
+                                            ),
+                                            SizedBox(height: 10),
+                                            Text(
+                                              'Ashraf: أهلاً وسهلاً بالجميع',
+                                              style: TextStyle(color: Colors.white, fontSize: 11),
+                                            ),
+                                            SizedBox(height: 10),
+                                            Text(
+                                              'Shadow أرسل هدية التاج إلى Ashraf — 10,000 كوينز',
+                                              style: TextStyle(color: Color(0xFFFFD54A), fontSize: 11),
+                                            ),
+                                          ],
+                                        )
+                                      : RoomChatFeed(
+                                          roomId: roomId,
+                                          roomEffectsEnabled: _roomEffectsEnabled,
+                                          effectSoundEnabled: _effectSoundEnabled,
+                                          scrollController: scrollController,
+                                        ),
                                 ),
                               ],
                             ),
