@@ -542,7 +542,7 @@ async function updateRoomSettings(db,uid,body){
     const permissions=roomPermissions(user);
     const ownerUid=clean(room.ownerUid||room.ownerId||room.hostId);
     if(ownerUid!==uid&&!permissions.manageRooms)throw new ApiError("forbidden",403);
-    if(visibility==="hidden"&&ownerUid!==uid&&!permissions.hidden)throw new ApiError("hidden_room_forbidden",403);
+    if(visibility==="hidden"&&!permissions.hidden)throw new ApiError("hidden_room_forbidden",403);
 
     const update={
       name,
@@ -604,6 +604,37 @@ async function updateRoomSettings(db,uid,body){
       ok:true,
       room:roomResponse(roomId,{...room,...update}),
     };
+  });
+}
+
+async function setRoomChatEnabled(db,uid,body){
+  const roomId=clean(body.roomId);
+  const enabled=body.enabled===true;
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+  const roomRef=db.collection("rooms").doc(roomId);
+  const actorRef=db.collection("users").doc(uid);
+  const auditRef=db.collection("room_audit_logs").doc(roomId).collection("items").doc();
+
+  return db.runTransaction(async tx=>{
+    const [roomSnap,actorSnap]=await Promise.all([tx.get(roomRef),tx.get(actorRef)]);
+    if(!roomSnap.exists)throw new ApiError("room_not_found",404);
+    const room=roomSnap.data()||{};
+    const actor=actorSnap.data()||{};
+    if(!canManageRoomAction(room,actor,uid,"moderateChat"))throw new ApiError("forbidden",403);
+
+    const before=room.chatEnabled!==false;
+    tx.update(roomRef,{
+      chatEnabled:enabled,
+      updatedAt:FieldValue.serverTimestamp(),
+    });
+    tx.create(auditRef,{
+      action:"setRoomChatEnabled",
+      actorUid:uid,
+      before:{chatEnabled:before},
+      after:{chatEnabled:enabled},
+      createdAt:FieldValue.serverTimestamp(),
+    });
+    return {ok:true,roomId,chatEnabled:enabled};
   });
 }
 
@@ -1939,6 +1970,9 @@ export default async function handler(req,res){
     if(action==="personalRoom"){
       const room=await openPersonalRoom(getFirestore(),decoded.uid);
       return out(res,200,{ok:true,room});
+    }
+    if(action==="setRoomChatEnabled"){
+      return out(res,200,await setRoomChatEnabled(getFirestore(),decoded.uid,req.body||{}));
     }
     if(action==="closePersonalRoom"){
       const roomId=clean(req.body?.roomId);

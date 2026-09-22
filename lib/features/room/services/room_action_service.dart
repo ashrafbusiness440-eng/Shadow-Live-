@@ -207,6 +207,18 @@ class RoomActionService {
     return Map<String, dynamic>.from(room);
   }
 
+  Future<bool> setRoomChatEnabled({
+    required String roomId,
+    required bool enabled,
+  }) async {
+    final body = await _post({
+      'action': 'setRoomChatEnabled',
+      'roomId': roomId,
+      'enabled': enabled,
+    });
+    return body['chatEnabled'] == true;
+  }
+
   Future<bool> loadGhostMode() async {
     final body = await _post({'action': 'roomGhostState'});
     return body['ghostMode'] == true;

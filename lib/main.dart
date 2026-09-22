@@ -3055,6 +3055,66 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       _showRoomModeratorsSheet();
                     },
                   ),
+                if (_canModerateChat)
+                  ListTile(
+                    leading: Icon(
+                      (_roomArguments['chatEnabled'] != false)
+                          ? Icons.chat_rounded
+                          : Icons.chat_bubble_outline_rounded,
+                      color: const Color(0xFFBFA5FF),
+                    ),
+                    title: const Text(
+                      'دردشة الغرفة',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    subtitle: Text(
+                      (_roomArguments['chatEnabled'] != false)
+                          ? 'مفعّلة للأعضاء'
+                          : 'متوقفة للأعضاء',
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 10,
+                      ),
+                    ),
+                    trailing: Switch(
+                      value: _roomArguments['chatEnabled'] != false,
+                      onChanged: null,
+                    ),
+                    onTap: () async {
+                      final roomId =
+                          (_roomArguments['roomId'] ?? '').toString();
+                      if (roomId.isEmpty) return;
+                      final next = !(_roomArguments['chatEnabled'] != false);
+                      try {
+                        final enabled =
+                            await _roomActions.setRoomChatEnabled(
+                          roomId: roomId,
+                          enabled: next,
+                        );
+                        if (mounted) {
+                          setState(() {
+                            _roomArguments = {
+                              ..._roomArguments,
+                              'chatEnabled': enabled,
+                            };
+                          });
+                        }
+                        if (sheetContext.mounted) {
+                          Navigator.pop(sheetContext);
+                        }
+                      } catch (_) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'تعذر تحديث دردشة الغرفة حالياً.',
+                              ),
+                            ),
+                          );
+                        }
+                      }
+                    },
+                  ),
                 if (owner)
                   ListTile(
                     leading: const Icon(
