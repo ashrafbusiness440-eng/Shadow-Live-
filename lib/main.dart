@@ -2242,37 +2242,42 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             }
 
             return SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 22),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 44,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: Colors.white24,
-                        borderRadius: BorderRadius.circular(99),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(sheetContext).height * .78,
+                ),
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 22),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.white24,
+                          borderRadius: BorderRadius.circular(99),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'الأدوات',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 21,
-                        fontWeight: FontWeight.w900,
+                      const SizedBox(height: 16),
+                      const Text(
+                        'الأدوات',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 21,
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 18),
-                    GridView.count(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      crossAxisCount: 5,
-                      mainAxisSpacing: 16,
-                      crossAxisSpacing: 8,
-                      childAspectRatio: .78,
-                      children: [
+                      const SizedBox(height: 18),
+                      GridView.count(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        crossAxisCount: 5,
+                        mainAxisSpacing: 16,
+                        crossAxisSpacing: 8,
+                        childAspectRatio: .78,
+                        children: [
                         tool(
                           icon: Icons.account_balance_wallet_rounded,
                           label: 'مركز الشحن',
@@ -2347,9 +2352,10 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                           value: _effectSoundEnabled,
                           onChanged: toggleEffectSound,
                         ),
-                      ],
-                    ),
-                  ],
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             );
@@ -3760,7 +3766,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                 builder: (context, constraints) {
                   final height = constraints.maxHeight;
                   final micTop = min(205.0, height * .26);
-                  final micHeight = max(280.0, height * .40);
+                  final micHeight = max(300.0, height * .46);
                   final feedTop = min(height - 145, micTop + micHeight - 6);
 
                   return Stack(
