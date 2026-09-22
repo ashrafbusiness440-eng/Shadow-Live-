@@ -301,7 +301,10 @@ export default async function handler(req, res) {
       const revenue = resolveRevenuePolicy(
         economy, receiver, monthlyGrossCoins, agencyId, periods.month, activeHostCount
       );
-      const earningsEnabled = economy.enabled === true && revenue.hostShareBps > 0;
+      const policyEnabled = economy.policyMode === "tiered_host_agency"
+        ? economy.enabled !== false
+        : true;
+      const earningsEnabled = policyEnabled && revenue.hostShareBps > 0;
       const recipientShareBps = earningsEnabled ? revenue.hostShareBps : 0;
       const before = Number(sender.coins ?? sender.balance ?? 0);
       if (!Number.isFinite(before) || before < 0) {
@@ -313,10 +316,10 @@ export default async function handler(req, res) {
       const recipientShareCoins = earningsEnabled
         ? Math.floor((totalCost * recipientShareBps) / 10000)
         : 0;
-      const agencyShareCoins = economy.enabled === true && agencyId
+      const agencyShareCoins = policyEnabled && agencyId
         ? Math.floor((totalCost * revenue.agencyShareBps) / 10000)
         : 0;
-      const platformShareCoins = economy.enabled === true
+      const platformShareCoins = policyEnabled
         ? Math.max(0, totalCost - recipientShareCoins - agencyShareCoins)
         : totalCost;
       const previousPendingGiftCoins = Math.max(
