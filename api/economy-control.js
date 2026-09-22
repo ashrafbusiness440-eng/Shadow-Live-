@@ -38,9 +38,25 @@ async function actor(req){
   if(!snap.exists)throw Error("forbidden");
   const user=snap.data()||{};
   const caps=Array.isArray(user.capabilities)?user.capabilities:[];
-  const canEconomy=user.role==="owner"||(user.adminEnabled===true&&caps.includes("manageEconomy"));
+  const isOwner=user.role==="owner";
+  const canEconomy=isOwner||(user.adminEnabled===true&&caps.includes("manageEconomy"));
   if(!canEconomy)throw Error("forbidden");
-  return {uid:decoded.uid,db,isOwner:user.role==="owner"};
+  const canAdjustBalances=isOwner||(user.adminEnabled===true&&caps.includes("adjustBalances"));
+  return {uid:decoded.uid,db,isOwner,canAdjustBalances};
+}
+
+function normalizeLock(data={}){
+  const economyLocked=data.economyLocked===true||data.enabled===true;
+  return {
+    enabled:economyLocked,
+    economyLocked,
+    rechargeLocked:data.rechargeLocked===true,
+    giftsLocked:data.giftsLocked===true,
+    transfersLocked:data.transfersLocked===true,
+    reason:clean(data.reason),
+    updatedBy:clean(data.updatedBy),
+    updatedAt:data.updatedAt||null,
+  };
 }
 
 function safeUser(uid,data){
@@ -58,6 +74,7 @@ function safeUser(uid,data){
     totalGiftsSent:Math.max(0,Number(data.totalGiftsSent||0)),
     totalGiftsReceived:Math.max(0,Number(data.totalGiftsReceived||0)),
     totalValueReceived:Math.max(0,Number(data.totalValueReceived||0)),
+    currentGiftRevenueTier:clean(data.currentGiftRevenueTier),
     agencyId:clean(data.agencyId),
     role:clean(data.role||"user"),
   };
@@ -126,7 +143,7 @@ export default async function handler(req,res){
   if(req.method!=="POST")return out(res,405,{ok:false,code:"method_not_allowed"});
   try{
     initFirebase();
-    const {uid,db,isOwner}=await actor(req);
+    const {uid,db,isOwner,canAdjustBalances}=await actor(req);
     const action=clean(req.body?.action);
 
     if(action==="state"){
@@ -134,43 +151,54 @@ export default async function handler(req,res){
       return out(res,200,{
         ok:true,
         isOwner,
-        emergencyLock:lock.exists?lock.data():{enabled:false},
+        canAdjustBalances,
+        emergencyLock:normalizeLock(lock.exists?lock.data():{}),
       });
     }
 
     if(action==="setEmergencyLock"){
       if(!isOwner)throw Error("owner_required");
-      const enabled=req.body?.enabled===true;
+      const economyLocked=req.body?.economyLocked===true||req.body?.enabled===true;
+      const rechargeLocked=req.body?.rechargeLocked===true;
+      const giftsLocked=req.body?.giftsLocked===true;
+      const transfersLocked=req.body?.transfersLocked===true;
       const reason=clean(req.body?.reason);
       if(reason.length<3||reason.length>240)throw Error("invalid_reason");
       const ref=db.collection("system_config").doc("emergency_lock");
       const before=await ref.get();
+      const after={
+        enabled:economyLocked,
+        economyLocked,
+        rechargeLocked,
+        giftsLocked,
+        transfersLocked,
+        reason,
+      };
       const auditRef=db.collection("admin_audit_logs").doc();
       await db.runTransaction(async tx=>{
         tx.set(ref,{
-          enabled,
-          reason,
+          ...after,
           updatedBy:uid,
           updatedAt:FieldValue.serverTimestamp(),
         },{merge:true});
         tx.create(auditRef,{
           actorUid:uid,
-          action:enabled?"enableEmergencyEconomyLock":"disableEmergencyEconomyLock",
+          action:"updateEconomyLocks",
           targetType:"system_config",
           targetId:"emergency_lock",
           reason,
-          before:before.exists?before.data():null,
-          after:{enabled,reason},
+          before:before.exists?normalizeLock(before.data()||{}):normalizeLock({}),
+          after,
           createdAt:FieldValue.serverTimestamp(),
         });
       });
-      return out(res,200,{ok:true,enabled,reason});
+      return out(res,200,{ok:true,emergencyLock:after});
     }
 
     if(action==="searchUser"){
       const user=await findUser(db,req.body?.query);
       const ledger=await userLedger(db,user.uid);
-      return out(res,200,{ok:true,user,ledger});
+      return out(res,200,{ok:true,user,ledger,canAdjustBalances});
     }
 
     if(action==="searchOperation"){
