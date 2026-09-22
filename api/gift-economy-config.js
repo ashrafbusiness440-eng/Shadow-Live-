@@ -44,7 +44,7 @@ async function actor(req){
 
 function defaultPolicy(){
   return {
-    enabled:false,
+    enabled:true,
     policyMode:"tiered_host_agency",
     coinsPerUsd:10000,
     coinsPerDiamond:10000,
@@ -87,7 +87,7 @@ function normalizeTier(item,index){
 }
 function normalizePolicy(raw={}){
   const defaults=defaultPolicy();
-  const enabled=raw.enabled===true;
+  const enabled=raw.policyMode==="tiered_host_agency" ? raw.enabled!==false : true;
   const hostPerformanceBonusBps=integer(
     raw.hostPerformanceBonusBps??defaults.hostPerformanceBonusBps,
     "invalid_host_bonus",0,3000
