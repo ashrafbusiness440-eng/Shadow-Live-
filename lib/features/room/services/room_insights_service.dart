@@ -37,6 +37,7 @@ class RoomRankEntry {
     required this.rank,
     required this.name,
     required this.publicId,
+    required this.activityScore,
     required this.dailySupport,
   });
 
@@ -44,6 +45,7 @@ class RoomRankEntry {
   final int rank;
   final String name;
   final String publicId;
+  final int activityScore;
   final num dailySupport;
 
   factory RoomRankEntry.fromJson(Map<String, dynamic> json) => RoomRankEntry(
@@ -51,6 +53,7 @@ class RoomRankEntry {
         rank: (json['rank'] as num?)?.toInt() ?? 0,
         name: (json['name'] ?? 'غرفة صوتية').toString(),
         publicId: (json['publicId'] ?? '').toString(),
+        activityScore: (json['activityScore'] as num?)?.toInt() ?? 0,
         dailySupport: (json['dailySupport'] as num?) ?? 0,
       );
 }
@@ -65,6 +68,7 @@ class RoomInsights {
     required this.followed,
     required this.favorited,
     required this.dailySupport,
+    required this.activityScore,
     required this.dailyRank,
     required this.supporters,
     required this.ranking,
@@ -78,6 +82,7 @@ class RoomInsights {
   final bool followed;
   final bool favorited;
   final num dailySupport;
+  final int activityScore;
   final int? dailyRank;
   final List<RoomSupporter> supporters;
   final List<RoomRankEntry> ranking;
@@ -99,6 +104,7 @@ class RoomInsights {
       followed: json['followed'] == true,
       favorited: json['favorited'] == true,
       dailySupport: (json['dailySupport'] as num?) ?? 0,
+      activityScore: (json['activityScore'] as num?)?.toInt() ?? 0,
       dailyRank: (json['dailyRank'] as num?)?.toInt(),
       supporters: rawSupporters is List
           ? rawSupporters

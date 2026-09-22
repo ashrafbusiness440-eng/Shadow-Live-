@@ -1739,12 +1739,27 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                             fontSize: 10,
                                           ),
                                         ),
-                                  trailing: Text(
-                                    entry.dailySupport.toString(),
-                                    style: const TextStyle(
-                                      color: Color(0xFFFFD54A),
-                                      fontWeight: FontWeight.w900,
-                                    ),
+                                  trailing: Column(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.center,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.end,
+                                    children: [
+                                      Text(
+                                        entry.activityScore.toString(),
+                                        style: const TextStyle(
+                                          color: Color(0xFFFFD54A),
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                      const Text(
+                                        'Activity',
+                                        style: TextStyle(
+                                          color: Colors.white38,
+                                          fontSize: 9,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               );

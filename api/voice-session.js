@@ -1753,6 +1753,37 @@ async function syncPk(db,uid,body){
   });
 }
 
+function timestampMillis(value){
+  if(!value)return 0;
+  if(typeof value.toMillis==="function")return Number(value.toMillis()||0);
+  if(value instanceof Date)return value.getTime();
+  if(typeof value==="number")return value;
+  return 0;
+}
+
+function roomActivityScore(room){
+  const now=Date.now();
+  const online=Math.max(0,Number(room.onlineCount||room.participantsCount||0));
+  const followers=Math.max(0,Number(room.followerCount||0));
+  const lastPresence=Number(room.lastPresenceAtMs||0);
+  const lastChat=timestampMillis(room.lastChatAt);
+  const presenceAge=lastPresence>0?Math.max(0,now-lastPresence):Number.POSITIVE_INFINITY;
+  const chatAge=lastChat>0?Math.max(0,now-lastChat):Number.POSITIVE_INFINITY;
+  const presenceBonus=presenceAge<=5*60*1000?50:0;
+  const chatBonus=chatAge<24*60*60*1000
+    ? Math.max(0,120-Math.floor(chatAge/(60*60*1000))*5)
+    : 0;
+  return Math.max(
+    0,
+    Math.round(
+      online*100+
+      Math.min(followers,5000)*2+
+      presenceBonus+
+      chatBonus
+    ),
+  );
+}
+
 async function roomInsights(db,uid,roomId){
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
   const roomRef=db.collection("rooms").doc(roomId);
@@ -1771,7 +1802,13 @@ async function roomInsights(db,uid,roomId){
   const room=roomSnap.data()||{};
   const ranked=activeRooms.docs
     .map(doc=>({id:doc.id,...(doc.data()||{})}))
-    .sort((a,b)=>Number(b.dailySupport||0)-Number(a.dailySupport||0));
+    .filter(item=>item.isHidden!==true&&clean(item.visibility)!=="hidden")
+    .map(item=>({...item,activityScore:roomActivityScore(item)}))
+    .sort((a,b)=>{
+      const activityDelta=Number(b.activityScore||0)-Number(a.activityScore||0);
+      if(activityDelta!==0)return activityDelta;
+      return Number(b.onlineCount||0)-Number(a.onlineCount||0);
+    });
   const rankIndex=ranked.findIndex(item=>item.id===roomId);
 
   const supporters=supportersSnap.docs.map((doc,index)=>{
@@ -1796,6 +1833,7 @@ async function roomInsights(db,uid,roomId){
     followed:followSnap.exists,
     favorited:favoriteSnap.exists,
     dailySupport:Math.max(0,Number(room.dailySupport||0)),
+    activityScore:roomActivityScore(room),
     dailyRank:rankIndex>=0?rankIndex+1:null,
     supporters,
     ranking:ranked.slice(0,100).map((item,index)=>({
@@ -1803,6 +1841,7 @@ async function roomInsights(db,uid,roomId){
       rank:index+1,
       name:String(item.name||item.title||"غرفة صوتية"),
       publicId:String(item.publicId||""),
+      activityScore:Number(item.activityScore||0),
       dailySupport:Number(item.dailySupport||0),
     })),
   };
