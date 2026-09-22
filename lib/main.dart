@@ -43,6 +43,7 @@ import 'features/room/services/room_moderation_service.dart';
 import 'features/room/services/room_moderator_service.dart';
 import 'features/room/services/room_presence_service.dart';
 import 'features/room/widgets/room_chat_panel.dart';
+import 'features/gift/widgets/room_gift_sheet.dart';
 import 'features/room/widgets/room_moderator_manager_sheet.dart';
 import 'features/room/widgets/room_music_sheet.dart';
 import 'features/room/widgets/room_pk_panel.dart';
@@ -4189,15 +4190,12 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           circleButton(
             icon: Icons.card_giftcard_rounded,
             tooltip: 'الهدايا',
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text(
-                    'اختيار الهدايا سيستخدم نظام اقتصاد Shadow Live المعتمد.',
-                  ),
-                ),
-              );
-            },
+            onPressed: roomId.isEmpty
+                ? null
+                : () => showRoomGiftSheet(
+                      context,
+                      roomId: roomId,
+                    ),
             color: const Color(0xFFFFD54A),
           ),
           const SizedBox(width: 5),
