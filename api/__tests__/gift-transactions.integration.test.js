@@ -8,6 +8,7 @@ import {settleAgencyCycle} from "../economy-control.js";
 import {saveGiftEconomyPolicy} from "../gift-economy-config.js";
 import {calculateAgencyCycleSettlement} from "../economy-policy.js";
 import {sendRoomGift} from "../room-gift.js";
+import {recordMicActivity} from "../voice-session.js";
 
 const app=getApps()[0]||initializeApp({projectId:"shadow-live-economy-test"});
 const db=getFirestore(app);
@@ -211,6 +212,66 @@ test("chat gift uses the same economy shares and duplicate protection as room gi
   assert.equal(duplicate.code,"duplicate");
   const senderAfter=await db.collection("users").doc(senderId).get();
   assert.equal(senderAfter.data().coins,900000);
+});
+
+test("real unmuted mic time qualifies 120-minute days and accumulates 9 cycle days",async()=>{
+  await seedSharedConfig();
+  const periods=periodKeys();
+  const suffix=Date.now().toString()+"_activity";
+  const hostUid="host_"+suffix;
+  const agencyId="agency_"+suffix;
+  const [year,monthNumber]=periods.month.split("-").map(Number);
+  const cycleStart=new Date().getUTCDate()<=15?1:16;
+
+  await db.collection("users").doc(hostUid).set({
+    role:"user",
+    agencyId,
+    giftHostActivityMonth:periods.month,
+    giftHostMicSecondsMonth:0,
+    giftHostQualifiedDays:0,
+  });
+
+  const mutedEnd=Date.UTC(year,monthNumber-1,cycleStart,9,0,0);
+  await db.runTransaction(async tx=>{
+    await recordMicActivity(
+      tx,
+      db,
+      hostUid,
+      {muted:true,micStartedAtMs:mutedEnd-2*60*60*1000},
+      mutedEnd,
+    );
+  });
+  let host=await db.collection("users").doc(hostUid).get();
+  assert.equal(host.data().giftHostMicSecondsMonth,0);
+  assert.equal(host.data().giftHostQualifiedDays,0);
+
+  for(let i=0;i<9;i++){
+    const end=Date.UTC(year,monthNumber-1,cycleStart+i,12,0,0);
+    await db.runTransaction(async tx=>{
+      await recordMicActivity(
+        tx,
+        db,
+        hostUid,
+        {muted:false,micStartedAtMs:end-120*60*1000},
+        end,
+      );
+    });
+  }
+
+  host=await db.collection("users").doc(hostUid).get();
+  assert.equal(host.data().giftHostMicSecondsMonth,9*7200);
+  assert.equal(host.data().giftHostQualifiedDays,9);
+
+  const firstDay=periods.month+"-"+String(cycleStart).padStart(2,"0");
+  const firstActivity=await db.collection("host_mic_activity")
+    .doc(hostUid).collection("days").doc(firstDay).get();
+  assert.equal(firstActivity.data().micSeconds,7200);
+  assert.equal(firstActivity.data().qualified,true);
+  assert.equal(firstActivity.data().requiredMinutes,120);
+
+  const agencyMonth=await db.collection("agency_support_stats")
+    .doc(agencyId).collection("monthly").doc(periods.month).get();
+  assert.deepEqual(agencyMonth.data().activeHostIds,[hostUid]);
 });
 
 test("Shadow Control policy save persists custom values and runtime calculations use them",async()=>{
