@@ -282,6 +282,8 @@ export default async function handler(req, res) {
         testPurchase: verified.testPurchaseContext != null,
         purchaseCompletionTime: clean(verified.purchaseCompletionTime),
         status: "credited",
+        refundState: "none",
+        disputeState: "none",
         creditedAt: FieldValue.serverTimestamp(),
       });
 
