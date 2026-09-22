@@ -131,6 +131,8 @@ class GooglePlayBillingService {
         return 'منتج الشحن لا يطابق الباقات المعتمدة.';
       case 'account_mismatch':
         return 'عملية الشراء مرتبطة بحساب مختلف.';
+      case 'purchase_already_consumed':
+        return 'Purchase Token مستخدم أو مستهلك مسبقاً.';
       case 'emergency_locked':
         return 'عمليات الشحن متوقفة مؤقتاً.';
       case 'account_required':
