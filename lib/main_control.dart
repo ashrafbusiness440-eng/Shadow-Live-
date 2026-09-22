@@ -27,7 +27,12 @@ class ShadowControlApp extends StatelessWidget {
       cardTheme: const CardThemeData(color: Color(0xFF151022)),
       navigationBarTheme: const NavigationBarThemeData(backgroundColor: Color(0xFF0D0917), indicatorColor: Color(0x443F2B71)),
     ),
-    home: const Directionality(textDirection: TextDirection.rtl, child: AdminGate()),
+    home: const Directionality(
+      textDirection: TextDirection.rtl,
+      child: bool.fromEnvironment('CONTROL_E2E_TEST')
+          ? ControlShell(initialNavIndex: 2)
+          : AdminGate(),
+    ),
   );
 }
 
@@ -185,12 +190,19 @@ class AccessDeniedPage extends StatelessWidget {
 }
 
 class ControlShell extends StatefulWidget {
-  const ControlShell({super.key});
+  const ControlShell({super.key, this.initialNavIndex = 0});
+  final int initialNavIndex;
   @override State<ControlShell> createState()=>_ControlShellState();
 }
 
 class _ControlShellState extends State<ControlShell> {
-  int index=0;
+  late int index;
+
+  @override
+  void initState() {
+    super.initState();
+    index = widget.initialNavIndex.clamp(0, 5);
+  }
   @override Widget build(BuildContext context) {
     final pages=[
       DashboardPage(onOpen:(i)=>setState(()=>index=i)),
