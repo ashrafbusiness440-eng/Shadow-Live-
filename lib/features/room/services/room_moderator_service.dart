@@ -79,9 +79,11 @@ class RoomModeratorService {
 
   int _limit(Map<String, dynamic> room) {
     final rawLevel = room['level'];
-    final level = rawLevel is num
-        ? rawLevel.toInt().clamp(1, 6)
-        : (int.tryParse(rawLevel?.toString() ?? '') ?? 1).clamp(1, 6);
+    final level = (rawLevel is num
+            ? rawLevel.toInt()
+            : int.tryParse(rawLevel?.toString() ?? '') ?? 1)
+        .clamp(1, 6)
+        .toInt();
     final agency = (room['roomType'] ?? room['type']).toString() == 'agency';
     const normal = [3, 4, 5, 7, 9, 12];
     const agencyTable = [5, 6, 7, 9, 11, 14];
