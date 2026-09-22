@@ -1617,11 +1617,31 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     return value.toString();
   }
 
+  int _fallbackRoomSeatCapacity() {
+    final direct = (_roomArguments['effectiveSeats'] as num?)?.toInt() ??
+        (_roomArguments['seatCount'] as num?)?.toInt();
+    if (direct != null && direct >= 1 && direct <= 50) return direct;
+
+    final level = (_roomInsights?.level ??
+            (_roomArguments['level'] as num?)?.toInt() ??
+            1)
+        .clamp(1, 6);
+    final type = (_roomArguments['roomType'] ??
+            _roomArguments['type'] ??
+            'personal')
+        .toString();
+    if (type == 'customer_service') return 5;
+    if (type == 'agency') {
+      return const [10, 12, 14, 16, 20, 22][level - 1];
+    }
+    return const [8, 10, 12, 15, 20, 20][level - 1];
+  }
+
   Widget _buildVoiceSeats() {
     final state = _roomSeatState;
     final seats = state?.seats ??
         List.generate(
-          8,
+          _fallbackRoomSeatCapacity(),
           (index) => VoiceSeat(
             index: index,
             uid: '',
