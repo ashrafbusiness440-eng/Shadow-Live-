@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
+import '../../room/services/room_presence_service.dart';
 import 'voice_service.dart';
 import 'zego_voice_service.dart';
 
@@ -14,6 +15,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
       VoiceRoomSessionController._();
 
   final VoiceService _voiceService = ZegoVoiceService();
+  final RoomPresenceService _presenceService = RoomPresenceService();
 
   StreamSubscription<VoiceConnectionState>? _connectionSubscription;
   StreamSubscription<VoiceMicState>? _micSubscription;
@@ -21,6 +23,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
       _roomLifecycleSubscription;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
       _roomBanSubscription;
+  Timer? _presenceTimer;
 
   bool _serviceInitialized = false;
   bool _joining = false;
@@ -84,6 +87,30 @@ class VoiceRoomSessionController extends ChangeNotifier {
     _serviceInitialized = true;
   }
 
+  Future<void> _startPresence(String targetRoomId) async {
+    _presenceTimer?.cancel();
+    try {
+      await _presenceService.join(targetRoomId);
+    } catch (_) {}
+    _presenceTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) {
+        if (!_active || roomId != targetRoomId) return;
+        unawaited(_presenceService.heartbeat(targetRoomId));
+      },
+    );
+  }
+
+  Future<void> _stopPresence([String? targetRoomId]) async {
+    _presenceTimer?.cancel();
+    _presenceTimer = null;
+    final id = (targetRoomId ?? roomId).trim();
+    if (id.isEmpty) return;
+    try {
+      await _presenceService.leave(id);
+    } catch (_) {}
+  }
+
   void _watchRoomBan(String targetRoomId) {
     unawaited(_roomBanSubscription?.cancel());
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
@@ -109,6 +136,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
   }
 
   Future<void> _leaveBannedRoom() async {
+    final activeRoomId = roomId;
+    await _stopPresence(activeRoomId);
     if (_serviceInitialized) {
       try {
         await _voiceService.leaveRoom();
@@ -156,6 +185,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
   }
 
   Future<void> _leaveClosedRoom() async {
+    final activeRoomId = roomId;
+    await _stopPresence(activeRoomId);
     if (_serviceInitialized) {
       try {
         await _voiceService.leaveRoom();
@@ -215,6 +246,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
       _connectionState = VoiceConnectionState.connected;
       _watchRoomLifecycle(targetRoomId);
       _watchRoomBan(targetRoomId);
+      unawaited(_startPresence(targetRoomId));
     } catch (error) {
       _active = false;
       _joining = false;
@@ -268,6 +300,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
   }
 
   Future<void> leave() async {
+    final activeRoomId = roomId;
+    await _stopPresence(activeRoomId);
     await _roomLifecycleSubscription?.cancel();
     _roomLifecycleSubscription = null;
     await _roomBanSubscription?.cancel();
@@ -296,6 +330,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
     if (_serviceInitialized) {
       await _voiceService.dispose();
     }
+    _presenceService.close();
     _serviceInitialized = false;
   }
 }
