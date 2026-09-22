@@ -234,7 +234,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           'ownerUid': 'owner_e2e',
           'onlineCount': 18,
           'chatEnabled': true,
-          'level': 3,
+          'level': 5,
         };
         _ownerDisplayName = 'Ashraf';
         _ownerPhotoUrl = '';
@@ -268,6 +268,18 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             VoiceSeat(index: 5, uid: '', displayName: '', profileImageUrl: '', muted: true),
             VoiceSeat(index: 6, uid: '', displayName: '', profileImageUrl: '', muted: true),
             VoiceSeat(index: 7, uid: '', displayName: '', profileImageUrl: '', muted: true),
+            VoiceSeat(index: 8, uid: '', displayName: '', profileImageUrl: '', muted: true),
+            VoiceSeat(index: 9, uid: '', displayName: '', profileImageUrl: '', muted: true),
+            VoiceSeat(index: 10, uid: '', displayName: '', profileImageUrl: '', muted: true),
+            VoiceSeat(index: 11, uid: '', displayName: '', profileImageUrl: '', muted: true),
+            VoiceSeat(index: 12, uid: '', displayName: '', profileImageUrl: '', muted: true),
+            VoiceSeat(index: 13, uid: '', displayName: '', profileImageUrl: '', muted: true),
+            VoiceSeat(index: 14, uid: '', displayName: '', profileImageUrl: '', muted: true),
+            VoiceSeat(index: 15, uid: '', displayName: '', profileImageUrl: '', muted: true),
+            VoiceSeat(index: 16, uid: '', displayName: '', profileImageUrl: '', muted: true),
+            VoiceSeat(index: 17, uid: '', displayName: '', profileImageUrl: '', muted: true),
+            VoiceSeat(index: 18, uid: '', displayName: '', profileImageUrl: '', muted: true),
+            VoiceSeat(index: 19, uid: '', displayName: '', profileImageUrl: '', muted: true),
           ],
           micInvites: const [],
           micRequests: const ['request_1', 'request_2'],
@@ -279,9 +291,9 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         );
         _roomInsights = const RoomInsights(
           roomId: 'e2e_room',
-          level: 3,
-          levelPoints: 4600,
-          levelTarget: 7000,
+          level: 5,
+          levelPoints: 18600,
+          levelTarget: 25000,
           followerCount: 320,
           followed: true,
           favorited: true,
