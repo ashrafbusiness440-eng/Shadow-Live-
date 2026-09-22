@@ -254,7 +254,7 @@ class _ControlShellState extends State<ControlShell> {
       bottomNavigationBar:NavigationBar(selectedIndex:index,onDestinationSelected:(v)=>setState(()=>index=v),destinations:const[
         NavigationDestination(icon:Icon(Icons.dashboard_outlined),selectedIcon:Icon(Icons.dashboard),label:'الرئيسية'),
         NavigationDestination(icon:Icon(Icons.people_outline),selectedIcon:Icon(Icons.people),label:'المستخدمون'),
-        NavigationDestination(icon:Icon(Icons.mic_none),selectedIcon:Icon(Icons.mic),label:'الغرف'),
+        NavigationDestination(icon:Icon(Icons.mic_none),selectedIcon:Icon(Icons.mic),label:'إدارة الغرف'),
         NavigationDestination(icon:Icon(Icons.wallet_outlined),selectedIcon:Icon(Icons.wallet),label:'المالية'),
         NavigationDestination(icon:Icon(Icons.badge_outlined),selectedIcon:Icon(Icons.badge),label:'IDs'),
         NavigationDestination(icon:Icon(Icons.more_horiz),label:'المزيد'),
@@ -292,7 +292,7 @@ class DashboardPage extends StatelessWidget {
     const SizedBox(height:12),const Text('اختصارات آمنة',style:TextStyle(fontSize:18,fontWeight:FontWeight.w800)),const SizedBox(height:8),
     Wrap(spacing:8,runSpacing:8,children:[
       ActionChip(label:const Text('المستخدمون'),avatar:const Icon(Icons.manage_accounts_outlined),onPressed:()=>onOpen(1)),
-      ActionChip(label:const Text('الغرف'),avatar:const Icon(Icons.mic_none_rounded),onPressed:()=>onOpen(2)),
+      ActionChip(label:const Text('إدارة الغرف'),avatar:const Icon(Icons.mic_none_rounded),onPressed:()=>onOpen(2)),
       ActionChip(label:const Text('السجل المالي'),avatar:const Icon(Icons.receipt_long_outlined),onPressed:()=>onOpen(3)),
       ActionChip(label:const Text('إدارة ID'),avatar:const Icon(Icons.badge_outlined),onPressed:()=>onOpen(4)),
       ActionChip(label:const Text('السجلات والإعدادات'),avatar:const Icon(Icons.history_outlined),onPressed:()=>onOpen(5)),
@@ -779,6 +779,30 @@ class _RoomsPageState extends State<RoomsPage> {
         TextField(
           controller:reason,maxLength:160,
           decoration:const InputDecoration(labelText:'سبب التعديل — يسجل في Audit Log',border:OutlineInputBorder(),prefixIcon:Icon(Icons.history_edu_outlined)),
+        ),
+        const SizedBox(height:8),
+        SizedBox(
+          width:double.infinity,
+          child:FilledButton.icon(
+            onPressed:busy?null:() async {
+              await saveOverrides();
+              if(!mounted||room==null)return;
+              final currentPolicy=room!['policy'] is Map<String,dynamic>
+                  ? room!['policy'] as Map<String,dynamic>
+                  : <String,dynamic>{};
+              if(currentPolicy['official']==true){
+                await execute('setOfficialRoom',extra:{
+                  'enabled':true,
+                  'officialType':(currentPolicy['officialType']??'official').toString(),
+                  'hostUid':hostUid.text.trim(),
+                });
+              }
+            },
+            icon:busy
+                ? const SizedBox(width:18,height:18,child:CircularProgressIndicator(strokeWidth:2))
+                : const Icon(Icons.save_rounded),
+            label:Text(busy?'جار الحفظ...':'حفظ جميع التغييرات'),
+          ),
         ),
       ],
     ]);
