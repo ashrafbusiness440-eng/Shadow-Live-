@@ -1317,6 +1317,7 @@ async function roomMusicCommand(db,uid,body){
       if(!access.canAddOrPlay)throw new ApiError("music_permission_required",403);
       const track=queue.find(item=>item.id===trackId);
       if(!track)throw new ApiError("music_track_not_found",404);
+      if(!access.manage&&track.sourceOwnerUid!==uid)throw new ApiError("forbidden",403);
       const sourcePresence=await tx.get(
         db.collection("room_presence").doc(roomId).collection("users").doc(track.sourceOwnerUid),
       );

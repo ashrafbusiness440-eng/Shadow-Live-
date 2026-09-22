@@ -460,7 +460,10 @@ class _RoomMusicSheetState extends State<RoomMusicSheet> {
                         ),
                       ),
                       trailing: IconButton(
-                        onPressed: !_canAddOrPlay || _busy
+                        onPressed: !_canAddOrPlay ||
+                                _busy ||
+                                (!widget.canManage &&
+                                    track.sourceOwnerUid != _uid)
                             ? null
                             : () => _play(track),
                         icon: Icon(
