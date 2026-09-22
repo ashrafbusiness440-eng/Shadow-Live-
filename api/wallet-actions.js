@@ -151,7 +151,12 @@ async function exchangeDiamonds(db, uid, body) {
     if (operationSnap.exists) {
       return { ok: true, code: "duplicate", operationId: key, ...operationSnap.data()?.result };
     }
-    if (lockSnap.exists && lockSnap.data()?.enabled === true) throw Error("emergency_locked");
+    const economyLock = lockSnap.exists ? (lockSnap.data() || {}) : {};
+    if (
+      economyLock.enabled === true ||
+      economyLock.economyLocked === true ||
+      economyLock.transfersLocked === true
+    ) throw Error("emergency_locked");
 
     const user = userSnap.data() || {};
     const openingDiamonds = Math.max(0, asInt(user.diamonds));
@@ -235,7 +240,12 @@ async function giftDiamonds(db, uid, body) {
     if (operationSnap.exists) {
       return { ok: true, code: "duplicate", operationId: key, ...operationSnap.data()?.result };
     }
-    if (lockSnap.exists && lockSnap.data()?.enabled === true) throw Error("emergency_locked");
+    const economyLock = lockSnap.exists ? (lockSnap.data() || {}) : {};
+    if (
+      economyLock.enabled === true ||
+      economyLock.economyLocked === true ||
+      economyLock.transfersLocked === true
+    ) throw Error("emergency_locked");
 
     const sender = senderSnap.data() || {};
     const recipient = recipientSnap.data() || {};
