@@ -8,6 +8,7 @@ import 'firebase_options.dart';
 import 'utils/compact_number.dart';
 import 'admin/control_admin_id_override.dart';
 import 'admin/control_asset_manager_page.dart';
+import 'admin/recharge_packages_control_page.dart';
 
 
 Future<void> main() async {
@@ -973,6 +974,13 @@ class FinancePage extends StatelessWidget {
   @override Widget build(BuildContext context)=>ListView(padding:const EdgeInsets.all(16),children:[
     const Row(children:[Icon(Icons.account_balance_wallet_outlined,size:28,color:Color(0xFFD7B85A)),SizedBox(width:10),Text('المالية',style:TextStyle(fontSize:25,fontWeight:FontWeight.w900))]),
     const SizedBox(height:16),
+    Card(child:ListTile(
+      leading:const Icon(Icons.storefront_outlined,color:Color(0xFFD7B85A)),
+      trailing:const Icon(Icons.chevron_left),
+      title:const Text('باقات الشحن والـBonus',style:TextStyle(fontWeight:FontWeight.w800)),
+      subtitle:const Text('إضافة/تعديل/إيقاف وترتيب الباقات بدون تحديث التطبيق'),
+      onTap:()=>Navigator.of(context).push(MaterialPageRoute(builder:(_)=>const RechargePackagesControlPage())),
+    )),
     _AdminCollectionTile(title:'السجل المالي',subtitle:'financial_ledger — قراءة فقط',icon:Icons.receipt_long_outlined,collection:'financial_ledger'),
     _AdminCollectionTile(title:'تسويات الوكالات',subtitle:'agency_settlements — قراءة فقط',icon:Icons.payments_outlined,collection:'agency_settlements'),
     const Card(child:ListTile(leading:Icon(Icons.verified_user_outlined,color:Color(0xFFD7B85A)),title:Text('تعديل Coins / Diamonds عبر Backend آمن'),subtitle:Text('Owner يمكنه تعديل الأرصدة من صفحة المستخدم، وكل عملية تُسجّل في Financial Ledger وAudit Log.'))),
