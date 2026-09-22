@@ -38,6 +38,7 @@ class RoomSeatState {
     required this.micRequests,
     required this.isOwner,
     required this.isActive,
+    required this.onlineCount,
   });
 
   final String roomId;
@@ -46,6 +47,7 @@ class RoomSeatState {
   final List<String> micRequests;
   final bool isOwner;
   final bool isActive;
+  final int onlineCount;
 
   bool invited(String uid) => micInvites.contains(uid);
   bool requested(String uid) => micRequests.contains(uid);
@@ -74,6 +76,7 @@ class RoomSeatState {
           : const [],
       isOwner: json['isOwner'] == true,
       isActive: json['isActive'] != false,
+      onlineCount: (json['onlineCount'] as num?)?.toInt() ?? 0,
     );
   }
 }
