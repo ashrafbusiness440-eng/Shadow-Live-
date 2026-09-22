@@ -96,7 +96,34 @@ service cloud.firestore {
              && request.resource.data.giftDiamondsLifetime == resource.data.giftDiamondsLifetime)
         && (!('giftSupportReceivedCoins' in resource.data) && !('giftSupportReceivedCoins' in request.resource.data)
           || ('giftSupportReceivedCoins' in resource.data) && ('giftSupportReceivedCoins' in request.resource.data)
-             && request.resource.data.giftSupportReceivedCoins == resource.data.giftSupportReceivedCoins);
+             && request.resource.data.giftSupportReceivedCoins == resource.data.giftSupportReceivedCoins)
+        && (!('pendingAgencyGiftEarningCoins' in resource.data) && !('pendingAgencyGiftEarningCoins' in request.resource.data)
+          || ('pendingAgencyGiftEarningCoins' in resource.data) && ('pendingAgencyGiftEarningCoins' in request.resource.data)
+             && request.resource.data.pendingAgencyGiftEarningCoins == resource.data.pendingAgencyGiftEarningCoins)
+        && (!('giftRevenueMonth' in resource.data) && !('giftRevenueMonth' in request.resource.data)
+          || ('giftRevenueMonth' in resource.data) && ('giftRevenueMonth' in request.resource.data)
+             && request.resource.data.giftRevenueMonth == resource.data.giftRevenueMonth)
+        && (!('giftRevenueMonthCoins' in resource.data) && !('giftRevenueMonthCoins' in request.resource.data)
+          || ('giftRevenueMonthCoins' in resource.data) && ('giftRevenueMonthCoins' in request.resource.data)
+             && request.resource.data.giftRevenueMonthCoins == resource.data.giftRevenueMonthCoins)
+        && (!('currentGiftRevenueTier' in resource.data) && !('currentGiftRevenueTier' in request.resource.data)
+          || ('currentGiftRevenueTier' in resource.data) && ('currentGiftRevenueTier' in request.resource.data)
+             && request.resource.data.currentGiftRevenueTier == resource.data.currentGiftRevenueTier)
+        && (!('giftHostActivityMonth' in resource.data) && !('giftHostActivityMonth' in request.resource.data)
+          || ('giftHostActivityMonth' in resource.data) && ('giftHostActivityMonth' in request.resource.data)
+             && request.resource.data.giftHostActivityMonth == resource.data.giftHostActivityMonth)
+        && (!('giftHostMicSecondsMonth' in resource.data) && !('giftHostMicSecondsMonth' in request.resource.data)
+          || ('giftHostMicSecondsMonth' in resource.data) && ('giftHostMicSecondsMonth' in request.resource.data)
+             && request.resource.data.giftHostMicSecondsMonth == resource.data.giftHostMicSecondsMonth)
+        && (!('giftHostQualifiedDays' in resource.data) && !('giftHostQualifiedDays' in request.resource.data)
+          || ('giftHostQualifiedDays' in resource.data) && ('giftHostQualifiedDays' in request.resource.data)
+             && request.resource.data.giftHostQualifiedDays == resource.data.giftHostQualifiedDays)
+        && (!('giftHostActivityUpdatedAt' in resource.data) && !('giftHostActivityUpdatedAt' in request.resource.data)
+          || ('giftHostActivityUpdatedAt' in resource.data) && ('giftHostActivityUpdatedAt' in request.resource.data)
+             && request.resource.data.giftHostActivityUpdatedAt == resource.data.giftHostActivityUpdatedAt)
+        && (!('agencyId' in resource.data) && !('agencyId' in request.resource.data)
+          || ('agencyId' in resource.data) && ('agencyId' in request.resource.data)
+             && request.resource.data.agencyId == resource.data.agencyId);
     }
 
     function publicProfileAuthoritativeFieldsMatch(userId) {
@@ -138,7 +165,24 @@ service cloud.firestore {
         && !('publicId' in request.resource.data)
         && !('publicIdHistory' in request.resource.data)
         && !('publicIdUpdatedAt' in request.resource.data)
-        && !('publicIdUpdatedBy' in request.resource.data);
+        && !('publicIdUpdatedBy' in request.resource.data)
+        && !('pendingGiftEarningCoins' in request.resource.data)
+        && !('pendingAgencyGiftEarningCoins' in request.resource.data)
+        && !('giftEarningCoinsLifetime' in request.resource.data)
+        && !('giftDiamondsLifetime' in request.resource.data)
+        && !('giftSupportReceivedCoins' in request.resource.data)
+        && !('giftRevenueMonth' in request.resource.data)
+        && !('giftRevenueMonthCoins' in request.resource.data)
+        && !('currentGiftRevenueTier' in request.resource.data)
+        && !('giftHostActivityMonth' in request.resource.data)
+        && !('giftHostMicSecondsMonth' in request.resource.data)
+        && !('giftHostQualifiedDays' in request.resource.data)
+        && !('giftHostActivityUpdatedAt' in request.resource.data)
+        && !('agencyId' in request.resource.data)
+        && !('diamondPasswordSet' in request.resource.data)
+        && !('diamondPasswordUpdatedAt' in request.resource.data)
+        && !('diamondPasswordHash' in request.resource.data)
+        && !('diamondPasswordSalt' in request.resource.data);
       allow read: if signedIn() && (request.auth.uid == userId || hasCapability('viewUsers'));
       allow update: if signedIn() && request.auth.uid == userId
         && protectedUserFieldsUnchanged()
@@ -206,7 +250,25 @@ service cloud.firestore {
     }
 
     match /agency_settlements/{settlementId} {
-      allow read: if hasCapability('manageSettlements') || hasCapability('manageAgencies');
+      allow read: if isOwner() || hasCapability('manageSettlements') || hasCapability('manageAgencies');
+      allow create, update, delete: if false;
+    }
+
+    match /agency_settlement_accruals/{accrualId} {
+      allow read: if isOwner()
+        || hasCapability('manageEconomy')
+        || hasCapability('manageSettlements')
+        || hasCapability('manageAgencies');
+      allow create, update, delete: if false;
+    }
+
+    match /host_mic_activity/{userId}/{document=**} {
+      allow read: if signedIn()
+        && (request.auth.uid == userId
+          || isOwner()
+          || hasCapability('manageEconomy')
+          || hasCapability('manageSettlements')
+          || hasCapability('manageAgencies'));
       allow create, update, delete: if false;
     }
 
