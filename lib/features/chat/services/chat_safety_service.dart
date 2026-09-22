@@ -16,8 +16,10 @@ class ChatSafetyStatus {
 }
 
 class ChatSafetyService {
-  static const _baseUrl =
-      'https://shadow-live-git-feature-shadow-control-foundation-shadow-c916.vercel.app/api';
+  static const _baseUrl = String.fromEnvironment(
+    'SHADOW_API_BASE_URL',
+    defaultValue: 'https://shadow-live-six.vercel.app/api',
+  );
 
   String get _uid => FirebaseAuth.instance.currentUser!.uid;
 

@@ -27,6 +27,10 @@ class PrivateChatScreen extends StatefulWidget {
 }
 
 class _PrivateChatScreenState extends State<PrivateChatScreen> {
+  static const _apiBase = String.fromEnvironment(
+    'SHADOW_API_BASE_URL',
+    defaultValue: 'https://shadow-live-six.vercel.app/api',
+  );
   final _controller = TextEditingController();
   final _follow = FollowService();
   final _picker = ImagePicker();
@@ -78,7 +82,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       if (token == null || token.isEmpty) throw StateError('not_signed_in');
       final key = [_uid, DateTime.now().microsecondsSinceEpoch.toString(), 'text'].join('_');
       final response = await http.post(
-        Uri.parse('https://shadow-live-git-feature-shadow-control-foundation-shadow-c916.vercel.app/api/chat-actions'),
+        Uri.parse('$_apiBase/chat-actions'),
         headers: {'authorization': 'Bearer ' + token, 'content-type': 'application/json'},
         body: jsonEncode({
           'action': 'sendMessage',
@@ -284,7 +288,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   Future<bool> _storageReady() async {
     try {
       final response = await http.get(
-        Uri.parse('https://shadow-live-git-feature-shadow-control-foundation-shadow-c916.vercel.app/api/storage-health'),
+        Uri.parse('$_apiBase/storage-health'),
       );
       if (response.statusCode != 200) return false;
       final body = jsonDecode(response.body);
@@ -495,7 +499,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       if (token == null || token.isEmpty) throw StateError('not_signed_in');
       final key = [_uid, DateTime.now().microsecondsSinceEpoch.toString(), giftId].join('_');
       final response = await http.post(
-        Uri.parse('https://shadow-live-git-feature-shadow-control-foundation-shadow-c916.vercel.app/api/chat-actions'),
+        Uri.parse('$_apiBase/chat-actions'),
         headers: {'authorization': 'Bearer ' + token, 'content-type': 'application/json'},
         body: jsonEncode({
           'action': 'sendGift',

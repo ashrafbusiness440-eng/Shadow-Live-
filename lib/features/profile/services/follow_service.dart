@@ -11,12 +11,21 @@ class FollowCounts {
 }
 
 class FollowService {
-  FollowService({FirebaseFirestore? firestore, FirebaseAuth? auth})
-      : _firestore = firestore ?? FirebaseFirestore.instance,
-        _auth = auth ?? FirebaseAuth.instance;
+  FollowService({
+    FirebaseFirestore? firestore,
+    FirebaseAuth? auth,
+    String? baseUrl,
+  })  : _firestore = firestore ?? FirebaseFirestore.instance,
+        _auth = auth ?? FirebaseAuth.instance,
+        _baseUrl = baseUrl ??
+            const String.fromEnvironment(
+              'SHADOW_API_BASE_URL',
+              defaultValue: 'https://shadow-live-six.vercel.app/api',
+            );
 
   final FirebaseFirestore _firestore;
   final FirebaseAuth _auth;
+  final String _baseUrl;
 
   static String relationId(String followerUid, String followingUid) =>
       '${followerUid}__${followingUid}';
@@ -39,9 +48,7 @@ class FollowService {
     final token = await _auth.currentUser?.getIdToken();
     if (token == null || token.isEmpty) throw StateError('not_signed_in');
     final response = await http.post(
-      Uri.parse(
-        'https://shadow-live-git-feature-shadow-control-foundation-shadow-c916.vercel.app/api/chat-actions',
-      ),
+      Uri.parse('$_baseUrl/chat-actions'),
       headers: {
         'authorization': 'Bearer ' + token,
         'content-type': 'application/json',
