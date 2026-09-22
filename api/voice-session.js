@@ -124,6 +124,7 @@ const ROOM_MODERATOR_CAPABILITIES=[
   "moderateUsers",
   "moderateChat",
   "manageMusic",
+  "manageMusicPolicy",
   "managePk",
 ];
 
@@ -393,6 +394,16 @@ async function openPersonalRoom(db,uid){
           micInvites:[],
           micRequests:[],
           moderators:[],
+          musicPolicy:{allowMembers:false},
+          musicQueue:[],
+          musicState:{
+            status:"stopped",
+            currentTrackId:"",
+            sourceOwnerUid:"",
+            requestedBy:"",
+            startedAtMs:0,
+            commandRevision:0,
+          },
           publicId,
           searchTokens:searchTokens(name+" "+displayName+" "+ownerLocation+" دردشة",publicId),
           createdAt:now,
@@ -929,6 +940,272 @@ async function roomLibrary(db,uid){
   return {ok:true,favorites,history};
 }
 
+function normalizeRoomMusicPolicy(room){
+  const raw=room.musicPolicy&&typeof room.musicPolicy==="object"?room.musicPolicy:{};
+  return {allowMembers:raw.allowMembers===true};
+}
+
+function normalizeRoomMusicQueue(room){
+  const raw=Array.isArray(room.musicQueue)?room.musicQueue:[];
+  const seen=new Set();
+  const result=[];
+  for(const item of raw){
+    const id=clean(item?.id);
+    if(!id||seen.has(id))continue;
+    seen.add(id);
+    result.push({
+      id,
+      title:clean(item?.title||"مقطع صوتي").slice(0,120),
+      artist:clean(item?.artist).slice(0,120),
+      durationMs:Math.max(0,Math.min(24*60*60*1000,Number(item?.durationMs||0))),
+      sourceOwnerUid:clean(item?.sourceOwnerUid),
+      sourceOwnerName:clean(item?.sourceOwnerName||"مستخدم Shadow Live"),
+      createdAtMs:Number(item?.createdAtMs||0),
+    });
+  }
+  return result.slice(0,50);
+}
+
+function normalizeRoomMusicState(room){
+  const raw=room.musicState&&typeof room.musicState==="object"?room.musicState:{};
+  return {
+    status:["playing","stopped"].includes(clean(raw.status))?clean(raw.status):"stopped",
+    currentTrackId:clean(raw.currentTrackId),
+    sourceOwnerUid:clean(raw.sourceOwnerUid),
+    requestedBy:clean(raw.requestedBy),
+    startedAtMs:Number(raw.startedAtMs||0),
+    commandRevision:Math.max(0,Number(raw.commandRevision||0)),
+  };
+}
+
+function roomMusicAccess(room,actor,uid){
+  const policy=normalizeRoomMusicPolicy(room);
+  const manage=canManageRoomAction(room,actor,uid,"manageMusic");
+  const managePolicy=canManageRoomAction(room,actor,uid,"manageMusicPolicy");
+  return {
+    policy,
+    manage,
+    managePolicy,
+    canAddOrPlay:manage||policy.allowMembers,
+  };
+}
+
+async function roomMusicState(db,uid,roomId){
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+  const [roomSnap,actorSnap]=await Promise.all([
+    db.collection("rooms").doc(roomId).get(),
+    db.collection("users").doc(uid).get(),
+  ]);
+  if(!roomSnap.exists)throw new ApiError("room_not_found",404);
+  const room=roomSnap.data()||{};
+  const access=roomMusicAccess(room,actorSnap.data()||{},uid);
+  return {
+    ok:true,
+    roomId,
+    policy:access.policy,
+    queue:normalizeRoomMusicQueue(room),
+    state:normalizeRoomMusicState(room),
+    canManage:access.manage,
+    canManagePolicy:access.managePolicy,
+    canAddOrPlay:access.canAddOrPlay,
+  };
+}
+
+async function setRoomMusicPolicy(db,uid,body){
+  const roomId=clean(body.roomId);
+  const allowMembers=body.allowMembers===true;
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+  const roomRef=db.collection("rooms").doc(roomId);
+  const actorRef=db.collection("users").doc(uid);
+  return db.runTransaction(async tx=>{
+    const [roomSnap,actorSnap]=await Promise.all([tx.get(roomRef),tx.get(actorRef)]);
+    if(!roomSnap.exists)throw new ApiError("room_not_found",404);
+    const room=roomSnap.data()||{};
+    const access=roomMusicAccess(room,actorSnap.data()||{},uid);
+    if(!access.managePolicy)throw new ApiError("forbidden",403);
+    const previous=normalizeRoomMusicPolicy(room);
+    tx.update(roomRef,{
+      musicPolicy:{allowMembers},
+      updatedAt:FieldValue.serverTimestamp(),
+    });
+    const auditRef=db.collection("room_audit_logs").doc(roomId).collection("items").doc();
+    tx.create(auditRef,{
+      action:"setMusicPolicy",
+      actorUid:uid,
+      before:previous,
+      after:{allowMembers},
+      createdAt:FieldValue.serverTimestamp(),
+    });
+    return {ok:true,roomId,policy:{allowMembers}};
+  });
+}
+
+async function addRoomMusicTrack(db,uid,body){
+  const roomId=clean(body.roomId);
+  const title=clean(body.title);
+  const artist=clean(body.artist);
+  const durationMs=Math.max(0,Math.min(24*60*60*1000,Number(body.durationMs||0)));
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId)||!title||title.length>120||artist.length>120){
+    throw new ApiError("invalid_music_track",400);
+  }
+  const roomRef=db.collection("rooms").doc(roomId);
+  const actorRef=db.collection("users").doc(uid);
+  const profileRef=db.collection("public_profiles").doc(uid);
+  return db.runTransaction(async tx=>{
+    const [roomSnap,actorSnap,profileSnap]=await Promise.all([
+      tx.get(roomRef),tx.get(actorRef),tx.get(profileRef),
+    ]);
+    if(!roomSnap.exists||roomSnap.data()?.isActive===false)throw new ApiError("room_unavailable",404);
+    const room=roomSnap.data()||{};
+    const access=roomMusicAccess(room,actorSnap.data()||{},uid);
+    if(!access.canAddOrPlay)throw new ApiError("music_permission_required",403);
+    const queue=normalizeRoomMusicQueue(room);
+    if(queue.length>=50)throw new ApiError("music_queue_full",409);
+    const profile=profileSnap.data()||{};
+    const now=Date.now();
+    const track={
+      id:"track_"+now+"_"+randomInt(100000,999999),
+      title,
+      artist,
+      durationMs,
+      sourceOwnerUid:uid,
+      sourceOwnerName:clean(profile.displayName||profile.username||"مستخدم Shadow Live"),
+      createdAtMs:now,
+    };
+    queue.push(track);
+    tx.update(roomRef,{musicQueue:queue,updatedAt:FieldValue.serverTimestamp()});
+    return {ok:true,roomId,track,queue};
+  });
+}
+
+async function removeRoomMusicTrack(db,uid,body){
+  const roomId=clean(body.roomId);
+  const trackId=clean(body.trackId);
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId)||!trackId)throw new ApiError("invalid_request",400);
+  const roomRef=db.collection("rooms").doc(roomId);
+  const actorRef=db.collection("users").doc(uid);
+  return db.runTransaction(async tx=>{
+    const [roomSnap,actorSnap]=await Promise.all([tx.get(roomRef),tx.get(actorRef)]);
+    if(!roomSnap.exists)throw new ApiError("room_not_found",404);
+    const room=roomSnap.data()||{};
+    const access=roomMusicAccess(room,actorSnap.data()||{},uid);
+    const queue=normalizeRoomMusicQueue(room);
+    const track=queue.find(item=>item.id===trackId);
+    if(!track)throw new ApiError("music_track_not_found",404);
+    if(!access.manage&&track.sourceOwnerUid!==uid)throw new ApiError("forbidden",403);
+    const nextQueue=queue.filter(item=>item.id!==trackId);
+    const state=normalizeRoomMusicState(room);
+    const nextState=state.currentTrackId===trackId
+      ? {...state,status:"stopped",currentTrackId:"",sourceOwnerUid:"",requestedBy:uid,commandRevision:state.commandRevision+1}
+      : state;
+    tx.update(roomRef,{
+      musicQueue:nextQueue,
+      musicState:nextState,
+      updatedAt:FieldValue.serverTimestamp(),
+    });
+    return {ok:true,roomId,queue:nextQueue,state:nextState};
+  });
+}
+
+async function clearRoomMusicQueue(db,uid,body){
+  const roomId=clean(body.roomId);
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+  const roomRef=db.collection("rooms").doc(roomId);
+  const actorRef=db.collection("users").doc(uid);
+  return db.runTransaction(async tx=>{
+    const [roomSnap,actorSnap]=await Promise.all([tx.get(roomRef),tx.get(actorRef)]);
+    if(!roomSnap.exists)throw new ApiError("room_not_found",404);
+    const room=roomSnap.data()||{};
+    const access=roomMusicAccess(room,actorSnap.data()||{},uid);
+    if(!access.manage)throw new ApiError("forbidden",403);
+    const state=normalizeRoomMusicState(room);
+    const nextState={
+      ...state,
+      status:"stopped",
+      currentTrackId:"",
+      sourceOwnerUid:"",
+      requestedBy:uid,
+      commandRevision:state.commandRevision+1,
+    };
+    tx.update(roomRef,{
+      musicQueue:[],
+      musicState:nextState,
+      updatedAt:FieldValue.serverTimestamp(),
+    });
+    return {ok:true,roomId,queue:[],state:nextState};
+  });
+}
+
+async function roomMusicCommand(db,uid,body){
+  const roomId=clean(body.roomId);
+  const command=clean(body.command);
+  const trackId=clean(body.trackId);
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId)||!["play","stop","skip"].includes(command)){
+    throw new ApiError("invalid_music_command",400);
+  }
+  const roomRef=db.collection("rooms").doc(roomId);
+  const actorRef=db.collection("users").doc(uid);
+  return db.runTransaction(async tx=>{
+    const [roomSnap,actorSnap]=await Promise.all([tx.get(roomRef),tx.get(actorRef)]);
+    if(!roomSnap.exists||roomSnap.data()?.isActive===false)throw new ApiError("room_unavailable",404);
+    const room=roomSnap.data()||{};
+    const access=roomMusicAccess(room,actorSnap.data()||{},uid);
+    const queue=normalizeRoomMusicQueue(room);
+    const state=normalizeRoomMusicState(room);
+    let nextState=state;
+
+    if(command==="play"){
+      if(!access.canAddOrPlay)throw new ApiError("music_permission_required",403);
+      const track=queue.find(item=>item.id===trackId);
+      if(!track)throw new ApiError("music_track_not_found",404);
+      nextState={
+        status:"playing",
+        currentTrackId:track.id,
+        sourceOwnerUid:track.sourceOwnerUid,
+        requestedBy:uid,
+        startedAtMs:Date.now(),
+        commandRevision:state.commandRevision+1,
+      };
+    }else if(command==="stop"){
+      const current=queue.find(item=>item.id===state.currentTrackId);
+      const ownCurrent=current?.sourceOwnerUid===uid;
+      if(!access.manage&&!ownCurrent)throw new ApiError("forbidden",403);
+      nextState={
+        status:"stopped",
+        currentTrackId:"",
+        sourceOwnerUid:"",
+        requestedBy:uid,
+        startedAtMs:0,
+        commandRevision:state.commandRevision+1,
+      };
+    }else{
+      if(!access.manage)throw new ApiError("forbidden",403);
+      const currentIndex=queue.findIndex(item=>item.id===state.currentTrackId);
+      const nextTrack=currentIndex>=0&&currentIndex+1<queue.length?queue[currentIndex+1]:null;
+      nextState=nextTrack
+        ? {
+            status:"playing",
+            currentTrackId:nextTrack.id,
+            sourceOwnerUid:nextTrack.sourceOwnerUid,
+            requestedBy:uid,
+            startedAtMs:Date.now(),
+            commandRevision:state.commandRevision+1,
+          }
+        : {
+            status:"stopped",
+            currentTrackId:"",
+            sourceOwnerUid:"",
+            requestedBy:uid,
+            startedAtMs:0,
+            commandRevision:state.commandRevision+1,
+          };
+    }
+
+    tx.update(roomRef,{musicState:nextState,updatedAt:FieldValue.serverTimestamp()});
+    return {ok:true,roomId,state:nextState,queue};
+  });
+}
+
 async function refreshRoomPresenceSummary(db,roomId){
   const now=Date.now();
   const cutoff=now-90000;
@@ -1421,6 +1698,25 @@ export default async function handler(req,res){
     if(action==="roomBanList"){
       const roomId=clean(req.body?.roomId);
       return out(res,200,await roomBanList(getFirestore(),decoded.uid,roomId));
+    }
+    if(action==="roomMusicState"){
+      const roomId=clean(req.body?.roomId);
+      return out(res,200,await roomMusicState(getFirestore(),decoded.uid,roomId));
+    }
+    if(action==="setRoomMusicPolicy"){
+      return out(res,200,await setRoomMusicPolicy(getFirestore(),decoded.uid,req.body||{}));
+    }
+    if(action==="addRoomMusicTrack"){
+      return out(res,200,await addRoomMusicTrack(getFirestore(),decoded.uid,req.body||{}));
+    }
+    if(action==="removeRoomMusicTrack"){
+      return out(res,200,await removeRoomMusicTrack(getFirestore(),decoded.uid,req.body||{}));
+    }
+    if(action==="clearRoomMusicQueue"){
+      return out(res,200,await clearRoomMusicQueue(getFirestore(),decoded.uid,req.body||{}));
+    }
+    if(action==="roomMusicCommand"){
+      return out(res,200,await roomMusicCommand(getFirestore(),decoded.uid,req.body||{}));
     }
     if(action==="roomPresenceJoin"){
       const roomId=clean(req.body?.roomId);
