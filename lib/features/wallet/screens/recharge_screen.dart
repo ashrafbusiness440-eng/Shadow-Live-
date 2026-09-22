@@ -304,7 +304,8 @@ class _RechargeScreenState extends State<RechargeScreen> {
                   child: FilledButton(
                     onPressed: () {
                       if (_packages.isEmpty) return;
-                      final package = _packages[selected.clamp(0, _packages.length - 1)];
+                      final safeIndex = selected < _packages.length ? selected : _packages.length - 1;
+                      final package = _packages[safeIndex];
                       Navigator.push(
                         context,
                         MaterialPageRoute(
