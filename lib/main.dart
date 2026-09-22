@@ -40,6 +40,7 @@ import 'features/room/services/room_moderation_service.dart';
 import 'features/room/services/room_moderator_service.dart';
 import 'features/room/widgets/room_chat_panel.dart';
 import 'features/room/widgets/room_moderator_manager_sheet.dart';
+import 'features/room/widgets/room_pk_panel.dart';
 import 'features/room/services/room_seat_service.dart';
 
 Future<void> main() async {
@@ -2962,6 +2963,12 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                           ),
                         ),
                       ],
+                      const SizedBox(height: 14),
+                      RoomPkPanel(
+                        roomId:
+                            (_roomArguments['roomId'] ?? '').toString(),
+                        canManage: _canManagePk,
+                      ),
                       const SizedBox(height: 14),
                       RoomChatPanel(
                         roomId:
