@@ -28,6 +28,17 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Audit Dart reachability
+        run: python3 .github/scripts/find_unreachable_dart.py
+
+      - name: Upload Dart reachability
+        uses: actions/upload-artifact@v4
+        with:
+          name: dart-reachability
+          path: dart_reachability.json
+          if-no-files-found: error
+          retention-days: 3
+
       - name: Analyze
         run: flutter analyze --no-fatal-infos --no-fatal-warnings lib test
 
