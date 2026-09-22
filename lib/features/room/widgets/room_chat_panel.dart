@@ -548,3 +548,313 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
     );
   }
 }
+
+
+class RoomChatFeed extends StatefulWidget {
+  const RoomChatFeed({
+    super.key,
+    required this.roomId,
+    required this.roomEffectsEnabled,
+    required this.effectSoundEnabled,
+    this.scrollController,
+  });
+
+  final String roomId;
+  final bool roomEffectsEnabled;
+  final bool effectSoundEnabled;
+  final ScrollController? scrollController;
+
+  @override
+  State<RoomChatFeed> createState() => _RoomChatFeedState();
+}
+
+class _RoomChatFeedState extends State<RoomChatFeed> {
+  final RoomChatService _service = RoomChatService();
+  bool _effectSoundInitialized = false;
+  String _lastEffectMessageId = '';
+
+  @override
+  void dispose() {
+    _service.close();
+    super.dispose();
+  }
+
+  Widget _entry(RoomChatMessage message) {
+    final isSystem = message.type == 'system';
+    final isGift = message.systemKind.contains('gift');
+    if (isSystem) {
+      final vipEntry = widget.roomEffectsEnabled &&
+          message.systemKind == 'room_join' &&
+          message.vipLevel > 0;
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: isGift
+                  ? const Color(0xFFFFD54A).withValues(alpha: .12)
+                  : vipEntry
+                      ? const Color(0xFF8A3DFF).withValues(alpha: .18)
+                      : Colors.white.withValues(alpha: .04),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isGift
+                    ? const Color(0xFFFFD54A).withValues(alpha: .35)
+                    : Colors.white10,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  isGift
+                      ? Icons.card_giftcard_rounded
+                      : vipEntry
+                          ? Icons.auto_awesome_rounded
+                          : Icons.login_rounded,
+                  size: 14,
+                  color: isGift
+                      ? const Color(0xFFFFD54A)
+                      : const Color(0xFFBFA5FF),
+                ),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    message.text,
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 11,
+                      height: 1.3,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: RichText(
+          textDirection: TextDirection.rtl,
+          text: TextSpan(
+            children: [
+              TextSpan(
+                text: message.displayName + ': ',
+                style: const TextStyle(
+                  color: Color(0xFFBFA5FF),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              TextSpan(
+                text: message.text,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.roomId.trim().isEmpty) return const SizedBox.shrink();
+    return StreamBuilder<List<RoomChatMessage>>(
+      stream: _service.watchMessages(widget.roomId),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const Center(
+            child: Text(
+              'تعذر تحميل نشاط الغرفة',
+              style: TextStyle(color: Colors.white38, fontSize: 11),
+            ),
+          );
+        }
+        if (!snapshot.hasData) {
+          return const Center(
+            child: SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Color(0xFF8A3DFF),
+              ),
+            ),
+          );
+        }
+        final messages = snapshot.data!;
+        if (messages.isNotEmpty) {
+          final latest = messages.first;
+          if (!_effectSoundInitialized) {
+            _effectSoundInitialized = true;
+            _lastEffectMessageId = latest.id;
+          } else if (latest.id != _lastEffectMessageId) {
+            _lastEffectMessageId = latest.id;
+            final shouldPlayEffectSound = widget.effectSoundEnabled &&
+                ((latest.systemKind == 'room_join' && latest.vipLevel > 0) ||
+                    latest.systemKind.contains('gift'));
+            if (shouldPlayEffectSound) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                SystemSound.play(SystemSoundType.click);
+              });
+            }
+          }
+        }
+        if (messages.isEmpty) {
+          return const Center(
+            child: Text(
+              'نشاط الغرفة سيظهر هنا',
+              style: TextStyle(color: Colors.white38, fontSize: 11),
+            ),
+          );
+        }
+        return ListView.builder(
+          controller: widget.scrollController,
+          reverse: true,
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+          itemCount: messages.length,
+          itemBuilder: (_, index) => _entry(messages[index]),
+        );
+      },
+    );
+  }
+}
+
+class RoomChatComposer extends StatefulWidget {
+  const RoomChatComposer({
+    super.key,
+    required this.roomId,
+    required this.chatEnabled,
+    required this.isOwner,
+  });
+
+  final String roomId;
+  final bool chatEnabled;
+  final bool isOwner;
+
+  @override
+  State<RoomChatComposer> createState() => _RoomChatComposerState();
+}
+
+class _RoomChatComposerState extends State<RoomChatComposer> {
+  final RoomChatService _service = RoomChatService();
+  final TextEditingController _controller = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
+  bool _sending = false;
+
+  bool get _canSend => widget.chatEnabled || widget.isOwner;
+
+  @override
+  void dispose() {
+    _service.close();
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send() async {
+    final text = _controller.text.trim();
+    if (text.isEmpty || _sending || !_canSend) return;
+    setState(() => _sending = true);
+    try {
+      await _service.sendMessage(roomId: widget.roomId, text: text);
+      if (!mounted) return;
+      _controller.clear();
+      _focusNode.requestFocus();
+    } on StateError catch (error) {
+      if (!mounted) return;
+      final code = error.message.toString();
+      final message = code == 'rate_limited'
+          ? 'أرسلت رسائل بسرعة كبيرة.'
+          : code == 'room_chat_disabled'
+              ? 'دردشة الغرفة متوقفة حالياً.'
+              : 'تعذر إرسال الرسالة حالياً.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 42,
+      decoration: BoxDecoration(
+        color: const Color(0xFF141722),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.white12),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            tooltip: 'السمايلات',
+            onPressed: _canSend ? () => _focusNode.requestFocus() : null,
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(
+              Icons.sentiment_satisfied_alt_rounded,
+              color: Colors.white60,
+              size: 20,
+            ),
+          ),
+          Expanded(
+            child: TextField(
+              enabled: _canSend,
+              controller: _controller,
+              focusNode: _focusNode,
+              textInputAction: TextInputAction.send,
+              maxLength: 500,
+              buildCounter: (
+                context, {
+                required currentLength,
+                required isFocused,
+                required maxLength,
+              }) =>
+                  null,
+              style: const TextStyle(color: Colors.white, fontSize: 12),
+              decoration: InputDecoration(
+                hintText: _canSend ? 'اكتب داخل الغرفة…' : 'الدردشة متوقفة',
+                hintStyle: const TextStyle(color: Colors.white30, fontSize: 11),
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+              onSubmitted: (_) => _send(),
+            ),
+          ),
+          IconButton(
+            tooltip: 'إرسال',
+            onPressed: _sending || !_canSend ? null : _send,
+            visualDensity: VisualDensity.compact,
+            icon: _sending
+                ? const SizedBox(
+                    width: 15,
+                    height: 15,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Color(0xFFBFA5FF),
+                    ),
+                  )
+                : const Icon(
+                    Icons.send_rounded,
+                    color: Color(0xFFBFA5FF),
+                    size: 20,
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
