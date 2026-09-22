@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -95,6 +96,8 @@ class _RoomMusicSheetState extends State<RoomMusicSheet> {
     try {
       final files = await FilePicker.pickFiles(
         type: FileType.audio,
+        allowMultiple: true,
+        withData: true,
       );
       if (!mounted || files.isEmpty) return;
       setState(() {
@@ -131,12 +134,14 @@ class _RoomMusicSheetState extends State<RoomMusicSheet> {
       for (final index in indices) {
         if (index < 0 || index >= _pending.length) continue;
         final file = _pending[index];
-        final length = file.lengthSync() ?? await file.length();
-        if (length == null || length <= 0 || length > 30 * 1024 * 1024) {
+        final bytes = file.bytes ?? Uint8List(0);
+        final length = file.size;
+        if (bytes.isEmpty ||
+            length <= 0 ||
+            length > 30 * 1024 * 1024) {
           skipped++;
           continue;
         }
-        final bytes = await file.readAsBytes();
         final track = await _service.addTrack(
           roomId: widget.roomId,
           title: _cleanTitle(file.name),
