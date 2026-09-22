@@ -1423,6 +1423,18 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     return const SizedBox.shrink();
   }
 
+  String _formatStarBattleCoins(int value) {
+    if (value >= 1000000) {
+      final number = value / 1000000;
+      return (number >= 10 ? number.toStringAsFixed(0) : number.toStringAsFixed(2)) + 'M';
+    }
+    if (value >= 1000) {
+      final number = value / 1000;
+      return (number >= 10 ? number.toStringAsFixed(0) : number.toStringAsFixed(1)) + 'K';
+    }
+    return value.toString();
+  }
+
   Widget _buildVoiceSeats() {
     final state = _roomSeatState;
     final seats = state?.seats ??
@@ -1434,6 +1446,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             displayName: '',
             profileImageUrl: '',
             muted: true,
+            starBattleCoins: 0,
           ),
         );
     return GridView.builder(
@@ -1528,6 +1541,16 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                   fontWeight: FontWeight.w700,
                 ),
               ),
+              if (seat.occupied && seat.starBattleCoins > 0)
+                Text(
+                  _formatStarBattleCoins(seat.starBattleCoins) + ' ⭐',
+                  maxLines: 1,
+                  style: const TextStyle(
+                    color: Color(0xFFFFD54A),
+                    fontSize: 9,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
             ],
           ),
         );

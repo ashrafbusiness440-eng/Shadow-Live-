@@ -11,6 +11,7 @@ class VoiceSeat {
     required this.displayName,
     required this.profileImageUrl,
     required this.muted,
+    this.starBattleCoins = 0,
   });
 
   final int index;
@@ -18,6 +19,7 @@ class VoiceSeat {
   final String displayName;
   final String profileImageUrl;
   final bool muted;
+  final int starBattleCoins;
 
   bool get occupied => uid.isNotEmpty;
 
@@ -27,6 +29,7 @@ class VoiceSeat {
         displayName: (json['displayName'] ?? '').toString(),
         profileImageUrl: (json['profileImageUrl'] ?? '').toString(),
         muted: json['muted'] != false,
+        starBattleCoins: (json['starBattleCoins'] as num?)?.toInt() ?? 0,
       );
 }
 
@@ -130,10 +133,36 @@ class RoomSeatService {
     final uid = _auth.currentUser?.uid ?? '';
     return _firestore.collection('rooms').doc(roomId).snapshots().map((snapshot) {
       final data = snapshot.data() ?? <String, dynamic>{};
+      final rawBattle = data['starBattleState'];
+      final battle = rawBattle is Map
+          ? Map<String, dynamic>.from(rawBattle)
+          : const <String, dynamic>{};
+      final rawScores = battle['scores'];
+      final scores = rawScores is Map
+          ? Map<String, dynamic>.from(rawScores)
+          : const <String, dynamic>{};
+      final rawSeats = data['seats'];
+      final seats = rawSeats is List
+          ? rawSeats.whereType<Map>().map((raw) {
+              final item = Map<String, dynamic>.from(raw);
+              final uid = (item['uid'] ?? '').toString();
+              final scoreRaw = scores[uid];
+              final score = scoreRaw is Map
+                  ? Map<String, dynamic>.from(scoreRaw)
+                  : const <String, dynamic>{};
+              return {
+                ...item,
+                'starBattleCoins': battle['status'] == 'active'
+                    ? ((score['coins'] as num?)?.toInt() ?? 0)
+                    : 0,
+              };
+            }).toList(growable: false)
+          : const <Map<String, dynamic>>[];
       final ownerUid =
           (data['ownerUid'] ?? data['ownerId'] ?? data['hostId'] ?? '').toString();
       return RoomSeatState.fromJson({
         ...data,
+        'seats': seats,
         'roomId': roomId,
         'isOwner': uid.isNotEmpty && ownerUid == uid,
         'isActive': snapshot.exists && data['isActive'] != false,
