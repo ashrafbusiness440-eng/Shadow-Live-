@@ -16,7 +16,7 @@ concurrency:
 jobs:
   validate-app:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,11 +31,11 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Analyze Shadow Live
-        run: flutter analyze --no-fatal-infos --no-fatal-warnings lib
+      - name: Analyze all app and tests
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings lib test
 
-      - name: Test app routing, shared formatters, and Phase 4 discovery
-        run: flutter test test/auth/setup_route_test.dart test/utils/compact_number_test.dart test/utils/search_index_test.dart test/home/discovery_service_test.dart
+      - name: Run all Flutter tests
+        run: flutter test
 
       - name: Build Shadow Live web
         run: flutter build web --release
