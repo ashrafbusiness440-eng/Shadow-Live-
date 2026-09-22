@@ -86,7 +86,8 @@ function utcPeriodKeys(date = new Date()) {
   const week = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
   const weekKey = d.getUTCFullYear().toString() + '-W' +
     week.toString().padStart(2, '0');
-  return { day, week: weekKey, month };
+  const cycle = month + "-" + (date.getUTCDate() <= 15 ? "C1" : "C2");
+  return { day, week: weekKey, month, cycle };
 }
 
 
