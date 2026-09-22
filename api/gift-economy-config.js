@@ -42,19 +42,105 @@ async function actor(req){
   return {uid:decoded.uid,db};
 }
 
-function normalizePolicy(raw={}){
-  const enabled=raw.enabled===true;
-  const recipientShareBps=Number(raw.recipientShareBps??0);
-  if(!Number.isSafeInteger(recipientShareBps)||recipientShareBps<0||recipientShareBps>10000){
-    throw Error("invalid_recipient_share");
-  }
+function defaultPolicy(){
   return {
-    enabled,
-    recipientShareBps,
+    enabled:false,
+    policyMode:"tiered_host_agency",
+    coinsPerUsd:10000,
     coinsPerDiamond:10000,
-    settlementMode:"accumulate_then_convert",
+    tierPeriod:"monthly",
+    settlementMode:"cycle_settlement",
     agencySupportTracking:true,
     periodTimeZone:"UTC",
+    hostPerformanceBonusBps:200,
+    agencyPerformanceBonusBps:200,
+    hostBonusQualifiedDays:9,
+    hostBonusMinutesPerQualifiedDay:120,
+    agencyBonusActiveHosts:10,
+    activityPayoutBpsByQualifiedDays:{
+      "0":0,"1":0,"2":0,"3":2500,"4":4000,"5":5500,
+      "6":7000,"7":8000,"8":9000,"9":10000
+    },
+    tiers:[
+      {id:"starter",nameAr:"Starter",minGiftCoins:0,hostShareBps:5500,agencyShareBps:500},
+      {id:"bronze",nameAr:"Bronze",minGiftCoins:1000000,hostShareBps:5700,agencyShareBps:600},
+      {id:"silver",nameAr:"Silver",minGiftCoins:5000000,hostShareBps:6000,agencyShareBps:800},
+      {id:"gold",nameAr:"Gold",minGiftCoins:20000000,hostShareBps:6200,agencyShareBps:900},
+      {id:"diamond",nameAr:"Diamond",minGiftCoins:50000000,hostShareBps:6300,agencyShareBps:1000}
+    ]
+  };
+}
+
+function integer(value,code,min,max){
+  const n=Number(value);
+  if(!Number.isSafeInteger(n)||n<min||n>max) throw Error(code);
+  return n;
+}
+function normalizeTier(item,index){
+  const id=clean(item?.id)||("tier_"+String(index+1));
+  const nameAr=clean(item?.nameAr)||id;
+  const minGiftCoins=integer(item?.minGiftCoins,"invalid_tier_threshold",0,1000000000000);
+  const hostShareBps=integer(item?.hostShareBps,"invalid_host_share",0,10000);
+  const agencyShareBps=integer(item?.agencyShareBps,"invalid_agency_share",0,10000);
+  if(hostShareBps+agencyShareBps>10000) throw Error("invalid_split_total");
+  return {
+    id,nameAr,minGiftCoins,hostShareBps,agencyShareBps,
+    platformShareBps:10000-hostShareBps-agencyShareBps
+  };
+}
+function normalizePolicy(raw={}){
+  const defaults=defaultPolicy();
+  const enabled=raw.enabled===true;
+  const hostPerformanceBonusBps=integer(
+    raw.hostPerformanceBonusBps??defaults.hostPerformanceBonusBps,
+    "invalid_host_bonus",0,3000
+  );
+  const agencyPerformanceBonusBps=integer(
+    raw.agencyPerformanceBonusBps??defaults.agencyPerformanceBonusBps,
+    "invalid_agency_bonus",0,3000
+  );
+  const hostBonusQualifiedDays=integer(
+    raw.hostBonusQualifiedDays??defaults.hostBonusQualifiedDays,
+    "invalid_host_bonus_days",1,31
+  );
+  const hostBonusMinutesPerQualifiedDay=integer(
+    raw.hostBonusMinutesPerQualifiedDay??defaults.hostBonusMinutesPerQualifiedDay,
+    "invalid_host_bonus_minutes",1,1440
+  );
+  const agencyBonusActiveHosts=integer(
+    raw.agencyBonusActiveHosts??defaults.agencyBonusActiveHosts,
+    "invalid_agency_bonus_hosts",1,100000
+  );
+  let source=Array.isArray(raw.tiers)&&raw.tiers.length?raw.tiers:defaults.tiers;
+  if(source.length<1||source.length>10) throw Error("invalid_tiers");
+  const tiers=source.map(normalizeTier).sort((a,b)=>a.minGiftCoins-b.minGiftCoins);
+  if(tiers[0].minGiftCoins!==0) throw Error("first_tier_must_start_zero");
+  for(let i=1;i<tiers.length;i++){
+    if(tiers[i].minGiftCoins<=tiers[i-1].minGiftCoins) throw Error("invalid_tier_order");
+  }
+  for(const tier of tiers){
+    if(tier.hostShareBps+tier.agencyShareBps+hostPerformanceBonusBps+agencyPerformanceBonusBps>10000){
+      throw Error("bonus_exceeds_platform_share");
+    }
+  }
+  const legacyRecipientShareBps=tiers[0].hostShareBps;
+  return {
+    enabled,
+    policyMode:"tiered_host_agency",
+    coinsPerUsd:10000,
+    coinsPerDiamond:10000,
+    tierPeriod:"monthly",
+    settlementMode:"cycle_settlement",
+    agencySupportTracking:true,
+    periodTimeZone:"UTC",
+    recipientShareBps:legacyRecipientShareBps,
+    hostPerformanceBonusBps,
+    agencyPerformanceBonusBps,
+    hostBonusQualifiedDays,
+    hostBonusMinutesPerQualifiedDay,
+    agencyBonusActiveHosts,
+    activityPayoutBpsByQualifiedDays:defaults.activityPayoutBpsByQualifiedDays,
+    tiers
   };
 }
 
@@ -69,14 +155,12 @@ export default async function handler(req,res){
 
     if(action==="state"){
       const snap=await ref.get();
-      const config=snap.exists?snap.data():{
-        enabled:false,
-        recipientShareBps:0,
-        coinsPerDiamond:10000,
-        settlementMode:"accumulate_then_convert",
-        agencySupportTracking:true,
-        periodTimeZone:"UTC",
-      };
+      let config=defaultPolicy();
+      if(snap.exists){
+        const data=snap.data()||{};
+        try{config=normalizePolicy(data);}
+        catch(_){config={...defaultPolicy(),...data};}
+      }
       return out(res,200,{ok:true,config});
     }
 
@@ -106,8 +190,14 @@ export default async function handler(req,res){
     return out(res,400,{ok:false,code:"invalid_action"});
   }catch(error){
     const code=clean(error?.message)||"server_error";
-    const status=code==="unauthorized"?401:code==="forbidden"?403:
-      ["invalid_recipient_share","invalid_action"].includes(code)?400:500;
+    const bad=new Set([
+      "invalid_tier_threshold","invalid_host_share","invalid_agency_share",
+      "invalid_split_total","invalid_host_bonus","invalid_agency_bonus",
+      "invalid_host_bonus_days","invalid_host_bonus_minutes",
+      "invalid_agency_bonus_hosts","invalid_tiers","first_tier_must_start_zero",
+      "invalid_tier_order","bonus_exceeds_platform_share","invalid_action"
+    ]);
+    const status=code==="unauthorized"?401:code==="forbidden"?403:bad.has(code)?400:500;
     return out(res,status,{ok:false,code});
   }
 }
