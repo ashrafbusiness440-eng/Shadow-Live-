@@ -51,6 +51,15 @@ Future<void> main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  const e2eTest = bool.fromEnvironment('E2E_TEST');
+  if (e2eTest && FirebaseAuth.instance.currentUser == null) {
+    try {
+      await FirebaseAuth.instance.signInAnonymously();
+    } catch (_) {
+      // The E2E shell can still render its diagnostic route if auth is unavailable.
+    }
+  }
   if (const bool.fromEnvironment('USE_FIREBASE_EMULATORS')) {
     await FirebaseAuth.instance.useAuthEmulator('127.0.0.1', 9099);
     FirebaseFirestore.instance.useFirestoreEmulator('127.0.0.1', 8080);
@@ -95,7 +104,9 @@ class MyApp extends StatelessWidget {
           Theme.of(context).textTheme,
         ).apply(bodyColor: Colors.white),
       ),
-      initialRoute: AppRoutes.splash,
+      initialRoute: const bool.fromEnvironment('E2E_TEST')
+          ? AppRoutes.main
+          : AppRoutes.splash,
       routes: {
         AppRoutes.splash: (context) => const SplashScreen(),
         AppRoutes.onboarding: (context) => const OnboardingScreen(),
