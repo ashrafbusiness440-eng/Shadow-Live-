@@ -5,6 +5,8 @@ import {getFirestore} from "firebase-admin/firestore";
 
 import {sendGift as sendChatGift} from "../chat-actions.js";
 import {settleAgencyCycle} from "../economy-control.js";
+import {saveGiftEconomyPolicy} from "../gift-economy-config.js";
+import {calculateAgencyCycleSettlement} from "../economy-policy.js";
 import {sendRoomGift} from "../room-gift.js";
 
 const app=getApps()[0]||initializeApp({projectId:"shadow-live-economy-test"});
@@ -209,6 +211,52 @@ test("chat gift uses the same economy shares and duplicate protection as room gi
   assert.equal(duplicate.code,"duplicate");
   const senderAfter=await db.collection("users").doc(senderId).get();
   assert.equal(senderAfter.data().coins,900000);
+});
+
+test("Shadow Control policy save persists custom values and runtime calculations use them",async()=>{
+  const custom={
+    policyMode:"tiered_host_agency",
+    enabled:true,
+    hostPerformanceBonusBps:300,
+    agencyPerformanceBonusBps:100,
+    hostBonusQualifiedDays:5,
+    hostBonusMinutesPerQualifiedDay:90,
+    agencyBonusActiveHosts:3,
+    activityPayoutBpsByQualifiedDays:{
+      "0":0,"1":0,"2":0,"3":2500,"4":4000,
+      "5":5500,"6":7000,"7":8000,"8":9000,"9":10000,
+    },
+    tiers:[
+      {id:"starter",nameAr:"Starter",minGiftCoins:0,hostShareBps:5000,agencyShareBps:400},
+      {id:"custom",nameAr:"Custom",minGiftCoins:200000,hostShareBps:6100,agencyShareBps:700},
+    ],
+  };
+  const saved=await saveGiftEconomyPolicy(db,"shadow_control_test",custom);
+  const stored=await db.collection("system_config").doc("gift_economy").get();
+  assert.equal(saved.hostBonusMinutesPerQualifiedDay,90);
+  assert.equal(stored.data().hostPerformanceBonusBps,300);
+  assert.equal(stored.data().agencyBonusActiveHosts,3);
+  assert.equal(stored.data().tiers[1].minGiftCoins,200000);
+
+  const result=calculateAgencyCycleSettlement(stored.data(),{
+    monthlyGrossCoins:250000,
+    supportCoins:250000,
+    qualifiedDays:9,
+    activeHostCount:3,
+    hasAgency:true,
+  });
+  assert.equal(result.tierId,"custom");
+  assert.equal(result.hostShareBps,6400);
+  assert.equal(result.agencyShareBps,800);
+  assert.equal(result.hostPayableCoins,160000);
+  assert.equal(result.agencyPayableCoins,20000);
+  assert.equal(result.platformCoins,70000);
+
+  const audit=await db.collection("admin_audit_logs")
+    .where("actorUid","==","shadow_control_test")
+    .where("action","==","updateGiftEconomyPolicy")
+    .get();
+  assert.equal(audit.empty,false);
 });
 
 test("cycle settlement pays final monthly tier and bonuses even above provisional accrual, then stays idempotent",async()=>{
