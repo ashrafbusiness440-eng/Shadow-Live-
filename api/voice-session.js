@@ -701,6 +701,8 @@ async function roomSeatAction(db,uid,body){
       invites=invites.filter(id=>id!==uid);
     }else if(action==="takeSeat"||action==="switchSeat"){
       if(!Number.isInteger(seatIndex)||seatIndex<0||seatIndex>=seats.length)throw new ApiError("invalid_seat",400);
+      const currentSeatIndex=seats.findIndex(item=>item.uid===uid);
+      if(action==="switchSeat"&&currentSeatIndex<0)throw new ApiError("speaker_seat_required",403);
       const seat=seats[seatIndex];
       const pk=activePk(room);
       const reserved=pk?.participants.find(item=>item.seatIndex===seatIndex);
@@ -708,7 +710,7 @@ async function roomSeatAction(db,uid,body){
       if(reserved&&reserved.uid!==uid)throw new ApiError("pk_seat_reserved",409);
       if(mine&&mine.seatIndex!==seatIndex)throw new ApiError("pk_original_seat_required",409);
       if(seat.uid&&seat.uid!==uid)throw new ApiError("seat_occupied",409);
-      if(!isOwner&&!invites.includes(uid)&&!mine)throw new ApiError("mic_invite_required",403);
+      if(!isOwner&&!invites.includes(uid)&&!mine&&currentSeatIndex<0)throw new ApiError("mic_invite_required",403);
 
       const profileSnap=await tx.get(myProfileRef);
       const profile=profileSnap.data()||{};

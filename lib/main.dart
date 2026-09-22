@@ -609,9 +609,17 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     final state = _roomSeatState;
     if (roomId.isEmpty || uid.isEmpty || state == null) return;
+    final hasSeat = state.seats.any((current) => current.uid == uid);
 
     if (!seat.occupied) {
-      if (state.isOwner || state.invited(uid)) {
+      if (hasSeat) {
+        await _runSeatAction(
+          () => _roomSeatService.switchSeat(
+            roomId: roomId,
+            seatIndex: seat.index,
+          ),
+        );
+      } else if (state.isOwner || state.invited(uid)) {
         await _runSeatAction(
           () => _roomSeatService.takeSeat(
             roomId: roomId,
