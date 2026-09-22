@@ -130,9 +130,36 @@ const ROOM_MODERATOR_CAPABILITIES=[
   "manageIds",
 ];
 
+function roomControlOverrides(room){
+  const raw=room.controlOverrides&&typeof room.controlOverrides==="object"
+    ? room.controlOverrides
+    : {};
+  const parseOptionalInt=(value,min,max)=>{
+    if(value===null||value===undefined||value==="")return null;
+    const parsed=Number(value);
+    return Number.isInteger(parsed)&&parsed>=min&&parsed<=max?parsed:null;
+  };
+  return {
+    seats:parseOptionalInt(raw.seats,1,50),
+    moderators:parseOptionalInt(raw.moderators,0,30),
+    bypassLevelCapacity:raw.bypassLevelCapacity===true,
+  };
+}
+
+function isOfficialRoom(room){
+  const type=clean(room.roomType||room.type||"personal");
+  return room.systemOwned===true||room.officialRoom===true||
+    type==="official"||type==="administrative"||type==="customer_service";
+}
+
 function roomModeratorLimit(room){
   const level=Math.max(1,Math.min(6,Number(room.level||1)));
   const type=clean(room.roomType||room.type||"personal");
+  const overrides=roomControlOverrides(room);
+  if((isOfficialRoom(room)||overrides.bypassLevelCapacity)&&overrides.moderators!==null){
+    return overrides.moderators;
+  }
+  if(type==="customer_service")return 2;
   const agency=[5,6,7,9,11,14];
   const normal=[3,4,5,7,9,12];
   return (type==="agency"?agency:normal)[level-1];
@@ -163,16 +190,36 @@ function roomModeratorEntry(room,uid){
   return normalizeRoomModerators(room).find(item=>item.uid===uid)||null;
 }
 
+const OFFICIAL_HOST_CAPABILITIES=[
+  "manageMic",
+  "moderateUsers",
+  "moderateChat",
+  "manageMusic",
+  "manageMusicPolicy",
+  "managePk",
+];
+
+function roomOwnerUid(room){
+  return clean(room.ownerUid||room.ownerId);
+}
+
+function roomHostUid(room){
+  return clean(room.hostUid||room.hostId);
+}
+
 function hasRoomCapability(room,uid,capability){
-  const ownerUid=clean(room.ownerUid||room.ownerId||room.hostId);
-  if(ownerUid===uid)return true;
+  const ownerUid=roomOwnerUid(room);
+  if(!isOfficialRoom(room)&&ownerUid===uid)return true;
+  if(isOfficialRoom(room)&&roomHostUid(room)===uid&&OFFICIAL_HOST_CAPABILITIES.includes(capability)){
+    return true;
+  }
   const moderator=roomModeratorEntry(room,uid);
   return Boolean(moderator&&moderator.capabilities.includes(capability));
 }
 
 function canManageRoomAction(room,actor,uid,capability){
   const global=roomPermissions(actor);
-  return clean(room.ownerUid||room.ownerId||room.hostId)===uid
+  return (!isOfficialRoom(room)&&roomOwnerUid(room)===uid)
     ||global.manageRooms
     ||hasRoomCapability(room,uid,capability);
 }
@@ -186,20 +233,26 @@ async function roomModeratorState(db,uid,roomId){
   if(!roomSnap.exists)throw new ApiError("room_not_found",404);
   const room=roomSnap.data()||{};
   const actor=actorSnap.data()||{};
-  const ownerUid=clean(room.ownerUid||room.ownerId||room.hostId);
+  const ownerUid=roomOwnerUid(room);
+  const hostUid=roomHostUid(room);
   const global=roomPermissions(actor);
   const myModerator=roomModeratorEntry(room,uid);
+  const hostCapabilities=isOfficialRoom(room)&&hostUid===uid
+    ? OFFICIAL_HOST_CAPABILITIES
+    : [];
   return {
     ok:true,
     roomId,
     ownerUid,
-    isOwner:ownerUid===uid,
-    canManage:ownerUid===uid||global.manageRooms,
+    hostUid,
+    isOwner:!isOfficialRoom(room)&&ownerUid===uid,
+    isHost:isOfficialRoom(room)&&hostUid===uid,
+    canManage:(!isOfficialRoom(room)&&ownerUid===uid)||global.manageRooms||hostCapabilities.length>0,
     limit:roomModeratorLimit(room),
     capabilities:ROOM_MODERATOR_CAPABILITIES,
-    myCapabilities:ownerUid===uid
+    myCapabilities:!isOfficialRoom(room)&&ownerUid===uid
       ? ROOM_MODERATOR_CAPABILITIES
-      : (myModerator?.capabilities||[]),
+      : [...new Set([...hostCapabilities,...(myModerator?.capabilities||[])])],
     moderators:normalizeRoomModerators(room),
   };
 }
@@ -235,10 +288,11 @@ async function setRoomModerator(db,uid,body){
     if(!profileSnap.exists)throw new ApiError("target_not_found",404);
     const room=roomSnap.data()||{};
     const actor=actorSnap.data()||{};
-    const ownerUid=clean(room.ownerUid||room.ownerId||room.hostId);
+    const ownerUid=roomOwnerUid(room);
     const global=roomPermissions(actor);
-    if(ownerUid!==uid&&!global.manageRooms)throw new ApiError("forbidden",403);
-    if(targetUid===ownerUid)throw new ApiError("owner_already_full_access",409);
+    if((isOfficialRoom(room)||ownerUid!==uid)&&!global.manageRooms)throw new ApiError("forbidden",403);
+    if(ownerUid&&targetUid===ownerUid)throw new ApiError("owner_already_full_access",409);
+    if(isOfficialRoom(room)&&targetUid===roomHostUid(room))throw new ApiError("host_session_role_managed_by_control",409);
 
     let moderators=normalizeRoomModerators(room);
     const previous=moderators.find(item=>item.uid===targetUid)||null;
@@ -289,7 +343,8 @@ function roomResponse(roomId,data){
     roomId,
     name:clean(data.name||data.title||"غرفتي"),
     publicId:clean(data.publicId),
-    ownerUid:clean(data.ownerUid||data.hostId),
+    ownerUid:clean(data.ownerUid||data.ownerId),
+    hostUid:clean(data.hostUid||data.hostId),
     roomType:clean(data.roomType||"personal"),
     category:clean(data.category||"دردشة"),
     ownerName:clean(data.ownerName),
@@ -434,7 +489,7 @@ async function changeRoomPublicId(db,uid,body){
   const roomId=clean(body.roomId);
   const newPublicId=clean(body.publicId);
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
-  if(!/^[0-9]{6}$/.test(newPublicId))throw new ApiError("invalid_public_id",400);
+  if(!/^[0-9]{3,12}$/.test(newPublicId))throw new ApiError("invalid_public_id",400);
 
   const roomRef=db.collection("rooms").doc(roomId);
   const userRef=db.collection("users").doc(uid);
@@ -453,6 +508,9 @@ async function changeRoomPublicId(db,uid,body){
     const permissions=roomPermissions(user);
     const canManageId=canManageRoomAction(room,user,uid,"manageIds")||permissions.manageIds;
     if(!canManageId)throw new ApiError("forbidden",403);
+    if(!permissions.manageIds&&newPublicId.length!==6){
+      throw new ApiError("manage_ids_required",403);
+    }
 
     const oldPublicId=clean(room.publicId);
     if(oldPublicId===newPublicId){
@@ -670,6 +728,10 @@ async function closePersonalRoom(db,uid,roomId){
 function roomSeatCapacity(room){
   const level=Math.max(1,Math.min(6,Number(room.level||1)));
   const type=clean(room.roomType||room.type||"personal");
+  const overrides=roomControlOverrides(room);
+  if((isOfficialRoom(room)||overrides.bypassLevelCapacity)&&overrides.seats!==null){
+    return overrides.seats;
+  }
   if(type==="customer_service")return 5;
   const agency=[10,12,14,16,20,22];
   const normal=[8,10,12,15,20,20];
@@ -693,18 +755,210 @@ function normalizeSeats(room){
   return seats;
 }
 
+function roomControlPolicySnapshot(room){
+  const level=Math.max(1,Math.min(6,Number(room.level||1)));
+  const type=clean(room.roomType||room.type||"personal");
+  const overrides=roomControlOverrides(room);
+  const agencySeats=[10,12,14,16,20,22];
+  const normalSeats=[8,10,12,15,20,20];
+  const agencyMods=[5,6,7,9,11,14];
+  const normalMods=[3,4,5,7,9,12];
+  const baseSeats=type==="customer_service"
+    ? 5
+    : (type==="agency"?agencySeats:normalSeats)[level-1];
+  const baseModerators=type==="customer_service"
+    ? 2
+    : (type==="agency"?agencyMods:normalMods)[level-1];
+  const manual=isOfficialRoom(room)||overrides.bypassLevelCapacity;
+  return {
+    level,
+    type,
+    official:isOfficialRoom(room),
+    systemOwned:room.systemOwned===true,
+    hostUid:roomHostUid(room),
+    baseSeats,
+    baseModerators,
+    overrides,
+    effectiveSeats:manual&&overrides.seats!==null?overrides.seats:baseSeats,
+    effectiveModerators:manual&&overrides.moderators!==null?overrides.moderators:baseModerators,
+    capacityMode:manual?"manual":"level",
+  };
+}
+
+async function controlRoomPolicy(db,uid,body){
+  let roomId=clean(body.roomId);
+  const roomPublicId=clean(body.roomPublicId);
+  const controlAction=clean(body.controlAction||"state");
+
+  const actorSnap=await db.collection("users").doc(uid).get();
+  const actor=actorSnap.data()||{};
+  const global=roomPermissions(actor);
+  const capabilities=Array.isArray(actor.capabilities)?actor.capabilities.map(clean):[];
+  const isOwner=actor.adminEnabled===true&&actor.role==="owner";
+  const canManage=actor.adminEnabled===true&&(
+    isOwner||global.manageRooms||capabilities.includes("globalRoomControl")
+  );
+  const canGlobal=isOwner||(actor.adminEnabled===true&&capabilities.includes("globalRoomControl"));
+  if(!actorSnap.exists||!canManage)throw new ApiError("forbidden",403);
+
+  if(!roomId&&roomPublicId){
+    if(!/^\d{3,12}$/.test(roomPublicId))throw new ApiError("invalid_room_public_id",400);
+    const idSnap=await db.collection("room_ids").doc(roomPublicId).get();
+    roomId=clean(idSnap.data()?.roomId);
+  }
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+
+  const roomRef=db.collection("rooms").doc(roomId);
+  if(controlAction==="state"){
+    const roomSnap=await roomRef.get();
+    if(!roomSnap.exists)throw new ApiError("room_not_found",404);
+    const room=roomSnap.data()||{};
+    return {
+      ok:true,
+      roomId,
+      publicId:clean(room.publicId),
+      name:clean(room.name||room.title||"غرفة صوتية"),
+      ownerUid:roomOwnerUid(room),
+      policy:roomControlPolicySnapshot(room),
+    };
+  }
+
+  const reason=clean(body.reason);
+  const operationId=clean(body.idempotencyKey);
+  if(reason.length<3||reason.length>160||!/^[A-Za-z0-9_-]{12,160}$/.test(operationId)){
+    throw new ApiError("invalid_request",400);
+  }
+
+  return db.runTransaction(async tx=>{
+    const opRef=db.collection("control_operations").doc(operationId);
+    const [opSnap,roomSnap]=await Promise.all([tx.get(opRef),tx.get(roomRef)]);
+    if(opSnap.exists){
+      return {ok:true,code:"duplicate",operationId,...(opSnap.data()?.result||{})};
+    }
+    if(!roomSnap.exists)throw new ApiError("room_not_found",404);
+    const room=roomSnap.data()||{};
+    const before=roomControlPolicySnapshot(room);
+    const now=FieldValue.serverTimestamp();
+    let patch={};
+
+    if(["setLevel","raiseLevel","lowerLevel"].includes(controlAction)){
+      let next=before.level;
+      if(controlAction==="setLevel"){
+        next=Number(body.level);
+        if(!Number.isInteger(next)||next<1||next>6)throw new ApiError("invalid_room_level",400);
+      }else if(controlAction==="raiseLevel"){
+        next=Math.min(6,before.level+1);
+      }else{
+        next=Math.max(1,before.level-1);
+      }
+      if(next===before.level)throw new ApiError("level_unchanged",409);
+      patch={level:next,levelUpdatedAt:now,levelUpdatedBy:uid,updatedAt:now};
+    }else if(controlAction==="setOverrides"){
+      const current=roomControlOverrides(room);
+      const parseBounded=(value,min,max,code)=>{
+        if(value===null||value===undefined||value==="")return null;
+        const n=Number(value);
+        if(!Number.isInteger(n)||n<min||n>max)throw new ApiError(code,400);
+        return n;
+      };
+      const seats=Object.prototype.hasOwnProperty.call(body,"seats")
+        ? parseBounded(body.seats,1,50,"invalid_seat_override")
+        : current.seats;
+      const moderators=Object.prototype.hasOwnProperty.call(body,"moderators")
+        ? parseBounded(body.moderators,0,30,"invalid_moderator_override")
+        : current.moderators;
+      patch={
+        controlOverrides:{
+          seats,
+          moderators,
+          bypassLevelCapacity:Object.prototype.hasOwnProperty.call(body,"bypassLevelCapacity")
+            ? body.bypassLevelCapacity===true
+            : current.bypassLevelCapacity,
+          updatedBy:uid,
+        },
+        overrideUpdatedAt:now,
+        updatedAt:now,
+      };
+    }else if(controlAction==="resetOverrides"){
+      patch={
+        controlOverrides:{seats:null,moderators:null,bypassLevelCapacity:false,updatedBy:uid},
+        overrideUpdatedAt:now,
+        updatedAt:now,
+      };
+    }else if(controlAction==="setOfficialRoom"){
+      if(!canGlobal)throw new ApiError("global_room_control_required",403);
+      const enabled=body.enabled===true;
+      const hostUid=clean(body.hostUid);
+      const officialType=clean(body.officialType||"official");
+      if(enabled&&!["official","administrative","customer_service"].includes(officialType)){
+        throw new ApiError("invalid_official_room_type",400);
+      }
+      if(enabled&&hostUid){
+        const hostSnap=await tx.get(db.collection("users").doc(hostUid));
+        if(!hostSnap.exists)throw new ApiError("host_not_found",404);
+      }
+      patch={
+        systemOwned:enabled,
+        officialRoom:enabled,
+        roomType:enabled?officialType:clean(room.previousRoomType||room.roomType||room.type||"personal"),
+        hostUid:enabled?hostUid:"",
+        ...(enabled?{previousRoomType:clean(room.roomType||room.type||"personal")}:{previousRoomType:FieldValue.delete()}),
+        officialUpdatedAt:now,
+        officialUpdatedBy:uid,
+        updatedAt:now,
+      };
+    }else{
+      throw new ApiError("invalid_control_room_action",400);
+    }
+
+    const after=roomControlPolicySnapshot({...room,...patch});
+    tx.update(roomRef,patch);
+    const auditRef=db.collection("admin_audit_logs").doc();
+    tx.create(auditRef,{
+      actorUid:uid,
+      action:controlAction,
+      targetType:"room",
+      targetId:roomId,
+      reason,
+      before,
+      after,
+      operationId,
+      createdAt:now,
+    });
+    const resultData={roomId,before,after};
+    tx.create(opRef,{
+      action:controlAction,
+      actorUid:uid,
+      targetType:"room",
+      targetId:roomId,
+      status:"completed",
+      result:resultData,
+      createdAt:now,
+    });
+    return {ok:true,code:"ok",operationId,...resultData};
+  });
+}
+
 async function roomSeatState(db,uid,roomId){
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
   const snap=await db.collection("rooms").doc(roomId).get();
   if(!snap.exists)throw new ApiError("room_not_found",404);
   const room=snap.data()||{};
+  const actorSnap=await db.collection("users").doc(uid).get();
+  const actor=actorSnap.data()||{};
+  const isOwner=!isOfficialRoom(room)&&roomOwnerUid(room)===uid;
+  const isHost=isOfficialRoom(room)&&roomHostUid(room)===uid;
   return {
     ok:true,
     roomId,
     seats:normalizeSeats(room),
     micInvites:Array.isArray(room.micInvites)?room.micInvites:[],
     micRequests:Array.isArray(room.micRequests)?room.micRequests:[],
-    isOwner:String(room.ownerUid||room.ownerId||room.hostId||"")===uid,
+    micInviteOnly:room.micInviteOnly===true,
+    starBattleActive:activeStarBattle(room)!=null,
+    isOwner,
+    isHost,
+    canManageMic:canManageRoomAction(room,actor,uid,"manageMic"),
     isActive:room.isActive!==false,
     onlineCount:Math.max(0,Number(room.onlineCount||0)),
   };
@@ -726,8 +980,9 @@ async function roomSeatAction(db,uid,body){
     const room=roomSnap.data()||{};
     if(room.isActive===false)throw new ApiError("room_unavailable",409);
 
-    const ownerUid=String(room.ownerUid||room.ownerId||room.hostId||"");
-    const isOwner=ownerUid===uid;
+    const ownerUid=roomOwnerUid(room);
+    const isOwner=!isOfficialRoom(room)&&ownerUid===uid;
+    const isHost=isOfficialRoom(room)&&roomHostUid(room)===uid;
     const actorSnap=await tx.get(db.collection("users").doc(uid));
     const actor=actorSnap.data()||{};
     const canManageMic=canManageRoomAction(room,actor,uid,"manageMic");
@@ -742,6 +997,7 @@ async function roomSeatAction(db,uid,body){
     let seats=normalizeSeats(room);
     let invites=Array.isArray(room.micInvites)?[...room.micInvites]:[];
     let requests=Array.isArray(room.micRequests)?[...room.micRequests]:[];
+    let micInviteOnly=room.micInviteOnly===true;
 
     const clearUserSeat=userId=>{
       seats=seats.map(seat=>seat.uid===userId
@@ -749,7 +1005,11 @@ async function roomSeatAction(db,uid,body){
         : seat);
     };
 
-    if(action==="requestMic"){
+    if(action==="setMicInviteOnly"){
+      if(!canManageMic)throw new ApiError("forbidden",403);
+      micInviteOnly=body.enabled===true;
+      if(!micInviteOnly)requests=[];
+    }else if(action==="requestMic"){
       if(!requests.includes(uid))requests.push(uid);
     }else if(action==="cancelMicRequest"){
       requests=requests.filter(id=>id!==uid);
@@ -782,7 +1042,7 @@ async function roomSeatAction(db,uid,body){
       if(reserved&&reserved.uid!==uid)throw new ApiError("pk_seat_reserved",409);
       if(mine&&mine.seatIndex!==seatIndex)throw new ApiError("pk_original_seat_required",409);
       if(seat.uid&&seat.uid!==uid)throw new ApiError("seat_occupied",409);
-      if(!isOwner&&!invites.includes(uid)&&!mine&&currentSeatIndex<0)throw new ApiError("mic_invite_required",403);
+      if(micInviteOnly&&!isOwner&&!isHost&&!canManageMic&&!invites.includes(uid)&&!mine&&currentSeatIndex<0)throw new ApiError("mic_invite_required",403);
 
       const profileSnap=await tx.get(myProfileRef);
       const profile=profileSnap.data()||{};
@@ -800,6 +1060,15 @@ async function roomSeatAction(db,uid,body){
       const seatIndex=seats.findIndex(seat=>seat.uid===uid);
       if(seatIndex<0)throw new ApiError("speaker_seat_required",403);
       seats[seatIndex]={...seats[seatIndex],muted:action==="muteSeat"};
+    }else if(action==="muteTargetSeat"||action==="unmuteTargetSeat"){
+      if(!canManageMic)throw new ApiError("forbidden",403);
+      if(!targetUid||targetUid===uid)throw new ApiError("invalid_target",400);
+      const targetSeatIndex=seats.findIndex(seat=>seat.uid===targetUid);
+      if(targetSeatIndex<0)throw new ApiError("speaker_seat_required",403);
+      seats[targetSeatIndex]={
+        ...seats[targetSeatIndex],
+        muted:action==="muteTargetSeat",
+      };
     }else if(action==="leaveSeat"){
       clearUserSeat(uid);
     }else if(action==="removeFromMic"){
@@ -816,6 +1085,7 @@ async function roomSeatAction(db,uid,body){
       seats,
       micInvites:invites,
       micRequests:requests,
+      micInviteOnly,
       updatedAt:FieldValue.serverTimestamp(),
     });
 
@@ -825,7 +1095,11 @@ async function roomSeatAction(db,uid,body){
       seats,
       micInvites:invites,
       micRequests:requests,
+      micInviteOnly,
+      starBattleActive:activeStarBattle({...room,starBattleState:room.starBattleState})!=null,
       isOwner,
+      isHost,
+      canManageMic,
       isActive:true,
       onlineCount:Math.max(0,Number(room.onlineCount||0)),
     };
@@ -2215,6 +2489,9 @@ export default async function handler(req,res){
     }
     if(action==="roomSeatAction"){
       return out(res,200,await roomSeatAction(getFirestore(),decoded.uid,req.body||{}));
+    }
+    if(action==="controlRoomPolicy"){
+      return out(res,200,await controlRoomPolicy(getFirestore(),decoded.uid,req.body||{}));
     }
     if(action!=="token")throw new ApiError("invalid_action",400);
 
