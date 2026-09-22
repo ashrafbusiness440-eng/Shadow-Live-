@@ -778,6 +778,25 @@ async function roomSeatAction(db,uid,body){
       requests=requests.filter(id=>id!==targetUid);
     }else if(action==="declineMicInvite"){
       invites=invites.filter(id=>id!==uid);
+    }else if(action==="setMicInviteOnly"){
+      if(!canManageMic)throw new ApiError("forbidden",403);
+      const enabled=body.enabled===true;
+      tx.update(roomRef,{
+        micInviteOnly:enabled,
+        ...(enabled?{}:{micRequests:[]}),
+        updatedAt:FieldValue.serverTimestamp(),
+      });
+      return {
+        ok:true,
+        roomId,
+        seats,
+        micInvites:invites,
+        micRequests:enabled?requests:[],
+        micInviteOnly:enabled,
+        isOwner,
+        isActive:true,
+        onlineCount:Math.max(0,Number(room.onlineCount||0)),
+      };
     }else if(action==="takeSeat"||action==="switchSeat"){
       if(!Number.isInteger(seatIndex)||seatIndex<0||seatIndex>=seats.length)throw new ApiError("invalid_seat",400);
       const currentSeatIndex=seats.findIndex(item=>item.uid===uid);
@@ -807,6 +826,15 @@ async function roomSeatAction(db,uid,body){
       const seatIndex=seats.findIndex(seat=>seat.uid===uid);
       if(seatIndex<0)throw new ApiError("speaker_seat_required",403);
       seats[seatIndex]={...seats[seatIndex],muted:action==="muteSeat"};
+    }else if(action==="muteTargetSeat"||action==="unmuteTargetSeat"){
+      if(!canManageMic)throw new ApiError("forbidden",403);
+      if(!targetUid||targetUid===uid)throw new ApiError("invalid_target",400);
+      const targetSeatIndex=seats.findIndex(seat=>seat.uid===targetUid);
+      if(targetSeatIndex<0)throw new ApiError("speaker_seat_required",403);
+      seats[targetSeatIndex]={
+        ...seats[targetSeatIndex],
+        muted:action==="muteTargetSeat",
+      };
     }else if(action==="leaveSeat"){
       clearUserSeat(uid);
     }else if(action==="muteTargetSeat"||action==="unmuteTargetSeat"){
