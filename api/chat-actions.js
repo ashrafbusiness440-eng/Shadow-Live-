@@ -52,6 +52,7 @@ const utcPeriodKeys=(date=new Date())=>{
     day,
     week:d.getUTCFullYear().toString()+"-W"+week.toString().padStart(2,"0"),
     month,
+    cycle:month+"-"+(date.getUTCDate()<=15?"C1":"C2"),
   };
 };
 
