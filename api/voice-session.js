@@ -82,6 +82,14 @@ async function recordMicActivity(tx,db,userId,seat,endedAtMs=Date.now()){
     giftHostQualifiedDays:previousQualifiedDays+(!wasQualified&&qualified?1:0),
     giftHostActivityUpdatedAt:FieldValue.serverTimestamp(),
   },{merge:true});
+  const agencyId=clean(user.agencyId);
+  if(!wasQualified&&qualified&&agencyId){
+    const agencyMonthRef=db.collection("agency_support_stats").doc(agencyId).collection("monthly").doc(month);
+    tx.set(agencyMonthRef,{
+      activeHostIds:FieldValue.arrayUnion(userId),
+      updatedAt:FieldValue.serverTimestamp(),
+    },{merge:true});
+  }
 }
 
 function zegoUserId(firebaseUid){
@@ -1222,7 +1230,7 @@ async function roomSeatAction(db,uid,body){
 
     const clearUserSeat=userId=>{
       seats=seats.map(seat=>seat.uid===userId
-        ? {...seat,uid:"",displayName:"",profileImageUrl:"",muted:true}
+        ? {...seat,uid:"",displayName:"",profileImageUrl:"",muted:true,micStartedAtMs:0}
         : seat);
     };
 
