@@ -493,24 +493,286 @@ class _RolePolicyCard extends StatelessWidget {
   }
 }
 
-class RoomsPage extends StatelessWidget {
+class RoomsPage extends StatefulWidget {
   const RoomsPage({super.key});
-  @override Widget build(BuildContext context)=>ListView(padding:const EdgeInsets.all(16),children:[
-    const Row(children:[Icon(Icons.mic_none_rounded,size:28,color:Color(0xFFD7B85A)),SizedBox(width:10),Text('الغرف',style:TextStyle(fontSize:25,fontWeight:FontWeight.w900))]),
-    const SizedBox(height:16),
-    const Card(child:ListTile(
-      leading:Icon(Icons.shield_outlined,color:Color(0xFFD7B85A)),
-      title:Text('الربط الآمن قيد التجهيز',style:TextStyle(fontWeight:FontWeight.w800)),
-      subtitle:Text('Firestore Rules الحالية لا تمنح لوحة التحكم قراءة لمجموعة غرف. لذلك لن نستخدم قراءة مفتوحة أو صلاحيات مؤقتة واسعة.'),
-    )),
-    const SizedBox(height:10),
-    ...const [
-      ControlItem('الغرف النشطة','ستعرض roomId، الاسم، المضيف، الحالة وعدد المشاركين بعد اعتماد Collection وقاعدة القراءة.',Icons.podcasts_outlined),
-      ControlItem('الغرف المبلغ عنها','ستعرض بلاغات الغرف للقراءة والمراجعة بعد إضافة صلاحية reviewReports.',Icons.report_outlined),
-      ControlItem('إدارة المضيفين','أي كتم/منع/تغيير مضيف سيبقى عملية Backend مسجلة في Audit Log.',Icons.record_voice_over_outlined),
-    ].map((item)=>Card(child:ListTile(leading:Icon(item.icon,color:const Color(0xFFD7B85A)),title:Text(item.title,style:const TextStyle(fontWeight:FontWeight.w700)),subtitle:Text(item.subtitle)))),
-  ]);
+  @override State<RoomsPage> createState()=>_RoomsPageState();
 }
+
+class _RoomsPageState extends State<RoomsPage> {
+  final publicId=TextEditingController();
+  final reason=TextEditingController(text:'تعديل إعدادات الغرفة من Shadow Control');
+  final seats=TextEditingController();
+  final moderators=TextEditingController();
+  final hostUid=TextEditingController();
+  bool busy=false,bypassLevelCapacity=false;
+  Map<String,dynamic>? room;
+  String? error;
+
+  @override void dispose(){
+    publicId.dispose();reason.dispose();seats.dispose();moderators.dispose();hostUid.dispose();super.dispose();
+  }
+
+  Uri get apiUri=>Uri(
+    scheme:Uri.base.scheme,
+    host:Uri.base.host,
+    port:Uri.base.hasPort?Uri.base.port:null,
+    path:'/api/voice-session',
+  );
+
+  Future<Map<String,dynamic>> post(Map<String,dynamic> payload) async {
+    final user=FirebaseAuth.instance.currentUser;
+    if(user==null)throw Exception('forbidden');
+    final token=await user.getIdToken().timeout(const Duration(seconds:12));
+    if(token==null||token.isEmpty)throw Exception('forbidden');
+    final response=await http.post(
+      apiUri,
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+      body:jsonEncode({'action':'controlRoomPolicy',...payload}),
+    ).timeout(const Duration(seconds:25));
+    final data=response.body.isEmpty?<String,dynamic>{}:jsonDecode(response.body) as Map<String,dynamic>;
+    if(response.statusCode<200||response.statusCode>=300||data['ok']!=true){
+      throw Exception((data['code']??'request_failed').toString());
+    }
+    return data;
+  }
+
+  String message(String code)=>switch(code){
+    'forbidden'=>'لا تملك صلاحية manageRooms / globalRoomControl.',
+    'room_not_found'=>'لم يتم العثور على الغرفة.',
+    'invalid_room_public_id'=>'Room ID غير صالح.',
+    'invalid_room_level'=>'Level يجب أن يكون بين 1 و6.',
+    'level_unchanged'=>'الغرفة موجودة بالفعل على هذا المستوى.',
+    'invalid_seat_override'=>'عدد المايكات يجب أن يكون بين 1 و50.',
+    'invalid_moderator_override'=>'عدد المشرفين يجب أن يكون بين 0 و30.',
+    'global_room_control_required'=>'تحويل الغرفة إلى رسمية يتطلب Owner أو globalRoomControl.',
+    'host_not_found'=>'حساب الـHost غير موجود.',
+    _=>'تعذر تنفيذ العملية: '+code,
+  };
+
+  void syncControllers(Map<String,dynamic> data){
+    final policy=data['policy'] is Map<String,dynamic>?data['policy'] as Map<String,dynamic>:<String,dynamic>{};
+    final overrides=policy['overrides'] is Map<String,dynamic>?policy['overrides'] as Map<String,dynamic>:<String,dynamic>{};
+    seats.text=overrides['seats']?.toString()??'';
+    moderators.text=overrides['moderators']?.toString()??'';
+    hostUid.text=policy['hostUid']?.toString()??'';
+    bypassLevelCapacity=overrides['bypassLevelCapacity']==true;
+  }
+
+  Future<void> lookup() async {
+    final id=publicId.text.trim();
+    if(id.isEmpty)return;
+    setState((){busy=true;error=null;});
+    try{
+      final data=await post({'controlAction':'state','roomPublicId':id});
+      if(!mounted)return;
+      syncControllers(data);
+      setState(()=>room=data);
+    }catch(e){
+      if(mounted)setState((){
+        room=null;
+        error=message(e.toString().replaceFirst('Exception: ',''));
+      });
+    }finally{
+      if(mounted)setState(()=>busy=false);
+    }
+  }
+
+  Future<void> execute(String action,{Map<String,dynamic> extra=const {}}) async {
+    final current=room;if(current==null)return;
+    final roomId=(current['roomId']??'').toString();if(roomId.isEmpty)return;
+    final why=reason.text.trim().isEmpty?'تعديل إعدادات الغرفة من Shadow Control':reason.text.trim();
+    final user=FirebaseAuth.instance.currentUser;if(user==null)return;
+    final prefix=user.uid.length>=6?user.uid.substring(0,6):user.uid;
+    final key='roomctl_'+DateTime.now().millisecondsSinceEpoch.toString()+'_'+prefix;
+    setState((){busy=true;error=null;});
+    try{
+      await post({
+        'controlAction':action,
+        'roomId':roomId,
+        'reason':why,
+        'idempotencyKey':key,
+        ...extra,
+      });
+      final refreshed=await post({'controlAction':'state','roomId':roomId});
+      if(!mounted)return;
+      syncControllers(refreshed);
+      setState(()=>room=refreshed);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content:Text('تم تحديث الغرفة وتسجيل العملية في Audit Log.')),
+      );
+    }catch(e){
+      if(mounted)setState(()=>error=message(e.toString().replaceFirst('Exception: ','')));
+    }finally{
+      if(mounted)setState(()=>busy=false);
+    }
+  }
+
+  Future<void> saveOverrides()=>execute('setOverrides',extra:{
+    'seats':seats.text.trim().isEmpty?null:int.tryParse(seats.text.trim()),
+    'moderators':moderators.text.trim().isEmpty?null:int.tryParse(moderators.text.trim()),
+    'bypassLevelCapacity':bypassLevelCapacity,
+  });
+
+  @override Widget build(BuildContext context){
+    final data=room;
+    final policy=data?['policy'] is Map<String,dynamic>?data!['policy'] as Map<String,dynamic>:<String,dynamic>{};
+    final level=(policy['level'] as num?)?.toInt()??1;
+    final official=policy['official']==true;
+    final systemOwned=policy['systemOwned']==true;
+    final effectiveSeats=(policy['effectiveSeats']??'—').toString();
+    final effectiveModerators=(policy['effectiveModerators']??'—').toString();
+    final manual=(policy['capacityMode']??'level').toString()=='manual';
+
+    return ListView(padding:const EdgeInsets.all(16),children:[
+      const Row(children:[
+        Icon(Icons.mic_none_rounded,size:28,color:Color(0xFFD7B85A)),
+        SizedBox(width:10),
+        Text('إدارة الغرف',style:TextStyle(fontSize:25,fontWeight:FontWeight.w900)),
+      ]),
+      const SizedBox(height:6),
+      const Text('Room Level + Overrides — التعديلات الحساسة تمر عبر Backend وAudit Log.',style:TextStyle(color:Color(0xFFAAA3B8))),
+      const SizedBox(height:16),
+      Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(children:[
+        TextField(
+          controller:publicId,
+          keyboardType:TextInputType.number,
+          onSubmitted:(_)=>lookup(),
+          decoration:const InputDecoration(labelText:'Room ID',hintText:'مثال: 123456',prefixIcon:Icon(Icons.search),border:OutlineInputBorder()),
+        ),
+        const SizedBox(height:10),
+        SizedBox(width:double.infinity,child:FilledButton.icon(
+          onPressed:busy?null:lookup,
+          icon:busy?const SizedBox(width:18,height:18,child:CircularProgressIndicator(strokeWidth:2)):const Icon(Icons.manage_search_rounded),
+          label:Text(busy?'جار التنفيذ...':'بحث عن الغرفة'),
+        )),
+      ]))),
+      if(error!=null)...[
+        const SizedBox(height:10),
+        Card(color:const Color(0xFF2A1015),child:ListTile(
+          leading:const Icon(Icons.error_outline,color:Colors.redAccent),
+          title:Text(error!,style:const TextStyle(color:Colors.redAccent)),
+        )),
+      ],
+      if(data!=null)...[
+        const SizedBox(height:12),
+        Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+          Row(children:[
+            Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+              Text((data['name']??'غرفة صوتية').toString(),style:const TextStyle(fontSize:20,fontWeight:FontWeight.w900)),
+              const SizedBox(height:4),
+              Text('ID: '+(data['publicId']??'—').toString()+' • Doc: '+(data['roomId']??'—').toString()),
+            ])),
+            Chip(
+              avatar:Icon(official?Icons.verified_rounded:Icons.mic_none_rounded,size:17),
+              label:Text(systemOwned?'رسمية — ملك النظام':(official?'رسمية':'عادية')),
+            ),
+          ]),
+          const Divider(height:28),
+          Wrap(spacing:8,runSpacing:8,children:[
+            Chip(label:Text('LV.'+level.toString())),
+            Chip(label:Text('المايكات الفعلية: '+effectiveSeats)),
+            Chip(label:Text('المشرفون: '+effectiveModerators)),
+            Chip(label:Text(manual?'Manual Override':'حسب Level')),
+          ]),
+        ]))),
+        const SizedBox(height:12),
+        Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+          const Text('Room Level',style:TextStyle(fontSize:18,fontWeight:FontWeight.w900)),
+          const SizedBox(height:10),
+          Row(children:[
+            Expanded(child:OutlinedButton.icon(
+              onPressed:busy||level<=1?null:()=>execute('lowerLevel'),
+              icon:const Icon(Icons.remove),label:const Text('خفض Level'),
+            )),
+            const SizedBox(width:8),
+            Chip(label:Text('LV.'+level.toString())),
+            const SizedBox(width:8),
+            Expanded(child:FilledButton.icon(
+              onPressed:busy||level>=6?null:()=>execute('raiseLevel'),
+              icon:const Icon(Icons.add),label:const Text('رفع Level'),
+            )),
+          ]),
+          const SizedBox(height:10),
+          Wrap(spacing:6,children:List.generate(6,(i){
+            final value=i+1;
+            return ChoiceChip(
+              label:Text('LV.'+value.toString()),
+              selected:value==level,
+              onSelected:busy||value==level?null:(_)=>execute('setLevel',extra:{'level':value}),
+            );
+          })),
+        ]))),
+        const SizedBox(height:12),
+        Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+          const Text('Room Overrides',style:TextStyle(fontSize:18,fontWeight:FontWeight.w900)),
+          const SizedBox(height:6),
+          const Text('اترك القيمة فارغة للرجوع لقيمة الـLevel.',style:TextStyle(color:Color(0xFFAAA3B8),fontSize:12)),
+          const SizedBox(height:12),
+          Row(children:[
+            Expanded(child:TextField(
+              controller:seats,keyboardType:TextInputType.number,
+              decoration:const InputDecoration(labelText:'عدد المايكات',hintText:'1 - 50',border:OutlineInputBorder()),
+            )),
+            const SizedBox(width:10),
+            Expanded(child:TextField(
+              controller:moderators,keyboardType:TextInputType.number,
+              decoration:const InputDecoration(labelText:'عدد المشرفين',hintText:'0 - 30',border:OutlineInputBorder()),
+            )),
+          ]),
+          SwitchListTile(
+            contentPadding:EdgeInsets.zero,
+            title:const Text('تجاوز سعة الـLevel'),
+            subtitle:const Text('استخدم القيم اليدوية بدل الجدول الطبيعي.'),
+            value:bypassLevelCapacity,
+            onChanged:busy?null:(v)=>setState(()=>bypassLevelCapacity=v),
+          ),
+          Row(children:[
+            Expanded(child:FilledButton.icon(
+              onPressed:busy?null:saveOverrides,
+              icon:const Icon(Icons.save_outlined),label:const Text('حفظ الاستثناءات'),
+            )),
+            const SizedBox(width:8),
+            Expanded(child:OutlinedButton.icon(
+              onPressed:busy?null:()=>execute('resetOverrides'),
+              icon:const Icon(Icons.restart_alt_rounded),label:const Text('إلغاء الاستثناءات'),
+            )),
+          ]),
+        ]))),
+        const SizedBox(height:12),
+        Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+          const Text('غرفة رسمية / إدارية',style:TextStyle(fontSize:18,fontWeight:FontWeight.w900)),
+          const SizedBox(height:6),
+          const Text('الغرفة الرسمية ملك Shadow Live. الـHost يدير الجلسة فقط ولا يصبح Owner.',style:TextStyle(color:Color(0xFFAAA3B8),fontSize:12)),
+          const SizedBox(height:12),
+          TextField(
+            controller:hostUid,
+            decoration:const InputDecoration(labelText:'Host UID',hintText:'اختياري',border:OutlineInputBorder(),prefixIcon:Icon(Icons.record_voice_over_outlined)),
+          ),
+          const SizedBox(height:10),
+          Row(children:[
+            Expanded(child:FilledButton.icon(
+              onPressed:busy||official?null:()=>execute('setOfficialRoom',extra:{
+                'enabled':true,'officialType':'official','hostUid':hostUid.text.trim(),
+              }),
+              icon:const Icon(Icons.verified_rounded),label:const Text('تحويل إلى رسمية'),
+            )),
+            const SizedBox(width:8),
+            Expanded(child:OutlinedButton.icon(
+              onPressed:busy||!official?null:()=>execute('setOfficialRoom',extra:{'enabled':false}),
+              icon:const Icon(Icons.undo_rounded),label:const Text('إلغاء الرسمية'),
+            )),
+          ]),
+        ]))),
+        const SizedBox(height:12),
+        TextField(
+          controller:reason,maxLength:160,
+          decoration:const InputDecoration(labelText:'سبب التعديل — يسجل في Audit Log',border:OutlineInputBorder(),prefixIcon:Icon(Icons.history_edu_outlined)),
+        ),
+      ],
+    ]);
+  }
+}
+
 class FinancePage extends StatelessWidget {
   const FinancePage({super.key});
   @override Widget build(BuildContext context)=>ListView(padding:const EdgeInsets.all(16),children:[
