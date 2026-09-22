@@ -108,7 +108,7 @@ function revenueTiers(economy){
   })).sort((a,b)=>a.minGiftCoins-b.minGiftCoins);
 }
 
-function resolveRevenuePolicy(economy,receiverData,monthlyGrossCoins,agencyId,monthKey){
+function resolveRevenuePolicy(economy,receiverData,monthlyGrossCoins,agencyId,monthKey,activeHostCount=0){
   const tiers=revenueTiers(economy);
   let tier=tiers[0];
   for(const item of tiers){
@@ -122,7 +122,12 @@ function resolveRevenuePolicy(economy,receiverData,monthlyGrossCoins,agencyId,mo
   const configuredHostBonus=Math.max(0,Math.min(3000,Number(economy?.hostPerformanceBonusBps||0)));
   const hostBonusBps=qualifiedDays>=requiredDays?configuredHostBonus:0;
   const hostShareBps=Math.max(0,Math.min(10000,tier.hostShareBps+hostBonusBps));
-  const agencyShareBps=agencyId?Math.max(0,Math.min(10000,tier.agencyShareBps)):0;
+  const requiredActiveHosts=Math.max(1,Math.min(100000,Number(economy?.agencyBonusActiveHosts||10)));
+  const configuredAgencyBonus=Math.max(0,Math.min(3000,Number(economy?.agencyPerformanceBonusBps||0)));
+  const agencyBonusBps=agencyId&&activeHostCount>=requiredActiveHosts?configuredAgencyBonus:0;
+  const agencyShareBps=agencyId
+    ?Math.max(0,Math.min(10000,tier.agencyShareBps+agencyBonusBps))
+    :0;
   const platformShareBps=Math.max(0,10000-hostShareBps-agencyShareBps);
   return {
     tierId:tier.id,
@@ -131,11 +136,14 @@ function resolveRevenuePolicy(economy,receiverData,monthlyGrossCoins,agencyId,mo
     hostBaseShareBps:tier.hostShareBps,
     hostBonusBps,
     hostShareBps,
+    agencyBaseShareBps:tier.agencyShareBps,
+    agencyBonusBps,
     agencyShareBps,
-    agencyBonusBpsPending:agencyId?Math.max(0,Math.min(3000,Number(economy?.agencyPerformanceBonusBps||0))):0,
     platformShareBps,
     qualifiedDays,
     requiredDays,
+    activeHostCount,
+    requiredActiveHosts,
   };
 }
 
@@ -277,13 +285,21 @@ export default async function handler(req, res) {
       const room = roomSnap.data() || {};
       const economy = economySnap.exists ? (economySnap.data() || {}) : {};
       const agencyId = clean(room.agencyId || receiver.agencyId || "");
+      const agencyMonthRef = agencyId
+        ? db.collection("agency_support_stats").doc(agencyId).collection("monthly").doc(periods.month)
+        : null;
+      const agencyMonthSnap = agencyMonthRef ? await tx.get(agencyMonthRef) : null;
+      const activeHostIds = agencyMonthSnap && Array.isArray(agencyMonthSnap.data()?.activeHostIds)
+        ? agencyMonthSnap.data().activeHostIds
+        : [];
+      const activeHostCount = activeHostIds.length;
       const previousMonthCoins =
         clean(receiver.giftRevenueMonth) === periods.month
           ? Math.max(0, Number(receiver.giftRevenueMonthCoins || 0))
           : 0;
       const monthlyGrossCoins = previousMonthCoins + totalCost;
       const revenue = resolveRevenuePolicy(
-        economy, receiver, monthlyGrossCoins, agencyId, periods.month
+        economy, receiver, monthlyGrossCoins, agencyId, periods.month, activeHostCount
       );
       const earningsEnabled = economy.enabled === true && revenue.hostShareBps > 0;
       const recipientShareBps = earningsEnabled ? revenue.hostShareBps : 0;
@@ -453,6 +469,7 @@ export default async function handler(req, res) {
           hostEarningCoins: FieldValue.increment(recipientShareCoins),
           agencyEarningCoins: FieldValue.increment(agencyShareCoins),
           platformShareCoins: FieldValue.increment(platformShareCoins),
+          activeHostCount,
         };
         tx.set(
           agencyRootRef.collection("daily").doc(periods.day),
@@ -536,9 +553,12 @@ export default async function handler(req, res) {
         recipientShareCoins,
         hostBaseShareBps: revenue.hostBaseShareBps,
         hostBonusBps: revenue.hostBonusBps,
+        agencyBaseShareBps: revenue.agencyBaseShareBps,
+        agencyBonusBps: revenue.agencyBonusBps,
         agencyShareBps: revenue.agencyShareBps,
         agencyShareCoins,
-        agencyBonusBpsPending: revenue.agencyBonusBpsPending,
+        agencyActiveHostCount: revenue.activeHostCount,
+        agencyRequiredActiveHosts: revenue.requiredActiveHosts,
         platformShareBps: revenue.platformShareBps,
         platformShareCoins,
         qualifiedDays: revenue.qualifiedDays,
