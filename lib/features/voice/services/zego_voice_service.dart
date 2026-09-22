@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:zego_express_engine/zego_express_engine.dart';
 
@@ -29,6 +30,8 @@ class ZegoVoiceService implements VoiceService {
   String? _accessCode;
   int? _seatIndex;
   bool _tokenRenewalInFlight = false;
+  ZegoMediaPlayer? _roomMediaPlayer;
+  bool _publishingForRoomMedia = false;
 
   @override
   Stream<VoiceConnectionState> get connectionStates =>
@@ -238,6 +241,7 @@ class ZegoVoiceService implements VoiceService {
       return;
     }
     try {
+      await stopRoomMedia();
       if (_publishing) {
         await ZegoExpressEngine.instance.stopPublishingStream();
       }
@@ -262,9 +266,7 @@ class ZegoVoiceService implements VoiceService {
   @override
   Future<void> muteMic() async {
     _requireJoined();
-    if (_publishing) {
-      await ZegoExpressEngine.instance.mutePublishStreamAudio(true);
-    }
+    await ZegoExpressEngine.instance.muteMicrophone(true);
     _micController.add(VoiceMicState.muted);
   }
 
@@ -286,8 +288,85 @@ class ZegoVoiceService implements VoiceService {
       await ZegoExpressEngine.instance.startPublishingStream(streamId);
       _publishing = true;
     }
+    _publishingForRoomMedia = false;
     await ZegoExpressEngine.instance.mutePublishStreamAudio(false);
+    await ZegoExpressEngine.instance.muteMicrophone(false);
     _micController.add(VoiceMicState.unmuted);
+  }
+
+  @override
+  Future<void> playRoomMedia(Uint8List mediaData) async {
+    _requireJoined();
+    if (mediaData.isEmpty) {
+      throw const VoiceException(
+        'room_media_empty',
+        'Room media resource is empty.',
+      );
+    }
+    final streamId = _streamId;
+    if (streamId == null) {
+      throw const VoiceException(
+        'stream_not_ready',
+        'Voice stream is not ready.',
+      );
+    }
+
+    if (!_publishing) {
+      await ZegoExpressEngine.instance.enableCamera(false);
+      await ZegoExpressEngine.instance.startPublishingStream(streamId);
+      _publishing = true;
+      _publishingForRoomMedia = true;
+      await ZegoExpressEngine.instance.mutePublishStreamAudio(false);
+      await ZegoExpressEngine.instance.muteMicrophone(true);
+    }
+
+    _roomMediaPlayer ??=
+        await ZegoExpressEngine.instance.createMediaPlayer();
+    final player = _roomMediaPlayer;
+    if (player == null) {
+      throw const VoiceException(
+        'room_media_player_unavailable',
+        'Unable to create room media player.',
+      );
+    }
+
+    try {
+      await player.stop();
+    } catch (_) {}
+    final loaded =
+        await player.loadResourceFromMediaData(mediaData, 0);
+    if (loaded.errorCode != 0) {
+      throw VoiceException(
+        'room_media_load_failed',
+        'ZEGO media load failed with code ' +
+            loaded.errorCode.toString() +
+            '.',
+      );
+    }
+    await player.enableAux(true);
+    await player.muteLocal(false);
+    await player.start();
+  }
+
+  @override
+  Future<void> stopRoomMedia() async {
+    final player = _roomMediaPlayer;
+    if (player != null) {
+      try {
+        await player.stop();
+      } catch (_) {}
+      try {
+        await player.enableAux(false);
+      } catch (_) {}
+    }
+
+    if (_publishingForRoomMedia && _publishing) {
+      try {
+        await ZegoExpressEngine.instance.stopPublishingStream();
+      } catch (_) {}
+      _publishing = false;
+      _publishingForRoomMedia = false;
+    }
   }
 
   @override
@@ -330,6 +409,13 @@ class ZegoVoiceService implements VoiceService {
   @override
   Future<void> dispose() async {
     if (_joined) await leaveRoom();
+    if (_roomMediaPlayer != null) {
+      try {
+        await ZegoExpressEngine.instance
+            .destroyMediaPlayer(_roomMediaPlayer!);
+      } catch (_) {}
+      _roomMediaPlayer = null;
+    }
     if (_engineCreated) {
       ZegoExpressEngine.onRoomStreamUpdate = null;
       ZegoExpressEngine.onRoomStateChanged = null;
