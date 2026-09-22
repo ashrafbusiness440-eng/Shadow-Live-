@@ -684,8 +684,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
 
         final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
         final hasSeat = state.seats.any((seat) => seat.uid == uid);
-        if (!state.isOwner &&
-            !hasSeat &&
+        if (!hasSeat &&
             !_voiceSession.micMuted &&
             _voiceSession.active) {
           unawaited(_voiceSession.setMicMuted(true));
@@ -806,7 +805,11 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             seatIndex: seat.index,
           ),
         );
-      } else if (state.isOwner || state.invited(uid) || !state.micInviteOnly) {
+      } else if (state.isOwner ||
+          state.isHost ||
+          state.canManageMic ||
+          state.invited(uid) ||
+          !state.micInviteOnly) {
         await _runSeatAction(
           () => _roomSeatService.takeSeat(
             roomId: roomId,
