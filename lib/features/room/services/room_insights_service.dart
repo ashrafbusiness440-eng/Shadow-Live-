@@ -68,6 +68,8 @@ class RoomInsights {
     required this.followed,
     required this.favorited,
     required this.dailySupport,
+    required this.weeklySupport,
+    required this.monthlySupport,
     required this.activityScore,
     required this.dailyRank,
     required this.supporters,
@@ -82,6 +84,8 @@ class RoomInsights {
   final bool followed;
   final bool favorited;
   final num dailySupport;
+  final num weeklySupport;
+  final num monthlySupport;
   final int activityScore;
   final int? dailyRank;
   final List<RoomSupporter> supporters;
@@ -104,6 +108,8 @@ class RoomInsights {
       followed: json['followed'] == true,
       favorited: json['favorited'] == true,
       dailySupport: (json['dailySupport'] as num?) ?? 0,
+      weeklySupport: (json['weeklySupport'] as num?) ?? 0,
+      monthlySupport: (json['monthlySupport'] as num?) ?? 0,
       activityScore: (json['activityScore'] as num?)?.toInt() ?? 0,
       dailyRank: (json['dailyRank'] as num?)?.toInt(),
       supporters: rawSupporters is List
