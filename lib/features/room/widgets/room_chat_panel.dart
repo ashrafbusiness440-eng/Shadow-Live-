@@ -151,6 +151,52 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
   }
 
   Widget _bubble(RoomChatMessage message) {
+    if (message.type == 'gift') {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 320),
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  const Color(0xFFFFD54A).withValues(alpha: .20),
+                  const Color(0xFF6D27D9).withValues(alpha: .28),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: const Color(0xFFFFD54A).withValues(alpha: .45),
+              ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.card_giftcard_rounded,
+                  color: Color(0xFFFFD54A),
+                  size: 18,
+                ),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Text(
+                    message.text,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     if (message.type == 'system') {
       final vipEntry = widget.roomEffectsEnabled &&
           message.systemKind == 'room_join' &&
