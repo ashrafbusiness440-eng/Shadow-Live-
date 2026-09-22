@@ -11,6 +11,7 @@ import 'admin/control_asset_manager_page.dart';
 import 'admin/recharge_packages_control_page.dart';
 import 'admin/gift_catalog_control_page.dart';
 import 'admin/gift_economy_control_page.dart';
+import 'admin/economy_control_page.dart';
 
 
 Future<void> main() async {
@@ -973,34 +974,67 @@ class _RoomsPageState extends State<RoomsPage> {
 
 class FinancePage extends StatelessWidget {
   const FinancePage({super.key});
-  @override Widget build(BuildContext context)=>ListView(padding:const EdgeInsets.all(16),children:[
-    const Row(children:[Icon(Icons.account_balance_wallet_outlined,size:28,color:Color(0xFFD7B85A)),SizedBox(width:10),Text('المالية',style:TextStyle(fontSize:25,fontWeight:FontWeight.w900))]),
-    const SizedBox(height:16),
-    Card(child:ListTile(
-      leading:const Icon(Icons.storefront_outlined,color:Color(0xFFD7B85A)),
-      trailing:const Icon(Icons.chevron_left),
-      title:const Text('باقات الشحن والـBonus',style:TextStyle(fontWeight:FontWeight.w800)),
-      subtitle:const Text('إضافة/تعديل/إيقاف وترتيب الباقات بدون تحديث التطبيق'),
-      onTap:()=>Navigator.of(context).push(MaterialPageRoute(builder:(_)=>const RechargePackagesControlPage())),
-    )),
-    Card(child:ListTile(
-      leading:const Icon(Icons.card_giftcard_rounded,color:Color(0xFFD7B85A)),
-      trailing:const Icon(Icons.chevron_left),
-      title:const Text('Gift Catalog',style:TextStyle(fontWeight:FontWeight.w800)),
-      subtitle:const Text('إدارة أسماء وأسعار وفئات وصور وترتيب الهدايا'),
-      onTap:()=>Navigator.of(context).push(MaterialPageRoute(builder:(_)=>const GiftCatalogControlPage())),
-    )),
-    Card(child:ListTile(
-      leading:const Icon(Icons.diamond_rounded,color:Color(0xFFD7B85A)),
-      trailing:const Icon(Icons.chevron_left),
-      title:const Text('نِسَب المضيف والوكالة',style:TextStyle(fontWeight:FontWeight.w800)),
-      subtitle:const Text('تعديل مستويات المضيف والوكالة وحصة Shadow Live بدون إعادة برمجة'),
-      onTap:()=>Navigator.of(context).push(MaterialPageRoute(builder:(_)=>const GiftEconomyControlPage())),
-    )),
-    _AdminCollectionTile(title:'السجل المالي',subtitle:'financial_ledger — قراءة فقط',icon:Icons.receipt_long_outlined,collection:'financial_ledger'),
-    _AdminCollectionTile(title:'تسويات الوكالات',subtitle:'agency_settlements — قراءة فقط',icon:Icons.payments_outlined,collection:'agency_settlements'),
-    const Card(child:ListTile(leading:Icon(Icons.verified_user_outlined,color:Color(0xFFD7B85A)),title:Text('تعديل Coins / Diamonds عبر Backend آمن'),subtitle:Text('Owner يمكنه تعديل الأرصدة من صفحة المستخدم، وكل عملية تُسجّل في Financial Ledger وAudit Log.'))),
-  ]);
+
+  @override
+  Widget build(BuildContext context) => ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const Row(
+            children: [
+              Icon(
+                Icons.account_balance_wallet_outlined,
+                size: 28,
+                color: Color(0xFFD7B85A),
+              ),
+              SizedBox(width: 10),
+              Text(
+                'المالية والاقتصاد',
+                style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Card(
+            child: ListTile(
+              leading: const Icon(
+                Icons.hub_outlined,
+                color: Color(0xFFD7B85A),
+              ),
+              trailing: const Icon(Icons.chevron_left),
+              title: const Text(
+                'Economy Control',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
+              subtitle: const Text(
+                'الشحن + الهدايا + النسب + الأرصدة + السجلات + أقفال الطوارئ من صفحة واحدة',
+              ),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const EconomyControlPage(),
+                ),
+              ),
+            ),
+          ),
+          _AdminCollectionTile(
+            title: 'تسويات الوكالات',
+            subtitle: 'agency_settlements — قراءة فقط',
+            icon: Icons.payments_outlined,
+            collection: 'agency_settlements',
+          ),
+          const Card(
+            child: ListTile(
+              leading: Icon(
+                Icons.verified_user_outlined,
+                color: Color(0xFFD7B85A),
+              ),
+              title: Text('العمليات المالية الحساسة Backend-only'),
+              subtitle: Text(
+                'تعديل الأرصدة، الشحن، الهدايا والتحويلات لا تُنفذ مباشرة من Flutter، وكل تعديل إداري مسجل في Ledger وAudit Log.',
+              ),
+            ),
+          ),
+        ],
+      );
 }
 
 class _AdminCollectionTile extends StatelessWidget {
