@@ -1,6 +1,7 @@
 import {getApps,initializeApp,cert} from "firebase-admin/app";
 import {getAuth} from "firebase-admin/auth";
 import {getFirestore,FieldValue,Timestamp} from "firebase-admin/firestore";
+import {resolveRevenuePolicy} from "./economy-policy.js";
 
 class ApiError extends Error {
   constructor(code,status=400){super(code);this.code=code;this.status=status;}
@@ -56,63 +57,6 @@ const utcPeriodKeys=(date=new Date())=>{
   };
 };
 
-
-function revenueTiers(economy){
-  const fallback=[
-    {id:"starter",nameAr:"Starter",minGiftCoins:0,hostShareBps:5500,agencyShareBps:500},
-    {id:"bronze",nameAr:"Bronze",minGiftCoins:1000000,hostShareBps:5700,agencyShareBps:600},
-    {id:"silver",nameAr:"Silver",minGiftCoins:5000000,hostShareBps:6000,agencyShareBps:800},
-    {id:"gold",nameAr:"Gold",minGiftCoins:20000000,hostShareBps:6200,agencyShareBps:900},
-    {id:"diamond",nameAr:"Diamond",minGiftCoins:50000000,hostShareBps:6300,agencyShareBps:1000},
-  ];
-  const raw=Array.isArray(economy?.tiers)&&economy.tiers.length?economy.tiers:fallback;
-  return raw.map((item,index)=>({
-    id:text(item?.id||("tier_"+String(index+1))),
-    nameAr:text(item?.nameAr||item?.id||("Tier "+String(index+1))),
-    minGiftCoins:Math.max(0,Number(item?.minGiftCoins||0)),
-    hostShareBps:Math.max(0,Math.min(10000,Number(item?.hostShareBps??economy?.recipientShareBps??0))),
-    agencyShareBps:Math.max(0,Math.min(10000,Number(item?.agencyShareBps||0))),
-  })).sort((a,b)=>a.minGiftCoins-b.minGiftCoins);
-}
-
-function resolveRevenuePolicy(economy,receiverData,monthlyGrossCoins,agencyId,monthKey,activeHostCount=0){
-  const tiers=revenueTiers(economy);
-  let tier=tiers[0];
-  for(const item of tiers){
-    if(monthlyGrossCoins>=item.minGiftCoins)tier=item;
-  }
-  const activityMonth=text(receiverData?.giftHostActivityMonth);
-  const qualifiedDays=activityMonth===monthKey
-    ?Math.max(0,Number(receiverData?.giftHostQualifiedDays||0))
-    :0;
-  const requiredDays=Math.max(1,Math.min(31,Number(economy?.hostBonusQualifiedDays||9)));
-  const configuredHostBonus=Math.max(0,Math.min(3000,Number(economy?.hostPerformanceBonusBps||0)));
-  const hostBonusBps=qualifiedDays>=requiredDays?configuredHostBonus:0;
-  const hostShareBps=Math.max(0,Math.min(10000,tier.hostShareBps+hostBonusBps));
-  const requiredActiveHosts=Math.max(1,Math.min(100000,Number(economy?.agencyBonusActiveHosts||10)));
-  const configuredAgencyBonus=Math.max(0,Math.min(3000,Number(economy?.agencyPerformanceBonusBps||0)));
-  const agencyBonusBps=agencyId&&activeHostCount>=requiredActiveHosts?configuredAgencyBonus:0;
-  const agencyShareBps=agencyId
-    ?Math.max(0,Math.min(10000,tier.agencyShareBps+agencyBonusBps))
-    :0;
-  const platformShareBps=Math.max(0,10000-hostShareBps-agencyShareBps);
-  return {
-    tierId:tier.id,
-    tierName:tier.nameAr,
-    tierMinGiftCoins:tier.minGiftCoins,
-    hostBaseShareBps:tier.hostShareBps,
-    hostBonusBps,
-    hostShareBps,
-    agencyBaseShareBps:tier.agencyShareBps,
-    agencyBonusBps,
-    agencyShareBps,
-    platformShareBps,
-    qualifiedDays,
-    requiredDays,
-    activeHostCount,
-    requiredActiveHosts,
-  };
-}
 
 async function sendMessage(db,uid,body){
   const receiverId=text(body.receiverId);
