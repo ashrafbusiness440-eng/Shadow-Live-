@@ -71,6 +71,7 @@ class RoomModeratorService {
     'manageMusic',
     'manageMusicPolicy',
     'managePk',
+    'manageIds',
   };
 
   final FirebaseFirestore _firestore;

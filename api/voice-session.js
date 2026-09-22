@@ -127,6 +127,7 @@ const ROOM_MODERATOR_CAPABILITIES=[
   "manageMusic",
   "manageMusicPolicy",
   "managePk",
+  "manageIds",
 ];
 
 function roomModeratorLimit(room){
@@ -450,7 +451,8 @@ async function changeRoomPublicId(db,uid,body){
     const user=userSnap.data()||{};
     const ownerUid=clean(room.ownerUid||room.ownerId||room.hostId);
     const permissions=roomPermissions(user);
-    if(ownerUid!==uid&&!permissions.manageIds)throw new ApiError("forbidden",403);
+    const canManageId=canManageRoomAction(room,user,uid,"manageIds")||permissions.manageIds;
+    if(!canManageId)throw new ApiError("forbidden",403);
 
     const oldPublicId=clean(room.publicId);
     if(oldPublicId===newPublicId){
@@ -526,6 +528,7 @@ async function updateRoomSettings(db,uid,body){
 
   const roomRef=db.collection("rooms").doc(roomId);
   const userRef=db.collection("users").doc(uid);
+  const auditRef=db.collection("room_audit_logs").doc(roomId).collection("items").doc();
 
   return db.runTransaction(async tx=>{
     const [roomSnap,userSnap]=await Promise.all([tx.get(roomRef),tx.get(userRef)]);
@@ -535,7 +538,7 @@ async function updateRoomSettings(db,uid,body){
     const permissions=roomPermissions(user);
     const ownerUid=clean(room.ownerUid||room.ownerId||room.hostId);
     if(ownerUid!==uid&&!permissions.manageRooms)throw new ApiError("forbidden",403);
-    if(visibility==="hidden"&&!permissions.hidden)throw new ApiError("hidden_room_forbidden",403);
+    if(visibility==="hidden"&&ownerUid!==uid&&!permissions.hidden)throw new ApiError("hidden_room_forbidden",403);
 
     const update={
       name,
@@ -567,6 +570,29 @@ async function updateRoomSettings(db,uid,body){
     }
 
     tx.update(roomRef,update);
+    tx.create(auditRef,{
+      action:"updateRoomSettings",
+      actorUid:uid,
+      before:{
+        name:clean(room.name||room.title),
+        description:clean(room.description),
+        category:clean(room.category),
+        tags:Array.isArray(room.tags)?room.tags.map(clean):[],
+        visibility:clean(room.visibility||"public"),
+        chatEnabled:room.chatEnabled!==false,
+        passwordProtected:Boolean(room.passwordSalt&&room.passwordHash),
+      },
+      after:{
+        name,
+        description,
+        category,
+        tags,
+        visibility,
+        chatEnabled,
+        passwordProtected:visibility==="password",
+      },
+      createdAt:FieldValue.serverTimestamp(),
+    });
     return {
       ok:true,
       room:roomResponse(roomId,{...room,...update}),
@@ -864,6 +890,7 @@ async function kickRoomUser(db,uid,body){
   const roomRef=db.collection("rooms").doc(roomId);
   const actorRef=db.collection("users").doc(uid);
   const banRef=db.collection("room_bans").doc(roomId).collection("users").doc(targetUid);
+  const auditRef=db.collection("room_audit_logs").doc(roomId).collection("items").doc();
 
   return db.runTransaction(async tx=>{
     const [roomSnap,actorSnap]=await Promise.all([tx.get(roomRef),tx.get(actorRef)]);
@@ -900,6 +927,16 @@ async function kickRoomUser(db,uid,body){
       micInvites,
       updatedAt:FieldValue.serverTimestamp(),
     });
+    tx.create(auditRef,{
+      action:"kickRoomUser",
+      actorUid:uid,
+      targetUid,
+      after:{
+        permanent,
+        durationMinutes:permanent?null:minutes,
+      },
+      createdAt:FieldValue.serverTimestamp(),
+    });
 
     return {
       ok:true,
@@ -917,13 +954,23 @@ async function unbanRoomUser(db,uid,body){
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId)||!targetUid)throw new ApiError("invalid_request",400);
   const roomRef=db.collection("rooms").doc(roomId);
   const actorRef=db.collection("users").doc(uid);
-  const [roomSnap,actorSnap]=await Promise.all([roomRef.get(),actorRef.get()]);
+  const banRef=db.collection("room_bans").doc(roomId).collection("users").doc(targetUid);
+  const auditRef=db.collection("room_audit_logs").doc(roomId).collection("items").doc();
+  const [roomSnap,actorSnap,banSnap]=await Promise.all([roomRef.get(),actorRef.get(),banRef.get()]);
   if(!roomSnap.exists)throw new ApiError("room_not_found",404);
   const room=roomSnap.data()||{};
-  const permissions=roomPermissions(actorSnap.data()||{});
-  const ownerUid=clean(room.ownerUid||room.ownerId||room.hostId);
   if(!canManageRoomAction(room,actorSnap.data()||{},uid,"moderateUsers"))throw new ApiError("forbidden",403);
-  await db.collection("room_bans").doc(roomId).collection("users").doc(targetUid).delete();
+  const batch=db.batch();
+  batch.delete(banRef);
+  batch.create(auditRef,{
+    action:"unbanRoomUser",
+    actorUid:uid,
+    targetUid,
+    before:banSnap.exists?(banSnap.data()||{}):null,
+    after:null,
+    createdAt:FieldValue.serverTimestamp(),
+  });
+  await batch.commit();
   return {ok:true,roomId,targetUid};
 }
 
@@ -945,8 +992,15 @@ async function roomBanList(db,uid,roomId){
     const expiresMs=ban.expiresAt?.toMillis?.()||0;
     const active=ban.permanent===true||expiresMs>Date.now();
     if(!active)continue;
-    const profile=await db.collection("public_profiles").doc(doc.id).get();
+    const blockedByUid=clean(ban.blockedBy);
+    const [profile,blockerProfile]=await Promise.all([
+      db.collection("public_profiles").doc(doc.id).get(),
+      blockedByUid
+        ? db.collection("public_profiles").doc(blockedByUid).get()
+        : Promise.resolve(null),
+    ]);
     const pdata=profile.data()||{};
+    const blockerData=blockerProfile?.data?.()||{};
     result.push({
       uid:doc.id,
       displayName:clean(pdata.displayName||pdata.username||"مستخدم Shadow Live"),
@@ -954,6 +1008,10 @@ async function roomBanList(db,uid,roomId){
       permanent:ban.permanent===true,
       durationMinutes:Number(ban.durationMinutes||0),
       expiresAt:expiresMs||null,
+      blockedByUid,
+      blockedByName:blockedByUid
+        ? clean(blockerData.displayName||blockerData.username||"مشرف الغرفة")
+        : "",
     });
   }
   return {ok:true,roomId,bans:result};

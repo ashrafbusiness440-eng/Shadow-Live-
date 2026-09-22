@@ -31,6 +31,7 @@ class _RoomModeratorManagerSheetState
     'manageMusic': 'الموسيقى',
     'manageMusicPolicy': 'سياسة الموسيقى',
     'managePk': 'PK',
+    'manageIds': 'تغيير ID الغرفة',
   };
 
   @override

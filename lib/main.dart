@@ -928,9 +928,12 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                 ),
                               ),
                               subtitle: Text(
-                                ban.permanent
-                                    ? 'حظر نهائي'
-                                    : 'حظر مؤقت',
+                                (ban.permanent
+                                        ? 'حظر نهائي'
+                                        : 'حظر مؤقت') +
+                                    (ban.blockedByName.isNotEmpty
+                                        ? ' — بواسطة ' + ban.blockedByName
+                                        : ''),
                                 style: const TextStyle(
                                   color: Colors.white54,
                                   fontSize: 10,

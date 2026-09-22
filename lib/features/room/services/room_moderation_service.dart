@@ -11,6 +11,8 @@ class RoomBanEntry {
     required this.permanent,
     required this.durationMinutes,
     required this.expiresAt,
+    required this.blockedByUid,
+    required this.blockedByName,
   });
 
   final String uid;
@@ -19,6 +21,8 @@ class RoomBanEntry {
   final bool permanent;
   final int durationMinutes;
   final DateTime? expiresAt;
+  final String blockedByUid;
+  final String blockedByName;
 
   factory RoomBanEntry.fromJson(Map<String, dynamic> json) {
     final expiresMs = (json['expiresAt'] as num?)?.toInt();
@@ -32,6 +36,8 @@ class RoomBanEntry {
       expiresAt: expiresMs == null
           ? null
           : DateTime.fromMillisecondsSinceEpoch(expiresMs),
+      blockedByUid: (json['blockedByUid'] ?? '').toString(),
+      blockedByName: (json['blockedByName'] ?? '').toString(),
     );
   }
 }
