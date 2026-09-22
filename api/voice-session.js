@@ -1080,7 +1080,13 @@ async function controlRoomPolicy(db,uid,body){
       throw new ApiError("invalid_control_room_action",400);
     }
 
-    const after=roomControlPolicySnapshot({...room,...patch});
+    // Persist the seat array at the effective capacity whenever room
+    // policy changes. This prevents an older Firestore seats array (often 8
+    // seats from LV.1) from racing the normalized API state and shrinking the
+    // room back down in realtime clients.
+    const projectedRoom={...room,...patch};
+    patch={...patch,seats:normalizeSeats(projectedRoom)};
+    const after=roomControlPolicySnapshot(projectedRoom);
     tx.update(roomRef,patch);
     const auditRef=db.collection("admin_audit_logs").doc();
     tx.create(auditRef,{
