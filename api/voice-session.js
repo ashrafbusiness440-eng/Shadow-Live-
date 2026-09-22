@@ -38,6 +38,52 @@ function cors(req,res){
 const out=(res,status,body)=>res.status(status).json(body);
 const clean=(v)=>String(v??"").trim();
 
+function utcActivityKeys(ms=Date.now()){
+  const day=new Date(ms).toISOString().slice(0,10);
+  return {day,month:day.slice(0,7)};
+}
+
+async function recordMicActivity(tx,db,userId,seat,endedAtMs=Date.now()){
+  const startedAtMs=Number(seat?.micStartedAtMs||0);
+  if(!userId||!Number.isFinite(startedAtMs)||startedAtMs<=0||endedAtMs<=startedAtMs)return;
+  const seconds=Math.max(0,Math.floor((endedAtMs-startedAtMs)/1000));
+  if(seconds<=0)return;
+
+  const {day,month}=utcActivityKeys(endedAtMs);
+  const activityRef=db.collection("host_mic_activity").doc(userId).collection("days").doc(day);
+  const userRef=db.collection("users").doc(userId);
+  const economyRef=db.collection("system_config").doc("gift_economy");
+  const [activitySnap,userSnap,economySnap]=await Promise.all([
+    tx.get(activityRef),tx.get(userRef),tx.get(economyRef),
+  ]);
+  const activity=activitySnap.data()||{};
+  const user=userSnap.data()||{};
+  const economy=economySnap.data()||{};
+  const requiredMinutes=Math.max(1,Math.min(1440,Number(economy.hostBonusMinutesPerQualifiedDay||120)));
+  const thresholdSeconds=requiredMinutes*60;
+  const previousSeconds=Math.max(0,Number(activity.micSeconds||0));
+  const nextSeconds=previousSeconds+seconds;
+  const wasQualified=activity.qualified===true||previousSeconds>=thresholdSeconds;
+  const qualified=nextSeconds>=thresholdSeconds;
+  const sameMonth=String(user.giftHostActivityMonth||"")===month;
+  const previousMonthSeconds=sameMonth?Math.max(0,Number(user.giftHostMicSecondsMonth||0)):0;
+  const previousQualifiedDays=sameMonth?Math.max(0,Number(user.giftHostQualifiedDays||0)):0;
+
+  tx.set(activityRef,{
+    day,
+    micSeconds:nextSeconds,
+    qualified,
+    requiredMinutes,
+    updatedAt:FieldValue.serverTimestamp(),
+  },{merge:true});
+  tx.set(userRef,{
+    giftHostActivityMonth:month,
+    giftHostMicSecondsMonth:previousMonthSeconds+seconds,
+    giftHostQualifiedDays:previousQualifiedDays+(!wasQualified&&qualified?1:0),
+    giftHostActivityUpdatedAt:FieldValue.serverTimestamp(),
+  },{merge:true});
+}
+
 function zegoUserId(firebaseUid){
   const digest=createHash("sha256").update(firebaseUid).digest("hex");
   return "u_"+digest.slice(0,40);
@@ -1080,7 +1126,13 @@ async function controlRoomPolicy(db,uid,body){
       throw new ApiError("invalid_control_room_action",400);
     }
 
-    const after=roomControlPolicySnapshot({...room,...patch});
+    // Persist the seat array at the effective capacity whenever room
+    // policy changes. This prevents an older Firestore seats array (often 8
+    // seats from LV.1) from racing the normalized API state and shrinking the
+    // room back down in realtime clients.
+    const projectedRoom={...room,...patch};
+    patch={...patch,seats:normalizeSeats(projectedRoom)};
+    const after=roomControlPolicySnapshot(projectedRoom);
     tx.update(roomRef,patch);
     const auditRef=db.collection("admin_audit_logs").doc();
     tx.create(auditRef,{
@@ -1215,6 +1267,10 @@ async function roomSeatAction(db,uid,body){
 
       const profileSnap=await tx.get(myProfileRef);
       const profile=profileSnap.data()||{};
+      const existingSeat=currentSeatIndex>=0?seats[currentSeatIndex]:null;
+      const micStartedAtMs=Number(existingSeat?.micStartedAtMs||0)>0
+        ? Number(existingSeat.micStartedAtMs)
+        : Date.now();
       clearUserSeat(uid);
       seats[seatIndex]={
         index:seatIndex,
@@ -1222,6 +1278,7 @@ async function roomSeatAction(db,uid,body){
         displayName:String(profile.displayName||profile.username||"مستخدم Shadow Live"),
         profileImageUrl:String(profile.profileImageUrl||""),
         muted:true,
+        micStartedAtMs,
       };
       invites=invites.filter(id=>id!==uid);
       requests=requests.filter(id=>id!==uid);
@@ -1239,10 +1296,14 @@ async function roomSeatAction(db,uid,body){
         muted:action==="muteTargetSeat",
       };
     }else if(action==="leaveSeat"){
+      const mySeat=seats.find(seat=>seat.uid===uid);
+      if(mySeat)await recordMicActivity(tx,db,uid,mySeat);
       clearUserSeat(uid);
     }else if(action==="removeFromMic"){
       if(!canManageMic)throw new ApiError("forbidden",403);
       if(!targetUid)throw new ApiError("invalid_target",400);
+      const targetSeat=seats.find(seat=>seat.uid===targetUid);
+      if(targetSeat)await recordMicActivity(tx,db,targetUid,targetSeat);
       clearUserSeat(targetUid);
       invites=invites.filter(id=>id!==targetUid);
       requests=requests.filter(id=>id!==targetUid);
@@ -2010,6 +2071,21 @@ async function roomPresenceHeartbeat(db,uid,roomId){
 
 async function roomPresenceLeave(db,uid,roomId){
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+  const roomRef=db.collection("rooms").doc(roomId);
+  await db.runTransaction(async tx=>{
+    const roomSnap=await tx.get(roomRef);
+    if(!roomSnap.exists)return;
+    const room=roomSnap.data()||{};
+    let seats=normalizeSeats(room);
+    const seat=seats.find(item=>item.uid===uid);
+    if(seat){
+      await recordMicActivity(tx,db,uid,seat);
+      seats=seats.map(item=>item.uid===uid
+        ? {...item,uid:"",displayName:"",profileImageUrl:"",muted:true,micStartedAtMs:0}
+        : item);
+      tx.update(roomRef,{seats,updatedAt:FieldValue.serverTimestamp()});
+    }
+  });
   await db.collection("room_presence").doc(roomId).collection("users").doc(uid).delete();
   const participants=await refreshRoomPresenceSummary(db,roomId);
   return {ok:true,roomId,onlineCount:participants.length};
@@ -2396,18 +2472,36 @@ function roomActivityScore(room){
   );
 }
 
+function utcSupportPeriods(date=new Date()){
+  const day=date.toISOString().slice(0,10);
+  const month=day.slice(0,7);
+  const d=new Date(Date.UTC(date.getUTCFullYear(),date.getUTCMonth(),date.getUTCDate()));
+  const weekday=d.getUTCDay()||7;
+  d.setUTCDate(d.getUTCDate()+4-weekday);
+  const yearStart=new Date(Date.UTC(d.getUTCFullYear(),0,1));
+  const week=Math.ceil((((d-yearStart)/86400000)+1)/7);
+  return {
+    day,
+    week:d.getUTCFullYear().toString()+"-W"+week.toString().padStart(2,"0"),
+    month,
+  };
+}
+
 async function roomInsights(db,uid,roomId){
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
   const roomRef=db.collection("rooms").doc(roomId);
   const followRef=db.collection("room_follows").doc(roomId).collection("users").doc(uid);
 
   const favoriteRef=db.collection("room_favorites").doc(uid).collection("items").doc(roomId);
-  const [roomSnap,followSnap,favoriteSnap,activeRooms,supportersSnap]=await Promise.all([
+  const periods=utcSupportPeriods();
+  const dailySupportRef=roomRef.collection("support_daily").doc(periods.day);
+  const [roomSnap,followSnap,favoriteSnap,activeRooms,dailySupportSnap,supportersSnap]=await Promise.all([
     roomRef.get(),
     followRef.get(),
     favoriteRef.get(),
     db.collection("rooms").where("isActive","==",true).limit(200).get(),
-    roomRef.collection("supporters").orderBy("totalSupport","desc").limit(50).get(),
+    dailySupportRef.get(),
+    dailySupportRef.collection("users").limit(200).get(),
   ]);
   if(!roomSnap.exists)throw new ApiError("room_not_found",404);
 
@@ -2423,17 +2517,30 @@ async function roomInsights(db,uid,roomId){
     });
   const rankIndex=ranked.findIndex(item=>item.id===roomId);
 
-  const supporters=supportersSnap.docs.map((doc,index)=>{
-    const data=doc.data()||{};
-    return {
-      uid:doc.id,
-      rank:index+1,
-      displayName:String(data.displayName||data.username||"مستخدم Shadow Live"),
-      profileImageUrl:String(data.profileImageUrl||""),
-      totalSupport:Number(data.totalSupport||0),
-      dailySupport:Number(data.dailySupport||0),
-    };
-  });
+  const supporters=supportersSnap.docs
+    .map(doc=>{
+      const data=doc.data()||{};
+      return {
+        uid:doc.id,
+        displayName:String(data.displayName||data.username||"مستخدم Shadow Live"),
+        profileImageUrl:String(data.profileImageUrl||""),
+        dailySupport:Math.max(0,Number(data.supportCoins||0)),
+        giftCount:Math.max(0,Number(data.giftCount||0)),
+      };
+    })
+    .sort((a,b)=>b.dailySupport-a.dailySupport)
+    .slice(0,50)
+    .map((item,index)=>({...item,rank:index+1,totalSupport:item.dailySupport}));
+
+  const dailySupport=room.dailySupportDate===periods.day
+    ?Math.max(0,Number(room.dailySupport||0))
+    :Math.max(0,Number(dailySupportSnap.data()?.supportCoins||0));
+  const weeklySupport=room.weeklySupportKey===periods.week
+    ?Math.max(0,Number(room.weeklySupport||0))
+    :0;
+  const monthlySupport=room.monthlySupportKey===periods.month
+    ?Math.max(0,Number(room.monthlySupport||0))
+    :0;
 
   return {
     ok:true,
@@ -2444,7 +2551,10 @@ async function roomInsights(db,uid,roomId){
     followerCount:Math.max(0,Number(room.followerCount||0)),
     followed:followSnap.exists,
     favorited:favoriteSnap.exists,
-    dailySupport:Math.max(0,Number(room.dailySupport||0)),
+    dailySupport,
+    weeklySupport,
+    monthlySupport,
+    supportPeriods:periods,
     activityScore:roomActivityScore(room),
     dailyRank:rankIndex>=0?rankIndex+1:null,
     supporters,
@@ -2454,7 +2564,9 @@ async function roomInsights(db,uid,roomId){
       name:String(item.name||item.title||"غرفة صوتية"),
       publicId:String(item.publicId||""),
       activityScore:Number(item.activityScore||0),
-      dailySupport:Number(item.dailySupport||0),
+      dailySupport:item.dailySupportDate===periods.day?Number(item.dailySupport||0):0,
+      weeklySupport:item.weeklySupportKey===periods.week?Number(item.weeklySupport||0):0,
+      monthlySupport:item.monthlySupportKey===periods.month?Number(item.monthlySupport||0):0,
     })),
   };
 }
