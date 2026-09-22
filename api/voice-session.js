@@ -2407,7 +2407,7 @@ async function roomInsights(db,uid,roomId){
     followRef.get(),
     favoriteRef.get(),
     db.collection("rooms").where("isActive","==",true).limit(200).get(),
-    roomRef.collection("supporters").orderBy("totalSupport","desc").limit(50).get(),
+    roomRef.collection("supporters").orderBy("dailySupport","desc").limit(50).get(),
   ]);
   if(!roomSnap.exists)throw new ApiError("room_not_found",404);
 
