@@ -228,7 +228,7 @@ try {
   console.log('PHASE3_LINKING_TO_READY_OK');
 
   await page.getByRole('button', { name: 'ابدأ الاستكشاف' }).click();
-  await page.getByText('الملف الشخصي', { exact: true }).last().waitFor({ timeout: 15000 });
+  await page.getByRole('button', { name: 'الملف' }).waitFor({ timeout: 15000 });
   await enableAccessibility();
   await dump('main');
   await screenshot('main');
@@ -245,7 +245,7 @@ try {
   if (stringField(publicProfile, 'uid') !== uid) throw new Error('public_profiles did not sync the user UID');
   console.log('PHASE3_FIRESTORE_SETUP_COMPLETE_OK', uid);
 
-  await page.getByRole('button', { name: 'الملف الشخصي' }).dispatchEvent('click');
+  await page.getByRole('button', { name: 'الملف' }).dispatchEvent('click');
   await page.waitForTimeout(900);
   await enableAccessibility();
   await dump('profile');
@@ -276,7 +276,7 @@ try {
   console.log('OTP_EMULATOR_CODE_RETRIEVED_SECOND');
   await enterOtp(secondSmsCode);
 
-  await page.getByText('الملف الشخصي', { exact: true }).last().waitFor({ timeout: 15000 });
+  await page.getByRole('button', { name: 'الملف' }).waitFor({ timeout: 15000 });
   if (await page.getByText('إنشاء الملف الشخصي', { exact: true }).count()) {
     throw new Error('Completed account was incorrectly routed back to Profile Setup');
   }
@@ -290,7 +290,7 @@ try {
   console.log('PHASE3_CORE_E2E_OK');
 
   // Edit profile validation + public_profiles sync.
-  await page.getByRole('button', { name: 'الملف الشخصي' }).dispatchEvent('click');
+  await page.getByRole('button', { name: 'الملف' }).dispatchEvent('click');
   await page.waitForTimeout(700);
   await enableAccessibility();
   const editButton = page.getByRole('button', { name: 'تعديل الملف الشخصي' });
@@ -384,13 +384,13 @@ try {
   await page.getByText('تسجيل الدخول / إنشاء حساب', { exact: true }).waitFor({ timeout: 12000 });
 
   await page.getByRole('button', { name: 'متابعة كضيف' }).click();
-  await page.getByRole('button', { name: 'الملف الشخصي' }).waitFor({ timeout: 12000 });
+  await page.getByRole('button', { name: 'الملف' }).waitFor({ timeout: 12000 });
   await page.getByRole('button', { name: 'الرسائل' }).dispatchEvent('click');
   await page.getByText('هذه الميزة تحتاج حساباً', { exact: true }).waitFor({ timeout: 5000 });
   await page.getByRole('button', { name: 'إلغاء' }).click();
   console.log('PHASE3_GUEST_RESTRICTED_FEATURE_GUARD_OK');
 
-  await page.getByRole('button', { name: 'الملف الشخصي' }).dispatchEvent('click');
+  await page.getByRole('button', { name: 'الملف' }).dispatchEvent('click');
   await page.getByText('أنت داخل كضيف', { exact: true }).waitFor({ timeout: 8000 });
   await page.getByRole('button', { name: 'العودة لتسجيل الدخول' }).click();
   await page.getByText('تسجيل الدخول / إنشاء حساب', { exact: true }).waitFor({ timeout: 12000 });
