@@ -87,3 +87,30 @@ jobs:
           path: e2e-screenshots
           if-no-files-found: warn
           retention-days: 3
+
+      - name: Build voice-room E2E web
+        run: flutter build web --dart-define=E2E_ROOM_TEST=true
+
+      - name: Start voice-room E2E server
+        run: |
+          python3 -m http.server 8089 --directory build/web > /tmp/shadow-room-e2e-server.log 2>&1 &
+          for i in {1..20}; do
+            if curl -fsS http://127.0.0.1:8089 >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/shadow-room-e2e-server.log
+          exit 1
+
+      - name: Run voice-room browser E2E
+        run: node .github/scripts/e2e_voice_room.mjs
+
+      - name: Upload voice-room E2E screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shadow-live-room-e2e
+          path: room-e2e-screenshots
+          if-no-files-found: warn
+          retention-days: 3
