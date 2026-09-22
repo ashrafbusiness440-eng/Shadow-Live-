@@ -40,6 +40,20 @@ const bounded=(value,fallback,min,max)=>{
   const n=Number(value);
   return Number.isFinite(n)?Math.max(min,Math.min(max,Math.floor(n))):fallback;
 };
+const utcPeriodKeys=(date=new Date())=>{
+  const day=date.toISOString().slice(0,10);
+  const month=day.slice(0,7);
+  const d=new Date(Date.UTC(date.getUTCFullYear(),date.getUTCMonth(),date.getUTCDate()));
+  const weekday=d.getUTCDay()||7;
+  d.setUTCDate(d.getUTCDate()+4-weekday);
+  const yearStart=new Date(Date.UTC(d.getUTCFullYear(),0,1));
+  const week=Math.ceil((((d-yearStart)/86400000)+1)/7);
+  return {
+    day,
+    week:d.getUTCFullYear().toString()+"-W"+week.toString().padStart(2,"0"),
+    month,
+  };
+};
 
 async function sendMessage(db,uid,body){
   const receiverId=text(body.receiverId);
@@ -169,11 +183,13 @@ async function sendGift(db,uid,body){
     const senderRef=db.collection("users").doc(uid);
     const receiverRef=db.collection("users").doc(receiverId);
     const catalogRef=db.collection("system_config").doc("gift_catalog");
+    const economyRef=db.collection("system_config").doc("gift_economy");
     const conversationRef=db.collection("conversations").doc(conversationId);
+    const periods=utcPeriodKeys();
     const outgoingBlockRef=db.collection("user_blocks").doc(uid).collection("items").doc(receiverId);
     const incomingBlockRef=db.collection("user_blocks").doc(receiverId).collection("items").doc(uid);
-    const [op,sender,receiver,catalog,conversation,outgoingBlock,incomingBlock]=await Promise.all([
-      tx.get(opRef),tx.get(senderRef),tx.get(receiverRef),tx.get(catalogRef),
+    const [op,sender,receiver,catalog,economy,conversation,outgoingBlock,incomingBlock]=await Promise.all([
+      tx.get(opRef),tx.get(senderRef),tx.get(receiverRef),tx.get(catalogRef),tx.get(economyRef),
       tx.get(conversationRef),tx.get(outgoingBlockRef),tx.get(incomingBlockRef),
     ]);
 
@@ -209,8 +225,29 @@ async function sendGift(db,uid,body){
 
     const totalCost=unitCoins*quantity;
     if(!Number.isSafeInteger(totalCost)||totalCost<=0)throw new ApiError("invalid_gift_price",409);
-    const before=Number(sender.data()?.coins||0);
+    const senderData=sender.data()||{};
+    const receiverData=receiver.data()||{};
+    const before=Number(senderData.coins||0);
     if(before<totalCost)throw new ApiError("insufficient_balance",409);
+
+    const economyData=economy.exists?(economy.data()||{}):{};
+    const shareBpsRaw=Number(economyData.recipientShareBps||0);
+    const earningsEnabled=
+      economyData.enabled===true&&
+      Number.isSafeInteger(shareBpsRaw)&&
+      shareBpsRaw>0;
+    const recipientShareBps=earningsEnabled
+      ?Math.max(0,Math.min(10000,shareBpsRaw))
+      :0;
+    const recipientShareCoins=earningsEnabled
+      ?Math.floor((totalCost*recipientShareBps)/10000)
+      :0;
+    const previousPending=Math.max(0,Number(receiverData.pendingGiftEarningCoins||0));
+    const accumulated=previousPending+recipientShareCoins;
+    const diamondsEarned=earningsEnabled?Math.floor(accumulated/10000):0;
+    const pendingGiftEarningCoins=earningsEnabled?accumulated%10000:previousPending;
+    const openingDiamonds=Math.max(0,Number(receiverData.diamonds||0));
+    const closingDiamonds=openingDiamonds+diamondsEarned;
 
     const after=before-totalCost;
     const now=FieldValue.serverTimestamp();
@@ -220,23 +257,59 @@ async function sendGift(db,uid,body){
     const messageRef=conversationRef.collection("messages").doc();
     const transactionRef=db.collection("gift_transactions").doc(key);
     const ledgerRef=db.collection("financial_ledger").doc("gift_"+key);
+    const earningsLedgerRef=db.collection("financial_ledger").doc("gift_earnings_"+key);
+    const userDailyRef=db.collection("gift_user_stats").doc(receiverId).collection("daily").doc(periods.day);
+    const userWeeklyRef=db.collection("gift_user_stats").doc(receiverId).collection("weekly").doc(periods.week);
+    const userMonthlyRef=db.collection("gift_user_stats").doc(receiverId).collection("monthly").doc(periods.month);
     const showcaseRef=db.collection("public_gift_showcases").doc(receiverId).collection("items").doc(giftId);
     const counts={...(conversationData.unreadCounts||{})};
     counts[uid]=0;
     counts[receiverId]=Number(counts[receiverId]||0)+1;
 
     tx.update(senderRef,{coins:after,totalGiftsSent:FieldValue.increment(quantity)});
-    tx.update(receiverRef,{totalGiftsReceived:FieldValue.increment(quantity),totalValueReceived:FieldValue.increment(totalCost)});
+    tx.update(receiverRef,{
+      totalGiftsReceived:FieldValue.increment(quantity),
+      totalValueReceived:FieldValue.increment(totalCost),
+      giftSupportReceivedCoins:FieldValue.increment(totalCost),
+      ...(earningsEnabled?{
+        diamonds:closingDiamonds,
+        pendingGiftEarningCoins,
+        giftEarningCoinsLifetime:FieldValue.increment(recipientShareCoins),
+        giftDiamondsLifetime:FieldValue.increment(diamondsEarned),
+      }:{})
+    });
+    const receiverStats={
+      receivedCoins:FieldValue.increment(totalCost),
+      giftCount:FieldValue.increment(quantity),
+      earningCoins:FieldValue.increment(recipientShareCoins),
+      diamondsEarned:FieldValue.increment(diamondsEarned),
+      updatedAt:now,
+    };
+    tx.set(userDailyRef,receiverStats,{merge:true});
+    tx.set(userWeeklyRef,receiverStats,{merge:true});
+    tx.set(userMonthlyRef,receiverStats,{merge:true});
+    if(earningsEnabled&&diamondsEarned>0){
+      tx.create(earningsLedgerRef,{
+        userId:receiverId,asset:"diamonds",delta:diamondsEarned,
+        openingBalance:openingDiamonds,closingBalance:closingDiamonds,
+        reason:"gift_earnings",sourceType:"gift",sourceId:key,
+        actorUid:uid,counterpartyUid:uid,idempotencyKey:key+"_earnings",createdAt:now
+      });
+    }
     tx.update(conversationRef,{lastMessage:"🎁 "+giftName+" ×"+quantity,lastSenderId:uid,updatedAt:now,unreadCounts:counts});
     tx.create(messageRef,{senderId:uid,receiverId,type:"gift",giftId,giftName,quantity,unitCoins,totalCost,imageUrl,assetKey,createdAt:now});
     tx.create(transactionRef,{
       senderId:uid,receiverId,contextType:"chat",conversationId,giftId,giftName,quantity,unitCoins,totalCost,
-      assetKey,earningsStatus:"pending_policy",createdAt:now
+      assetKey,recipientShareBps,recipientShareCoins,diamondsEarned,pendingGiftEarningCoins,
+      earningsStatus:earningsEnabled?"applied":"pending_policy",periods,createdAt:now
     });
     tx.create(ledgerRef,{userId:uid,asset:"coins",delta:-totalCost,openingBalance:before,closingBalance:after,reason:"gift_send",sourceType:"gift",sourceId:key,actorUid:uid,idempotencyKey:key,createdAt:now});
     tx.set(showcaseRef,{giftId,name:giftName,imageUrl,assetKey,count:FieldValue.increment(quantity),updatedAt:now},{merge:true});
 
-    const resultData={giftId,giftName,quantity,totalCost,messageId:messageRef.id,balance:after};
+    const resultData={
+      giftId,giftName,quantity,totalCost,messageId:messageRef.id,balance:after,
+      recipientShareCoins,diamondsEarned,earningsApplied:earningsEnabled
+    };
     tx.create(opRef,{senderId:uid,receiverId,action:"sendGift",status:"completed",result:resultData,createdAt:now});
     return {ok:true,code:"ok",...resultData};
   });
