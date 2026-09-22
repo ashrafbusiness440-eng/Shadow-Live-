@@ -644,7 +644,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       return;
     }
 
-    if (state.isOwner) {
+    if (_canManageMic || _canModerateUsers) {
       await showModalBottomSheet<void>(
         context: context,
         backgroundColor: const Color(0xFF111522),
@@ -657,6 +657,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (_canManageMic)
                 ListTile(
                   leading: const Icon(
                     Icons.person_remove_rounded,
@@ -682,6 +683,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                     );
                   },
                 ),
+                if (_canModerateUsers)
                 ListTile(
                   leading: const Icon(
                     Icons.block_rounded,
@@ -806,7 +808,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
 
   Future<void> _showRoomBansSheet() async {
     final roomId = (_roomArguments['roomId'] ?? '').toString();
-    if (roomId.isEmpty || !_voiceSession.isOwner) return;
+    if (roomId.isEmpty || !_canModerateUsers) return;
 
     await showModalBottomSheet<void>(
       context: context,
@@ -964,7 +966,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
 
   Future<void> _showMicRequestsSheet() async {
     final state = _roomSeatState;
-    if (state == null || !state.isOwner) return;
+    if (state == null || !_canManageMic) return;
     final roomId = (_roomArguments['roomId'] ?? '').toString();
     await showModalBottomSheet<void>(
       context: context,
@@ -2536,7 +2538,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                   ),
                 ),
                 const SizedBox(height: 14),
-                if (owner)
+                if (_canModerateUsers)
                   ListTile(
                     leading: const Icon(
                       Icons.block_rounded,
@@ -2549,6 +2551,21 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                     onTap: () {
                       Navigator.pop(sheetContext);
                       _showRoomBansSheet();
+                    },
+                  ),
+                if (owner)
+                  ListTile(
+                    leading: const Icon(
+                      Icons.admin_panel_settings_rounded,
+                      color: Color(0xFFFFD54A),
+                    ),
+                    title: const Text(
+                      'مشرفو الغرفة',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      _showRoomModeratorsSheet();
                     },
                   ),
                 if (owner)
@@ -2622,10 +2639,13 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
 
   @override
   void dispose() {
+    unawaited(_roomModeratorSubscription?.cancel());
     _voiceSession.removeListener(_syncVoiceSession);
     _roomActions.close();
     _roomInvites.close();
     _roomInsightsService.close();
+    _roomModeration.close();
+    _roomModeratorService.close();
     _roomSeatService.close();
     super.dispose();
   }
@@ -2924,7 +2944,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       const SizedBox(height: 18),
                       _buildMicStatusBanner(),
                       _buildVoiceSeats(),
-                      if (_roomSeatState?.isOwner == true) ...[
+                      if (_canManageMic) ...[
                         const SizedBox(height: 8),
                         Align(
                           alignment: AlignmentDirectional.centerStart,
@@ -2948,7 +2968,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                             (_roomArguments['roomId'] ?? '').toString(),
                         chatEnabled:
                             _roomArguments['chatEnabled'] != false,
-                        isOwner: _voiceSession.isOwner,
+                        isOwner: _canModerateChat,
                       ),
                       const SizedBox(height: 190),
                     ],
