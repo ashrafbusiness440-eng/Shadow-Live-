@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../../../utils/compact_number.dart';
 import '../services/diamond_wallet_service.dart';
+import '../services/recharge_config_service.dart';
 import 'recharge_checkout_screen.dart';
 
 class RechargeScreen extends StatefulWidget {
@@ -20,43 +23,26 @@ class _RechargeScreenState extends State<RechargeScreen> {
   bool _checkedPassword = false;
   final TextEditingController _diamondAmount = TextEditingController();
 
-  static const packages = [
-    (
-      amount: 500,
-      price: 4.99,
-      image: 'assets/images/coins/coins_500.png',
-    ),
-    (
-      amount: 1200,
-      price: 9.99,
-      image: 'assets/images/coins/coins_1200.png',
-    ),
-    (
-      amount: 2500,
-      price: 19.99,
-      image: 'assets/images/coins/coins_2500.png',
-    ),
-    (
-      amount: 5000,
-      price: 34.99,
-      image: 'assets/images/coins/coins_5000.png',
-    ),
-    (
-      amount: 12000,
-      price: 66.99,
-      image: 'assets/images/coins/coins_12000.png',
-    ),
-    (
-      amount: 25000,
-      price: 99.99,
-      image: 'assets/images/coins/coins_25000.png',
-    ),
-  ];
+  StreamSubscription<List<RechargePackageConfig>>? _packageSubscription;
+  List<RechargePackageConfig> _packages =
+      List<RechargePackageConfig>.from(RechargeConfigService.fallbackPackages);
 
   @override
   void initState() {
     super.initState();
     tab = widget.initialTab == 1 ? 1 : 0;
+    _packageSubscription = RechargeConfigService.watchPackages().listen(
+      (items) {
+        if (!mounted) return;
+        setState(() {
+          _packages = List<RechargePackageConfig>.from(items);
+          if (selected >= _packages.length) {
+            selected = _packages.isEmpty ? 0 : _packages.length - 1;
+          }
+        });
+      },
+      onError: (_) {},
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (tab == 1) _ensurePassword();
     });
@@ -64,6 +50,7 @@ class _RechargeScreenState extends State<RechargeScreen> {
 
   @override
   void dispose() {
+    _packageSubscription?.cancel();
     _diamondAmount.dispose();
     super.dispose();
   }
@@ -316,15 +303,20 @@ class _RechargeScreenState extends State<RechargeScreen> {
                   height: 54,
                   child: FilledButton(
                     onPressed: () {
-                      final package = packages[selected];
+                      if (_packages.isEmpty) return;
+                      final package = _packages[selected.clamp(0, _packages.length - 1)];
                       Navigator.push(
                         context,
                         MaterialPageRoute(
                           builder: (_) => const RechargeCheckoutScreen(),
                           settings: RouteSettings(
                             arguments: {
-                              'coins': package.amount,
-                              'price': package.price,
+                              'coins': package.totalCoins,
+                              'baseCoins': package.baseCoins,
+                              'bonusCoins': package.bonusCoins,
+                              'price': package.priceUsd,
+                              'productId': package.productId,
+                              'packageId': package.id,
                               'currencyType': 'coins',
                             },
                           ),
@@ -499,7 +491,7 @@ class _RechargeScreenState extends State<RechargeScreen> {
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      itemCount: packages.length,
+      itemCount: _packages.length,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 3,
         crossAxisSpacing: 10,
@@ -507,7 +499,7 @@ class _RechargeScreenState extends State<RechargeScreen> {
         childAspectRatio: .68,
       ),
       itemBuilder: (_, index) {
-        final package = packages[index];
+        final package = _packages[index];
         final active = selected == index;
         return InkWell(
           onTap: () => setState(() => selected = index),
@@ -525,14 +517,21 @@ class _RechargeScreenState extends State<RechargeScreen> {
             ),
             child: Column(
               children: [
-                if (index == 1) _tag('🔥 الأكثر شعبية', const Color(0xFFFF3B72)),
-                if (index == 5) _tag('👑 أفضل قيمة', const Color(0xFF8A2CFF)),
+                if (package.badge.isNotEmpty)
+                  _tag(
+                    package.badge == 'أفضل قيمة'
+                        ? '👑 ' + package.badge
+                        : '🔥 ' + package.badge,
+                    package.badge == 'أفضل قيمة'
+                        ? const Color(0xFF8A2CFF)
+                        : const Color(0xFFFF3B72),
+                  ),
                 Expanded(
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
                       Image.asset(
-                        package.image,
+                        package.imageAsset,
                         fit: BoxFit.cover,
                         alignment: Alignment.center,
                         errorBuilder: (_, __, ___) => const Center(
@@ -557,7 +556,7 @@ class _RechargeScreenState extends State<RechargeScreen> {
                             ),
                           ),
                           child: Text(
-                            '🪙 ' + formatCompactAmount(package.amount),
+                            '🪙 ' + formatCompactAmount(package.totalCoins),
                             textAlign: TextAlign.center,
                             style: const TextStyle(
                               color: Colors.white,
@@ -575,7 +574,7 @@ class _RechargeScreenState extends State<RechargeScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   decoration: const BoxDecoration(color: Color(0xFF201071)),
                   child: Text(
-                    r'$ ' + package.price.toStringAsFixed(2),
+                    r'$ ' + package.priceUsd.toStringAsFixed(2),
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: Colors.white,
