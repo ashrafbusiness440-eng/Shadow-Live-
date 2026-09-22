@@ -606,8 +606,13 @@ async function roomSeatAction(db,uid,body){
     }else if(action==="takeSeat"||action==="switchSeat"){
       if(!Number.isInteger(seatIndex)||seatIndex<0||seatIndex>=seats.length)throw new ApiError("invalid_seat",400);
       const seat=seats[seatIndex];
+      const pk=activePk(room);
+      const reserved=pk?.participants.find(item=>item.seatIndex===seatIndex);
+      const mine=pk?.participants.find(item=>item.uid===uid);
+      if(reserved&&reserved.uid!==uid)throw new ApiError("pk_seat_reserved",409);
+      if(mine&&mine.seatIndex!==seatIndex)throw new ApiError("pk_original_seat_required",409);
       if(seat.uid&&seat.uid!==uid)throw new ApiError("seat_occupied",409);
-      if(!isOwner&&!invites.includes(uid))throw new ApiError("mic_invite_required",403);
+      if(!isOwner&&!invites.includes(uid)&&!mine)throw new ApiError("mic_invite_required",403);
 
       const profileSnap=await tx.get(myProfileRef);
       const profile=profileSnap.data()||{};
@@ -921,6 +926,228 @@ async function roomLibrary(db,uid){
   return {ok:true,favorites,history};
 }
 
+function normalizePkState(room){
+  const raw=room.pkState;
+  if(!raw||typeof raw!=="object")return null;
+  const participants=Array.isArray(raw.participants)
+    ? raw.participants.map(item=>({
+        uid:clean(item?.uid),
+        displayName:clean(item?.displayName||"مستخدم Shadow Live"),
+        profileImageUrl:clean(item?.profileImageUrl),
+        seatIndex:Number.isInteger(Number(item?.seatIndex))?Number(item.seatIndex):-1,
+        team:clean(item?.team)==="b"?"b":"a",
+        accepted:item?.accepted===true,
+        score:Math.max(0,Number(item?.score||0)),
+      })).filter(item=>item.uid)
+    : [];
+  const teamA=participants.filter(item=>item.team==="a")
+    .reduce((sum,item)=>sum+Number(item.score||0),0);
+  const teamB=participants.filter(item=>item.team==="b")
+    .reduce((sum,item)=>sum+Number(item.score||0),0);
+  return {
+    id:clean(raw.id),
+    status:clean(raw.status||"idle"),
+    mode:clean(raw.mode),
+    durationMinutes:Number(raw.durationMinutes||0),
+    participants,
+    teamScores:{a:teamA,b:teamB},
+    createdBy:clean(raw.createdBy),
+    createdAtMs:Number(raw.createdAtMs||0),
+    countdownEndsAtMs:Number(raw.countdownEndsAtMs||0),
+    endsAtMs:Number(raw.endsAtMs||0),
+    overtimeUsed:raw.overtimeUsed===true,
+    winner:clean(raw.winner),
+    cancelledBy:clean(raw.cancelledBy),
+    finishedAtMs:Number(raw.finishedAtMs||0),
+  };
+}
+
+function activePk(room){
+  const pk=normalizePkState(room);
+  if(!pk)return null;
+  return ["awaiting_acceptance","countdown","active"].includes(pk.status)?pk:null;
+}
+
+async function pkState(db,roomId){
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+  const snap=await db.collection("rooms").doc(roomId).get();
+  if(!snap.exists)throw new ApiError("room_not_found",404);
+  return {ok:true,roomId,pk:normalizePkState(snap.data()||{})};
+}
+
+async function createPk(db,uid,body){
+  const roomId=clean(body.roomId);
+  const durationMinutes=Number(body.durationMinutes);
+  const requested=Array.isArray(body.participantUids)
+    ? [...new Set(body.participantUids.map(clean).filter(Boolean))]
+    : [];
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+  if(![5,10,15,30].includes(durationMinutes))throw new ApiError("invalid_pk_duration",400);
+  if(![2,4,6,8].includes(requested.length))throw new ApiError("invalid_pk_participants",400);
+
+  const roomRef=db.collection("rooms").doc(roomId);
+  const actorRef=db.collection("users").doc(uid);
+  return db.runTransaction(async tx=>{
+    const [roomSnap,actorSnap]=await Promise.all([tx.get(roomRef),tx.get(actorRef)]);
+    if(!roomSnap.exists)throw new ApiError("room_not_found",404);
+    const room=roomSnap.data()||{};
+    if(room.isActive===false)throw new ApiError("room_unavailable",409);
+    if(!canManageRoomAction(room,actorSnap.data()||{},uid,"managePk")){
+      throw new ApiError("forbidden",403);
+    }
+    if(activePk(room))throw new ApiError("pk_already_active",409);
+
+    const seats=normalizeSeats(room);
+    const participantSeats=requested.map(targetUid=>{
+      const seat=seats.find(item=>item.uid===targetUid);
+      if(!seat)throw new ApiError("pk_participant_not_on_mic",409);
+      return seat;
+    });
+
+    const half=requested.length/2;
+    const participants=[];
+    for(let index=0;index<requested.length;index++){
+      const targetUid=requested[index];
+      const seat=participantSeats[index];
+      participants.push({
+        uid:targetUid,
+        displayName:clean(seat.displayName||"مستخدم Shadow Live"),
+        profileImageUrl:clean(seat.profileImageUrl),
+        seatIndex:Number(seat.index),
+        team:index<half?"a":"b",
+        accepted:targetUid===uid,
+        score:0,
+      });
+    }
+
+    const now=Date.now();
+    const pk={
+      id:"pk_"+now+"_"+randomInt(100000,999999),
+      status:participants.every(item=>item.accepted)?"countdown":"awaiting_acceptance",
+      mode:String(half)+"v"+String(half),
+      durationMinutes,
+      participants,
+      createdBy:uid,
+      createdAtMs:now,
+      countdownEndsAtMs:participants.every(item=>item.accepted)?now+3000:0,
+      endsAtMs:participants.every(item=>item.accepted)?now+3000+durationMinutes*60*1000:0,
+      overtimeUsed:false,
+      winner:"",
+      cancelledBy:"",
+      finishedAtMs:0,
+    };
+    tx.update(roomRef,{pkState:pk,updatedAt:FieldValue.serverTimestamp()});
+    return {ok:true,roomId,pk:normalizePkState({pkState:pk})};
+  });
+}
+
+async function respondPk(db,uid,body,accepted){
+  const roomId=clean(body.roomId);
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+  const roomRef=db.collection("rooms").doc(roomId);
+  return db.runTransaction(async tx=>{
+    const snap=await tx.get(roomRef);
+    if(!snap.exists)throw new ApiError("room_not_found",404);
+    const room=snap.data()||{};
+    const pk=activePk(room);
+    if(!pk||pk.status!=="awaiting_acceptance")throw new ApiError("pk_not_waiting",409);
+    const index=pk.participants.findIndex(item=>item.uid===uid);
+    if(index<0)throw new ApiError("not_pk_participant",403);
+
+    if(!accepted){
+      const cancelled={
+        ...pk,
+        status:"cancelled",
+        cancelledBy:uid,
+        finishedAtMs:Date.now(),
+      };
+      tx.update(roomRef,{pkState:cancelled,updatedAt:FieldValue.serverTimestamp()});
+      return {ok:true,roomId,pk:cancelled};
+    }
+
+    pk.participants[index]={...pk.participants[index],accepted:true};
+    const allAccepted=pk.participants.every(item=>item.accepted);
+    const now=Date.now();
+    const next={
+      ...pk,
+      status:allAccepted?"countdown":"awaiting_acceptance",
+      countdownEndsAtMs:allAccepted?now+3000:0,
+      endsAtMs:allAccepted?now+3000+pk.durationMinutes*60*1000:0,
+    };
+    tx.update(roomRef,{pkState:next,updatedAt:FieldValue.serverTimestamp()});
+    return {ok:true,roomId,pk:next};
+  });
+}
+
+async function cancelPk(db,uid,body){
+  const roomId=clean(body.roomId);
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+  const roomRef=db.collection("rooms").doc(roomId);
+  const actorRef=db.collection("users").doc(uid);
+  return db.runTransaction(async tx=>{
+    const [roomSnap,actorSnap]=await Promise.all([tx.get(roomRef),tx.get(actorRef)]);
+    if(!roomSnap.exists)throw new ApiError("room_not_found",404);
+    const room=roomSnap.data()||{};
+    const pk=activePk(room);
+    if(!pk)throw new ApiError("pk_not_active",409);
+    if(!canManageRoomAction(room,actorSnap.data()||{},uid,"managePk")){
+      throw new ApiError("forbidden",403);
+    }
+    const next={
+      ...pk,
+      status:"cancelled",
+      cancelledBy:uid,
+      winner:"",
+      finishedAtMs:Date.now(),
+    };
+    tx.update(roomRef,{pkState:next,updatedAt:FieldValue.serverTimestamp()});
+    return {ok:true,roomId,pk:next};
+  });
+}
+
+async function syncPk(db,uid,body){
+  const roomId=clean(body.roomId);
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+  const roomRef=db.collection("rooms").doc(roomId);
+  return db.runTransaction(async tx=>{
+    const snap=await tx.get(roomRef);
+    if(!snap.exists)throw new ApiError("room_not_found",404);
+    const room=snap.data()||{};
+    const pk=activePk(room);
+    if(!pk)return {ok:true,roomId,pk:normalizePkState(room)};
+
+    const now=Date.now();
+    let next=pk;
+    if(pk.status==="countdown"&&pk.countdownEndsAtMs>0&&now>=pk.countdownEndsAtMs){
+      next={...pk,status:"active"};
+    }
+    if((next.status==="active"||next.status==="countdown")&&
+        next.endsAtMs>0&&now>=next.endsAtMs){
+      const scoreA=Number(next.teamScores?.a||0);
+      const scoreB=Number(next.teamScores?.b||0);
+      if(scoreA===scoreB&&!next.overtimeUsed){
+        next={
+          ...next,
+          status:"active",
+          overtimeUsed:true,
+          endsAtMs:now+60000,
+        };
+      }else{
+        next={
+          ...next,
+          status:"finished",
+          winner:scoreA===scoreB?"draw":(scoreA>scoreB?"a":"b"),
+          finishedAtMs:now,
+        };
+      }
+    }
+    if(JSON.stringify(next)!==JSON.stringify(pk)){
+      tx.update(roomRef,{pkState:next,updatedAt:FieldValue.serverTimestamp()});
+    }
+    return {ok:true,roomId,pk:next};
+  });
+}
+
 async function roomInsights(db,uid,roomId){
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
   const roomRef=db.collection("rooms").doc(roomId);
@@ -1082,6 +1309,25 @@ export default async function handler(req,res){
     if(action==="roomBanList"){
       const roomId=clean(req.body?.roomId);
       return out(res,200,await roomBanList(getFirestore(),decoded.uid,roomId));
+    }
+    if(action==="pkState"){
+      const roomId=clean(req.body?.roomId);
+      return out(res,200,await pkState(getFirestore(),roomId));
+    }
+    if(action==="createPk"){
+      return out(res,200,await createPk(getFirestore(),decoded.uid,req.body||{}));
+    }
+    if(action==="acceptPk"){
+      return out(res,200,await respondPk(getFirestore(),decoded.uid,req.body||{},true));
+    }
+    if(action==="declinePk"){
+      return out(res,200,await respondPk(getFirestore(),decoded.uid,req.body||{},false));
+    }
+    if(action==="cancelPk"){
+      return out(res,200,await cancelPk(getFirestore(),decoded.uid,req.body||{}));
+    }
+    if(action==="syncPk"){
+      return out(res,200,await syncPk(getFirestore(),decoded.uid,req.body||{}));
     }
     if(action==="roomModeratorState"){
       const roomId=clean(req.body?.roomId);
