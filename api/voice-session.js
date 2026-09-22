@@ -39,7 +39,7 @@ function cors(req,res){
 const out=(res,status,body)=>res.status(status).json(body);
 const clean=(v)=>String(v??"").trim();
 
-async function recordMicActivity(tx,db,userId,seat,endedAtMs=Date.now()){
+export async function recordMicActivity(tx,db,userId,seat,endedAtMs=Date.now()){
   const segments=activeMicSegments(seat,endedAtMs);
   if(!userId||segments.length===0)return;
 
