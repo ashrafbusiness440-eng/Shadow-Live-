@@ -224,7 +224,7 @@ const result = await db.runTransaction(async (tx) => {
   const receiver = receiverSnap.data() || {};
   const room = roomSnap.data() || {};
   const economy = economySnap.exists ? (economySnap.data() || {}) : {};
-  const agencyId = clean(room.agencyId || receiver.agencyId || "");
+  const agencyId = clean(receiver.agencyId || "");
   const agencyMonthRef = agencyId
     ? db.collection("agency_support_stats").doc(agencyId).collection("monthly").doc(periods.month)
     : null;
