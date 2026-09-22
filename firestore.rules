@@ -156,6 +156,10 @@ service cloud.firestore {
       allow read, create, update, delete: if false;
     }
 
+    match /google_play_purchases/{purchaseId} {
+      allow read, create, update, delete: if false;
+    }
+
     match /system_config/{configId} {
       allow read: if signedIn();
       allow create, update, delete: if false;
