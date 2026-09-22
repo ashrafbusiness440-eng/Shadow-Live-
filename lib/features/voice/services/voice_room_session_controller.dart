@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -23,7 +24,12 @@ class VoiceRoomSessionController extends ChangeNotifier {
       _roomLifecycleSubscription;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
       _roomBanSubscription;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+      _roomMusicSubscription;
   Timer? _presenceTimer;
+  final Map<String, Uint8List> _localRoomMusic = <String, Uint8List>{};
+  Map<String, dynamic>? _lastRoomMusicState;
+  String _activeRoomMediaKey = '';
 
   bool _serviceInitialized = false;
   bool _joining = false;
@@ -87,6 +93,98 @@ class VoiceRoomSessionController extends ChangeNotifier {
     _serviceInitialized = true;
   }
 
+  void registerRoomMusicTrack(
+    String trackId,
+    Uint8List mediaData,
+  ) {
+    if (trackId.trim().isEmpty || mediaData.isEmpty) return;
+    _localRoomMusic[trackId] = mediaData;
+    final state = _lastRoomMusicState;
+    if (state != null) unawaited(_applyRoomMusicState(state));
+  }
+
+  void unregisterRoomMusicTrack(String trackId) {
+    _localRoomMusic.remove(trackId);
+  }
+
+  bool hasLocalRoomMusicTrack(String trackId) =>
+      _localRoomMusic.containsKey(trackId);
+
+  Future<void> _applyRoomMusicState(
+    Map<String, dynamic> state,
+  ) async {
+    if (!_active) return;
+    final status = (state['status'] ?? 'stopped').toString();
+    final trackId = (state['currentTrackId'] ?? '').toString();
+    final sourceOwnerUid =
+        (state['sourceOwnerUid'] ?? '').toString();
+    final revision = (state['commandRevision'] as num?)?.toInt() ?? 0;
+    final me = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final shouldPlay =
+        status == 'playing' && sourceOwnerUid == me && trackId.isNotEmpty;
+    final key = trackId + ':' + revision.toString();
+
+    if (shouldPlay) {
+      final bytes = _localRoomMusic[trackId];
+      if (bytes == null) {
+        if (_activeRoomMediaKey.isNotEmpty) {
+          _activeRoomMediaKey = '';
+          await _voiceService.stopRoomMedia();
+        }
+        return;
+      }
+      if (_activeRoomMediaKey == key) return;
+      _activeRoomMediaKey = key;
+      try {
+        await _voiceService.playRoomMedia(bytes);
+      } catch (_) {
+        _activeRoomMediaKey = '';
+      }
+      return;
+    }
+
+    if (_activeRoomMediaKey.isNotEmpty) {
+      _activeRoomMediaKey = '';
+      try {
+        await _voiceService.stopRoomMedia();
+      } catch (_) {}
+    }
+  }
+
+  void _watchRoomMusic(String targetRoomId) {
+    unawaited(_roomMusicSubscription?.cancel());
+    _roomMusicSubscription = FirebaseFirestore.instance
+        .collection('rooms')
+        .doc(targetRoomId)
+        .snapshots()
+        .listen((snapshot) {
+      if (!_active || roomId != targetRoomId) return;
+      final data = snapshot.data();
+      final raw = data?['musicState'];
+      final state = raw is Map
+          ? Map<String, dynamic>.from(raw)
+          : <String, dynamic>{
+              'status': 'stopped',
+              'currentTrackId': '',
+              'sourceOwnerUid': '',
+              'commandRevision': 0,
+            };
+      _lastRoomMusicState = state;
+      unawaited(_applyRoomMusicState(state));
+    });
+  }
+
+  Future<void> _stopRoomMusicWatch() async {
+    await _roomMusicSubscription?.cancel();
+    _roomMusicSubscription = null;
+    _lastRoomMusicState = null;
+    _activeRoomMediaKey = '';
+    try {
+      await _voiceService.stopRoomMedia();
+    } catch (_) {}
+    _localRoomMusic.clear();
+  }
+
   Future<void> _startPresence(String targetRoomId) async {
     _presenceTimer?.cancel();
     try {
@@ -138,6 +236,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
   Future<void> _leaveBannedRoom() async {
     final activeRoomId = roomId;
     await _stopPresence(activeRoomId);
+    await _stopRoomMusicWatch();
     if (_serviceInitialized) {
       try {
         await _voiceService.leaveRoom();
@@ -187,6 +286,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
   Future<void> _leaveClosedRoom() async {
     final activeRoomId = roomId;
     await _stopPresence(activeRoomId);
+    await _stopRoomMusicWatch();
     if (_serviceInitialized) {
       try {
         await _voiceService.leaveRoom();
@@ -246,6 +346,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
       _connectionState = VoiceConnectionState.connected;
       _watchRoomLifecycle(targetRoomId);
       _watchRoomBan(targetRoomId);
+      _watchRoomMusic(targetRoomId);
       unawaited(_startPresence(targetRoomId));
     } catch (error) {
       _active = false;
@@ -302,6 +403,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
   Future<void> leave() async {
     final activeRoomId = roomId;
     await _stopPresence(activeRoomId);
+    await _stopRoomMusicWatch();
     await _roomLifecycleSubscription?.cancel();
     _roomLifecycleSubscription = null;
     await _roomBanSubscription?.cancel();
@@ -327,6 +429,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
     await _micSubscription?.cancel();
     await _roomLifecycleSubscription?.cancel();
     await _roomBanSubscription?.cancel();
+    await _roomMusicSubscription?.cancel();
     if (_serviceInitialized) {
       await _voiceService.dispose();
     }
