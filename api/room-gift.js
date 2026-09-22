@@ -113,6 +113,16 @@ export default async function handler(req, res) {
       .doc(roomId)
       .collection("users")
       .doc(receiverId);
+    const senderBlockRef = db
+      .collection("user_blocks")
+      .doc(decoded.uid)
+      .collection("items")
+      .doc(receiverId);
+    const receiverBlockRef = db
+      .collection("user_blocks")
+      .doc(receiverId)
+      .collection("items")
+      .doc(decoded.uid);
     const catalogRef = db.collection("system_config").doc("gift_catalog");
     const opRef = db.collection("gift_operations").doc(key);
     const lockRef = db.collection("system_config").doc("emergency_lock");
@@ -124,6 +134,8 @@ export default async function handler(req, res) {
         receiverSnap,
         senderPresence,
         receiverPresence,
+        senderBlock,
+        receiverBlock,
         catalogSnap,
         opSnap,
         lockSnap,
@@ -133,6 +145,8 @@ export default async function handler(req, res) {
         tx.get(receiverRef),
         tx.get(senderPresenceRef),
         tx.get(receiverPresenceRef),
+        tx.get(senderBlockRef),
+        tx.get(receiverBlockRef),
         tx.get(catalogRef),
         tx.get(opRef),
         tx.get(lockRef),
@@ -150,6 +164,9 @@ export default async function handler(req, res) {
       }
       if (!senderSnap.exists || !receiverSnap.exists) {
         throw Error("user_not_found");
+      }
+      if (senderBlock.exists || receiverBlock.exists) {
+        throw Error("blocked");
       }
       if (lockSnap.exists && lockSnap.data()?.enabled === true) {
         throw Error("emergency_locked");
@@ -345,6 +362,7 @@ export default async function handler(req, res) {
                 "receiver_not_in_room",
                 "gift_inactive",
                 "insufficient_balance",
+                "blocked",
                 "emergency_locked",
               ].includes(code)
               ? 409
