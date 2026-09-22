@@ -1,6 +1,6 @@
 import {getApps,initializeApp,cert} from "firebase-admin/app";
 import {getAuth} from "firebase-admin/auth";
-import {getFirestore} from "firebase-admin/firestore";
+import {getFirestore,FieldValue} from "firebase-admin/firestore";
 
 function parseServiceAccount(raw){
   const text=String(raw||"").trim();
@@ -135,31 +135,148 @@ export default async function handler(req,res){
     if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId)){
       return out(res,400,{ok:false,code:"invalid_room_id"});
     }
-    if(action!=="state")return out(res,400,{ok:false,code:"unsupported_action"});
 
-    const roomSnap=await db.collection("rooms").doc(roomId).get();
-    if(!roomSnap.exists)return out(res,404,{ok:false,code:"room_not_found"});
-    const room=roomSnap.data()||{};
-    const policy=effectivePolicy(room);
+    if(action==="state"){
+      const roomSnap=await db.collection("rooms").doc(roomId).get();
+      if(!roomSnap.exists)return out(res,404,{ok:false,code:"room_not_found"});
+      const room=roomSnap.data()||{};
+      const policy=effectivePolicy(room);
+      return out(res,200,{
+        ok:true,
+        code:"ok",
+        roomId,
+        publicId:clean(room.publicId),
+        name:clean(room.name||room.title||"غرفة صوتية"),
+        ownerUid:clean(room.ownerUid||room.ownerId||room.hostId),
+        policy,
+      });
+    }
 
-    return out(res,200,{
-      ok:true,
-      code:"ok",
-      roomId,
-      publicId:clean(room.publicId),
-      name:clean(room.name||room.title||"غرفة صوتية"),
-      ownerUid:clean(room.ownerUid||room.ownerId||room.hostId),
-      policy,
+    const reason=clean(body.reason);
+    const operationId=clean(body.idempotencyKey);
+    if(reason.length<3||reason.length>160||!/^[A-Za-z0-9_-]{12,160}$/.test(operationId)){
+      return out(res,400,{ok:false,code:"invalid_request"});
+    }
+
+    const roomRef=db.collection("rooms").doc(roomId);
+    const opRef=db.collection("control_operations").doc(operationId);
+
+    const result=await db.runTransaction(async tx=>{
+      const [opSnap,roomSnap]=await Promise.all([tx.get(opRef),tx.get(roomRef)]);
+      if(opSnap.exists){
+        return {ok:true,code:"duplicate",operationId,...(opSnap.data()?.result||{})};
+      }
+      if(!roomSnap.exists)throw Error("room_not_found");
+
+      const room=roomSnap.data()||{};
+      const beforePolicy=effectivePolicy(room);
+      const now=FieldValue.serverTimestamp();
+      let patch={};
+      let auditAction=action;
+
+      if(action==="setLevel"||action==="raiseLevel"||action==="lowerLevel"){
+        let nextLevel=beforePolicy.level;
+        if(action==="setLevel"){
+          nextLevel=level(body.level);
+        }else if(action==="raiseLevel"){
+          nextLevel=Math.min(6,beforePolicy.level+1);
+        }else{
+          nextLevel=Math.max(1,beforePolicy.level-1);
+        }
+        if(nextLevel===beforePolicy.level)throw Error("level_unchanged");
+        patch={
+          level:nextLevel,
+          levelUpdatedAt:now,
+          levelUpdatedBy:decoded.uid,
+          updatedAt:now,
+        };
+      }else if(action==="setOverrides"){
+        const current=normalizeOverrides(room);
+        const nextSeats=Object.prototype.hasOwnProperty.call(body,"seats")
+          ? boundedInt(body.seats,{min:1,max:50,code:"invalid_seat_override"})
+          : current.seats;
+        const nextModerators=Object.prototype.hasOwnProperty.call(body,"moderators")
+          ? boundedInt(body.moderators,{min:0,max:30,code:"invalid_moderator_override"})
+          : current.moderators;
+        const nextBypass=Object.prototype.hasOwnProperty.call(body,"bypassLevelCapacity")
+          ? body.bypassLevelCapacity===true
+          : current.bypassLevelCapacity;
+
+        patch={
+          controlOverrides:{
+            seats:nextSeats,
+            moderators:nextModerators,
+            bypassLevelCapacity:nextBypass,
+            updatedBy:decoded.uid,
+          },
+          overrideUpdatedAt:now,
+          updatedAt:now,
+        };
+      }else if(action==="resetOverrides"){
+        patch={
+          controlOverrides:{
+            seats:null,
+            moderators:null,
+            bypassLevelCapacity:false,
+            updatedBy:decoded.uid,
+          },
+          overrideUpdatedAt:now,
+          updatedAt:now,
+        };
+      }else{
+        throw Error("unsupported_action");
+      }
+
+      const simulated={...room,...patch};
+      const afterPolicy=effectivePolicy(simulated);
+
+      tx.update(roomRef,patch);
+
+      const auditRef=db.collection("admin_audit_logs").doc();
+      tx.create(auditRef,{
+        ...auditShape({
+          actorUid:decoded.uid,
+          action:auditAction,
+          roomId,
+          reason,
+          before:beforePolicy,
+          after:afterPolicy,
+          operationId,
+        }),
+        createdAt:now,
+      });
+
+      const resultData={
+        roomId,
+        before:beforePolicy,
+        after:afterPolicy,
+      };
+      tx.create(opRef,{
+        action,
+        actorUid:decoded.uid,
+        targetId:roomId,
+        targetType:"room",
+        status:"completed",
+        result:resultData,
+        createdAt:now,
+      });
+
+      return {ok:true,code:"ok",operationId,...resultData};
     });
+
+    return out(res,200,result);
   }catch(error){
     const code=clean(error?.message||"server_failed");
-    const known=[
+    const badRequest=[
       "invalid_room_level",
       "invalid_seat_override",
       "invalid_moderator_override",
+      "unsupported_action",
+      "level_unchanged",
       "server_not_configured",
       "invalid_service_account_json",
     ];
-    return out(res,known.includes(code)?400:500,{ok:false,code:known.includes(code)?code:"server_failed"});
+    const status=code==="room_not_found"?404:badRequest.includes(code)?400:500;
+    return out(res,status,{ok:false,code:code==="room_not_found"||badRequest.includes(code)?code:"server_failed"});
   }
 }
