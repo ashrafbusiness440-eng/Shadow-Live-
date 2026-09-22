@@ -1959,10 +1959,22 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                               }
                                             } on StateError catch (error) {
                                               if (sheetContext.mounted) {
-                                                final text =
-                                                    error.message == 'blocked'
-                                                        ? 'لا يمكن إرسال الدعوة بسبب الحظر.'
-                                                        : 'تعذر إرسال الدعوة حالياً.';
+                                                final code =
+                                                    error.message.toString();
+                                                final text = switch (code) {
+                                                  'blocked' =>
+                                                    'لا يمكن إرسال الدعوة بسبب الحظر.',
+                                                  'mutual_follow_required' =>
+                                                    'دعوات الغرف متاحة للأصدقاء بمتابعة متبادلة فقط.',
+                                                  'not_in_room' =>
+                                                    'يجب أن تكون داخل الغرفة لإرسال دعوتها.',
+                                                  'rate_limited' =>
+                                                    'تم إرسال دعوة لهذا المستخدم قبل قليل. حاول بعد لحظات.',
+                                                  'room_unavailable' =>
+                                                    'الغرفة لم تعد متاحة حالياً.',
+                                                  _ =>
+                                                    'تعذر إرسال الدعوة حالياً.',
+                                                };
                                                 ScaffoldMessenger.of(
                                                   sheetContext,
                                                 ).showSnackBar(
