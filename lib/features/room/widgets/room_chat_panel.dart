@@ -9,9 +9,13 @@ class RoomChatPanel extends StatefulWidget {
   const RoomChatPanel({
     super.key,
     required this.roomId,
+    required this.chatEnabled,
+    required this.isOwner,
   });
 
   final String roomId;
+  final bool chatEnabled;
+  final bool isOwner;
 
   @override
   State<RoomChatPanel> createState() => _RoomChatPanelState();
@@ -27,6 +31,7 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
   bool _sending = false;
 
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
+  bool get _canSend => widget.chatEnabled || widget.isOwner;
 
   @override
   void dispose() {
@@ -59,7 +64,7 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
 
   Future<void> _send() async {
     final text = _controller.text.trim();
-    if (text.isEmpty || _sending) return;
+    if (text.isEmpty || _sending || !_canSend) return;
     setState(() => _sending = true);
     final reply = _replyingTo;
     final mention = _mentionUid;
@@ -83,7 +88,9 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
           ? 'أرسلت رسائل بسرعة كبيرة. حاول بعد قليل.'
           : code == 'room_banned'
               ? 'لا يمكنك الكتابة في هذه الغرفة حالياً.'
-              : 'تعذر إرسال الرسالة حالياً.';
+              : code == 'room_chat_disabled'
+                  ? 'دردشة الغرفة متوقفة حالياً.'
+                  : 'تعذر إرسال الرسالة حالياً.';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message)),
       );
@@ -368,12 +375,38 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
                 ],
               ),
             ),
+          if (!_canSend)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              color: const Color(0xFF6D27D9).withValues(alpha: .10),
+              child: const Row(
+                children: [
+                  Icon(
+                    Icons.lock_rounded,
+                    size: 15,
+                    color: Color(0xFFFFD54A),
+                  ),
+                  SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'دردشة الغرفة متوقفة من صاحب الغرفة.',
+                      style: TextStyle(
+                        color: Colors.white60,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
             child: Row(
               children: [
                 Expanded(
                   child: TextField(
+                    enabled: _canSend,
                     controller: _controller,
                     focusNode: _focusNode,
                     minLines: 1,
@@ -391,7 +424,9 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
                       fontSize: 12,
                     ),
                     decoration: InputDecoration(
-                      hintText: 'اكتب رسالة أو إيموجي…',
+                      hintText: _canSend
+                          ? 'اكتب رسالة أو إيموجي…'
+                          : 'الدردشة متوقفة',
                       hintStyle: const TextStyle(
                         color: Colors.white30,
                         fontSize: 11,
@@ -413,7 +448,7 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
                 ),
                 const SizedBox(width: 7),
                 IconButton.filled(
-                  onPressed: _sending ? null : _send,
+                  onPressed: _sending || !_canSend ? null : _send,
                   style: IconButton.styleFrom(
                     backgroundColor: const Color(0xFF6D27D9),
                   ),
