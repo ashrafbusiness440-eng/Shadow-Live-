@@ -57,10 +57,7 @@ function defaultPolicy(){
     hostBonusQualifiedDays:9,
     hostBonusMinutesPerQualifiedDay:120,
     agencyBonusActiveHosts:10,
-    activityPayoutBpsByQualifiedDays:{
-      "0":0,"1":0,"2":0,"3":2500,"4":4000,"5":5500,
-      "6":7000,"7":8000,"8":9000,"9":10000
-    },
+    activityRuleMode:"bonus_only",
     tiers:[
       {id:"starter",nameAr:"Starter",minGiftCoins:0,hostShareBps:5500,agencyShareBps:500},
       {id:"bronze",nameAr:"Bronze",minGiftCoins:1000000,hostShareBps:5700,agencyShareBps:600},
@@ -139,7 +136,7 @@ function normalizePolicy(raw={}){
     hostBonusQualifiedDays,
     hostBonusMinutesPerQualifiedDay,
     agencyBonusActiveHosts,
-    activityPayoutBpsByQualifiedDays:defaults.activityPayoutBpsByQualifiedDays,
+    activityRuleMode:"bonus_only",
     tiers
   };
 }
