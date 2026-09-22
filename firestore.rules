@@ -79,8 +79,12 @@ service cloud.firestore {
         && (!('diamondPasswordUpdatedAt' in resource.data) && !('diamondPasswordUpdatedAt' in request.resource.data)
           || ('diamondPasswordUpdatedAt' in resource.data) && ('diamondPasswordUpdatedAt' in request.resource.data)
              && request.resource.data.diamondPasswordUpdatedAt == resource.data.diamondPasswordUpdatedAt)
-        && !('diamondPasswordHash' in request.resource.data)
-        && !('diamondPasswordSalt' in request.resource.data);
+        && (!('diamondPasswordHash' in resource.data) && !('diamondPasswordHash' in request.resource.data)
+          || ('diamondPasswordHash' in resource.data) && ('diamondPasswordHash' in request.resource.data)
+             && request.resource.data.diamondPasswordHash == resource.data.diamondPasswordHash)
+        && (!('diamondPasswordSalt' in resource.data) && !('diamondPasswordSalt' in request.resource.data)
+          || ('diamondPasswordSalt' in resource.data) && ('diamondPasswordSalt' in request.resource.data)
+             && request.resource.data.diamondPasswordSalt == resource.data.diamondPasswordSalt);
     }
 
     function publicProfileAuthoritativeFieldsMatch(userId) {
