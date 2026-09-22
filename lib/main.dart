@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'widgets/bottom_nav_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -28,6 +29,7 @@ import 'features/main/screens/main_shell_screen.dart';
 import 'features/auth/screens/register_screen.dart';
 import 'features/user/screens/profile_screen.dart';
 import 'features/user/screens/edit_profile_screen.dart';
+import 'features/profile/widgets/quick_profile_sheet.dart';
 import 'screens/room/create_room_screen.dart';
 import 'screens/room/room_list_screen.dart';
 import 'screens/settings/settings_screen.dart';
@@ -311,7 +313,28 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     final canSpeak = state?.isOwner == true || hasSeat;
 
     if (!canSpeak) {
-      if (state?.requested(uid) == true) {
+      if (state == null) return;
+      if (!state.micInviteOnly) {
+        final emptySeats = state.seats.where((seat) => !seat.occupied).toList();
+        if (emptySeats.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('لا يوجد مايك فارغ حالياً.')),
+          );
+          return;
+        }
+        await _runSeatAction(
+          () => _roomSeatService.takeSeat(
+            roomId: roomId,
+            seatIndex: emptySeats.first.index,
+          ),
+        );
+        try {
+          await _voiceSession.setMicMuted(false);
+          if (mounted) setState(() => _voiceMicMuted = false);
+        } catch (_) {}
+        return;
+      }
+      if (state.requested(uid)) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('طلب المايك ما زال قيد الانتظار.')),
         );
@@ -319,7 +342,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         await _runSeatAction(() => _roomSeatService.requestMic(roomId));
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('تم إرسال طلب المايك لصاحب الغرفة.')),
+            const SnackBar(content: Text('تم إرسال طلب المايك للمشرفين.')),
           );
         }
       }
@@ -627,6 +650,69 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     }
   }
 
+  Future<void> _showSeatQuickProfile(VoiceSeat seat) async {
+    if (!seat.occupied || seat.uid.isEmpty) return;
+    final roomId = (_roomArguments['roomId'] ?? '').toString();
+    final actions = <QuickProfileAction>[];
+
+    if ((_canManageMic || _canModerateUsers) &&
+        seat.uid != (FirebaseAuth.instance.currentUser?.uid ?? '')) {
+      if (_canManageMic) {
+        actions.add(
+          QuickProfileAction(
+            icon: seat.muted ? Icons.mic_rounded : Icons.mic_off_rounded,
+            label: seat.muted ? 'إزالة كتم المايك' : 'كتم المايك',
+            color: const Color(0xFFFFD54A),
+            onTap: () {
+              unawaited(
+                _runSeatAction(
+                  () => _roomSeatService.setTargetSeatMuted(
+                    roomId: roomId,
+                    targetUid: seat.uid,
+                    muted: !seat.muted,
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+        actions.add(
+          QuickProfileAction(
+            icon: Icons.person_remove_rounded,
+            label: 'إنزال من المايك',
+            color: Colors.orangeAccent,
+            onTap: () {
+              unawaited(
+                _runSeatAction(
+                  () => _roomSeatService.removeFromMic(
+                    roomId: roomId,
+                    targetUid: seat.uid,
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      }
+      if (_canModerateUsers) {
+        actions.add(
+          QuickProfileAction(
+            icon: Icons.block_rounded,
+            label: 'طرد / حظر من الغرفة',
+            color: Colors.redAccent,
+            onTap: () => _showKickOptions(seat),
+          ),
+        );
+      }
+    }
+
+    await showQuickProfileSheet(
+      context,
+      userId: seat.uid,
+      adminActions: actions,
+    );
+  }
+
   Future<void> _handleSeatTap(VoiceSeat seat) async {
     final roomId = (_roomArguments['roomId'] ?? '').toString();
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
@@ -642,7 +728,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             seatIndex: seat.index,
           ),
         );
-      } else if (state.isOwner || state.invited(uid)) {
+      } else if (state.isOwner || state.invited(uid) || !state.micInviteOnly) {
         await _runSeatAction(
           () => _roomSeatService.takeSeat(
             roomId: roomId,
@@ -659,7 +745,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         );
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('تم إرسال طلب المايك لصاحب الغرفة.')),
+            const SnackBar(content: Text('تم إرسال طلب المايك للمشرفين.')),
           );
         }
       }
@@ -689,69 +775,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       return;
     }
 
-    if (_canManageMic || _canModerateUsers) {
-      await showModalBottomSheet<void>(
-        context: context,
-        backgroundColor: const Color(0xFF111522),
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        builder: (sheetContext) => Directionality(
-          textDirection: TextDirection.rtl,
-          child: SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (_canManageMic)
-                ListTile(
-                  leading: const Icon(
-                    Icons.person_remove_rounded,
-                    color: Colors.orangeAccent,
-                  ),
-                  title: Text(
-                    'إنزال ' +
-                        (seat.displayName.isEmpty
-                            ? 'المستخدم'
-                            : seat.displayName) +
-                        ' من المايك',
-                    style: const TextStyle(color: Colors.white),
-                  ),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    unawaited(
-                      _runSeatAction(
-                        () => _roomSeatService.removeFromMic(
-                          roomId: roomId,
-                          targetUid: seat.uid,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                if (_canModerateUsers)
-                ListTile(
-                  leading: const Icon(
-                    Icons.block_rounded,
-                    color: Colors.redAccent,
-                  ),
-                  title: const Text(
-                    'طرد / حظر من الغرفة',
-                    style: TextStyle(
-                      color: Colors.redAccent,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    _showKickOptions(seat);
-                  },
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
+    await _showSeatQuickProfile(seat);
   }
 
   Future<void> _showKickOptions(VoiceSeat seat) async {
@@ -2097,6 +2121,52 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     );
   }
 
+  Future<void> _runLuckyWheel() async {
+    if (!_canManageMic) return;
+    final occupied = (_roomSeatState?.seats ?? const <VoiceSeat>[])
+        .where((seat) => seat.occupied)
+        .toList(growable: false);
+    if (occupied.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('لا يوجد مستخدمون على المايكات حالياً.')),
+      );
+      return;
+    }
+    final selected = occupied[Random.secure().nextInt(occupied.length)];
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          backgroundColor: const Color(0xFF111522),
+          title: const Row(
+            children: [
+              Icon(Icons.autorenew_rounded, color: Color(0xFFFFD54A)),
+              SizedBox(width: 8),
+              Text('عجلة الحظ', style: TextStyle(color: Colors.white)),
+            ],
+          ),
+          content: Text(
+            'تم اختيار المايك رقم ${selected.index + 1}',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 22,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('تم'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _showToolsSheet() async {
     await showModalBottomSheet<void>(
       context: context,
@@ -2251,7 +2321,12 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         tool(
                           icon: Icons.autorenew_rounded,
                           label: 'عجلة الحظ',
-                          onTap: () => comingSoon('عجلة الحظ'),
+                          onTap: _canManageMic
+                              ? () {
+                                  Navigator.pop(sheetContext);
+                                  _runLuckyWheel();
+                                }
+                              : () => comingSoon('عجلة الحظ للمشرفين فقط'),
                           iconColor: const Color(0xFFFFF59D),
                         ),
                         _RoomToolToggle(
@@ -3126,6 +3201,45 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                     onTap: () {
                       Navigator.pop(sheetContext);
                       _showRoomModeratorsSheet();
+                    },
+                  ),
+                if (_canManageMic)
+                  ListTile(
+                    leading: Icon(
+                      (_roomSeatState?.micInviteOnly ?? false)
+                          ? Icons.lock_rounded
+                          : Icons.mic_external_on_rounded,
+                      color: const Color(0xFFFFD54A),
+                    ),
+                    title: const Text(
+                      'الصعود للمايك',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    subtitle: Text(
+                      (_roomSeatState?.micInviteOnly ?? false)
+                          ? 'بدعوة أو موافقة المشرفين فقط'
+                          : 'مفتوح — الضغط على + يصعد مباشرة',
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 10,
+                      ),
+                    ),
+                    trailing: Switch(
+                      value: _roomSeatState?.micInviteOnly ?? false,
+                      onChanged: null,
+                    ),
+                    onTap: () async {
+                      final roomId =
+                          (_roomArguments['roomId'] ?? '').toString();
+                      if (roomId.isEmpty) return;
+                      final next = !(_roomSeatState?.micInviteOnly ?? false);
+                      Navigator.pop(sheetContext);
+                      await _runSeatAction(
+                        () => _roomSeatService.setMicInviteOnly(
+                          roomId: roomId,
+                          enabled: next,
+                        ),
+                      );
                     },
                   ),
                 if (_canModerateChat)
