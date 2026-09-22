@@ -153,29 +153,72 @@ class RoomSeatService {
       final scores = rawScores is Map
           ? Map<String, dynamic>.from(rawScores)
           : const <String, dynamic>{};
-      final rawSeats = data['seats'];
-      final seats = rawSeats is List
-          ? rawSeats.whereType<Map>().map((raw) {
-              final item = Map<String, dynamic>.from(raw);
-              final uid = (item['uid'] ?? '').toString();
-              final scoreRaw = scores[uid];
-              final score = scoreRaw is Map
-                  ? Map<String, dynamic>.from(scoreRaw)
-                  : const <String, dynamic>{};
-              return {
-                ...item,
-                'starBattleCoins': battle['status'] == 'active'
-                    ? ((score['coins'] as num?)?.toInt() ?? 0)
-                    : 0,
-              };
-            }).toList(growable: false)
-          : const <Map<String, dynamic>>[];
-      final roomType = (data['roomType'] ?? data['type'] ?? 'personal').toString();
+      final roomType =
+          (data['roomType'] ?? data['type'] ?? 'personal').toString();
       final official = data['systemOwned'] == true ||
           data['officialRoom'] == true ||
           roomType == 'official' ||
           roomType == 'administrative' ||
           roomType == 'customer_service';
+
+      // Firestore may still contain an older seats array (for example 8
+      // entries) after a room was promoted to a higher level. Never let that
+      // stale array shrink the realtime UI. Rebuild the visible seat list
+      // from the same capacity policy used by the backend.
+      final level = ((data['level'] as num?)?.toInt() ?? 1).clamp(1, 6);
+      final rawOverrides = data['controlOverrides'];
+      final overrides = rawOverrides is Map
+          ? Map<String, dynamic>.from(rawOverrides)
+          : const <String, dynamic>{};
+      final overrideSeats = (overrides['seats'] as num?)?.toInt();
+      final validOverrideSeats =
+          overrideSeats != null && overrideSeats >= 1 && overrideSeats <= 50
+              ? overrideSeats
+              : null;
+      final bypassLevelCapacity =
+          overrides['bypassLevelCapacity'] == true;
+      final baseCapacity = roomType == 'customer_service'
+          ? 5
+          : roomType == 'agency'
+              ? const [10, 12, 14, 16, 20, 22][level - 1]
+              : const [8, 10, 12, 15, 20, 20][level - 1];
+      final capacity =
+          (official || bypassLevelCapacity) && validOverrideSeats != null
+              ? validOverrideSeats
+              : baseCapacity;
+
+      final rawSeats = data['seats'];
+      final seatsByIndex = <int, Map<String, dynamic>>{};
+      if (rawSeats is List) {
+        for (final raw in rawSeats.whereType<Map>()) {
+          final item = Map<String, dynamic>.from(raw);
+          final index = (item['index'] as num?)?.toInt();
+          if (index == null || index < 0 || index >= capacity) continue;
+          seatsByIndex[index] = item;
+        }
+      }
+      final seats = List<Map<String, dynamic>>.generate(capacity, (index) {
+        final item = seatsByIndex[index] ??
+            <String, dynamic>{
+              'index': index,
+              'uid': '',
+              'displayName': '',
+              'profileImageUrl': '',
+              'muted': true,
+            };
+        final seatUid = (item['uid'] ?? '').toString();
+        final scoreRaw = scores[seatUid];
+        final score = scoreRaw is Map
+            ? Map<String, dynamic>.from(scoreRaw)
+            : const <String, dynamic>{};
+        return {
+          ...item,
+          'index': index,
+          'starBattleCoins': battle['status'] == 'active'
+              ? ((score['coins'] as num?)?.toInt() ?? 0)
+              : 0,
+        };
+      }, growable: false);
       final ownerUid = (data['ownerUid'] ?? data['ownerId'] ?? '').toString();
       final hostUid = (data['hostUid'] ?? data['hostId'] ?? '').toString();
       final moderators = data['moderators'] is List ? data['moderators'] as List : const [];
