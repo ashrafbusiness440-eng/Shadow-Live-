@@ -44,3 +44,35 @@ jobs:
           path: build/web
           if-no-files-found: error
           retention-days: 3
+
+      - name: Build E2E web
+        run: flutter build web --dart-define=E2E_TEST=true
+
+      - name: Start E2E web server
+        run: |
+          python3 -m http.server 8088 --directory build/web > /tmp/shadow-e2e-server.log 2>&1 &
+          for i in {1..20}; do
+            if curl -fsS http://127.0.0.1:8088 >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/shadow-e2e-server.log
+          exit 1
+
+      - name: Install Playwright Chromium
+        run: |
+          npm install --no-save playwright@latest
+          npx playwright install --with-deps chromium
+
+      - name: Run main-tab browser E2E
+        run: node .github/scripts/e2e_tabs.mjs
+
+      - name: Upload E2E screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shadow-live-tab-e2e
+          path: e2e-screenshots
+          if-no-files-found: warn
+          retention-days: 3
