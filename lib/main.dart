@@ -1618,15 +1618,27 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             starBattleCoins: 0,
           ),
         );
+
+    // Keep the complete mic stage compact even at LV.6 / agency capacity.
+    // 20-22 seats stay within four rows instead of pushing the room feed
+    // below the fold.
+    final count = seats.length;
+    final columns = count <= 8 ? 4 : (count <= 12 ? 4 : (count <= 20 ? 5 : 6));
+    final compact = count > 12;
+    final micSize = count > 20 ? 38.0 : (compact ? 42.0 : 54.0);
+    final badgeSize = compact ? 17.0 : 20.0;
+    final nameSize = compact ? 8.5 : 10.0;
+    final starSize = compact ? 8.0 : 9.0;
+
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: seats.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 4,
-        mainAxisSpacing: 14,
-        crossAxisSpacing: 10,
-        childAspectRatio: .78,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: columns,
+        mainAxisSpacing: compact ? 5 : 14,
+        crossAxisSpacing: compact ? 5 : 10,
+        childAspectRatio: compact ? .88 : .78,
       ),
       itemBuilder: (_, index) {
         final seat = seats[index];
@@ -1634,13 +1646,14 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           onTap: _changingSeat ? null : () => _handleSeatTap(seat),
           borderRadius: BorderRadius.circular(18),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
               Stack(
                 clipBehavior: Clip.none,
                 children: [
                   Container(
-                    width: 54,
-                    height: 54,
+                    width: micSize,
+                    height: micSize,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: const Color(0xFF151B29),
@@ -1659,13 +1672,15 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                     ),
                     child: seat.occupied
                         ? (seat.profileImageUrl.isEmpty
-                            ? const Icon(
+                            ? Icon(
                                 Icons.person_rounded,
+                                size: compact ? 20 : 24,
                                 color: Colors.white70,
                               )
                             : null)
-                        : const Icon(
+                        : Icon(
                             Icons.add_rounded,
+                            size: compact ? 19 : 24,
                             color: Colors.white38,
                           ),
                   ),
@@ -1674,8 +1689,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       right: -2,
                       bottom: -2,
                       child: Container(
-                        width: 20,
-                        height: 20,
+                        width: badgeSize,
+                        height: badgeSize,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: seat.muted
@@ -1690,14 +1705,14 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                           seat.muted
                               ? Icons.mic_off_rounded
                               : Icons.mic_rounded,
-                          size: 11,
+                          size: compact ? 9 : 11,
                           color: Colors.white,
                         ),
                       ),
                     ),
                 ],
               ),
-              const SizedBox(height: 5),
+              SizedBox(height: compact ? 3 : 5),
               Text(
                 seat.occupied
                     ? (seat.displayName.isEmpty ? 'متحدث' : seat.displayName)
@@ -1706,7 +1721,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   color: seat.occupied ? Colors.white70 : Colors.white38,
-                  fontSize: 10,
+                  fontSize: nameSize,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -1714,9 +1729,9 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                 Text(
                   _formatStarBattleCoins(seat.starBattleCoins) + ' ⭐',
                   maxLines: 1,
-                  style: const TextStyle(
-                    color: Color(0xFFFFD54A),
-                    fontSize: 9,
+                  style: TextStyle(
+                    color: const Color(0xFFFFD54A),
+                    fontSize: starSize,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
