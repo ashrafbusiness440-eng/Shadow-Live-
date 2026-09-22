@@ -242,12 +242,13 @@ async function sendGift(db,uid,body){
     const receiverRef=db.collection("users").doc(receiverId);
     const catalogRef=db.collection("system_config").doc("gift_catalog");
     const economyRef=db.collection("system_config").doc("gift_economy");
+    const lockRef=db.collection("system_config").doc("emergency_lock");
     const conversationRef=db.collection("conversations").doc(conversationId);
     const periods=utcPeriodKeys();
     const outgoingBlockRef=db.collection("user_blocks").doc(uid).collection("items").doc(receiverId);
     const incomingBlockRef=db.collection("user_blocks").doc(receiverId).collection("items").doc(uid);
-    const [op,sender,receiver,catalog,economy,conversation,outgoingBlock,incomingBlock]=await Promise.all([
-      tx.get(opRef),tx.get(senderRef),tx.get(receiverRef),tx.get(catalogRef),tx.get(economyRef),
+    const [op,sender,receiver,catalog,economy,lock,conversation,outgoingBlock,incomingBlock]=await Promise.all([
+      tx.get(opRef),tx.get(senderRef),tx.get(receiverRef),tx.get(catalogRef),tx.get(economyRef),tx.get(lockRef),
       tx.get(conversationRef),tx.get(outgoingBlockRef),tx.get(incomingBlockRef),
     ]);
 
@@ -259,6 +260,10 @@ async function sendGift(db,uid,body){
       throw new ApiError("invalid_conversation",409);
     }
     if(outgoingBlock.exists||incomingBlock.exists)throw new ApiError("blocked",403);
+    const economyLock=lock.exists?(lock.data()||{}):{};
+    if(economyLock.enabled===true||economyLock.economyLocked===true||economyLock.giftsLocked===true){
+      throw new ApiError("emergency_locked",409);
+    }
 
     const fallback=[
       {id:"rose",nameAr:"وردة",priceCoins:100,enabled:true,assetKey:"gifts.placeholder.default"},
