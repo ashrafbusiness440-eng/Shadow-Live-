@@ -131,8 +131,8 @@ class _RoomMusicSheetState extends State<RoomMusicSheet> {
       for (final index in indices) {
         if (index < 0 || index >= _pending.length) continue;
         final file = _pending[index];
-        final length = await file.length();
-        if (length <= 0 || length > 30 * 1024 * 1024) {
+        final length = file.lengthSync() ?? await file.length();
+        if (length == null || length <= 0 || length > 30 * 1024 * 1024) {
           skipped++;
           continue;
         }
