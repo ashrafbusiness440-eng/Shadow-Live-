@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - feature/shadow-control-foundation
-      - fix/economy-stage-closeout
   workflow_dispatch:
 
 permissions:
