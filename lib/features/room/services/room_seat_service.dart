@@ -42,6 +42,8 @@ class RoomSeatState {
     required this.micInviteOnly,
     required this.starBattleActive,
     required this.isOwner,
+    this.isHost = false,
+    this.canManageMic = false,
     required this.isActive,
     required this.onlineCount,
   });
@@ -53,6 +55,8 @@ class RoomSeatState {
   final bool micInviteOnly;
   final bool starBattleActive;
   final bool isOwner;
+  final bool isHost;
+  final bool canManageMic;
   final bool isActive;
   final int onlineCount;
 
@@ -84,6 +88,8 @@ class RoomSeatState {
       micInviteOnly: json['micInviteOnly'] == true,
       starBattleActive: json['starBattleActive'] == true,
       isOwner: json['isOwner'] == true,
+      isHost: json['isHost'] == true,
+      canManageMic: json['canManageMic'] == true,
       isActive: json['isActive'] != false,
       onlineCount: (json['onlineCount'] as num?)?.toInt() ?? 0,
     );
@@ -164,14 +170,33 @@ class RoomSeatService {
               };
             }).toList(growable: false)
           : const <Map<String, dynamic>>[];
-      final ownerUid =
-          (data['ownerUid'] ?? data['ownerId'] ?? data['hostId'] ?? '').toString();
+      final roomType = (data['roomType'] ?? data['type'] ?? 'personal').toString();
+      final official = data['systemOwned'] == true ||
+          data['officialRoom'] == true ||
+          roomType == 'official' ||
+          roomType == 'administrative' ||
+          roomType == 'customer_service';
+      final ownerUid = (data['ownerUid'] ?? data['ownerId'] ?? '').toString();
+      final hostUid = (data['hostUid'] ?? data['hostId'] ?? '').toString();
+      final moderators = data['moderators'] is List ? data['moderators'] as List : const [];
+      final moderatorCanManageMic = moderators.whereType<Map>().any((raw) {
+        final item = Map<String, dynamic>.from(raw);
+        final moderatorUid = (item['uid'] ?? '').toString();
+        final capabilities = item['capabilities'] is List
+            ? (item['capabilities'] as List).map((e) => e.toString())
+            : const <String>[];
+        return moderatorUid == uid && capabilities.contains('manageMic');
+      });
+      final isOwner = uid.isNotEmpty && !official && ownerUid == uid;
+      final isHost = uid.isNotEmpty && official && hostUid == uid;
       return RoomSeatState.fromJson({
         ...data,
         'seats': seats,
         'roomId': roomId,
         'starBattleActive': battle['status'] == 'active',
-        'isOwner': uid.isNotEmpty && ownerUid == uid,
+        'isOwner': isOwner,
+        'isHost': isHost,
+        'canManageMic': isOwner || isHost || moderatorCanManageMic,
         'isActive': snapshot.exists && data['isActive'] != false,
       });
     });
