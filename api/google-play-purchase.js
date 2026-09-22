@@ -162,7 +162,7 @@ export default async function handler(req, res) {
     const purchaseToken = clean(body.purchaseToken);
     const productId = clean(body.productId);
     const packageName = clean(
-      process.env.GOOGLE_PLAY_PACKAGE_NAME || "com.example.voice_chat_room",
+      process.env.GOOGLE_PLAY_PACKAGE_NAME || "com.shadowlive.app",
     );
 
     if (
