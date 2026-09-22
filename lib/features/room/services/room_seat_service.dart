@@ -39,6 +39,8 @@ class RoomSeatState {
     required this.seats,
     required this.micInvites,
     required this.micRequests,
+    required this.micInviteOnly,
+    required this.starBattleActive,
     required this.isOwner,
     required this.isActive,
     required this.onlineCount,
@@ -48,6 +50,8 @@ class RoomSeatState {
   final List<VoiceSeat> seats;
   final List<String> micInvites;
   final List<String> micRequests;
+  final bool micInviteOnly;
+  final bool starBattleActive;
   final bool isOwner;
   final bool isActive;
   final int onlineCount;
@@ -77,6 +81,8 @@ class RoomSeatState {
       micRequests: rawRequests is List
           ? rawRequests.map((item) => item.toString()).toList()
           : const [],
+      micInviteOnly: json['micInviteOnly'] == true,
+      starBattleActive: json['starBattleActive'] == true,
       isOwner: json['isOwner'] == true,
       isActive: json['isActive'] != false,
       onlineCount: (json['onlineCount'] as num?)?.toInt() ?? 0,
@@ -164,6 +170,7 @@ class RoomSeatService {
         ...data,
         'seats': seats,
         'roomId': roomId,
+        'starBattleActive': battle['status'] == 'active',
         'isOwner': uid.isNotEmpty && ownerUid == uid,
         'isActive': snapshot.exists && data['isActive'] != false,
       });
@@ -183,6 +190,7 @@ class RoomSeatService {
     required String seatAction,
     int? seatIndex,
     String? targetUid,
+    bool? enabled,
   }) async {
     final body = await _post({
       'action': 'roomSeatAction',
@@ -190,6 +198,7 @@ class RoomSeatService {
       'seatAction': seatAction,
       if (seatIndex != null) 'seatIndex': seatIndex,
       if (targetUid != null && targetUid.isNotEmpty) 'targetUid': targetUid,
+      if (enabled != null) 'enabled': enabled,
     });
     return RoomSeatState.fromJson(body);
   }
@@ -212,6 +221,16 @@ class RoomSeatService {
 
   Future<RoomSeatState> declineMicInvite(String roomId) =>
       _action(roomId: roomId, seatAction: 'declineMicInvite');
+
+  Future<RoomSeatState> setMicInviteOnly({
+    required String roomId,
+    required bool enabled,
+  }) =>
+      _action(
+        roomId: roomId,
+        seatAction: 'setMicInviteOnly',
+        enabled: enabled,
+      );
 
   Future<RoomSeatState> approveMicRequest({
     required String roomId,
@@ -264,6 +283,17 @@ class RoomSeatService {
 
   Future<RoomSeatState> leaveSeat(String roomId) =>
       _action(roomId: roomId, seatAction: 'leaveSeat');
+
+  Future<RoomSeatState> setTargetSeatMuted({
+    required String roomId,
+    required String targetUid,
+    required bool muted,
+  }) =>
+      _action(
+        roomId: roomId,
+        seatAction: muted ? 'muteTargetSeat' : 'unmuteTargetSeat',
+        targetUid: targetUid,
+      );
 
   Future<RoomSeatState> removeFromMic({
     required String roomId,

@@ -6,19 +6,44 @@ import '../services/follow_service.dart';
 import '../services/profile_action_service.dart';
 import 'registry_badge.dart';
 
-Future<void> showQuickProfileSheet(BuildContext context, {required String userId}) async {
+class QuickProfileAction {
+  const QuickProfileAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.color = Colors.white,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final Color color;
+}
+
+Future<void> showQuickProfileSheet(
+  BuildContext context, {
+  required String userId,
+  List<QuickProfileAction> adminActions = const [],
+}) async {
   await showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     backgroundColor: const Color(0xFF0C101A),
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-    builder: (sheetContext) => _QuickProfileSheet(userId: userId),
+    builder: (sheetContext) => _QuickProfileSheet(
+      userId: userId,
+      adminActions: adminActions,
+    ),
   );
 }
 
 class _QuickProfileSheet extends StatefulWidget {
-  const _QuickProfileSheet({required this.userId});
+  const _QuickProfileSheet({
+    required this.userId,
+    required this.adminActions,
+  });
   final String userId;
+  final List<QuickProfileAction> adminActions;
 
   @override
   State<_QuickProfileSheet> createState() => _QuickProfileSheetState();
@@ -245,6 +270,28 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                       ),
                     ],
                   ),
+                  if (widget.adminActions.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    const Divider(color: Colors.white10),
+                    ...widget.adminActions.map(
+                      (action) => ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(action.icon, color: action.color),
+                        title: Text(
+                          action.label,
+                          style: TextStyle(
+                            color: action.color,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        onTap: () {
+                          Navigator.pop(context);
+                          action.onTap();
+                        },
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   TextButton.icon(onPressed: _openFull, icon: const Icon(Icons.open_in_new_rounded), label: const Text('عرض الملف الشخصي الكامل')),
                 ],

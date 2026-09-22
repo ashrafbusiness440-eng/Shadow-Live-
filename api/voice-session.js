@@ -704,6 +704,8 @@ async function roomSeatState(db,uid,roomId){
     seats:normalizeSeats(room),
     micInvites:Array.isArray(room.micInvites)?room.micInvites:[],
     micRequests:Array.isArray(room.micRequests)?room.micRequests:[],
+    micInviteOnly:room.micInviteOnly===true,
+    starBattleActive:activeStarBattle(room)!=null,
     isOwner:String(room.ownerUid||room.ownerId||room.hostId||"")===uid,
     isActive:room.isActive!==false,
     onlineCount:Math.max(0,Number(room.onlineCount||0)),
@@ -742,6 +744,7 @@ async function roomSeatAction(db,uid,body){
     let seats=normalizeSeats(room);
     let invites=Array.isArray(room.micInvites)?[...room.micInvites]:[];
     let requests=Array.isArray(room.micRequests)?[...room.micRequests]:[];
+    let micInviteOnly=room.micInviteOnly===true;
 
     const clearUserSeat=userId=>{
       seats=seats.map(seat=>seat.uid===userId
@@ -749,7 +752,11 @@ async function roomSeatAction(db,uid,body){
         : seat);
     };
 
-    if(action==="requestMic"){
+    if(action==="setMicInviteOnly"){
+      if(!canManageMic)throw new ApiError("forbidden",403);
+      micInviteOnly=body.enabled===true;
+      if(!micInviteOnly)requests=[];
+    }else if(action==="requestMic"){
       if(!requests.includes(uid))requests.push(uid);
     }else if(action==="cancelMicRequest"){
       requests=requests.filter(id=>id!==uid);
@@ -771,6 +778,25 @@ async function roomSeatAction(db,uid,body){
       requests=requests.filter(id=>id!==targetUid);
     }else if(action==="declineMicInvite"){
       invites=invites.filter(id=>id!==uid);
+    }else if(action==="setMicInviteOnly"){
+      if(!canManageMic)throw new ApiError("forbidden",403);
+      const enabled=body.enabled===true;
+      tx.update(roomRef,{
+        micInviteOnly:enabled,
+        ...(enabled?{}:{micRequests:[]}),
+        updatedAt:FieldValue.serverTimestamp(),
+      });
+      return {
+        ok:true,
+        roomId,
+        seats,
+        micInvites:invites,
+        micRequests:enabled?requests:[],
+        micInviteOnly:enabled,
+        isOwner,
+        isActive:true,
+        onlineCount:Math.max(0,Number(room.onlineCount||0)),
+      };
     }else if(action==="takeSeat"||action==="switchSeat"){
       if(!Number.isInteger(seatIndex)||seatIndex<0||seatIndex>=seats.length)throw new ApiError("invalid_seat",400);
       const currentSeatIndex=seats.findIndex(item=>item.uid===uid);
@@ -782,7 +808,7 @@ async function roomSeatAction(db,uid,body){
       if(reserved&&reserved.uid!==uid)throw new ApiError("pk_seat_reserved",409);
       if(mine&&mine.seatIndex!==seatIndex)throw new ApiError("pk_original_seat_required",409);
       if(seat.uid&&seat.uid!==uid)throw new ApiError("seat_occupied",409);
-      if(!isOwner&&!invites.includes(uid)&&!mine&&currentSeatIndex<0)throw new ApiError("mic_invite_required",403);
+      if(micInviteOnly&&!isOwner&&!invites.includes(uid)&&!mine&&currentSeatIndex<0)throw new ApiError("mic_invite_required",403);
 
       const profileSnap=await tx.get(myProfileRef);
       const profile=profileSnap.data()||{};
@@ -800,8 +826,26 @@ async function roomSeatAction(db,uid,body){
       const seatIndex=seats.findIndex(seat=>seat.uid===uid);
       if(seatIndex<0)throw new ApiError("speaker_seat_required",403);
       seats[seatIndex]={...seats[seatIndex],muted:action==="muteSeat"};
+    }else if(action==="muteTargetSeat"||action==="unmuteTargetSeat"){
+      if(!canManageMic)throw new ApiError("forbidden",403);
+      if(!targetUid||targetUid===uid)throw new ApiError("invalid_target",400);
+      const targetSeatIndex=seats.findIndex(seat=>seat.uid===targetUid);
+      if(targetSeatIndex<0)throw new ApiError("speaker_seat_required",403);
+      seats[targetSeatIndex]={
+        ...seats[targetSeatIndex],
+        muted:action==="muteTargetSeat",
+      };
     }else if(action==="leaveSeat"){
       clearUserSeat(uid);
+    }else if(action==="muteTargetSeat"||action==="unmuteTargetSeat"){
+      if(!canManageMic)throw new ApiError("forbidden",403);
+      if(!targetUid||targetUid===uid)throw new ApiError("invalid_target",400);
+      const targetSeatIndex=seats.findIndex(seat=>seat.uid===targetUid);
+      if(targetSeatIndex<0)throw new ApiError("speaker_seat_required",403);
+      seats[targetSeatIndex]={
+        ...seats[targetSeatIndex],
+        muted:action==="muteTargetSeat",
+      };
     }else if(action==="removeFromMic"){
       if(!canManageMic)throw new ApiError("forbidden",403);
       if(!targetUid)throw new ApiError("invalid_target",400);
@@ -816,6 +860,7 @@ async function roomSeatAction(db,uid,body){
       seats,
       micInvites:invites,
       micRequests:requests,
+      micInviteOnly,
       updatedAt:FieldValue.serverTimestamp(),
     });
 
@@ -825,6 +870,8 @@ async function roomSeatAction(db,uid,body){
       seats,
       micInvites:invites,
       micRequests:requests,
+      micInviteOnly,
+      starBattleActive:activeStarBattle({...room,starBattleState:room.starBattleState})!=null,
       isOwner,
       isActive:true,
       onlineCount:Math.max(0,Number(room.onlineCount||0)),
