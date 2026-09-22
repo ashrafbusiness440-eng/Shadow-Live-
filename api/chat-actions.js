@@ -171,7 +171,7 @@ async function sendMessage(db,uid,body){
   });
 }
 
-async function sendGift(db,uid,body){
+export async function sendGift(db,uid,body){
   const receiverId=text(body.receiverId);
   const giftId=text(body.giftId);
   const conversationId=text(body.conversationId);
