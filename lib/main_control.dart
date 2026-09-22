@@ -9,6 +9,7 @@ import 'utils/compact_number.dart';
 import 'admin/control_admin_id_override.dart';
 import 'admin/control_asset_manager_page.dart';
 import 'admin/recharge_packages_control_page.dart';
+import 'admin/gift_catalog_control_page.dart';
 
 
 Future<void> main() async {
@@ -980,6 +981,13 @@ class FinancePage extends StatelessWidget {
       title:const Text('باقات الشحن والـBonus',style:TextStyle(fontWeight:FontWeight.w800)),
       subtitle:const Text('إضافة/تعديل/إيقاف وترتيب الباقات بدون تحديث التطبيق'),
       onTap:()=>Navigator.of(context).push(MaterialPageRoute(builder:(_)=>const RechargePackagesControlPage())),
+    )),
+    Card(child:ListTile(
+      leading:const Icon(Icons.card_giftcard_rounded,color:Color(0xFFD7B85A)),
+      trailing:const Icon(Icons.chevron_left),
+      title:const Text('Gift Catalog',style:TextStyle(fontWeight:FontWeight.w800)),
+      subtitle:const Text('إدارة أسماء وأسعار وفئات وصور وترتيب الهدايا'),
+      onTap:()=>Navigator.of(context).push(MaterialPageRoute(builder:(_)=>const GiftCatalogControlPage())),
     )),
     _AdminCollectionTile(title:'السجل المالي',subtitle:'financial_ledger — قراءة فقط',icon:Icons.receipt_long_outlined,collection:'financial_ledger'),
     _AdminCollectionTile(title:'تسويات الوكالات',subtitle:'agency_settlements — قراءة فقط',icon:Icons.payments_outlined,collection:'agency_settlements'),
