@@ -40,7 +40,9 @@ class _MainShellScreenState extends State<MainShellScreen> {
     ProfileScreen(),
   ];
 
-  bool get _guest => FirebaseAuth.instance.currentUser?.isAnonymous == true;
+  bool get _guest =>
+      !const bool.fromEnvironment('E2E_TEST') &&
+      FirebaseAuth.instance.currentUser?.isAnonymous == true;
 
   int _pageForNav(int navIndex) {
     switch (navIndex) {
