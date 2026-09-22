@@ -610,6 +610,7 @@ async function updateRoomSettings(db,uid,body){
 async function closePersonalRoom(db,uid,roomId){
   if(!/^personal_[A-Za-z0-9:_-]{1,160}$/.test(roomId))throw new ApiError("invalid_room_id",400);
   const ref=db.collection("rooms").doc(roomId);
+  const auditRef=db.collection("room_audit_logs").doc(roomId).collection("items").doc();
   await db.runTransaction(async tx=>{
     const snap=await tx.get(ref);
     if(!snap.exists)throw new ApiError("room_not_found",404);
@@ -623,6 +624,13 @@ async function closePersonalRoom(db,uid,roomId){
       participantsCount:0,
       closedAt:FieldValue.serverTimestamp(),
       updatedAt:FieldValue.serverTimestamp(),
+    });
+    tx.create(auditRef,{
+      action:"closePersonalRoom",
+      actorUid:uid,
+      before:{isActive:data.isActive!==false},
+      after:{isActive:false},
+      createdAt:FieldValue.serverTimestamp(),
     });
   });
   return {ok:true,roomId,isActive:false};

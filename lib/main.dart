@@ -385,11 +385,18 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   String get _ownerFlag {
     final location = _ownerLocation.trim();
     if (location.isEmpty) return '';
-    final match = RegExp(
+    final emojiMatch = RegExp(
       r'^[\u{1F1E6}-\u{1F1FF}]{2}',
       unicode: true,
     ).firstMatch(location);
-    return match?.group(0) ?? '';
+    if (emojiMatch != null) return emojiMatch.group(0) ?? '';
+
+    final codeMatch = RegExp(r'\\b([A-Za-z]{2})\\b').firstMatch(location);
+    final code = codeMatch?.group(1)?.toUpperCase() ?? '';
+    if (code.length != 2) return '';
+    final first = 0x1F1E6 + code.codeUnitAt(0) - 65;
+    final second = 0x1F1E6 + code.codeUnitAt(1) - 65;
+    return String.fromCharCodes([first, second]);
   }
 
   Future<void> _loadOwnerProfile(
