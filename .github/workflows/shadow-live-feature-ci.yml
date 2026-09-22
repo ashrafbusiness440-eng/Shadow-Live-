@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/shadow-control-foundation
+      - integration/phase6-production-recovery
   workflow_dispatch:
 
 permissions:
