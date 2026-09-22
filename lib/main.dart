@@ -2733,6 +2733,181 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     passwordController.dispose();
   }
 
+  Future<void> _showChangeRoomIdSheet() async {
+    final roomId = (_roomArguments['roomId'] ?? '').toString().trim();
+    if (roomId.isEmpty || !_voiceSession.isOwner) return;
+    final controller = TextEditingController(
+      text: (_roomArguments['publicId'] ?? '').toString(),
+    );
+    var saving = false;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF111522),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: StatefulBuilder(
+          builder: (context, setSheetState) => SafeArea(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                18,
+                14,
+                18,
+                MediaQuery.viewInsetsOf(context).bottom + 20,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 44,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  const Row(
+                    children: [
+                      Icon(Icons.tag_rounded, color: Color(0xFFFFD54A)),
+                      SizedBox(width: 8),
+                      Text(
+                        'تغيير Room ID',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 19,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: controller,
+                    keyboardType: TextInputType.number,
+                    maxLength: 6,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(
+                      labelText: 'Room ID جديد — 6 أرقام',
+                      labelStyle: TextStyle(color: Colors.white60),
+                    ),
+                  ),
+                  const Text(
+                    'بعد التغيير يبقى الـID القديم محجوزاً ولا يُعاد استخدامه.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white38, fontSize: 10),
+                  ),
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: saving
+                          ? null
+                          : () async {
+                              final requested = controller.text.trim();
+                              final current =
+                                  (_roomArguments['publicId'] ?? '').toString();
+                              final numeric = int.tryParse(requested) != null;
+                              if (requested.length != 6 || !numeric) {
+                                ScaffoldMessenger.of(sheetContext).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'أدخل Room ID صحيح من 6 أرقام.',
+                                    ),
+                                  ),
+                                );
+                                return;
+                              }
+                              if (requested == current) {
+                                ScaffoldMessenger.of(sheetContext).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('هذا هو الـID الحالي للغرفة.'),
+                                  ),
+                                );
+                                return;
+                              }
+                              setSheetState(() => saving = true);
+                              try {
+                                final changed =
+                                    await _roomActions.changeRoomPublicId(
+                                  roomId: roomId,
+                                  publicId: requested,
+                                );
+                                if (!mounted) return;
+                                setState(() {
+                                  _roomArguments = {
+                                    ..._roomArguments,
+                                    'publicId': changed,
+                                  };
+                                });
+                                if (sheetContext.mounted) {
+                                  Navigator.pop(sheetContext);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'تم تغيير Room ID وحجز الـID القديم.',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              } on StateError catch (error) {
+                                if (!sheetContext.mounted) return;
+                                final message =
+                                    error.message == 'public_id_taken'
+                                        ? 'هذا الـID مستخدم أو محجوز.'
+                                        : error.message == 'forbidden'
+                                            ? 'لا تملك صلاحية تغيير Room ID.'
+                                            : 'تعذر تغيير Room ID حالياً.';
+                                ScaffoldMessenger.of(sheetContext).showSnackBar(
+                                  SnackBar(content: Text(message)),
+                                );
+                              } catch (_) {
+                                if (sheetContext.mounted) {
+                                  ScaffoldMessenger.of(sheetContext)
+                                      .showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'تعذر تغيير Room ID حالياً.',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              } finally {
+                                if (sheetContext.mounted) {
+                                  setSheetState(() => saving = false);
+                                }
+                              }
+                            },
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF6D27D9),
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                      ),
+                      icon: saving
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.swap_horiz_rounded),
+                      label: const Text('تغيير الـID'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    controller.dispose();
+  }
   Future<void> _showRoomMenu() async {
     final personal = (_roomArguments['roomType'] ?? '').toString() == 'personal';
     final owner = _voiceSession.isOwner;
@@ -2802,6 +2977,21 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                     onTap: () {
                       Navigator.pop(sheetContext);
                       _showRoomSettingsSheet();
+                    },
+                  ),
+                if (owner)
+                  ListTile(
+                    leading: const Icon(
+                      Icons.tag_rounded,
+                      color: Color(0xFFFFD54A),
+                    ),
+                    title: const Text(
+                      'تغيير Room ID',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      _showChangeRoomIdSheet();
                     },
                   ),
                 ListTile(
