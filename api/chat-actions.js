@@ -306,15 +306,18 @@ async function sendGift(db,uid,body){
     const revenue=resolveRevenuePolicy(
       economyData,receiverData,monthlyGrossCoins,agencyId,periods.month,activeHostCount
     );
-    const earningsEnabled=economyData.enabled===true&&revenue.hostShareBps>0;
+    const policyEnabled=economyData.policyMode==="tiered_host_agency"
+      ?economyData.enabled!==false
+      :true;
+    const earningsEnabled=policyEnabled&&revenue.hostShareBps>0;
     const recipientShareBps=earningsEnabled?revenue.hostShareBps:0;
     const recipientShareCoins=earningsEnabled
       ?Math.floor((totalCost*recipientShareBps)/10000)
       :0;
-    const agencyShareCoins=economyData.enabled===true&&agencyId
+    const agencyShareCoins=policyEnabled&&agencyId
       ?Math.floor((totalCost*revenue.agencyShareBps)/10000)
       :0;
-    const platformShareCoins=economyData.enabled===true
+    const platformShareCoins=policyEnabled
       ?Math.max(0,totalCost-recipientShareCoins-agencyShareCoins)
       :totalCost;
     const previousPending=Math.max(0,Number(receiverData.pendingGiftEarningCoins||0));
