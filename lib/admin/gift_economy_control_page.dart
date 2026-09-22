@@ -345,7 +345,7 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
                         ),
                         const SizedBox(height: 10),
                         const Text(
-                          'نظام الاستحقاق الحالي محفوظ: 9+ أيام = 100%، 8 = 90%، 7 = 80%، 6 = 70%، 5 = 55%، 4 = 40%، 3 = 25%، وأقل من 3 = 0%.',
+                          'سياسة التحفيز الجديدة: النسبة الأساسية لا تنخفض بسبب عدد الأيام. عند تحقيق شرط النشاط الكامل يضاف Bonus المضيف فوق نسبته الأساسية. Bonus الوكالة يعتمد على عدد المضيفين النشطين المؤهلين.',
                           style: TextStyle(color: Color(0xFFAAA3B8)),
                         ),
                       ],
