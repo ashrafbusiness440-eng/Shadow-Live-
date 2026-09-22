@@ -10,7 +10,6 @@ import '../../auth/bloc/auth_bloc.dart';
 import '../../chat/screens/chat_list_screen.dart';
 import '../../home/screens/home_screen.dart';
 import '../../user/screens/profile_screen.dart';
-import '../../voice/widgets/mini_voice_room_overlay.dart';
 
 class MainShellScreen extends StatefulWidget {
   const MainShellScreen({super.key, this.initialNavIndex = 0});
@@ -161,14 +160,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         backgroundColor: const Color(0xFF05060D),
-        body: Stack(
-          children: [
-            Positioned.fill(
-              child: _buildCurrentPage(),
-            ),
-            const MiniVoiceRoomOverlay(),
-          ],
-        ),
+        body: _buildCurrentPage(),
         bottomNavigationBar: _ShadowBottomNavigation(
           currentIndex: _currentNavIndex,
           onChanged: _changePage,
