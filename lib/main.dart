@@ -3305,29 +3305,107 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       ghostMode = await _roomActions.loadGhostMode();
     } catch (_) {}
     if (!mounted) return;
+
     await showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       backgroundColor: const Color(0xFF111522),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (sheetContext) => SafeArea(
-        child: Directionality(
-          textDirection: TextDirection.rtl,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 14, 18, 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+      builder: (sheetContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: .72,
+          minChildSize: .42,
+          maxChildSize: .92,
+          builder: (context, scrollController) => SafeArea(
+            child: ListView(
+              controller: scrollController,
+              padding: const EdgeInsets.fromLTRB(18, 14, 18, 20),
               children: [
-                Container(
-                  width: 44,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.white24,
-                    borderRadius: BorderRadius.circular(99),
+                Center(
+                  child: Container(
+                    width: 44,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 14),
+
+                // أهم إجراءات الغرفة تبقى في الأعلى لسهولة الوصول.
+                if (personal && owner)
+                  ListTile(
+                    leading: const Icon(
+                      Icons.power_settings_new_rounded,
+                      color: Colors.redAccent,
+                    ),
+                    title: const Text(
+                      'إغلاق الغرفة',
+                      style: TextStyle(
+                        color: Colors.redAccent,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    onTap: () async {
+                      Navigator.pop(sheetContext);
+                      final confirmed = await showDialog<bool>(
+                        context: context,
+                        builder: (dialogContext) => Directionality(
+                          textDirection: TextDirection.rtl,
+                          child: AlertDialog(
+                            backgroundColor: const Color(0xFF111522),
+                            title: const Text(
+                              'إغلاق الغرفة؟',
+                              style: TextStyle(color: Colors.white),
+                            ),
+                            content: const Text(
+                              'سيتم إغلاق الغرفة وإنهاء الجلسة الحالية للجميع.',
+                              style: TextStyle(color: Colors.white70),
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () =>
+                                    Navigator.pop(dialogContext, false),
+                                child: const Text('إلغاء'),
+                              ),
+                              FilledButton(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: Colors.redAccent,
+                                ),
+                                onPressed: () =>
+                                    Navigator.pop(dialogContext, true),
+                                child: const Text('إغلاق الغرفة'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                      if (confirmed == true && mounted) {
+                        await _closePersonalRoom();
+                      }
+                    },
+                  ),
+                ListTile(
+                  leading: const Icon(
+                    Icons.picture_in_picture_alt_rounded,
+                    color: Color(0xFFFFD54A),
+                  ),
+                  title: const Text(
+                    'تصغير الغرفة',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _minimizeVoiceRoom();
+                  },
+                ),
+                const Divider(color: Colors.white12, height: 18),
+
                 if (_canModerateUsers)
                   ListTile(
                     leading: const Icon(
@@ -3545,20 +3623,6 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                 ),
                 ListTile(
                   leading: const Icon(
-                    Icons.picture_in_picture_alt_rounded,
-                    color: Color(0xFFFFD54A),
-                  ),
-                  title: const Text(
-                    'تصغير الغرفة',
-                    style: TextStyle(color: Colors.white),
-                  ),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    _minimizeVoiceRoom();
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(
                     Icons.logout_rounded,
                     color: Colors.orangeAccent,
                   ),
@@ -3571,24 +3635,6 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                     _leaveVoiceRoom();
                   },
                 ),
-                if (personal && owner)
-                  ListTile(
-                    leading: const Icon(
-                      Icons.power_settings_new_rounded,
-                      color: Colors.redAccent,
-                    ),
-                    title: const Text(
-                      'إغلاق الغرفة',
-                      style: TextStyle(
-                        color: Colors.redAccent,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    onTap: () {
-                      Navigator.pop(sheetContext);
-                      _closePersonalRoom();
-                    },
-                  ),
               ],
             ),
           ),
