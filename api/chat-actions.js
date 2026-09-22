@@ -40,6 +40,70 @@ const bounded=(value,fallback,min,max)=>{
   const n=Number(value);
   return Number.isFinite(n)?Math.max(min,Math.min(max,Math.floor(n))):fallback;
 };
+const utcPeriodKeys=(date=new Date())=>{
+  const day=date.toISOString().slice(0,10);
+  const month=day.slice(0,7);
+  const d=new Date(Date.UTC(date.getUTCFullYear(),date.getUTCMonth(),date.getUTCDate()));
+  const weekday=d.getUTCDay()||7;
+  d.setUTCDate(d.getUTCDate()+4-weekday);
+  const yearStart=new Date(Date.UTC(d.getUTCFullYear(),0,1));
+  const week=Math.ceil((((d-yearStart)/86400000)+1)/7);
+  return {
+    day,
+    week:d.getUTCFullYear().toString()+"-W"+week.toString().padStart(2,"0"),
+    month,
+  };
+};
+
+
+function revenueTiers(economy){
+  const fallback=[
+    {id:"starter",nameAr:"Starter",minGiftCoins:0,hostShareBps:5500,agencyShareBps:500},
+    {id:"bronze",nameAr:"Bronze",minGiftCoins:1000000,hostShareBps:5700,agencyShareBps:600},
+    {id:"silver",nameAr:"Silver",minGiftCoins:5000000,hostShareBps:6000,agencyShareBps:800},
+    {id:"gold",nameAr:"Gold",minGiftCoins:20000000,hostShareBps:6200,agencyShareBps:900},
+    {id:"diamond",nameAr:"Diamond",minGiftCoins:50000000,hostShareBps:6300,agencyShareBps:1000},
+  ];
+  const raw=Array.isArray(economy?.tiers)&&economy.tiers.length?economy.tiers:fallback;
+  return raw.map((item,index)=>({
+    id:text(item?.id||("tier_"+String(index+1))),
+    nameAr:text(item?.nameAr||item?.id||("Tier "+String(index+1))),
+    minGiftCoins:Math.max(0,Number(item?.minGiftCoins||0)),
+    hostShareBps:Math.max(0,Math.min(10000,Number(item?.hostShareBps??economy?.recipientShareBps??0))),
+    agencyShareBps:Math.max(0,Math.min(10000,Number(item?.agencyShareBps||0))),
+  })).sort((a,b)=>a.minGiftCoins-b.minGiftCoins);
+}
+
+function resolveRevenuePolicy(economy,receiverData,monthlyGrossCoins,agencyId,monthKey){
+  const tiers=revenueTiers(economy);
+  let tier=tiers[0];
+  for(const item of tiers){
+    if(monthlyGrossCoins>=item.minGiftCoins)tier=item;
+  }
+  const activityMonth=text(receiverData?.giftHostActivityMonth);
+  const qualifiedDays=activityMonth===monthKey
+    ?Math.max(0,Number(receiverData?.giftHostQualifiedDays||0))
+    :0;
+  const requiredDays=Math.max(1,Math.min(31,Number(economy?.hostBonusQualifiedDays||9)));
+  const configuredHostBonus=Math.max(0,Math.min(3000,Number(economy?.hostPerformanceBonusBps||0)));
+  const hostBonusBps=qualifiedDays>=requiredDays?configuredHostBonus:0;
+  const hostShareBps=Math.max(0,Math.min(10000,tier.hostShareBps+hostBonusBps));
+  const agencyShareBps=agencyId?Math.max(0,Math.min(10000,tier.agencyShareBps)):0;
+  const platformShareBps=Math.max(0,10000-hostShareBps-agencyShareBps);
+  return {
+    tierId:tier.id,
+    tierName:tier.nameAr,
+    tierMinGiftCoins:tier.minGiftCoins,
+    hostBaseShareBps:tier.hostShareBps,
+    hostBonusBps,
+    hostShareBps,
+    agencyShareBps,
+    agencyBonusBpsPending:agencyId?Math.max(0,Math.min(3000,Number(economy?.agencyPerformanceBonusBps||0))):0,
+    platformShareBps,
+    qualifiedDays,
+    requiredDays,
+  };
+}
 
 async function sendMessage(db,uid,body){
   const receiverId=text(body.receiverId);
@@ -168,17 +232,19 @@ async function sendGift(db,uid,body){
     const opRef=db.collection("gift_operations").doc(key);
     const senderRef=db.collection("users").doc(uid);
     const receiverRef=db.collection("users").doc(receiverId);
-    const giftRef=db.collection("gifts").doc(giftId);
+    const catalogRef=db.collection("system_config").doc("gift_catalog");
+    const economyRef=db.collection("system_config").doc("gift_economy");
     const conversationRef=db.collection("conversations").doc(conversationId);
+    const periods=utcPeriodKeys();
     const outgoingBlockRef=db.collection("user_blocks").doc(uid).collection("items").doc(receiverId);
     const incomingBlockRef=db.collection("user_blocks").doc(receiverId).collection("items").doc(uid);
-    const [op,sender,receiver,gift,conversation,outgoingBlock,incomingBlock]=await Promise.all([
-      tx.get(opRef),tx.get(senderRef),tx.get(receiverRef),tx.get(giftRef),
+    const [op,sender,receiver,catalog,economy,conversation,outgoingBlock,incomingBlock]=await Promise.all([
+      tx.get(opRef),tx.get(senderRef),tx.get(receiverRef),tx.get(catalogRef),tx.get(economyRef),
       tx.get(conversationRef),tx.get(outgoingBlockRef),tx.get(incomingBlockRef),
     ]);
 
     if(op.exists)return {ok:true,code:"duplicate",...(op.data()?.result||{})};
-    if(!sender.exists||!receiver.exists||!gift.exists||!conversation.exists)throw new ApiError("not_found",404);
+    if(!sender.exists||!receiver.exists||!conversation.exists)throw new ApiError("not_found",404);
     const conversationData=conversation.data()||{};
     const participants=Array.isArray(conversationData.participants)?conversationData.participants:[];
     if(participants.length!==2||!participants.includes(uid)||!participants.includes(receiverId)){
@@ -186,36 +252,159 @@ async function sendGift(db,uid,body){
     }
     if(outgoingBlock.exists||incomingBlock.exists)throw new ApiError("blocked",403);
 
-    const giftData=gift.data()||{};
-    if(giftData.isActive!==true)throw new ApiError("gift_inactive",409);
-    const unitCoins=Number(giftData.price??giftData.coins??giftData.unitCoins??0);
-    if(!Number.isFinite(unitCoins)||unitCoins<=0)throw new ApiError("invalid_gift_price",409);
+    const fallback=[
+      {id:"rose",nameAr:"وردة",priceCoins:100,enabled:true,assetKey:"gifts.placeholder.default"},
+      {id:"coffee",nameAr:"قهوة",priceCoins:300,enabled:true,assetKey:"gifts.placeholder.default"},
+      {id:"heart",nameAr:"قلب",priceCoins:500,enabled:true,assetKey:"gifts.placeholder.default"},
+      {id:"chocolate",nameAr:"شوكولا",priceCoins:1000,enabled:true,assetKey:"gifts.placeholder.default"},
+      {id:"crown",nameAr:"تاج",priceCoins:2500,enabled:true,assetKey:"gifts.placeholder.default"},
+      {id:"ring",nameAr:"خاتم ألماس",priceCoins:5000,enabled:true,assetKey:"gifts.placeholder.default"},
+      {id:"sports_car",nameAr:"سيارة رياضية",priceCoins:10000,enabled:true,assetKey:"gifts.placeholder.default"},
+      {id:"yacht",nameAr:"يخت فاخر",priceCoins:25000,enabled:true,assetKey:"gifts.placeholder.default"},
+      {id:"private_jet",nameAr:"طائرة خاصة",priceCoins:50000,enabled:true,assetKey:"gifts.placeholder.default"},
+      {id:"castle",nameAr:"قصر ملكي",priceCoins:100000,enabled:true,assetKey:"gifts.placeholder.default"},
+      {id:"golden_dragon",nameAr:"التنين الذهبي",priceCoins:250000,enabled:true,assetKey:"gifts.placeholder.default"},
+      {id:"galaxy",nameAr:"مجرة شادو",priceCoins:500000,enabled:true,assetKey:"gifts.placeholder.default"},
+    ];
+    const rawCatalog=catalog.exists&&Array.isArray(catalog.data()?.gifts)?catalog.data().gifts:fallback;
+    const giftData=rawCatalog.find(item=>String(item?.id||"")===giftId);
+    if(!giftData)throw new ApiError("not_found",404);
+    if(giftData.enabled===false)throw new ApiError("gift_inactive",409);
+    const unitCoins=Number(giftData.priceCoins||0);
+    if(!Number.isSafeInteger(unitCoins)||unitCoins<=0)throw new ApiError("invalid_gift_price",409);
+
     const totalCost=unitCoins*quantity;
-    const before=Number(sender.data()?.coins||0);
+    if(!Number.isSafeInteger(totalCost)||totalCost<=0)throw new ApiError("invalid_gift_price",409);
+    const senderData=sender.data()||{};
+    const receiverData=receiver.data()||{};
+    const before=Number(senderData.coins||0);
     if(before<totalCost)throw new ApiError("insufficient_balance",409);
+
+    const economyData=economy.exists?(economy.data()||{}):{};
+    const agencyId=text(receiverData.agencyId||"");
+    const previousMonthCoins=
+      text(receiverData.giftRevenueMonth)===periods.month
+        ?Math.max(0,Number(receiverData.giftRevenueMonthCoins||0))
+        :0;
+    const monthlyGrossCoins=previousMonthCoins+totalCost;
+    const revenue=resolveRevenuePolicy(
+      economyData,receiverData,monthlyGrossCoins,agencyId,periods.month
+    );
+    const earningsEnabled=economyData.enabled===true&&revenue.hostShareBps>0;
+    const recipientShareBps=earningsEnabled?revenue.hostShareBps:0;
+    const recipientShareCoins=earningsEnabled
+      ?Math.floor((totalCost*recipientShareBps)/10000)
+      :0;
+    const agencyShareCoins=economyData.enabled===true&&agencyId
+      ?Math.floor((totalCost*revenue.agencyShareBps)/10000)
+      :0;
+    const platformShareCoins=economyData.enabled===true
+      ?Math.max(0,totalCost-recipientShareCoins-agencyShareCoins)
+      :totalCost;
+    const previousPending=Math.max(0,Number(receiverData.pendingGiftEarningCoins||0));
+    const accumulated=previousPending+recipientShareCoins;
+    const diamondsEarned=earningsEnabled?Math.floor(accumulated/10000):0;
+    const pendingGiftEarningCoins=earningsEnabled?accumulated%10000:previousPending;
+    const openingDiamonds=Math.max(0,Number(receiverData.diamonds||0));
+    const closingDiamonds=openingDiamonds+diamondsEarned;
 
     const after=before-totalCost;
     const now=FieldValue.serverTimestamp();
-    const giftName=String(giftData.name??giftData.title??"هدية");
-    const imageUrl=String(giftData.imageUrl??"");
-    const assetKey=String(giftData.assetKey??"");
+    const giftName=String(giftData.nameAr||"هدية");
+    const imageUrl=String(giftData.imageUrl||"");
+    const assetKey=String(giftData.assetKey||"gifts.placeholder.default");
     const messageRef=conversationRef.collection("messages").doc();
     const transactionRef=db.collection("gift_transactions").doc(key);
     const ledgerRef=db.collection("financial_ledger").doc("gift_"+key);
+    const earningsLedgerRef=db.collection("financial_ledger").doc("gift_earnings_"+key);
+    const userDailyRef=db.collection("gift_user_stats").doc(receiverId).collection("daily").doc(periods.day);
+    const userWeeklyRef=db.collection("gift_user_stats").doc(receiverId).collection("weekly").doc(periods.week);
+    const userMonthlyRef=db.collection("gift_user_stats").doc(receiverId).collection("monthly").doc(periods.month);
     const showcaseRef=db.collection("public_gift_showcases").doc(receiverId).collection("items").doc(giftId);
     const counts={...(conversationData.unreadCounts||{})};
     counts[uid]=0;
     counts[receiverId]=Number(counts[receiverId]||0)+1;
 
     tx.update(senderRef,{coins:after,totalGiftsSent:FieldValue.increment(quantity)});
-    tx.update(receiverRef,{totalGiftsReceived:FieldValue.increment(quantity),totalValueReceived:FieldValue.increment(totalCost)});
+    tx.update(receiverRef,{
+      totalGiftsReceived:FieldValue.increment(quantity),
+      totalValueReceived:FieldValue.increment(totalCost),
+      giftSupportReceivedCoins:FieldValue.increment(totalCost),
+      giftRevenueMonth:periods.month,
+      giftRevenueMonthCoins:monthlyGrossCoins,
+      currentGiftRevenueTier:revenue.tierId,
+      ...(earningsEnabled?{
+        diamonds:closingDiamonds,
+        pendingGiftEarningCoins,
+        giftEarningCoinsLifetime:FieldValue.increment(recipientShareCoins),
+        giftDiamondsLifetime:FieldValue.increment(diamondsEarned),
+      }:{})
+    });
+    const receiverStats={
+      receivedCoins:FieldValue.increment(totalCost),
+      giftCount:FieldValue.increment(quantity),
+      earningCoins:FieldValue.increment(recipientShareCoins),
+      diamondsEarned:FieldValue.increment(diamondsEarned),
+      updatedAt:now,
+    };
+    tx.set(userDailyRef,receiverStats,{merge:true});
+    tx.set(userWeeklyRef,receiverStats,{merge:true});
+    tx.set(userMonthlyRef,receiverStats,{merge:true});
+    if(agencyId){
+      const agencyRootRef=db.collection("agency_support_stats").doc(agencyId);
+      const agencyStats={
+        supportCoins:FieldValue.increment(totalCost),
+        giftCount:FieldValue.increment(quantity),
+        hostEarningCoins:FieldValue.increment(recipientShareCoins),
+        agencyEarningCoins:FieldValue.increment(agencyShareCoins),
+        platformShareCoins:FieldValue.increment(platformShareCoins),
+        updatedAt:now,
+      };
+      tx.set(agencyRootRef.collection("daily").doc(periods.day),agencyStats,{merge:true});
+      tx.set(agencyRootRef.collection("weekly").doc(periods.week),agencyStats,{merge:true});
+      tx.set(agencyRootRef.collection("monthly").doc(periods.month),agencyStats,{merge:true});
+    }
+    if(earningsEnabled&&diamondsEarned>0){
+      tx.create(earningsLedgerRef,{
+        userId:receiverId,asset:"diamonds",delta:diamondsEarned,
+        openingBalance:openingDiamonds,closingBalance:closingDiamonds,
+        reason:"gift_earnings",sourceType:"gift",sourceId:key,
+        actorUid:uid,counterpartyUid:uid,idempotencyKey:key+"_earnings",createdAt:now
+      });
+    }
     tx.update(conversationRef,{lastMessage:"🎁 "+giftName+" ×"+quantity,lastSenderId:uid,updatedAt:now,unreadCounts:counts});
     tx.create(messageRef,{senderId:uid,receiverId,type:"gift",giftId,giftName,quantity,unitCoins,totalCost,imageUrl,assetKey,createdAt:now});
-    tx.create(transactionRef,{senderId:uid,receiverId,conversationId,giftId,giftName,quantity,unitCoins,totalCost,createdAt:now});
+    tx.create(transactionRef,{
+      senderId:uid,receiverId,contextType:"chat",conversationId,giftId,giftName,quantity,unitCoins,totalCost,
+      assetKey,
+      policyMode:text(economyData.policyMode||"legacy"),
+      revenueTierId:revenue.tierId,
+      revenueTierName:revenue.tierName,
+      revenueTierMinGiftCoins:revenue.tierMinGiftCoins,
+      monthlyGrossCoins,
+      recipientShareBps,
+      recipientShareCoins,
+      hostBaseShareBps:revenue.hostBaseShareBps,
+      hostBonusBps:revenue.hostBonusBps,
+      agencyShareBps:revenue.agencyShareBps,
+      agencyShareCoins,
+      agencyBonusBpsPending:revenue.agencyBonusBpsPending,
+      platformShareBps:revenue.platformShareBps,
+      platformShareCoins,
+      qualifiedDays:revenue.qualifiedDays,
+      requiredQualifiedDays:revenue.requiredDays,
+      diamondsEarned,pendingGiftEarningCoins,
+      earningsStatus:earningsEnabled?"applied":"pending_policy",periods,agencyId:agencyId||null,createdAt:now
+    });
     tx.create(ledgerRef,{userId:uid,asset:"coins",delta:-totalCost,openingBalance:before,closingBalance:after,reason:"gift_send",sourceType:"gift",sourceId:key,actorUid:uid,idempotencyKey:key,createdAt:now});
     tx.set(showcaseRef,{giftId,name:giftName,imageUrl,assetKey,count:FieldValue.increment(quantity),updatedAt:now},{merge:true});
 
-    const resultData={giftId,giftName,quantity,totalCost,messageId:messageRef.id,balance:after};
+    const resultData={
+      giftId,giftName,quantity,totalCost,messageId:messageRef.id,balance:after,
+      revenueTierId:revenue.tierId,
+      recipientShareCoins,agencyShareCoins,platformShareCoins,
+      diamondsEarned,earningsApplied:earningsEnabled
+    };
     tx.create(opRef,{senderId:uid,receiverId,action:"sendGift",status:"completed",result:resultData,createdAt:now});
     return {ok:true,code:"ok",...resultData};
   });
