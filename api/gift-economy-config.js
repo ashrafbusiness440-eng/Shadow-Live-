@@ -57,7 +57,11 @@ function defaultPolicy(){
     hostBonusQualifiedDays:9,
     hostBonusMinutesPerQualifiedDay:120,
     agencyBonusActiveHosts:10,
-    activityRuleMode:"bonus_only",
+    activityRuleMode:"cycle_multiplier",
+    activityPayoutBpsByQualifiedDays:{
+      "0":0,"1":0,"2":0,"3":2500,"4":4000,
+      "5":5500,"6":7000,"7":8000,"8":9000,"9":10000
+    },
     tiers:[
       {id:"starter",nameAr:"Starter",minGiftCoins:0,hostShareBps:5500,agencyShareBps:500},
       {id:"bronze",nameAr:"Bronze",minGiftCoins:1000000,hostShareBps:5700,agencyShareBps:600},
@@ -108,6 +112,20 @@ function normalizePolicy(raw={}){
     raw.agencyBonusActiveHosts??defaults.agencyBonusActiveHosts,
     "invalid_agency_bonus_hosts",1,100000
   );
+  const activitySource=raw.activityPayoutBpsByQualifiedDays||defaults.activityPayoutBpsByQualifiedDays;
+  const activityPayoutBpsByQualifiedDays={};
+  for(let day=0;day<=9;day++){
+    const key=String(day);
+    activityPayoutBpsByQualifiedDays[key]=integer(
+      activitySource?.[key]??defaults.activityPayoutBpsByQualifiedDays[key],
+      "invalid_activity_multiplier",0,10000
+    );
+  }
+  for(let day=1;day<=9;day++){
+    if(activityPayoutBpsByQualifiedDays[String(day)]<activityPayoutBpsByQualifiedDays[String(day-1)]){
+      throw Error("invalid_activity_multiplier_order");
+    }
+  }
   let source=Array.isArray(raw.tiers)&&raw.tiers.length?raw.tiers:defaults.tiers;
   if(source.length<1||source.length>10) throw Error("invalid_tiers");
   const tiers=source.map(normalizeTier).sort((a,b)=>a.minGiftCoins-b.minGiftCoins);
@@ -136,7 +154,8 @@ function normalizePolicy(raw={}){
     hostBonusQualifiedDays,
     hostBonusMinutesPerQualifiedDay,
     agencyBonusActiveHosts,
-    activityRuleMode:"bonus_only",
+    activityRuleMode:"cycle_multiplier",
+    activityPayoutBpsByQualifiedDays,
     tiers
   };
 }
@@ -191,7 +210,8 @@ export default async function handler(req,res){
       "invalid_tier_threshold","invalid_host_share","invalid_agency_share",
       "invalid_split_total","invalid_host_bonus","invalid_agency_bonus",
       "invalid_host_bonus_days","invalid_host_bonus_minutes",
-      "invalid_agency_bonus_hosts","invalid_tiers","first_tier_must_start_zero",
+      "invalid_agency_bonus_hosts","invalid_activity_multiplier",
+      "invalid_activity_multiplier_order","invalid_tiers","first_tier_must_start_zero",
       "invalid_tier_order","bonus_exceeds_platform_share","invalid_action"
     ]);
     const status=code==="unauthorized"?401:code==="forbidden"?403:bad.has(code)?400:500;
