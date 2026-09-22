@@ -3,7 +3,7 @@ import 'package:go_router/go_router.dart';
 import '../../features/auth/screens/login_screen.dart';
 import '../../features/auth/screens/register_screen.dart';
 import '../../features/home/screens/home_screen.dart';
-import '../../features/room/screens/room_screen.dart';
+import '../../screens/room/room_list_screen.dart';
 import '../../features/user/screens/profile_screen.dart';
 
 class AppRouter {
@@ -47,12 +47,10 @@ class AppRouter {
                 path: 'room/:roomId',
                 name: 'room',
                 builder: (context, state) {
-                  final roomId = state.pathParameters['roomId'] ?? '';
-                  final isHost = state.uri.queryParameters['isHost'] == 'true';
-                  return RoomScreen(
-                    roomId: roomId,
-                    isHost: isHost,
-                  );
+                  // The legacy Agora RoomScreen was removed. Active voice
+                  // rooms are now opened by Shadow Live's provider-neutral
+                  // room flow from RoomListScreen.
+                  return const RoomListScreen();
                 },
               ),
             ],

@@ -1,0 +1,81 @@
+name: Shadow Live Web Preview
+
+on:
+  push:
+    branches:
+      - feature/recharge-main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Prepare Shadow Live install icons
+        run: |
+          python3 -m pip install --quiet Pillow
+          python3 - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+
+          source = Path('assets/images/app_icon.png')
+          if not source.exists():
+              raise SystemExit('Missing assets/images/app_icon.png')
+
+          image = Image.open(source).convert('RGBA')
+          icons = Path('web/icons')
+          icons.mkdir(parents=True, exist_ok=True)
+
+          for size, name in [
+              (192, 'Icon-192.png'),
+              (512, 'Icon-512.png'),
+              (192, 'Icon-maskable-192.png'),
+              (512, 'Icon-maskable-512.png'),
+          ]:
+              image.resize((size, size), Image.Resampling.LANCZOS).save(icons / name)
+
+          image.resize((64, 64), Image.Resampling.LANCZOS).save('web/favicon.png')
+          PY
+
+      - name: Analyze app code
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings lib
+
+      - name: Build Flutter web for GitHub Pages
+        run: flutter build web --release --base-href "/Shadow-Live-/"
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

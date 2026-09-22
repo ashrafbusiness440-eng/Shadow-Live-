@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 /// Provider-neutral contract for Shadow Live real-time voice.
 ///
 /// UI and product logic must depend on this interface instead of importing a
@@ -11,12 +13,16 @@ abstract interface class VoiceService {
     required String userId,
     required String displayName,
     String? token,
+    String? accessCode,
   });
 
   Future<void> leaveRoom();
 
   Future<void> muteMic();
   Future<void> unmuteMic();
+  Future<void> setPlaybackEnabled(bool enabled);
+  Future<void> playRoomMedia(Uint8List mediaData);
+  Future<void> stopRoomMedia();
 
   Future<void> takeMicSeat(int seatIndex);
   Future<void> leaveMicSeat();

@@ -1,6 +1,5 @@
 import 'package:get_it/get_it.dart';
 import '../utils/app_logger.dart';
-import 'agora_service.dart';
 import 'analytics_service.dart';
 import 'firebase_service.dart';
 import 'navigation_service.dart';
@@ -19,7 +18,6 @@ class ServiceLocator {
   Future<void> initialize() async {
     try {
       // Register services as singletons
-      _locator.registerLazySingleton(() => AgoraService());
       _locator.registerLazySingleton(() => AnalyticsService());
       _locator.registerLazySingleton(() => FirebaseService());
       _locator.registerLazySingleton(() => NavigationService());

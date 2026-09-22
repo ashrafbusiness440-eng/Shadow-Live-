@@ -1,0 +1,77 @@
+name: Phase 3 Browser E2E
+
+on:
+  push:
+    branches:
+      - feature/shadow-control-foundation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase3-browser-e2e
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.2'
+          cache: true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Build emulator-backed Shadow Live web
+        run: flutter build web --release --dart-define=USE_FIREBASE_EMULATORS=true
+
+      - name: Install Playwright
+        run: |
+          npm install --no-save playwright@1.55.0 firebase-admin@13.5.0
+          npx playwright install --with-deps chromium
+
+      - name: Probe Flutter browser semantics with Firebase emulators
+        run: npx --yes firebase-tools@15.1.0 emulators:exec --only auth,firestore,storage --project shadow-live "bash scripts/run_phase3_e2e_probe.sh"
+
+      - name: Upload E2E probe screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase3-e2e-probe-${{ github.sha }}
+          path: |
+            phase3-onboarding.png
+            phase3-auth-choice.png
+            phase3-otp-first.png
+            phase3-profile-setup.png
+            phase3-success.png
+            phase3-linking.png
+            phase3-ready.png
+            phase3-main.png
+            phase3-profile.png
+            phase3-settings.png
+            phase3-logged-out.png
+            phase3-otp-second.png
+            phase3-main-after-relogin.png
+            phase3-probe-account-success.png
+            phase3-probe-account-linking.png
+            phase3-probe-account-ready.png
+            phase3-probe-main.png
+            phase3-probe-relogin-main.png
+          if-no-files-found: warn
+          retention-days: 7

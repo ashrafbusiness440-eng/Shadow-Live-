@@ -1,2 +1,7 @@
-Trigger Vercel production deployment for Phase 6 E2E.
-Backend main head before trigger: c86683a5e772f2ead89899d587fd3740d7ed19f8
+Trigger preview deployment after profile message navigation fix.
+
+Fix message navigation deploy trigger.
+
+Deploy secure private messaging head after CI success.
+
+Deploy Phase 6 ZEGOCLOUD voice integration after successful web build.

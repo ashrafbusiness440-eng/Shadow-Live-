@@ -1,0 +1,71 @@
+name: Shadow Control Pages
+# GitHub-hosted staging fallback when external deploy credits are unavailable.
+
+on:
+  push:
+    branches:
+      - feature/shadow-control-foundation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: shadow-control-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.2'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build Shadow Live app and Shadow Control
+        run: |
+          set -e
+          cp web/index.html /tmp/control-index.html
+          cp web/manifest.json /tmp/control-manifest.json
+
+          cp scripts/app_index.html web/index.html
+          sed 's#"scope": "/app/"#"scope": "/Shadow-Live-/app/"#' scripts/app_manifest.json > web/manifest.json
+          flutter build web --release --target lib/main.dart --base-href /Shadow-Live-/app/
+          mv build/web /tmp/shadow-live-app
+
+          cp /tmp/control-index.html web/index.html
+          cp /tmp/control-manifest.json web/manifest.json
+          flutter build web --release --target lib/main_control.dart --base-href /Shadow-Live-/
+
+          mkdir -p build/web/app
+          cp -R /tmp/shadow-live-app/. build/web/app/
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

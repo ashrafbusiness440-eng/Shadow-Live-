@@ -13,7 +13,6 @@ dependencies:
   google_fonts: ^8.2.1
   material_design_icons_flutter: ^7.0.7296
   cached_network_image: ^4.0.0
-  agora_rtc_engine: ^6.6.4
   firebase_core: ^4.14.0
   firebase_auth: ^6.6.1
   cloud_firestore: ^6.9.0
@@ -28,6 +27,9 @@ dependencies:
   flutter_bloc: ^9.1.1
   permission_handler: ^13.0.2
   image_picker: ^1.2.3
+  file_picker: ^13.1.0
+  crop_your_image: ^2.0.0
+  crypto: ^3.0.6
   http: ^1.5.0
   zego_express_engine: ^3.25.0
 
@@ -41,5 +43,17 @@ flutter:
   assets:
     - assets/images/
     - assets/images/avatars/
-    - assets/images/profile/
     - assets/images/coins/
+
+    - assets/images/badges/
+    - assets/images/vip/
+    - assets/images/levels/
+    - assets/images/roles/
+    - assets/images/frames/
+    - assets/images/gifts/
+    - assets/images/rooms/
+    - assets/images/backgrounds/
+    - assets/images/banners/
+    - assets/images/games/
+    - assets/images/store/
+    - assets/images/misc/

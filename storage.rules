@@ -1,0 +1,71 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function ownsJpg(fileName) {
+      return signedIn() && fileName == request.auth.uid + '.jpg';
+    }
+
+    function validProfileImage() {
+      return request.resource != null
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    match /profile_images/{fileName} {
+      allow read: if signedIn();
+      allow create, update: if ownsJpg(fileName) && validProfileImage();
+      allow delete: if ownsJpg(fileName);
+    }
+
+    match /profile_covers/{fileName} {
+      allow read: if signedIn();
+      allow create, update: if ownsJpg(fileName) && validProfileImage();
+      allow delete: if ownsJpg(fileName);
+    }
+
+    function validChatImage() {
+      return request.resource != null
+        && request.resource.size < 8 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    function conversationParticipants(conversationId) {
+      return firestore.get(/databases/(default)/documents/conversations/$(conversationId)).data.participants;
+    }
+
+    function follows(fromUid, toUid) {
+      return firestore.exists(/databases/(default)/documents/follows/$(fromUid + '__' + toUid));
+    }
+
+    function mutualFollow(firstUid, secondUid) {
+      return follows(firstUid, secondUid) && follows(secondUid, firstUid);
+    }
+
+    function blockedBetween(firstUid, secondUid) {
+      return firestore.exists(/databases/(default)/documents/user_blocks/$(firstUid)/items/$(secondUid))
+        || firestore.exists(/databases/(default)/documents/user_blocks/$(secondUid)/items/$(firstUid));
+    }
+
+    match /chat_images/{conversationId}/{senderUid}/{receiverUid}/{fileName} {
+      allow read: if signedIn() && request.auth.uid in conversationParticipants(conversationId);
+      allow create: if signedIn()
+        && request.auth.uid == senderUid
+        && receiverUid != request.auth.uid
+        && request.auth.uid in conversationParticipants(conversationId)
+        && receiverUid in conversationParticipants(conversationId)
+        && mutualFollow(senderUid, receiverUid)
+        && !blockedBetween(senderUid, receiverUid)
+        && validChatImage();
+      allow update: if false;
+      allow delete: if signedIn() && request.auth.uid == senderUid;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

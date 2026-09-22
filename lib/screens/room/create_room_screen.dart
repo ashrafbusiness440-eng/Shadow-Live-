@@ -1,4 +1,8 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+
+import '../../features/room/services/room_action_service.dart';
+import '../../services/navigation_service.dart';
 
 class CreateRoomScreen extends StatefulWidget {
   const CreateRoomScreen({super.key});
@@ -8,156 +12,131 @@ class CreateRoomScreen extends StatefulWidget {
 }
 
 class _CreateRoomScreenState extends State<CreateRoomScreen> {
-  String _selectedCategory = 'Music';
-  bool _isPrivate = false;
+  final RoomActionService _roomActions = RoomActionService();
+  bool _opening = false;
 
-  final List<String> _categories = [
-    'Music',
-    'Chat',
-    'Gaming',
-    'Education',
-    'Entertainment',
-    'Social',
-  ];
+  Future<void> _openMyRoom() async {
+    if (_opening) return;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.isAnonymous) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('إنشاء غرفة يحتاج حساباً مسجلاً.')),
+      );
+      return;
+    }
+
+    setState(() => _opening = true);
+    try {
+      final room = await _roomActions.openPersonalRoom();
+      if (!mounted) return;
+      NavigationService.navigateToReplacement(
+        AppRoutes.voiceChatRoom,
+        arguments: room.toNavigationArguments(),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر فتح غرفتك حالياً.')),
+      );
+    } finally {
+      if (mounted) setState(() => _opening = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _roomActions.close();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: const Text('Create Room'),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Room Title
-            TextField(
-              decoration: InputDecoration(
-                hintText: 'Room Title',
-                filled: true,
-                fillColor: Colors.grey[800],
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Room Category
-            const Text(
-              'Category',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _categories.map((category) {
-                final isSelected = category == _selectedCategory;
-                return ChoiceChip(
-                  label: Text(category),
-                  selected: isSelected,
-                  onSelected: (selected) {
-                    if (selected) {
-                      setState(() => _selectedCategory = category);
-                    }
-                  },
-                  backgroundColor: Colors.grey[800],
-                  selectedColor: Colors.yellow[700],
-                  labelStyle: TextStyle(
-                    color: isSelected ? Colors.black : Colors.white,
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: const Color(0xFF05060D),
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF05060D),
+          foregroundColor: Colors.white,
+          title: const Text('غرفتي الصوتية'),
+        ),
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                const Spacer(),
+                Container(
+                  width: 92,
+                  height: 92,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFF8A3DFF).withValues(alpha: .14),
+                    border: Border.all(
+                      color: const Color(0xFF8A3DFF).withValues(alpha: .45),
+                    ),
                   ),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 24),
-
-            // Room Description
-            TextField(
-              maxLines: 3,
-              decoration: InputDecoration(
-                hintText: 'Room Description',
-                filled: true,
-                fillColor: Colors.grey[800],
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Room Settings
-            const Text(
-              'Room Settings',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.grey[800],
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: SwitchListTile(
-                title: const Text('Private Room'),
-                subtitle: const Text(
-                  'Only invited users can join',
-                  style: TextStyle(color: Colors.grey),
-                ),
-                value: _isPrivate,
-                onChanged: (value) => setState(() => _isPrivate = value),
-                activeThumbColor: Colors.yellow[700],
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Room Tags
-            TextField(
-              decoration: InputDecoration(
-                hintText: 'Add tags (separated by comma)',
-                filled: true,
-                fillColor: Colors.grey[800],
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-                prefixIcon: const Icon(Icons.tag),
-              ),
-            ),
-            const SizedBox(height: 32),
-
-            // Create Button
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () {},
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.yellow[700],
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                  child: const Icon(
+                    Icons.graphic_eq_rounded,
+                    color: Color(0xFFFFD54A),
+                    size: 44,
                   ),
                 ),
-                child: const Text(
-                  'Create Room',
-                  style: TextStyle(fontSize: 16, color: Colors.black),
+                const SizedBox(height: 22),
+                const Text(
+                  'غرفة واحدة دائمة مرتبطة بحسابك',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
-              ),
+                const SizedBox(height: 10),
+                const Text(
+                  'أول مرة ننشئ الغرفة ونحفظ الـID الخاص بها. بعد ذلك تدخل نفس الغرفة دائماً بدون إنشاء نسخة جديدة.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white54,
+                    height: 1.6,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 26),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _opening ? null : _openMyRoom,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF6D27D9),
+                      padding: const EdgeInsets.symmetric(vertical: 15),
+                    ),
+                    icon: _opening
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.meeting_room_rounded),
+                    label: Text(_opening ? 'جارٍ فتح الغرفة…' : 'فتح غرفتي'),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'الاسم والوصف والتصنيف والوسوم والخصوصية تعدّلها من داخل الغرفة.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white38,
+                    fontSize: 10,
+                  ),
+                ),
+                const Spacer(),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

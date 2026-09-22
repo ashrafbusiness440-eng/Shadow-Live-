@@ -1,0 +1,63 @@
+name: Shadow Control CI
+on:
+  pull_request:
+    branches: [feature/recharge-main]
+  push:
+    branches: [feature/shadow-control-foundation]
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.2'
+          cache: true
+      - run: flutter pub get
+      - name: Validate Shadow Live Phase 4 app
+        run: |
+          flutter analyze --no-fatal-infos --no-fatal-warnings lib
+          flutter test test/auth/setup_route_test.dart test/utils/compact_number_test.dart test/utils/search_index_test.dart test/home/discovery_service_test.dart test/voice/voice_service_test.dart
+          flutter build web --release --target lib/main.dart --base-href /app/
+      - name: Upload Shadow Live web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: shadow-live-web-${{ github.sha }}
+          path: build/web
+          if-no-files-found: error
+          retention-days: 7
+      - run: dart analyze lib/admin test/admin
+      - run: flutter test test/admin
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate Vercel admin API syntax
+        run: node --check api/change-public-id.js && node --check api/change-room-id.js && node --check api/set-id-management-permission.js && node --check api/manage-app-asset.js && node --check api/app-assets.js && node --check api/chat-actions.js
+      - working-directory: functions
+        run: npm install
+      - working-directory: functions
+        run: npm test
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Validate Firebase rules compile
+        run: npx --yes firebase-tools@15.1.0 emulators:exec --only firestore,storage --project shadow-control-ci "echo Firestore and Storage rules compiled"
+      - name: Build Shadow Control web
+        run: flutter build web --release --target lib/main_control.dart --base-href /Shadow-Live-/control/
+      - name: Upload Shadow Control web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: shadow-control-web-${{ github.sha }}
+          path: build/web
+          if-no-files-found: error
+          retention-days: 7
+      - name: Package Control site for GitHub Pages
+        run: |
+          mkdir -p pages/control
+          cp -R build/web/. pages/control/
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: pages
