@@ -8,16 +8,57 @@ class GiftEconomyControlPage extends StatefulWidget {
   const GiftEconomyControlPage({super.key});
 
   @override
-  State<GiftEconomyControlPage> createState() =>
-      _GiftEconomyControlPageState();
+  State<GiftEconomyControlPage> createState() => _GiftEconomyControlPageState();
+}
+
+class _TierDraft {
+  _TierDraft({
+    required this.id,
+    required this.name,
+    required int minGiftCoins,
+    required int hostShareBps,
+    required int agencyShareBps,
+  })  : minUsd = TextEditingController(text: (minGiftCoins / 10000).toStringAsFixed(0)),
+        hostPercent = TextEditingController(text: (hostShareBps / 100).toStringAsFixed(1)),
+        agencyPercent = TextEditingController(text: (agencyShareBps / 100).toStringAsFixed(1));
+
+  final String id;
+  final String name;
+  final TextEditingController minUsd;
+  final TextEditingController hostPercent;
+  final TextEditingController agencyPercent;
+
+  void dispose() {
+    minUsd.dispose();
+    hostPercent.dispose();
+    agencyPercent.dispose();
+  }
+
+  Map<String, dynamic> toPayload() {
+    final usd = double.tryParse(minUsd.text.trim()) ?? -1;
+    final host = double.tryParse(hostPercent.text.trim()) ?? -1;
+    final agency = double.tryParse(agencyPercent.text.trim()) ?? -1;
+    return {
+      'id': id,
+      'nameAr': name,
+      'minGiftCoins': (usd * 10000).round(),
+      'hostShareBps': (host * 100).round(),
+      'agencyShareBps': (agency * 100).round(),
+    };
+  }
 }
 
 class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
   bool loading = true;
   bool saving = false;
   bool enabled = false;
-  double recipientPercent = 0;
   String? error;
+  List<_TierDraft> tiers = [];
+  final hostBonus = TextEditingController(text: '2');
+  final agencyBonus = TextEditingController(text: '2');
+  final hostBonusDays = TextEditingController(text: '9');
+  final hostMinutesPerDay = TextEditingController(text: '120');
+  final agencyBonusActiveHosts = TextEditingController(text: '10');
 
   Uri get apiUri => Uri(
         scheme: Uri.base.scheme,
@@ -32,6 +73,19 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
     load();
   }
 
+  @override
+  void dispose() {
+    for (final tier in tiers) {
+      tier.dispose();
+    }
+    hostBonus.dispose();
+    agencyBonus.dispose();
+    hostBonusDays.dispose();
+    hostMinutesPerDay.dispose();
+    agencyBonusActiveHosts.dispose();
+    super.dispose();
+  }
+
   Future<Map<String, dynamic>> post(Map<String, dynamic> payload) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw StateError('يجب تسجيل الدخول.');
@@ -39,7 +93,6 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
     if (token == null || token.isEmpty) {
       throw StateError('تعذر قراءة جلسة الإدارة.');
     }
-
     final response = await http
         .post(
           apiUri,
@@ -50,17 +103,31 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
           body: jsonEncode(payload),
         )
         .timeout(const Duration(seconds: 25));
-
     final body = response.body.isEmpty
         ? <String, dynamic>{}
         : Map<String, dynamic>.from(jsonDecode(response.body) as Map);
-
     if (response.statusCode < 200 ||
         response.statusCode >= 300 ||
         body['ok'] != true) {
       throw StateError((body['code'] ?? 'request_failed').toString());
     }
     return body;
+  }
+
+  void _replaceTiers(List<dynamic> raw) {
+    for (final tier in tiers) {
+      tier.dispose();
+    }
+    tiers = raw.map((item) {
+      final m = Map<String, dynamic>.from(item as Map);
+      return _TierDraft(
+        id: (m['id'] ?? 'tier').toString(),
+        name: (m['nameAr'] ?? m['id'] ?? 'Tier').toString(),
+        minGiftCoins: (m['minGiftCoins'] as num?)?.toInt() ?? 0,
+        hostShareBps: (m['hostShareBps'] as num?)?.toInt() ?? 0,
+        agencyShareBps: (m['agencyShareBps'] as num?)?.toInt() ?? 0,
+      );
+    }).toList();
   }
 
   Future<void> load() async {
@@ -73,11 +140,24 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
       final config = body['config'] is Map
           ? Map<String, dynamic>.from(body['config'] as Map)
           : <String, dynamic>{};
-      final bps = (config['recipientShareBps'] as num?)?.toInt() ?? 0;
+      final rawTiers = config['tiers'] is List ? config['tiers'] as List : const [];
       if (!mounted) return;
+      _replaceTiers(rawTiers);
+      hostBonus.text =
+          (((config['hostPerformanceBonusBps'] as num?)?.toDouble() ?? 200) / 100)
+              .toStringAsFixed(1);
+      agencyBonus.text =
+          (((config['agencyPerformanceBonusBps'] as num?)?.toDouble() ?? 200) / 100)
+              .toStringAsFixed(1);
+      hostBonusDays.text =
+          ((config['hostBonusQualifiedDays'] as num?)?.toInt() ?? 9).toString();
+      hostMinutesPerDay.text =
+          ((config['hostBonusMinutesPerQualifiedDay'] as num?)?.toInt() ?? 120)
+              .toString();
+      agencyBonusActiveHosts.text =
+          ((config['agencyBonusActiveHosts'] as num?)?.toInt() ?? 10).toString();
       setState(() {
         enabled = config['enabled'] == true;
-        recipientPercent = (bps / 100).clamp(0, 100).toDouble();
         loading = false;
       });
     } catch (e) {
@@ -89,18 +169,29 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
     }
   }
 
+  int _bps(TextEditingController controller) =>
+      ((double.tryParse(controller.text.trim()) ?? -1) * 100).round();
+
   Future<void> save() async {
     setState(() => saving = true);
     try {
       await post({
         'action': 'save',
         'enabled': enabled,
-        'recipientShareBps': (recipientPercent * 100).round(),
+        'tiers': tiers.map((e) => e.toPayload()).toList(),
+        'hostPerformanceBonusBps': _bps(hostBonus),
+        'agencyPerformanceBonusBps': _bps(agencyBonus),
+        'hostBonusQualifiedDays':
+            int.tryParse(hostBonusDays.text.trim()) ?? -1,
+        'hostBonusMinutesPerQualifiedDay':
+            int.tryParse(hostMinutesPerDay.text.trim()) ?? -1,
+        'agencyBonusActiveHosts':
+            int.tryParse(agencyBonusActiveHosts.text.trim()) ?? -1,
       });
       if (!mounted) return;
       setState(() => saving = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم حفظ سياسة أرباح الهدايا.')),
+        const SnackBar(content: Text('تم حفظ سياسة المضيف والوكالة وShadow Live.')),
       );
       await load();
     } catch (e) {
@@ -112,15 +203,31 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
     }
   }
 
+  Widget _numberField(
+    String label,
+    TextEditingController controller, {
+    String? suffix,
+  }) {
+    return SizedBox(
+      width: 150,
+      child: TextField(
+        controller: controller,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        decoration: InputDecoration(
+          labelText: label,
+          suffixText: suffix,
+          border: const OutlineInputBorder(),
+        ),
+        onChanged: (_) => setState(() {}),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final shareExample = (10000 * recipientPercent / 100).floor();
-    final diamondsExample = shareExample ~/ 10000;
-    final remainderExample = shareExample % 10000;
-
     return Scaffold(
       appBar: AppBar(
-        title: const Text('سياسة أرباح الهدايا'),
+        title: const Text('نِسَب المضيف والوكالة'),
         actions: [
           IconButton(
             onPressed: loading ? null : load,
@@ -135,67 +242,111 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
               children: [
                 const Card(
                   child: ListTile(
-                    leading: Icon(
-                      Icons.diamond_rounded,
-                      color: Color(0xFFD7B85A),
-                    ),
+                    leading: Icon(Icons.account_balance_wallet_rounded,
+                        color: Color(0xFFD7B85A)),
                     title: Text(
-                      'تحويل أرباح الهدايا إلى Diamonds',
+                      'اقتصاد Shadow Live المعتمد',
                       style: TextStyle(fontWeight: FontWeight.w900),
                     ),
                     subtitle: Text(
-                      '1 Diamond = 10,000 Coins. الجزء غير المكتمل يُحفظ كرصد Pending حتى يكتمل Diamond كامل، بدون خسارة كسور القيمة.',
+                      '1 USD = 1 Diamond = 10,000 Coins. المستويات تُقاس بقيمة الهدايا الشهرية، والتسوية النهائية تبقى حسب دورات الوكالة.',
                     ),
                   ),
                 ),
                 SwitchListTile(
                   value: enabled,
                   onChanged: (value) => setState(() => enabled = value),
-                  title: const Text('تفعيل تحويل أرباح المستلم إلى Diamonds'),
+                  title: const Text('تفعيل سياسة الأرباح'),
                   subtitle: const Text(
-                    'يبقى معطلًا إلى أن يحدد Owner النسبة النهائية المعتمدة.',
+                    'يمكن إبقاؤها غير مفعلة أثناء التطوير، مع حفظ جميع النسب والعتبات.',
                   ),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 8),
+                const Text(
+                  'مستويات التوزيع',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 8),
+                ...tiers.map((tier) {
+                  final host =
+                      double.tryParse(tier.hostPercent.text.trim()) ?? 0;
+                  final agency =
+                      double.tryParse(tier.agencyPercent.text.trim()) ?? 0;
+                  final platform = 100 - host - agency;
+                  return Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            tier.name,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 10,
+                            runSpacing: 10,
+                            children: [
+                              _numberField(
+                                  'يبدأ من قيمة هدايا', tier.minUsd,
+                                  suffix: 'USD'),
+                              _numberField('المضيف', tier.hostPercent,
+                                  suffix: '%'),
+                              _numberField('الوكالة', tier.agencyPercent,
+                                  suffix: '%'),
+                              Chip(
+                                avatar: const Icon(Icons.shield_outlined,
+                                    size: 18),
+                                label: Text(
+                                  'Shadow Live: ' +
+                                      platform.toStringAsFixed(1) +
+                                      '%',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+                const SizedBox(height: 12),
                 Card(
                   child: Padding(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(14),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Text(
-                          'حصة المستلم: ' +
-                              recipientPercent.toStringAsFixed(2) +
-                              '%',
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
-                          ),
+                        const Text(
+                          'مكافآت الأداء',
+                          style: TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.w900),
                         ),
-                        Slider(
-                          value: recipientPercent,
-                          min: 0,
-                          max: 100,
-                          divisions: 1000,
-                          label:
-                              recipientPercent.toStringAsFixed(1) + '%',
-                          onChanged: enabled
-                              ? (value) =>
-                                  setState(() => recipientPercent = value)
-                              : null,
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          children: [
+                            _numberField('Bonus المضيف', hostBonus, suffix: '%'),
+                            _numberField(
+                                'Bonus الوكالة', agencyBonus,
+                                suffix: '%'),
+                            _numberField('أيام المضيف المؤهلة', hostBonusDays),
+                            _numberField(
+                                'دقائق المايك/اليوم', hostMinutesPerDay),
+                            _numberField(
+                                'مضيفون نشطون للوكالة',
+                                agencyBonusActiveHosts),
+                          ],
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'مثال هدية 10,000 Coins → حصة المستلم ' +
-                              shareExample.toString() +
-                              ' Coins → ' +
-                              diamondsExample.toString() +
-                              ' Diamond + ' +
-                              remainderExample.toString() +
-                              ' Coins Pending.',
-                          style: const TextStyle(
-                            color: Color(0xFFAAA3B8),
-                          ),
+                        const SizedBox(height: 10),
+                        const Text(
+                          'نظام الاستحقاق الحالي محفوظ: 9+ أيام = 100%، 8 = 90%، 7 = 80%، 6 = 70%، 5 = 55%، 4 = 40%، 3 = 25%، وأقل من 3 = 0%.',
+                          style: TextStyle(color: Color(0xFFAAA3B8)),
                         ),
                       ],
                     ),
@@ -203,10 +354,8 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
                 ),
                 if (error != null) ...[
                   const SizedBox(height: 10),
-                  Text(
-                    error!,
-                    style: const TextStyle(color: Colors.orangeAccent),
-                  ),
+                  Text(error!,
+                      style: const TextStyle(color: Colors.orangeAccent)),
                 ],
                 const SizedBox(height: 16),
                 FilledButton.icon(
