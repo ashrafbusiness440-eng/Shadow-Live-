@@ -261,6 +261,7 @@ async function sendGift(db,uid,body){
     const userDailyRef=db.collection("gift_user_stats").doc(receiverId).collection("daily").doc(periods.day);
     const userWeeklyRef=db.collection("gift_user_stats").doc(receiverId).collection("weekly").doc(periods.week);
     const userMonthlyRef=db.collection("gift_user_stats").doc(receiverId).collection("monthly").doc(periods.month);
+    const agencyId=text(receiverData.agencyId||"");
     const showcaseRef=db.collection("public_gift_showcases").doc(receiverId).collection("items").doc(giftId);
     const counts={...(conversationData.unreadCounts||{})};
     counts[uid]=0;
@@ -288,6 +289,17 @@ async function sendGift(db,uid,body){
     tx.set(userDailyRef,receiverStats,{merge:true});
     tx.set(userWeeklyRef,receiverStats,{merge:true});
     tx.set(userMonthlyRef,receiverStats,{merge:true});
+    if(agencyId){
+      const agencyRootRef=db.collection("agency_support_stats").doc(agencyId);
+      const agencyStats={
+        supportCoins:FieldValue.increment(totalCost),
+        giftCount:FieldValue.increment(quantity),
+        updatedAt:now,
+      };
+      tx.set(agencyRootRef.collection("daily").doc(periods.day),agencyStats,{merge:true});
+      tx.set(agencyRootRef.collection("weekly").doc(periods.week),agencyStats,{merge:true});
+      tx.set(agencyRootRef.collection("monthly").doc(periods.month),agencyStats,{merge:true});
+    }
     if(earningsEnabled&&diamondsEarned>0){
       tx.create(earningsLedgerRef,{
         userId:receiverId,asset:"diamonds",delta:diamondsEarned,
@@ -301,7 +313,7 @@ async function sendGift(db,uid,body){
     tx.create(transactionRef,{
       senderId:uid,receiverId,contextType:"chat",conversationId,giftId,giftName,quantity,unitCoins,totalCost,
       assetKey,recipientShareBps,recipientShareCoins,diamondsEarned,pendingGiftEarningCoins,
-      earningsStatus:earningsEnabled?"applied":"pending_policy",periods,createdAt:now
+      earningsStatus:earningsEnabled?"applied":"pending_policy",periods,agencyId:agencyId||null,createdAt:now
     });
     tx.create(ledgerRef,{userId:uid,asset:"coins",delta:-totalCost,openingBalance:before,closingBalance:after,reason:"gift_send",sourceType:"gift",sourceId:key,actorUid:uid,idempotencyKey:key,createdAt:now});
     tx.set(showcaseRef,{giftId,name:giftName,imageUrl,assetKey,count:FieldValue.increment(quantity),updatedAt:now},{merge:true});
