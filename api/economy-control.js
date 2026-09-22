@@ -182,7 +182,7 @@ async function cycleQualifiedDays(db,hostUid,cycleKey){
     .where("day",">=",start).where("day","<=",end).get();
   return snap.docs.reduce((count,doc)=>count+((doc.data()||{}).qualified===true?1:0),0);
 }
-async function settleAgencyCycle(db,actorUid,accrualId){
+export async function settleAgencyCycle(db,actorUid,accrualId){
   const accrualRef=db.collection("agency_settlement_accruals").doc(accrualId);
   const initial=await accrualRef.get();
   if(!initial.exists)throw Error("settlement_not_found");
