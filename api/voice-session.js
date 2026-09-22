@@ -785,6 +785,171 @@ function roomControlPolicySnapshot(room){
   };
 }
 
+async function createOfficialRoomFromControl(db,uid,body){
+  const actorSnap=await db.collection("users").doc(uid).get();
+  const actor=actorSnap.data()||{};
+  const capabilities=Array.isArray(actor.capabilities)?actor.capabilities.map(clean):[];
+  const isOwner=actor.adminEnabled===true&&actor.role==="owner";
+  const canGlobal=isOwner||(actor.adminEnabled===true&&capabilities.includes("globalRoomControl"));
+  if(!actorSnap.exists||!canGlobal)throw new ApiError("global_room_control_required",403);
+
+  const name=clean(body.name);
+  const requestedPublicId=clean(body.publicId);
+  const hostUid=clean(body.hostUid);
+  const officialType=clean(body.officialType||"official");
+  const category=clean(body.category||"رسمية").slice(0,60);
+  const description=clean(body.description).slice(0,500);
+  const coverImageUrl=clean(body.coverImageUrl).slice(0,1200);
+  const visibility=clean(body.visibility||"public");
+  const seats=Number(body.seats??8);
+  const moderators=Number(body.moderators??3);
+  const reason=clean(body.reason);
+  const operationId=clean(body.idempotencyKey);
+  const tags=Array.isArray(body.tags)
+    ? [...new Set(body.tags.map(clean).filter(Boolean))].slice(0,8)
+    : [];
+
+  if(name.length<2||name.length>80)throw new ApiError("invalid_room_name",400);
+  if(requestedPublicId&&!/^\d{3,12}$/.test(requestedPublicId))throw new ApiError("invalid_room_public_id",400);
+  if(!["official","administrative","customer_service"].includes(officialType)){
+    throw new ApiError("invalid_official_room_type",400);
+  }
+  if(!["public","hidden"].includes(visibility))throw new ApiError("invalid_room_visibility",400);
+  if(!Number.isInteger(seats)||seats<1||seats>50)throw new ApiError("invalid_seat_override",400);
+  if(!Number.isInteger(moderators)||moderators<0||moderators>30)throw new ApiError("invalid_moderator_override",400);
+  if(reason.length<3||reason.length>160||!/^[A-Za-z0-9_-]{12,160}$/.test(operationId)){
+    throw new ApiError("invalid_request",400);
+  }
+
+  const createWithPublicId=async publicId=>{
+    const roomId="official_"+Date.now().toString(36)+"_"+randomBytes(5).toString("hex");
+    const roomRef=db.collection("rooms").doc(roomId);
+    const roomIdRef=db.collection("room_ids").doc(publicId);
+    const userIdRef=db.collection("public_ids").doc(publicId);
+    const opRef=db.collection("control_operations").doc(operationId);
+    const hostRef=hostUid?db.collection("users").doc(hostUid):null;
+
+    return db.runTransaction(async tx=>{
+      const reads=[tx.get(opRef),tx.get(roomRef),tx.get(roomIdRef),tx.get(userIdRef)];
+      if(hostRef)reads.push(tx.get(hostRef));
+      const snapshots=await Promise.all(reads);
+      const [opSnap,roomSnap,roomIdSnap,userIdSnap]=snapshots;
+      const hostSnap=hostRef?snapshots[4]:null;
+
+      if(opSnap.exists){
+        return {ok:true,code:"duplicate",operationId,...(opSnap.data()?.result||{})};
+      }
+      if(roomSnap.exists)throw new ApiError("room_id_collision",409);
+      if(roomIdSnap.exists||userIdSnap.exists)throw new ApiError("room_public_id_taken",409);
+      if(hostUid&&!hostSnap?.exists)throw new ApiError("host_not_found",404);
+
+      const now=FieldValue.serverTimestamp();
+      const room={
+        name,
+        title:name,
+        ownerUid:"",
+        ownerId:"",
+        hostUid,
+        hostId:hostUid,
+        systemOwned:true,
+        officialRoom:true,
+        roomType:officialType,
+        type:officialType,
+        category,
+        description,
+        coverImageUrl,
+        tags,
+        chatEnabled:true,
+        visibility,
+        isHidden:visibility==="hidden",
+        isActive:true,
+        isFeatured:true,
+        onlineCount:0,
+        participantsCount:0,
+        level:1,
+        levelPoints:0,
+        levelTarget:1000,
+        followerCount:0,
+        dailySupport:0,
+        controlOverrides:{
+          seats,
+          moderators,
+          bypassLevelCapacity:true,
+          updatedBy:uid,
+        },
+        seats:Array.from({length:seats},(_,index)=>({
+          index,uid:"",displayName:"",profileImageUrl:"",muted:true,
+        })),
+        micInvites:[],
+        micRequests:[],
+        moderators:[],
+        musicPolicy:{allowMembers:false},
+        musicQueue:[],
+        musicState:{
+          status:"stopped",
+          currentTrackId:"",
+          sourceOwnerUid:"",
+          requestedBy:"",
+          startedAtMs:0,
+          commandRevision:0,
+        },
+        publicId,
+        searchTokens:searchTokens(name+" "+category+" "+tags.join(" "),publicId),
+        officialCreatedBy:uid,
+        officialUpdatedBy:uid,
+        createdAt:now,
+        updatedAt:now,
+      };
+      const after=roomControlPolicySnapshot(room);
+      const resultData={roomId,publicId,name,policy:after};
+
+      tx.create(roomRef,room);
+      tx.create(roomIdRef,{
+        roomId,
+        ownerUid:"",
+        source:"officialRoomControl",
+        systemOwned:true,
+        active:true,
+        reserved:true,
+        createdAt:now,
+      });
+      tx.create(db.collection("admin_audit_logs").doc(),{
+        actorUid:uid,
+        action:"createOfficialRoom",
+        targetType:"room",
+        targetId:roomId,
+        reason,
+        before:null,
+        after:{...after,name,publicId,category,visibility},
+        operationId,
+        createdAt:now,
+      });
+      tx.create(opRef,{
+        action:"createOfficialRoom",
+        actorUid:uid,
+        targetType:"room",
+        targetId:roomId,
+        status:"completed",
+        result:resultData,
+        createdAt:now,
+      });
+      return {ok:true,code:"ok",operationId,...resultData};
+    });
+  };
+
+  if(requestedPublicId)return createWithPublicId(requestedPublicId);
+  for(let attempt=0;attempt<40;attempt++){
+    const generated=String(randomInt(100000,1000000));
+    try{
+      return await createWithPublicId(generated);
+    }catch(error){
+      if(error instanceof ApiError&&error.code==="room_public_id_taken")continue;
+      throw error;
+    }
+  }
+  throw new ApiError("room_public_id_exhausted",503);
+}
+
 async function controlRoomPolicy(db,uid,body){
   let roomId=clean(body.roomId);
   const roomPublicId=clean(body.roomPublicId);
@@ -800,6 +965,10 @@ async function controlRoomPolicy(db,uid,body){
   );
   const canGlobal=isOwner||(actor.adminEnabled===true&&capabilities.includes("globalRoomControl"));
   if(!actorSnap.exists||!canManage)throw new ApiError("forbidden",403);
+
+  if(controlAction==="createOfficialRoom"){
+    return createOfficialRoomFromControl(db,uid,body);
+  }
 
   if(!roomId&&roomPublicId){
     if(!/^\d{3,12}$/.test(roomPublicId))throw new ApiError("invalid_room_public_id",400);
