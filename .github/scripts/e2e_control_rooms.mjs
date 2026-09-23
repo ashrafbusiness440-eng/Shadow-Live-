@@ -22,7 +22,7 @@ await page.goto('http://127.0.0.1:8090', {
 await page.waitForTimeout(7000);
 
 await page.screenshot({
-  path: 'control-e2e-screenshots/rooms-control.png',
+  path: 'control-e2e-screenshots/economy-control.png',
   fullPage: true,
 });
 
@@ -36,5 +36,5 @@ fs.writeFileSync(
   diagnostics.length ? diagnostics.join('\n\n') : 'NO_BROWSER_ERRORS\n',
 );
 
-console.log(`Shadow Control diagnostic entries: ${diagnostics.length}`);
+console.log(`Shadow Control economy diagnostic entries: ${diagnostics.length}`);
 await browser.close();
