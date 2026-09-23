@@ -599,7 +599,12 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
   }
 
   Widget _statusBar(GameCatalogEntry game) {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    String? uid;
+    try {
+      uid = FirebaseAuth.instance.currentUser?.uid;
+    } catch (_) {
+      uid = null;
+    }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       color: Colors.white.withValues(alpha: .025),
