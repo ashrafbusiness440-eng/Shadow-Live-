@@ -182,7 +182,7 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
         ? _state!.bets
         : game?.bets ?? const <int>[];
     if (values.isEmpty) return 0;
-    final index = _betIndex.clamp(0, values.length - 1);
+    final index = _betIndex.clamp(0, values.length - 1).toInt();
     return values[index];
   }
 
@@ -259,7 +259,7 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
     if (closes <= 0 || serverAtFetch <= 0) return 0;
     final delta = serverAtFetch - DateTime.now().millisecondsSinceEpoch;
     final serverNow = DateTime.now().millisecondsSinceEpoch + delta;
-    return ((closes - serverNow) / 1000).ceil().clamp(0, 999);
+    return ((closes - serverNow) / 1000).ceil().clamp(0, 999).toInt();
   }
 
   Color get _accent {
