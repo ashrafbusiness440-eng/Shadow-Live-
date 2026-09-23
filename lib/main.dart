@@ -47,6 +47,8 @@ import 'features/gift/widgets/room_gift_sheet.dart';
 import 'features/room/widgets/room_moderator_manager_sheet.dart';
 import 'features/room/widgets/room_music_sheet.dart';
 import 'features/room/widgets/room_pk_panel.dart';
+import 'features/room/widgets/room_rocket_banner_host.dart';
+import 'features/room/services/room_rocket_service.dart';
 import 'features/room/widgets/star_battle_sheet.dart';
 import 'features/room/services/room_seat_service.dart';
 
@@ -100,6 +102,9 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Shadow Live',
       navigatorKey: NavigationService.navigatorKey,
+      builder: (context, child) => RoomRocketBannerHost(
+        child: child ?? const SizedBox.shrink(),
+      ),
       theme: ThemeData(
         colorScheme: ColorScheme.dark(
           primary: Colors.yellow[400]!,
@@ -3996,6 +4001,147 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     );
   }
 
+  Future<void> _showRoomRocketSheet() async {
+    final roomId = (_roomArguments['roomId'] ?? '').toString().trim();
+    if (roomId.isEmpty) return;
+    final service = RoomRocketService();
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: const Color(0xFF0C101A),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+        ),
+        builder: (sheetContext) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: SafeArea(
+            child: StreamBuilder<RoomRocketState>(
+              stream: service.watchRoomState(roomId),
+              builder: (context, snapshot) {
+                final state = snapshot.data ??
+                    const RoomRocketState(
+                      currentLevel: 1,
+                      progressCoins: 0,
+                      thresholdCoins: 100000,
+                      contributors: [],
+                    );
+                final top = state.contributors.take(3).toList(growable: false);
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 16, 18, 22),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.rocket_launch_rounded,
+                            color: Color(0xFFFFD54A),
+                            size: 30,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'صاروخ الغرفة • LV.${state.currentLevel}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 20,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      LinearProgressIndicator(
+                        value: state.progress,
+                        minHeight: 9,
+                        borderRadius: BorderRadius.circular(99),
+                        color: const Color(0xFFFFD54A),
+                        backgroundColor: Colors.white12,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '${state.progressCoins} / ${state.thresholdCoins} Coins',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      const Text(
+                        'أعلى المساهمين في المستوى الحالي',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      if (top.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 14),
+                          child: Text(
+                            'لا توجد مساهمات بعد',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: Colors.white54),
+                          ),
+                        )
+                      else
+                        ...top.asMap().entries.map((entry) {
+                          final item = entry.value;
+                          final name =
+                              (item['displayName'] ?? 'مستخدم Shadow Live')
+                                  .toString();
+                          final photo =
+                              (item['profileImageUrl'] ?? '').toString();
+                          final coins = (item['coins'] as num?)?.toInt() ?? 0;
+                          return ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: CircleAvatar(
+                              backgroundColor: const Color(0xFF25183F),
+                              backgroundImage:
+                                  photo.isEmpty ? null : NetworkImage(photo),
+                              child: photo.isEmpty
+                                  ? Text(
+                                      '${entry.key + 1}',
+                                      style: const TextStyle(
+                                        color: Color(0xFFFFD54A),
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    )
+                                  : null,
+                            ),
+                            title: Text(
+                              name,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            trailing: Text(
+                              '$coins Coins',
+                              style: const TextStyle(
+                                color: Color(0xFFFFD54A),
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          );
+                        }),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+    } finally {
+      service.close();
+    }
+  }
+
   Widget _buildRoomRocketButton() {
     return Tooltip(
       message: 'صاروخ الغرفة',
@@ -4003,13 +4149,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
-          onTap: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('تم تثبيت مكان صاروخ الغرفة. ربط وظيفة الصاروخ سيتم على نظامه المعتمد.'),
-              ),
-            );
-          },
+          onTap: _showRoomRocketSheet,
           child: Container(
             width: 48,
             height: 48,
