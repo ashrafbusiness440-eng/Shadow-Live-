@@ -3,6 +3,7 @@ import {after,test} from "node:test";
 import {deleteApp,getApps,initializeApp} from "firebase-admin/app";
 import {getFirestore} from "firebase-admin/firestore";
 import {
+  gameCatalog,
   gameState,
   placeGameBet,
   settleGameOperation,
@@ -73,6 +74,38 @@ async function seedUserRoom(uid,roomId,coins=20000){
     }),
   ]);
 }
+
+test("catalog exposes only enabled runtime variants with their bet ladders",async()=>{
+  await seedRuntime();
+  const catalog=await gameCatalog(db);
+  assert.equal(catalog.ok,true);
+  assert.deepEqual(
+    catalog.items.map(item=>item.key).sort(),
+    ["greedy_cat","slot","witch_advanced","witch_normal"],
+  );
+  const greedy=catalog.items.find(item=>item.key==="greedy_cat");
+  assert.deepEqual(greedy.bets,[200,2000,20000,200000]);
+});
+
+test("collective state exposes the same previous global result in every room",async()=>{
+  await seedRuntime();
+  const suffix=Date.now().toString()+"_last_result";
+  const uidA="state_a_"+suffix;
+  const uidB="state_b_"+suffix;
+  await Promise.all([
+    seedUserRoom(uidA,"state_room_a_"+suffix),
+    seedUserRoom(uidB,"state_room_b_"+suffix),
+  ]);
+  const options={nowMs,rngSecret};
+  const [a,b]=await Promise.all([
+    gameState(db,uidA,{gameId:"greedy_cat"},options),
+    gameState(db,uidB,{gameId:"greedy_cat"},options),
+  ]);
+  assert.ok(a.lastResult);
+  assert.deepEqual(a.lastResult,b.lastResult);
+  assert.equal(a.round.roundId,b.round.roundId);
+  assert.equal(a.serverNowMs,nowMs);
+});
 
 test("collective game debits once and settles after disconnect",async()=>{
   await seedRuntime();
@@ -197,7 +230,7 @@ test("witch separate taps in one round aggregate to 21K on the same choice",asyn
   const state=await gameState(db,uid,{
     gameId:"witch",
     mode:"normal",
-  },{nowMs});
+  },{nowMs,rngSecret});
   assert.equal(state.currentRoundSelections.length,1);
   assert.equal(state.currentRoundSelections[0].choiceId,"book");
   assert.equal(state.currentRoundSelections[0].amountCoins,21000);
