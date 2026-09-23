@@ -124,13 +124,15 @@ function runtimeConfig(raw={}){
 function gameConfig(config,gameId,mode){
   if(!config.enabled)throw Error("games_disabled");
   const game=config.games?.[gameId];
-  if(!game||game.enabled!==true)throw Error("game_disabled");
+  if(!game)throw Error("game_disabled");
   if(gameId==="witch"){
     if(!["normal","advanced"].includes(mode))throw Error("invalid_mode");
     const variant=game[mode]||{};
+    if(variant.enabled!==true)throw Error("game_disabled");
     return {
       ...game,
       ...variant,
+      enabled:true,
       targetRtpBps:Number.isSafeInteger(Number(variant.targetRtpBps))
         ? Math.max(1000,Math.min(9900,Number(variant.targetRtpBps)))
         : Number.isSafeInteger(Number(game.targetRtpBps))
@@ -139,6 +141,7 @@ function gameConfig(config,gameId,mode){
       outcomes:validateOutcomeWeights(gameId,mode,variant.outcomes),
     };
   }
+  if(game.enabled!==true)throw Error("game_disabled");
   return {
     ...game,
     targetRtpBps:Number.isSafeInteger(Number(game.targetRtpBps))
