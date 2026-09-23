@@ -31,7 +31,7 @@ class ShadowControlApp extends StatelessWidget {
     home: const Directionality(
       textDirection: TextDirection.rtl,
       child: bool.fromEnvironment('CONTROL_E2E_TEST')
-          ? ControlShell(initialNavIndex: 2)
+          ? ControlShell(initialNavIndex: 3)
           : AdminGate(),
     ),
   );
