@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 
 abstract final class ShadowAssetRegistry {
   static const apiBase = String.fromEnvironment('SHADOW_ASSET_API_BASE');
-  static const fallbackApiBase = 'https://shadow-live-git-feature-shadow-control-foundation-shadow-c916.vercel.app';
+  static const fallbackApiBase = 'https://shadow-live-six.vercel.app';
   static final Map<String, Future<Uri?>> _cache = <String, Future<Uri?>>{};
 
   static Uri _endpoint(String key) {
