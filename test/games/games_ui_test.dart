@@ -29,7 +29,7 @@ void main() {
     await tester.pump();
 
     final joinButton = find.textContaining('شارك بـ 200');
-    await tester.scrollUntilVisible(joinButton, 300);
+    await tester.scrollUntilVisible(joinButton, 300, scrollable: find.byType(Scrollable).first);
     await tester.pumpAndSettle();
     await tester.tap(joinButton);
     await tester.pump();
