@@ -529,10 +529,29 @@ export async function gameState(db,uid,body={},options={}){
     .where("userId","==",uid)
     .limit(50)
     .get();
-  const pending=pendingSnapshot.docs
+  const pendingRaw=pendingSnapshot.docs
     .map(doc=>doc.data()||{})
-    .filter(item=>item.status==="pending")
-    .map(publicOperation);
+    .filter(item=>item.status==="pending");
+  const pending=pendingRaw.map(publicOperation);
+  const currentRoundTotals=new Map();
+  if(gameId!=="slot"){
+    for(const operation of pendingRaw){
+      if(clean(operation.roundId)!==round.roundId)continue;
+      for(const selection of Array.isArray(operation.selections)
+        ? operation.selections
+        : []){
+        const choiceId=clean(selection?.choiceId);
+        const amountCoins=Number(selection?.amountCoins||0);
+        if(!choiceId||!Number.isSafeInteger(amountCoins)||amountCoins<=0)continue;
+        currentRoundTotals.set(
+          choiceId,
+          (currentRoundTotals.get(choiceId)||0)+amountCoins,
+        );
+      }
+    }
+  }
+  const currentRoundSelections=[...currentRoundTotals.entries()]
+    .map(([choiceId,amountCoins])=>({choiceId,amountCoins}));
   return {
     ok:true,
     gameId,
@@ -547,6 +566,7 @@ export async function gameState(db,uid,body={},options={}){
       closesAtMs:round.closesAtMs,
       locked:nowMs>=round.closesAtMs-config.lockBeforeMs,
     },
+    currentRoundSelections,
     pending,
   };
 }
