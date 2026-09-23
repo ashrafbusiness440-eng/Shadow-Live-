@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 
 import 'control_asset_policy.dart';
@@ -23,8 +24,10 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
   final _reason = TextEditingController(text: 'تحديث أصل التطبيق من Shadow Control');
 
   Uint8List? _bytes;
+  Uint8List? _sourceBytes;
   String? _mimeType;
   String? _pickedName;
+  String? _conversionNote;
   bool _busy = false;
   String _mode = 'remote';
   String? _message;
@@ -49,29 +52,198 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
 
   static final Uri _endpoint = Uri.parse('https://shadow-live-six.vercel.app/api/manage-app-asset');
 
+  String _defaultFileNameFromCurrent(String pickedName) {
+    final directory = ControlAssetPolicy.normalizeDirectory(_directory.text);
+    final key = _assetKey.text.trim();
+    if (directory == 'assets/images/gifts' && key.startsWith('gifts.')) {
+      final id = key.substring('gifts.'.length).replaceAll('.', '_');
+      if (id.isNotEmpty) return 'gift_$id.webp';
+    }
+
+    final current = _fileName.text.trim();
+    if (current.isNotEmpty && ControlAssetPolicy.fileNameAllowed(current)) {
+      return current;
+    }
+    final dot = pickedName.lastIndexOf('.');
+    final base = dot > 0 ? pickedName.substring(0, dot) : pickedName;
+    return '$base.webp';
+  }
+
+  void _syncGiftFileNameFromAssetKey() {
+    final directory = ControlAssetPolicy.normalizeDirectory(_directory.text);
+    final key = _assetKey.text.trim();
+    if (directory != 'assets/images/gifts' || !key.startsWith('gifts.')) {
+      return;
+    }
+    final id = key.substring('gifts.'.length).replaceAll('.', '_');
+    if (id.isNotEmpty) _fileName.text = 'gift_$id.webp';
+  }
+
+  String? _targetExtension() {
+    final name = _fileName.text.trim().toLowerCase();
+    final dot = name.lastIndexOf('.');
+    if (dot <= 0 || dot == name.length - 1) return null;
+    final ext = name.substring(dot + 1);
+    return ControlAssetPolicy.allowedExtensions.contains(ext) ? ext : null;
+  }
+
+  String _mimeForExtension(String extension) => switch (extension) {
+        'png' => 'image/png',
+        'jpg' || 'jpeg' => 'image/jpeg',
+        'webp' => 'image/webp',
+        'gif' => 'image/gif',
+        _ => 'application/octet-stream',
+      };
+
+  img.Image _prepareDimensions(img.Image decoded) {
+    final directory = ControlAssetPolicy.normalizeDirectory(_directory.text);
+    if (directory == 'assets/images/gifts') {
+      return img.copyResizeCropSquare(
+        decoded,
+        size: 1024,
+        interpolation: img.Interpolation.linear,
+        antialias: true,
+      );
+    }
+
+    final longest =
+        decoded.width > decoded.height ? decoded.width : decoded.height;
+    if (longest <= 2048) return decoded;
+    return decoded.width >= decoded.height
+        ? img.copyResize(
+            decoded,
+            width: 2048,
+            interpolation: img.Interpolation.linear,
+          )
+        : img.copyResize(
+            decoded,
+            height: 2048,
+            interpolation: img.Interpolation.linear,
+          );
+  }
+
+  Uint8List? _encodeForTarget(img.Image image, String extension) {
+    if (extension == 'webp') {
+      Uint8List? smallest;
+      for (final quality in const [90, 86, 82, 76, 70, 64]) {
+        final encoded = img.encodeWebP(
+          image,
+          lossless: false,
+          quality: quality,
+          method: 4,
+          alphaQuality: 100,
+        );
+        smallest = encoded;
+        if (encoded.length <= ControlAssetPolicy.maxBytes) return encoded;
+      }
+      return smallest != null && smallest.length <= ControlAssetPolicy.maxBytes
+          ? smallest
+          : null;
+    }
+
+    if (extension == 'jpg' || extension == 'jpeg') {
+      Uint8List? smallest;
+      for (final quality in const [92, 88, 84, 78, 72, 66]) {
+        final encoded = img.encodeJpg(image, quality: quality);
+        smallest = encoded;
+        if (encoded.length <= ControlAssetPolicy.maxBytes) return encoded;
+      }
+      return smallest != null && smallest.length <= ControlAssetPolicy.maxBytes
+          ? smallest
+          : null;
+    }
+
+    if (extension == 'png') {
+      final encoded = img.encodePng(image, level: 7);
+      return encoded.length <= ControlAssetPolicy.maxBytes ? encoded : null;
+    }
+
+    if (extension == 'gif') {
+      final encoded = img.encodeGif(image);
+      return encoded.length <= ControlAssetPolicy.maxBytes ? encoded : null;
+    }
+
+    return null;
+  }
+
+  String _formatLabel(String extension) => switch (extension) {
+        'jpg' || 'jpeg' => 'JPEG',
+        _ => extension.toUpperCase(),
+      };
+
+  Future<bool> _convertSelectedToTarget({bool updateMessage = true}) async {
+    final sourceBytes = _sourceBytes;
+    if (sourceBytes == null) return false;
+
+    final extension = _targetExtension();
+    if (extension == null) {
+      if (mounted && updateMessage) {
+        setState(() => _message =
+            'امتداد اسم الملف غير مدعوم. استخدم PNG أو JPG/JPEG أو WebP أو GIF.');
+      }
+      return false;
+    }
+
+    final decoded = img.decodeImage(sourceBytes);
+    if (decoded == null) {
+      if (mounted && updateMessage) {
+        setState(() => _message =
+            'تعذر قراءة الصورة الأصلية. الصيغ المدعومة: PNG / JPG / JPEG / WebP / GIF.');
+      }
+      return false;
+    }
+
+    final prepared = _prepareDimensions(decoded);
+    final encoded = _encodeForTarget(prepared, extension);
+    if (encoded == null) {
+      if (mounted && updateMessage) {
+        setState(() => _message =
+            'تعذر تجهيز \${_formatLabel(extension)} تحت حد 2.5 MB. جرّب WebP أو صورة أصغر.');
+      }
+      return false;
+    }
+
+    final sourceKb = sourceBytes.length / 1024;
+    final outputKb = encoded.length / 1024;
+    if (mounted) {
+      setState(() {
+        _bytes = encoded;
+        _mimeType = _mimeForExtension(extension);
+        _conversionNote =
+            'تجهيز تلقائي حسب اسم الملف → \${_formatLabel(extension)} • '
+            '\${prepared.width}×\${prepared.height} • '
+            '\${sourceKb.toStringAsFixed(1)} KB → \${outputKb.toStringAsFixed(1)} KB';
+        if (updateMessage) _message = null;
+      });
+    }
+    return true;
+  }
+
   Future<void> _pickImage() async {
     final file = await ImagePicker().pickImage(source: ImageSource.gallery);
     if (file == null) return;
-    final bytes = await file.readAsBytes();
-    if (bytes.length > ControlAssetPolicy.maxBytes) {
-      setState(() => _message = 'حجم الصورة أكبر من 2.5 MB.');
-      return;
-    }
-    final lower = file.name.toLowerCase();
-    final mime = lower.endsWith('.png')
-        ? 'image/png'
-        : lower.endsWith('.webp')
-            ? 'image/webp'
-            : lower.endsWith('.gif')
-                ? 'image/gif'
-                : 'image/jpeg';
+
     setState(() {
-      _bytes = bytes;
-      _mimeType = mime;
-      _pickedName = file.name;
-      if (_fileName.text.trim().isEmpty) _fileName.text = file.name;
-      _message = null;
+      _busy = true;
+      _message = 'جارٍ تجهيز الصورة حسب صيغة اسم الملف...';
     });
+
+    try {
+      final sourceBytes = await file.readAsBytes();
+      final outputName = _defaultFileNameFromCurrent(file.name);
+      setState(() {
+        _sourceBytes = sourceBytes;
+        _pickedName = file.name;
+        _fileName.text = outputName;
+      });
+      await _convertSelectedToTarget();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _message = 'تعذر تجهيز الصورة: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _loadAssets() async {
@@ -106,9 +278,24 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
   }
 
   Future<void> _upload() async {
+    if (_sourceBytes != null) {
+      setState(() {
+        _busy = true;
+        _message = 'جارٍ التحقق من الصيغة النهائية وتحويل الصورة تلقائيًا...';
+      });
+      final converted = await _convertSelectedToTarget();
+      if (!converted) {
+        if (mounted) setState(() => _busy = false);
+        return;
+      }
+    }
+
     final error = _validate();
     if (error != null) {
-      setState(() => _message = error);
+      setState(() {
+        _busy = false;
+        _message = error;
+      });
       return;
     }
     setState(() {
@@ -171,7 +358,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
           ]),
           const SizedBox(height: 8),
           const Text(
-            'ارفع صورة وحدد مسارها واسمها. إذا كان الملف موجودًا بنفس الاسم والمسار سيتم استبداله، وليس إنشاء نسخة إضافية.',
+            'اختر PNG أو JPG/JPEG أو WebP أو GIF. الصيغة النهائية تُحدد تلقائيًا من امتداد اسم الملف: إذا كتبت .webp يتحول WebP، وإذا كتبت .png أو .jpg/.jpeg أو .gif يتحول للصيغة نفسها قبل الرفع. صور الهدايا تُجهّز تلقائيًا بمقاس 1024×1024.',
             style: TextStyle(color: Color(0xFFCBC5D6), height: 1.5),
           ),
           const SizedBox(height: 16),
@@ -185,23 +372,45 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                   items: ControlAssetPolicy.allowedDirectories
                       .map((p) => DropdownMenuItem(value: p, child: Text(p)))
                       .toList(),
-                  onChanged: (v) { if (v != null) setState(() => _directory.text = v); },
+                  onChanged: (v) {
+                    if (v != null) {
+                      setState(() {
+                        _directory.text = v;
+                        _syncGiftFileNameFromAssetKey();
+                      });
+                    }
+                  },
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: _fileName,
+                  onEditingComplete: () async {
+                    FocusScope.of(context).unfocus();
+                    if (_sourceBytes != null) {
+                      setState(() {
+                        _busy = true;
+                        _message = 'جارٍ التحويل حسب امتداد اسم الملف...';
+                      });
+                      await _convertSelectedToTarget();
+                      if (mounted) setState(() => _busy = false);
+                    }
+                  },
                   decoration: const InputDecoration(
-                    labelText: 'اسم الملف',
-                    hintText: 'vip_3.webp',
+                    labelText: 'اسم الملف يحدد صيغة التحويل',
+                    hintText: 'gift_rose.webp / banner.png / photo.jpg / animation.gif',
+                    helperText: 'الامتدادات المدعومة: .webp .png .jpg .jpeg .gif',
                     border: OutlineInputBorder(),
                   ),
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: _assetKey,
+                  onChanged: (_) {
+                    setState(_syncGiftFileNameFromAssetKey);
+                  },
                   decoration: const InputDecoration(
                     labelText: 'مفتاح الاستخدام داخل النظام',
-                    hintText: 'vip.badge.3',
+                    hintText: 'gifts.rose',
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -226,6 +435,17 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                   icon: const Icon(Icons.photo_library_outlined),
                   label: Text(_pickedName == null ? 'اختيار صورة' : 'تغيير الصورة: $_pickedName'),
                 ),
+                if (_conversionNote != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    _conversionNote!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.greenAccent,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
                 if (_bytes != null) ...[
                   const SizedBox(height: 12),
                   Container(

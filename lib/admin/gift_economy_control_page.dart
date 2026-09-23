@@ -4,6 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
+import 'control_api_endpoints.dart';
+
 typedef GiftEconomyPost = Future<Map<String, dynamic>> Function(
   Map<String, dynamic> payload,
 );
@@ -66,12 +68,7 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
   final hostMinutesPerDay = TextEditingController(text: '120');
   final agencyBonusActiveHosts = TextEditingController(text: '10');
 
-  Uri get apiUri => Uri(
-        scheme: Uri.base.scheme,
-        host: Uri.base.host,
-        port: Uri.base.hasPort ? Uri.base.port : null,
-        path: '/api/gift-economy-config',
-      );
+  Uri get apiUri => shadowEconomyEndpoint('gift-economy-config');
 
   @override
   void initState() {

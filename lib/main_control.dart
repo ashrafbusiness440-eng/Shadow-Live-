@@ -7,8 +7,10 @@ import 'package:http/http.dart' as http;
 import 'firebase_options.dart';
 import 'utils/compact_number.dart';
 import 'admin/control_admin_id_override.dart';
+import 'admin/control_api_endpoints.dart';
 import 'admin/control_asset_manager_page.dart';
 import 'admin/economy_control_page.dart';
+import 'admin/games_control_page.dart';
 
 
 Future<void> main() async {
@@ -252,14 +254,20 @@ class _ControlShellState extends State<ControlShell> {
         ],
       ),
       body: IndexedStack(index:index,children:pages),
-      bottomNavigationBar:NavigationBar(selectedIndex:index,onDestinationSelected:(v)=>setState(()=>index=v),destinations:const[
-        NavigationDestination(icon:Icon(Icons.dashboard_outlined),selectedIcon:Icon(Icons.dashboard),label:'الرئيسية'),
-        NavigationDestination(icon:Icon(Icons.people_outline),selectedIcon:Icon(Icons.people),label:'المستخدمون'),
-        NavigationDestination(icon:Icon(Icons.mic_none),selectedIcon:Icon(Icons.mic),label:'إدارة الغرف'),
-        NavigationDestination(icon:Icon(Icons.wallet_outlined),selectedIcon:Icon(Icons.wallet),label:'المالية'),
-        NavigationDestination(icon:Icon(Icons.badge_outlined),selectedIcon:Icon(Icons.badge),label:'IDs'),
-        NavigationDestination(icon:Icon(Icons.more_horiz),label:'المزيد'),
-      ]),
+      bottomNavigationBar:NavigationBar(
+        height:72,
+        labelBehavior:NavigationDestinationLabelBehavior.onlyShowSelected,
+        selectedIndex:index,
+        onDestinationSelected:(v)=>setState(()=>index=v),
+        destinations:const[
+          NavigationDestination(icon:Icon(Icons.dashboard_outlined),selectedIcon:Icon(Icons.dashboard),label:'الرئيسية'),
+          NavigationDestination(icon:Icon(Icons.people_outline),selectedIcon:Icon(Icons.people),label:'مستخدمون'),
+          NavigationDestination(icon:Icon(Icons.mic_none),selectedIcon:Icon(Icons.mic),label:'غرف'),
+          NavigationDestination(icon:Icon(Icons.wallet_outlined),selectedIcon:Icon(Icons.wallet),label:'المالية'),
+          NavigationDestination(icon:Icon(Icons.badge_outlined),selectedIcon:Icon(Icons.badge),label:'IDs'),
+          NavigationDestination(icon:Icon(Icons.more_horiz),label:'المزيد'),
+        ],
+      ),
     );
   }
 }
@@ -466,7 +474,7 @@ class _OwnerEconomyCard extends StatelessWidget {
       final token=await user.getIdToken().timeout(const Duration(seconds:12));
       if(token==null||token.isEmpty)throw Exception('empty_token');
       final key='bal_${DateTime.now().millisecondsSinceEpoch}_${user.uid.substring(0,6)}';
-      final apiUri=Uri(scheme:Uri.base.scheme,host:Uri.base.host,port:Uri.base.hasPort?Uri.base.port:null,path:'/api/adjust-balance');
+      final apiUri=shadowApiEndpoint('adjust-balance');
       final response=await http.post(apiUri,headers:{'Content-Type':'application/json','Authorization':'Bearer $token'},body:jsonEncode({'targetId':uid,'asset':asset,'delta':delta,'reason':reason,'idempotencyKey':key})).timeout(const Duration(seconds:20));
       final body=jsonDecode(response.body) as Map<String,dynamic>;
       if(response.statusCode!=200||body['ok']!=true)throw Exception(body['code']??'request_failed');
@@ -482,7 +490,7 @@ class _RolePolicyCard extends StatelessWidget {
   final String role; final bool adminEnabled; final List<String> capabilities;
   static const labels=<String,String>{
     'viewUsers':'عرض المستخدمين','manageUsers':'إدارة المستخدمين','manageRooms':'إدارة الغرف',
-    'reviewReports':'مراجعة البلاغات','manageEconomy':'إدارة الاقتصاد','manageWithdrawals':'إدارة السحب',
+    'reviewReports':'مراجعة البلاغات','manageEconomy':'إدارة الاقتصاد','manageGames':'إدارة الألعاب','manageWithdrawals':'إدارة السحب',
     'manageSettlements':'إدارة التسويات','manageRoles':'إدارة الأدوار','manageCapabilities':'إدارة الصلاحيات',
     'manageSystem':'إدارة النظام','manageIds':'إدارة IDs المستخدمين والغرف',
   };
@@ -525,12 +533,7 @@ class _RoomsPageState extends State<RoomsPage> {
     publicId.dispose();reason.dispose();seats.dispose();moderators.dispose();hostUid.dispose();super.dispose();
   }
 
-  Uri get apiUri=>Uri(
-    scheme:Uri.base.scheme,
-    host:Uri.base.host,
-    port:Uri.base.hasPort?Uri.base.port:null,
-    path:'/api/voice-session',
-  );
+  Uri get apiUri=>shadowApiEndpoint('voice-session');
 
   Future<Map<String,dynamic>> post(Map<String,dynamic> payload) async {
     final user=FirebaseAuth.instance.currentUser;
@@ -1012,6 +1015,27 @@ class FinancePage extends StatelessWidget {
               ),
             ),
           ),
+          Card(
+            child: ListTile(
+              leading: const Icon(
+                Icons.sports_esports_rounded,
+                color: Color(0xFFD7B85A),
+              ),
+              trailing: const Icon(Icons.chevron_left),
+              title: const Text(
+                'Games Control',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
+              subtitle: const Text(
+                'تشغيل/إيقاف مستقل + RTP + Bet Ladder + الاحتمالات + الإحصاءات + Audit',
+              ),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const GamesControlPage(),
+                ),
+              ),
+            ),
+          ),
           _AdminCollectionTile(
             title: 'تسويات الوكالات',
             subtitle: 'agency_settlements — قراءة فقط',
@@ -1225,7 +1249,7 @@ class _RoomIdManagementPageState extends State<RoomIdManagementPage> {
       final token=await user.getIdToken().timeout(const Duration(seconds:12));
       if(token==null||token.isEmpty)throw Exception('forbidden');
       final key='rid_${DateTime.now().millisecondsSinceEpoch}_${user.uid.substring(0,6)}';
-      final apiUri=Uri(scheme:Uri.base.scheme,host:Uri.base.host,port:Uri.base.hasPort?Uri.base.port:null,path:'/api/voice-session');
+      final apiUri=shadowApiEndpoint('voice-session');
       final response=await http.post(
         apiUri,
         headers:{'Content-Type':'application/json','Authorization':'Bearer $token'},
@@ -1379,7 +1403,7 @@ class _OwnerIdPermissionCardState extends State<_OwnerIdPermissionCard> {
       final token=await user.getIdToken().timeout(const Duration(seconds:12));
       if(token==null||token.isEmpty)throw Exception('empty_token');
       final key='idcap_${DateTime.now().millisecondsSinceEpoch}_${user.uid.substring(0,6)}';
-      final apiUri=Uri(scheme:Uri.base.scheme,host:Uri.base.host,port:Uri.base.hasPort?Uri.base.port:null,path:'/api/set-id-management-permission');
+      final apiUri=shadowApiEndpoint('set-id-management-permission');
       final response=await http.post(
         apiUri,
         headers:{'Content-Type':'application/json','Authorization':'Bearer $token'},
@@ -1520,7 +1544,7 @@ class _IdManagementPageState extends State<UserIdManagementPage> {
       final token=await user.getIdToken().timeout(const Duration(seconds:12));
       if(token==null||token.isEmpty)throw Exception('forbidden');
       final key='pid_${DateTime.now().millisecondsSinceEpoch}_${user.uid.substring(0,6)}';
-      final apiUri=Uri(scheme:Uri.base.scheme,host:Uri.base.host,port:Uri.base.hasPort?Uri.base.port:null,path:'/api/change-public-id');
+      final apiUri=shadowApiEndpoint('change-public-id');
       final response=await http.post(
         apiUri,
         headers:{'Content-Type':'application/json','Authorization':'Bearer $token'},

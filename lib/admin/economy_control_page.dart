@@ -5,10 +5,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
+import 'control_api_endpoints.dart';
+
 import '../utils/compact_number.dart';
 import 'gift_catalog_control_page.dart';
 import 'gift_economy_control_page.dart';
 import 'recharge_packages_control_page.dart';
+import 'room_rocket_control_page.dart';
 
 class EconomyControlPage extends StatefulWidget {
   const EconomyControlPage({super.key});
@@ -36,12 +39,13 @@ class _EconomyControlPageState extends State<EconomyControlPage> {
   List<Map<String, dynamic>> operations = [];
   List<Map<String, dynamic>> issues = [];
 
-  Uri endpoint(String path) => Uri(
-        scheme: Uri.base.scheme,
-        host: Uri.base.host,
-        port: Uri.base.hasPort ? Uri.base.port : null,
-        path: path,
-      );
+  Uri endpoint(String path) {
+    final clean = path.replaceFirst('/api/', '');
+    if (clean == 'economy-control') {
+      return shadowEconomyEndpoint('economy-control');
+    }
+    return shadowApiEndpoint(clean);
+  }
 
   @override
   void initState() {
@@ -401,6 +405,12 @@ class _EconomyControlPageState extends State<EconomyControlPage> {
             'نِسَب المضيف والوكالة',
             'المستويات والـBonus وحصة Shadow Live',
             const GiftEconomyControlPage(),
+          ),
+          tool(
+            Icons.rocket_launch_rounded,
+            'Room Rocket',
+            'المستويات والجوائز والـTop 3 ومدة الانفجار',
+            const RoomRocketControlPage(),
           ),
           const SizedBox(height: 12),
           Card(

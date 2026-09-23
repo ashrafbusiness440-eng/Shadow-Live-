@@ -27,6 +27,7 @@ dependencies:
   flutter_bloc: ^9.1.1
   permission_handler: ^13.0.2
   image_picker: ^1.2.3
+  image: ^4.10.1
   file_picker: ^13.1.0
   crop_your_image: ^2.0.0
   crypto: ^3.0.6
@@ -57,5 +58,8 @@ flutter:
     - assets/images/backgrounds/
     - assets/images/banners/
     - assets/images/games/
+    - assets/images/games/greedy_cat/
+    - assets/images/games/witch/
+    - assets/images/games/slot/
     - assets/images/store/
     - assets/images/misc/
