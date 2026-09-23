@@ -98,7 +98,10 @@ test("approved reward policy includes voice waves and never VIP",()=>{
   assert.deepEqual(custom.levels.map((level)=>level.winProbabilityBps),[1000,2000,3000,4000]);
   assert.equal(config.regularAttempts,1);
   assert.equal(config.topContributorAttempts,2);
-  assert.deepEqual(config.rewardTypes,["coins","frame","entrance","voice_wave"]);
+  assert.deepEqual(
+    config.rewardTypes,
+    ["coins","frame","entrance","voice_wave","room_background"],
+  );
   assert.equal(config.vipRewardEnabled,false);
   assert.equal(config.cosmeticStackCapHours,720);
 });
