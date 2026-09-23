@@ -37,12 +37,14 @@ async function seedRuntime(){
         witch:{
           enabled:true,
           normal:{
+            enabled:true,
             outcomes:[
               {id:"moon",weightBps:9999},
               {id:"book",weightBps:1},
             ],
           },
           advanced:{
+            enabled:true,
             outcomes:[
               {id:"moon",weightBps:9999},
               {id:"book",weightBps:1},
