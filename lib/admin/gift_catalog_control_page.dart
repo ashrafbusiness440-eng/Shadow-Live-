@@ -4,6 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
+import 'control_api_endpoints.dart';
+
 import '../features/gift/services/gift_catalog_service.dart';
 import '../utils/compact_number.dart';
 
@@ -21,12 +23,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   String? error;
   List<GiftCatalogItem> gifts = <GiftCatalogItem>[];
 
-  Uri get apiUri => Uri(
-        scheme: Uri.base.scheme,
-        host: Uri.base.host,
-        port: Uri.base.hasPort ? Uri.base.port : null,
-        path: '/api/gift-catalog',
-      );
+  Uri get apiUri => shadowEconomyEndpoint('gift-catalog');
 
   @override
   void initState() {
