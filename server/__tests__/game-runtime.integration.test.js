@@ -3,6 +3,7 @@ import {after,test} from "node:test";
 import {deleteApp,getApps,initializeApp} from "firebase-admin/app";
 import {getFirestore} from "firebase-admin/firestore";
 import {
+  gameState,
   placeGameBet,
   settleGameOperation,
 } from "../games/game-runtime.js";
@@ -137,6 +138,67 @@ test("collective game debits once and settles after disconnect",async()=>{
       .doc("game_credit__"+uid+"__"+key).get();
     assert.equal(credit.data().delta,Number(operation.payoutCoins));
   }
+});
+
+test("greedy cat stores repeated taps as events and one accumulated selection",async()=>{
+  await seedRuntime();
+  const suffix=Date.now().toString()+"_repeat_cat";
+  const uid="repeat_cat_"+suffix;
+  const roomId="repeat_cat_room_"+suffix;
+  const key="repeat_cat_operation_"+suffix;
+  await seedUserRoom(uid,roomId,100000);
+
+  const result=await placeGameBet(db,uid,{
+    gameId:"greedy_cat",
+    roomId,
+    idempotencyKey:key,
+    bets:[
+      {choiceId:"chicken10",amountCoins:2000},
+      {choiceId:"chicken10",amountCoins:20000},
+      {choiceId:"chicken10",amountCoins:20000},
+    ],
+  },{nowMs,rngSecret});
+
+  assert.equal(result.totalStakeCoins,42000);
+  const operation=(await db.collection("game_operations")
+    .doc(uid+"__"+key).get()).data();
+  assert.equal(operation.betEvents.length,3);
+  assert.equal(operation.selections.length,1);
+  assert.equal(operation.selections[0].choiceId,"chicken10");
+  assert.equal(operation.selections[0].amountCoins,42000);
+  assert.equal(operation.selections[0].entryCount,3);
+  assert.equal((await db.collection("users").doc(uid).get()).data().coins,58000);
+});
+
+test("witch separate taps in one round aggregate to 21K on the same choice",async()=>{
+  await seedRuntime();
+  const suffix=Date.now().toString()+"_repeat_witch";
+  const uid="repeat_witch_"+suffix;
+  const roomId="repeat_witch_room_"+suffix;
+  await seedUserRoom(uid,roomId,100000);
+
+  const amounts=[1000,10000,10000];
+  const operations=[];
+  for(let i=0;i<amounts.length;i++){
+    operations.push(await placeGameBet(db,uid,{
+      gameId:"witch",
+      mode:"normal",
+      roomId,
+      idempotencyKey:"repeat_witch_"+suffix+"_"+i,
+      bets:[{choiceId:"book",amountCoins:amounts[i]}],
+    },{nowMs,rngSecret}));
+  }
+
+  assert.equal(new Set(operations.map(item=>item.roundId)).size,1);
+  assert.equal((await db.collection("users").doc(uid).get()).data().coins,79000);
+
+  const state=await gameState(db,uid,{
+    gameId:"witch",
+    mode:"normal",
+  },{nowMs});
+  assert.equal(state.currentRoundSelections.length,1);
+  assert.equal(state.currentRoundSelections[0].choiceId,"book");
+  assert.equal(state.currentRoundSelections[0].amountCoins,21000);
 });
 
 test("same collective round is global across users and rooms",async()=>{
