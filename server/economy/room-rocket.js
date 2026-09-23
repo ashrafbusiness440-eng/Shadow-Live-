@@ -59,7 +59,7 @@ export function defaultRoomRocketConfig() {
     cosmeticDurationHours: [24, 72, 168],
     cosmeticStackCapHours: 720,
     noWinMessageAr: "حظ أوفر في المرة القادمة",
-    rewardTypes: ["coins", "frame", "entrance", "voice_wave"],
+    rewardTypes: ["coins", "frame", "entrance", "voice_wave", "room_background"],
     vipRewardEnabled: false,
     levels: DEFAULT_LEVELS.map((level) => ({
       ...level,
@@ -67,6 +67,7 @@ export function defaultRoomRocketConfig() {
       frameRewards: [],
       entranceRewards: [],
       voiceWaveRewards: [],
+      roomBackgroundRewards: [],
     })),
   };
 }
@@ -102,6 +103,9 @@ function normalizeCosmeticRewards(raw, type) {
       durationHours: integer(item?.durationHours, "invalid_reward_duration", 1, 8760),
       weight: integer(item?.weight, "invalid_reward_weight", 1, 1000000),
       overflowCoins: integer(item?.overflowCoins ?? 0, "invalid_overflow_coins", 0, 1000000000),
+      nameAr: clean(item?.nameAr),
+      assetKey: clean(item?.assetKey),
+      imageUrl: clean(item?.imageUrl),
       enabled: item?.enabled !== false,
     };
   });
@@ -134,6 +138,10 @@ export function normalizeRoomRocketConfig(raw = {}) {
       frameRewards: normalizeCosmeticRewards(item?.frameRewards, "frame"),
       entranceRewards: normalizeCosmeticRewards(item?.entranceRewards, "entrance"),
       voiceWaveRewards: normalizeCosmeticRewards(item?.voiceWaveRewards, "voice_wave"),
+      roomBackgroundRewards: normalizeCosmeticRewards(
+        item?.roomBackgroundRewards,
+        "room_background",
+      ),
     };
   });
 
@@ -164,7 +172,7 @@ export function normalizeRoomRocketConfig(raw = {}) {
       8760,
     ),
     noWinMessageAr: clean(raw.noWinMessageAr) || defaults.noWinMessageAr,
-    rewardTypes: ["coins", "frame", "entrance", "voice_wave"],
+    rewardTypes: ["coins", "frame", "entrance", "voice_wave", "room_background"],
     vipRewardEnabled: false,
     levels,
   };
@@ -291,6 +299,7 @@ export function advanceRoomRocket({
         frameRewards: level.frameRewards.map((item) => ({ ...item })),
         entranceRewards: level.entranceRewards.map((item) => ({ ...item })),
         voiceWaveRewards: level.voiceWaveRewards.map((item) => ({ ...item })),
+        roomBackgroundRewards: level.roomBackgroundRewards.map((item) => ({ ...item })),
       },
       cosmeticStackCapHours: policy.cosmeticStackCapHours,
       noWinMessageAr: policy.noWinMessageAr,
