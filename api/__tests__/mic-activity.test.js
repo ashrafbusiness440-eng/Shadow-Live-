@@ -4,7 +4,7 @@ import {
   activeMicSegments,
   splitUtcIntervalByDay,
   totalMicSeconds,
-} from "../mic-activity.js";
+} from "../../server/economy/mic-activity.js";
 
 test("muted seat time never counts as real mic activity",()=>{
   const end=Date.UTC(2026,8,22,12,0,0);
