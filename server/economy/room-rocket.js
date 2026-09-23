@@ -279,6 +279,17 @@ export function advanceRoomRocket({
       contributorIds: ranked.map((item) => item.uid),
       top3: ranked.slice(0, 3),
       rewardTypes: policy.rewardTypes,
+      rewardPool: {
+        coinPrizes: level.coinPrizes.map((item) => ({ ...item })),
+        frameRewards: level.frameRewards.map((item) => ({ ...item })),
+        entranceRewards: level.entranceRewards.map((item) => ({ ...item })),
+        voiceWaveRewards: level.voiceWaveRewards.map((item) => ({ ...item })),
+      },
+      cosmeticStackCapHours: policy.cosmeticStackCapHours,
+      noWinMessageAr: policy.noWinMessageAr,
+      regularAttempts: 1,
+      topContributorAttempts: 2,
+      vipRewardEnabled: false,
       status: "queued",
     });
 
