@@ -49,6 +49,7 @@ import 'features/room/widgets/room_music_sheet.dart';
 import 'features/room/widgets/room_pk_panel.dart';
 import 'features/room/widgets/room_rocket_banner_host.dart';
 import 'features/room/services/room_rocket_service.dart';
+import 'core/assets/shadow_asset_registry.dart';
 import 'features/room/widgets/star_battle_sheet.dart';
 import 'features/room/services/room_seat_service.dart';
 
@@ -175,6 +176,9 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       _voiceJoining = _voiceSession.joining;
       _voiceMicMuted = _voiceSession.micMuted;
       _voiceError = _voiceSession.error;
+      if (_voiceSession.roomArguments.isNotEmpty) {
+        _roomArguments = _voiceSession.roomArguments;
+      }
     });
     if ((roomClosed || roomBanned) && !_roomClosedHandled) {
       _roomClosedHandled = true;
@@ -4458,6 +4462,56 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     );
   }
 
+  Widget _buildRoomBackground({
+    required String coverImageUrl,
+    required String rewardImageUrl,
+    required String rewardAssetKey,
+  }) {
+    Widget fallback() => coverImageUrl.isEmpty
+        ? const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0xFF24123D),
+                  Color(0xFF080A10),
+                  Colors.black,
+                ],
+              ),
+            ),
+          )
+        : Image.network(
+            coverImageUrl,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) =>
+                const ColoredBox(color: Colors.black),
+          );
+
+    if (rewardImageUrl.isNotEmpty) {
+      return Image.network(
+        rewardImageUrl,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => fallback(),
+      );
+    }
+    if (rewardAssetKey.isNotEmpty) {
+      return FutureBuilder<Uri?>(
+        future: ShadowAssetRegistry.remoteUrl(rewardAssetKey),
+        builder: (context, snapshot) {
+          final uri = snapshot.data;
+          if (uri == null) return fallback();
+          return Image.network(
+            uri.toString(),
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => fallback(),
+          );
+        },
+      );
+    }
+    return fallback();
+  }
+
   @override
   Widget build(BuildContext context) {
     final roomId = (_roomArguments['roomId'] ?? '').toString();
@@ -4466,6 +4520,21 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             '')
         .toString()
         .trim();
+    final rewardBackgroundExpiresAtMs =
+        (_roomArguments['activeRoomBackgroundExpiresAtMs'] as num?)?.toInt() ??
+            0;
+    final rewardBackgroundValid = rewardBackgroundExpiresAtMs >
+        DateTime.now().millisecondsSinceEpoch;
+    final rewardBackgroundImageUrl = rewardBackgroundValid
+        ? (_roomArguments['activeRoomBackgroundImageUrl'] ?? '')
+            .toString()
+            .trim()
+        : '';
+    final rewardBackgroundAssetKey = rewardBackgroundValid
+        ? (_roomArguments['activeRoomBackgroundAssetKey'] ?? '')
+            .toString()
+            .trim()
+        : '';
     final roomTitle = (_roomArguments['name'] ??
             _roomArguments['title'] ??
             'غرفة صوتية')
@@ -4497,26 +4566,11 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                   return Stack(
                     children: [
                       Positioned.fill(
-                        child: coverImageUrl.isEmpty
-                            ? const DecoratedBox(
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    colors: [
-                                      Color(0xFF24123D),
-                                      Color(0xFF080A10),
-                                      Colors.black,
-                                    ],
-                                  ),
-                                ),
-                              )
-                            : Image.network(
-                                coverImageUrl,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) =>
-                                    const ColoredBox(color: Colors.black),
-                              ),
+                        child: _buildRoomBackground(
+                          coverImageUrl: coverImageUrl,
+                          rewardImageUrl: rewardBackgroundImageUrl,
+                          rewardAssetKey: rewardBackgroundAssetKey,
+                        ),
                       ),
                       Positioned.fill(
                         child: DecoratedBox(
