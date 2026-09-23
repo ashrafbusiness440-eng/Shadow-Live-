@@ -5,6 +5,7 @@ import {
   TARGET_RTP_BPS,
   calculatePayout,
   dailyRoundClock,
+  normalizeBetEvents,
   normalizeSelections,
   resolveOutcome,
   slotReelsForOutcome,
@@ -239,7 +240,8 @@ export async function placeGameBet(
 
     const config=runtimeConfig(configSnap.exists?configSnap.data()||{}:{});
     const selectedConfig=gameConfig(config,gameId,mode);
-    const selections=normalizeSelections(gameId,mode,body.bets);
+    const betEvents=normalizeBetEvents(gameId,mode,body.bets);
+    const selections=normalizeSelections(gameId,mode,betEvents);
     const stake=totalStake(selections);
     const round=buildRound({config,gameId,mode,uid,key,nowMs});
     if(gameId!=="slot"&&nowMs>=round.closesAtMs-config.lockBeforeMs){
@@ -292,6 +294,7 @@ export async function placeGameBet(
       roomId,
       gameId,
       mode,
+      betEvents,
       selections,
       totalStakeCoins:stake,
       payoutCoins:payout,
@@ -361,6 +364,8 @@ export async function placeGameBet(
         roundId:round.roundId,
         roundNumber:round.roundNumber,
         dayKey:round.dayKey,
+        betEvents,
+        selections,
         totalStakeCoins:stake,
         payoutCoins:payout,
         outcomeId:resolved.outcomeId,
@@ -448,6 +453,8 @@ async function settleOperationRef(db,operationRef,nowMs){
       roundId:clean(operation.roundId),
       roundNumber:Number(operation.roundNumber||0),
       dayKey:clean(operation.dayKey),
+      betEvents:Array.isArray(operation.betEvents)?operation.betEvents:[],
+      selections:Array.isArray(operation.selections)?operation.selections:[],
       totalStakeCoins:Number(operation.totalStakeCoins||0),
       payoutCoins:payout,
       outcomeId:clean(operation.outcomeId),
