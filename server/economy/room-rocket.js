@@ -3,6 +3,7 @@ const DEFAULT_LEVELS = [
     id: "lv1",
     level: 1,
     thresholdCoins: 100000,
+    winProbabilityBps: 3000,
     coinPrizes: [
       { coins: 100, weight: 45 },
       { coins: 300, weight: 30 },
@@ -14,6 +15,7 @@ const DEFAULT_LEVELS = [
     id: "lv2",
     level: 2,
     thresholdCoins: 500000,
+    winProbabilityBps: 3000,
     coinPrizes: [
       { coins: 500, weight: 40 },
       { coins: 1000, weight: 30 },
@@ -25,6 +27,7 @@ const DEFAULT_LEVELS = [
     id: "lv3",
     level: 3,
     thresholdCoins: 1000000,
+    winProbabilityBps: 3000,
     coinPrizes: [
       { coins: 1000, weight: 40 },
       { coins: 3000, weight: 30 },
@@ -36,6 +39,7 @@ const DEFAULT_LEVELS = [
     id: "lv4",
     level: 4,
     thresholdCoins: 5000000,
+    winProbabilityBps: 3000,
     coinPrizes: [
       { coins: 5000, weight: 40 },
       { coins: 10000, weight: 30 },
@@ -119,6 +123,12 @@ export function normalizeRoomRocketConfig(raw = {}) {
         "invalid_rocket_threshold",
         1,
         1000000000000,
+      ),
+      winProbabilityBps: integer(
+        item?.winProbabilityBps ?? raw.winProbabilityBps ?? fallback.winProbabilityBps,
+        "invalid_win_probability",
+        0,
+        10000,
       ),
       coinPrizes: normalizeCoinPrizes(item?.coinPrizes, fallback.coinPrizes),
       frameRewards: normalizeCosmeticRewards(item?.frameRewards, "frame"),
@@ -268,7 +278,7 @@ export function advanceRoomRocket({
       startsAtMs: startAtMs,
       endsAtMs: endAtMs,
       durationSeconds: policy.explosionDurationSeconds,
-      winProbabilityBps: policy.winProbabilityBps,
+      winProbabilityBps: level.winProbabilityBps,
       triggerUid: sender.uid,
       triggerDisplayName: clean(sender.displayName),
       triggerProfileImageUrl: clean(sender.profileImageUrl),
