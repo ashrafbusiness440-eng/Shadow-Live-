@@ -9,6 +9,7 @@ import '../../../screens/room/room_list_screen.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../chat/screens/chat_list_screen.dart';
 import '../../home/screens/home_screen.dart';
+import '../../games/screens/games_hub_screen.dart';
 import '../../user/screens/profile_screen.dart';
 
 class MainShellScreen extends StatefulWidget {
@@ -32,10 +33,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
   final List<Widget> _pages = const [
     HomeScreen(),
     RoomListScreen(),
-    _ComingSoonPage(
-      title: 'الألعاب',
-      icon: Icons.sports_esports_rounded,
-    ),
+    GamesHubScreen(),
     ChatListScreen(),
     ProfileScreen(),
   ];
