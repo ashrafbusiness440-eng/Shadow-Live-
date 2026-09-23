@@ -343,12 +343,30 @@ class _ConversationTile extends StatelessWidget {
     return '$h:$m ${d.hour >= 12 ? 'م' : 'ص'}';
   }
 
+  Future<Map<String, dynamic>> _loadUser() async {
+    if (otherUid.isEmpty) return const <String, dynamic>{};
+    final publicSnap = await FirebaseFirestore.instance
+        .collection('public_profiles')
+        .doc(otherUid)
+        .get();
+    final publicData = publicSnap.data() ?? const <String, dynamic>{};
+    final hasIdentity =
+        (publicData['displayName'] ?? '').toString().trim().isNotEmpty ||
+        (publicData['profileImageUrl'] ?? '').toString().trim().isNotEmpty ||
+        (publicData['profileAvatarAsset'] ?? '').toString().trim().isNotEmpty;
+    if (hasIdentity) return publicData;
+    final userSnap =
+        await FirebaseFirestore.instance.collection('users').doc(otherUid).get();
+    final userData = userSnap.data() ?? const <String, dynamic>{};
+    return <String, dynamic>{...userData, ...publicData};
+  }
+
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      future: otherUid.isEmpty ? null : FirebaseFirestore.instance.collection('public_profiles').doc(otherUid).get(),
+    return FutureBuilder<Map<String, dynamic>>(
+      future: otherUid.isEmpty ? null : _loadUser(),
       builder: (context, snapshot) {
-        final user = snapshot.data?.data() ?? const <String, dynamic>{};
+        final user = snapshot.data ?? const <String, dynamic>{};
         final name = '${user['displayName'] ?? 'مستخدم Shadow Live'}';
         final photo = '${user['profileImageUrl'] ?? ''}';
         final asset = '${user['profileAvatarAsset'] ?? ''}';
