@@ -348,91 +348,101 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                   return Card(
                     child: Padding(
                       padding: const EdgeInsets.all(12),
-                      child: Row(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Switch(
-                            value: item.enabled,
-                            onChanged: (value) {
-                              setState(() {
-                                gifts[index] = GiftCatalogItem(
-                                  id: item.id,
-                                  nameAr: item.nameAr,
-                                  priceCoins: item.priceCoins,
-                                  category: item.category,
-                                  enabled: value,
-                                  featured: item.featured,
-                                  sortOrder: index,
-                                  assetKey: item.assetKey,
-                                  localPlaceholder: item.localPlaceholder,
-                                );
-                              });
-                            },
-                          ),
-                          const SizedBox(width: 8),
-                          const CircleAvatar(
-                            backgroundColor: Color(0xFF261A45),
-                            child: Icon(
-                              Icons.card_giftcard_rounded,
-                              color: Color(0xFFFFD54A),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Text(
-                                      item.nameAr,
-                                      style: const TextStyle(
-                                        fontSize: 17,
-                                        fontWeight: FontWeight.w900,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    if (item.featured)
-                                      const Chip(label: Text('Featured')),
-                                  ],
+                          Row(
+                            children: [
+                              Switch(
+                                value: item.enabled,
+                                onChanged: (value) {
+                                  setState(() {
+                                    gifts[index] = GiftCatalogItem(
+                                      id: item.id,
+                                      nameAr: item.nameAr,
+                                      priceCoins: item.priceCoins,
+                                      category: item.category,
+                                      enabled: value,
+                                      featured: item.featured,
+                                      sortOrder: index,
+                                      assetKey: item.assetKey,
+                                      localPlaceholder: item.localPlaceholder,
+                                    );
+                                  });
+                                },
+                              ),
+                              const SizedBox(width: 8),
+                              const CircleAvatar(
+                                backgroundColor: Color(0xFF261A45),
+                                child: Icon(
+                                  Icons.card_giftcard_rounded,
+                                  color: Color(0xFFFFD54A),
                                 ),
-                                Text(
-                                  '🪙 ' +
-                                      formatCompactAmount(item.priceCoins) +
-                                      ' • ' +
-                                      item.category,
-                                ),
-                                Text(
-                                  'Asset: ' + item.assetKey,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  item.nameAr,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
-                                    color: Color(0xFFAAA3B8),
-                                    fontSize: 12,
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w900,
                                   ),
                                 ),
-                              ],
+                              ),
+                              if (item.featured)
+                                const Flexible(child: Chip(label: Text('Featured'))),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '🪙 ' +
+                                formatCompactAmount(item.priceCoins) +
+                                ' • ' +
+                                item.category,
+                          ),
+                          Directionality(
+                            textDirection: TextDirection.ltr,
+                            child: Text(
+                              'Asset: ' + item.assetKey,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFFAAA3B8),
+                                fontSize: 12,
+                              ),
                             ),
                           ),
-                          IconButton(
-                            onPressed: index > 0 ? () => move(index, -1) : null,
-                            icon: const Icon(Icons.arrow_upward_rounded),
-                          ),
-                          IconButton(
-                            onPressed: index < gifts.length - 1
-                                ? () => move(index, 1)
-                                : null,
-                            icon: const Icon(Icons.arrow_downward_rounded),
-                          ),
-                          IconButton(
-                            onPressed: () => editGift(index),
-                            icon: const Icon(Icons.edit_outlined),
-                          ),
-                          IconButton(
-                            onPressed: gifts.length <= 1
-                                ? null
-                                : () => setState(() => gifts.removeAt(index)),
-                            icon: const Icon(
-                              Icons.delete_outline_rounded,
-                              color: Colors.redAccent,
-                            ),
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 2,
+                            runSpacing: 2,
+                            children: [
+                              IconButton(
+                                onPressed: index > 0 ? () => move(index, -1) : null,
+                                icon: const Icon(Icons.arrow_upward_rounded),
+                              ),
+                              IconButton(
+                                onPressed: index < gifts.length - 1
+                                    ? () => move(index, 1)
+                                    : null,
+                                icon: const Icon(Icons.arrow_downward_rounded),
+                              ),
+                              IconButton(
+                                onPressed: () => editGift(index),
+                                icon: const Icon(Icons.edit_outlined),
+                              ),
+                              IconButton(
+                                onPressed: gifts.length <= 1
+                                    ? null
+                                    : () => setState(() => gifts.removeAt(index)),
+                                icon: const Icon(
+                                  Icons.delete_outline_rounded,
+                                  color: Colors.redAccent,
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
