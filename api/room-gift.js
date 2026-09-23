@@ -1,7 +1,7 @@
 import { getApps, initializeApp, cert } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
-import { resolveRevenuePolicy } from "./economy-policy.js";
+import { resolveRevenuePolicy } from "../server/economy/economy-policy.js";
 
 function clean(value) {
   return String(value ?? "").trim();
