@@ -92,6 +92,9 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
       if (selected != null) {
         await _loadState();
         _startPolling();
+        if (const bool.fromEnvironment('E2E_GAME_TEST')) {
+          debugPrint('E2E_GAME_OVERLAY_READY:${selected.key}');
+        }
       }
     } catch (error) {
       if (!mounted) return;
