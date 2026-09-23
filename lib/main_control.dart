@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'firebase_options.dart';
 import 'utils/compact_number.dart';
 import 'admin/control_admin_id_override.dart';
+import 'admin/control_api_endpoints.dart';
 import 'admin/control_asset_manager_page.dart';
 import 'admin/economy_control_page.dart';
 
@@ -525,12 +526,7 @@ class _RoomsPageState extends State<RoomsPage> {
     publicId.dispose();reason.dispose();seats.dispose();moderators.dispose();hostUid.dispose();super.dispose();
   }
 
-  Uri get apiUri=>Uri(
-    scheme:Uri.base.scheme,
-    host:Uri.base.host,
-    port:Uri.base.hasPort?Uri.base.port:null,
-    path:'/api/voice-session',
-  );
+  Uri get apiUri=>shadowApiEndpoint('voice-session');
 
   Future<Map<String,dynamic>> post(Map<String,dynamic> payload) async {
     final user=FirebaseAuth.instance.currentUser;
