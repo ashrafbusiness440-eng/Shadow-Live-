@@ -28,6 +28,7 @@ class _RocketLevelDraft {
     required List<dynamic> frameRewards,
     required List<dynamic> entranceRewards,
     required List<dynamic> voiceWaveRewards,
+    required List<dynamic> roomBackgroundRewards,
   })  : threshold = TextEditingController(text: thresholdCoins.toString()),
         winPercent = TextEditingController(
           text: (winProbabilityBps / 100).toStringAsFixed(0),
@@ -41,6 +42,9 @@ class _RocketLevelDraft {
         ),
         voiceWaves = TextEditingController(
           text: _cosmeticText(voiceWaveRewards),
+        ),
+        roomBackgrounds = TextEditingController(
+          text: _cosmeticText(roomBackgroundRewards),
         );
 
   final int level;
@@ -50,6 +54,7 @@ class _RocketLevelDraft {
   final TextEditingController frames;
   final TextEditingController entrances;
   final TextEditingController voiceWaves;
+  final TextEditingController roomBackgrounds;
 
   static String _coinText(List<dynamic> raw) => raw
       .whereType<Map>()
@@ -61,10 +66,15 @@ class _RocketLevelDraft {
 
   static String _cosmeticText(List<dynamic> raw) => raw
       .whereType<Map>()
-      .map(
-        (item) =>
-            '${item['id'] ?? ''}|${(item['durationHours'] as num?)?.toInt() ?? 24}|${(item['weight'] as num?)?.toInt() ?? 1}|${(item['overflowCoins'] as num?)?.toInt() ?? 0}',
-      )
+      .map((item) {
+        final base =
+            '${item['id'] ?? ''}|${(item['durationHours'] as num?)?.toInt() ?? 24}|${(item['weight'] as num?)?.toInt() ?? 1}|${(item['overflowCoins'] as num?)?.toInt() ?? 0}';
+        final name = (item['nameAr'] ?? '').toString();
+        final assetKey = (item['assetKey'] ?? '').toString();
+        final imageUrl = (item['imageUrl'] ?? '').toString();
+        if (name.isEmpty && assetKey.isEmpty && imageUrl.isEmpty) return base;
+        return '$base|$name|$assetKey|$imageUrl';
+      })
       .join('\n');
 
   void dispose() {
@@ -74,6 +84,7 @@ class _RocketLevelDraft {
     frames.dispose();
     entrances.dispose();
     voiceWaves.dispose();
+    roomBackgrounds.dispose();
   }
 
   List<Map<String, dynamic>> _parseCoins() {
@@ -106,9 +117,9 @@ class _RocketLevelDraft {
       final clean = line.trim();
       if (clean.isEmpty) continue;
       final bits = clean.split('|');
-      if (bits.length != 4) {
+      if (bits.length < 4 || bits.length > 7) {
         throw const FormatException(
-          'صيغة الجائزة التجميلية: id|hours|weight|overflowCoins',
+          'الصيغة: id|hours|weight|overflowCoins|nameAr|assetKey|imageUrl',
         );
       }
       final id = bits[0].trim();
@@ -129,6 +140,9 @@ class _RocketLevelDraft {
         'durationHours': hours,
         'weight': weight,
         'overflowCoins': overflowCoins,
+        'nameAr': bits.length > 4 ? bits[4].trim() : '',
+        'assetKey': bits.length > 5 ? bits[5].trim() : '',
+        'imageUrl': bits.length > 6 ? bits[6].trim() : '',
         'enabled': true,
       });
     }
@@ -153,6 +167,7 @@ class _RocketLevelDraft {
       'frameRewards': _parseCosmetics(frames),
       'entranceRewards': _parseCosmetics(entrances),
       'voiceWaveRewards': _parseCosmetics(voiceWaves),
+      'roomBackgroundRewards': _parseCosmetics(roomBackgrounds),
     };
   }
 }
@@ -240,6 +255,7 @@ class _RoomRocketControlPageState extends State<RoomRocketControlPage> {
         frameRewards: list('frameRewards'),
         entranceRewards: list('entranceRewards'),
         voiceWaveRewards: list('voiceWaveRewards'),
+        roomBackgroundRewards: list('roomBackgroundRewards'),
       );
     }).toList(growable: false);
   }
@@ -480,7 +496,14 @@ class _RoomRocketControlPageState extends State<RoomRocketControlPage> {
                             'Voice Waves',
                             level.voiceWaves,
                             helper:
-                                'كل سطر: id|hours|weight|overflowCoins',
+                                'id|hours|weight|overflowCoins|nameAr|assetKey|imageUrl',
+                          ),
+                          const SizedBox(height: 12),
+                          _poolField(
+                            'Room Backgrounds',
+                            level.roomBackgrounds,
+                            helper:
+                                'id|hours|weight|overflowCoins|nameAr|assetKey|imageUrl',
                           ),
                         ],
                       ),
