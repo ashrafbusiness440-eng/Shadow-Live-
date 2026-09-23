@@ -36,12 +36,13 @@ function explosionData({
     contributors,
     contributorIds:contributors.map((item)=>item.uid),
     top3,
-    rewardTypes:["coins","frame","entrance","voice_wave"],
+    rewardTypes:["coins","frame","entrance","voice_wave","room_background"],
     rewardPool:{
       coinPrizes:[{coins:100,weight:1}],
       frameRewards:[],
       entranceRewards:[],
       voiceWaveRewards:[],
+      roomBackgroundRewards:[],
     },
     cosmeticStackCapHours:720,
     noWinMessageAr:"حظ أوفر في المرة القادمة",
@@ -181,4 +182,55 @@ test("timed voice-wave reward starts at explosion end and is not auto-activated"
   assert.equal(reward.exists,true);
   assert.equal(reward.data().active,false);
   assert.equal(reward.data().expiresAtMs,end+24*60*60*1000);
+});
+
+
+test("room background reward is stored in My Items and is not auto-activated",async()=>{
+  const suffix=Date.now().toString()+"_background";
+  const uid="rocket_background_"+suffix;
+  const roomId="rocket_room_"+suffix;
+  const explosionId="rocket_explosion_"+suffix;
+  const start=400000;
+  const end=410000;
+  const contribution={uid,coins:100000,displayName:"Background Winner",profileImageUrl:""};
+  const explosion=explosionData({
+    roomId,
+    startsAtMs:start,
+    endsAtMs:end,
+    contributors:[contribution],
+  });
+  explosion.rewardPool={
+    coinPrizes:[],
+    frameRewards:[],
+    entranceRewards:[],
+    voiceWaveRewards:[],
+    roomBackgroundRewards:[{
+      id:"neon_room",
+      nameAr:"خلفية النيون",
+      assetKey:"room.background.neon",
+      imageUrl:"https://example.com/neon.webp",
+      durationHours:72,
+      weight:1,
+      overflowCoins:1000,
+      enabled:true,
+    }],
+  };
+
+  await Promise.all([
+    db.collection("users").doc(uid).set({coins:0,role:"user"}),
+    db.collection("room_rocket_explosions").doc(explosionId).set(explosion),
+  ]);
+
+  const result=await claimRocketReward(db,uid,explosionId,end+1);
+  assert.equal(result.ok,true);
+  assert.equal(result.result.outcomes[0].type,"room_background");
+
+  const reward=await db.collection("user_rewards").doc(uid)
+    .collection("items").doc("room_background__neon_room").get();
+  assert.equal(reward.exists,true);
+  assert.equal(reward.data().active,false);
+  assert.equal(reward.data().nameAr,"خلفية النيون");
+  assert.equal(reward.data().assetKey,"room.background.neon");
+  assert.equal(reward.data().imageUrl,"https://example.com/neon.webp");
+  assert.equal(reward.data().expiresAtMs,end+72*60*60*1000);
 });
