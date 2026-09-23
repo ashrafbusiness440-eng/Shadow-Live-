@@ -225,6 +225,18 @@ service cloud.firestore {
       allow read, create, update, delete: if false;
     }
 
+    match /game_operations/{operationId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /game_rounds/{roundId}/{document=**} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /game_user_history/{userId}/{document=**} {
+      allow read, create, update, delete: if false;
+    }
+
     match /gift_user_stats/{userId}/{document=**} {
       allow read: if signedIn()
         && (request.auth.uid == userId
