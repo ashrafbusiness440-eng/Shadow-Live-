@@ -53,6 +53,8 @@ import 'features/room/services/room_rocket_service.dart';
 import 'core/assets/shadow_asset_registry.dart';
 import 'features/room/widgets/star_battle_sheet.dart';
 import 'features/room/services/room_seat_service.dart';
+import 'features/games/widgets/room_game_overlay.dart';
+import 'features/profile/screens/my_items_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -224,6 +226,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   RoomModeratorState? _roomModeratorState;
   StreamSubscription<RoomModeratorState>? _roomModeratorSubscription;
   bool _roomClosedHandled = false;
+  bool _initialGameOpened = false;
 
   @override
   void didChangeDependencies() {
@@ -363,6 +366,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       unawaited(_loadRoomInsights(roomId));
       unawaited(_loadRoomSeatState(roomId));
       unawaited(_watchRoomModerators(roomId));
+      _openInitialGameIfNeeded(args);
     } catch (error) {
       if (mounted) {
         final code = error.toString();
@@ -2346,6 +2350,32 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     );
   }
 
+  void _openInitialGameIfNeeded(Map<String, dynamic> args) {
+    final key = (args['initialGameKey'] ?? '').toString().trim();
+    if (key.isEmpty || _initialGameOpened) return;
+    _initialGameOpened = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_showRoomGameOverlay(initialGameKey: key));
+    });
+  }
+
+  Future<void> _showRoomGameOverlay({String? initialGameKey}) async {
+    final roomId = (_roomArguments['roomId'] ?? '').toString().trim();
+    if (roomId.isEmpty) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: false,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: .42),
+      builder: (_) => RoomGameOverlaySheet(
+        roomId: roomId,
+        initialGameKey: initialGameKey,
+      ),
+    );
+  }
+
   Future<void> _runLuckyWheel() async {
     if (!_canManageMic) return;
     final occupied = (_roomSeatState?.seats ?? const <VoiceSeat>[])
@@ -2527,8 +2557,24 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         tool(
                           icon: Icons.checkroom_rounded,
                           label: 'الإكسسوارات',
-                          onTap: () => comingSoon('الإكسسوارات'),
+                          onTap: () {
+                            Navigator.pop(sheetContext);
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const MyItemsScreen(),
+                              ),
+                            );
+                          },
                           iconColor: const Color(0xFFCE93D8),
+                        ),
+                        tool(
+                          icon: Icons.sports_esports_rounded,
+                          label: 'الألعاب',
+                          onTap: () {
+                            Navigator.pop(sheetContext);
+                            _showRoomGameOverlay();
+                          },
+                          iconColor: const Color(0xFF80D8FF),
                         ),
                         tool(
                           icon: Icons.music_note_rounded,
