@@ -95,6 +95,23 @@ test("witch normal and advanced remain independently configurable",async()=>{
   const advanced=state.variants.find(item=>item.key==="witch_advanced");
   assert.equal(normal.enabled,true);
   assert.equal(advanced.enabled,false);
+
+  const suffix=Date.now().toString()+"_mode_guard";
+  const uid="mode_guard_"+suffix;
+  const roomId="mode_guard_room_"+suffix;
+  await Promise.all([
+    db.collection("users").doc(uid).set({role:"user",coins:100000}),
+    db.collection("rooms").doc(roomId).set({isActive:true}),
+    db.collection("room_presence").doc(roomId).collection("users").doc(uid).set({lastSeenAtMs:nowMs}),
+  ]);
+  await assert.rejects(
+    placeGameBet(db,uid,{
+      gameId:"witch",mode:"advanced",roomId,
+      idempotencyKey:"mode_guard_"+suffix,
+      bets:[{choiceId:"book",amountCoins:2000}],
+    },{nowMs,rngSecret}),
+    /game_disabled/,
+  );
 });
 
 test("runtime accepts a control-defined custom bet ladder",async()=>{
