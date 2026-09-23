@@ -507,6 +507,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                                           child: _giftImage(
                                             <String, dynamic>{
                                               'assetKey': gift.assetKey,
+                                              'giftId': gift.id,
                                             },
                                           ),
                                         ),
@@ -586,10 +587,30 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     }
   }
 
+  String _giftEmoji(String id) => switch (id) {
+        'rose' => '🌹',
+        'coffee' => '☕',
+        'heart' => '❤️',
+        'chocolate' => '🍫',
+        'crown' => '👑',
+        'ring' => '💍',
+        'sports_car' => '🏎️',
+        'yacht' => '🛥️',
+        'private_jet' => '✈️',
+        'castle' => '🏰',
+        'golden_dragon' => '🐉',
+        'galaxy' => '🌌',
+        _ => '🎁',
+      };
+
   Widget _giftImage(Map<String, dynamic> data) {
     final url = (data['imageUrl'] ?? '').toString().trim();
     final key = (data['assetKey'] ?? '').toString().trim();
-    const fallback = Icon(Icons.card_giftcard_rounded, color: Color(0xFFFFD54A), size: 42);
+    final fallback = Text(
+      _giftEmoji((data['giftId'] ?? '').toString()),
+      style: const TextStyle(fontSize: 40),
+      textAlign: TextAlign.center,
+    );
     if (url.isNotEmpty) {
       return Image.network(url, fit: BoxFit.contain, errorBuilder: (_, __, ___) => fallback);
     }
@@ -668,6 +689,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
         ),
       );
     } else if (type == 'room_invite') {
+      final roomId = (data['roomId'] ?? '').toString();
       final roomName = (data['roomName'] ?? 'غرفة صوتية').toString();
       final publicId = (data['roomPublicId'] ?? '').toString();
       content = Container(
@@ -723,14 +745,25 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
             const SizedBox(height: 10),
             SizedBox(
               width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: () => _openRoomInvite(data),
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF6D27D9),
-                  foregroundColor: Colors.white,
-                ),
-                icon: const Icon(Icons.login_rounded, size: 18),
-                label: const Text('دخول الغرفة'),
+              child: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                future: roomId.isEmpty
+                    ? null
+                    : FirebaseFirestore.instance.collection('rooms').doc(roomId).get(),
+                builder: (_, roomSnapshot) {
+                  final roomData = roomSnapshot.data?.data();
+                  final active = roomSnapshot.data?.exists == true &&
+                      roomData != null &&
+                      roomData['isActive'] != false;
+                  return FilledButton.icon(
+                    onPressed: active ? () => _openRoomInvite(data) : null,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF6D27D9),
+                      foregroundColor: Colors.white,
+                    ),
+                    icon: Icon(active ? Icons.login_rounded : Icons.block_rounded, size: 18),
+                    label: Text(active ? 'دخول الغرفة' : 'الغرفة غير متاحة'),
+                  );
+                },
               ),
             ),
           ],
@@ -740,7 +773,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       content = Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(width: 48, height: 48, child: _giftImage({'imageUrl': data['imageUrl'], 'assetKey': data['assetKey']})),
+          SizedBox(width: 48, height: 48, child: _giftImage({'imageUrl': data['imageUrl'], 'assetKey': data['assetKey'], 'giftId': data['giftId']})),
           const SizedBox(width: 8),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
