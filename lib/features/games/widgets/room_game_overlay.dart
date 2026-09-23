@@ -291,6 +291,19 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
       return 'يجب أن تبقى داخل الروم أثناء اللعب.';
     }
     if (text.contains('account_required')) return 'الألعاب تحتاج حساباً مسجلاً.';
+    if (text.contains('not_signed_in') || text.contains('unauthorized')) {
+      return 'انتهت جلسة الدخول. سجّل الدخول من جديد ثم أعد المحاولة.';
+    }
+    if (text.contains('TimeoutException') ||
+        text.contains('game_request_failed') ||
+        text.contains('Failed host lookup') ||
+        text.contains('ClientException')) {
+      return 'تعذر الاتصال بخادم الألعاب. أعد المحاولة.';
+    }
+    if (text.contains('server_not_configured') ||
+        text.contains('rng_not_configured')) {
+      return 'إعداد خادم الألعاب غير مكتمل حالياً.';
+    }
     return 'تعذر تنفيذ العملية حالياً.';
   }
 
@@ -466,9 +479,27 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
   Widget _errorView() => Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Text(
-            _error!,
-            style: const TextStyle(color: Colors.orangeAccent),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.cloud_off_rounded,
+                color: Colors.orangeAccent,
+                size: 38,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                _error!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.orangeAccent),
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: _loading ? null : _loadCatalog,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('إعادة المحاولة'),
+              ),
+            ],
           ),
         ),
       );
