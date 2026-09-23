@@ -13,6 +13,8 @@ import '../../../utils/compact_number.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../wallet/screens/recharge_screen.dart';
 import '../../profile/screens/my_items_screen.dart';
+import '../../profile/services/reward_inventory_service.dart';
+import '../../room/widgets/cosmetic_effect_widgets.dart';
 import '../bloc/user_bloc.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -28,6 +30,8 @@ class _ProfileScreenState extends State<ProfileScreen>
   bool _loggingOut = false;
   bool _openingEdit = false;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _profileSub;
+  final RewardInventoryService _inventoryService = RewardInventoryService();
+  MyItemReward? _activeFrame;
 
   @override
   void initState() {
@@ -42,6 +46,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   @override
   void dispose() {
     _profileSub?.cancel();
+    _inventoryService.close();
     _tabs.dispose();
     super.dispose();
   }
@@ -89,7 +94,36 @@ class _ProfileScreenState extends State<ProfileScreen>
 
     if (uid != null && uid.isNotEmpty) {
       context.read<UserBloc>().add(LoadUserProfile(uid));
+      unawaited(_loadActiveFrame());
     }
+  }
+
+  Future<void> _loadActiveFrame() async {
+    try {
+      final items = await _inventoryService.load();
+      final now = DateTime.now().millisecondsSinceEpoch;
+      MyItemReward? active;
+      for (final item in items) {
+        if (item.type == 'frame' &&
+            item.active &&
+            !item.expired &&
+            item.expiresAtMs > now) {
+          active = item;
+          break;
+        }
+      }
+      if (!mounted) return;
+      setState(() => _activeFrame = active);
+    } catch (_) {
+      // Profile still works if cosmetic metadata cannot be loaded.
+    }
+  }
+
+  Future<void> _openMyItems() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const MyItemsScreen()),
+    );
+    if (mounted) _load();
   }
 
   Future<void> _edit() async {
@@ -481,25 +515,44 @@ class _ProfileScreenState extends State<ProfileScreen>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          Container(
-            padding: const EdgeInsets.all(4),
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                colors: [Color(0xFFFFC84A), Color(0xFF8A3DFF)],
-              ),
-            ),
-            child: CircleAvatar(
-              radius: 50,
-              backgroundColor: const Color(0xFF171D31),
-              backgroundImage: image,
-              child: image == null
-                  ? const Icon(
-                      Icons.person_rounded,
-                      size: 56,
-                      color: Colors.white54,
-                    )
-                  : null,
+          SizedBox(
+            width: 116,
+            height: 116,
+            child: Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      colors: [Color(0xFFFFC84A), Color(0xFF8A3DFF)],
+                    ),
+                  ),
+                  child: CircleAvatar(
+                    radius: 50,
+                    backgroundColor: const Color(0xFF171D31),
+                    backgroundImage: image,
+                    child: image == null
+                        ? const Icon(
+                            Icons.person_rounded,
+                            size: 56,
+                            color: Colors.white54,
+                          )
+                        : null,
+                  ),
+                ),
+                if (_activeFrame != null)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: CosmeticAssetVisual(
+                        assetKey: _activeFrame!.assetKey,
+                        imageUrl: _activeFrame!.imageUrl,
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
           const SizedBox(height: 10),
@@ -700,9 +753,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         _action(
           Icons.inventory_2_rounded,
           'مقتنياتي',
-          () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const MyItemsScreen()),
-          ),
+          () => unawaited(_openMyItems()),
         ),
         const SizedBox(height: 16),
         _card(
