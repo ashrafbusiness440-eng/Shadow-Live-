@@ -23,11 +23,15 @@ class _RocketLevelDraft {
   _RocketLevelDraft({
     required this.level,
     required int thresholdCoins,
+    required int winProbabilityBps,
     required List<dynamic> coinPrizes,
     required List<dynamic> frameRewards,
     required List<dynamic> entranceRewards,
     required List<dynamic> voiceWaveRewards,
   })  : threshold = TextEditingController(text: thresholdCoins.toString()),
+        winPercent = TextEditingController(
+          text: (winProbabilityBps / 100).toStringAsFixed(0),
+        ),
         coins = TextEditingController(text: _coinText(coinPrizes)),
         frames = TextEditingController(
           text: _cosmeticText(frameRewards),
@@ -41,6 +45,7 @@ class _RocketLevelDraft {
 
   final int level;
   final TextEditingController threshold;
+  final TextEditingController winPercent;
   final TextEditingController coins;
   final TextEditingController frames;
   final TextEditingController entrances;
@@ -64,6 +69,7 @@ class _RocketLevelDraft {
 
   void dispose() {
     threshold.dispose();
+    winPercent.dispose();
     coins.dispose();
     frames.dispose();
     entrances.dispose();
@@ -134,10 +140,15 @@ class _RocketLevelDraft {
     if (thresholdCoins == null || thresholdCoins <= 0) {
       throw FormatException('حد LV.$level غير صحيح');
     }
+    final win = double.tryParse(winPercent.text.trim());
+    if (win == null || win < 0 || win > 100) {
+      throw FormatException('نسبة الفوز في LV.$level غير صحيحة');
+    }
     return {
       'id': 'lv$level',
       'level': level,
       'thresholdCoins': thresholdCoins,
+      'winProbabilityBps': (win * 100).round(),
       'coinPrizes': _parseCoins(),
       'frameRewards': _parseCosmetics(frames),
       'entranceRewards': _parseCosmetics(entrances),
@@ -153,7 +164,6 @@ class _RoomRocketControlPageState extends State<RoomRocketControlPage> {
   String? error;
 
   final durationSeconds = TextEditingController(text: '10');
-  final winPercent = TextEditingController(text: '30');
   final stackCapDays = TextEditingController(text: '30');
   final noWinMessage = TextEditingController(text: 'حظ أوفر في المرة القادمة');
   List<_RocketLevelDraft> levels = [];
@@ -169,7 +179,6 @@ class _RoomRocketControlPageState extends State<RoomRocketControlPage> {
   @override
   void dispose() {
     durationSeconds.dispose();
-    winPercent.dispose();
     stackCapDays.dispose();
     noWinMessage.dispose();
     for (final level in levels) {
@@ -225,6 +234,8 @@ class _RoomRocketControlPageState extends State<RoomRocketControlPage> {
         level: entry.key + 1,
         thresholdCoins:
             (item['thresholdCoins'] as num?)?.toInt() ?? 100000,
+        winProbabilityBps:
+            (item['winProbabilityBps'] as num?)?.toInt() ?? 3000,
         coinPrizes: list('coinPrizes'),
         frameRewards: list('frameRewards'),
         entranceRewards: list('entranceRewards'),
@@ -250,9 +261,6 @@ class _RoomRocketControlPageState extends State<RoomRocketControlPage> {
       durationSeconds.text =
           ((config['explosionDurationSeconds'] as num?)?.toInt() ?? 10)
               .toString();
-      winPercent.text =
-          (((config['winProbabilityBps'] as num?)?.toDouble() ?? 3000) / 100)
-              .toStringAsFixed(0);
       stackCapDays.text =
           ((((config['cosmeticStackCapHours'] as num?)?.toDouble() ?? 720) /
                       24)
@@ -277,13 +285,9 @@ class _RoomRocketControlPageState extends State<RoomRocketControlPage> {
     setState(() => saving = true);
     try {
       final duration = int.tryParse(durationSeconds.text.trim());
-      final win = double.tryParse(winPercent.text.trim());
       final capDays = int.tryParse(stackCapDays.text.trim());
       if (duration == null ||
           duration <= 0 ||
-          win == null ||
-          win < 0 ||
-          win > 100 ||
           capDays == null ||
           capDays <= 0) {
         throw const FormatException('تحقق من مدة الانفجار ونسبة الفوز والسقف');
@@ -293,7 +297,6 @@ class _RoomRocketControlPageState extends State<RoomRocketControlPage> {
         'action': 'save',
         'enabled': enabled,
         'explosionDurationSeconds': duration,
-        'winProbabilityBps': (win * 100).round(),
         'cosmeticStackCapHours': capDays * 24,
         'cosmeticDurationHours': const [24, 72, 168],
         'noWinMessageAr': noWinMessage.text.trim(),
@@ -400,11 +403,6 @@ class _RoomRocketControlPageState extends State<RoomRocketControlPage> {
                       suffix: 'ث',
                     ),
                     _numberField(
-                      'احتمال الفوز',
-                      winPercent,
-                      suffix: '%',
-                    ),
-                    _numberField(
                       'سقف تراكم الجائزة',
                       stackCapDays,
                       suffix: 'يوم',
@@ -441,10 +439,21 @@ class _RoomRocketControlPageState extends State<RoomRocketControlPage> {
                             ),
                           ),
                           const SizedBox(height: 12),
-                          _numberField(
-                            'حد الانفجار',
-                            level.threshold,
-                            suffix: 'Coins',
+                          Wrap(
+                            spacing: 10,
+                            runSpacing: 10,
+                            children: [
+                              _numberField(
+                                'حد الانفجار',
+                                level.threshold,
+                                suffix: 'Coins',
+                              ),
+                              _numberField(
+                                'احتمال الفوز',
+                                level.winPercent,
+                                suffix: '%',
+                              ),
+                            ],
                           ),
                           const SizedBox(height: 12),
                           _poolField(
