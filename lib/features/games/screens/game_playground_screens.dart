@@ -1232,6 +1232,7 @@ class _ChoiceTile extends StatelessWidget {
     required this.icon,
     required this.accent,
     required this.selected,
+    required this.winner,
     required this.disabled,
     required this.onTap,
     this.compact = false,
@@ -1242,62 +1243,105 @@ class _ChoiceTile extends StatelessWidget {
   final IconData icon;
   final Color accent;
   final bool selected;
+  final bool winner;
   final bool disabled;
   final bool compact;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final highlighted = selected || winner;
     return InkWell(
       onTap: disabled ? null : onTap,
       borderRadius: BorderRadius.circular(18),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 170),
-        padding: EdgeInsets.all(compact ? 9 : 12),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
-          gradient: selected
-              ? LinearGradient(
-                  colors: [
-                    accent.withValues(alpha: .34),
-                    accent.withValues(alpha: .10),
-                  ],
-                )
-              : const LinearGradient(
-                  colors: [Color(0xFF111420), Color(0xFF0A0C14)],
-                ),
-          border: Border.all(
-            color: selected
-                ? accent.withValues(alpha: .75)
-                : Colors.white.withValues(alpha: .08),
-            width: selected ? 1.5 : 1,
+      child: AnimatedScale(
+        duration: const Duration(milliseconds: 180),
+        scale: winner ? 1.035 : 1,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: EdgeInsets.all(compact ? 9 : 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            gradient: highlighted
+                ? LinearGradient(
+                    colors: [
+                      accent.withValues(alpha: winner ? .46 : .34),
+                      accent.withValues(alpha: .10),
+                    ],
+                  )
+                : const LinearGradient(
+                    colors: [Color(0xFF111420), Color(0xFF0A0C14)],
+                  ),
+            border: Border.all(
+              color: winner
+                  ? accent
+                  : selected
+                      ? accent.withValues(alpha: .75)
+                      : Colors.white.withValues(alpha: .08),
+              width: winner ? 2 : selected ? 1.5 : 1,
+            ),
+            boxShadow: winner
+                ? [
+                    BoxShadow(
+                      color: accent.withValues(alpha: .30),
+                      blurRadius: 18,
+                    ),
+                  ]
+                : const [],
           ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: selected ? accent : Colors.white70, size: compact ? 25 : 29),
-            const SizedBox(height: 7),
-            Text(
-              title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: selected ? Colors.white : Colors.white70,
-                fontWeight: FontWeight.w800,
-                fontSize: compact ? 10.5 : 11.5,
+          child: Stack(
+            children: [
+              Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      icon,
+                      color: highlighted ? accent : Colors.white70,
+                      size: compact ? 25 : 29,
+                    ),
+                    const SizedBox(height: 7),
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: highlighted ? Colors.white : Colors.white70,
+                        fontWeight: FontWeight.w800,
+                        fontSize: compact ? 10.5 : 11.5,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      multiplier,
+                      style: TextStyle(
+                        color: accent,
+                        fontWeight: FontWeight.w900,
+                        fontSize: compact ? 10 : 11,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 3),
-            Text(
-              multiplier,
-              style: TextStyle(
-                color: accent,
-                fontWeight: FontWeight.w900,
-                fontSize: compact ? 10 : 11,
-              ),
-            ),
-          ],
+              if (winner)
+                PositionedDirectional(
+                  top: 0,
+                  end: 0,
+                  child: Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: accent,
+                    ),
+                    child: const Icon(
+                      Icons.check_rounded,
+                      size: 11,
+                      color: Color(0xFF090A10),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
