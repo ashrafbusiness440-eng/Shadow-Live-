@@ -158,81 +158,82 @@ export async function claimRocketReward(db,uid,explosionId,nowMs=Date.now()){
 
   const contributor=isContributor(explosion,uid);
   if(!contributor&&!entrySnap.exists) throw Error("not_eligible");
+
   const attempts=isTop3(explosion,uid)?2:1;
-  const outcomes=drawAttempts(explosion,attempts);
+  const drawnOutcomes=drawAttempts(explosion,attempts);
   const resultRef=explosionRef.collection("results").doc(uid);
   const userRef=db.collection("users").doc(uid);
   const noWinMessageAr=clean(explosion.noWinMessageAr)||"حظ أوفر في المرة القادمة";
   const capHours=Math.max(1,Number(explosion.cosmeticStackCapHours||720));
-
-  const existingResult=await resultRef.get();
-  if(existingResult.exists){
-    return {ok:true,duplicate:true,result:existingResult.data()};
-  }
-
   const cosmeticTypes=new Set(["frame","entrance","voice_wave"]);
-  const cosmeticKeys=[...new Set(outcomes
+  const cosmeticKeys=[...new Set(drawnOutcomes
     .filter((item)=>item.won&&cosmeticTypes.has(item.type))
     .map((item)=>item.type+"::"+item.id))];
 
   const rewardRefs=new Map();
-  const rewardSnaps=new Map();
   for(const key of cosmeticKeys){
     const [type,id]=key.split("::");
-    const ref=db.collection("user_rewards").doc(uid)
-      .collection("items").doc(rewardDocId(type,id));
-    rewardRefs.set(key,ref);
-    rewardSnaps.set(key,await ref.get());
-  }
-
-  const resolved=[];
-  let coinAward=0;
-  const cosmeticState=new Map();
-  for(const key of cosmeticKeys){
-    const snap=rewardSnaps.get(key);
-    const data=snap?.exists?(snap.data()||{}):{};
-    cosmeticState.set(key,{
-      expiresAtMs:Math.max(nowMs,Number(data.expiresAtMs||0)),
-    });
-  }
-
-  for(const outcome of outcomes){
-    if(!outcome.won){
-      resolved.push({won:false,messageAr:noWinMessageAr});
-      continue;
-    }
-    if(outcome.type==="coins"){
-      coinAward+=outcome.coins;
-      resolved.push({won:true,type:"coins",coins:outcome.coins});
-      continue;
-    }
-    const key=outcome.type+"::"+outcome.id;
-    const state=cosmeticState.get(key)||{expiresAtMs:nowMs};
-    const requestedMs=outcome.durationHours*3600000;
-    const capEndMs=nowMs+capHours*3600000;
-    const requestedEndMs=state.expiresAtMs+requestedMs;
-    const grantedEndMs=Math.min(requestedEndMs,capEndMs);
-    const grantedMs=Math.max(0,grantedEndMs-state.expiresAtMs);
-    const overflowMs=Math.max(0,requestedMs-grantedMs);
-    const overflowRatio=requestedMs>0?overflowMs/requestedMs:0;
-    const convertedCoins=Math.floor((outcome.overflowCoins||0)*overflowRatio);
-    coinAward+=convertedCoins;
-    state.expiresAtMs=grantedEndMs;
-    cosmeticState.set(key,state);
-    resolved.push({
-      won:true,
-      type:outcome.type,
-      rewardId:outcome.id,
-      durationHours:outcome.durationHours,
-      expiresAtMs:grantedEndMs,
-      convertedCoins,
-    });
+    rewardRefs.set(
+      key,
+      db.collection("user_rewards").doc(uid)
+        .collection("items").doc(rewardDocId(type,id)),
+    );
   }
 
   const result=await db.runTransaction(async tx=>{
-    const [again,userSnap]=await Promise.all([tx.get(resultRef),tx.get(userRef)]);
+    const rewardEntries=[...rewardRefs.entries()];
+    const [again,userSnap,...rewardSnaps]=await Promise.all([
+      tx.get(resultRef),
+      tx.get(userRef),
+      ...rewardEntries.map(([,ref])=>tx.get(ref)),
+    ]);
     if(again.exists) return {duplicate:true,result:again.data()};
     if(!userSnap.exists) throw Error("user_not_found");
+
+    const cosmeticState=new Map();
+    rewardEntries.forEach(([key],index)=>{
+      const snap=rewardSnaps[index];
+      const data=snap?.exists?(snap.data()||{}):{};
+      cosmeticState.set(key,{
+        expiresAtMs:Math.max(nowMs,Number(data.expiresAtMs||0)),
+      });
+    });
+
+    const resolved=[];
+    let coinAward=0;
+    for(const outcome of drawnOutcomes){
+      if(!outcome.won){
+        resolved.push({won:false,messageAr:noWinMessageAr});
+        continue;
+      }
+      if(outcome.type==="coins"){
+        coinAward+=outcome.coins;
+        resolved.push({won:true,type:"coins",coins:outcome.coins});
+        continue;
+      }
+
+      const key=outcome.type+"::"+outcome.id;
+      const state=cosmeticState.get(key)||{expiresAtMs:nowMs};
+      const requestedMs=outcome.durationHours*3600000;
+      const capEndMs=nowMs+capHours*3600000;
+      const requestedEndMs=state.expiresAtMs+requestedMs;
+      const grantedEndMs=Math.min(requestedEndMs,capEndMs);
+      const grantedMs=Math.max(0,grantedEndMs-state.expiresAtMs);
+      const overflowMs=Math.max(0,requestedMs-grantedMs);
+      const overflowRatio=requestedMs>0?overflowMs/requestedMs:0;
+      const convertedCoins=Math.floor((outcome.overflowCoins||0)*overflowRatio);
+      coinAward+=convertedCoins;
+      state.expiresAtMs=grantedEndMs;
+      cosmeticState.set(key,state);
+      resolved.push({
+        won:true,
+        type:outcome.type,
+        rewardId:outcome.id,
+        durationHours:outcome.durationHours,
+        expiresAtMs:grantedEndMs,
+        convertedCoins,
+      });
+    }
 
     const now=FieldValue.serverTimestamp();
     if(coinAward>0){
