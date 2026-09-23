@@ -1,0 +1,33 @@
+name: Verify Cloudflare Token
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/cloudflare-token-check.yml'
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify secret exists and token is active
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "CLOUDFLARE_API_TOKEN is missing"
+            exit 1
+          fi
+          HTTP_CODE=$(curl -sS -o /tmp/cf.json -w "%{http_code}"             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             https://api.cloudflare.com/client/v4/user/tokens/verify)
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "Cloudflare token verification failed with HTTP $HTTP_CODE"
+            exit 1
+          fi
+          python3 - <<'PY'
+          import json, sys
+          data=json.load(open('/tmp/cf.json'))
+          ok=data.get('success') is True and data.get('result',{}).get('status')=='active'
+          print('Cloudflare token active' if ok else 'Cloudflare token invalid')
+          sys.exit(0 if ok else 1)
+          PY
