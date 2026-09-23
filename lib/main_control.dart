@@ -467,7 +467,7 @@ class _OwnerEconomyCard extends StatelessWidget {
       final token=await user.getIdToken().timeout(const Duration(seconds:12));
       if(token==null||token.isEmpty)throw Exception('empty_token');
       final key='bal_${DateTime.now().millisecondsSinceEpoch}_${user.uid.substring(0,6)}';
-      final apiUri=Uri(scheme:Uri.base.scheme,host:Uri.base.host,port:Uri.base.hasPort?Uri.base.port:null,path:'/api/adjust-balance');
+      final apiUri=shadowApiEndpoint('adjust-balance');
       final response=await http.post(apiUri,headers:{'Content-Type':'application/json','Authorization':'Bearer $token'},body:jsonEncode({'targetId':uid,'asset':asset,'delta':delta,'reason':reason,'idempotencyKey':key})).timeout(const Duration(seconds:20));
       final body=jsonDecode(response.body) as Map<String,dynamic>;
       if(response.statusCode!=200||body['ok']!=true)throw Exception(body['code']??'request_failed');
@@ -1221,7 +1221,7 @@ class _RoomIdManagementPageState extends State<RoomIdManagementPage> {
       final token=await user.getIdToken().timeout(const Duration(seconds:12));
       if(token==null||token.isEmpty)throw Exception('forbidden');
       final key='rid_${DateTime.now().millisecondsSinceEpoch}_${user.uid.substring(0,6)}';
-      final apiUri=Uri(scheme:Uri.base.scheme,host:Uri.base.host,port:Uri.base.hasPort?Uri.base.port:null,path:'/api/voice-session');
+      final apiUri=shadowApiEndpoint('voice-session');
       final response=await http.post(
         apiUri,
         headers:{'Content-Type':'application/json','Authorization':'Bearer $token'},
@@ -1375,7 +1375,7 @@ class _OwnerIdPermissionCardState extends State<_OwnerIdPermissionCard> {
       final token=await user.getIdToken().timeout(const Duration(seconds:12));
       if(token==null||token.isEmpty)throw Exception('empty_token');
       final key='idcap_${DateTime.now().millisecondsSinceEpoch}_${user.uid.substring(0,6)}';
-      final apiUri=Uri(scheme:Uri.base.scheme,host:Uri.base.host,port:Uri.base.hasPort?Uri.base.port:null,path:'/api/set-id-management-permission');
+      final apiUri=shadowApiEndpoint('set-id-management-permission');
       final response=await http.post(
         apiUri,
         headers:{'Content-Type':'application/json','Authorization':'Bearer $token'},
@@ -1516,7 +1516,7 @@ class _IdManagementPageState extends State<UserIdManagementPage> {
       final token=await user.getIdToken().timeout(const Duration(seconds:12));
       if(token==null||token.isEmpty)throw Exception('forbidden');
       final key='pid_${DateTime.now().millisecondsSinceEpoch}_${user.uid.substring(0,6)}';
-      final apiUri=Uri(scheme:Uri.base.scheme,host:Uri.base.host,port:Uri.base.hasPort?Uri.base.port:null,path:'/api/change-public-id');
+      final apiUri=shadowApiEndpoint('change-public-id');
       final response=await http.post(
         apiUri,
         headers:{'Content-Type':'application/json','Authorization':'Bearer $token'},
