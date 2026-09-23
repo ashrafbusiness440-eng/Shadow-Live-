@@ -302,6 +302,13 @@ class RoomSeatService {
     return RoomSeatState.fromJson(body);
   }
 
+  Future<void> announceEntrance(String roomId) async {
+    await _post({
+      'action': 'announceEntrance',
+      'roomId': roomId,
+    });
+  }
+
   Future<RoomSeatState> requestMic(String roomId) =>
       _action(roomId: roomId, seatAction: 'requestMic');
 
