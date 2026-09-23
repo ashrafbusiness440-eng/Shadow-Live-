@@ -2,7 +2,7 @@ name: Deploy Shadow Live + Shadow Control to GitHub Pages
 
 on:
   push:
-    branches: [phase8-games]
+    branches: [main, phase8-games]
   workflow_dispatch:
 
 permissions:
