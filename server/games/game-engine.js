@@ -233,7 +233,7 @@ export function dailyRoundClock({
     roundNumber,
     opensAtMs,
     closesAtMs,
-    roundId:${gameId}${modeKey}:${dayKey}:${roundNumber},
+    roundId:gameId+modeKey+":"+dayKey+":"+String(roundNumber),
   });
 }
 
