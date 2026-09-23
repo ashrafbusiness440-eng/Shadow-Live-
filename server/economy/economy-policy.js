@@ -53,7 +53,7 @@ export function resolveRevenuePolicy(
   );
   const configuredHostBonus = Math.max(
     0,
-    Math.min(3000, Number(economy?.hostPerformanceBonusBps || 0)),
+    Math.min(3000, Number(economy?.hostPerformanceBonusBps ?? 200)),
   );
   const hostBonusBps = qualifiedDays >= requiredDays
     ? configuredHostBonus
@@ -66,7 +66,7 @@ export function resolveRevenuePolicy(
   );
   const configuredAgencyBonus = Math.max(
     0,
-    Math.min(3000, Number(economy?.agencyPerformanceBonusBps || 0)),
+    Math.min(3000, Number(economy?.agencyPerformanceBonusBps ?? 200)),
   );
   const agencyBonusBps = agencyId && activeHostCount >= requiredActiveHosts
     ? configuredAgencyBonus
