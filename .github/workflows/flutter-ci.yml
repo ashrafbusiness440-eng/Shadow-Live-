@@ -47,7 +47,7 @@ jobs:
         run: npm install --no-save firebase-admin@13.5.0 firebase@12.19.0 @firebase/rules-unit-testing@5.0.2
 
       - name: Run wallet gift and settlement Firestore integration tests
-        run: npx --yes firebase-tools@15.1.0 emulators:exec --only firestore --project shadow-live-economy-test "node --test server/__tests__/wallet-actions.integration.test.js server/__tests__/gift-transactions.integration.test.js server/__tests__/firestore-security.integration.test.js server/__tests__/room-rocket.integration.test.js server/__tests__/reward-inventory.integration.test.js"
+        run: npx --yes firebase-tools@15.1.0 emulators:exec --only firestore --project shadow-live-economy-test "node --test server/__tests__/wallet-actions.integration.test.js server/__tests__/gift-transactions.integration.test.js server/__tests__/firestore-security.integration.test.js server/__tests__/room-rocket.integration.test.js server/__tests__/reward-inventory.integration.test.js server/__tests__/cosmetic-room.integration.test.js"
 
       - name: Audit Dart reachability
         run: python3 .github/scripts/find_unreachable_dart.py

@@ -12,6 +12,14 @@ class VoiceSeat {
     required this.profileImageUrl,
     required this.muted,
     this.starBattleCoins = 0,
+    this.frameRewardId = '',
+    this.frameAssetKey = '',
+    this.frameImageUrl = '',
+    this.frameExpiresAtMs = 0,
+    this.voiceWaveRewardId = '',
+    this.voiceWaveAssetKey = '',
+    this.voiceWaveImageUrl = '',
+    this.voiceWaveExpiresAtMs = 0,
   });
 
   final int index;
@@ -20,8 +28,22 @@ class VoiceSeat {
   final String profileImageUrl;
   final bool muted;
   final int starBattleCoins;
+  final String frameRewardId;
+  final String frameAssetKey;
+  final String frameImageUrl;
+  final int frameExpiresAtMs;
+  final String voiceWaveRewardId;
+  final String voiceWaveAssetKey;
+  final String voiceWaveImageUrl;
+  final int voiceWaveExpiresAtMs;
 
   bool get occupied => uid.isNotEmpty;
+  bool get frameActive =>
+      occupied && frameExpiresAtMs > DateTime.now().millisecondsSinceEpoch;
+  bool get voiceWaveActive =>
+      occupied &&
+      !muted &&
+      voiceWaveExpiresAtMs > DateTime.now().millisecondsSinceEpoch;
 
   factory VoiceSeat.fromJson(Map<String, dynamic> json) => VoiceSeat(
         index: (json['index'] as num?)?.toInt() ?? 0,
@@ -30,6 +52,15 @@ class VoiceSeat {
         profileImageUrl: (json['profileImageUrl'] ?? '').toString(),
         muted: json['muted'] != false,
         starBattleCoins: (json['starBattleCoins'] as num?)?.toInt() ?? 0,
+        frameRewardId: (json['frameRewardId'] ?? '').toString(),
+        frameAssetKey: (json['frameAssetKey'] ?? '').toString(),
+        frameImageUrl: (json['frameImageUrl'] ?? '').toString(),
+        frameExpiresAtMs: (json['frameExpiresAtMs'] as num?)?.toInt() ?? 0,
+        voiceWaveRewardId: (json['voiceWaveRewardId'] ?? '').toString(),
+        voiceWaveAssetKey: (json['voiceWaveAssetKey'] ?? '').toString(),
+        voiceWaveImageUrl: (json['voiceWaveImageUrl'] ?? '').toString(),
+        voiceWaveExpiresAtMs:
+            (json['voiceWaveExpiresAtMs'] as num?)?.toInt() ?? 0,
       );
 }
 
@@ -269,6 +300,13 @@ class RoomSeatService {
       if (enabled != null) 'enabled': enabled,
     });
     return RoomSeatState.fromJson(body);
+  }
+
+  Future<void> announceEntrance(String roomId) async {
+    await _post({
+      'action': 'announceEntrance',
+      'roomId': roomId,
+    });
   }
 
   Future<RoomSeatState> requestMic(String roomId) =>

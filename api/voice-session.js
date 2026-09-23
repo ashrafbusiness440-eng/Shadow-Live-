@@ -39,6 +39,51 @@ function cors(req,res){
 const out=(res,status,body)=>res.status(status).json(body);
 const clean=(v)=>String(v??"").trim();
 
+function cosmeticDocId(type,id){
+  return (clean(type)+"__"+clean(id))
+    .replace(/[^A-Za-z0-9_.-]/g,"_")
+    .slice(0,220);
+}
+function defaultCosmeticAssetKey(type,id){
+  const safeId=clean(id).replace(/[^A-Za-z0-9_.-]/g,"_");
+  return safeId?"cosmetics."+clean(type)+"."+safeId:"";
+}
+async function activeCosmetics(db,uid,types,tx=null){
+  if(!uid||!Array.isArray(types)||types.length===0)return {};
+  const rootRef=db.collection("user_rewards").doc(uid);
+  const rootSnap=tx?await tx.get(rootRef):await rootRef.get();
+  const activeByType=rootSnap.data()?.activeByType||{};
+  const refs=[];
+  const mapped=[];
+  for(const type of types){
+    const rewardId=clean(activeByType[type]);
+    if(!rewardId)continue;
+    refs.push(rootRef.collection("items").doc(cosmeticDocId(type,rewardId)));
+    mapped.push({type,rewardId});
+  }
+  if(refs.length===0)return {};
+  const snaps=tx
+    ?await Promise.all(refs.map(ref=>tx.get(ref)))
+    :await Promise.all(refs.map(ref=>ref.get()));
+  const now=Date.now();
+  const result={};
+  for(let i=0;i<snaps.length;i++){
+    const snap=snaps[i];
+    const meta=mapped[i];
+    if(!snap.exists)continue;
+    const item=snap.data()||{};
+    const expiresAtMs=Number(item.expiresAtMs||0);
+    if(item.active!==true||expiresAtMs<=now)continue;
+    result[meta.type]={
+      rewardId:meta.rewardId,
+      assetKey:clean(item.assetKey)||defaultCosmeticAssetKey(meta.type,meta.rewardId),
+      imageUrl:clean(item.imageUrl),
+      expiresAtMs,
+    };
+  }
+  return result;
+}
+
 export async function recordMicActivity(tx,db,userId,seat,endedAtMs=Date.now()){
   const segments=activeMicSegments(seat,endedAtMs);
   if(!userId||segments.length===0)return;
@@ -837,6 +882,15 @@ function normalizeSeats(room){
       displayName:String(found.displayName||""),
       profileImageUrl:String(found.profileImageUrl||""),
       muted:found.muted!==false,
+      micStartedAtMs:Number(found.micStartedAtMs||0),
+      frameRewardId:String(found.frameRewardId||""),
+      frameAssetKey:String(found.frameAssetKey||""),
+      frameImageUrl:String(found.frameImageUrl||""),
+      frameExpiresAtMs:Number(found.frameExpiresAtMs||0),
+      voiceWaveRewardId:String(found.voiceWaveRewardId||""),
+      voiceWaveAssetKey:String(found.voiceWaveAssetKey||""),
+      voiceWaveImageUrl:String(found.voiceWaveImageUrl||""),
+      voiceWaveExpiresAtMs:Number(found.voiceWaveExpiresAtMs||0),
     });
   }
   return seats;
@@ -1201,6 +1255,41 @@ async function controlRoomPolicy(db,uid,body){
   });
 }
 
+export async function announceRoomEntrance(db,uid,roomId){
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId)){
+    throw new ApiError("invalid_room_id",400);
+  }
+  const roomRef=db.collection("rooms").doc(roomId);
+  const roomSnap=await roomRef.get();
+  if(!roomSnap.exists||roomSnap.data()?.isActive===false){
+    throw new ApiError("room_unavailable",404);
+  }
+
+  const cosmetics=await activeCosmetics(db,uid,["entrance"]);
+  const entrance=cosmetics.entrance;
+  if(!entrance)return {ok:true,announced:false,roomId};
+
+  const profileSnap=await db.collection("public_profiles").doc(uid).get();
+  const profile=profileSnap.data()||{};
+  const eventAtMs=Date.now();
+  const event={
+    eventId:uid+"_"+eventAtMs.toString(36),
+    uid,
+    displayName:clean(profile.displayName||profile.username||"مستخدم Shadow Live"),
+    profileImageUrl:clean(profile.profileImageUrl),
+    rewardId:clean(entrance.rewardId),
+    assetKey:clean(entrance.assetKey),
+    imageUrl:clean(entrance.imageUrl),
+    rewardExpiresAtMs:Number(entrance.expiresAtMs||0),
+    eventAtMs,
+  };
+  await roomRef.set({
+    recentEntrance:event,
+    updatedAt:FieldValue.serverTimestamp(),
+  },{merge:true});
+  return {ok:true,announced:true,roomId,event};
+}
+
 async function roomSeatState(db,uid,roomId){
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
   const snap=await db.collection("rooms").doc(roomId).get();
@@ -1263,7 +1352,22 @@ async function roomSeatAction(db,uid,body){
 
     const clearUserSeat=userId=>{
       seats=seats.map(seat=>seat.uid===userId
-        ? {...seat,uid:"",displayName:"",profileImageUrl:"",muted:true,micStartedAtMs:0}
+        ? {
+            ...seat,
+            uid:"",
+            displayName:"",
+            profileImageUrl:"",
+            muted:true,
+            micStartedAtMs:0,
+            frameRewardId:"",
+            frameAssetKey:"",
+            frameImageUrl:"",
+            frameExpiresAtMs:0,
+            voiceWaveRewardId:"",
+            voiceWaveAssetKey:"",
+            voiceWaveImageUrl:"",
+            voiceWaveExpiresAtMs:0,
+          }
         : seat);
     };
 
@@ -1308,6 +1412,14 @@ async function roomSeatAction(db,uid,body){
 
       const profileSnap=await tx.get(myProfileRef);
       const profile=profileSnap.data()||{};
+      const cosmetics=await activeCosmetics(
+        db,
+        uid,
+        ["frame","voice_wave"],
+        tx,
+      );
+      const frame=cosmetics.frame||{};
+      const voiceWave=cosmetics.voice_wave||{};
       const existingSeat=currentSeatIndex>=0?seats[currentSeatIndex]:null;
       const keepMicActive=
         existingSeat?.muted===false&&Number(existingSeat?.micStartedAtMs||0)>0;
@@ -1322,6 +1434,14 @@ async function roomSeatAction(db,uid,body){
         profileImageUrl:String(profile.profileImageUrl||""),
         muted:!keepMicActive,
         micStartedAtMs,
+        frameRewardId:clean(frame.rewardId),
+        frameAssetKey:clean(frame.assetKey),
+        frameImageUrl:clean(frame.imageUrl),
+        frameExpiresAtMs:Number(frame.expiresAtMs||0),
+        voiceWaveRewardId:clean(voiceWave.rewardId),
+        voiceWaveAssetKey:clean(voiceWave.assetKey),
+        voiceWaveImageUrl:clean(voiceWave.imageUrl),
+        voiceWaveExpiresAtMs:Number(voiceWave.expiresAtMs||0),
       };
       invites=invites.filter(id=>id!==uid);
       requests=requests.filter(id=>id!==uid);
@@ -2831,6 +2951,14 @@ export default async function handler(req,res){
     }
     if(action==="setRoomModerator"){
       return out(res,200,await setRoomModerator(getFirestore(),decoded.uid,req.body||{}));
+    }
+    if(action==="announceEntrance"){
+      const roomId=clean(req.body?.roomId);
+      return out(
+        res,
+        200,
+        await announceRoomEntrance(getFirestore(),decoded.uid,roomId),
+      );
     }
     if(action==="roomSeatState"){
       const roomId=clean(req.body?.roomId);

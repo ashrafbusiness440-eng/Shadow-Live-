@@ -21,6 +21,11 @@ function validId(value){
 function rewardDocId(type,id){
   return (type+"__"+id).replace(/[^A-Za-z0-9_.-]/g,"_").slice(0,220);
 }
+function defaultAssetKey(type,id){
+  const safeId=clean(id).replace(/[^A-Za-z0-9_.-]/g,"_");
+  if(!safeId)return "";
+  return "cosmetics."+clean(type)+"."+safeId;
+}
 function parseServiceAccount(raw){
   const text=clean(raw); if(!text) throw Error("server_not_configured");
   let sa=JSON.parse(text); if(typeof sa==="string") sa=JSON.parse(sa);
@@ -60,7 +65,7 @@ function serializeReward(doc,nowMs){
     rewardId:clean(data.rewardId),
     type:clean(data.type),
     nameAr:clean(data.nameAr),
-    assetKey:clean(data.assetKey),
+    assetKey:clean(data.assetKey)||defaultAssetKey(data.type,data.rewardId),
     imageUrl:clean(data.imageUrl),
     expiresAtMs,
     active:data.active===true && expiresAtMs>nowMs,
@@ -173,7 +178,7 @@ export async function setActiveReward(db,uid,{type,rewardId,active}){
       type:rewardType,
       active:shouldActivate,
       imageUrl:clean(item.imageUrl),
-      assetKey:clean(item.assetKey),
+      assetKey:clean(item.assetKey)||defaultAssetKey(rewardType,id),
       expiresAtMs:Number(item.expiresAtMs||0),
     };
   });
