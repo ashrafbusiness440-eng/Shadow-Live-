@@ -1,8 +1,9 @@
 {
+  "id": "/Shadow-Live-/app/",
   "name": "Shadow Live",
   "short_name": "Shadow Live",
-  "start_url": ".",
-  "scope": "/app/",
+  "start_url": "/Shadow-Live-/app/",
+  "scope": "/Shadow-Live-/app/",
   "display": "standalone",
   "background_color": "#020711",
   "theme_color": "#8A00FF",
@@ -10,6 +11,11 @@
   "orientation": "portrait-primary",
   "prefer_related_applications": false,
   "icons": [
-    {"src":"assets/assets/images/app_icon.png","sizes":"any","type":"image/png","purpose":"any maskable"}
+    {
+      "src": "assets/assets/images/app_icon.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
   ]
 }
