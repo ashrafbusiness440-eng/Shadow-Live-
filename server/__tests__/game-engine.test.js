@@ -46,6 +46,39 @@ test("bet ladders reject unsupported arbitrary values",()=>{
   );
 });
 
+test("greedy cat repeated taps on one choice accumulate before payout",()=>{
+  const selections=normalizeSelections("greedy_cat","",[
+    {choiceId:"chicken10",amountCoins:2000},
+    {choiceId:"chicken10",amountCoins:20000},
+    {choiceId:"chicken10",amountCoins:20000},
+  ]);
+  assert.equal(selections.length,1);
+  assert.equal(selections[0].choiceId,"chicken10");
+  assert.equal(selections[0].amountCoins,42000);
+  assert.equal(selections[0].entryCount,3);
+  assert.equal(totalStake(selections),42000);
+  assert.equal(greedyCatPayout(selections,"chicken10"),420000);
+});
+
+test("witch repeated taps on one choice accumulate exactly",()=>{
+  const selections=normalizeSelections("witch","normal",[
+    {choiceId:"book",amountCoins:1000},
+    {choiceId:"book",amountCoins:10000},
+    {choiceId:"book",amountCoins:10000},
+  ]);
+  assert.equal(selections.length,1);
+  assert.equal(selections[0].choiceId,"book");
+  assert.equal(selections[0].amountCoins,21000);
+  assert.equal(selections[0].entryCount,3);
+  assert.equal(totalStake(selections),21000);
+  assert.equal(calculatePayout({
+    gameId:"witch",
+    mode:"normal",
+    selections,
+    outcomeId:"book",
+  }),210000);
+});
+
 test("daily collective round id is room independent and resets by day",()=>{
   const before=Date.UTC(2026,8,23,19,59,59);
   const after=Date.UTC(2026,8,23,20,0,1);
