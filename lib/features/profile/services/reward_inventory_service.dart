@@ -28,7 +28,9 @@ class MyItemReward {
 
   int remainingSeconds([int? nowMs]) {
     final now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
-    return ((expiresAtMs - now) / 1000).ceil().clamp(0, 1 << 31);
+    final seconds = ((expiresAtMs - now) / 1000).ceil();
+    if (seconds <= 0) return 0;
+    return seconds;
   }
 
   factory MyItemReward.fromMap(Map<String, dynamic> data) => MyItemReward(
