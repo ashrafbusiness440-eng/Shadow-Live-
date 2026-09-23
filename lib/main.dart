@@ -48,6 +48,7 @@ import 'features/room/widgets/room_moderator_manager_sheet.dart';
 import 'features/room/widgets/room_music_sheet.dart';
 import 'features/room/widgets/room_pk_panel.dart';
 import 'features/room/widgets/room_rocket_banner_host.dart';
+import 'features/room/widgets/cosmetic_effect_widgets.dart';
 import 'features/room/services/room_rocket_service.dart';
 import 'core/assets/shadow_asset_registry.dart';
 import 'features/room/widgets/star_battle_sheet.dart';
@@ -1696,6 +1697,21 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
               Stack(
                 clipBehavior: Clip.none,
                 children: [
+                  if (seat.voiceWaveActive)
+                    Positioned(
+                      left: -8,
+                      top: -8,
+                      child: IgnorePointer(
+                        child: SizedBox(
+                          width: micSize + 16,
+                          height: micSize + 16,
+                          child: CosmeticAssetVisual(
+                            assetKey: seat.voiceWaveAssetKey,
+                            imageUrl: seat.voiceWaveImageUrl,
+                          ),
+                        ),
+                      ),
+                    ),
                   Container(
                     width: micSize,
                     height: micSize,
@@ -1729,6 +1745,21 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                             color: Colors.white38,
                           ),
                   ),
+                  if (seat.frameActive)
+                    Positioned(
+                      left: -6,
+                      top: -6,
+                      child: IgnorePointer(
+                        child: SizedBox(
+                          width: micSize + 12,
+                          height: micSize + 12,
+                          child: CosmeticAssetVisual(
+                            assetKey: seat.frameAssetKey,
+                            imageUrl: seat.frameImageUrl,
+                          ),
+                        ),
+                      ),
+                    ),
                   if (seat.occupied)
                     Positioned(
                       right: -2,
@@ -4535,6 +4566,10 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             .toString()
             .trim()
         : '';
+    final rawEntrance = _roomArguments['recentEntrance'];
+    final recentEntrance = rawEntrance is Map
+        ? Map<String, dynamic>.from(rawEntrance)
+        : null;
     final roomTitle = (_roomArguments['name'] ??
             _roomArguments['title'] ??
             'غرفة صوتية')
@@ -4585,6 +4620,11 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                               ],
                             ),
                           ),
+                        ),
+                      ),
+                      Positioned.fill(
+                        child: RoomEntranceEffectHost(
+                          event: recentEntrance,
                         ),
                       ),
                       Positioned(
