@@ -122,6 +122,17 @@ export function firestoreClient(env) {
       });
       return body;
     },
+    async list(collectionPath, pageSize = 200) {
+      const url = new URL(`${documentRoot}/${collectionPath}`);
+      url.searchParams.set("pageSize", String(Math.max(1, Math.min(1000, pageSize))));
+      const { body } = await call(url.toString(), { method: "GET" });
+      return (body?.documents || []).map((doc) => ({
+        id: String(doc.name || "").split("/").pop(),
+        data: decodeFields(doc.fields || {}),
+        updateTime: doc.updateTime || null,
+      }));
+    },
+
 
     writeUpdate(path, fields, fieldPaths = null) {
       const write = {
