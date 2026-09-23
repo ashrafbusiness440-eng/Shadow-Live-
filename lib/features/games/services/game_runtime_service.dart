@@ -115,8 +115,7 @@ class GameBetResult {
             ? (json['payoutCoins'] as num).toInt()
             : null,
         balanceAfter: (json['balanceAfter'] as num?)?.toInt() ?? 0,
-        outcomeId:
-            json['outcomeId'] == null ? null : json['outcomeId'].toString(),
+        outcomeId: json['outcomeId']?.toString(),
         reels: json['reels'] is List
             ? (json['reels'] as List)
                 .map((value) => value.toString())
@@ -158,7 +157,9 @@ class GameRuntimeService {
 
   Future<String> _token() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user?.isAnonymous ?? true) throw StateError('account_required');
+    if (user == null || user.isAnonymous) {
+      throw StateError('account_required');
+    }
     final token = await user.getIdToken();
     if (token?.isEmpty ?? true) throw StateError('not_signed_in');
     return token!;
