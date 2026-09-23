@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../../core/assets/shadow_asset_registry.dart';
 import '../services/follow_service.dart';
 import '../services/profile_action_service.dart';
+import '../../gift/widgets/direct_gift_sheet.dart';
 import '../widgets/registry_badge.dart';
 
 class PublicProfileScreen extends StatefulWidget {
@@ -39,37 +40,11 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
     return null;
   }
 
-  Future<void> _showGiftInfo(String name) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: const Color(0xFF111625),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (giftContext) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(22),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.card_giftcard_rounded, color: Color(0xFFFFD54A), size: 44),
-                const SizedBox(height: 12),
-                Text('إرسال هدية إلى $name', style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)),
-                const SizedBox(height: 8),
-                const Text(
-                  'تم تجهيز مكان إرسال الهدية من الملف الشخصي. تنفيذ الخصم والتحويل المالي سيبقى Server-side ضمن مرحلة الاقتصاد والهدايا.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white60, height: 1.5),
-                ),
-                const SizedBox(height: 16),
-                FilledButton(onPressed: () => Navigator.pop(giftContext), child: const Text('حسنًا')),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Future<void> _showGiftInfo(String name) => showDirectGiftSheet(
+        context,
+        receiverId: widget.userId,
+        receiverName: name,
+      );
 
   @override
   Widget build(BuildContext context) {

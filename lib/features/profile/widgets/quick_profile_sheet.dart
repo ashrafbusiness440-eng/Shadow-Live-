@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../screens/public_profile_screen.dart';
+import '../../gift/widgets/direct_gift_sheet.dart';
 import '../services/follow_service.dart';
 import '../services/profile_action_service.dart';
 import 'registry_badge.dart';
@@ -61,37 +62,11 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
     return null;
   }
 
-  Future<void> _gift(BuildContext context, String name) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: const Color(0xFF111625),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (giftContext) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(22),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.card_giftcard_rounded, color: Color(0xFFFFD54A), size: 42),
-                const SizedBox(height: 12),
-                Text('إرسال هدية إلى $name', style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900)),
-                const SizedBox(height: 8),
-                const Text(
-                  'واجهة الإرسال جاهزة. تنفيذ الخصم والتحويل المالي سيتم عبر Backend آمن ضمن نظام الهدايا والاقتصاد، وليس مباشرة من التطبيق.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white60, height: 1.5),
-                ),
-                const SizedBox(height: 16),
-                FilledButton(onPressed: () => Navigator.pop(giftContext), child: const Text('حسنًا')),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Future<void> _gift(BuildContext context, String name) => showDirectGiftSheet(
+        context,
+        receiverId: widget.userId,
+        receiverName: name,
+      );
 
   void _openFull() {
     final navigator = Navigator.of(context);
