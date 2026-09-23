@@ -243,30 +243,100 @@ class _WitchGameScreenState extends State<WitchGameScreen> {
   ];
 
   final _random = Random();
+  final List<_RoundResult> _history = [];
+  Timer? _dayTimer;
+  String _day = _dayKey();
   bool _advanced = false;
   int _betIndex = 0;
   int? _selected;
+  int? _winner;
+  bool _locked = false;
   bool _settling = false;
   String _message = 'اختَر رمز الساحرة';
-  int _round = 7831;
+  int _round = 1;
 
   List<int> get _bets => _advanced ? _advancedBets : _normalBets;
 
+  @override
+  void initState() {
+    super.initState();
+    _dayTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _syncDailyRound(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _dayTimer?.cancel();
+    super.dispose();
+  }
+
+  void _syncDailyRound() {
+    final nextDay = _dayKey();
+    if (!mounted || nextDay == _day) return;
+    setState(() {
+      _day = nextDay;
+      _round = 1;
+      _selected = null;
+      _winner = null;
+      _locked = false;
+      _settling = false;
+      _history.clear();
+      _message = 'يوم جديد • الجولة رقم 1 جاهزة';
+    });
+  }
+
   Future<void> _play() async {
-    if (_selected == null || _settling) return;
+    if (_selected == null || _settling || _locked) return;
     setState(() {
       _settling = true;
+      _locked = true;
+      _winner = null;
       _message = 'الساحرة تحسم النتيجة...';
     });
     await Future<void>.delayed(const Duration(milliseconds: 900));
     if (!mounted) return;
     final winner = _random.nextInt(_choices.length);
+    final multipliers = _advanced
+        ? ['×2.2', '×3', '×4.5', '×6', '×9', '×16']
+        : ['×1.8', '×2.2', '×3', '×4', '×6', '×10'];
     setState(() {
+      _winner = winner;
       _message = winner == _selected
-          ? 'اختيار موفق • ${_choices[winner].$1}'
-          : 'النتيجة: ${_choices[winner].$1}';
+          ? 'اختيار موفق • ${_choices[winner].$1} ${multipliers[winner]}'
+          : 'النتيجة: ${_choices[winner].$1} ${multipliers[winner]}';
+      _history.insert(
+        0,
+        _RoundResult(
+          round: _round,
+          label: _choices[winner].$1,
+          multiplier: multipliers[winner],
+        ),
+      );
+      if (_history.length > 6) _history.removeLast();
       _settling = false;
+    });
+  }
+
+  void _nextRound() {
+    setState(() {
       _round++;
+      _selected = null;
+      _winner = null;
+      _locked = false;
+      _settling = false;
+      _message = 'اختَر رمز الساحرة';
+    });
+  }
+
+  void _setMode(bool advanced) {
+    if (_locked || _settling) return;
+    setState(() {
+      _advanced = advanced;
+      _betIndex = 0;
+      _selected = null;
+      _winner = null;
     });
   }
 
@@ -275,12 +345,25 @@ class _WitchGameScreenState extends State<WitchGameScreen> {
     const accent = Color(0xFFB96CFF);
     return _GameScaffold(
       title: 'الساحرة',
-      subtitle: 'Round #$_round • ${_advanced ? 'متقدم' : 'عادي'}',
+      subtitle: 'جولة عالمية موحّدة • ${_advanced ? 'متقدم' : 'عادي'}',
       accent: accent,
       icon: Icons.auto_awesome_rounded,
       child: Column(
         children: [
           const _DemoNotice(),
+          const SizedBox(height: 12),
+          _DailyRoundBar(
+            round: _round,
+            accent: accent,
+            gameLabel: 'الساحرة',
+          ),
+          const SizedBox(height: 12),
+          _GameIdentityBanner(
+            accent: accent,
+            icon: Icons.auto_awesome_rounded,
+            title: 'اختَر الرمز قبل اكتمال التعويذة',
+            subtitle: 'وضعان مستقلان • نتيجة واحدة موحّدة لكل اللاعبين',
+          ),
           const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(5),
@@ -296,10 +379,7 @@ class _WitchGameScreenState extends State<WitchGameScreen> {
                     text: 'عادي',
                     selected: !_advanced,
                     accent: accent,
-                    onTap: () => setState(() {
-                      _advanced = false;
-                      _betIndex = 0;
-                    }),
+                    onTap: () => _setMode(false),
                   ),
                 ),
                 const SizedBox(width: 6),
@@ -308,10 +388,7 @@ class _WitchGameScreenState extends State<WitchGameScreen> {
                     text: 'متقدم',
                     selected: _advanced,
                     accent: accent,
-                    onTap: () => setState(() {
-                      _advanced = true;
-                      _betIndex = 0;
-                    }),
+                    onTap: () => _setMode(true),
                   ),
                 ),
               ],
@@ -321,7 +398,7 @@ class _WitchGameScreenState extends State<WitchGameScreen> {
           _RoundStatusCard(
             label: _message,
             accent: accent,
-            locked: _settling,
+            locked: _locked,
           ),
           const SizedBox(height: 12),
           GridView.builder(
@@ -344,7 +421,8 @@ class _WitchGameScreenState extends State<WitchGameScreen> {
                 icon: _choices[index].$2,
                 accent: accent,
                 selected: _selected == index,
-                disabled: _settling,
+                winner: _winner == index,
+                disabled: _locked,
                 compact: true,
                 onTap: () => setState(() => _selected = index),
               );
@@ -355,16 +433,24 @@ class _WitchGameScreenState extends State<WitchGameScreen> {
             values: _bets,
             index: _betIndex,
             accent: accent,
-            enabled: !_settling,
+            enabled: !_locked,
             onChanged: (index) => setState(() => _betIndex = index),
           ),
           const SizedBox(height: 12),
           _PrimaryGameButton(
-            label: 'شارك بـ ${_formatCoins(_bets[_betIndex])} Coins',
+            label: _locked
+                ? 'الجولة التالية'
+                : 'شارك بـ ${_formatCoins(_bets[_betIndex])} Coins',
             accent: accent,
-            enabled: _selected != null,
+            enabled: _locked || _selected != null,
             busy: _settling,
-            onPressed: _play,
+            onPressed: _locked ? _nextRound : _play,
+          ),
+          const SizedBox(height: 16),
+          _RoundHistory(
+            title: 'آخر نتائج الساحرة',
+            items: _history,
+            accent: accent,
           ),
         ],
       ),
