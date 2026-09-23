@@ -7,7 +7,7 @@ import {
   saveGameTiming,
   saveGameVariant,
 } from "../games/game-control.js";
-import {placeGameBet} from "../games/game-runtime.js";
+import {gameCatalog,placeGameBet} from "../games/game-runtime.js";
 
 const app=getApps()[0]||initializeApp({projectId:"shadow-live-economy-test"});
 const db=getFirestore(app);
@@ -95,6 +95,10 @@ test("witch normal and advanced remain independently configurable",async()=>{
   const advanced=state.variants.find(item=>item.key==="witch_advanced");
   assert.equal(normal.enabled,true);
   assert.equal(advanced.enabled,false);
+
+  const catalog=await gameCatalog(db);
+  assert.ok(catalog.items.some(item=>item.key==="witch_normal"));
+  assert.equal(catalog.items.some(item=>item.key==="witch_advanced"),false);
 
   const suffix=Date.now().toString()+"_mode_guard";
   const uid="mode_guard_"+suffix;
