@@ -57,27 +57,73 @@ class _GreedyCatGameScreenState extends State<GreedyCatGameScreen> {
   ];
 
   final _random = Random();
+  final List<_RoundResult> _history = [];
+  Timer? _dayTimer;
+  String _day = _dayKey();
   int _betIndex = 0;
   int? _selected;
+  int? _winner;
   bool _locked = false;
   bool _settling = false;
   String _status = 'اختر بابًا قبل إغلاق الجولة';
-  int _round = 10241;
+  int _round = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    _dayTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _syncDailyRound(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _dayTimer?.cancel();
+    super.dispose();
+  }
+
+  void _syncDailyRound() {
+    final nextDay = _dayKey();
+    if (!mounted || nextDay == _day) return;
+    setState(() {
+      _day = nextDay;
+      _round = 1;
+      _selected = null;
+      _winner = null;
+      _locked = false;
+      _settling = false;
+      _history.clear();
+      _status = 'يوم جديد • الجولة رقم 1 جاهزة';
+    });
+  }
 
   Future<void> _joinRound() async {
     if (_selected == null || _settling) return;
     setState(() {
       _locked = true;
       _settling = true;
+      _winner = null;
       _status = 'تم تثبيت اختيارك • جارٍ حسم الجولة...';
     });
     await Future<void>.delayed(const Duration(milliseconds: 850));
     if (!mounted) return;
     final winner = _random.nextInt(_options.length);
+    final item = _options[winner];
     setState(() {
+      _winner = winner;
       _status = winner == _selected
-          ? 'ربحت الجولة! الفائز: ${_options[winner].$1}'
-          : 'انتهت الجولة • الفائز: ${_options[winner].$1}';
+          ? 'ربحت الجولة! الفائز: ${item.$1} ${item.$2}'
+          : 'انتهت الجولة • الفائز: ${item.$1} ${item.$2}';
+      _history.insert(
+        0,
+        _RoundResult(
+          round: _round,
+          label: item.$1,
+          multiplier: item.$2,
+        ),
+      );
+      if (_history.length > 6) _history.removeLast();
       _settling = false;
     });
   }
@@ -86,6 +132,7 @@ class _GreedyCatGameScreenState extends State<GreedyCatGameScreen> {
     setState(() {
       _round++;
       _selected = null;
+      _winner = null;
       _locked = false;
       _settling = false;
       _status = 'اختر بابًا قبل إغلاق الجولة';
@@ -96,12 +143,25 @@ class _GreedyCatGameScreenState extends State<GreedyCatGameScreen> {
   Widget build(BuildContext context) {
     return _GameScaffold(
       title: 'القط الجشع',
-      subtitle: 'جولة جماعية • Round #$_round',
+      subtitle: 'جولة عالمية موحّدة • اليوم #$_round',
       accent: _gold,
       icon: Icons.pets_rounded,
       child: Column(
         children: [
           const _DemoNotice(),
+          const SizedBox(height: 12),
+          _DailyRoundBar(
+            round: _round,
+            accent: _gold,
+            gameLabel: 'القط الجشع',
+          ),
+          const SizedBox(height: 12),
+          _GameIdentityBanner(
+            accent: _gold,
+            icon: Icons.pets_rounded,
+            title: 'اختَر غنيمتك قبل أن يصل القط',
+            subtitle: 'ثمانية اختيارات • نتيجة واحدة موحّدة لكل اللاعبين',
+          ),
           const SizedBox(height: 12),
           _RoundStatusCard(
             label: _status,
@@ -121,13 +181,13 @@ class _GreedyCatGameScreenState extends State<GreedyCatGameScreen> {
             ),
             itemBuilder: (context, index) {
               final item = _options[index];
-              final selected = _selected == index;
               return _ChoiceTile(
                 title: item.$1,
                 multiplier: item.$2,
                 icon: item.$3,
                 accent: _gold,
-                selected: selected,
+                selected: _selected == index,
+                winner: _winner == index,
                 disabled: _locked,
                 onTap: () => setState(() => _selected = index),
               );
@@ -143,11 +203,19 @@ class _GreedyCatGameScreenState extends State<GreedyCatGameScreen> {
           ),
           const SizedBox(height: 12),
           _PrimaryGameButton(
-            label: _locked ? 'جولة جديدة' : 'شارك بـ ${_formatCoins(_bets[_betIndex])} Coins',
+            label: _locked
+                ? 'الجولة التالية'
+                : 'شارك بـ ${_formatCoins(_bets[_betIndex])} Coins',
             accent: _gold,
             enabled: _locked || _selected != null,
             busy: _settling,
             onPressed: _locked ? _nextRound : _joinRound,
+          ),
+          const SizedBox(height: 16),
+          _RoundHistory(
+            title: 'آخر نتائج القط الجشع',
+            items: _history,
+            accent: _gold,
           ),
         ],
       ),
