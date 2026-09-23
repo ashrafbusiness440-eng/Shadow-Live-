@@ -1255,7 +1255,7 @@ async function controlRoomPolicy(db,uid,body){
   });
 }
 
-async function announceRoomEntrance(db,uid,roomId){
+export async function announceRoomEntrance(db,uid,roomId){
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId)){
     throw new ApiError("invalid_room_id",400);
   }
