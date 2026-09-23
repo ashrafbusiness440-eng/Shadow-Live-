@@ -253,14 +253,20 @@ class _ControlShellState extends State<ControlShell> {
         ],
       ),
       body: IndexedStack(index:index,children:pages),
-      bottomNavigationBar:NavigationBar(selectedIndex:index,onDestinationSelected:(v)=>setState(()=>index=v),destinations:const[
-        NavigationDestination(icon:Icon(Icons.dashboard_outlined),selectedIcon:Icon(Icons.dashboard),label:'الرئيسية'),
-        NavigationDestination(icon:Icon(Icons.people_outline),selectedIcon:Icon(Icons.people),label:'المستخدمون'),
-        NavigationDestination(icon:Icon(Icons.mic_none),selectedIcon:Icon(Icons.mic),label:'إدارة الغرف'),
-        NavigationDestination(icon:Icon(Icons.wallet_outlined),selectedIcon:Icon(Icons.wallet),label:'المالية'),
-        NavigationDestination(icon:Icon(Icons.badge_outlined),selectedIcon:Icon(Icons.badge),label:'IDs'),
-        NavigationDestination(icon:Icon(Icons.more_horiz),label:'المزيد'),
-      ]),
+      bottomNavigationBar:NavigationBar(
+        height:72,
+        labelBehavior:NavigationDestinationLabelBehavior.onlyShowSelected,
+        selectedIndex:index,
+        onDestinationSelected:(v)=>setState(()=>index=v),
+        destinations:const[
+          NavigationDestination(icon:Icon(Icons.dashboard_outlined),selectedIcon:Icon(Icons.dashboard),label:'الرئيسية'),
+          NavigationDestination(icon:Icon(Icons.people_outline),selectedIcon:Icon(Icons.people),label:'مستخدمون'),
+          NavigationDestination(icon:Icon(Icons.mic_none),selectedIcon:Icon(Icons.mic),label:'غرف'),
+          NavigationDestination(icon:Icon(Icons.wallet_outlined),selectedIcon:Icon(Icons.wallet),label:'المالية'),
+          NavigationDestination(icon:Icon(Icons.badge_outlined),selectedIcon:Icon(Icons.badge),label:'IDs'),
+          NavigationDestination(icon:Icon(Icons.more_horiz),label:'المزيد'),
+        ],
+      ),
     );
   }
 }
