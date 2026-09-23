@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../game_asset_paths.dart';
 import '../services/game_room_launcher.dart';
 
 class GamesHubScreen extends StatelessWidget {
@@ -12,6 +13,7 @@ class GamesHubScreen extends StatelessWidget {
         title: 'القط الجشع',
         subtitle: 'جولة جماعية • 8 اختيارات • نتائج واضحة',
         icon: Icons.pets_rounded,
+        coverAsset: GameAssetPaths.greedyCover,
         accent: const Color(0xFFFFC84A),
         secondary: const Color(0xFFFF7A3D),
         bets: '200 • 2K • 20K • 200K',
@@ -24,6 +26,7 @@ class GamesHubScreen extends StatelessWidget {
         title: 'الساحرة',
         subtitle: 'عادي ومتقدم • معاملات مستقلة لكل وضع',
         icon: Icons.auto_awesome_rounded,
+        coverAsset: GameAssetPaths.witchCover,
         accent: const Color(0xFFB96CFF),
         secondary: const Color(0xFF5D21C7),
         bets: '100–100K / 200–200K',
@@ -36,6 +39,7 @@ class GamesHubScreen extends StatelessWidget {
         title: 'Shadow Slot',
         subtitle: 'Spin • Auto Play • هوية أصلية لشادو لايف',
         icon: Icons.casino_rounded,
+        coverAsset: GameAssetPaths.slotCover,
         accent: const Color(0xFF49D7FF),
         secondary: const Color(0xFF7B2DFF),
         bets: '200 → 200K',
@@ -348,7 +352,16 @@ class _GameCard extends StatelessWidget {
                   ),
                 ],
               ),
-              child: Icon(game.icon, color: Colors.white, size: 32),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: Image.asset(
+                  game.coverAsset,
+                  fit: BoxFit.cover,
+                  filterQuality: FilterQuality.medium,
+                  errorBuilder: (_, __, ___) =>
+                      Icon(game.icon, color: Colors.white, size: 32),
+                ),
+              ),
             ),
             const SizedBox(width: 13),
             Expanded(
@@ -475,6 +488,7 @@ class _GameEntry {
     required this.title,
     required this.subtitle,
     required this.icon,
+    required this.coverAsset,
     required this.accent,
     required this.secondary,
     required this.bets,
@@ -484,6 +498,7 @@ class _GameEntry {
   final String title;
   final String subtitle;
   final IconData icon;
+  final String coverAsset;
   final Color accent;
   final Color secondary;
   final String bets;
