@@ -346,89 +346,97 @@ class _RechargePackagesControlPageState
                   return Card(
                     child: Padding(
                       padding: const EdgeInsets.all(12),
-                      child: Row(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Switch(
-                            value: item.enabled,
-                            onChanged: (value) {
-                              setState(() {
-                                packages[index] = RechargePackageConfig(
-                                  id: item.id,
-                                  productId: item.productId,
-                                  priceUsd: item.priceUsd,
-                                  baseCoins: item.baseCoins,
-                                  bonusCoins: item.bonusCoins,
-                                  enabled: value,
-                                  badge: item.badge,
-                                  sortOrder: index,
-                                  imageAsset: item.imageAsset,
-                                );
-                              });
-                            },
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Text(
-                                      'USD ' + item.priceUsd.toStringAsFixed(2),
-                                      style: const TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.w900,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    if (item.badge.isNotEmpty)
-                                      Chip(label: Text(item.badge)),
-                                  ],
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  '🪙 ' +
-                                      formatCompactAmount(item.totalCoins) +
-                                      ' (' +
-                                      formatCompactAmount(item.baseCoins) +
-                                      ' + ' +
-                                      formatCompactAmount(item.bonusCoins) +
-                                      ' Bonus)',
-                                ),
-                                Text(
-                                  'Product: ' + item.productId,
+                          Row(
+                            children: [
+                              Switch(
+                                value: item.enabled,
+                                onChanged: (value) {
+                                  setState(() {
+                                    packages[index] = RechargePackageConfig(
+                                      id: item.id,
+                                      productId: item.productId,
+                                      priceUsd: item.priceUsd,
+                                      baseCoins: item.baseCoins,
+                                      bonusCoins: item.bonusCoins,
+                                      enabled: value,
+                                      badge: item.badge,
+                                      sortOrder: index,
+                                      imageAsset: item.imageAsset,
+                                    );
+                                  });
+                                },
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'USD ' + item.priceUsd.toStringAsFixed(2),
                                   style: const TextStyle(
-                                    color: Color(0xFFAAA3B8),
-                                    fontSize: 12,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
                                   ),
                                 ),
-                              ],
+                              ),
+                              if (item.badge.isNotEmpty)
+                                Flexible(child: Chip(label: Text(item.badge))),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '🪙 ' +
+                                formatCompactAmount(item.totalCoins) +
+                                ' (' +
+                                formatCompactAmount(item.baseCoins) +
+                                ' + ' +
+                                formatCompactAmount(item.bonusCoins) +
+                                ' Bonus)',
+                          ),
+                          const SizedBox(height: 4),
+                          Directionality(
+                            textDirection: TextDirection.ltr,
+                            child: Text(
+                              'Product: ' + item.productId,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFFAAA3B8),
+                                fontSize: 12,
+                              ),
                             ),
                           ),
-                          IconButton(
-                            onPressed: index > 0 ? () => move(index, -1) : null,
-                            icon: const Icon(Icons.arrow_upward_rounded),
-                          ),
-                          IconButton(
-                            onPressed: index < packages.length - 1
-                                ? () => move(index, 1)
-                                : null,
-                            icon: const Icon(Icons.arrow_downward_rounded),
-                          ),
-                          IconButton(
-                            onPressed: () => editPackage(index),
-                            icon: const Icon(Icons.edit_outlined),
-                          ),
-                          IconButton(
-                            onPressed: packages.length <= 1
-                                ? null
-                                : () => setState(
-                                      () => packages.removeAt(index),
-                                    ),
-                            icon: const Icon(
-                              Icons.delete_outline_rounded,
-                              color: Colors.redAccent,
-                            ),
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 2,
+                            runSpacing: 2,
+                            children: [
+                              IconButton(
+                                onPressed: index > 0 ? () => move(index, -1) : null,
+                                icon: const Icon(Icons.arrow_upward_rounded),
+                              ),
+                              IconButton(
+                                onPressed: index < packages.length - 1
+                                    ? () => move(index, 1)
+                                    : null,
+                                icon: const Icon(Icons.arrow_downward_rounded),
+                              ),
+                              IconButton(
+                                onPressed: () => editPackage(index),
+                                icon: const Icon(Icons.edit_outlined),
+                              ),
+                              IconButton(
+                                onPressed: packages.length <= 1
+                                    ? null
+                                    : () => setState(
+                                          () => packages.removeAt(index),
+                                        ),
+                                icon: const Icon(
+                                  Icons.delete_outline_rounded,
+                                  color: Colors.redAccent,
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
