@@ -146,7 +146,7 @@ function buildRound({config,gameId,mode,uid,key,nowMs}){
       roundNumber:0,
       opensAtMs:nowMs,
       closesAtMs:nowMs,
-      roundId:${gameId}:${uid}:${key},
+      roundId:gameId+":"+uid+":"+key,
     };
   }
   return dailyRoundClock({
