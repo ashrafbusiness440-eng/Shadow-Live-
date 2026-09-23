@@ -138,6 +138,7 @@ const catalogRef = db.collection("system_config").doc("gift_catalog");
 const economyRef = db.collection("system_config").doc("gift_economy");
 const rocketConfigRef = db.collection("system_config").doc("room_rocket");
 const rocketStateRef = db.collection("room_rocket_state").doc(roomId);
+const rocketGlobalQueueRef = db.collection("system_state").doc("room_rocket_global_queue");
 const opRef = db.collection("gift_operations").doc(key);
 const lockRef = db.collection("system_config").doc("emergency_lock");
 const periods = utcPeriodKeys();
@@ -155,6 +156,7 @@ const result = await db.runTransaction(async (tx) => {
     economySnap,
     rocketConfigSnap,
     rocketStateSnap,
+    rocketGlobalQueueSnap,
     opSnap,
     lockSnap,
   ] = await Promise.all([
@@ -169,6 +171,7 @@ const result = await db.runTransaction(async (tx) => {
     tx.get(economyRef),
     tx.get(rocketConfigRef),
     tx.get(rocketStateRef),
+    tx.get(rocketGlobalQueueRef),
     tx.get(opRef),
     tx.get(lockRef),
   ]);
@@ -313,7 +316,13 @@ const result = await db.runTransaction(async (tx) => {
   const assetKey = clean(gift.assetKey || "gifts.placeholder.default");
   const imageUrl = clean(gift.imageUrl);
   const rocketAdvance = advanceRoomRocket({
-    state: rocketStateSnap.exists ? (rocketStateSnap.data() || {}) : {},
+    state: {
+      ...(rocketStateSnap.exists ? (rocketStateSnap.data() || {}) : {}),
+      queueAvailableAtMs: Math.max(
+        Number(rocketStateSnap.data()?.queueAvailableAtMs || 0),
+        Number(rocketGlobalQueueSnap.data()?.queueAvailableAtMs || 0),
+      ),
+    },
     config: rocketConfigSnap.exists ? (rocketConfigSnap.data() || {}) : {},
     roomId,
     sender: {
@@ -437,6 +446,20 @@ const result = await db.runTransaction(async (tx) => {
       operationId: key,
       createdAt: now,
     });
+  }
+
+  if (rocketAdvance.explosions.length > 0) {
+    tx.set(
+      rocketGlobalQueueRef,
+      {
+        queueAvailableAtMs: rocketAdvance.nextState.queueAvailableAtMs,
+        lastRoomId: roomId,
+        lastExplosionId:
+          rocketAdvance.explosions[rocketAdvance.explosions.length - 1].explosionId,
+        updatedAt: now,
+      },
+      { merge: true },
+    );
   }
 
   const supportSummary = {
