@@ -254,18 +254,18 @@ class _GamesControlPageState extends State<GamesControlPage> {
   Widget gameCard(Map<String, dynamic> variant) {
     final key = (variant['key'] ?? '').toString();
     final stat = stats[key] ?? const <String, dynamic>{};
-    final enabled = variant['enabled'] == true;
+    final rawOutcomes = variant['outcomes'] is List
+        ? variant['outcomes'] as List
+        : const <dynamic>[];
+    final hasStoredOutcomes = rawOutcomes.isNotEmpty;
+    final enabled = hasStoredOutcomes ? variant['enabled'] == true : true;
     final rtp = (NumberHelper.toDouble(variant['targetRtpBps']) / 100)
         .toStringAsFixed(2);
     final bets = (variant['bets'] is List
             ? (variant['bets'] as List)
             : const <dynamic>[])
         .join(',');
-    final outcomes = formatOutcomes(
-      variant['outcomes'] is List
-          ? variant['outcomes'] as List
-          : const <dynamic>[],
-    );
+    final outcomes = formatOutcomes(rawOutcomes);
 
     return _GameConfigCard(
       key: ValueKey(key),
@@ -501,11 +501,18 @@ class _GameConfigCardState extends State<_GameConfigCard> {
               .where((e) => e.isNotEmpty)
               .toList()
           : <String>[];
+      final defaults = _defaultOutcomeBps(
+        (widget.variant['key'] ?? '').toString(),
+      );
       outcomeFields = ids
           .map(
             (id) => _OutcomeWeightControl(
               id: id,
-              controller: TextEditingController(),
+              controller: TextEditingController(
+                text: defaults.containsKey(id)
+                    ? _cleanPercent((defaults[id] ?? 0) / 100)
+                    : '',
+              ),
             ),
           )
           .toList();
@@ -535,6 +542,50 @@ class _GameConfigCardState extends State<_GameConfigCard> {
 
   void _refreshOutcomeTotal() {
     if (mounted) setState(() {});
+  }
+
+  Map<String, int> _defaultOutcomeBps(String key) {
+    switch (key) {
+      case 'greedy_cat':
+        return const {
+          'pepper5': 2000,
+          'tomato5': 1999,
+          'cabbage5': 1999,
+          'carrot5': 1999,
+          'chicken10': 1036,
+          'fish15': 536,
+          'steak25': 144,
+          'shell45': 8,
+          'salad': 278,
+          'pizza': 1,
+        };
+      case 'witch_normal':
+        return const {
+          'moon': 1364,
+          'mirror': 1384,
+          'potion': 1472,
+          'orb': 1578,
+          'owl': 1812,
+          'book': 2390,
+        };
+      case 'witch_advanced':
+        return const {
+          'moon': 2395,
+          'mirror': 2235,
+          'potion': 1908,
+          'orb': 1644,
+          'owl': 1216,
+          'book': 602,
+        };
+      case 'slot':
+        return const {
+          'lose': 6875,
+          'pair': 3000,
+          'jackpot': 125,
+        };
+      default:
+        return const {};
+    }
   }
 
   String _cleanPercent(double value) {
