@@ -7,6 +7,7 @@ import {
   SLOT_OUTCOMES,
   WITCH_CHOICES,
   TARGET_RTP_BPS,
+  defaultOutcomeWeights,
   validateBetLadder,
   validateOutcomeWeights,
 } from "./game-engine.js";
@@ -105,10 +106,10 @@ function validateOutcomesOrEmpty(gameId,mode,outcomes,enabled){
 
 function defaultVariant(item){
   return {
-    enabled:false,
+    enabled:true,
     targetRtpBps:TARGET_RTP_BPS,
     bets:[...item.defaultBets],
-    outcomes:[],
+    outcomes:defaultOutcomeWeights(item.gameId,item.mode),
   };
 }
 
@@ -119,9 +120,7 @@ function readVariant(config,item){
     ? (game[item.mode]&&typeof game[item.mode]==="object"?game[item.mode]:{})
     : game;
   const base=defaultVariant(item);
-  const enabled=item.gameId==="witch"
-    ? raw.enabled===true
-    : raw.enabled===true;
+  const enabled=raw.enabled!==false;
   return {
     key:item.key,
     gameId:item.gameId,
@@ -134,7 +133,9 @@ function readVariant(config,item){
         ? Number(game.targetRtpBps)
         : base.targetRtpBps,
     bets:Array.isArray(raw.bets)&&raw.bets.length?raw.bets:[...base.bets],
-    outcomes:Array.isArray(raw.outcomes)?raw.outcomes:[],
+    outcomes:Array.isArray(raw.outcomes)&&raw.outcomes.length
+      ? raw.outcomes
+      : base.outcomes,
     outcomeIds:[...item.outcomeIds],
   };
 }
