@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'game_playground_screens.dart';
+import '../services/game_room_launcher.dart';
 
 class GamesHubScreen extends StatelessWidget {
   const GamesHubScreen({super.key});
@@ -15,8 +15,9 @@ class GamesHubScreen extends StatelessWidget {
         accent: const Color(0xFFFFC84A),
         secondary: const Color(0xFFFF7A3D),
         bets: '200 • 2K • 20K • 200K',
-        onOpen: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const GreedyCatGameScreen()),
+        onOpen: () => GameRoomLauncher.open(
+          context,
+          gameKey: 'greedy_cat',
         ),
       ),
       _GameEntry(
@@ -26,8 +27,9 @@ class GamesHubScreen extends StatelessWidget {
         accent: const Color(0xFFB96CFF),
         secondary: const Color(0xFF5D21C7),
         bets: '100–100K / 200–200K',
-        onOpen: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const WitchGameScreen()),
+        onOpen: () => GameRoomLauncher.open(
+          context,
+          gameKey: 'witch',
         ),
       ),
       _GameEntry(
@@ -37,8 +39,9 @@ class GamesHubScreen extends StatelessWidget {
         accent: const Color(0xFF49D7FF),
         secondary: const Color(0xFF7B2DFF),
         bets: '200 → 200K',
-        onOpen: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const ShadowSlotGameScreen()),
+        onOpen: () => GameRoomLauncher.open(
+          context,
+          gameKey: 'slot',
         ),
       ),
     ];
