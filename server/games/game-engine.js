@@ -38,6 +38,51 @@ export const SLOT_OUTCOMES=Object.freeze({
   jackpot:Object.freeze({multiplier:20}),
 });
 
+export const DEFAULT_OUTCOME_WEIGHTS=Object.freeze({
+  greedy_cat:Object.freeze([
+    Object.freeze({id:"pepper5",weightBps:2000}),
+    Object.freeze({id:"tomato5",weightBps:1999}),
+    Object.freeze({id:"cabbage5",weightBps:1999}),
+    Object.freeze({id:"carrot5",weightBps:1999}),
+    Object.freeze({id:"chicken10",weightBps:1036}),
+    Object.freeze({id:"fish15",weightBps:536}),
+    Object.freeze({id:"steak25",weightBps:144}),
+    Object.freeze({id:"shell45",weightBps:8}),
+    Object.freeze({id:"salad",weightBps:278}),
+    Object.freeze({id:"pizza",weightBps:1}),
+  ]),
+  witch_normal:Object.freeze([
+    Object.freeze({id:"moon",weightBps:1364}),
+    Object.freeze({id:"mirror",weightBps:1384}),
+    Object.freeze({id:"potion",weightBps:1472}),
+    Object.freeze({id:"orb",weightBps:1578}),
+    Object.freeze({id:"owl",weightBps:1812}),
+    Object.freeze({id:"book",weightBps:2390}),
+  ]),
+  witch_advanced:Object.freeze([
+    Object.freeze({id:"moon",weightBps:2395}),
+    Object.freeze({id:"mirror",weightBps:2235}),
+    Object.freeze({id:"potion",weightBps:1908}),
+    Object.freeze({id:"orb",weightBps:1644}),
+    Object.freeze({id:"owl",weightBps:1216}),
+    Object.freeze({id:"book",weightBps:602}),
+  ]),
+  slot:Object.freeze([
+    Object.freeze({id:"lose",weightBps:6875}),
+    Object.freeze({id:"pair",weightBps:3000}),
+    Object.freeze({id:"jackpot",weightBps:125}),
+  ]),
+});
+
+export function defaultOutcomeWeights(gameId,mode=""){
+  const key=gameId==="witch"
+    ? (mode==="advanced"?"witch_advanced":"witch_normal")
+    : gameId;
+  const source=DEFAULT_OUTCOME_WEIGHTS[key];
+  if(!source)throw Error("unsupported_game");
+  return source.map(item=>({id:item.id,weightBps:item.weightBps}));
+}
+
 export function validIdempotencyKey(value){
   return /^[A-Za-z0-9_-]{12,220}$/.test(clean(value));
 }
