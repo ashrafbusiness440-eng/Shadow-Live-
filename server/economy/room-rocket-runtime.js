@@ -165,6 +165,7 @@ export async function claimRocketReward(db,uid,explosionId,nowMs=Date.now()){
   const userRef=db.collection("users").doc(uid);
   const noWinMessageAr=clean(explosion.noWinMessageAr)||"حظ أوفر في المرة القادمة";
   const capHours=Math.max(1,Number(explosion.cosmeticStackCapHours||720));
+  const awardAtMs=Math.max(0,Number(explosion.endsAtMs||nowMs));
   const cosmeticTypes=new Set(["frame","entrance","voice_wave"]);
   const cosmeticKeys=[...new Set(drawnOutcomes
     .filter((item)=>item.won&&cosmeticTypes.has(item.type))
@@ -195,7 +196,8 @@ export async function claimRocketReward(db,uid,explosionId,nowMs=Date.now()){
       const snap=rewardSnaps[index];
       const data=snap?.exists?(snap.data()||{}):{};
       cosmeticState.set(key,{
-        expiresAtMs:Math.max(nowMs,Number(data.expiresAtMs||0)),
+        expiresAtMs:Math.max(awardAtMs,Number(data.expiresAtMs||0)),
+        active:data.active===true,
       });
     });
 
@@ -213,9 +215,9 @@ export async function claimRocketReward(db,uid,explosionId,nowMs=Date.now()){
       }
 
       const key=outcome.type+"::"+outcome.id;
-      const state=cosmeticState.get(key)||{expiresAtMs:nowMs};
+      const state=cosmeticState.get(key)||{expiresAtMs:awardAtMs,active:false};
       const requestedMs=outcome.durationHours*3600000;
-      const capEndMs=nowMs+capHours*3600000;
+      const capEndMs=awardAtMs+capHours*3600000;
       const requestedEndMs=state.expiresAtMs+requestedMs;
       const grantedEndMs=Math.min(requestedEndMs,capEndMs);
       const grantedMs=Math.max(0,grantedEndMs-state.expiresAtMs);
@@ -263,7 +265,7 @@ export async function claimRocketReward(db,uid,explosionId,nowMs=Date.now()){
         type,
         rewardId:id,
         expiresAtMs:state.expiresAtMs,
-        active:false,
+        active:state.active===true,
         source:"room_rocket",
         sourceExplosionId:explosionId,
         updatedAt:now,
@@ -279,6 +281,7 @@ export async function claimRocketReward(db,uid,explosionId,nowMs=Date.now()){
       outcomes:resolved,
       coinAward,
       private:true,
+      awardedAtMs:awardAtMs,
       claimedAtMs:nowMs,
       createdAt:now,
     };
