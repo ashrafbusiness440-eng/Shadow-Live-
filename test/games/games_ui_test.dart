@@ -26,7 +26,7 @@ void main() {
     await tester.tap(find.text('سمكة ذهبية'));
     await tester.pump();
     await tester.tap(find.textContaining('شارك بـ 200'));
-    await tester.pump(const Duration(milliseconds: 900));
+    await tester.pumpAndSettle();
     expect(find.textContaining('الفائز'), findsOneWidget);
   });
 
