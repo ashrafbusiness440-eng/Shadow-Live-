@@ -147,9 +147,12 @@ class GameRuntimeService {
     if (!kIsWeb) return stableBackend;
 
     final host = Uri.base.host.toLowerCase();
-    if (host.endsWith('.vercel.app')) {
+    if (host == 'shadow-live-six.vercel.app') {
       return '${Uri.base.origin}/api';
     }
+
+    // GitHub Pages and Vercel preview deployments may not expose the
+    // current backend routes. Always use the stable production API there.
     return stableBackend;
   }
 
