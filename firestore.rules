@@ -330,6 +330,45 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    match /room_rocket_state/{roomId} {
+      allow read: if signedIn();
+      allow create, update, delete: if false;
+    }
+
+    match /room_rocket_explosions/{explosionId} {
+      allow read: if signedIn();
+      allow create, update, delete: if false;
+
+      match /entries/{userId} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /results/{userId} {
+        allow get: if signedIn() && request.auth.uid == userId;
+        allow list, create, update, delete: if false;
+      }
+    }
+
+    match /user_rewards/{userId} {
+      allow read, write: if false;
+
+      match /items/{rewardId} {
+        allow read: if signedIn()
+          && (request.auth.uid == userId
+            || isOwner()
+            || hasCapability('manageEconomy'));
+        allow create, update, delete: if false;
+      }
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if signedIn() && resource.data.userId == request.auth.uid;
+      allow update: if signedIn()
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      allow create, delete: if false;
+    }
+
     match /rooms/{roomId} {
       allow read: if signedIn();
       allow create, update, delete: if false;
