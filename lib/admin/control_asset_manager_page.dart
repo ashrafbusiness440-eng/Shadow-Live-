@@ -198,7 +198,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     if (encoded == null) {
       if (mounted && updateMessage) {
         setState(() => _message =
-            'تعذر تجهيز \${_formatLabel(extension)} تحت حد 2.5 MB. جرّب WebP أو صورة أصغر.');
+            'تعذر تجهيز ${_formatLabel(extension)} تحت حد 2.5 MB. جرّب WebP أو صورة أصغر.');
       }
       return false;
     }
@@ -210,9 +210,9 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
         _bytes = encoded;
         _mimeType = _mimeForExtension(extension);
         _conversionNote =
-            'تجهيز تلقائي حسب اسم الملف → \${_formatLabel(extension)} • '
-            '\${prepared.width}×\${prepared.height} • '
-            '\${sourceKb.toStringAsFixed(1)} KB → \${outputKb.toStringAsFixed(1)} KB';
+            'تجهيز تلقائي حسب اسم الملف → ${_formatLabel(extension)} • '
+            '${prepared.width}×${prepared.height} • '
+            '${sourceKb.toStringAsFixed(1)} KB → ${outputKb.toStringAsFixed(1)} KB';
         if (updateMessage) _message = null;
       });
     }
