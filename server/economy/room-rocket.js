@@ -254,13 +254,10 @@ export function advanceRoomRocket({
     const ranked = sortedContributors(contributors);
     const startAtMs = queueAvailableAtMs;
     const endAtMs = startAtMs + policy.explosionDurationSeconds * 1000;
-    const explosionId = [
-      clean(roomId) || "room",
-      "c" + cycleNumber,
-      "l" + (levelIndex + 1),
-      "s" + sequence,
-      clean(operationId) || String(nowMs),
-    ].join("_");
+    const operationToken = clean(operationId).slice(0, 200);
+    const explosionId = operationToken
+      ? operationToken + "_rocket_" + sequence
+      : "rocket_" + String(nowMs) + "_" + sequence;
 
     explosions.push({
       explosionId,
