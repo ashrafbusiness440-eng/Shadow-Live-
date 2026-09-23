@@ -140,7 +140,11 @@ function readVariant(config,item){
 }
 
 function applyVariant(config,item,patch){
-  const next=structuredClone(config&&typeof config==="object"?config:{});
+  const source=config&&typeof config==="object"?config:{};
+  const next={
+    ...source,
+    games:source.games&&typeof source.games==="object"?{...source.games}:{},
+  };
   next.enabled=true;
   next.targetRtpBps=Number.isSafeInteger(Number(next.targetRtpBps))
     ? Number(next.targetRtpBps)
