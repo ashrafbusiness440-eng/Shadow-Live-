@@ -49,11 +49,19 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx wrangler deploy
+        run: npx wrangler deploy --var BUILD_SHA:"$GITHUB_SHA"
 
       - name: Verify Worker health
         run: |
-          BODY=$(curl --fail --silent --show-error --retry 5 --retry-delay 2 \
-            https://shadow-live.ashraf-business-440.workers.dev/health)
-          echo "$BODY"
-          echo "$BODY" | grep -q '"ok":true'
+          for ATTEMPT in $(seq 1 15); do
+            BODY=$(curl --fail --silent --show-error \
+              https://shadow-live.ashraf-business-440.workers.dev/health || true)
+            echo "$BODY"
+            if echo "$BODY" | grep -q '"ok":true' && \
+               echo "$BODY" | grep -q "\"buildSha\":\"$GITHUB_SHA\""; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Latest Worker version did not become active."
+          exit 1
