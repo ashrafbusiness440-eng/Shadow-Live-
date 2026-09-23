@@ -23,6 +23,8 @@ void main() {
 
   testWidgets('Greedy Cat design round can be selected and settled', (tester) async {
     await tester.pumpWidget(_host(const GreedyCatGameScreen()));
+    expect(find.text('جولة اليوم'), findsOneWidget);
+    expect(find.text('#1'), findsOneWidget);
     final option = find.text('سمكة ذهبية');
     await tester.ensureVisible(option);
     await tester.tap(option);
@@ -37,10 +39,14 @@ void main() {
     await tester.pump();
 
     expect(find.textContaining('الفائز'), findsOneWidget);
+    expect(find.text('آخر نتائج القط الجشع'), findsOneWidget);
+    expect(find.text('جولة #1'), findsOneWidget);
   });
 
   testWidgets('Witch supports normal and advanced design modes', (tester) async {
     await tester.pumpWidget(_host(const WitchGameScreen()));
+    expect(find.text('جولة اليوم'), findsOneWidget);
+    expect(find.text('#1'), findsOneWidget);
     expect(find.text('عادي'), findsOneWidget);
     expect(find.text('متقدم'), findsOneWidget);
     await tester.tap(find.text('متقدم'));
@@ -50,6 +56,7 @@ void main() {
 
   testWidgets('Shadow Slot spin interaction completes', (tester) async {
     await tester.pumpWidget(_host(const ShadowSlotGameScreen()));
+    expect(find.text('آخر اللفات'), findsOneWidget);
     await tester.tap(find.text('Spin • 200'));
     await tester.pump(const Duration(milliseconds: 700));
     expect(find.text('Spin • 200'), findsOneWidget);
