@@ -266,6 +266,17 @@ class VoiceRoomSessionController extends ChangeNotifier {
       }
 
       if (data != null && _active && roomId == targetRoomId) {
+        _roomArguments = <String, dynamic>{
+          ..._roomArguments,
+          'activeRoomBackgroundRewardId':
+              data['activeRoomBackgroundRewardId'] ?? '',
+          'activeRoomBackgroundImageUrl':
+              data['activeRoomBackgroundImageUrl'] ?? '',
+          'activeRoomBackgroundAssetKey':
+              data['activeRoomBackgroundAssetKey'] ?? '',
+          'activeRoomBackgroundExpiresAtMs':
+              data['activeRoomBackgroundExpiresAtMs'] ?? 0,
+        };
         final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
         final ownerUid =
             (data['ownerUid'] ?? data['ownerId'] ?? data['hostId'] ?? '')
@@ -279,6 +290,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
         if (!isOwner && !hasSeat && !_micMuted) {
           unawaited(setMicMuted(true));
         }
+        notifyListeners();
       }
     });
   }

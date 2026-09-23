@@ -12,6 +12,7 @@ import '../../../shared/widgets/loading_indicator.dart';
 import '../../../utils/compact_number.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../wallet/screens/recharge_screen.dart';
+import '../../profile/screens/my_items_screen.dart';
 import '../bloc/user_bloc.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -694,6 +695,14 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
             ),
           ],
+        ),
+        const SizedBox(height: 10),
+        _action(
+          Icons.inventory_2_rounded,
+          'مقتنياتي',
+          () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const MyItemsScreen()),
+          ),
         ),
         const SizedBox(height: 16),
         _card(

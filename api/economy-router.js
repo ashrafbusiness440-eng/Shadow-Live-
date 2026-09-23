@@ -2,12 +2,18 @@ import { handler as economyControl } from "../server/economy/economy-control.js"
 import { handler as giftCatalog } from "../server/economy/gift-catalog.js";
 import { handler as giftEconomyConfig } from "../server/economy/gift-economy-config.js";
 import { handler as rechargeConfig } from "../server/economy/recharge-config.js";
+import { handler as roomRocketConfig } from "../server/economy/room-rocket-config.js";
+import { handler as roomRocketRuntime } from "../server/economy/room-rocket-runtime.js";
+import { handler as rewardInventory } from "../server/economy/reward-inventory.js";
 
 const routes = {
   "economy-control": economyControl,
   "gift-catalog": giftCatalog,
   "gift-economy-config": giftEconomyConfig,
   "recharge-config": rechargeConfig,
+  "room-rocket-config": roomRocketConfig,
+  "room-rocket": roomRocketRuntime,
+  "reward-inventory": rewardInventory,
 };
 
 export default async function handler(req, res) {
