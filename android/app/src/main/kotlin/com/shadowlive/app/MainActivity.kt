@@ -1,4 +1,4 @@
-package com.example.voice_chat_room
+package com.shadowlive.app
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -42,7 +42,7 @@ async function actor(req){
   return {uid:decoded.uid,db};
 }
 
-function defaultPolicy(){
+export function defaultPolicy(){
   return {
     enabled:true,
     policyMode:"tiered_host_agency",
@@ -89,7 +89,7 @@ function normalizeTier(item,index){
     platformShareBps:10000-hostShareBps-agencyShareBps
   };
 }
-function normalizePolicy(raw={}){
+export function normalizePolicy(raw={}){
   const defaults=defaultPolicy();
   const enabled=raw.policyMode==="tiered_host_agency" ? raw.enabled!==false : true;
   const hostPerformanceBonusBps=integer(
@@ -160,7 +160,31 @@ function normalizePolicy(raw={}){
   };
 }
 
-export default async function handler(req,res){
+export async function saveGiftEconomyPolicy(db,uid,raw={}){
+  const policy=normalizePolicy(raw);
+  const ref=db.collection("system_config").doc("gift_economy");
+  const before=await ref.get();
+  const auditRef=db.collection("admin_audit_logs").doc();
+  await db.runTransaction(async tx=>{
+    tx.set(ref,{
+      ...policy,
+      updatedBy:uid,
+      updatedAt:FieldValue.serverTimestamp(),
+    },{merge:true});
+    tx.create(auditRef,{
+      actorUid:uid,
+      action:"updateGiftEconomyPolicy",
+      targetType:"system_config",
+      targetId:"gift_economy",
+      before:before.exists?before.data():null,
+      after:policy,
+      createdAt:FieldValue.serverTimestamp(),
+    });
+  });
+  return policy;
+}
+
+export async function handler(req,res){
   if(cors(req,res))return;
   if(req.method!=="POST")return out(res,405,{ok:false,code:"method_not_allowed"});
   try{
@@ -181,25 +205,7 @@ export default async function handler(req,res){
     }
 
     if(action==="save"){
-      const policy=normalizePolicy(req.body||{});
-      const before=await ref.get();
-      const auditRef=db.collection("admin_audit_logs").doc();
-      await db.runTransaction(async tx=>{
-        tx.set(ref,{
-          ...policy,
-          updatedBy:uid,
-          updatedAt:FieldValue.serverTimestamp(),
-        },{merge:true});
-        tx.create(auditRef,{
-          actorUid:uid,
-          action:"updateGiftEconomyPolicy",
-          targetType:"system_config",
-          targetId:"gift_economy",
-          before:before.exists?before.data():null,
-          after:policy,
-          createdAt:FieldValue.serverTimestamp(),
-        });
-      });
+      const policy=await saveGiftEconomyPolicy(db,uid,req.body||{});
       return out(res,200,{ok:true,config:policy});
     }
 

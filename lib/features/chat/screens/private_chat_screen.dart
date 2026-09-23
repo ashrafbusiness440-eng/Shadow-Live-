@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/assets/shadow_asset_registry.dart';
+import '../../gift/services/gift_catalog_service.dart';
 import '../../../services/navigation_service.dart';
 import '../../main/screens/main_shell_screen.dart';
 import '../../profile/services/follow_service.dart';
@@ -384,30 +385,22 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   }
 
   Future<void> _openGiftPicker() async {
-    QuerySnapshot<Map<String, dynamic>> snapshot;
+    List<GiftCatalogItem> gifts;
     try {
-      snapshot = await FirebaseFirestore.instance
-          .collection('gifts')
-          .where('isActive', isEqualTo: true)
-          .limit(60)
-          .get();
+      gifts = await GiftCatalogService.watchCatalog().first;
     } catch (_) {
       _snack('تعذر تحميل الهدايا حالياً.');
       return;
     }
-    final gifts = [...snapshot.docs]
-      ..sort((a, b) {
-        final ap = (a.data()['price'] as num?)?.toInt() ?? (a.data()['coins'] as num?)?.toInt() ?? 0;
-        final bp = (b.data()['price'] as num?)?.toInt() ?? (b.data()['coins'] as num?)?.toInt() ?? 0;
-        return ap.compareTo(bp);
-      });
     if (!mounted) return;
     var quantity = 1;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF0C101A),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      ),
       builder: (sheetContext) => Directionality(
         textDirection: TextDirection.rtl,
         child: StatefulBuilder(
@@ -418,30 +411,67 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
                 child: Column(
                   children: [
-                    Container(width: 44, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(4))),
+                    Container(
+                      width: 44,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
                     const SizedBox(height: 14),
-                    const Row(children: [
-                      Icon(Icons.card_giftcard_rounded, color: Color(0xFFFFD54A)),
-                      SizedBox(width: 8),
-                      Expanded(child: Text('إرسال هدية', style: TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900))),
-                    ]),
+                    const Row(
+                      children: [
+                        Icon(
+                          Icons.card_giftcard_rounded,
+                          color: Color(0xFFFFD54A),
+                        ),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'إرسال هدية',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 21,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 12),
                     Wrap(
                       spacing: 8,
-                      children: [1, 7, 77, 777].map((value) => ChoiceChip(
-                        label: Text('×' + value.toString()),
-                        selected: quantity == value,
-                        onSelected: (_) => setSheetState(() => quantity = value),
-                        selectedColor: const Color(0xFF7B2DFF),
-                        labelStyle: TextStyle(color: quantity == value ? Colors.white : Colors.white70, fontWeight: FontWeight.w800),
-                      )).toList(),
+                      children: [1, 7, 77, 777]
+                          .map(
+                            (value) => ChoiceChip(
+                              label: Text('×' + value.toString()),
+                              selected: quantity == value,
+                              onSelected: (_) =>
+                                  setSheetState(() => quantity = value),
+                              selectedColor: const Color(0xFF7B2DFF),
+                              labelStyle: TextStyle(
+                                color: quantity == value
+                                    ? Colors.white
+                                    : Colors.white70,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          )
+                          .toList(),
                     ),
                     const SizedBox(height: 12),
                     Expanded(
                       child: gifts.isEmpty
-                          ? const Center(child: Text('لا توجد هدايا مفعلة حالياً', style: TextStyle(color: Colors.white54)))
+                          ? const Center(
+                              child: Text(
+                                'لا توجد هدايا مفعلة حالياً',
+                                style: TextStyle(color: Colors.white54),
+                              ),
+                            )
                           : GridView.builder(
-                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                              gridDelegate:
+                                  const SliverGridDelegateWithFixedCrossAxisCount(
                                 crossAxisCount: 3,
                                 crossAxisSpacing: 10,
                                 mainAxisSpacing: 10,
@@ -449,17 +479,21 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                               ),
                               itemCount: gifts.length,
                               itemBuilder: (_, index) {
-                                final doc = gifts[index];
-                                final data = doc.data();
-                                final name = (data['name'] ?? data['title'] ?? 'هدية').toString();
-                                final price = (data['price'] as num?)?.toInt() ?? (data['coins'] as num?)?.toInt() ?? 0;
-                                final busy = _sendingGiftId == doc.id;
+                                final gift = gifts[index];
+                                final busy = _sendingGiftId == gift.id;
                                 return InkWell(
                                   borderRadius: BorderRadius.circular(18),
-                                  onTap: busy ? null : () async {
-                                    final ok = await _sendGift(giftId: doc.id, quantity: quantity);
-                                    if (ok && sheetContext.mounted) Navigator.pop(sheetContext);
-                                  },
+                                  onTap: busy
+                                      ? null
+                                      : () async {
+                                          final ok = await _sendGift(
+                                            giftId: gift.id,
+                                            quantity: quantity,
+                                          );
+                                          if (ok && sheetContext.mounted) {
+                                            Navigator.pop(sheetContext);
+                                          }
+                                        },
                                   child: Container(
                                     padding: const EdgeInsets.all(9),
                                     decoration: BoxDecoration(
@@ -469,11 +503,35 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                                     ),
                                     child: Column(
                                       children: [
-                                        Expanded(child: _giftImage(data)),
+                                        Expanded(
+                                          child: _giftImage(
+                                            <String, dynamic>{
+                                              'assetKey': gift.assetKey,
+                                            },
+                                          ),
+                                        ),
                                         const SizedBox(height: 5),
-                                        Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)),
+                                        Text(
+                                          gift.nameAr,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
                                         const SizedBox(height: 3),
-                                        Text('🪙 ' + (price * quantity).toString(), style: const TextStyle(color: Color(0xFFFFD54A), fontSize: 11, fontWeight: FontWeight.w900)),
+                                        Text(
+                                          '🪙 ' +
+                                              (gift.priceCoins * quantity)
+                                                  .toString(),
+                                          style: const TextStyle(
+                                            color: Color(0xFFFFD54A),
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w900,
+                                          ),
+                                        ),
                                       ],
                                     ),
                                   ),

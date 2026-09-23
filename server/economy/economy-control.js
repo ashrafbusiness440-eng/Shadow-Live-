@@ -1,6 +1,8 @@
 import { getApps, initializeApp, cert } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
+import { calculateAgencyCycleSettlement, convertPayableCoinsToDiamonds } from "./economy-policy.js";
+import { economyPermissions } from "./economy-permissions.js";
 
 function clean(value){return String(value??"").trim();}
 function parseServiceAccount(raw){
@@ -37,12 +39,15 @@ async function actor(req){
   const snap=await db.collection("users").doc(decoded.uid).get();
   if(!snap.exists)throw Error("forbidden");
   const user=snap.data()||{};
-  const caps=Array.isArray(user.capabilities)?user.capabilities:[];
-  const isOwner=user.role==="owner";
-  const canEconomy=isOwner||(user.adminEnabled===true&&caps.includes("manageEconomy"));
-  if(!canEconomy)throw Error("forbidden");
-  const canAdjustBalances=isOwner||(user.adminEnabled===true&&caps.includes("adjustBalances"));
-  return {uid:decoded.uid,db,isOwner,canAdjustBalances};
+  const permissions=economyPermissions(user);
+  if(!permissions.canEconomy)throw Error("forbidden");
+  return {
+    uid:decoded.uid,
+    db,
+    isOwner:permissions.isOwner,
+    canAdjustBalances:permissions.canAdjustBalances,
+    canManageSettlements:permissions.canManageSettlements,
+  };
 }
 
 function normalizeLock(data={}){
@@ -167,12 +172,148 @@ async function recentIssues(db){
   return issues.slice(0,50);
 }
 
-export default async function handler(req,res){
+
+async function cycleQualifiedDays(db,hostUid,cycleKey){
+  const parts=clean(cycleKey).match(/^(\d{4}-\d{2})-C([12])$/);
+  if(!parts)throw Error("invalid_cycle");
+  const month=parts[1], cycle=parts[2];
+  const start=month+"-"+(cycle==="1"?"01":"16");
+  const [year,mon]=month.split("-").map(Number);
+  const endDay=cycle==="1"?15:new Date(Date.UTC(year,mon,0)).getUTCDate();
+  const end=month+"-"+String(endDay).padStart(2,"0");
+  const snap=await db.collection("host_mic_activity").doc(hostUid).collection("days")
+    .where("day",">=",start).where("day","<=",end).get();
+  return snap.docs.reduce((count,doc)=>count+((doc.data()||{}).qualified===true?1:0),0);
+}
+export async function settleAgencyCycle(db,actorUid,accrualId){
+  const accrualRef=db.collection("agency_settlement_accruals").doc(accrualId);
+  const initial=await accrualRef.get();
+  if(!initial.exists)throw Error("settlement_not_found");
+  const raw=initial.data()||{};
+  if(clean(raw.status)==="settled"){
+    const existing=await db.collection("agency_settlements").doc(accrualId).get();
+    return {alreadySettled:true,settlement:existing.exists?existing.data():raw};
+  }
+  const agencyId=clean(raw.agencyId), hostUid=clean(raw.hostUid), cycleKey=clean(raw.cycleKey), month=clean(raw.month);
+  if(!agencyId||!hostUid||!cycleKey||!month)throw Error("invalid_settlement");
+
+  const [economySnap,hostSnap,monthStats]=await Promise.all([
+    db.collection("system_config").doc("gift_economy").get(),
+    db.collection("users").doc(hostUid).get(),
+    db.collection("agency_support_stats").doc(agencyId).collection("monthly").doc(month).get(),
+  ]);
+  if(!hostSnap.exists)throw Error("user_not_found");
+  const economy=economySnap.exists?(economySnap.data()||{}):{};
+  const host=hostSnap.data()||{};
+  const monthlyGross=clean(host.giftRevenueMonth)===month
+    ?Math.max(0,Number(host.giftRevenueMonthCoins||0))
+    :Math.max(0,Number(raw.supportCoins||0));
+  const qualifiedDays=await cycleQualifiedDays(db,hostUid,cycleKey);
+  const activeHosts=Array.isArray(monthStats.data()?.activeHostIds)
+    ?monthStats.data().activeHostIds.length
+    :0;
+  const settlementMath=calculateAgencyCycleSettlement(economy,{
+    monthlyGrossCoins:monthlyGross,
+    supportCoins:Math.max(0,Number(raw.supportCoins||0)),
+    qualifiedDays,
+    activeHostCount:activeHosts,
+    hasAgency:true,
+  });
+  const {
+    tierId,
+    hostBaseShareBps,
+    hostBonusBps,
+    hostShareBps,
+    agencyBaseShareBps,
+    agencyBonusBps,
+    agencyShareBps,
+    activityPayoutBps:payoutBps,
+    supportCoins,
+    hostGrossCoins:hostGross,
+    agencyGrossCoins:agencyGross,
+    hostPayableCoins,
+    agencyPayableCoins,
+    platformCoins,
+  }=settlementMath;
+  const coinsPerDiamond=Math.max(1,Number(economy.coinsPerDiamond||10000));
+  const settlementRef=db.collection("agency_settlements").doc(accrualId);
+  const auditRef=db.collection("admin_audit_logs").doc();
+  const ledgerRef=db.collection("financial_ledger").doc("agency_settlement_"+accrualId);
+
+  const result=await db.runTransaction(async tx=>{
+    const current=await tx.get(accrualRef);
+    if(!current.exists)throw Error("settlement_not_found");
+    if(clean(current.data()?.status)==="settled"){
+      const existing=await tx.get(settlementRef);
+      return {alreadySettled:true,settlement:existing.exists?existing.data():current.data()};
+    }
+    const currentHost=await tx.get(db.collection("users").doc(hostUid));
+    if(!currentHost.exists)throw Error("user_not_found");
+    const currentData=currentHost.data()||{};
+    const currentPending=Math.max(0,Number(currentData.pendingAgencyGiftEarningCoins||0));
+    const currentAccrual=current.data()||{};
+    const cycleAccruedHostCoins=Math.max(
+      0,
+      Number(currentAccrual.hostGrossEarningCoins||0),
+    );
+    const pendingToClear=Math.min(currentPending,cycleAccruedHostCoins);
+    const conversion=convertPayableCoinsToDiamonds(
+      currentData.pendingGiftEarningCoins,
+      hostPayableCoins,
+      coinsPerDiamond,
+    );
+    const currentDiamonds=conversion.diamondsEarned;
+    const currentRemainder=conversion.remainderCoins;
+    const settlement={
+      agencyId,hostUid,cycleKey,month,supportCoins,tierId,
+      qualifiedDays,activityPayoutBps:payoutBps,
+      hostBaseShareBps,hostBonusBps,hostShareBps,
+      agencyBaseShareBps,agencyBonusBps,agencyShareBps,
+      hostGrossCoins:hostGross,agencyGrossCoins:agencyGross,
+      hostPayableCoins,agencyPayableCoins,platformCoins,
+      provisionalHostAccruedCoins:cycleAccruedHostCoins,
+      hostAccrualAdjustmentCoins:hostGross-cycleAccruedHostCoins,
+      pendingAgencyClearedCoins:pendingToClear,
+      hostDiamonds:currentDiamonds,
+      hostRemainderCoins:currentRemainder,
+      status:"settled",settledBy:actorUid,
+      policyMode:"tiered_host_agency",
+    };
+    tx.update(db.collection("users").doc(hostUid),{
+      pendingAgencyGiftEarningCoins:Math.max(0,currentPending-pendingToClear),
+      pendingGiftEarningCoins:currentRemainder,
+      diamonds:Math.max(0,Number(currentData.diamonds||0))+currentDiamonds,
+      giftDiamondsLifetime:FieldValue.increment(currentDiamonds),
+    });
+    tx.set(settlementRef,{...settlement,settledAt:FieldValue.serverTimestamp()},{merge:false});
+    tx.set(accrualRef,{status:"settled",settledAt:FieldValue.serverTimestamp(),settledBy:actorUid,settlementId:accrualId},{merge:true});
+    tx.create(ledgerRef,{
+      userId:hostUid,agencyId,asset:"diamonds",delta:currentDiamonds,
+      openingBalance:Math.max(0,Number(currentData.diamonds||0)),
+      closingBalance:Math.max(0,Number(currentData.diamonds||0))+currentDiamonds,
+      payableCoins:hostPayableCoins,
+      remainderCoins:currentRemainder,
+      provisionalHostAccruedCoins:cycleAccruedHostCoins,
+      pendingAgencyClearedCoins:pendingToClear,
+      reason:"agency_cycle_settlement",sourceType:"agency_settlement",sourceId:accrualId,
+      settlementCycleKey:cycleKey,idempotencyKey:"agency_settlement_"+accrualId,
+      createdAt:FieldValue.serverTimestamp(),
+    });
+    tx.create(auditRef,{
+      actorUid,action:"settleAgencyCycle",targetType:"agency_settlement",targetId:accrualId,
+      after:settlement,createdAt:FieldValue.serverTimestamp(),
+    });
+    return {alreadySettled:false,settlement};
+  });
+  return result;
+}
+
+export async function handler(req,res){
   if(cors(req,res))return;
   if(req.method!=="POST")return out(res,405,{ok:false,code:"method_not_allowed"});
   try{
     initFirebase();
-    const {uid,db,isOwner,canAdjustBalances}=await actor(req);
+    const {uid,db,isOwner,canAdjustBalances,canManageSettlements}=await actor(req);
     const action=clean(req.body?.action);
 
     if(action==="state"){
@@ -240,13 +381,21 @@ export default async function handler(req,res){
       return out(res,200,{ok:true,issues});
     }
 
+    if(action==="settleAgencyCycle"){
+      if(!canManageSettlements)throw Error("settlement_forbidden");
+      const accrualId=clean(req.body?.accrualId);
+      if(!/^[A-Za-z0-9_-]{3,500}$/.test(accrualId))throw Error("invalid_settlement");
+      const result=await settleAgencyCycle(db,uid,accrualId);
+      return out(res,200,{ok:true,...result});
+    }
+
     return out(res,400,{ok:false,code:"invalid_action"});
   }catch(error){
     const code=clean(error?.message)||"server_error";
     const status=code==="unauthorized"?401:
-      ["forbidden","owner_required"].includes(code)?403:
-      code==="user_not_found"?404:
-      ["invalid_query","invalid_reason","invalid_action"].includes(code)?400:500;
+      ["forbidden","owner_required","settlement_forbidden"].includes(code)?403:
+      ["user_not_found","settlement_not_found"].includes(code)?404:
+      ["invalid_query","invalid_reason","invalid_action","invalid_cycle","invalid_settlement"].includes(code)?400:500;
     return out(res,status,{ok:false,code});
   }
 }

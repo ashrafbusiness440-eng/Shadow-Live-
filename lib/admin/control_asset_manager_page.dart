@@ -47,7 +47,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     return token;
   }
 
-  static final Uri _endpoint = Uri.parse('https://shadow-live-git-feature-shadow-control-foundation-shadow-c916.vercel.app/api/manage-app-asset');
+  static final Uri _endpoint = Uri.parse('https://shadow-live-six.vercel.app/api/manage-app-asset');
 
   Future<void> _pickImage() async {
     final file = await ImagePicker().pickImage(source: ImageSource.gallery);

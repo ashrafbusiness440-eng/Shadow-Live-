@@ -9,7 +9,6 @@ import 'utils/compact_number.dart';
 import 'admin/control_admin_id_override.dart';
 import 'admin/control_asset_manager_page.dart';
 import 'admin/economy_control_page.dart';
-import 'admin/gift_economy_control_page.dart';
 
 
 Future<void> main() async {
@@ -32,7 +31,7 @@ class ShadowControlApp extends StatelessWidget {
     home: const Directionality(
       textDirection: TextDirection.rtl,
       child: bool.fromEnvironment('CONTROL_E2E_TEST')
-          ? ControlShell(initialNavIndex: 2)
+          ? ControlShell(initialNavIndex: 3)
           : AdminGate(),
     ),
   );

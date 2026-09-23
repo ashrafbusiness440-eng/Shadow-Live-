@@ -5,7 +5,7 @@ import {getFirestore,FieldValue} from "firebase-admin/firestore";
 
 const OWNER="ashrafbusiness440-eng";
 const REPO="Shadow-Live-";
-const DEFAULT_BRANCH="feature/shadow-control-foundation";
+const DEFAULT_BRANCH="main";
 const MAX_BYTES=2500000;
 const ALLOWED_DIRS=new Set([
  "assets/images","assets/images/avatars","assets/images/coins","assets/images/badges","assets/images/vip",
@@ -29,7 +29,7 @@ function applyCors(req,res){
  const origin=String(req.headers.origin||"");
  const allowed=new Set([
   "https://ashrafbusiness440-eng.github.io",
-  "https://shadow-live-git-feature-shadow-control-foundation-shadow-c916.vercel.app"
+  "https://shadow-live-six.vercel.app"
  ]);
  if(allowed.has(origin))res.setHeader("access-control-allow-origin",origin);
  res.setHeader("vary","Origin");

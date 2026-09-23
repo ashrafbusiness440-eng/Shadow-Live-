@@ -31,6 +31,8 @@ dependencies:
   crop_your_image: ^2.0.0
   crypto: ^3.0.6
   http: ^1.5.0
+  in_app_purchase: ^3.3.1
+  in_app_purchase_android: ^0.5.3
   zego_express_engine: ^3.25.0
 
 dev_dependencies:

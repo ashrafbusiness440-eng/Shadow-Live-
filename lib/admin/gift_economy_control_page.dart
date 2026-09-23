@@ -4,8 +4,14 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
+typedef GiftEconomyPost = Future<Map<String, dynamic>> Function(
+  Map<String, dynamic> payload,
+);
+
 class GiftEconomyControlPage extends StatefulWidget {
-  const GiftEconomyControlPage({super.key});
+  const GiftEconomyControlPage({super.key, this.postOverride});
+
+  final GiftEconomyPost? postOverride;
 
   @override
   State<GiftEconomyControlPage> createState() => _GiftEconomyControlPageState();
@@ -87,6 +93,9 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
   }
 
   Future<Map<String, dynamic>> post(Map<String, dynamic> payload) async {
+    final override = widget.postOverride;
+    if (override != null) return override(payload);
+
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw StateError('يجب تسجيل الدخول.');
     final token = await user.getIdToken();
@@ -98,7 +107,7 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
           apiUri,
           headers: {
             'content-type': 'application/json',
-            'authorization': 'Bearer ' + token,
+            'authorization': 'Bearer $token',
           },
           body: jsonEncode(payload),
         )
@@ -198,7 +207,7 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
       if (!mounted) return;
       setState(() => saving = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('تعذر الحفظ: ' + e.toString())),
+        SnackBar(content: Text('تعذر الحفظ: $e')),
       );
     }
   }
@@ -206,11 +215,13 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
   Widget _numberField(
     String label,
     TextEditingController controller, {
+    Key? fieldKey,
     String? suffix,
   }) {
     return SizedBox(
       width: 150,
       child: TextField(
+        key: fieldKey,
         controller: controller,
         keyboardType: const TextInputType.numberWithOptions(decimal: true),
         decoration: InputDecoration(
@@ -292,19 +303,34 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
                             runSpacing: 10,
                             children: [
                               _numberField(
-                                  'يبدأ من قيمة هدايا', tier.minUsd,
-                                  suffix: 'USD'),
-                              _numberField('المضيف', tier.hostPercent,
-                                  suffix: '%'),
-                              _numberField('الوكالة', tier.agencyPercent,
-                                  suffix: '%'),
+                                'يبدأ من قيمة هدايا',
+                                tier.minUsd,
+                                fieldKey: ValueKey(
+                                  'gift-economy-tier-${tier.id}-min-usd',
+                                ),
+                                suffix: 'USD',
+                              ),
+                              _numberField(
+                                'المضيف',
+                                tier.hostPercent,
+                                fieldKey: ValueKey(
+                                  'gift-economy-tier-${tier.id}-host-pct',
+                                ),
+                                suffix: '%',
+                              ),
+                              _numberField(
+                                'الوكالة',
+                                tier.agencyPercent,
+                                fieldKey: ValueKey(
+                                  'gift-economy-tier-${tier.id}-agency-pct',
+                                ),
+                                suffix: '%',
+                              ),
                               Chip(
                                 avatar: const Icon(Icons.shield_outlined,
                                     size: 18),
                                 label: Text(
-                                  'Shadow Live: ' +
-                                      platform.toStringAsFixed(1) +
-                                      '%',
+                                  'Shadow Live: ${platform.toStringAsFixed(1)}%',
                                 ),
                               ),
                             ],
@@ -331,16 +357,43 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
                           spacing: 10,
                           runSpacing: 10,
                           children: [
-                            _numberField('Bonus المضيف', hostBonus, suffix: '%'),
                             _numberField(
-                                'Bonus الوكالة', agencyBonus,
-                                suffix: '%'),
-                            _numberField('أيام المضيف المؤهلة', hostBonusDays),
+                              'Bonus المضيف',
+                              hostBonus,
+                              fieldKey: const ValueKey(
+                                'gift-economy-host-bonus-pct',
+                              ),
+                              suffix: '%',
+                            ),
                             _numberField(
-                                'دقائق المايك/اليوم', hostMinutesPerDay),
+                              'Bonus الوكالة',
+                              agencyBonus,
+                              fieldKey: const ValueKey(
+                                'gift-economy-agency-bonus-pct',
+                              ),
+                              suffix: '%',
+                            ),
                             _numberField(
-                                'مضيفون نشطون للوكالة',
-                                agencyBonusActiveHosts),
+                              'أيام المضيف المؤهلة',
+                              hostBonusDays,
+                              fieldKey: const ValueKey(
+                                'gift-economy-host-bonus-days',
+                              ),
+                            ),
+                            _numberField(
+                              'دقائق المايك/اليوم',
+                              hostMinutesPerDay,
+                              fieldKey: const ValueKey(
+                                'gift-economy-host-minutes-day',
+                              ),
+                            ),
+                            _numberField(
+                              'مضيفون نشطون للوكالة',
+                              agencyBonusActiveHosts,
+                              fieldKey: const ValueKey(
+                                'gift-economy-agency-active-hosts',
+                              ),
+                            ),
                           ],
                         ),
                         const SizedBox(height: 10),
@@ -359,6 +412,7 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
                 ],
                 const SizedBox(height: 16),
                 FilledButton.icon(
+                  key: const ValueKey('gift-economy-save'),
                   onPressed: saving ? null : save,
                   icon: saving
                       ? const SizedBox(

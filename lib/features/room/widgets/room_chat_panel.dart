@@ -4,6 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../core/assets/shadow_asset_registry.dart';
+
 import '../services/room_chat_service.dart';
 
 class RoomChatPanel extends StatefulWidget {
@@ -150,7 +152,97 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
     return TextSpan(children: spans);
   }
 
+  Widget _giftVisual(RoomChatMessage message) {
+    const fallback = Icon(
+      Icons.card_giftcard_rounded,
+      color: Color(0xFFFFD54A),
+      size: 30,
+    );
+    if (message.giftImageUrl.trim().isNotEmpty) {
+      return Image.network(
+        message.giftImageUrl,
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => fallback,
+      );
+    }
+    if (message.giftAssetKey.trim().isNotEmpty) {
+      return FutureBuilder<Uri?>(
+        future: ShadowAssetRegistry.remoteUrl(message.giftAssetKey),
+        builder: (_, snapshot) {
+          final url = snapshot.data;
+          if (url == null) return fallback;
+          return Image.network(
+            url.toString(),
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => fallback,
+          );
+        },
+      );
+    }
+    return fallback;
+  }
+
   Widget _bubble(RoomChatMessage message) {
+    if (message.type == 'gift') {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 320),
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  const Color(0xFFFFD54A).withValues(alpha: .20),
+                  const Color(0xFF6D27D9).withValues(alpha: .28),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: const Color(0xFFFFD54A).withValues(alpha: .45),
+              ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                SizedBox(
+                  width: 42,
+                  height: 42,
+                  child: _giftVisual(message),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        message.text,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      if (message.giftTotalCost > 0)
+                        Text(
+                          '🪙 ' + message.giftTotalCost.toString(),
+                          style: const TextStyle(
+                            color: Color(0xFFFFD54A),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     if (message.type == 'system') {
       final vipEntry = widget.roomEffectsEnabled &&
           message.systemKind == 'room_join' &&

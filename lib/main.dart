@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'widgets/bottom_nav_bar.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -42,6 +43,7 @@ import 'features/room/services/room_moderation_service.dart';
 import 'features/room/services/room_moderator_service.dart';
 import 'features/room/services/room_presence_service.dart';
 import 'features/room/widgets/room_chat_panel.dart';
+import 'features/gift/widgets/room_gift_sheet.dart';
 import 'features/room/widgets/room_moderator_manager_sheet.dart';
 import 'features/room/widgets/room_music_sheet.dart';
 import 'features/room/widgets/room_pk_panel.dart';
@@ -233,7 +235,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           'ownerUid': 'owner_e2e',
           'onlineCount': 18,
           'chatEnabled': true,
-          'level': 3,
+          'level': 5,
         };
         _ownerDisplayName = 'Ashraf';
         _ownerPhotoUrl = '';
@@ -267,6 +269,18 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             VoiceSeat(index: 5, uid: '', displayName: '', profileImageUrl: '', muted: true),
             VoiceSeat(index: 6, uid: '', displayName: '', profileImageUrl: '', muted: true),
             VoiceSeat(index: 7, uid: '', displayName: '', profileImageUrl: '', muted: true),
+            VoiceSeat(index: 8, uid: '', displayName: '', profileImageUrl: '', muted: true),
+            VoiceSeat(index: 9, uid: '', displayName: '', profileImageUrl: '', muted: true),
+            VoiceSeat(index: 10, uid: '', displayName: '', profileImageUrl: '', muted: true),
+            VoiceSeat(index: 11, uid: '', displayName: '', profileImageUrl: '', muted: true),
+            VoiceSeat(index: 12, uid: '', displayName: '', profileImageUrl: '', muted: true),
+            VoiceSeat(index: 13, uid: '', displayName: '', profileImageUrl: '', muted: true),
+            VoiceSeat(index: 14, uid: '', displayName: '', profileImageUrl: '', muted: true),
+            VoiceSeat(index: 15, uid: '', displayName: '', profileImageUrl: '', muted: true),
+            VoiceSeat(index: 16, uid: '', displayName: '', profileImageUrl: '', muted: true),
+            VoiceSeat(index: 17, uid: '', displayName: '', profileImageUrl: '', muted: true),
+            VoiceSeat(index: 18, uid: '', displayName: '', profileImageUrl: '', muted: true),
+            VoiceSeat(index: 19, uid: '', displayName: '', profileImageUrl: '', muted: true),
           ],
           micInvites: const [],
           micRequests: const ['request_1', 'request_2'],
@@ -278,13 +292,15 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         );
         _roomInsights = const RoomInsights(
           roomId: 'e2e_room',
-          level: 3,
-          levelPoints: 4600,
-          levelTarget: 7000,
+          level: 5,
+          levelPoints: 18600,
+          levelTarget: 25000,
           followerCount: 320,
           followed: true,
           favorited: true,
           dailySupport: 18500,
+          weeklySupport: 64200,
+          monthlySupport: 241000,
           activityScore: 950,
           dailyRank: 4,
           supporters: [
@@ -1604,11 +1620,31 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     return value.toString();
   }
 
+  int _fallbackRoomSeatCapacity() {
+    final direct = (_roomArguments['effectiveSeats'] as num?)?.toInt() ??
+        (_roomArguments['seatCount'] as num?)?.toInt();
+    if (direct != null && direct >= 1 && direct <= 50) return direct;
+
+    final level = (_roomInsights?.level ??
+            (_roomArguments['level'] as num?)?.toInt() ??
+            1)
+        .clamp(1, 6);
+    final type = (_roomArguments['roomType'] ??
+            _roomArguments['type'] ??
+            'personal')
+        .toString();
+    if (type == 'customer_service') return 5;
+    if (type == 'agency') {
+      return const [10, 12, 14, 16, 20, 22][level - 1];
+    }
+    return const [8, 10, 12, 15, 20, 20][level - 1];
+  }
+
   Widget _buildVoiceSeats() {
     final state = _roomSeatState;
     final seats = state?.seats ??
         List.generate(
-          8,
+          _fallbackRoomSeatCapacity(),
           (index) => VoiceSeat(
             index: index,
             uid: '',
@@ -1618,15 +1654,27 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             starBattleCoins: 0,
           ),
         );
+
+    // Keep the complete mic stage compact even at LV.6 / agency capacity.
+    // 20-22 seats stay within four rows instead of pushing the room feed
+    // below the fold.
+    final count = seats.length;
+    final columns = count <= 8 ? 4 : (count <= 12 ? 4 : (count <= 20 ? 5 : 6));
+    final compact = count > 12;
+    final micSize = count > 20 ? 38.0 : (compact ? 42.0 : 54.0);
+    final badgeSize = compact ? 17.0 : 20.0;
+    final nameSize = compact ? 8.5 : 10.0;
+    final starSize = compact ? 8.0 : 9.0;
+
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: seats.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 4,
-        mainAxisSpacing: 14,
-        crossAxisSpacing: 10,
-        childAspectRatio: .78,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: columns,
+        mainAxisSpacing: compact ? 5 : 14,
+        crossAxisSpacing: compact ? 5 : 10,
+        childAspectRatio: compact ? .88 : .78,
       ),
       itemBuilder: (_, index) {
         final seat = seats[index];
@@ -1634,13 +1682,14 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           onTap: _changingSeat ? null : () => _handleSeatTap(seat),
           borderRadius: BorderRadius.circular(18),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
               Stack(
                 clipBehavior: Clip.none,
                 children: [
                   Container(
-                    width: 54,
-                    height: 54,
+                    width: micSize,
+                    height: micSize,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: const Color(0xFF151B29),
@@ -1659,13 +1708,15 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                     ),
                     child: seat.occupied
                         ? (seat.profileImageUrl.isEmpty
-                            ? const Icon(
+                            ? Icon(
                                 Icons.person_rounded,
+                                size: compact ? 20 : 24,
                                 color: Colors.white70,
                               )
                             : null)
-                        : const Icon(
+                        : Icon(
                             Icons.add_rounded,
+                            size: compact ? 19 : 24,
                             color: Colors.white38,
                           ),
                   ),
@@ -1674,8 +1725,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       right: -2,
                       bottom: -2,
                       child: Container(
-                        width: 20,
-                        height: 20,
+                        width: badgeSize,
+                        height: badgeSize,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: seat.muted
@@ -1690,14 +1741,14 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                           seat.muted
                               ? Icons.mic_off_rounded
                               : Icons.mic_rounded,
-                          size: 11,
+                          size: compact ? 9 : 11,
                           color: Colors.white,
                         ),
                       ),
                     ),
                 ],
               ),
-              const SizedBox(height: 5),
+              SizedBox(height: compact ? 3 : 5),
               Text(
                 seat.occupied
                     ? (seat.displayName.isEmpty ? 'متحدث' : seat.displayName)
@@ -1706,7 +1757,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   color: seat.occupied ? Colors.white70 : Colors.white38,
-                  fontSize: 10,
+                  fontSize: nameSize,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -1714,9 +1765,9 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                 Text(
                   _formatStarBattleCoins(seat.starBattleCoins) + ' ⭐',
                   maxLines: 1,
-                  style: const TextStyle(
-                    color: Color(0xFFFFD54A),
-                    fontSize: 9,
+                  style: TextStyle(
+                    color: const Color(0xFFFFD54A),
+                    fontSize: starSize,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
@@ -3290,29 +3341,107 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       ghostMode = await _roomActions.loadGhostMode();
     } catch (_) {}
     if (!mounted) return;
+
     await showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       backgroundColor: const Color(0xFF111522),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (sheetContext) => SafeArea(
-        child: Directionality(
-          textDirection: TextDirection.rtl,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 14, 18, 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+      builder: (sheetContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: .72,
+          minChildSize: .42,
+          maxChildSize: .92,
+          builder: (context, scrollController) => SafeArea(
+            child: ListView(
+              controller: scrollController,
+              padding: const EdgeInsets.fromLTRB(18, 14, 18, 20),
               children: [
-                Container(
-                  width: 44,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.white24,
-                    borderRadius: BorderRadius.circular(99),
+                Center(
+                  child: Container(
+                    width: 44,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 14),
+
+                // أهم إجراءات الغرفة تبقى في الأعلى لسهولة الوصول.
+                if (personal && owner)
+                  ListTile(
+                    leading: const Icon(
+                      Icons.power_settings_new_rounded,
+                      color: Colors.redAccent,
+                    ),
+                    title: const Text(
+                      'إغلاق الغرفة',
+                      style: TextStyle(
+                        color: Colors.redAccent,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    onTap: () async {
+                      Navigator.pop(sheetContext);
+                      final confirmed = await showDialog<bool>(
+                        context: context,
+                        builder: (dialogContext) => Directionality(
+                          textDirection: TextDirection.rtl,
+                          child: AlertDialog(
+                            backgroundColor: const Color(0xFF111522),
+                            title: const Text(
+                              'إغلاق الغرفة؟',
+                              style: TextStyle(color: Colors.white),
+                            ),
+                            content: const Text(
+                              'سيتم إغلاق الغرفة وإنهاء الجلسة الحالية للجميع.',
+                              style: TextStyle(color: Colors.white70),
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () =>
+                                    Navigator.pop(dialogContext, false),
+                                child: const Text('إلغاء'),
+                              ),
+                              FilledButton(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: Colors.redAccent,
+                                ),
+                                onPressed: () =>
+                                    Navigator.pop(dialogContext, true),
+                                child: const Text('إغلاق الغرفة'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                      if (confirmed == true && mounted) {
+                        await _closePersonalRoom();
+                      }
+                    },
+                  ),
+                ListTile(
+                  leading: const Icon(
+                    Icons.picture_in_picture_alt_rounded,
+                    color: Color(0xFFFFD54A),
+                  ),
+                  title: const Text(
+                    'تصغير الغرفة',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _minimizeVoiceRoom();
+                  },
+                ),
+                const Divider(color: Colors.white12, height: 18),
+
                 if (_canModerateUsers)
                   ListTile(
                     leading: const Icon(
@@ -3530,20 +3659,6 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                 ),
                 ListTile(
                   leading: const Icon(
-                    Icons.picture_in_picture_alt_rounded,
-                    color: Color(0xFFFFD54A),
-                  ),
-                  title: const Text(
-                    'تصغير الغرفة',
-                    style: TextStyle(color: Colors.white),
-                  ),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    _minimizeVoiceRoom();
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(
                     Icons.logout_rounded,
                     color: Colors.orangeAccent,
                   ),
@@ -3556,24 +3671,6 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                     _leaveVoiceRoom();
                   },
                 ),
-                if (personal && owner)
-                  ListTile(
-                    leading: const Icon(
-                      Icons.power_settings_new_rounded,
-                      color: Colors.redAccent,
-                    ),
-                    title: const Text(
-                      'إغلاق الغرفة',
-                      style: TextStyle(
-                        color: Colors.redAccent,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    onTap: () {
-                      Navigator.pop(sheetContext);
-                      _closePersonalRoom();
-                    },
-                  ),
               ],
             ),
           ),
@@ -3594,6 +3691,350 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     _roomPresence.close();
     _roomSeatService.close();
     super.dispose();
+  }
+
+  Future<void> _copyRoomPublicId(String publicId) async {
+    final value = publicId.trim();
+    if (value.isEmpty || value == '—') return;
+    await Clipboard.setData(ClipboardData(text: value));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('تم نسخ ID الغرفة.'),
+        duration: Duration(milliseconds: 1400),
+      ),
+    );
+  }
+
+  Future<void> _showRoomLevelSheet() async {
+    final insights = _roomInsights;
+    if (insights == null) return;
+
+    final rawType = (_roomArguments['roomType'] ??
+            _roomArguments['type'] ??
+            'personal')
+        .toString();
+    final isAgency = rawType == 'agency';
+    final isCustomerService = rawType == 'customer_service';
+
+    final seatByLevel = isCustomerService
+        ? const <int>[5, 5, 5, 5, 5, 5]
+        : isAgency
+            ? const <int>[10, 12, 14, 16, 20, 22]
+            : const <int>[8, 10, 12, 15, 20, 20];
+    final moderatorByLevel = isCustomerService
+        ? const <int>[2, 2, 2, 2, 2, 2]
+        : isAgency
+            ? const <int>[5, 6, 7, 9, 11, 14]
+            : const <int>[3, 4, 5, 7, 9, 12];
+
+    final remaining = max<num>(
+      0,
+      insights.levelTarget - insights.levelPoints,
+    );
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF0D1019),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      ),
+      builder: (sheetContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: SafeArea(
+          child: SizedBox(
+            height: MediaQuery.of(sheetContext).size.height * .68,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+              child: Column(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.workspace_premium_rounded,
+                        color: Color(0xFFFFD54A),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'مستوى الغرفة — LV.${insights.level}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF151A27),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: Colors.white10),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${insights.levelPoints} / ${insights.levelTarget} نقطة',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 9),
+                        LinearProgressIndicator(
+                          value: insights.levelProgress,
+                          minHeight: 7,
+                          borderRadius: BorderRadius.circular(99),
+                          color: const Color(0xFF8A3DFF),
+                          backgroundColor: Colors.white12,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          insights.level >= 6
+                              ? 'وصلت الغرفة إلى أعلى Level حاليًا.'
+                              : 'باقي $remaining نقطة للوصول إلى LV.${insights.level + 1}',
+                          style: const TextStyle(
+                            color: Colors.white60,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF151A27),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Column(
+                            children: [
+                              const Text(
+                                'اليوم',
+                                style: TextStyle(
+                                  color: Colors.white54,
+                                  fontSize: 10,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                insights.dailySupport.toString(),
+                                style: const TextStyle(
+                                  color: Color(0xFFFFD54A),
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 7),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF151A27),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Column(
+                            children: [
+                              const Text(
+                                'الأسبوع',
+                                style: TextStyle(
+                                  color: Colors.white54,
+                                  fontSize: 10,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                insights.weeklySupport.toString(),
+                                style: const TextStyle(
+                                  color: Color(0xFFC9B8FF),
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 7),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF151A27),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Column(
+                            children: [
+                              const Text(
+                                'الشهر',
+                                style: TextStyle(
+                                  color: Colors.white54,
+                                  fontSize: 10,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                insights.monthlySupport.toString(),
+                                style: const TextStyle(
+                                  color: Color(0xFF72D572),
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  const Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      'ميزات المستويات',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: ListView.separated(
+                      itemCount: 6,
+                      separatorBuilder: (_, __) =>
+                          const Divider(color: Colors.white10, height: 1),
+                      itemBuilder: (_, index) {
+                        final level = index + 1;
+                        final current = level == insights.level;
+                        final reached = level <= insights.level;
+                        return Container(
+                          color: current
+                              ? const Color(0xFF8A3DFF).withValues(alpha: .12)
+                              : Colors.transparent,
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              radius: 18,
+                              backgroundColor: reached
+                                  ? const Color(0xFFFFD54A)
+                                  : const Color(0xFF202534),
+                              child: Text(
+                                level.toString(),
+                                style: TextStyle(
+                                  color: reached ? Colors.black : Colors.white60,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                            title: Text(
+                              'LV.$level',
+                              style: TextStyle(
+                                color: current
+                                    ? const Color(0xFFFFD54A)
+                                    : Colors.white,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            subtitle: Text(
+                              '${seatByLevel[index]} مايك • حتى ${moderatorByLevel[index]} مشرف',
+                              style: const TextStyle(
+                                color: Colors.white60,
+                                fontSize: 11,
+                              ),
+                            ),
+                            trailing: current
+                                ? const Chip(label: Text('الحالي'))
+                                : reached
+                                    ? const Icon(
+                                        Icons.check_circle_rounded,
+                                        color: Color(0xFF72D572),
+                                      )
+                                    : const Icon(
+                                        Icons.lock_outline_rounded,
+                                        color: Colors.white30,
+                                      ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRoomRocketButton() {
+    return Tooltip(
+      message: 'صاروخ الغرفة',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('تم تثبيت مكان صاروخ الغرفة. ربط وظيفة الصاروخ سيتم على نظامه المعتمد.'),
+              ),
+            );
+          },
+          child: Container(
+            width: 48,
+            height: 48,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: const Color(0xFF25183F).withValues(alpha: .94),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0x66FFD54A)),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x33000000),
+                  blurRadius: 12,
+                  offset: Offset(0, 5),
+                ),
+              ],
+            ),
+            child: const Icon(
+              Icons.rocket_launch_rounded,
+              color: Color(0xFFFFD54A),
+              size: 27,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildSupporterCluster() {
@@ -3678,83 +4119,86 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           : const SizedBox.shrink();
     }
 
-    final levelBox = Container(
-      width: 118,
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: const Color(0xFF111522).withValues(alpha: .86),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white10),
-      ),
-      child: Row(
-        children: [
-          Text(
-            'LV.${insights.level}',
-            style: const TextStyle(
-              color: Color(0xFFFFD54A),
-              fontSize: 11,
-              fontWeight: FontWeight.w900,
+    final levelBox = InkWell(
+      onTap: _showRoomLevelSheet,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: 118,
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+        decoration: BoxDecoration(
+          color: const Color(0xFF111522).withValues(alpha: .86),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white10),
+        ),
+        child: Row(
+          children: [
+            Text(
+              'LV.${insights.level}',
+              style: const TextStyle(
+                color: Color(0xFFFFD54A),
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+              ),
             ),
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: LinearProgressIndicator(
-              value: insights.levelProgress,
-              minHeight: 3,
-              borderRadius: BorderRadius.circular(99),
-              color: const Color(0xFF8A3DFF),
-              backgroundColor: Colors.white12,
+            const SizedBox(width: 6),
+            Expanded(
+              child: LinearProgressIndicator(
+                value: insights.levelProgress,
+                minHeight: 3,
+                borderRadius: BorderRadius.circular(99),
+                color: const Color(0xFF8A3DFF),
+                backgroundColor: Colors.white12,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
 
-    return Column(
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        Row(
-          children: [
-            InkWell(
-              onTap: _showRoomRankingSheet,
+        InkWell(
+          onTap: _showRoomRankingSheet,
+          borderRadius: BorderRadius.circular(999),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+            decoration: BoxDecoration(
+              color: const Color(0xFF111522).withValues(alpha: .86),
               borderRadius: BorderRadius.circular(999),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF111522).withValues(alpha: .86),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: Colors.white10),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.emoji_events_rounded,
-                      color: Color(0xFFFFD54A),
-                      size: 14,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      insights.dailyRank == null
-                          ? 'الترتيب اليومي'
-                          : 'TOP ${insights.dailyRank} اليومي',
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              border: Border.all(color: Colors.white10),
             ),
-            const Spacer(),
-            _buildSupporterCluster(),
-          ],
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.emoji_events_rounded,
+                  color: Color(0xFFFFD54A),
+                  size: 14,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  insights.dailyRank == null
+                      ? 'الترتيب اليومي'
+                      : 'TOP ${insights.dailyRank} اليومي',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
-        const SizedBox(height: 8),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: levelBox,
+        const Spacer(),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildSupporterCluster(),
+            const SizedBox(height: 6),
+            levelBox,
+          ],
         ),
       ],
     );
@@ -3848,15 +4292,12 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           circleButton(
             icon: Icons.card_giftcard_rounded,
             tooltip: 'الهدايا',
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text(
-                    'اختيار الهدايا سيستخدم نظام اقتصاد Shadow Live المعتمد.',
-                  ),
-                ),
-              );
-            },
+            onPressed: roomId.isEmpty
+                ? null
+                : () => showRoomGiftSheet(
+                      context,
+                      roomId: roomId,
+                    ),
             color: const Color(0xFFFFD54A),
           ),
           const SizedBox(width: 5),
@@ -4029,19 +4470,36 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                           ],
                                         ),
                                         const SizedBox(height: 2),
-                                        Text(
-                                          '# ID: $roomPublicId',
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
                                           textDirection: TextDirection.ltr,
-                                          style: const TextStyle(
-                                            color: Colors.white54,
-                                            fontSize: 10,
-                                          ),
+                                          children: [
+                                            InkWell(
+                                              onTap: () => _copyRoomPublicId(roomPublicId),
+                                              borderRadius: BorderRadius.circular(99),
+                                              child: const Padding(
+                                                padding: EdgeInsets.all(2),
+                                                child: Icon(
+                                                  Icons.copy_rounded,
+                                                  size: 13,
+                                                  color: Colors.white54,
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              '# ID: $roomPublicId',
+                                              textDirection: TextDirection.ltr,
+                                              style: const TextStyle(
+                                                color: Colors.white54,
+                                                fontSize: 10,
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ],
                                     ),
                                   ),
-                                  _buildSupporterCluster(),
-                                  const SizedBox(width: 4),
                                   IconButton(
                                     visualDensity: VisualDensity.compact,
                                     onPressed: _showShareRoomSheet,
@@ -4130,9 +4588,11 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                               ),
                               border: Border.all(color: Colors.white10),
                             ),
-                            child: Column(
+                            child: Stack(
                               children: [
-                                const SizedBox(height: 7),
+                                Column(
+                                  children: [
+                                    const SizedBox(height: 7),
                                 Container(
                                   width: 42,
                                   height: 4,
@@ -4170,6 +4630,13 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                           effectSoundEnabled: _effectSoundEnabled,
                                           scrollController: scrollController,
                                         ),
+                                ),
+                                  ],
+                                ),
+                                Positioned(
+                                  left: 12,
+                                  top: 22,
+                                  child: _buildRoomRocketButton(),
                                 ),
                               ],
                             ),

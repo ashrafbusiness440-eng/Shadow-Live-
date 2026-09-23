@@ -1,6 +1,7 @@
 import {getApps,initializeApp,cert} from "firebase-admin/app";
 import {getAuth} from "firebase-admin/auth";
 import {getFirestore,FieldValue,Timestamp} from "firebase-admin/firestore";
+import {resolveRevenuePolicy} from "../server/economy/economy-policy.js";
 
 class ApiError extends Error {
   constructor(code,status=400){super(code);this.code=code;this.status=status;}
@@ -52,66 +53,10 @@ const utcPeriodKeys=(date=new Date())=>{
     day,
     week:d.getUTCFullYear().toString()+"-W"+week.toString().padStart(2,"0"),
     month,
+    cycle:month+"-"+(date.getUTCDate()<=15?"C1":"C2"),
   };
 };
 
-
-function revenueTiers(economy){
-  const fallback=[
-    {id:"starter",nameAr:"Starter",minGiftCoins:0,hostShareBps:5500,agencyShareBps:500},
-    {id:"bronze",nameAr:"Bronze",minGiftCoins:1000000,hostShareBps:5700,agencyShareBps:600},
-    {id:"silver",nameAr:"Silver",minGiftCoins:5000000,hostShareBps:6000,agencyShareBps:800},
-    {id:"gold",nameAr:"Gold",minGiftCoins:20000000,hostShareBps:6200,agencyShareBps:900},
-    {id:"diamond",nameAr:"Diamond",minGiftCoins:50000000,hostShareBps:6300,agencyShareBps:1000},
-  ];
-  const raw=Array.isArray(economy?.tiers)&&economy.tiers.length?economy.tiers:fallback;
-  return raw.map((item,index)=>({
-    id:text(item?.id||("tier_"+String(index+1))),
-    nameAr:text(item?.nameAr||item?.id||("Tier "+String(index+1))),
-    minGiftCoins:Math.max(0,Number(item?.minGiftCoins||0)),
-    hostShareBps:Math.max(0,Math.min(10000,Number(item?.hostShareBps??economy?.recipientShareBps??0))),
-    agencyShareBps:Math.max(0,Math.min(10000,Number(item?.agencyShareBps||0))),
-  })).sort((a,b)=>a.minGiftCoins-b.minGiftCoins);
-}
-
-function resolveRevenuePolicy(economy,receiverData,monthlyGrossCoins,agencyId,monthKey,activeHostCount=0){
-  const tiers=revenueTiers(economy);
-  let tier=tiers[0];
-  for(const item of tiers){
-    if(monthlyGrossCoins>=item.minGiftCoins)tier=item;
-  }
-  const activityMonth=text(receiverData?.giftHostActivityMonth);
-  const qualifiedDays=activityMonth===monthKey
-    ?Math.max(0,Number(receiverData?.giftHostQualifiedDays||0))
-    :0;
-  const requiredDays=Math.max(1,Math.min(31,Number(economy?.hostBonusQualifiedDays||9)));
-  const configuredHostBonus=Math.max(0,Math.min(3000,Number(economy?.hostPerformanceBonusBps||0)));
-  const hostBonusBps=qualifiedDays>=requiredDays?configuredHostBonus:0;
-  const hostShareBps=Math.max(0,Math.min(10000,tier.hostShareBps+hostBonusBps));
-  const requiredActiveHosts=Math.max(1,Math.min(100000,Number(economy?.agencyBonusActiveHosts||10)));
-  const configuredAgencyBonus=Math.max(0,Math.min(3000,Number(economy?.agencyPerformanceBonusBps||0)));
-  const agencyBonusBps=agencyId&&activeHostCount>=requiredActiveHosts?configuredAgencyBonus:0;
-  const agencyShareBps=agencyId
-    ?Math.max(0,Math.min(10000,tier.agencyShareBps+agencyBonusBps))
-    :0;
-  const platformShareBps=Math.max(0,10000-hostShareBps-agencyShareBps);
-  return {
-    tierId:tier.id,
-    tierName:tier.nameAr,
-    tierMinGiftCoins:tier.minGiftCoins,
-    hostBaseShareBps:tier.hostShareBps,
-    hostBonusBps,
-    hostShareBps,
-    agencyBaseShareBps:tier.agencyShareBps,
-    agencyBonusBps,
-    agencyShareBps,
-    platformShareBps,
-    qualifiedDays,
-    requiredDays,
-    activeHostCount,
-    requiredActiveHosts,
-  };
-}
 
 async function sendMessage(db,uid,body){
   const receiverId=text(body.receiverId);
@@ -226,7 +171,7 @@ async function sendMessage(db,uid,body){
   });
 }
 
-async function sendGift(db,uid,body){
+export async function sendGift(db,uid,body){
   const receiverId=text(body.receiverId);
   const giftId=text(body.giftId);
   const conversationId=text(body.conversationId);
@@ -242,12 +187,13 @@ async function sendGift(db,uid,body){
     const receiverRef=db.collection("users").doc(receiverId);
     const catalogRef=db.collection("system_config").doc("gift_catalog");
     const economyRef=db.collection("system_config").doc("gift_economy");
+    const lockRef=db.collection("system_config").doc("emergency_lock");
     const conversationRef=db.collection("conversations").doc(conversationId);
     const periods=utcPeriodKeys();
     const outgoingBlockRef=db.collection("user_blocks").doc(uid).collection("items").doc(receiverId);
     const incomingBlockRef=db.collection("user_blocks").doc(receiverId).collection("items").doc(uid);
-    const [op,sender,receiver,catalog,economy,conversation,outgoingBlock,incomingBlock]=await Promise.all([
-      tx.get(opRef),tx.get(senderRef),tx.get(receiverRef),tx.get(catalogRef),tx.get(economyRef),
+    const [op,sender,receiver,catalog,economy,lock,conversation,outgoingBlock,incomingBlock]=await Promise.all([
+      tx.get(opRef),tx.get(senderRef),tx.get(receiverRef),tx.get(catalogRef),tx.get(economyRef),tx.get(lockRef),
       tx.get(conversationRef),tx.get(outgoingBlockRef),tx.get(incomingBlockRef),
     ]);
 
@@ -259,6 +205,10 @@ async function sendGift(db,uid,body){
       throw new ApiError("invalid_conversation",409);
     }
     if(outgoingBlock.exists||incomingBlock.exists)throw new ApiError("blocked",403);
+    const economyLock=lock.exists?(lock.data()||{}):{};
+    if(economyLock.enabled===true||economyLock.economyLocked===true||economyLock.giftsLocked===true){
+      throw new ApiError("emergency_locked",409);
+    }
 
     const fallback=[
       {id:"rose",nameAr:"وردة",priceCoins:100,enabled:true,assetKey:"gifts.placeholder.default"},
@@ -320,10 +270,15 @@ async function sendGift(db,uid,body){
     const platformShareCoins=policyEnabled
       ?Math.max(0,totalCost-recipientShareCoins-agencyShareCoins)
       :totalCost;
+    const agencySettlementPending=Boolean(agencyId);
     const previousPending=Math.max(0,Number(receiverData.pendingGiftEarningCoins||0));
     const accumulated=previousPending+recipientShareCoins;
-    const diamondsEarned=earningsEnabled?Math.floor(accumulated/10000):0;
-    const pendingGiftEarningCoins=earningsEnabled?accumulated%10000:previousPending;
+    const diamondsEarned=earningsEnabled&&!agencySettlementPending?Math.floor(accumulated/10000):0;
+    const pendingGiftEarningCoins=earningsEnabled&&!agencySettlementPending?accumulated%10000:previousPending;
+    const pendingAgencyBefore=Math.max(0,Number(receiverData.pendingAgencyGiftEarningCoins||0));
+    const pendingAgencyAfter=agencySettlementPending&&earningsEnabled
+      ?pendingAgencyBefore+recipientShareCoins
+      :pendingAgencyBefore;
     const openingDiamonds=Math.max(0,Number(receiverData.diamonds||0));
     const closingDiamonds=openingDiamonds+diamondsEarned;
 
@@ -339,6 +294,9 @@ async function sendGift(db,uid,body){
     const userDailyRef=db.collection("gift_user_stats").doc(receiverId).collection("daily").doc(periods.day);
     const userWeeklyRef=db.collection("gift_user_stats").doc(receiverId).collection("weekly").doc(periods.week);
     const userMonthlyRef=db.collection("gift_user_stats").doc(receiverId).collection("monthly").doc(periods.month);
+    const agencyAccrualRef=agencyId
+      ?db.collection("agency_settlement_accruals").doc(agencyId+"__"+periods.cycle+"__"+receiverId)
+      :null;
     const showcaseRef=db.collection("public_gift_showcases").doc(receiverId).collection("items").doc(giftId);
     const counts={...(conversationData.unreadCounts||{})};
     counts[uid]=0;
@@ -353,10 +311,14 @@ async function sendGift(db,uid,body){
       giftRevenueMonthCoins:monthlyGrossCoins,
       currentGiftRevenueTier:revenue.tierId,
       ...(earningsEnabled?{
-        diamonds:closingDiamonds,
-        pendingGiftEarningCoins,
         giftEarningCoinsLifetime:FieldValue.increment(recipientShareCoins),
-        giftDiamondsLifetime:FieldValue.increment(diamondsEarned),
+        ...(agencySettlementPending?{
+          pendingAgencyGiftEarningCoins:pendingAgencyAfter,
+        }:{
+          diamonds:closingDiamonds,
+          pendingGiftEarningCoins,
+          giftDiamondsLifetime:FieldValue.increment(diamondsEarned),
+        }),
       }:{})
     });
     const receiverStats={
@@ -383,8 +345,31 @@ async function sendGift(db,uid,body){
       tx.set(agencyRootRef.collection("daily").doc(periods.day),agencyStats,{merge:true});
       tx.set(agencyRootRef.collection("weekly").doc(periods.week),agencyStats,{merge:true});
       tx.set(agencyRootRef.collection("monthly").doc(periods.month),agencyStats,{merge:true});
+      if(agencyAccrualRef){
+        tx.set(agencyAccrualRef,{
+          agencyId,
+          hostUid:receiverId,
+          cycleKey:periods.cycle,
+          month:periods.month,
+          supportCoins:FieldValue.increment(totalCost),
+          hostGrossEarningCoins:FieldValue.increment(recipientShareCoins),
+          agencyGrossEarningCoins:FieldValue.increment(agencyShareCoins),
+          platformShareCoins:FieldValue.increment(platformShareCoins),
+          giftCount:FieldValue.increment(quantity),
+          status:"open",
+          updatedAt:now,
+        },{merge:true});
+      }
     }
-    if(earningsEnabled&&diamondsEarned>0){
+    if(earningsEnabled&&agencySettlementPending&&recipientShareCoins>0){
+      tx.create(earningsLedgerRef,{
+        userId:receiverId,asset:"pendingAgencyGiftEarningCoins",delta:recipientShareCoins,
+        openingBalance:pendingAgencyBefore,closingBalance:pendingAgencyAfter,
+        reason:"agency_gift_earning_accrual",sourceType:"gift",sourceId:key,
+        actorUid:uid,counterpartyUid:uid,settlementCycleKey:periods.cycle,
+        idempotencyKey:key+"_earnings",createdAt:now
+      });
+    }else if(earningsEnabled&&diamondsEarned>0){
       tx.create(earningsLedgerRef,{
         userId:receiverId,asset:"diamonds",delta:diamondsEarned,
         openingBalance:openingDiamonds,closingBalance:closingDiamonds,
@@ -417,7 +402,11 @@ async function sendGift(db,uid,body){
       qualifiedDays:revenue.qualifiedDays,
       requiredQualifiedDays:revenue.requiredDays,
       diamondsEarned,pendingGiftEarningCoins,
-      earningsStatus:earningsEnabled?"applied":"pending_policy",periods,agencyId:agencyId||null,createdAt:now
+      pendingAgencyGiftEarningCoins:pendingAgencyAfter,
+      settlementMode:agencySettlementPending?"agency_cycle":"immediate",
+      settlementCycleKey:agencySettlementPending?periods.cycle:null,
+      earningsStatus:!earningsEnabled?"disabled":agencySettlementPending?"accrued_for_cycle":"applied",
+      periods,agencyId:agencyId||null,createdAt:now
     });
     tx.create(ledgerRef,{userId:uid,asset:"coins",delta:-totalCost,openingBalance:before,closingBalance:after,reason:"gift_send",sourceType:"gift",sourceId:key,actorUid:uid,idempotencyKey:key,createdAt:now});
     tx.set(showcaseRef,{giftId,name:giftName,imageUrl,assetKey,count:FieldValue.increment(quantity),updatedAt:now},{merge:true});
@@ -426,7 +415,9 @@ async function sendGift(db,uid,body){
       giftId,giftName,quantity,totalCost,messageId:messageRef.id,balance:after,
       revenueTierId:revenue.tierId,
       recipientShareCoins,agencyShareCoins,platformShareCoins,
-      diamondsEarned,earningsApplied:earningsEnabled
+      diamondsEarned,earningsApplied:earningsEnabled,
+      earningsStatus:!earningsEnabled?"disabled":agencySettlementPending?"accrued_for_cycle":"applied",
+      settlementCycleKey:agencySettlementPending?periods.cycle:null
     };
     tx.create(opRef,{senderId:uid,receiverId,action:"sendGift",status:"completed",result:resultData,createdAt:now});
     return {ok:true,code:"ok",...resultData};

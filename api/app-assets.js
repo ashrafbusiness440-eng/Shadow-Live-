@@ -16,7 +16,7 @@ function applyCors(req,res){
  const origin=String(req.headers.origin||"");
  const allowed=new Set([
   "https://ashrafbusiness440-eng.github.io",
-  "https://shadow-live-git-feature-shadow-control-foundation-shadow-c916.vercel.app"
+  "https://shadow-live-six.vercel.app"
  ]);
  if(allowed.has(origin))res.setHeader("access-control-allow-origin",origin);
  res.setHeader("vary","Origin");
