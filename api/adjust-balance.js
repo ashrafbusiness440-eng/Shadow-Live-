@@ -18,6 +18,35 @@ function init(){
   initializeApp({credential:cert(sa),projectId:sa.projectId});
  }
 }
+const DEFAULT_ALLOWED_ORIGINS=[
+ "https://ashrafbusiness440-eng.github.io",
+ "https://shadow-live-six.vercel.app",
+];
+function allowedOrigins(){
+ return new Set([
+  ...DEFAULT_ALLOWED_ORIGINS,
+  ...String(process.env.CONTROL_ALLOWED_ORIGINS||"")
+   .split(",")
+   .map(value=>value.trim())
+   .filter(Boolean),
+ ]);
+}
+function cors(req,res){
+ const origin=String(req.headers.origin||"").trim();
+ if(origin&&allowedOrigins().has(origin)){
+  res.setHeader("Access-Control-Allow-Origin",origin);
+  res.setHeader("Vary","Origin");
+ }
+ res.setHeader("Access-Control-Allow-Methods","GET,POST,OPTIONS");
+ res.setHeader("Access-Control-Allow-Headers","Authorization, Content-Type");
+ res.setHeader("Access-Control-Max-Age","86400");
+ res.setHeader("Cache-Control","no-store");
+ if(req.method==="OPTIONS"){
+  res.status(204).end();
+  return true;
+ }
+ return false;
+}
 const out=(r,s,b)=>r.status(s).json(b);
 export default async function handler(req,res){
  if(req.method==="GET"){
