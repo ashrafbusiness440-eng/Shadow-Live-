@@ -2,7 +2,7 @@ import {createCipheriv,randomBytes,randomInt,createHash,scryptSync,timingSafeEqu
 import {getApps,initializeApp,cert} from "firebase-admin/app";
 import {getAuth} from "firebase-admin/auth";
 import {getFirestore,FieldValue} from "firebase-admin/firestore";
-import {activeMicSegments} from "./mic-activity.js";
+import {activeMicSegments} from "../server/economy/mic-activity.js";
 
 class ApiError extends Error {
   constructor(code,status=400){super(code);this.code=code;this.status=status;}
