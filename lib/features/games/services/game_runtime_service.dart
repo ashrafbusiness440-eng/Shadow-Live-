@@ -160,8 +160,8 @@ class GameRuntimeService {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || user.isAnonymous) throw StateError('account_required');
     final token = await user.getIdToken();
-    if (token == null || token.isEmpty) throw StateError('not_signed_in');
-    return token;
+    if (token?.isEmpty ?? true) throw StateError('not_signed_in');
+    return token!;
   }
 
   Future<Map<String, dynamic>> _post(Map<String, dynamic> payload) async {
