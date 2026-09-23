@@ -79,6 +79,9 @@ test("client cannot forge gift operations ledgers accrual activity or settlement
     ["agency_settlement_accruals","fake_accrual"],
     ["agency_settlements","fake_settlement"],
     ["system_config","gift_economy"],
+    ["game_operations","fake_game_op"],
+    ["game_rounds","fake_game_round"],
+    ["game_user_history","fake_game_history"],
   ];
   for(const [collection,id] of writes){
     await assertFails(setDoc(doc(userDb,collection,id),{forged:true}));
