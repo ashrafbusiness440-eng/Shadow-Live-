@@ -276,6 +276,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
               data['activeRoomBackgroundAssetKey'] ?? '',
           'activeRoomBackgroundExpiresAtMs':
               data['activeRoomBackgroundExpiresAtMs'] ?? 0,
+          'recentEntrance': data['recentEntrance'],
         };
         final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
         final ownerUid =
