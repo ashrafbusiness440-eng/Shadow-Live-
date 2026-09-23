@@ -131,11 +131,19 @@ function gameConfig(config,gameId,mode){
     return {
       ...game,
       ...variant,
+      targetRtpBps:Number.isSafeInteger(Number(variant.targetRtpBps))
+        ? Math.max(1000,Math.min(9900,Number(variant.targetRtpBps)))
+        : Number.isSafeInteger(Number(game.targetRtpBps))
+          ? Math.max(1000,Math.min(9900,Number(game.targetRtpBps)))
+          : config.targetRtpBps,
       outcomes:validateOutcomeWeights(gameId,mode,variant.outcomes),
     };
   }
   return {
     ...game,
+    targetRtpBps:Number.isSafeInteger(Number(game.targetRtpBps))
+      ? Math.max(1000,Math.min(9900,Number(game.targetRtpBps)))
+      : config.targetRtpBps,
     outcomes:validateOutcomeWeights(gameId,mode,game.outcomes),
   };
 }
@@ -309,7 +317,7 @@ export async function placeGameBet(
       closesAtMs:round.closesAtMs,
       balanceBefore:before,
       balanceAfter:finalBalance,
-      targetRtpBps:config.targetRtpBps,
+      targetRtpBps:selectedConfig.targetRtpBps,
       createdAt:now,
       updatedAt:now,
       ...(settled?{settledAt:now}:{}),
@@ -345,7 +353,7 @@ export async function placeGameBet(
       closesAtMs:round.closesAtMs,
       outcomeId:resolved.outcomeId,
       entropyDigest:resolved.entropyDigest,
-      targetRtpBps:config.targetRtpBps,
+      targetRtpBps:selectedConfig.targetRtpBps,
       status:settled?"settled":"open",
       totalWagerCoins:FieldValue.increment(stake),
       totalPayoutCoins:FieldValue.increment(settled?payout:0),
@@ -557,7 +565,7 @@ export async function gameState(db,uid,body={},options={}){
     gameId,
     mode,
     enabled:selected.enabled===true,
-    targetRtpBps:config.targetRtpBps,
+    targetRtpBps:selectedConfig.targetRtpBps,
     round:gameId==="slot"?null:{
       roundId:round.roundId,
       dayKey:round.dayKey,
