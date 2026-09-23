@@ -324,6 +324,12 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           ranking: [],
         );
       });
+      if (const bool.fromEnvironment('E2E_GAME_TEST')) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          unawaited(_showRoomGameOverlay(initialGameKey: 'greedy_cat'));
+        });
+      }
       return;
     }
     final raw = ModalRoute.of(context)?.settings.arguments;
