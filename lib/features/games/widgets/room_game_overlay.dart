@@ -328,7 +328,10 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.sizeOf(context).height;
     final factor = _minimized ? .16 : (_maximized ? .94 : .70);
-    return AnimatedContainer(
+    return Semantics(
+      container: true,
+      label: 'Shadow Live game overlay',
+      child: AnimatedContainer(
       duration: const Duration(milliseconds: 220),
       height: screenHeight * factor,
       decoration: const BoxDecoration(
@@ -359,6 +362,7 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
           ),
         ),
       ),
+    ),
     );
   }
 
