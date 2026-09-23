@@ -107,6 +107,9 @@ function runtimeConfig(raw={}){
       greedy_cat:{
         ...FALLBACK_CONFIG.games.greedy_cat,
         ...(games.greedy_cat||{}),
+        enabled:Array.isArray(games.greedy_cat?.outcomes)&&games.greedy_cat.outcomes.length
+          ? games.greedy_cat?.enabled!==false
+          : true,
         outcomes:Array.isArray(games.greedy_cat?.outcomes)&&games.greedy_cat.outcomes.length
           ? games.greedy_cat.outcomes
           : defaultOutcomeWeights("greedy_cat"),
@@ -117,6 +120,9 @@ function runtimeConfig(raw={}){
         normal:{
           ...FALLBACK_CONFIG.games.witch.normal,
           ...(games.witch?.normal||{}),
+          enabled:Array.isArray(games.witch?.normal?.outcomes)&&games.witch.normal.outcomes.length
+            ? games.witch?.normal?.enabled!==false
+            : true,
           outcomes:Array.isArray(games.witch?.normal?.outcomes)&&games.witch.normal.outcomes.length
             ? games.witch.normal.outcomes
             : defaultOutcomeWeights("witch","normal"),
@@ -124,6 +130,9 @@ function runtimeConfig(raw={}){
         advanced:{
           ...FALLBACK_CONFIG.games.witch.advanced,
           ...(games.witch?.advanced||{}),
+          enabled:Array.isArray(games.witch?.advanced?.outcomes)&&games.witch.advanced.outcomes.length
+            ? games.witch?.advanced?.enabled!==false
+            : true,
           outcomes:Array.isArray(games.witch?.advanced?.outcomes)&&games.witch.advanced.outcomes.length
             ? games.witch.advanced.outcomes
             : defaultOutcomeWeights("witch","advanced"),
@@ -132,6 +141,9 @@ function runtimeConfig(raw={}){
       slot:{
         ...FALLBACK_CONFIG.games.slot,
         ...(games.slot||{}),
+        enabled:Array.isArray(games.slot?.outcomes)&&games.slot.outcomes.length
+          ? games.slot?.enabled!==false
+          : true,
         outcomes:Array.isArray(games.slot?.outcomes)&&games.slot.outcomes.length
           ? games.slot.outcomes
           : defaultOutcomeWeights("slot"),
