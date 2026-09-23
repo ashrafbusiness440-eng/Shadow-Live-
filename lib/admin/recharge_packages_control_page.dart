@@ -4,6 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
+import 'control_api_endpoints.dart';
+
 import '../features/wallet/services/recharge_config_service.dart';
 import '../utils/compact_number.dart';
 
@@ -22,12 +24,7 @@ class _RechargePackagesControlPageState
   String? error;
   List<RechargePackageConfig> packages = <RechargePackageConfig>[];
 
-  Uri get apiUri => Uri(
-        scheme: Uri.base.scheme,
-        host: Uri.base.host,
-        port: Uri.base.hasPort ? Uri.base.port : null,
-        path: '/api/recharge-config',
-      );
+  Uri get apiUri => shadowEconomyEndpoint('recharge-config');
 
   @override
   void initState() {
