@@ -346,3 +346,11 @@ export default async function handler(req, res) {
     return out(res, status, { ok: false, code });
   }
 }
+
+
+export {
+  walletState,
+  setWalletPassword,
+  exchangeDiamonds,
+  giftDiamonds,
+};
