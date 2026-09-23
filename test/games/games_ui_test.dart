@@ -23,10 +23,19 @@ void main() {
 
   testWidgets('Greedy Cat design round can be selected and settled', (tester) async {
     await tester.pumpWidget(_host(const GreedyCatGameScreen()));
-    await tester.tap(find.text('سمكة ذهبية'));
+    final option = find.text('سمكة ذهبية');
+    await tester.ensureVisible(option);
+    await tester.tap(option);
     await tester.pump();
-    await tester.tap(find.textContaining('شارك بـ 200'));
+
+    final joinButton = find.textContaining('شارك بـ 200');
+    await tester.ensureVisible(joinButton);
     await tester.pumpAndSettle();
+    await tester.tap(joinButton);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 900));
+    await tester.pump();
+
     expect(find.textContaining('الفائز'), findsOneWidget);
   });
 
