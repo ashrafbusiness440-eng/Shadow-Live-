@@ -11,6 +11,7 @@ import '../utils/compact_number.dart';
 import 'gift_catalog_control_page.dart';
 import 'gift_economy_control_page.dart';
 import 'recharge_packages_control_page.dart';
+import 'room_rocket_control_page.dart';
 
 class EconomyControlPage extends StatefulWidget {
   const EconomyControlPage({super.key});
@@ -404,6 +405,12 @@ class _EconomyControlPageState extends State<EconomyControlPage> {
             'نِسَب المضيف والوكالة',
             'المستويات والـBonus وحصة Shadow Live',
             const GiftEconomyControlPage(),
+          ),
+          tool(
+            Icons.rocket_launch_rounded,
+            'Room Rocket',
+            'المستويات والجوائز والـTop 3 ومدة الانفجار',
+            const RoomRocketControlPage(),
           ),
           const SizedBox(height: 12),
           Card(
