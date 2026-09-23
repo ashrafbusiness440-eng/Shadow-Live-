@@ -64,6 +64,7 @@ function rewardItems(explosion){
     ["frame",pool.frameRewards],
     ["entrance",pool.entranceRewards],
     ["voice_wave",pool.voiceWaveRewards],
+    ["room_background",pool.roomBackgroundRewards],
   ];
   for(const [type,items] of groups){
     for(const item of Array.isArray(items)?items:[]){
@@ -75,8 +76,14 @@ function rewardItems(explosion){
       if(!id||!Number.isSafeInteger(durationHours)||durationHours<=0||
          !Number.isSafeInteger(weight)||weight<=0) continue;
       result.push({
-        type,id,durationHours,weight,
+        type,
+        id,
+        durationHours,
+        weight,
         overflowCoins:Number.isSafeInteger(overflowCoins)&&overflowCoins>0?overflowCoins:0,
+        nameAr:clean(item?.nameAr),
+        assetKey:clean(item?.assetKey),
+        imageUrl:clean(item?.imageUrl),
       });
     }
   }
@@ -166,7 +173,7 @@ export async function claimRocketReward(db,uid,explosionId,nowMs=Date.now()){
   const noWinMessageAr=clean(explosion.noWinMessageAr)||"حظ أوفر في المرة القادمة";
   const capHours=Math.max(1,Number(explosion.cosmeticStackCapHours||720));
   const awardAtMs=Math.max(0,Number(explosion.endsAtMs||nowMs));
-  const cosmeticTypes=new Set(["frame","entrance","voice_wave"]);
+  const cosmeticTypes=new Set(["frame","entrance","voice_wave","room_background"]);
   const cosmeticKeys=[...new Set(drawnOutcomes
     .filter((item)=>item.won&&cosmeticTypes.has(item.type))
     .map((item)=>item.type+"::"+item.id))];
@@ -231,6 +238,9 @@ export async function claimRocketReward(db,uid,explosionId,nowMs=Date.now()){
         won:true,
         type:outcome.type,
         rewardId:outcome.id,
+        nameAr:clean(outcome.nameAr),
+        assetKey:clean(outcome.assetKey),
+        imageUrl:clean(outcome.imageUrl),
         durationHours:outcome.durationHours,
         expiresAtMs:grantedEndMs,
         convertedCoins,
@@ -264,6 +274,15 @@ export async function claimRocketReward(db,uid,explosionId,nowMs=Date.now()){
       tx.set(ref,{
         type,
         rewardId:id,
+        nameAr:clean(
+          resolved.find((item)=>item.won&&item.type===type&&item.rewardId===id)?.nameAr,
+        ),
+        assetKey:clean(
+          resolved.find((item)=>item.won&&item.type===type&&item.rewardId===id)?.assetKey,
+        ),
+        imageUrl:clean(
+          resolved.find((item)=>item.won&&item.type===type&&item.rewardId===id)?.imageUrl,
+        ),
         expiresAtMs:state.expiresAtMs,
         active:state.active===true,
         source:"room_rocket",
