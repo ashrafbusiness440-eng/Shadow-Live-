@@ -2,12 +2,14 @@ import { handler as economyControl } from "../server/economy/economy-control.js"
 import { handler as giftCatalog } from "../server/economy/gift-catalog.js";
 import { handler as giftEconomyConfig } from "../server/economy/gift-economy-config.js";
 import { handler as rechargeConfig } from "../server/economy/recharge-config.js";
+import { handler as roomRocketConfig } from "../server/economy/room-rocket-config.js";
 
 const routes = {
   "economy-control": economyControl,
   "gift-catalog": giftCatalog,
   "gift-economy-config": giftEconomyConfig,
   "recharge-config": rechargeConfig,
+  "room-rocket-config": roomRocketConfig,
 };
 
 export default async function handler(req, res) {
