@@ -41,24 +41,33 @@ jobs:
           grep -q "assets/images/games/greedy_cat" lib/admin/control_asset_policy.dart
           grep -q "assets/images/games/witch" lib/admin/control_asset_policy.dart
           grep -q "assets/images/games/slot" lib/admin/control_asset_policy.dart
+          grep -q '"/Shadow-Live-/app/"' scripts/app_manifest.json
+          grep -q '"/Shadow-Live-/control/"' scripts/control_manifest.json
 
-      - name: Build Shadow Control
+      - name: Build Shadow Control with isolated PWA identity
         run: |
           rm -rf build/web site
-          flutter build web --release --pwa-strategy=none --target lib/main_control.dart --base-href /Shadow-Live-/
-          mkdir -p site
-          cp -R build/web/. site/
+          cp scripts/control_index.html web/index.html
+          cp scripts/control_manifest.json web/manifest.json
+          flutter build web --release --pwa-strategy=none --target lib/main_control.dart --base-href /Shadow-Live-/control/
+          mkdir -p site/control
+          cp -R build/web/. site/control/
 
       - name: Verify Shadow Control build
         run: |
-          test -f site/main.dart.js
-          grep -q "assets/images/games/greedy_cat" site/main.dart.js
-          grep -q "assets/images/games/witch" site/main.dart.js
-          grep -q "assets/images/games/slot" site/main.dart.js
+          test -f site/control/main.dart.js
+          grep -q "assets/images/games/greedy_cat" site/control/main.dart.js
+          grep -q "assets/images/games/witch" site/control/main.dart.js
+          grep -q "assets/images/games/slot" site/control/main.dart.js
+          grep -q '"id": "/Shadow-Live-/control/"' site/control/manifest.json
+          grep -q '"scope": "/Shadow-Live-/control/"' site/control/manifest.json
+          grep -q 'Shadow Control' site/control/manifest.json
 
-      - name: Build Shadow Live app
+      - name: Build Shadow Live with isolated PWA identity
         run: |
           rm -rf build/web
+          cp scripts/app_index.html web/index.html
+          cp scripts/app_manifest.json web/manifest.json
           flutter build web --release --pwa-strategy=none --target lib/main.dart --base-href /Shadow-Live-/app/
           mkdir -p site/app
           cp -R build/web/. site/app/
@@ -69,6 +78,41 @@ jobs:
           grep -q "greedy_cat" site/app/main.dart.js
           grep -q "witch" site/app/main.dart.js
           grep -q "slot" site/app/main.dart.js
+          grep -q '"id": "/Shadow-Live-/app/"' site/app/manifest.json
+          grep -q '"scope": "/Shadow-Live-/app/"' site/app/manifest.json
+          grep -q '"name": "Shadow Live"' site/app/manifest.json
+
+      - name: Create non-PWA root launcher
+        run: |
+          cat > site/index.html <<'EOF'
+          <!doctype html>
+          <html lang="ar" dir="rtl">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width,initial-scale=1">
+            <meta name="theme-color" content="#05060D">
+            <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+            <title>Shadow Live</title>
+            <style>
+              html,body{margin:0;min-height:100%;background:#05060d;color:#fff;font-family:Arial,sans-serif}
+              body{display:grid;place-items:center;padding:24px;box-sizing:border-box}
+              main{width:min(520px,100%);background:#0d0f18;border:1px solid #29233c;border-radius:24px;padding:24px;box-sizing:border-box}
+              h1{margin:0 0 8px;font-size:28px}
+              p{color:#aaa;margin:0 0 24px;line-height:1.7}
+              a{display:block;text-decoration:none;text-align:center;padding:16px;margin-top:12px;border-radius:16px;font-weight:700}
+              .app{background:#7b2dff;color:white}.control{background:#d8b84a;color:#17120a}
+            </style>
+          </head>
+          <body>
+            <main>
+              <h1>Shadow Live</h1>
+              <p>اختر الواجهة التي تريد فتحها. التطبيق والكونترول أصبحا PWA منفصلين بهوية ونطاق مستقل.</p>
+              <a class="app" href="/Shadow-Live-/app/">فتح Shadow Live</a>
+              <a class="control" href="/Shadow-Live-/control/">فتح Shadow Control</a>
+            </main>
+          </body>
+          </html>
+          EOF
 
       - name: Add immutable deployment markers
         run: |
@@ -76,6 +120,7 @@ jobs:
             "$GITHUB_SHA" "$GITHUB_REF_NAME" "$GITHUB_RUN_ID" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             > site/deploy.json
           cp site/deploy.json site/app/deploy.json
+          cp site/deploy.json site/control/deploy.json
           touch site/.nojekyll
 
       - name: Kill all legacy Flutter service workers and caches
@@ -97,6 +142,7 @@ jobs:
           EOF
           cp /tmp/flutter_service_worker.js site/flutter_service_worker.js
           cp /tmp/flutter_service_worker.js site/app/flutter_service_worker.js
+          cp /tmp/flutter_service_worker.js site/control/flutter_service_worker.js
 
       - name: Publish verified static snapshot to gh-pages branch
         env:
@@ -108,7 +154,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -B gh-pages
           git add -A
-          git commit -m "Publish Shadow Live ${GITHUB_SHA}"
+          git commit -m "Publish isolated Shadow Live PWAs ${GITHUB_SHA}"
           git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push --force origin gh-pages
 
