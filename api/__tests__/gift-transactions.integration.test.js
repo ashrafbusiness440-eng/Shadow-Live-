@@ -216,6 +216,56 @@ test("chat gift uses the same economy shares and duplicate protection as room gi
   assert.equal(senderAfter.data().coins,900000);
 });
 
+test("room gift is rejected when either user has blocked the other",async()=>{
+  await seedSharedConfig();
+  const suffix=Date.now().toString()+"_blocked";
+  const senderId="sender_"+suffix;
+  const receiverId="receiver_"+suffix;
+  const roomId="room_"+suffix;
+  const key="roomgift_blocked_"+suffix;
+
+  await Promise.all([
+    db.collection("users").doc(senderId).set({
+      coins:1000000,diamonds:0,role:"user",
+    }),
+    db.collection("users").doc(receiverId).set({
+      coins:0,diamonds:0,role:"user",
+    }),
+    db.collection("rooms").doc(roomId).set({isActive:true,totalSupport:0}),
+    db.collection("room_presence").doc(roomId).collection("users").doc(senderId).set({
+      lastSeenAtMs:Date.now(),displayName:"Sender",
+    }),
+    db.collection("room_presence").doc(roomId).collection("users").doc(receiverId).set({
+      lastSeenAtMs:Date.now(),displayName:"Receiver",
+    }),
+    db.collection("user_blocks").doc(receiverId).collection("items").doc(senderId).set({
+      blockedAt:Date.now(),
+    }),
+  ]);
+
+  await assert.rejects(
+    sendRoomGift(db,senderId,{
+      roomId,
+      receiverId,
+      giftId:"integration_gift",
+      quantity:1,
+      idempotencyKey:key,
+    }),
+    /blocked/,
+  );
+
+  const [sender,tx,ledger,op]=await Promise.all([
+    db.collection("users").doc(senderId).get(),
+    db.collection("gift_transactions").doc(key).get(),
+    db.collection("financial_ledger").doc("gift_"+key).get(),
+    db.collection("gift_operations").doc(key).get(),
+  ]);
+  assert.equal(sender.data().coins,1000000);
+  assert.equal(tx.exists,false);
+  assert.equal(ledger.exists,false);
+  assert.equal(op.exists,false);
+});
+
 test("real unmuted mic time qualifies 120-minute days and accumulates 9 cycle days",async()=>{
   await seedSharedConfig();
   const periods=periodKeys();
