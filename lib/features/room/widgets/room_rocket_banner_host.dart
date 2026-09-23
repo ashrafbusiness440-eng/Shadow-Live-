@@ -144,6 +144,8 @@ class _RoomRocketBannerHostState extends State<RoomRocketBannerHost> {
         return 'ربحت دخولية لمدة ${outcome['durationHours'] ?? 0} ساعة';
       case 'voice_wave':
         return 'ربحت موجة صوتية لمدة ${outcome['durationHours'] ?? 0} ساعة';
+      case 'room_background':
+        return 'ربحت خلفية روم لمدة ${outcome['durationHours'] ?? 0} ساعة';
       default:
         return 'تمت إضافة جائزتك إلى حسابك';
     }
