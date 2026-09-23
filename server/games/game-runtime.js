@@ -505,10 +505,11 @@ export async function settleDueGameOperations(
 export async function gameState(db,uid,body={},options={}){
   const gameId=clean(body.gameId);
   const mode=gameId==="witch"?clean(body.mode||"normal"):"";
+  const nowMs=Number(options.nowMs||Date.now());
+  await settleDueGameOperations(db,{nowMs,limit:20});
   const configSnap=await db.collection("system_config").doc("game_runtime").get();
   const config=runtimeConfig(configSnap.exists?configSnap.data()||{}:{});
   const selected=gameConfig(config,gameId,mode);
-  const nowMs=Number(options.nowMs||Date.now());
   const round=buildRound({
     config,
     gameId,
