@@ -10,6 +10,7 @@ abstract final class ControlActionCatalog {
   'reviewReport':ControlActionDefinition('reviewReport',ControlCapabilities.reviewReports),
   'grantVip':ControlActionDefinition('grantVip',ControlCapabilities.manageVip,sensitive:true),
   'manageSpecialId':ControlActionDefinition('manageSpecialId',ControlCapabilities.manageSpecialIds,sensitive:true),
+  'manageGames':ControlActionDefinition('manageGames',ControlCapabilities.manageGames,sensitive:true,financial:true),
   'adjustBalance':ControlActionDefinition('adjustBalance',ControlCapabilities.manageEconomy,sensitive:true,financial:true),
   'approveWithdrawal':ControlActionDefinition('approveWithdrawal',ControlCapabilities.manageWithdrawals,sensitive:true,financial:true),
   'paySettlement':ControlActionDefinition('paySettlement',ControlCapabilities.manageSettlements,sensitive:true,financial:true),
