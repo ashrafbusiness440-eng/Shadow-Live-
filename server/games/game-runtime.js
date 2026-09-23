@@ -240,8 +240,8 @@ export async function placeGameBet(
 
     const config=runtimeConfig(configSnap.exists?configSnap.data()||{}:{});
     const selectedConfig=gameConfig(config,gameId,mode);
-    const betEvents=normalizeBetEvents(gameId,mode,body.bets);
-    const selections=normalizeSelections(gameId,mode,betEvents);
+    const betEvents=normalizeBetEvents(gameId,mode,body.bets,selectedConfig.bets);
+    const selections=normalizeSelections(gameId,mode,betEvents,selectedConfig.bets);
     const stake=totalStake(selections);
     const round=buildRound({config,gameId,mode,uid,key,nowMs});
     if(gameId!=="slot"&&nowMs>=round.closesAtMs-config.lockBeforeMs){
