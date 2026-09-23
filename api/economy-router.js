@@ -1,7 +1,7 @@
-import { handler as economyControl } from "./economy-control.js";
-import { handler as giftCatalog } from "./gift-catalog.js";
-import { handler as giftEconomyConfig } from "./gift-economy-config.js";
-import { handler as rechargeConfig } from "./recharge-config.js";
+import { handler as economyControl } from "../server/economy/economy-control.js";
+import { handler as giftCatalog } from "../server/economy/gift-catalog.js";
+import { handler as giftEconomyConfig } from "../server/economy/gift-economy-config.js";
+import { handler as rechargeConfig } from "../server/economy/recharge-config.js";
 
 const routes = {
   "economy-control": economyControl,
