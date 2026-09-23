@@ -466,7 +466,17 @@ class ShadowSlotGameScreen extends StatefulWidget {
 }
 
 class _ShadowSlotGameScreenState extends State<ShadowSlotGameScreen> {
-  static const _bets = [200, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000];
+  static const _bets = [
+    200,
+    1000,
+    2000,
+    5000,
+    10000,
+    20000,
+    50000,
+    100000,
+    200000,
+  ];
   static const _symbols = [
     ('👑', 'تاج'),
     ('💎', 'ماسة'),
@@ -477,7 +487,9 @@ class _ShadowSlotGameScreenState extends State<ShadowSlotGameScreen> {
   ];
 
   final _random = Random();
+  final List<_RoundResult> _history = [];
   int _betIndex = 0;
+  int _spinNumber = 1;
   List<int> _reels = [0, 1, 2];
   bool _spinning = false;
   bool _auto = false;
@@ -492,15 +504,28 @@ class _ShadowSlotGameScreenState extends State<ShadowSlotGameScreen> {
 
   Future<void> _spin() async {
     if (_spinning) return;
+    final spinId = _spinNumber;
     setState(() {
       _spinning = true;
       _message = 'Spin...';
     });
     await Future<void>.delayed(const Duration(milliseconds: 620));
     if (!mounted) return;
+
     final next = List.generate(3, (_) => _random.nextInt(_symbols.length));
     final jackpot = next.toSet().length == 1;
     final pair = next.toSet().length == 2;
+    final resultLabel = jackpot
+        ? 'JACKPOT'
+        : pair
+            ? 'تطابق مزدوج'
+            : 'بدون تطابق';
+    final resultMultiplier = jackpot
+        ? '×20'
+        : pair
+            ? '×2'
+            : '×0';
+
     setState(() {
       _reels = next;
       _spinning = false;
@@ -509,6 +534,16 @@ class _ShadowSlotGameScreenState extends State<ShadowSlotGameScreen> {
           : pair
               ? 'تطابق مزدوج'
               : 'جرّب لفة جديدة';
+      _history.insert(
+        0,
+        _RoundResult(
+          round: spinId,
+          label: resultLabel,
+          multiplier: resultMultiplier,
+        ),
+      );
+      if (_history.length > 6) _history.removeLast();
+      _spinNumber++;
     });
   }
 
@@ -527,16 +562,26 @@ class _ShadowSlotGameScreenState extends State<ShadowSlotGameScreen> {
   @override
   Widget build(BuildContext context) {
     const accent = Color(0xFF49D7FF);
+    final winning = !_spinning && _reels.toSet().length <= 2;
+
     return _GameScaffold(
       title: 'Shadow Slot',
-      subtitle: 'Spin • Auto Play',
+      subtitle: 'Spin #$_spinNumber • Auto Play',
       accent: accent,
       icon: Icons.casino_rounded,
       child: Column(
         children: [
           const _DemoNotice(),
+          const SizedBox(height: 12),
+          _GameIdentityBanner(
+            accent: accent,
+            icon: Icons.casino_rounded,
+            title: 'Shadow Slot',
+            subtitle: 'رموز أصلية • Spin سريع • Auto Play بنفس الرهان',
+          ),
           const SizedBox(height: 14),
-          Container(
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 260),
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(26),
@@ -544,12 +589,15 @@ class _ShadowSlotGameScreenState extends State<ShadowSlotGameScreen> {
                 colors: [Color(0xFF121934), Color(0xFF1A0D2D)],
               ),
               border: Border.all(
-                color: accent.withValues(alpha: .32),
+                color: winning
+                    ? accent.withValues(alpha: .70)
+                    : accent.withValues(alpha: .32),
+                width: winning ? 1.6 : 1,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: accent.withValues(alpha: .12),
-                  blurRadius: 22,
+                  color: accent.withValues(alpha: winning ? .24 : .12),
+                  blurRadius: winning ? 30 : 22,
                 ),
               ],
             ),
@@ -568,11 +616,21 @@ class _ShadowSlotGameScreenState extends State<ShadowSlotGameScreen> {
                           color: const Color(0xFF080B16),
                           borderRadius: BorderRadius.circular(18),
                           border: Border.all(
-                            color: Colors.white.withValues(alpha: .10),
+                            color: winning
+                                ? accent.withValues(alpha: .35)
+                                : Colors.white.withValues(alpha: .10),
                           ),
                         ),
                         child: AnimatedSwitcher(
                           duration: const Duration(milliseconds: 220),
+                          transitionBuilder: (child, animation) =>
+                              ScaleTransition(
+                            scale: animation,
+                            child: FadeTransition(
+                              opacity: animation,
+                              child: child,
+                            ),
+                          ),
                           child: Column(
                             key: ValueKey('${_reels[index]}-$_spinning'),
                             mainAxisAlignment: MainAxisAlignment.center,
@@ -598,12 +656,16 @@ class _ShadowSlotGameScreenState extends State<ShadowSlotGameScreen> {
                   }),
                 ),
                 const SizedBox(height: 12),
-                Text(
-                  _message,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 220),
+                  child: Text(
+                    _message,
+                    key: ValueKey(_message),
+                    style: TextStyle(
+                      color: winning ? accent : Colors.white70,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ),
               ],
@@ -640,6 +702,13 @@ class _ShadowSlotGameScreenState extends State<ShadowSlotGameScreen> {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 16),
+          _RoundHistory(
+            title: 'آخر اللفات',
+            items: _history,
+            accent: accent,
+            roundPrefix: 'Spin',
           ),
         ],
       ),
