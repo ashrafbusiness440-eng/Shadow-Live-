@@ -289,7 +289,7 @@ class _GamesControlPageState extends State<GamesControlPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Games Control'),
+        title: const Text('إدارة الألعاب'),
         actions: [
           IconButton(onPressed: load, icon: const Icon(Icons.refresh_rounded)),
         ],
@@ -312,7 +312,7 @@ class _GamesControlPageState extends State<GamesControlPage> {
                           style: TextStyle(fontWeight: FontWeight.w900),
                         ),
                         subtitle: Text(
-                          'كل لعبة/وضع مستقل: تشغيل وإيقاف، RTP، سلم الرهانات، الاحتمالات والإحصاءات. لا يوجد فرض نتيجة لاعب من لوحة الإنتاج.',
+                          'تحكم بكل لعبة بشكل مستقل. الإعدادات اليومية مبسطة، والتفاصيل لا تظهر إلا عند فتح بطاقة اللعبة.',
                         ),
                       ),
                     ),
@@ -341,7 +341,7 @@ class _GamesControlPageState extends State<GamesControlPage> {
                                     controller: timezone,
                                     keyboardType: TextInputType.number,
                                     decoration: const InputDecoration(
-                                      labelText: 'Timezone offset بالدقائق',
+                                      labelText: 'فرق التوقيت عن UTC (دقيقة)',
                                       hintText: '240 = الإمارات',
                                       border: OutlineInputBorder(),
                                     ),
@@ -353,7 +353,7 @@ class _GamesControlPageState extends State<GamesControlPage> {
                                     controller: roundDuration,
                                     keyboardType: TextInputType.number,
                                     decoration: const InputDecoration(
-                                      labelText: 'مدة الجولة / ثانية',
+                                      labelText: 'مدة الجولة (ثانية)',
                                       border: OutlineInputBorder(),
                                     ),
                                   ),
@@ -364,7 +364,7 @@ class _GamesControlPageState extends State<GamesControlPage> {
                                     controller: lockBefore,
                                     keyboardType: TextInputType.number,
                                     decoration: const InputDecoration(
-                                      labelText: 'قفل الرهان قبل النهاية ms',
+                                      labelText: 'قفل الرهان قبل النهاية (ms)',
                                       border: OutlineInputBorder(),
                                     ),
                                   ),
@@ -390,14 +390,14 @@ class _GamesControlPageState extends State<GamesControlPage> {
                       controller: reason,
                       maxLength: 240,
                       decoration: const InputDecoration(
-                        labelText: 'سبب التغيير — إلزامي للـAudit',
+                        labelText: 'سبب التغيير (يُحفظ في سجل الإدارة)',
                         border: OutlineInputBorder(),
                       ),
                     ),
                     ...variants.map(gameCard),
                     const SizedBox(height: 12),
                     const Text(
-                      'آخر تغييرات الألعاب',
+                      'سجل تغييرات الألعاب',
                       style:
                           TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
                     ),
@@ -414,7 +414,7 @@ class _GamesControlPageState extends State<GamesControlPage> {
                                   '${item['targetId'] ?? '-'} • ${item['action'] ?? '-'}',
                                 ),
                                 subtitle: Text(
-                                  '${item['reason'] ?? '-'}\nActor: ${item['actorUid'] ?? '-'}',
+                                  '${item['reason'] ?? '-'}\nالمسؤول: ${item['actorUid'] ?? '-'}',
                                 ),
                               ),
                             ),
@@ -461,11 +461,22 @@ class _GameConfigCard extends StatefulWidget {
   State<_GameConfigCard> createState() => _GameConfigCardState();
 }
 
+class _OutcomeWeightControl {
+  _OutcomeWeightControl({
+    required this.id,
+    required this.controller,
+  });
+
+  final String id;
+  final TextEditingController controller;
+}
+
 class _GameConfigCardState extends State<_GameConfigCard> {
   late bool enabled;
+  bool expanded = false;
   late final TextEditingController rtp;
   late final TextEditingController bets;
-  late final TextEditingController outcomes;
+  late final List<_OutcomeWeightControl> outcomeFields;
   bool saving = false;
 
   @override
@@ -474,15 +485,161 @@ class _GameConfigCardState extends State<_GameConfigCard> {
     enabled = widget.initialEnabled;
     rtp = TextEditingController(text: widget.initialRtp);
     bets = TextEditingController(text: widget.initialBets);
-    outcomes = TextEditingController(text: widget.initialOutcomes);
+    outcomeFields = _parseInitialOutcomes(widget.initialOutcomes);
+  }
+
+  List<_OutcomeWeightControl> _parseInitialOutcomes(String raw) {
+    final result = <_OutcomeWeightControl>[];
+    for (final rawLine in raw.split('\n')) {
+      final line = rawLine.trim();
+      if (line.isEmpty) continue;
+      final separator = line.indexOf('=');
+      if (separator <= 0) continue;
+      final id = line.substring(0, separator).trim();
+      final bps = int.tryParse(line.substring(separator + 1).trim()) ?? 0;
+      final percent = bps / 100;
+      final text = _cleanPercent(percent);
+      final controller = TextEditingController(text: text);
+      controller.addListener(_refreshOutcomeTotal);
+      result.add(_OutcomeWeightControl(id: id, controller: controller));
+    }
+    return result;
+  }
+
+  void _refreshOutcomeTotal() {
+    if (mounted) setState(() {});
+  }
+
+  String _cleanPercent(double value) {
+    final fixed = value.toStringAsFixed(2);
+    if (fixed.endsWith('.00')) {
+      return fixed.substring(0, fixed.length - 3);
+    }
+    if (fixed.endsWith('0')) {
+      return fixed.substring(0, fixed.length - 1);
+    }
+    return fixed;
+  }
+
+  int _outcomeTotalBps() {
+    var total = 0;
+    for (final item in outcomeFields) {
+      final percent = double.tryParse(item.controller.text.trim()) ?? 0;
+      total += (percent * 100).round();
+    }
+    return total;
+  }
+
+  String _serializeOutcomes() {
+    return outcomeFields.map((item) {
+      final percent = double.tryParse(item.controller.text.trim()) ?? 0;
+      final bps = (percent * 100).round();
+      return item.id + '=' + bps.toString();
+    }).join('\n');
   }
 
   @override
   void dispose() {
     rtp.dispose();
     bets.dispose();
-    outcomes.dispose();
+    for (final item in outcomeFields) {
+      item.controller
+        ..removeListener(_refreshOutcomeTotal)
+        ..dispose();
+    }
     super.dispose();
+  }
+
+  Widget _metric(String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: .04),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: .08)),
+      ),
+      child: Text(
+        label + ': ' + value,
+        style: const TextStyle(
+          fontWeight: FontWeight.w700,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+
+  Widget _outcomeEditor() {
+    final totalBps = _outcomeTotalBps();
+    final totalOk = totalBps == 10000;
+    final totalPercent = _cleanPercent(totalBps / 100);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'احتمالات النتائج',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: (totalOk ? Colors.greenAccent : Colors.orangeAccent)
+                    .withValues(alpha: .10),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                'المجموع ' + totalPercent + '%',
+                style: TextStyle(
+                  color: totalOk ? Colors.greenAccent : Colors.orangeAccent,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'عدّل النسبة لكل نتيجة. يجب أن يكون المجموع 100% عند تشغيل اللعبة.',
+          style: TextStyle(
+            color: Color(0xFFAAA3B8),
+            fontSize: 12,
+            height: 1.4,
+          ),
+        ),
+        const SizedBox(height: 10),
+        if (outcomeFields.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              'لا توجد نتائج قابلة للتعديل لهذه اللعبة.',
+              style: TextStyle(color: Colors.white54),
+            ),
+          )
+        else
+          ...outcomeFields.map(
+            (item) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: TextField(
+                controller: item.controller,
+                enabled: !saving,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(
+                  labelText: 'النتيجة: ' + item.id,
+                  suffixText: '%',
+                  isDense: true,
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
   }
 
   @override
@@ -490,114 +647,227 @@ class _GameConfigCardState extends State<_GameConfigCard> {
     final wager = NumberHelper.toDouble(widget.stats['totalWagerCoins']);
     final payout = NumberHelper.toDouble(widget.stats['totalPayoutCoins']);
     final actual = NumberHelper.toDouble(widget.stats['actualRtpBps']) / 100;
-    final ids = widget.variant['outcomeIds'] is List
-        ? (widget.variant['outcomeIds'] as List).join(', ')
-        : '';
+    final gameName = (widget.variant['nameAr'] ?? '').toString();
+    final targetRtp = double.tryParse(rtp.text.trim()) ?? 0;
 
     return Card(
       margin: const EdgeInsets.only(top: 10),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              value: enabled,
-              onChanged: saving ? null : (v) => setState(() => enabled = v),
-              title: Text(
-                (widget.variant['nameAr'] ?? '').toString(),
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              subtitle: Text(
-                enabled ? 'مفعّلة' : 'متوقفة',
-                style: TextStyle(
-                  color: enabled ? Colors.greenAccent : Colors.white54,
-                ),
-              ),
-            ),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
+            child: Row(
               children: [
-                widget.statChip(
-                  'Rounds',
-                  (widget.stats['rounds'] ?? 0).toString(),
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFD7B85A).withValues(alpha: .10),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.sports_esports_rounded,
+                    color: Color(0xFFD7B85A),
+                  ),
                 ),
-                widget.statChip(
-                  'Operations',
-                  (widget.stats['operations'] ?? 0).toString(),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        gameName,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        enabled ? 'مفعّلة' : 'متوقفة',
+                        style: TextStyle(
+                          color:
+                              enabled ? Colors.greenAccent : Colors.white54,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                widget.statChip(
-                  'Wager',
-                  formatCompactAmount(wager),
-                ),
-                widget.statChip(
-                  'Payout',
-                  formatCompactAmount(payout),
-                ),
-                widget.statChip(
-                  'Actual RTP',
-                  '${actual.toStringAsFixed(2)}%',
+                Switch.adaptive(
+                  value: enabled,
+                  onChanged: saving
+                      ? null
+                      : (value) => setState(() {
+                            enabled = value;
+                            expanded = true;
+                          }),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: rtp,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                labelText: 'Target RTP %',
-                hintText: '85.00',
-                border: OutlineInputBorder(),
-              ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _metric(
+                  'RTP المستهدف',
+                  _cleanPercent(targetRtp) + '%',
+                ),
+                _metric(
+                  'RTP الفعلي',
+                  actual.toStringAsFixed(2) + '%',
+                ),
+                _metric(
+                  'الجولات',
+                  (widget.stats['rounds'] ?? 0).toString(),
+                ),
+              ],
             ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: bets,
-              decoration: const InputDecoration(
-                labelText: 'Bet Ladder — افصل بفاصلة',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: outcomes,
-              minLines: 3,
-              maxLines: 12,
-              decoration: InputDecoration(
-                labelText: 'Outcome weights — id=weightBps',
-                hintText: ids,
-                helperText: 'مجموع weightBps عند التفعيل يجب أن يساوي 10000.',
-                border: const OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 10),
-            FilledButton.icon(
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+            child: OutlinedButton.icon(
               onPressed: saving
                   ? null
-                  : () async {
-                      setState(() => saving = true);
-                      try {
-                        await widget.onSave(
-                          enabled: enabled,
-                          rtp: rtp.text,
-                          bets: bets.text,
-                          outcomes: outcomes.text,
-                        );
-                      } finally {
-                        if (mounted) setState(() => saving = false);
-                      }
-                    },
-              icon: const Icon(Icons.save_rounded),
-              label: Text(saving ? 'جار الحفظ...' : 'حفظ هذه اللعبة فقط'),
+                  : () => setState(() => expanded = !expanded),
+              icon: Icon(
+                expanded
+                    ? Icons.keyboard_arrow_up_rounded
+                    : Icons.tune_rounded,
+              ),
+              label: Text(
+                expanded ? 'إخفاء الإعدادات' : 'تعديل إعدادات اللعبة',
+              ),
             ),
-          ],
-        ),
+          ),
+          AnimatedCrossFade(
+            duration: const Duration(milliseconds: 180),
+            crossFadeState: expanded
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
+            firstChild: const SizedBox.shrink(),
+            secondChild: Container(
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: .12),
+                border: Border(
+                  top: BorderSide(
+                    color: Colors.white.withValues(alpha: .06),
+                  ),
+                ),
+              ),
+              padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'الإعدادات الأساسية',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: rtp,
+                    enabled: !saving,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: 'نسبة الإرجاع المستهدفة (RTP)',
+                      suffixText: '%',
+                      helperText: 'مثال: 85 يعني أن الهدف النظري 85%.',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: bets,
+                    enabled: !saving,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'قيم الرهانات المتاحة',
+                      hintText: '100, 1000, 10000, 100000',
+                      helperText: 'افصل القيم بفاصلة.',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _outcomeEditor(),
+                  const SizedBox(height: 8),
+                  ExpansionTile(
+                    tilePadding: EdgeInsets.zero,
+                    childrenPadding: const EdgeInsets.only(bottom: 8),
+                    title: const Text(
+                      'إحصاءات متقدمة',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    subtitle: const Text(
+                      'للمراجعة فقط ولا تحتاجها أثناء التعديل اليومي.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    children: [
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _metric(
+                              'العمليات',
+                              (widget.stats['operations'] ?? 0).toString(),
+                            ),
+                            _metric(
+                              'إجمالي الرهانات',
+                              formatCompactAmount(wager),
+                            ),
+                            _metric(
+                              'إجمالي المدفوعات',
+                              formatCompactAmount(payout),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  FilledButton.icon(
+                    onPressed: saving
+                        ? null
+                        : () async {
+                            setState(() => saving = true);
+                            try {
+                              await widget.onSave(
+                                enabled: enabled,
+                                rtp: rtp.text,
+                                bets: bets.text,
+                                outcomes: _serializeOutcomes(),
+                              );
+                            } finally {
+                              if (mounted) setState(() => saving = false);
+                            }
+                          },
+                    icon: saving
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.save_rounded),
+                    label: Text(
+                      saving ? 'جار الحفظ...' : 'حفظ تغييرات هذه اللعبة',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
