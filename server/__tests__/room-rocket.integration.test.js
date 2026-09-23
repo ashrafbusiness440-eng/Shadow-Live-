@@ -136,3 +136,49 @@ test("contributor outside room remains eligible and top3 receives two attempts",
   const user=await db.collection("users").doc(uid).get();
   assert.equal(user.data().coins,200);
 });
+
+
+test("timed voice-wave reward starts at explosion end and is not auto-activated",async()=>{
+  const suffix=Date.now().toString()+"_wave";
+  const uid="rocket_wave_"+suffix;
+  const roomId="rocket_room_"+suffix;
+  const explosionId="rocket_explosion_"+suffix;
+  const start=300000;
+  const end=310000;
+  const contribution={uid,coins:100000,displayName:"Wave Winner",profileImageUrl:""};
+  const explosion=explosionData({
+    roomId,
+    startsAtMs:start,
+    endsAtMs:end,
+    contributors:[contribution],
+    top3:[],
+  });
+  explosion.rewardPool={
+    coinPrizes:[],
+    frameRewards:[],
+    entranceRewards:[],
+    voiceWaveRewards:[{
+      id:"wave_test",
+      durationHours:24,
+      weight:1,
+      overflowCoins:500,
+      enabled:true,
+    }],
+  };
+
+  await Promise.all([
+    db.collection("users").doc(uid).set({coins:0,role:"user"}),
+    db.collection("room_rocket_explosions").doc(explosionId).set(explosion),
+  ]);
+
+  const result=await claimRocketReward(db,uid,explosionId,end+3600000);
+  assert.equal(result.ok,true);
+  assert.equal(result.result.awardedAtMs,end);
+  assert.equal(result.result.outcomes[0].type,"voice_wave");
+
+  const reward=await db.collection("user_rewards").doc(uid)
+    .collection("items").doc("voice_wave__wave_test").get();
+  assert.equal(reward.exists,true);
+  assert.equal(reward.data().active,false);
+  assert.equal(reward.data().expiresAtMs,end+24*60*60*1000);
+});
