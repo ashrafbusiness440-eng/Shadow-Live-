@@ -2,16 +2,19 @@
   "name": "Shadow Live",
   "short_name": "Shadow Live",
   "start_url": ".",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#050814",
-  "theme_color": "#6D28D9",
-  "description": "Shadow Live - مجتمع صوتي مباشر",
+  "background_color": "#020711",
+  "theme_color": "#8A00FF",
+  "description": "Shadow Live - تطبيق اجتماعي صوتي",
   "orientation": "portrait-primary",
   "prefer_related_applications": false,
   "icons": [
-    {"src":"icons/Icon-192.png","sizes":"192x192","type":"image/png"},
-    {"src":"icons/Icon-512.png","sizes":"512x512","type":"image/png"},
-    {"src":"icons/Icon-maskable-192.png","sizes":"192x192","type":"image/png","purpose":"maskable"},
-    {"src":"icons/Icon-maskable-512.png","sizes":"512x512","type":"image/png","purpose":"maskable"}
+    {
+      "src": "assets/assets/images/app_icon.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
   ]
 }

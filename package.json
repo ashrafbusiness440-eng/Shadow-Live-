@@ -1,0 +1,1 @@
+{"name":"shadow-control-api","private":true,"type":"module","dependencies":{"firebase-admin":"13.5.0","google-auth-library":"11.1.0"}}

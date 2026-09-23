@@ -1,0 +1,54 @@
+name: Shadow Live Feature CI
+
+on:
+  push:
+    branches:
+      - feature/shadow-control-foundation
+      - integration/phase6-production-recovery
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shadow-live-feature-ci
+  cancel-in-progress: true
+
+jobs:
+  validate-app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.2'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Validate Phase 6 backend syntax
+        run: |
+          node --check api/voice-session.js
+          node --check api/chat-actions.js
+
+      - name: Reject legacy Agora references
+        run: |
+          if grep -Rni -E 'agora_rtc_engine|AgoraService|agoraAppId|YOUR_AGORA_APP_ID' lib lib_backup_before_auth_ui voice_chat_room/lib; then
+            echo "Legacy Agora reference detected."
+            exit 1
+          fi
+
+      - name: Analyze all app and tests
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings lib test
+
+      - name: Run all Flutter tests
+        run: flutter test
+
+      - name: Build Shadow Live web
+        run: flutter build web --release

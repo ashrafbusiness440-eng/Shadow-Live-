@@ -2,13 +2,274 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
+    function userDoc() { return get(/databases/$(database)/documents/users/$(request.auth.uid)); }
+    function isOwner() { return signedIn() && userDoc().data.role == 'owner'; }
+    function hasCapability(capability) {
+      return signedIn() && userDoc().data.adminEnabled == true
+        && (isOwner() || (userDoc().data.capabilities is list && capability in userDoc().data.capabilities));
+    }
+
+    function publicIdTransitionAllowed(userId) {
+      return (
+          !('publicId' in resource.data)
+          && !('publicId' in request.resource.data)
+        )
+        || (
+          (!('publicId' in resource.data) || resource.data.publicId == null || resource.data.publicId == '')
+          && request.resource.data.publicId is string
+          && request.resource.data.publicId.matches('^[0-9]{6}$')
+          && getAfter(/databases/$(database)/documents/public_ids/$(request.resource.data.publicId)).data.uid == userId
+        )
+        || (
+          ('publicId' in resource.data)
+          && ('publicId' in request.resource.data)
+          && request.resource.data.publicId == resource.data.publicId
+        );
+    }
+
+    function protectedUserFieldsUnchanged() {
+      return (!('role' in resource.data) && !('role' in request.resource.data)
+          || ('role' in resource.data) && ('role' in request.resource.data)
+             && request.resource.data.role == resource.data.role)
+        && (!('adminEnabled' in resource.data) && !('adminEnabled' in request.resource.data)
+          || ('adminEnabled' in resource.data) && ('adminEnabled' in request.resource.data)
+             && request.resource.data.adminEnabled == resource.data.adminEnabled)
+        && (!('capabilities' in resource.data) && !('capabilities' in request.resource.data)
+          || ('capabilities' in resource.data) && ('capabilities' in request.resource.data)
+             && request.resource.data.capabilities == resource.data.capabilities)
+        && (!('coins' in resource.data) && !('coins' in request.resource.data)
+          || ('coins' in resource.data) && ('coins' in request.resource.data)
+             && request.resource.data.coins == resource.data.coins)
+        && (!('diamonds' in resource.data) && !('diamonds' in request.resource.data)
+          || ('diamonds' in resource.data) && ('diamonds' in request.resource.data)
+             && request.resource.data.diamonds == resource.data.diamonds)
+        && (!('balance' in resource.data) && !('balance' in request.resource.data)
+          || ('balance' in resource.data) && ('balance' in request.resource.data)
+             && request.resource.data.balance == resource.data.balance)
+        && (!('level' in resource.data) && !('level' in request.resource.data)
+          || ('level' in resource.data) && ('level' in request.resource.data)
+             && request.resource.data.level == resource.data.level)
+        && (!('vipLevel' in resource.data) && !('vipLevel' in request.resource.data)
+          || ('vipLevel' in resource.data) && ('vipLevel' in request.resource.data)
+             && request.resource.data.vipLevel == resource.data.vipLevel)
+        && (!('publicBadges' in resource.data) && !('publicBadges' in request.resource.data)
+          || ('publicBadges' in resource.data) && ('publicBadges' in request.resource.data)
+             && request.resource.data.publicBadges == resource.data.publicBadges)
+        && (!('totalGiftsSent' in resource.data) && !('totalGiftsSent' in request.resource.data)
+          || ('totalGiftsSent' in resource.data) && ('totalGiftsSent' in request.resource.data)
+             && request.resource.data.totalGiftsSent == resource.data.totalGiftsSent)
+        && (!('totalGiftsReceived' in resource.data) && !('totalGiftsReceived' in request.resource.data)
+          || ('totalGiftsReceived' in resource.data) && ('totalGiftsReceived' in request.resource.data)
+             && request.resource.data.totalGiftsReceived == resource.data.totalGiftsReceived)
+        && (!('totalValueReceived' in resource.data) && !('totalValueReceived' in request.resource.data)
+          || ('totalValueReceived' in resource.data) && ('totalValueReceived' in request.resource.data)
+             && request.resource.data.totalValueReceived == resource.data.totalValueReceived)
+        && (!('publicIdHistory' in resource.data) && !('publicIdHistory' in request.resource.data)
+          || ('publicIdHistory' in resource.data) && ('publicIdHistory' in request.resource.data)
+             && request.resource.data.publicIdHistory == resource.data.publicIdHistory)
+        && (!('publicIdUpdatedAt' in resource.data) && !('publicIdUpdatedAt' in request.resource.data)
+          || ('publicIdUpdatedAt' in resource.data) && ('publicIdUpdatedAt' in request.resource.data)
+             && request.resource.data.publicIdUpdatedAt == resource.data.publicIdUpdatedAt)
+        && (!('publicIdUpdatedBy' in resource.data) && !('publicIdUpdatedBy' in request.resource.data)
+          || ('publicIdUpdatedBy' in resource.data) && ('publicIdUpdatedBy' in request.resource.data)
+             && request.resource.data.publicIdUpdatedBy == resource.data.publicIdUpdatedBy)
+        && (!('diamondPasswordSet' in resource.data) && !('diamondPasswordSet' in request.resource.data)
+          || ('diamondPasswordSet' in resource.data) && ('diamondPasswordSet' in request.resource.data)
+             && request.resource.data.diamondPasswordSet == resource.data.diamondPasswordSet)
+        && (!('diamondPasswordUpdatedAt' in resource.data) && !('diamondPasswordUpdatedAt' in request.resource.data)
+          || ('diamondPasswordUpdatedAt' in resource.data) && ('diamondPasswordUpdatedAt' in request.resource.data)
+             && request.resource.data.diamondPasswordUpdatedAt == resource.data.diamondPasswordUpdatedAt)
+        && (!('diamondPasswordHash' in resource.data) && !('diamondPasswordHash' in request.resource.data)
+          || ('diamondPasswordHash' in resource.data) && ('diamondPasswordHash' in request.resource.data)
+             && request.resource.data.diamondPasswordHash == resource.data.diamondPasswordHash)
+        && (!('diamondPasswordSalt' in resource.data) && !('diamondPasswordSalt' in request.resource.data)
+          || ('diamondPasswordSalt' in resource.data) && ('diamondPasswordSalt' in request.resource.data)
+             && request.resource.data.diamondPasswordSalt == resource.data.diamondPasswordSalt)
+        && (!('pendingGiftEarningCoins' in resource.data) && !('pendingGiftEarningCoins' in request.resource.data)
+          || ('pendingGiftEarningCoins' in resource.data) && ('pendingGiftEarningCoins' in request.resource.data)
+             && request.resource.data.pendingGiftEarningCoins == resource.data.pendingGiftEarningCoins)
+        && (!('giftEarningCoinsLifetime' in resource.data) && !('giftEarningCoinsLifetime' in request.resource.data)
+          || ('giftEarningCoinsLifetime' in resource.data) && ('giftEarningCoinsLifetime' in request.resource.data)
+             && request.resource.data.giftEarningCoinsLifetime == resource.data.giftEarningCoinsLifetime)
+        && (!('giftDiamondsLifetime' in resource.data) && !('giftDiamondsLifetime' in request.resource.data)
+          || ('giftDiamondsLifetime' in resource.data) && ('giftDiamondsLifetime' in request.resource.data)
+             && request.resource.data.giftDiamondsLifetime == resource.data.giftDiamondsLifetime)
+        && (!('giftSupportReceivedCoins' in resource.data) && !('giftSupportReceivedCoins' in request.resource.data)
+          || ('giftSupportReceivedCoins' in resource.data) && ('giftSupportReceivedCoins' in request.resource.data)
+             && request.resource.data.giftSupportReceivedCoins == resource.data.giftSupportReceivedCoins)
+        && (!('pendingAgencyGiftEarningCoins' in resource.data) && !('pendingAgencyGiftEarningCoins' in request.resource.data)
+          || ('pendingAgencyGiftEarningCoins' in resource.data) && ('pendingAgencyGiftEarningCoins' in request.resource.data)
+             && request.resource.data.pendingAgencyGiftEarningCoins == resource.data.pendingAgencyGiftEarningCoins)
+        && (!('giftRevenueMonth' in resource.data) && !('giftRevenueMonth' in request.resource.data)
+          || ('giftRevenueMonth' in resource.data) && ('giftRevenueMonth' in request.resource.data)
+             && request.resource.data.giftRevenueMonth == resource.data.giftRevenueMonth)
+        && (!('giftRevenueMonthCoins' in resource.data) && !('giftRevenueMonthCoins' in request.resource.data)
+          || ('giftRevenueMonthCoins' in resource.data) && ('giftRevenueMonthCoins' in request.resource.data)
+             && request.resource.data.giftRevenueMonthCoins == resource.data.giftRevenueMonthCoins)
+        && (!('currentGiftRevenueTier' in resource.data) && !('currentGiftRevenueTier' in request.resource.data)
+          || ('currentGiftRevenueTier' in resource.data) && ('currentGiftRevenueTier' in request.resource.data)
+             && request.resource.data.currentGiftRevenueTier == resource.data.currentGiftRevenueTier)
+        && (!('giftHostActivityMonth' in resource.data) && !('giftHostActivityMonth' in request.resource.data)
+          || ('giftHostActivityMonth' in resource.data) && ('giftHostActivityMonth' in request.resource.data)
+             && request.resource.data.giftHostActivityMonth == resource.data.giftHostActivityMonth)
+        && (!('giftHostMicSecondsMonth' in resource.data) && !('giftHostMicSecondsMonth' in request.resource.data)
+          || ('giftHostMicSecondsMonth' in resource.data) && ('giftHostMicSecondsMonth' in request.resource.data)
+             && request.resource.data.giftHostMicSecondsMonth == resource.data.giftHostMicSecondsMonth)
+        && (!('giftHostQualifiedDays' in resource.data) && !('giftHostQualifiedDays' in request.resource.data)
+          || ('giftHostQualifiedDays' in resource.data) && ('giftHostQualifiedDays' in request.resource.data)
+             && request.resource.data.giftHostQualifiedDays == resource.data.giftHostQualifiedDays)
+        && (!('giftHostActivityUpdatedAt' in resource.data) && !('giftHostActivityUpdatedAt' in request.resource.data)
+          || ('giftHostActivityUpdatedAt' in resource.data) && ('giftHostActivityUpdatedAt' in request.resource.data)
+             && request.resource.data.giftHostActivityUpdatedAt == resource.data.giftHostActivityUpdatedAt)
+        && (!('agencyId' in resource.data) && !('agencyId' in request.resource.data)
+          || ('agencyId' in resource.data) && ('agencyId' in request.resource.data)
+             && request.resource.data.agencyId == resource.data.agencyId);
+    }
+
+    function publicProfileAuthoritativeFieldsMatch(userId) {
+      let source = get(/databases/$(database)/documents/users/$(userId)).data;
+      return request.resource.data.level == source.get('level', 0)
+        && request.resource.data.vipLevel == source.get('vipLevel', 0)
+        && request.resource.data.badges == source.get('publicBadges', []);
+    }
+
     function conversationParticipant(conversationId) {
       return signedIn() && request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants;
     }
 
+    function follows(fromUid, toUid) {
+      return exists(/databases/$(database)/documents/follows/$(fromUid + '__' + toUid));
+    }
+
+    function mutualFollow(otherUid) {
+      return signedIn() && follows(request.auth.uid, otherUid) && follows(otherUid, request.auth.uid);
+    }
+
+    function blockedBetween(firstUid, secondUid) {
+      return exists(/databases/$(database)/documents/user_blocks/$(firstUid)/items/$(secondUid))
+        || exists(/databases/$(database)/documents/user_blocks/$(secondUid)/items/$(firstUid));
+    }
+
     match /users/{userId} {
-      allow create, read, update: if signedIn() && request.auth.uid == userId;
+      allow create: if signedIn() && request.auth.uid == userId
+        && request.resource.data.role == 'user'
+        && request.resource.data.coins == 0
+        && request.resource.data.diamonds == 0
+        && (!('balance' in request.resource.data) || request.resource.data.balance == 0)
+        && (!('level' in request.resource.data) || request.resource.data.level == 0)
+        && (!('vipLevel' in request.resource.data) || request.resource.data.vipLevel == 0)
+        && !('publicBadges' in request.resource.data)
+        && !('totalGiftsSent' in request.resource.data)
+        && !('totalGiftsReceived' in request.resource.data)
+        && !('totalValueReceived' in request.resource.data)
+        && !('publicId' in request.resource.data)
+        && !('publicIdHistory' in request.resource.data)
+        && !('publicIdUpdatedAt' in request.resource.data)
+        && !('publicIdUpdatedBy' in request.resource.data)
+        && !('pendingGiftEarningCoins' in request.resource.data)
+        && !('pendingAgencyGiftEarningCoins' in request.resource.data)
+        && !('giftEarningCoinsLifetime' in request.resource.data)
+        && !('giftDiamondsLifetime' in request.resource.data)
+        && !('giftSupportReceivedCoins' in request.resource.data)
+        && !('giftRevenueMonth' in request.resource.data)
+        && !('giftRevenueMonthCoins' in request.resource.data)
+        && !('currentGiftRevenueTier' in request.resource.data)
+        && !('giftHostActivityMonth' in request.resource.data)
+        && !('giftHostMicSecondsMonth' in request.resource.data)
+        && !('giftHostQualifiedDays' in request.resource.data)
+        && !('giftHostActivityUpdatedAt' in request.resource.data)
+        && !('agencyId' in request.resource.data)
+        && !('diamondPasswordSet' in request.resource.data)
+        && !('diamondPasswordUpdatedAt' in request.resource.data)
+        && !('diamondPasswordHash' in request.resource.data)
+        && !('diamondPasswordSalt' in request.resource.data);
+      allow read: if signedIn() && (request.auth.uid == userId || hasCapability('viewUsers'));
+      allow update: if signedIn() && request.auth.uid == userId
+        && protectedUserFieldsUnchanged()
+        && publicIdTransitionAllowed(userId);
       allow delete: if false;
+    }
+
+    match /admin_audit_logs/{logId} {
+      allow read: if hasCapability('viewAuditLog');
+      allow create, update, delete: if false;
+    }
+
+    match /financial_ledger/{entryId} {
+      allow read: if isOwner() || hasCapability('manageEconomy') || hasCapability('manageSettlements');
+      allow create, update, delete: if false;
+    }
+
+    match /wallet_private/{userId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /wallet_operations/{operationId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /wallet_transfers/{transferId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /gift_transactions/{transactionId} {
+      allow read: if signedIn()
+        && (resource.data.senderId == request.auth.uid
+          || resource.data.receiverId == request.auth.uid
+          || isOwner()
+          || hasCapability('manageEconomy'));
+      allow create, update, delete: if false;
+    }
+
+    match /gift_operations/{operationId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /gift_user_stats/{userId}/{document=**} {
+      allow read: if signedIn()
+        && (request.auth.uid == userId
+          || isOwner()
+          || hasCapability('manageEconomy'));
+      allow create, update, delete: if false;
+    }
+
+    match /agency_support_stats/{agencyId}/{document=**} {
+      allow read: if isOwner()
+        || hasCapability('manageEconomy')
+        || hasCapability('manageAgencies');
+      allow create, update, delete: if false;
+    }
+
+    match /google_play_purchases/{purchaseId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /system_config/{configId} {
+      allow read: if signedIn();
+      allow create, update, delete: if false;
+    }
+
+    match /agency_settlements/{settlementId} {
+      allow read: if isOwner() || hasCapability('manageSettlements') || hasCapability('manageAgencies');
+      allow create, update, delete: if false;
+    }
+
+    match /agency_settlement_accruals/{accrualId} {
+      allow read: if isOwner()
+        || hasCapability('manageEconomy')
+        || hasCapability('manageSettlements')
+        || hasCapability('manageAgencies');
+      allow create, update, delete: if false;
+    }
+
+    match /host_mic_activity/{userId}/{document=**} {
+      allow read: if signedIn()
+        && (request.auth.uid == userId
+          || isOwner()
+          || hasCapability('manageEconomy')
+          || hasCapability('manageSettlements')
+          || hasCapability('manageAgencies'));
+      allow create, update, delete: if false;
     }
 
     match /public_profiles/{userId} {
@@ -16,20 +277,48 @@ service cloud.firestore {
       allow create, update: if signedIn()
         && request.auth.uid == userId
         && request.resource.data.uid == request.auth.uid
+        && request.resource.data.publicId == get(/databases/$(database)/documents/users/$(userId)).data.get('publicId', '')
+        && request.resource.data.searchTokens is list
+        && request.resource.data.searchTokens.size() <= 512
+        && request.resource.data.interests is list
+        && request.resource.data.interests.size() <= 30
+        && request.resource.data.badges is list
+        && request.resource.data.badges.size() <= 20
+        && publicProfileAuthoritativeFieldsMatch(userId)
         && request.resource.data.keys().hasOnly([
-          'uid','displayName','username','publicId','profileImageUrl','profileAvatarAsset',
-          'bio','location','level','vipLevel','isOnline','createdAt','updatedAt'
+          'uid','displayName','username','publicId','searchTokens','profileImageUrl','profileAvatarAsset',
+          'coverImageUrl','bio','location','interests','level','vipLevel','badges','isOnline','createdAt','updatedAt'
         ]);
       allow delete: if false;
+    }
+
+    match /public_gift_showcases/{userId} {
+      allow read: if signedIn();
+      allow create, update, delete: if false;
+
+      match /items/{giftId} {
+        allow read: if signedIn();
+        allow create, update, delete: if false;
+      }
     }
 
     match /public_ids/{publicId} {
       allow get: if signedIn();
       allow list: if false;
       allow create: if signedIn()
+        && publicId.matches('^[0-9]{6}$')
         && request.resource.data.uid == request.auth.uid
-        && !exists(/databases/$(database)/documents/public_ids/$(publicId));
+        && request.resource.data.keys().hasOnly(['uid','createdAt'])
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.publicId == publicId
+        && !exists(/databases/$(database)/documents/public_ids/$(publicId))
+        && !exists(/databases/$(database)/documents/room_ids/$(publicId));
       allow update, delete: if false;
+    }
+
+    match /room_ids/{publicId} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create, update, delete: if false;
     }
 
     match /usernames/{username} {
@@ -41,9 +330,100 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    match /rooms/{roomId} {
+      allow read: if signedIn();
+      allow create, update, delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if signedIn();
+        allow create, update, delete: if false;
+      }
+
+      match /supporters/{supporterId} {
+        allow read: if signedIn();
+        allow create, update, delete: if false;
+      }
+
+      match /support_daily/{periodId}/{document=**} {
+        allow read: if signedIn();
+        allow create, update, delete: if false;
+      }
+
+      match /support_weekly/{periodId}/{document=**} {
+        allow read: if signedIn();
+        allow create, update, delete: if false;
+      }
+
+      match /support_monthly/{periodId}/{document=**} {
+        allow read: if signedIn();
+        allow create, update, delete: if false;
+      }
+    }
+
+    match /room_bans/{roomId} {
+      allow read, write: if false;
+
+      match /users/{userId} {
+        allow get: if signedIn() && request.auth.uid == userId;
+        allow list, create, update, delete: if false;
+      }
+    }
+
+    match /follows/{followId} {
+      allow read: if signedIn();
+      allow create, update, delete: if false;
+    }
+
+    match /gifts/{giftId} {
+      allow read: if signedIn();
+      allow create, update, delete: if false;
+    }
+
+    match /conversation_hides/{userId} {
+      allow read, write: if false;
+      match /items/{conversationId} {
+        allow read: if signedIn() && request.auth.uid == userId;
+        allow create: if signedIn()
+          && request.auth.uid == userId
+          && request.resource.data.keys().hasOnly(['hiddenAt'])
+          && request.resource.data.hiddenAt == request.time;
+        allow delete: if signedIn() && request.auth.uid == userId;
+        allow update: if false;
+      }
+    }
+
+    match /user_blocks/{userId} {
+      allow read, write: if false;
+      match /items/{blockedUid} {
+        allow read: if signedIn()
+          && (request.auth.uid == userId || hasCapability('manageUsers'));
+        allow create, update, delete: if false;
+      }
+    }
+
+    match /reports/{reportId} {
+      allow read: if hasCapability('viewReports');
+      allow create, update, delete: if false;
+    }
+
+    match /message_rate_limits/{userId} {
+      allow read, write: if false;
+    }
+
+    match /report_rate_limits/{userId} {
+      allow read, write: if false;
+    }
+
+    match /report_operations/{operationId} {
+      allow read, write: if false;
+    }
+
     match /conversations/{conversationId} {
       allow read: if signedIn() && request.auth.uid in resource.data.participants;
       allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'participants','createdAt','updatedAt','unreadCounts'
+        ])
         && request.resource.data.participants is list
         && request.resource.data.participants.size() == 2
         && request.auth.uid in request.resource.data.participants;
@@ -59,10 +439,16 @@ service cloud.firestore {
         allow read: if conversationParticipant(conversationId);
         allow create: if conversationParticipant(conversationId)
           && request.resource.data.senderId == request.auth.uid
-          && request.resource.data.type == 'text'
-          && request.resource.data.text is string
-          && request.resource.data.text.size() > 0
-          && request.resource.data.text.size() <= 2000;
+          && request.resource.data.type == 'image'
+          && request.resource.data.receiverId is string
+          && request.resource.data.receiverId != request.auth.uid
+          && request.resource.data.receiverId in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants
+          && mutualFollow(request.resource.data.receiverId)
+          && !blockedBetween(request.auth.uid, request.resource.data.receiverId)
+          && request.resource.data.imageUrl is string
+          && request.resource.data.imageUrl.size() > 0
+          && request.resource.data.storagePath is string
+          && request.resource.data.storagePath.size() > 0;
         allow update, delete: if false;
       }
     }

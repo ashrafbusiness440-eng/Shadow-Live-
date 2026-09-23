@@ -1,0 +1,15 @@
+{
+  "name": "Shadow Live",
+  "short_name": "Shadow Live",
+  "start_url": ".",
+  "scope": "/app/",
+  "display": "standalone",
+  "background_color": "#020711",
+  "theme_color": "#8A00FF",
+  "description": "Shadow Live - تطبيق اجتماعي صوتي",
+  "orientation": "portrait-primary",
+  "prefer_related_applications": false,
+  "icons": [
+    {"src":"assets/assets/images/app_icon.png","sizes":"any","type":"image/png","purpose":"any maskable"}
+  ]
+}

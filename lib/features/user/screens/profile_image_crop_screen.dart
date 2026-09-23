@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:crop_your_image/crop_your_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 class ProfileImageCropScreen extends StatefulWidget {
   final Uint8List imageData;
@@ -13,6 +14,15 @@ class ProfileImageCropScreen extends StatefulWidget {
 class _ProfileImageCropScreenState extends State<ProfileImageCropScreen> {
   final _controller = CropController();
   bool _cropping = false;
+
+  void _approve() {
+    if (kIsWeb) {
+      Navigator.pop(context, widget.imageData);
+      return;
+    }
+    setState(() => _cropping = true);
+    _controller.crop();
+  }
 
   @override
   Widget build(BuildContext context) => Directionality(
@@ -57,12 +67,47 @@ class _ProfileImageCropScreenState extends State<ProfileImageCropScreen> {
         )),
         Padding(
           padding: const EdgeInsets.all(18),
-          child: SizedBox(width:double.infinity,child:FilledButton.icon(
-            onPressed: _cropping ? null : () { setState(() => _cropping = true); _controller.crop(); },
-            style: FilledButton.styleFrom(backgroundColor:const Color(0xFF8B5CF6),padding:const EdgeInsets.symmetric(vertical:16)),
-            icon: const Icon(Icons.crop_rounded),
-            label: Text(_cropping ? 'جارٍ تجهيز الصورة...' : 'اعتماد الصورة'),
-          )),
+          child: kIsWeb
+              ? Semantics(
+                  button: true,
+                  enabled: true,
+                  label: 'اعتماد الصورة',
+                  onTap: _approve,
+                  child: ExcludeSemantics(
+                    child: GestureDetector(
+                      onTap: _approve,
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF8B5CF6),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        alignment: Alignment.center,
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.crop_rounded, color: Colors.white),
+                            SizedBox(width: 8),
+                            Text('اعتماد الصورة', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              : SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _cropping ? null : _approve,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF8B5CF6),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    ),
+                    icon: const Icon(Icons.crop_rounded),
+                    label: Text(_cropping ? 'جارٍ تجهيز الصورة...' : 'اعتماد الصورة'),
+                  ),
+                ),
         ),
       ]),
     ),
