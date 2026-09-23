@@ -11,6 +11,7 @@ import {
   slotReelsForOutcome,
   totalStake,
   validIdempotencyKey,
+  validateBetLadder,
   validateOutcomeWeights,
 } from "./game-engine.js";
 
@@ -520,6 +521,44 @@ export async function settleDueGameOperations(
   return {checked:snapshot.size,settled:results.filter(x=>x.ok).length,results};
 }
 
+export async function gameCatalog(db){
+  const configSnap=await db.collection("system_config").doc("game_runtime").get();
+  const config=runtimeConfig(configSnap.exists?configSnap.data()||{}:{});
+  const items=[];
+
+  const add=(key,gameId,mode,label)=>{
+    try{
+      const selected=gameConfig(config,gameId,mode);
+      items.push({
+        key,
+        gameId,
+        mode,
+        label,
+        targetRtpBps:selected.targetRtpBps,
+        bets:[...validateBetLadder(gameId,mode,selected.bets)],
+      });
+    }catch(error){
+      if(clean(error?.message)!=="game_disabled"&&
+        clean(error?.message)!=="games_disabled"){
+        throw error;
+      }
+    }
+  };
+
+  add("greedy_cat","greedy_cat","","القط الجشع");
+  add("witch_normal","witch","normal","الساحرة — عادي");
+  add("witch_advanced","witch","advanced","الساحرة — متقدم");
+  add("slot","slot","","Shadow Slot");
+
+  return {
+    ok:true,
+    engineEnabled:config.enabled===true,
+    timezoneOffsetMinutes:config.timezoneOffsetMinutes,
+    roundDurationSeconds:config.roundDurationSeconds,
+    items,
+  };
+}
+
 export async function gameState(db,uid,body={},options={}){
   const gameId=clean(body.gameId);
   const mode=gameId==="witch"?clean(body.mode||"normal"):"";
@@ -536,6 +575,34 @@ export async function gameState(db,uid,body={},options={}){
     key:"state_preview",
     nowMs,
   });
+  let lastResult=null;
+  if(gameId!=="slot"){
+    const previousNow=Math.max(0,nowMs-config.roundDurationSeconds*1000);
+    const previous=buildRound({
+      config,
+      gameId,
+      mode,
+      uid,
+      key:"previous_preview",
+      nowMs:previousNow,
+    });
+    if(previous.roundId!==round.roundId){
+      const resolved=resolveOutcome({
+        gameId,
+        mode,
+        outcomes:selected.outcomes,
+        roundId:previous.roundId,
+        secret:options.rngSecret||process.env.GAME_RNG_SECRET,
+      });
+      lastResult={
+        roundId:previous.roundId,
+        dayKey:previous.dayKey,
+        roundNumber:previous.roundNumber,
+        outcomeId:resolved.outcomeId,
+        closedAtMs:previous.closesAtMs,
+      };
+    }
+  }
   const pendingSnapshot=await db.collection("game_operations")
     .where("userId","==",uid)
     .limit(50)
@@ -569,6 +636,9 @@ export async function gameState(db,uid,body={},options={}){
     mode,
     enabled:selected.enabled===true,
     targetRtpBps:selected.targetRtpBps,
+    bets:[...validateBetLadder(gameId,mode,selected.bets)],
+    serverNowMs:nowMs,
+    lastResult,
     round:gameId==="slot"?null:{
       roundId:round.roundId,
       dayKey:round.dayKey,
@@ -599,6 +669,9 @@ export async function handler(req,res){
     if(req.method!=="POST")return out(res,405,{ok:false,code:"method_not_allowed"});
     const {uid}=await actor(req);
     const action=clean(req.body?.action);
+    if(action==="catalog"){
+      return out(res,200,await gameCatalog(db));
+    }
     if(action==="placeBet"){
       const result=await placeGameBet(db,uid,req.body||{});
       return out(res,200,result);
