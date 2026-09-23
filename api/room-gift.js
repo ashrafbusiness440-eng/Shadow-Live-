@@ -541,7 +541,7 @@ const result = await db.runTransaction(async (tx) => {
     unitCoins,
     totalCost,
     assetKey,
-    policyMode: clean(economy.policyMode || "legacy"),
+    policyMode: "tiered_host_agency",
     revenueTierId: revenue.tierId,
     revenueTierName: revenue.tierName,
     revenueTierMinGiftCoins: revenue.tierMinGiftCoins,
