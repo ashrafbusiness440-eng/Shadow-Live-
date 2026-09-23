@@ -11,17 +11,19 @@ class RoomGameOverlaySheet extends StatefulWidget {
     super.key,
     required this.roomId,
     this.initialGameKey,
+    this.runtimeService,
   });
 
   final String roomId;
   final String? initialGameKey;
+  final GameRuntimeService? runtimeService;
 
   @override
   State<RoomGameOverlaySheet> createState() => _RoomGameOverlaySheetState();
 }
 
 class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
-  final GameRuntimeService _service = GameRuntimeService();
+  late final GameRuntimeService _service;
   Timer? _poller;
   Timer? _ticker;
 
@@ -31,6 +33,8 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
   GameBetResult? _slotResult;
   bool _loading = true;
   bool _placing = false;
+  bool _autoPlaying = false;
+  int? _autoBetAmount;
   bool _minimized = false;
   bool _maximized = false;
   String? _error;
@@ -44,6 +48,7 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
   @override
   void initState() {
     super.initState();
+    _service = widget.runtimeService ?? GameRuntimeService();
     _loadCatalog();
     _ticker = Timer.periodic(
       const Duration(seconds: 1),
@@ -55,9 +60,12 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
 
   @override
   void dispose() {
+    _autoPlaying = false;
     _poller?.cancel();
     _ticker?.cancel();
-    _service.close();
+    if (widget.runtimeService == null) {
+      _service.close();
+    }
     super.dispose();
   }
 
@@ -193,10 +201,14 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
         : game?.bets ?? const <int>[];
   }
 
-  Future<void> _placeChoice(String choiceId) async {
+  Future<bool> _placeChoice(
+    String choiceId, {
+    int? amountOverride,
+    bool silent = false,
+  }) async {
     final game = _selected;
-    final amount = _currentBet;
-    if (game == null || amount <= 0 || _placing) return;
+    final amount = amountOverride ?? _currentBet;
+    if (game == null || amount <= 0 || _placing) return false;
     setState(() {
       _placing = true;
       _error = null;
@@ -208,21 +220,60 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
         amountCoins: amount,
         choiceId: choiceId,
       );
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() => _slotResult = result);
       await _loadState(silent: true);
-      if (!mounted) return;
-      final text = game.gameId == 'slot'
-          ? 'تمت اللفة • الدفع: ${_coins(result.payoutCoins ?? 0)}'
-          : 'تمت إضافة ${_coins(amount)} على الخيار';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(text)),
-      );
+      if (!mounted) return false;
+      if (!silent) {
+        final text = game.gameId == 'slot'
+            ? 'تمت اللفة • الدفع: ${_coins(result.payoutCoins ?? 0)}'
+            : 'تمت إضافة ${_coins(amount)} على الخيار';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(text)),
+        );
+      }
+      return true;
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() => _error = _message(error));
+      return false;
     } finally {
       if (mounted) setState(() => _placing = false);
+    }
+  }
+
+  Future<void> _toggleAutoPlay() async {
+    if (_selected?.gameId != 'slot') return;
+    if (_autoPlaying) {
+      setState(() {
+        _autoPlaying = false;
+        _autoBetAmount = null;
+      });
+      return;
+    }
+    final fixedBet = _currentBet;
+    if (fixedBet <= 0) return;
+    setState(() {
+      _autoPlaying = true;
+      _autoBetAmount = fixedBet;
+      _error = null;
+    });
+    while (mounted && _autoPlaying && _selected?.gameId == 'slot') {
+      final ok = await _placeChoice(
+        'spin',
+        amountOverride: fixedBet,
+        silent: true,
+      );
+      if (!ok || !mounted) {
+        if (mounted) {
+          setState(() {
+            _autoPlaying = false;
+            _autoBetAmount = null;
+          });
+        }
+        break;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 900));
     }
   }
 
@@ -687,7 +738,7 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
       child: Row(
         children: [
           IconButton(
-            onPressed: _placing || _betIndex <= 0
+            onPressed: _placing || _autoPlaying || _betIndex <= 0
                 ? null
                 : () => setState(() => _betIndex--),
             icon: const Icon(Icons.remove_rounded),
@@ -711,7 +762,7 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
             ),
           ),
           IconButton(
-            onPressed: _placing || _betIndex >= values.length - 1
+            onPressed: _placing || _autoPlaying || _betIndex >= values.length - 1
                 ? null
                 : () => setState(() => _betIndex++),
             icon: const Icon(Icons.add_rounded),
@@ -925,13 +976,13 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
         ],
         const SizedBox(height: 12),
         FilledButton.icon(
-          onPressed: _placing ? null : () => _placeChoice('spin'),
+          onPressed: _placing || _autoPlaying ? null : () => _placeChoice('spin'),
           style: FilledButton.styleFrom(
             backgroundColor: _cyan,
             foregroundColor: const Color(0xFF041018),
             minimumSize: const Size.fromHeight(48),
           ),
-          icon: _placing
+          icon: _placing && !_autoPlaying
               ? const SizedBox(
                   width: 17,
                   height: 17,
@@ -940,6 +991,27 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
               : const Icon(Icons.casino_rounded),
           label: Text(
             'Spin • ${_coins(_currentBet)} Coins',
+            style: const TextStyle(fontWeight: FontWeight.w900),
+          ),
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: _placing && !_autoPlaying ? null : _toggleAutoPlay,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: _autoPlaying ? Colors.orangeAccent : _cyan,
+            side: BorderSide(
+              color: (_autoPlaying ? Colors.orangeAccent : _cyan)
+                  .withValues(alpha: .65),
+            ),
+            minimumSize: const Size.fromHeight(44),
+          ),
+          icon: Icon(
+            _autoPlaying ? Icons.stop_circle_rounded : Icons.autorenew_rounded,
+          ),
+          label: Text(
+            _autoPlaying
+                ? 'إيقاف Auto Play • ${_coins(_autoBetAmount ?? _currentBet)}'
+                : 'Auto Play • نفس الرهان حتى الإيقاف',
             style: const TextStyle(fontWeight: FontWeight.w900),
           ),
         ),
