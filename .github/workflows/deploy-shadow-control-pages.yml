@@ -2,7 +2,7 @@ name: Deploy Shadow Live + Shadow Control to GitHub Pages
 
 on:
   push:
-    branches: [main, phase8-games]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -11,43 +11,78 @@ permissions:
   id-token: write
 
 concurrency:
-  group: shadow-live-pages
-  cancel-in-progress: true
+  group: shadow-live-pages-production
+  cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout exact production commit
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 1
 
-      - name: Set up Flutter
+      - name: Set up pinned Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.47.2'
           channel: stable
           cache: true
 
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Verify production source before build
+        run: |
+          grep -q "GamesHubScreen" lib/features/main/screens/main_shell_screen.dart
+          grep -q "greedy_cat" lib/features/games/screens/games_hub_screen.dart
+          grep -q "assets/images/games/greedy_cat" lib/admin/control_asset_policy.dart
+          grep -q "assets/images/games/witch" lib/admin/control_asset_policy.dart
+          grep -q "assets/images/games/slot" lib/admin/control_asset_policy.dart
+
       - name: Build Shadow Control
         run: |
+          rm -rf build/web site
           flutter build web --release --pwa-strategy=none --target lib/main_control.dart --base-href /Shadow-Live-/
-          rm -rf site
           mkdir -p site
           cp -R build/web/. site/
 
+      - name: Verify Shadow Control build
+        run: |
+          test -f site/main.dart.js
+          grep -q "assets/images/games/greedy_cat" site/main.dart.js
+          grep -q "assets/images/games/witch" site/main.dart.js
+          grep -q "assets/images/games/slot" site/main.dart.js
+
       - name: Build Shadow Live app
         run: |
+          rm -rf build/web
           flutter build web --release --pwa-strategy=none --target lib/main.dart --base-href /Shadow-Live-/app/
           mkdir -p site/app
           cp -R build/web/. site/app/
+
+      - name: Verify Shadow Live build
+        run: |
+          test -f site/app/main.dart.js
+          grep -q "greedy_cat" site/app/main.dart.js
+          grep -q "witch" site/app/main.dart.js
+          grep -q "slot" site/app/main.dart.js
+
+      - name: Add immutable deployment markers
+        run: |
+          printf '{"commit":"%s","ref":"%s","run_id":"%s","built_at":"%s"}\n' \
+            "$GITHUB_SHA" "$GITHUB_REF_NAME" "$GITHUB_RUN_ID" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            > site/deploy.json
+          cp site/deploy.json site/app/deploy.json
+          touch site/.nojekyll
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v4
         with:
           path: site
 
@@ -58,6 +93,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - name: Deploy to GitHub Pages
+      - name: Deploy exact verified artifact
         id: deployment
         uses: actions/deploy-pages@v4
