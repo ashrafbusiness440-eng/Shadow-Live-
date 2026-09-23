@@ -10,7 +10,9 @@ const MAX_BYTES=2500000;
 const ALLOWED_DIRS=new Set([
  "assets/images","assets/images/avatars","assets/images/coins","assets/images/badges","assets/images/vip",
  "assets/images/levels","assets/images/roles","assets/images/frames","assets/images/gifts","assets/images/rooms",
- "assets/images/backgrounds","assets/images/banners","assets/images/games","assets/images/store","assets/images/misc"
+ "assets/images/backgrounds","assets/images/banners","assets/images/games",
+ "assets/images/games/greedy_cat","assets/images/games/witch","assets/images/games/slot",
+ "assets/images/store","assets/images/misc"
 ]);
 const ALLOWED_EXTS=new Set(["png","jpg","jpeg","webp","gif"]);
 
