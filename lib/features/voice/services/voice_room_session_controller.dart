@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../room/services/room_presence_service.dart';
+import '../../room/services/room_seat_service.dart';
 import 'voice_service.dart';
 import 'zego_voice_service.dart';
 
@@ -17,6 +18,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
 
   final VoiceService _voiceService = ZegoVoiceService();
   final RoomPresenceService _presenceService = RoomPresenceService();
+  final RoomSeatService _seatService = RoomSeatService();
 
   StreamSubscription<VoiceConnectionState>? _connectionSubscription;
   StreamSubscription<VoiceMicState>? _micSubscription;
@@ -183,6 +185,14 @@ class VoiceRoomSessionController extends ChangeNotifier {
       await _voiceService.stopRoomMedia();
     } catch (_) {}
     _localRoomMusic.clear();
+  }
+
+  Future<void> _announceEntrance(String targetRoomId) async {
+    try {
+      await _seatService.announceEntrance(targetRoomId);
+    } catch (_) {
+      // Entrance cosmetics must never block joining the room.
+    }
   }
 
   Future<void> _startPresence(String targetRoomId) async {
@@ -360,6 +370,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
       _watchRoomLifecycle(targetRoomId);
       _watchRoomBan(targetRoomId);
       _watchRoomMusic(targetRoomId);
+      unawaited(_announceEntrance(targetRoomId));
       unawaited(_startPresence(targetRoomId));
     } catch (error) {
       _active = false;
@@ -447,6 +458,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
       await _voiceService.dispose();
     }
     _presenceService.close();
+    _seatService.close();
     _serviceInitialized = false;
   }
 }
