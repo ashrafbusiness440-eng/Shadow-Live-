@@ -113,8 +113,10 @@ class DiamondWalletService {
 
   static String _operationKey(String prefix) {
     final random = Random.secure();
-    final a = random.nextInt(1 << 32).toRadixString(16).padLeft(8, '0');
-    final b = random.nextInt(1 << 32).toRadixString(16).padLeft(8, '0');
+    // Dart Web bitwise operators are 32-bit, so `1 << 32` becomes 0.
+    // Keep the bound safely below 2^31 and combine chunks for entropy.
+    final a = random.nextInt(0x7fffffff).toRadixString(16).padLeft(8, '0');
+    final b = random.nextInt(0x7fffffff).toRadixString(16).padLeft(8, '0');
     return prefix +
         '_' +
         DateTime.now().microsecondsSinceEpoch.toString() +
