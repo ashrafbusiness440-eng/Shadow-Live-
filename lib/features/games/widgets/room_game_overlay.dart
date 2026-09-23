@@ -341,6 +341,29 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
     }
   }
 
+  String? _heroAsset(GameCatalogEntry? game) {
+    if (game == null) return null;
+    switch (game.gameId) {
+      case 'greedy_cat':
+        return GameAssetPaths.greedyMascot;
+      case 'witch':
+        return GameAssetPaths.witchCharacter;
+      case 'slot':
+        return GameAssetPaths.slotCover;
+      default:
+        return null;
+    }
+  }
+
+  String? _outcomeAsset(String id) {
+    if (id == 'salad') return GameAssetPaths.greedySalad;
+    if (id == 'pizza') return GameAssetPaths.greedyPizza;
+    if (id == 'jackpot') return GameAssetPaths.slotJackpot;
+    return GameAssetPaths.greedyChoices[id] ??
+        GameAssetPaths.witchSymbols[id] ??
+        GameAssetPaths.slotSymbols[id];
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.sizeOf(context).height;
@@ -401,16 +424,25 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
               color: _accent.withValues(alpha: .14),
               borderRadius: BorderRadius.circular(14),
             ),
-            child: Icon(
-              game == null
-                  ? Icons.sports_esports_rounded
-                  : game.gameId == 'greedy_cat'
-                      ? Icons.pets_rounded
-                      : game.gameId == 'witch'
-                          ? Icons.auto_awesome_rounded
-                          : Icons.casino_rounded,
-              color: _accent,
-            ),
+            clipBehavior: Clip.antiAlias,
+            child: _heroAsset(game) == null
+                ? Icon(
+                    Icons.sports_esports_rounded,
+                    color: _accent,
+                  )
+                : Image.asset(
+                    _heroAsset(game)!,
+                    fit: BoxFit.cover,
+                    filterQuality: FilterQuality.medium,
+                    errorBuilder: (_, __, ___) => Icon(
+                      game?.gameId == 'greedy_cat'
+                          ? Icons.pets_rounded
+                          : game?.gameId == 'witch'
+                              ? Icons.auto_awesome_rounded
+                              : Icons.casino_rounded,
+                      color: _accent,
+                    ),
+                  ),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -702,6 +734,8 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
     final round = _state?.round;
     final number = (round?['roundNumber'] as num?)?.toInt() ?? 0;
     final last = _state?.lastResult;
+    final lastOutcome = (last?['outcomeId'] ?? '').toString();
+    final lastAsset = last == null ? null : _outcomeAsset(lastOutcome);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -749,7 +783,26 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
               ],
             ),
           ),
-          Icon(Icons.public_rounded, color: _accent, size: 20),
+          if (lastAsset != null) ...[
+            const SizedBox(width: 8),
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                color: Colors.black.withValues(alpha: .20),
+              ),
+              padding: const EdgeInsets.all(4),
+              child: Image.asset(
+                lastAsset,
+                fit: BoxFit.contain,
+                filterQuality: FilterQuality.medium,
+                errorBuilder: (_, __, ___) =>
+                    Icon(Icons.public_rounded, color: _accent, size: 20),
+              ),
+            ),
+          ] else
+            Icon(Icons.public_rounded, color: _accent, size: 20),
         ],
       ),
     );
@@ -1039,6 +1092,18 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
         ),
         if (result != null) ...[
           const SizedBox(height: 9),
+          if (result.outcomeId == 'jackpot')
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: SizedBox(
+                height: 58,
+                child: Image.asset(
+                  GameAssetPaths.slotJackpot,
+                  fit: BoxFit.contain,
+                  filterQuality: FilterQuality.medium,
+                ),
+              ),
+            ),
           Text(
             'النتيجة: ${_outcomeLabel(result.outcomeId ?? '')} • '
             'الدفع ${_coins(result.payoutCoins ?? 0)}',
