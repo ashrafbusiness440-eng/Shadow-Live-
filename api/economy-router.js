@@ -5,6 +5,7 @@ import { handler as rechargeConfig } from "../server/economy/recharge-config.js"
 import { handler as roomRocketConfig } from "../server/economy/room-rocket-config.js";
 import { handler as roomRocketRuntime } from "../server/economy/room-rocket-runtime.js";
 import { handler as rewardInventory } from "../server/economy/reward-inventory.js";
+import { handler as gameRuntime } from "../server/games/game-runtime.js";
 
 const routes = {
   "economy-control": economyControl,
@@ -14,6 +15,7 @@ const routes = {
   "room-rocket-config": roomRocketConfig,
   "room-rocket": roomRocketRuntime,
   "reward-inventory": rewardInventory,
+  "game-runtime": gameRuntime,
 };
 
 export default async function handler(req, res) {
