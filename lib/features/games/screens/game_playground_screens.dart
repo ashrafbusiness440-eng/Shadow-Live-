@@ -19,6 +19,23 @@ String _formatCoins(int value) {
   return '$value';
 }
 
+String _dayKey() {
+  final now = DateTime.now();
+  return '${now.year}-${now.month}-${now.day}';
+}
+
+class _RoundResult {
+  const _RoundResult({
+    required this.round,
+    required this.label,
+    required this.multiplier,
+  });
+
+  final int round;
+  final String label;
+  final String multiplier;
+}
+
 class GreedyCatGameScreen extends StatefulWidget {
   const GreedyCatGameScreen({super.key});
 
