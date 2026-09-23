@@ -59,7 +59,7 @@ function choiceMap(gameId,mode){
   throw Error("unsupported_game");
 }
 
-export function normalizeSelections(gameId,mode,rawSelections){
+export function normalizeBetEvents(gameId,mode,rawSelections){
   if(!GAME_IDS.includes(gameId))throw Error("unsupported_game");
   if(gameId==="slot"){
     const amount=Number(Array.isArray(rawSelections)
@@ -72,27 +72,50 @@ export function normalizeSelections(gameId,mode,rawSelections){
   if(gameId==="witch"&&!["normal","advanced"].includes(mode)){
     throw Error("invalid_mode");
   }
-  if(!Array.isArray(rawSelections)||rawSelections.length<1||rawSelections.length>8){
+  if(!Array.isArray(rawSelections)||rawSelections.length<1||rawSelections.length>100){
     throw Error("invalid_bets");
   }
   const choices=choiceMap(gameId,mode);
   const ladder=allowedBetSet(gameId,mode);
-  const seen=new Set();
-  const normalized=[];
+  const events=[];
   for(const raw of rawSelections){
     const choiceId=clean(raw?.choiceId);
     const amountCoins=Number(raw?.amountCoins);
     if(!Object.prototype.hasOwnProperty.call(choices,choiceId)){
       throw Error("invalid_choice");
     }
-    if(seen.has(choiceId))throw Error("duplicate_choice");
     if(!Number.isSafeInteger(amountCoins)||!ladder.has(amountCoins)){
       throw Error("invalid_bet");
     }
-    seen.add(choiceId);
-    normalized.push(Object.freeze({choiceId,amountCoins}));
+    events.push(Object.freeze({choiceId,amountCoins}));
   }
-  return Object.freeze(normalized);
+  return Object.freeze(events);
+}
+
+export function normalizeSelections(gameId,mode,rawSelections){
+  const events=normalizeBetEvents(gameId,mode,rawSelections);
+  if(gameId==="slot")return events;
+
+  const merged=new Map();
+  for(const event of events){
+    const previous=merged.get(event.choiceId)||{amountCoins:0,entryCount:0};
+    const nextAmount=previous.amountCoins+event.amountCoins;
+    if(!Number.isSafeInteger(nextAmount)||nextAmount<=0){
+      throw Error("invalid_bet");
+    }
+    merged.set(event.choiceId,{
+      amountCoins:nextAmount,
+      entryCount:previous.entryCount+1,
+    });
+  }
+
+  return Object.freeze(
+    [...merged.entries()].map(([choiceId,value])=>Object.freeze({
+      choiceId,
+      amountCoins:value.amountCoins,
+      entryCount:value.entryCount,
+    })),
+  );
 }
 
 export function totalStake(selections){
