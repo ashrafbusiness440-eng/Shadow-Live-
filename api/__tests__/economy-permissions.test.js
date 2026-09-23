@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {economyPermissions} from "../economy-permissions.js";
+import {economyPermissions} from "../../server/economy/economy-permissions.js";
 
 test("ordinary users cannot access economy controls or settlement",()=>{
   const p=economyPermissions({role:"user",adminEnabled:false,capabilities:[]});
