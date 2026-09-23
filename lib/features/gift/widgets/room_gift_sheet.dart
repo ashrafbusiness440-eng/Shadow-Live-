@@ -149,11 +149,27 @@ class _RoomGiftSheetState extends State<_RoomGiftSheet> {
     );
   }
 
+  String _giftEmoji(String id) => switch (id) {
+        'rose' => '🌹',
+        'coffee' => '☕',
+        'heart' => '❤️',
+        'chocolate' => '🍫',
+        'crown' => '👑',
+        'ring' => '💍',
+        'sports_car' => '🏎️',
+        'yacht' => '🛥️',
+        'private_jet' => '✈️',
+        'castle' => '🏰',
+        'golden_dragon' => '🐉',
+        'galaxy' => '🌌',
+        _ => '🎁',
+      };
+
   Widget _giftImage(GiftCatalogItem gift) {
-    const fallback = Icon(
-      Icons.card_giftcard_rounded,
-      color: Color(0xFFFFD54A),
-      size: 44,
+    final fallback = Text(
+      _giftEmoji(gift.id),
+      style: const TextStyle(fontSize: 42),
+      textAlign: TextAlign.center,
     );
     return FutureBuilder<Uri?>(
       future: ShadowAssetRegistry.remoteUrl(gift.assetKey),
