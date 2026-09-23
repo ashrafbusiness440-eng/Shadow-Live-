@@ -565,7 +565,7 @@ export async function gameState(db,uid,body={},options={}){
     gameId,
     mode,
     enabled:selected.enabled===true,
-    targetRtpBps:selectedConfig.targetRtpBps,
+    targetRtpBps:selected.targetRtpBps,
     round:gameId==="slot"?null:{
       roundId:round.roundId,
       dayKey:round.dayKey,
