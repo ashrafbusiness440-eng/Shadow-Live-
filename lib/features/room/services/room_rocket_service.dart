@@ -78,7 +78,7 @@ class RoomRocketState {
 
   double get progress => thresholdCoins <= 0
       ? 0
-      : (progressCoins / thresholdCoins).clamp(0.0, 1.0);
+      : (progressCoins / thresholdCoins).clamp(0.0, 1.0).toDouble();
 
   factory RoomRocketState.fromMap(Map<String, dynamic> data) {
     final raw = data['levelContributors'];
@@ -196,8 +196,9 @@ class RoomRocketService {
   ) async {
     final snapshot = await _firestore.collection('rooms').doc(roomId).get();
     if (!snapshot.exists) return null;
+    final data = snapshot.data() ?? const <String, dynamic>{};
     return {
-      ...snapshot.data() ?? const <String, dynamic>{},
+      ...data,
       'roomId': roomId,
     };
   }
