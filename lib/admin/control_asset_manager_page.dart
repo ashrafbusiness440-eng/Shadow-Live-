@@ -24,6 +24,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
   final _reason = TextEditingController(text: 'تحديث أصل التطبيق من Shadow Control');
 
   Uint8List? _bytes;
+  Uint8List? _sourceBytes;
   String? _mimeType;
   String? _pickedName;
   String? _conversionNote;
@@ -51,7 +52,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
 
   static final Uri _endpoint = Uri.parse('https://shadow-live-six.vercel.app/api/manage-app-asset');
 
-  String _webpFileNameFromCurrent(String pickedName) {
+  String _defaultFileNameFromCurrent(String pickedName) {
     final directory = ControlAssetPolicy.normalizeDirectory(_directory.text);
     final key = _assetKey.text.trim();
     if (directory == 'assets/images/gifts' && key.startsWith('gifts.')) {
@@ -60,9 +61,11 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     }
 
     final current = _fileName.text.trim();
-    final source = current.isNotEmpty ? current : pickedName;
-    final dot = source.lastIndexOf('.');
-    final base = dot > 0 ? source.substring(0, dot) : source;
+    if (current.isNotEmpty && ControlAssetPolicy.fileNameAllowed(current)) {
+      return current;
+    }
+    final dot = pickedName.lastIndexOf('.');
+    final base = dot > 0 ? pickedName.substring(0, dot) : pickedName;
     return '$base.webp';
   }
 
@@ -76,22 +79,144 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     if (id.isNotEmpty) _fileName.text = 'gift_$id.webp';
   }
 
-  Uint8List? _encodeWebpUnderLimit(img.Image image) {
-    Uint8List? smallest;
-    for (final quality in const [88, 82, 76, 70, 64]) {
-      final encoded = img.encodeWebP(
-        image,
-        lossless: false,
-        quality: quality,
-        method: 4,
-        alphaQuality: 100,
+  String? _targetExtension() {
+    final name = _fileName.text.trim().toLowerCase();
+    final dot = name.lastIndexOf('.');
+    if (dot <= 0 || dot == name.length - 1) return null;
+    final ext = name.substring(dot + 1);
+    return ControlAssetPolicy.allowedExtensions.contains(ext) ? ext : null;
+  }
+
+  String _mimeForExtension(String extension) => switch (extension) {
+        'png' => 'image/png',
+        'jpg' || 'jpeg' => 'image/jpeg',
+        'webp' => 'image/webp',
+        'gif' => 'image/gif',
+        _ => 'application/octet-stream',
+      };
+
+  img.Image _prepareDimensions(img.Image decoded) {
+    final directory = ControlAssetPolicy.normalizeDirectory(_directory.text);
+    if (directory == 'assets/images/gifts') {
+      return img.copyResizeCropSquare(
+        decoded,
+        size: 1024,
+        interpolation: img.Interpolation.linear,
+        antialias: true,
       );
-      smallest = encoded;
-      if (encoded.length <= ControlAssetPolicy.maxBytes) return encoded;
     }
-    return smallest != null && smallest.length <= ControlAssetPolicy.maxBytes
-        ? smallest
-        : null;
+
+    final longest =
+        decoded.width > decoded.height ? decoded.width : decoded.height;
+    if (longest <= 2048) return decoded;
+    return decoded.width >= decoded.height
+        ? img.copyResize(
+            decoded,
+            width: 2048,
+            interpolation: img.Interpolation.linear,
+          )
+        : img.copyResize(
+            decoded,
+            height: 2048,
+            interpolation: img.Interpolation.linear,
+          );
+  }
+
+  Uint8List? _encodeForTarget(img.Image image, String extension) {
+    if (extension == 'webp') {
+      Uint8List? smallest;
+      for (final quality in const [90, 86, 82, 76, 70, 64]) {
+        final encoded = img.encodeWebP(
+          image,
+          lossless: false,
+          quality: quality,
+          method: 4,
+          alphaQuality: 100,
+        );
+        smallest = encoded;
+        if (encoded.length <= ControlAssetPolicy.maxBytes) return encoded;
+      }
+      return smallest != null && smallest.length <= ControlAssetPolicy.maxBytes
+          ? smallest
+          : null;
+    }
+
+    if (extension == 'jpg' || extension == 'jpeg') {
+      Uint8List? smallest;
+      for (final quality in const [92, 88, 84, 78, 72, 66]) {
+        final encoded = img.encodeJpg(image, quality: quality);
+        smallest = encoded;
+        if (encoded.length <= ControlAssetPolicy.maxBytes) return encoded;
+      }
+      return smallest != null && smallest.length <= ControlAssetPolicy.maxBytes
+          ? smallest
+          : null;
+    }
+
+    if (extension == 'png') {
+      final encoded = img.encodePng(image, level: 7);
+      return encoded.length <= ControlAssetPolicy.maxBytes ? encoded : null;
+    }
+
+    if (extension == 'gif') {
+      final encoded = img.encodeGif(image);
+      return encoded.length <= ControlAssetPolicy.maxBytes ? encoded : null;
+    }
+
+    return null;
+  }
+
+  String _formatLabel(String extension) => switch (extension) {
+        'jpg' || 'jpeg' => 'JPEG',
+        _ => extension.toUpperCase(),
+      };
+
+  Future<bool> _convertSelectedToTarget({bool updateMessage = true}) async {
+    final sourceBytes = _sourceBytes;
+    if (sourceBytes == null) return false;
+
+    final extension = _targetExtension();
+    if (extension == null) {
+      if (mounted && updateMessage) {
+        setState(() => _message =
+            'امتداد اسم الملف غير مدعوم. استخدم PNG أو JPG/JPEG أو WebP أو GIF.');
+      }
+      return false;
+    }
+
+    final decoded = img.decodeImage(sourceBytes);
+    if (decoded == null) {
+      if (mounted && updateMessage) {
+        setState(() => _message =
+            'تعذر قراءة الصورة الأصلية. الصيغ المدعومة: PNG / JPG / JPEG / WebP / GIF.');
+      }
+      return false;
+    }
+
+    final prepared = _prepareDimensions(decoded);
+    final encoded = _encodeForTarget(prepared, extension);
+    if (encoded == null) {
+      if (mounted && updateMessage) {
+        setState(() => _message =
+            'تعذر تجهيز \${_formatLabel(extension)} تحت حد 2.5 MB. جرّب WebP أو صورة أصغر.');
+      }
+      return false;
+    }
+
+    final sourceKb = sourceBytes.length / 1024;
+    final outputKb = encoded.length / 1024;
+    if (mounted) {
+      setState(() {
+        _bytes = encoded;
+        _mimeType = _mimeForExtension(extension);
+        _conversionNote =
+            'تجهيز تلقائي حسب اسم الملف → \${_formatLabel(extension)} • '
+            '\${prepared.width}×\${prepared.height} • '
+            '\${sourceKb.toStringAsFixed(1)} KB → \${outputKb.toStringAsFixed(1)} KB';
+        if (updateMessage) _message = null;
+      });
+    }
+    return true;
   }
 
   Future<void> _pickImage() async {
@@ -100,65 +225,22 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
 
     setState(() {
       _busy = true;
-      _message = 'جارٍ تجهيز الصورة وتحويلها إلى WebP...';
+      _message = 'جارٍ تجهيز الصورة حسب صيغة اسم الملف...';
     });
 
     try {
       final sourceBytes = await file.readAsBytes();
-      final decoded = img.decodeImage(sourceBytes);
-      if (decoded == null) {
-        setState(() => _message = 'تعذر قراءة الصورة. اختر PNG أو JPG أو WebP صالح.');
-        return;
-      }
-
-      final directory = ControlAssetPolicy.normalizeDirectory(_directory.text);
-      img.Image prepared = decoded;
-      if (directory == 'assets/images/gifts') {
-        prepared = img.copyResizeCropSquare(
-          decoded,
-          size: 1024,
-          interpolation: img.Interpolation.linear,
-          antialias: true,
-        );
-      } else {
-        final longest = decoded.width > decoded.height ? decoded.width : decoded.height;
-        if (longest > 2048) {
-          if (decoded.width >= decoded.height) {
-            prepared = img.copyResize(
-              decoded,
-              width: 2048,
-              interpolation: img.Interpolation.linear,
-            );
-          } else {
-            prepared = img.copyResize(
-              decoded,
-              height: 2048,
-              interpolation: img.Interpolation.linear,
-            );
-          }
-        }
-      }
-
-      final webp = _encodeWebpUnderLimit(prepared);
-      if (webp == null) {
-        setState(() => _message =
-            'تعذر ضغط الصورة تحت 2.5 MB. اختر صورة أبسط أو أصغر.');
-        return;
-      }
-
-      final outputName = _webpFileNameFromCurrent(file.name);
+      final outputName = _defaultFileNameFromCurrent(file.name);
       setState(() {
-        _bytes = webp;
-        _mimeType = 'image/webp';
+        _sourceBytes = sourceBytes;
         _pickedName = file.name;
         _fileName.text = outputName;
-        _conversionNote = directory == 'assets/images/gifts'
-            ? 'تم التحويل تلقائيًا إلى WebP • 1024×1024 • ${(webp.length / 1024).toStringAsFixed(1)} KB'
-            : 'تم التحويل تلقائيًا إلى WebP • ${prepared.width}×${prepared.height} • ${(webp.length / 1024).toStringAsFixed(1)} KB';
-        _message = null;
       });
+      await _convertSelectedToTarget();
     } catch (e) {
-      setState(() => _message = 'تعذر تحويل الصورة إلى WebP: $e');
+      if (mounted) {
+        setState(() => _message = 'تعذر تجهيز الصورة: $e');
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -196,9 +278,24 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
   }
 
   Future<void> _upload() async {
+    if (_sourceBytes != null) {
+      setState(() {
+        _busy = true;
+        _message = 'جارٍ التحقق من الصيغة النهائية وتحويل الصورة تلقائيًا...';
+      });
+      final converted = await _convertSelectedToTarget();
+      if (!converted) {
+        if (mounted) setState(() => _busy = false);
+        return;
+      }
+    }
+
     final error = _validate();
     if (error != null) {
-      setState(() => _message = error);
+      setState(() {
+        _busy = false;
+        _message = error;
+      });
       return;
     }
     setState(() {
@@ -261,7 +358,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
           ]),
           const SizedBox(height: 8),
           const Text(
-            'اختر PNG أو JPG أو WebP وسيتم تحويله تلقائيًا إلى WebP قبل الرفع. صور الهدايا تُجهّز تلقائيًا بمقاس 1024×1024، وإذا كان الملف موجودًا بنفس الاسم والمسار سيتم استبداله.',
+            'اختر PNG أو JPG/JPEG أو WebP أو GIF. الصيغة النهائية تُحدد تلقائيًا من امتداد اسم الملف: إذا كتبت .webp يتحول WebP، وإذا كتبت .png أو .jpg/.jpeg أو .gif يتحول للصيغة نفسها قبل الرفع. صور الهدايا تُجهّز تلقائيًا بمقاس 1024×1024.',
             style: TextStyle(color: Color(0xFFCBC5D6), height: 1.5),
           ),
           const SizedBox(height: 16),
@@ -287,9 +384,21 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: _fileName,
+                  onEditingComplete: () async {
+                    FocusScope.of(context).unfocus();
+                    if (_sourceBytes != null) {
+                      setState(() {
+                        _busy = true;
+                        _message = 'جارٍ التحويل حسب امتداد اسم الملف...';
+                      });
+                      await _convertSelectedToTarget();
+                      if (mounted) setState(() => _busy = false);
+                    }
+                  },
                   decoration: const InputDecoration(
-                    labelText: 'اسم الملف',
-                    hintText: 'vip_3.webp',
+                    labelText: 'اسم الملف يحدد صيغة التحويل',
+                    hintText: 'gift_rose.webp / banner.png / photo.jpg / animation.gif',
+                    helperText: 'الامتدادات المدعومة: .webp .png .jpg .jpeg .gif',
                     border: OutlineInputBorder(),
                   ),
                 ),
