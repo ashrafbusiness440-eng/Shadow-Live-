@@ -4,9 +4,9 @@ import {deleteApp, getApps, initializeApp} from "firebase-admin/app";
 import {getFirestore} from "firebase-admin/firestore";
 
 import {sendGift as sendChatGift} from "../chat-actions.js";
-import {settleAgencyCycle} from "../economy-control.js";
-import {saveGiftEconomyPolicy} from "../gift-economy-config.js";
-import {calculateAgencyCycleSettlement} from "../economy-policy.js";
+import {settleAgencyCycle} from "../../server/economy/economy-control.js";
+import {saveGiftEconomyPolicy} from "../../server/economy/gift-economy-config.js";
+import {calculateAgencyCycleSettlement} from "../../server/economy/economy-policy.js";
 import {sendRoomGift} from "../room-gift.js";
 import {recordMicActivity} from "../voice-session.js";
 
