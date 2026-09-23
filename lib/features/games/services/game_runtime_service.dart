@@ -142,8 +142,15 @@ class GameRuntimeService {
   static String _defaultBaseUrl() {
     const configured = String.fromEnvironment('SHADOW_API_BASE_URL');
     if (configured.isNotEmpty) return configured;
-    if (kIsWeb) return '${Uri.base.origin}/api';
-    return 'https://shadow-live-six.vercel.app/api';
+
+    const stableBackend = 'https://shadow-live-six.vercel.app/api';
+    if (!kIsWeb) return stableBackend;
+
+    final host = Uri.base.host.toLowerCase();
+    if (host.endsWith('.vercel.app')) {
+      return '${Uri.base.origin}/api';
+    }
+    return stableBackend;
   }
 
   Future<String> _token() async {
