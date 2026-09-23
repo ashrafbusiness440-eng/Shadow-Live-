@@ -16,24 +16,24 @@ import {
 
 test("greedy cat salad pays all x5 selections",()=>{
   const selections=normalizeSelections("greedy_cat","",[
-    {choiceId:"pepper5",amountCoins:1000},
-    {choiceId:"tomato5",amountCoins:1000},
-    {choiceId:"cabbage5",amountCoins:1000},
-    {choiceId:"carrot5",amountCoins:1000},
+    {choiceId:"pepper5",amountCoins:2000},
+    {choiceId:"tomato5",amountCoins:2000},
+    {choiceId:"cabbage5",amountCoins:2000},
+    {choiceId:"carrot5",amountCoins:2000},
   ]);
-  assert.equal(totalStake(selections),4000);
-  assert.equal(greedyCatPayout(selections,"salad"),20000);
+  assert.equal(totalStake(selections),8000);
+  assert.equal(greedyCatPayout(selections,"salad"),40000);
 });
 
 test("greedy cat pizza pays x10 x15 x25 x45 together",()=>{
   const selections=normalizeSelections("greedy_cat","",[
-    {choiceId:"chicken10",amountCoins:1000},
-    {choiceId:"fish15",amountCoins:1000},
-    {choiceId:"steak25",amountCoins:1000},
-    {choiceId:"shell45",amountCoins:1000},
+    {choiceId:"chicken10",amountCoins:2000},
+    {choiceId:"fish15",amountCoins:2000},
+    {choiceId:"steak25",amountCoins:2000},
+    {choiceId:"shell45",amountCoins:2000},
   ]);
-  assert.equal(totalStake(selections),4000);
-  assert.equal(greedyCatPayout(selections,"pizza"),95000);
+  assert.equal(totalStake(selections),8000);
+  assert.equal(greedyCatPayout(selections,"pizza"),190000);
 });
 
 test("bet ladders reject unsupported arbitrary values",()=>{
