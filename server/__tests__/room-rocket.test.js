@@ -81,7 +81,7 @@ test("after level four the next overflow starts a new cycle at level one",()=>{
   assert.equal(result.explosions[1].level,1);
   assert.equal(result.nextState.cycleNumber,8);
   assert.equal(result.nextState.currentLevel,2);
-  assert.equal(result.nextState.progressCoins,10000);
+  assert.equal(result.nextState.progressCoins,100000);
 });
 
 test("approved reward policy includes voice waves and never VIP",()=>{
