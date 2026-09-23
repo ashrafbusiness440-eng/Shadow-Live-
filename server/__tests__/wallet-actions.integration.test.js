@@ -6,7 +6,7 @@ import {
   setWalletPassword,
   exchangeDiamonds,
   giftDiamonds,
-} from "../wallet-actions.js";
+} from "../../api/wallet-actions.js";
 
 const app=getApps()[0]||initializeApp({projectId:"shadow-live-economy-test"});
 const db=getFirestore(app);

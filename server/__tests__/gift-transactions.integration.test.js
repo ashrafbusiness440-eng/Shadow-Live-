@@ -3,12 +3,12 @@ import {after, test} from "node:test";
 import {deleteApp, getApps, initializeApp} from "firebase-admin/app";
 import {getFirestore} from "firebase-admin/firestore";
 
-import {sendGift as sendChatGift} from "../chat-actions.js";
-import {settleAgencyCycle} from "../../server/economy/economy-control.js";
-import {saveGiftEconomyPolicy} from "../../server/economy/gift-economy-config.js";
-import {calculateAgencyCycleSettlement} from "../../server/economy/economy-policy.js";
-import {sendRoomGift} from "../room-gift.js";
-import {recordMicActivity} from "../voice-session.js";
+import {sendGift as sendChatGift} from "../../api/chat-actions.js";
+import {settleAgencyCycle} from "../economy/economy-control.js";
+import {saveGiftEconomyPolicy} from "../economy/gift-economy-config.js";
+import {calculateAgencyCycleSettlement} from "../economy/economy-policy.js";
+import {sendRoomGift} from "../../api/room-gift.js";
+import {recordMicActivity} from "../../api/voice-session.js";
 
 const app=getApps()[0]||initializeApp({projectId:"shadow-live-economy-test"});
 const db=getFirestore(app);

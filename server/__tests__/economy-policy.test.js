@@ -6,7 +6,7 @@ import {
   convertPayableCoinsToDiamonds,
   resolveRevenuePolicy,
   tierForMonthlyGross,
-} from "../../server/economy/economy-policy.js";
+} from "../economy/economy-policy.js";
 
 const policy={
   hostPerformanceBonusBps:200,
