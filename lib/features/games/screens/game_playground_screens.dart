@@ -866,7 +866,7 @@ class _DemoNotice extends StatelessWidget {
           SizedBox(width: 8),
           Expanded(
             child: Text(
-              'نسخة تصميم واختبار: التفاعل يعمل الآن بدون خصم أو إضافة Coins.',
+              'التصميم النهائي للواجهة • المحاكاة الحالية لا تخصم أو تضيف Coins حتى ربط المحرك Server-side.',
               style: TextStyle(
                 color: Color(0xFFB8E4FF),
                 fontSize: 10.5,
@@ -875,6 +875,300 @@ class _DemoNotice extends StatelessWidget {
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+
+class _DailyRoundBar extends StatelessWidget {
+  const _DailyRoundBar({
+    required this.round,
+    required this.accent,
+    required this.gameLabel,
+  });
+
+  final int round;
+  final Color accent;
+  final String gameLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        color: const Color(0xFF0D101B),
+        border: Border.all(color: accent.withValues(alpha: .24)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: accent.withValues(alpha: .14),
+              border: Border.all(color: accent.withValues(alpha: .45)),
+            ),
+            child: Text(
+              '#$round',
+              style: TextStyle(
+                color: accent,
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'جولة اليوم',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '$gameLabel • عداد مستقل',
+                  style: const TextStyle(
+                    color: Colors.white54,
+                    fontSize: 10.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(999),
+              color: Colors.white.withValues(alpha: .04),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.restart_alt_rounded,
+                  size: 14,
+                  color: Colors.white54,
+                ),
+                SizedBox(width: 4),
+                Text(
+                  'يتجدد 00:00',
+                  style: TextStyle(
+                    color: Colors.white54,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GameIdentityBanner extends StatelessWidget {
+  const _GameIdentityBanner({
+    required this.accent,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final Color accent;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        gradient: LinearGradient(
+          begin: Alignment.topRight,
+          end: Alignment.bottomLeft,
+          colors: [
+            accent.withValues(alpha: .20),
+            const Color(0xFF0A0C15),
+          ],
+        ),
+        border: Border.all(color: accent.withValues(alpha: .30)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(17),
+              color: accent.withValues(alpha: .16),
+            ),
+            child: Icon(icon, color: accent, size: 29),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: Colors.white60,
+                    fontSize: 10.5,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Icon(
+            Icons.auto_awesome_rounded,
+            color: accent.withValues(alpha: .85),
+            size: 20,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RoundHistory extends StatelessWidget {
+  const _RoundHistory({
+    required this.title,
+    required this.items,
+    required this.accent,
+    this.roundPrefix = 'جولة',
+  });
+
+  final String title;
+  final List<_RoundResult> items;
+  final Color accent;
+  final String roundPrefix;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        color: Colors.white.withValues(alpha: .025),
+        border: Border.all(color: Colors.white.withValues(alpha: .07)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.history_rounded, size: 18, color: accent),
+              const SizedBox(width: 7),
+              Text(
+                title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (items.isEmpty)
+            const SizedBox(
+              height: 44,
+              child: Center(
+                child: Text(
+                  'تظهر النتائج هنا بعد انتهاء أول جولة',
+                  style: TextStyle(
+                    color: Colors.white38,
+                    fontSize: 10.5,
+                  ),
+                ),
+              ),
+            )
+          else
+            SizedBox(
+              height: 64,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: items.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (context, index) {
+                  final item = items[index];
+                  return Container(
+                    width: 112,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(14),
+                      color: accent.withValues(alpha: .08),
+                      border: Border.all(
+                        color: accent.withValues(alpha: .20),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          '$roundPrefix #${item.round}',
+                          style: const TextStyle(
+                            color: Colors.white38,
+                            fontSize: 8.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          item.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        Text(
+                          item.multiplier,
+                          style: TextStyle(
+                            color: accent,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
         ],
       ),
     );
