@@ -13,6 +13,9 @@ abstract final class ControlAssetPolicy {
     'assets/images/backgrounds',
     'assets/images/banners',
     'assets/images/games',
+    'assets/images/games/greedy_cat',
+    'assets/images/games/witch',
+    'assets/images/games/slot',
     'assets/images/store',
     'assets/images/misc',
   ];
