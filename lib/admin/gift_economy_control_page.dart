@@ -107,7 +107,7 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
           apiUri,
           headers: {
             'content-type': 'application/json',
-            'authorization': 'Bearer ' + token,
+            'authorization': 'Bearer $token',
           },
           body: jsonEncode(payload),
         )
@@ -207,7 +207,7 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
       if (!mounted) return;
       setState(() => saving = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('تعذر الحفظ: ' + e.toString())),
+        SnackBar(content: Text('تعذر الحفظ: $e')),
       );
     }
   }
@@ -330,9 +330,7 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
                                 avatar: const Icon(Icons.shield_outlined,
                                     size: 18),
                                 label: Text(
-                                  'Shadow Live: ' +
-                                      platform.toStringAsFixed(1) +
-                                      '%',
+                                  'Shadow Live: ${platform.toStringAsFixed(1)}%',
                                 ),
                               ),
                             ],
