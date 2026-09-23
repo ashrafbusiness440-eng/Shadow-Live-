@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../game_asset_paths.dart';
 import '../services/game_runtime_service.dart';
 
 class RoomGameOverlaySheet extends StatefulWidget {
@@ -542,9 +543,18 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
         margin: const EdgeInsets.only(bottom: 10),
         child: ListTile(
           onTap: () => _selectBase(keyName),
-          leading: CircleAvatar(
-            backgroundColor: accent.withValues(alpha: .14),
-            child: Icon(icon, color: accent),
+          leading: ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              width: 44,
+              height: 44,
+              color: accent.withValues(alpha: .12),
+              child: Image.asset(
+                GameAssetPaths.coverFor(keyName),
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Icon(icon, color: accent),
+              ),
+            ),
           ),
           title: Text(
             title,
@@ -566,6 +576,7 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
 
   Widget _gameView() {
     final game = _selected!;
+    final background = GameAssetPaths.backgroundFor(game.gameId, game.mode);
     return Column(
       children: [
         _statusBar(game),
@@ -583,18 +594,29 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
             ),
           ),
         Expanded(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 20),
-            children: [
-              if (game.gameId == 'witch') _witchModesBar(),
-              if (game.gameId != 'slot') _roundCard(),
-              const SizedBox(height: 10),
-              _betPicker(),
-              const SizedBox(height: 12),
-              if (game.gameId == 'greedy_cat') _greedyBoard(),
-              if (game.gameId == 'witch') _witchBoard(),
-              if (game.gameId == 'slot') _slotBoard(),
-            ],
+          child: Container(
+            decoration: background == null
+                ? null
+                : BoxDecoration(
+                    image: DecorationImage(
+                      image: AssetImage(background),
+                      fit: BoxFit.cover,
+                      opacity: .10,
+                    ),
+                  ),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 20),
+              children: [
+                if (game.gameId == 'witch') _witchModesBar(),
+                if (game.gameId != 'slot') _roundCard(),
+                const SizedBox(height: 10),
+                _betPicker(),
+                const SizedBox(height: 12),
+                if (game.gameId == 'greedy_cat') _greedyBoard(),
+                if (game.gameId == 'witch') _witchBoard(),
+                if (game.gameId == 'slot') _slotBoard(),
+              ],
+            ),
           ),
         ),
       ],
@@ -785,15 +807,15 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
   }
 
   Widget _greedyBoard() {
-    const choices = [
-      ('pepper5', '×5 • فلفل', '🫑'),
-      ('tomato5', '×5 • طماطم', '🍅'),
-      ('cabbage5', '×5 • ملفوف', '🥬'),
-      ('carrot5', '×5 • جزر', '🥕'),
-      ('chicken10', '×10', '🍗'),
-      ('fish15', '×15', '🐟'),
-      ('steak25', '×25', '🥩'),
-      ('shell45', '×45', '🐚'),
+    final choices = [
+      ('pepper5', '×5 • فلفل', GameAssetPaths.greedyChoices['pepper5']!),
+      ('tomato5', '×5 • طماطم', GameAssetPaths.greedyChoices['tomato5']!),
+      ('cabbage5', '×5 • ملفوف', GameAssetPaths.greedyChoices['cabbage5']!),
+      ('carrot5', '×5 • جزر', GameAssetPaths.greedyChoices['carrot5']!),
+      ('chicken10', '×10', GameAssetPaths.greedyChoices['chicken10']!),
+      ('fish15', '×15', GameAssetPaths.greedyChoices['fish15']!),
+      ('steak25', '×25', GameAssetPaths.greedyChoices['steak25']!),
+      ('shell45', '×45', GameAssetPaths.greedyChoices['shell45']!),
     ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -844,7 +866,7 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
         ? const ['×2.2', '×3', '×4.5', '×6', '×9', '×16']
         : const ['×1.8', '×2.2', '×3', '×4', '×6', '×10'];
     const ids = ['moon', 'mirror', 'potion', 'orb', 'owl', 'book'];
-    const icons = ['🌙', '🪞', '🧪', '🔮', '🦉', '📖'];
+    final assets = ids.map((id) => GameAssetPaths.witchSymbols[id]!).toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -864,13 +886,13 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
             mainAxisSpacing: 8,
           ),
           itemBuilder: (_, index) =>
-              _choiceTile(ids[index], multipliers[index], icons[index]),
+              _choiceTile(ids[index], multipliers[index], assets[index]),
         ),
       ],
     );
   }
 
-  Widget _choiceTile(String id, String label, String emoji) {
+  Widget _choiceTile(String id, String label, String assetPath) {
     final total = _state?.currentRoundSelections[id] ?? 0;
     return InkWell(
       onTap: _placing ? null : () => _placeChoice(id),
@@ -891,7 +913,20 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(emoji, style: const TextStyle(fontSize: 24)),
+            SizedBox(
+              width: 44,
+              height: 44,
+              child: Image.asset(
+                assetPath,
+                fit: BoxFit.contain,
+                filterQuality: FilterQuality.medium,
+                errorBuilder: (_, __, ___) => Icon(
+                  Icons.image_not_supported_outlined,
+                  color: _accent,
+                  size: 24,
+                ),
+              ),
+            ),
             const SizedBox(height: 3),
             Text(
               label,
@@ -923,25 +958,6 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
   Widget _slotBoard() {
     final result = _slotResult;
     final reels = result?.reels ?? const <String>[];
-    String symbol(String raw) {
-      switch (raw) {
-        case 'crown':
-          return '👑';
-        case 'diamond':
-          return '💎';
-        case 'star':
-          return '⭐';
-        case 'mic':
-          return '🎙️';
-        case 'moon':
-          return '🌙';
-        case 'fire':
-          return '🔥';
-        default:
-          return '✦';
-      }
-    }
-
     return Column(
       children: [
         Container(
@@ -965,10 +981,26 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
                     borderRadius: BorderRadius.circular(16),
                   ),
                   alignment: Alignment.center,
-                  child: Text(
-                    index < reels.length ? symbol(reels[index]) : '✦',
-                    style: const TextStyle(fontSize: 34),
-                  ),
+                  child: index < reels.length &&
+                          GameAssetPaths.slotSymbols[reels[index]] != null
+                      ? Padding(
+                          padding: const EdgeInsets.all(10),
+                          child: Image.asset(
+                            GameAssetPaths.slotSymbols[reels[index]]!,
+                            fit: BoxFit.contain,
+                            filterQuality: FilterQuality.medium,
+                            errorBuilder: (_, __, ___) => const Icon(
+                              Icons.casino_rounded,
+                              color: Colors.white70,
+                              size: 30,
+                            ),
+                          ),
+                        )
+                      : const Icon(
+                          Icons.casino_rounded,
+                          color: Colors.white54,
+                          size: 30,
+                        ),
                 ),
               ),
             ),
