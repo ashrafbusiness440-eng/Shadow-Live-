@@ -184,7 +184,7 @@ export async function saveGiftEconomyPolicy(db,uid,raw={}){
   return policy;
 }
 
-export default async function handler(req,res){
+export async function handler(req,res){
   if(cors(req,res))return;
   if(req.method!=="POST")return out(res,405,{ok:false,code:"method_not_allowed"});
   try{
