@@ -1,7 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../../../screens/room/room_list_screen.dart';
 import '../../../services/navigation_service.dart';
 import '../../room/services/room_action_service.dart';
 import '../../voice/services/voice_room_session_controller.dart';
