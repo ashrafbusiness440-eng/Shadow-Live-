@@ -70,7 +70,7 @@ function serializeReward(doc,nowMs){
   };
 }
 
-async function listInventory(db,uid,nowMs=Date.now()){
+export async function listInventory(db,uid,nowMs=Date.now()){
   const snapshot=await db.collection("user_rewards").doc(uid)
     .collection("items").get();
   const items=snapshot.docs.map((doc)=>serializeReward(doc,nowMs))
@@ -125,7 +125,7 @@ async function updateOwnedRoomBackground(db,uid,item,active){
   return refs.length;
 }
 
-async function setActiveReward(db,uid,{type,rewardId,active}){
+export async function setActiveReward(db,uid,{type,rewardId,active}){
   const rewardType=safeType(type);
   const id=clean(rewardId);
   if(!validId(id)) throw Error("invalid_reward_id");
