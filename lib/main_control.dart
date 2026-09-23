@@ -490,7 +490,7 @@ class _RolePolicyCard extends StatelessWidget {
   final String role; final bool adminEnabled; final List<String> capabilities;
   static const labels=<String,String>{
     'viewUsers':'عرض المستخدمين','manageUsers':'إدارة المستخدمين','manageRooms':'إدارة الغرف',
-    'reviewReports':'مراجعة البلاغات','manageEconomy':'إدارة الاقتصاد','manageWithdrawals':'إدارة السحب',
+    'reviewReports':'مراجعة البلاغات','manageEconomy':'إدارة الاقتصاد','manageGames':'إدارة الألعاب','manageWithdrawals':'إدارة السحب',
     'manageSettlements':'إدارة التسويات','manageRoles':'إدارة الأدوار','manageCapabilities':'إدارة الصلاحيات',
     'manageSystem':'إدارة النظام','manageIds':'إدارة IDs المستخدمين والغرف',
   };
