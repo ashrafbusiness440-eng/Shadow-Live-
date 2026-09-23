@@ -1,10 +1,9 @@
-name: Shadow Control Pages
-# GitHub-hosted staging fallback when external deploy credits are unavailable.
+name: Shadow Live Pages
 
 on:
   push:
     branches:
-      - feature/shadow-control-foundation
+      - main
   workflow_dispatch:
 
 permissions:
@@ -13,7 +12,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: shadow-control-pages
+  group: shadow-live-pages
   cancel-in-progress: true
 
 jobs:
@@ -55,7 +54,7 @@ jobs:
         uses: actions/configure-pages@v5
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v4
         with:
           path: build/web
 
