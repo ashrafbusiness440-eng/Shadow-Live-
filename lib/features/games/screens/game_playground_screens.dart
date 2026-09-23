@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 
 const _bg = Color(0xFF05060D);
 const _gold = Color(0xFFFFC84A);
-const _purple = Color(0xFF8A3DFF);
 
 String _formatCoins(int value) {
   if (value >= 1000000) {
