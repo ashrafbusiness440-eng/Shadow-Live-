@@ -494,6 +494,25 @@ class _GameConfigCardState extends State<_GameConfigCard> {
     rtp = TextEditingController(text: widget.initialRtp);
     bets = TextEditingController(text: widget.initialBets);
     outcomeFields = _parseInitialOutcomes(widget.initialOutcomes);
+    if (outcomeFields.isEmpty) {
+      final ids = widget.variant['outcomeIds'] is List
+          ? (widget.variant['outcomeIds'] as List)
+              .map((e) => e.toString())
+              .where((e) => e.isNotEmpty)
+              .toList()
+          : <String>[];
+      outcomeFields = ids
+          .map(
+            (id) => _OutcomeWeightControl(
+              id: id,
+              controller: TextEditingController(),
+            ),
+          )
+          .toList();
+      for (final item in outcomeFields) {
+        item.controller.addListener(_refreshOutcomeTotal);
+      }
+    }
   }
 
   List<_OutcomeWeightControl> _parseInitialOutcomes(String raw) {
@@ -539,11 +558,40 @@ class _GameConfigCardState extends State<_GameConfigCard> {
   }
 
   String _serializeOutcomes() {
-    return outcomeFields.map((item) {
-      final percent = double.tryParse(item.controller.text.trim()) ?? 0;
-      final bps = (percent * 100).round();
-      return item.id + '=' + bps.toString();
-    }).join('\n');
+    return outcomeFields
+        .map((item) {
+          final percent = double.tryParse(item.controller.text.trim()) ?? 0;
+          final bps = (percent * 100).round();
+          return (id: item.id, bps: bps);
+        })
+        .where((item) => item.bps > 0)
+        .map((item) => item.id + '=' + item.bps.toString())
+        .join('\n');
+  }
+
+  String _outcomeLabel(String id) {
+    const labels = <String, String>{
+      'pepper5': 'فلفل ×5',
+      'tomato5': 'طماطم ×5',
+      'cabbage5': 'ملفوف ×5',
+      'carrot5': 'جزر ×5',
+      'chicken10': 'دجاج ×10',
+      'fish15': 'سمك ×15',
+      'steak25': 'ستيك ×25',
+      'shell45': 'صدفة ×45',
+      'salad': 'مجموعة السلطة',
+      'pizza': 'مجموعة البيتزا',
+      'moon': 'القمر',
+      'mirror': 'المرآة',
+      'potion': 'الجرعة',
+      'orb': 'الكرة السحرية',
+      'owl': 'البومة',
+      'book': 'الكتاب',
+      'lose': 'خسارة',
+      'pair': 'زوج',
+      'jackpot': 'جاكبوت',
+    };
+    return labels[id] ?? id;
   }
 
   @override
@@ -580,6 +628,7 @@ class _GameConfigCardState extends State<_GameConfigCard> {
     final totalBps = _outcomeTotalBps();
     final totalOk = totalBps == 10000;
     final totalPercent = _cleanPercent(totalBps / 100);
+    final invalidEnabledConfig = enabled && !totalOk;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -619,6 +668,28 @@ class _GameConfigCardState extends State<_GameConfigCard> {
             height: 1.4,
           ),
         ),
+        if (invalidEnabledConfig) ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.orangeAccent.withValues(alpha: .10),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: Colors.orangeAccent.withValues(alpha: .30),
+              ),
+            ),
+            child: const Text(
+              'هذه اللعبة مفعّلة لكن توزيع النتائج غير مكتمل. أدخل نسباً مجموعها 100% قبل الحفظ، أو أوقف اللعبة ثم احفظ.',
+              style: TextStyle(
+                color: Colors.orangeAccent,
+                fontSize: 12,
+                height: 1.45,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
         const SizedBox(height: 10),
         if (outcomeFields.isEmpty)
           const Padding(
@@ -638,7 +709,7 @@ class _GameConfigCardState extends State<_GameConfigCard> {
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
                 decoration: InputDecoration(
-                  labelText: 'النتيجة: ' + item.id,
+                  labelText: _outcomeLabel(item.id),
                   suffixText: '%',
                   isDense: true,
                   border: const OutlineInputBorder(),
@@ -845,7 +916,7 @@ class _GameConfigCardState extends State<_GameConfigCard> {
                   ),
                   const SizedBox(height: 8),
                   FilledButton.icon(
-                    onPressed: saving
+                    onPressed: saving || (enabled && _outcomeTotalBps() != 10000)
                         ? null
                         : () async {
                             setState(() => saving = true);
@@ -868,7 +939,11 @@ class _GameConfigCardState extends State<_GameConfigCard> {
                           )
                         : const Icon(Icons.save_rounded),
                     label: Text(
-                      saving ? 'جار الحفظ...' : 'حفظ تغييرات هذه اللعبة',
+                      saving
+                          ? 'جار الحفظ...'
+                          : (enabled && _outcomeTotalBps() != 10000)
+                              ? 'أكمل الاحتمالات إلى 100%'
+                              : 'حفظ تغييرات هذه اللعبة',
                     ),
                   ),
                 ],
