@@ -120,7 +120,7 @@ function readVariant(config,item){
     : game;
   const base=defaultVariant(item);
   const enabled=item.gameId==="witch"
-    ? raw.enabled!==false&&game.enabled===true
+    ? raw.enabled===true
     : raw.enabled===true;
   return {
     key:item.key,
@@ -328,11 +328,11 @@ export async function saveGameTiming(db,actorUid,body={}){
     };
     const now=FieldValue.serverTimestamp();
     tx.set(ref,{
+      ...before,
       enabled:true,
       targetRtpBps:Number.isSafeInteger(Number(before.targetRtpBps))
         ? Number(before.targetRtpBps)
         : TARGET_RTP_BPS,
-      ...before,
       ...after,
       updatedBy:actorUid,
       updatedAt:now,
