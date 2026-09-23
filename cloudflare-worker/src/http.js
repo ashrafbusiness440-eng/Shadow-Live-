@@ -25,11 +25,12 @@ export function corsHeaders(request, env) {
   return headers;
 }
 
-export function json(request, env, body, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: corsHeaders(request, env),
-  });
+export function json(request, env, body, status = 200, extraHeaders = {}) {
+  const headers = new Headers(corsHeaders(request, env));
+  for (const [key, value] of Object.entries(extraHeaders)) {
+    headers.set(key, value);
+  }
+  return new Response(JSON.stringify(body), { status, headers });
 }
 
 export async function readJson(request) {
