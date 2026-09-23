@@ -1,7 +1,7 @@
 import {getApps,initializeApp,cert} from "firebase-admin/app";
 import {getAuth} from "firebase-admin/auth";
 import {getFirestore,FieldValue,Timestamp} from "firebase-admin/firestore";
-import {resolveRevenuePolicy} from "./economy-policy.js";
+import {resolveRevenuePolicy} from "../server/economy/economy-policy.js";
 
 class ApiError extends Error {
   constructor(code,status=400){super(code);this.code=code;this.status=status;}
