@@ -105,7 +105,7 @@ class _GamesControlPageState extends State<GamesControlPage> {
         timezone.text = (config['timezoneOffsetMinutes'] ?? 240).toString();
         roundDuration.text =
             (config['roundDurationSeconds'] ?? 30).toString();
-        lockBefore.text = (config['lockBeforeMs'] ?? 3000).toString();
+        lockBefore.text = _formatSeconds(NumberHelper.toDouble(config['lockBeforeMs'] ?? 3000) / 1000);
         variants = rawVariants;
         stats = {
           for (final item in rawStats)
@@ -121,6 +121,13 @@ class _GamesControlPageState extends State<GamesControlPage> {
         error = e.toString();
       });
     }
+  }
+
+  String _formatSeconds(double value) {
+    final fixed = value.toStringAsFixed(2);
+    if (fixed.endsWith('.00')) return fixed.substring(0, fixed.length - 3);
+    if (fixed.endsWith('0')) return fixed.substring(0, fixed.length - 1);
+    return fixed;
   }
 
   String formatOutcomes(List<dynamic> raw) {
@@ -167,7 +174,7 @@ class _GamesControlPageState extends State<GamesControlPage> {
         'action': 'saveTiming',
         'timezoneOffsetMinutes': int.tryParse(timezone.text.trim()),
         'roundDurationSeconds': int.tryParse(roundDuration.text.trim()),
-        'lockBeforeMs': int.tryParse(lockBefore.text.trim()),
+        'lockBeforeMs': ((double.tryParse(lockBefore.text.trim()) ?? 0) * 1000).round(),
         'reason': why,
       });
       await load();
@@ -362,9 +369,10 @@ class _GamesControlPageState extends State<GamesControlPage> {
                                   width: 180,
                                   child: TextField(
                                     controller: lockBefore,
-                                    keyboardType: TextInputType.number,
+                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                     decoration: const InputDecoration(
-                                      labelText: 'قفل الرهان قبل النهاية (ms)',
+                                      labelText: 'إيقاف الرهان قبل النهاية (ثانية)',
+                                      hintText: '3',
                                       border: OutlineInputBorder(),
                                     ),
                                   ),
