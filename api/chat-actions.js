@@ -256,9 +256,7 @@ export async function sendGift(db,uid,body){
     const revenue=resolveRevenuePolicy(
       economyData,receiverData,monthlyGrossCoins,agencyId,periods.month,activeHostCount
     );
-    const policyEnabled=economyData.policyMode==="tiered_host_agency"
-      ?economyData.enabled!==false
-      :true;
+    const policyEnabled=economyData.enabled!==false;
     const earningsEnabled=policyEnabled&&revenue.hostShareBps>0;
     const recipientShareBps=earningsEnabled?revenue.hostShareBps:0;
     const recipientShareCoins=earningsEnabled
@@ -382,7 +380,7 @@ export async function sendGift(db,uid,body){
     tx.create(transactionRef,{
       senderId:uid,receiverId,contextType:"chat",conversationId,giftId,giftName,quantity,unitCoins,totalCost,
       assetKey,
-      policyMode:text(economyData.policyMode||"legacy"),
+      policyMode:text("tiered_host_agency"),
       revenueTierId:revenue.tierId,
       revenueTierName:revenue.tierName,
       revenueTierMinGiftCoins:revenue.tierMinGiftCoins,
