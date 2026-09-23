@@ -80,7 +80,7 @@ test("after level four the next overflow starts a new cycle at level one",()=>{
   assert.equal(result.explosions[1].cycleNumber,8);
   assert.equal(result.explosions[1].level,1);
   assert.equal(result.nextState.cycleNumber,8);
-  assert.equal(result.nextState.currentLevel,1);
+  assert.equal(result.nextState.currentLevel,2);
   assert.equal(result.nextState.progressCoins,10000);
 });
 
@@ -88,6 +88,14 @@ test("approved reward policy includes voice waves and never VIP",()=>{
   const config=normalizeRoomRocketConfig({});
   assert.equal(config.explosionDurationSeconds,10);
   assert.equal(config.winProbabilityBps,3000);
+  assert.deepEqual(config.levels.map((level)=>level.winProbabilityBps),[3000,3000,3000,3000]);
+  const custom=normalizeRoomRocketConfig({
+    levels:config.levels.map((level,index)=>({
+      ...level,
+      winProbabilityBps:[1000,2000,3000,4000][index],
+    })),
+  });
+  assert.deepEqual(custom.levels.map((level)=>level.winProbabilityBps),[1000,2000,3000,4000]);
   assert.equal(config.regularAttempts,1);
   assert.equal(config.topContributorAttempts,2);
   assert.deepEqual(config.rewardTypes,["coins","frame","entrance","voice_wave"]);
