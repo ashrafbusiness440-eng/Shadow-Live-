@@ -114,7 +114,7 @@ test("room gift debits once and records transaction ledger agency link and accru
   assert.equal(first.platformShareCoins,40000);
   assert.equal(first.earningsStatus,"accrued_for_cycle");
 
-  const [sender,receiver,transaction,ledger,operation,accrual]=await Promise.all([
+  const [sender,receiver,transaction,ledger,operation,accrual,rocketState,rocketExplosion]=await Promise.all([
     db.collection("users").doc(senderId).get(),
     db.collection("users").doc(receiverId).get(),
     db.collection("gift_transactions").doc(key).get(),
@@ -123,6 +123,8 @@ test("room gift debits once and records transaction ledger agency link and accru
     db.collection("agency_settlement_accruals").doc(
       agencyId+"__"+periods.cycle+"__"+receiverId,
     ).get(),
+    db.collection("room_rocket_state").doc(roomId).get(),
+    db.collection("room_rocket_explosions").doc(key+"_rocket_1").get(),
   ]);
   assert.equal(sender.data().coins,900000);
   assert.equal(receiver.data().pendingAgencyGiftEarningCoins,55000);
@@ -134,6 +136,12 @@ test("room gift debits once and records transaction ledger agency link and accru
   assert.equal(transaction.data().platformShareCoins,40000);
   assert.equal(ledger.data().delta,-100000);
   assert.equal(operation.data().status,"completed");
+  assert.equal(rocketState.exists,true);
+  assert.equal(rocketState.data().currentLevel,2);
+  assert.equal(rocketState.data().progressCoins,0);
+  assert.equal(rocketExplosion.exists,true);
+  assert.equal(rocketExplosion.data().level,1);
+  assert.equal(rocketExplosion.data().triggerUid,senderId);
   assert.equal(accrual.data().supportCoins,100000);
   assert.equal(accrual.data().hostGrossEarningCoins,55000);
   assert.equal(accrual.data().agencyGrossEarningCoins,5000);
@@ -149,6 +157,9 @@ test("room gift debits once and records transaction ledger agency link and accru
   ]);
   assert.equal(senderAfter.data().coins,900000);
   assert.equal(accrualAfter.data().supportCoins,100000);
+  const explosionsAfter=await db.collection("room_rocket_explosions")
+    .where("operationId","==",key).get();
+  assert.equal(explosionsAfter.size,1);
 });
 
 test("chat gift uses the same economy shares and duplicate protection as room gifts",async()=>{
@@ -209,6 +220,8 @@ test("chat gift uses the same economy shares and duplicate protection as room gi
   assert.equal(transaction.data().platformShareCoins,40000);
   assert.equal(ledger.data().delta,-100000);
   assert.equal(accrual.data().hostGrossEarningCoins,55000);
+  const chatRocketState=await db.collection("room_rocket_state").doc(conversationId).get();
+  assert.equal(chatRocketState.exists,false);
 
   const duplicate=await sendChatGift(db,senderId,body);
   assert.equal(duplicate.code,"duplicate");
