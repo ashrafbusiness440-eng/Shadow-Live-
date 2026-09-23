@@ -10,6 +10,7 @@ import 'admin/control_admin_id_override.dart';
 import 'admin/control_api_endpoints.dart';
 import 'admin/control_asset_manager_page.dart';
 import 'admin/economy_control_page.dart';
+import 'admin/games_control_page.dart';
 
 
 Future<void> main() async {
@@ -1010,6 +1011,27 @@ class FinancePage extends StatelessWidget {
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (_) => const EconomyControlPage(),
+                ),
+              ),
+            ),
+          ),
+          Card(
+            child: ListTile(
+              leading: const Icon(
+                Icons.sports_esports_rounded,
+                color: Color(0xFFD7B85A),
+              ),
+              trailing: const Icon(Icons.chevron_left),
+              title: const Text(
+                'Games Control',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
+              subtitle: const Text(
+                'تشغيل/إيقاف مستقل + RTP + Bet Ladder + الاحتمالات + الإحصاءات + Audit',
+              ),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const GamesControlPage(),
                 ),
               ),
             ),
