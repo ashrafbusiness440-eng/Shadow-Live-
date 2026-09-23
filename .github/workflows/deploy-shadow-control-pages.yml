@@ -1,4 +1,4 @@
-name: Deploy Shadow Control to GitHub Pages
+name: Deploy Shadow Live + Shadow Control to GitHub Pages
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: shadow-control-pages
+  group: shadow-live-pages
   cancel-in-progress: true
 
 jobs:
@@ -31,7 +31,17 @@ jobs:
         run: flutter pub get
 
       - name: Build Shadow Control
-        run: flutter build web --release --target lib/main_control.dart --base-href /Shadow-Live-/
+        run: |
+          flutter build web --release --target lib/main_control.dart --base-href /Shadow-Live-/
+          rm -rf site
+          mkdir -p site
+          cp -R build/web/. site/
+
+      - name: Build Shadow Live app
+        run: |
+          flutter build web --release --target lib/main.dart --base-href /Shadow-Live-/app/
+          mkdir -p site/app
+          cp -R build/web/. site/app/
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
@@ -39,7 +49,7 @@ jobs:
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: build/web
+          path: site
 
   deploy:
     environment:
