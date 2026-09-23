@@ -89,6 +89,12 @@ test("witch normal and advanced remain independently configurable",async()=>{
   assert.equal(config.games.witch.advanced.enabled,false);
   assert.equal(config.games.witch.normal.targetRtpBps,8500);
   assert.equal(config.games.witch.advanced.targetRtpBps,8200);
+
+  const state=await gameControlState(db);
+  const normal=state.variants.find(item=>item.key==="witch_normal");
+  const advanced=state.variants.find(item=>item.key==="witch_advanced");
+  assert.equal(normal.enabled,true);
+  assert.equal(advanced.enabled,false);
 });
 
 test("runtime accepts a control-defined custom bet ladder",async()=>{
