@@ -1255,6 +1255,41 @@ async function controlRoomPolicy(db,uid,body){
   });
 }
 
+async function announceRoomEntrance(db,uid,roomId){
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId)){
+    throw new ApiError("invalid_room_id",400);
+  }
+  const roomRef=db.collection("rooms").doc(roomId);
+  const roomSnap=await roomRef.get();
+  if(!roomSnap.exists||roomSnap.data()?.isActive===false){
+    throw new ApiError("room_unavailable",404);
+  }
+
+  const cosmetics=await activeCosmetics(db,uid,["entrance"]);
+  const entrance=cosmetics.entrance;
+  if(!entrance)return {ok:true,announced:false,roomId};
+
+  const profileSnap=await db.collection("public_profiles").doc(uid).get();
+  const profile=profileSnap.data()||{};
+  const eventAtMs=Date.now();
+  const event={
+    eventId:uid+"_"+eventAtMs.toString(36),
+    uid,
+    displayName:clean(profile.displayName||profile.username||"مستخدم Shadow Live"),
+    profileImageUrl:clean(profile.profileImageUrl),
+    rewardId:clean(entrance.rewardId),
+    assetKey:clean(entrance.assetKey),
+    imageUrl:clean(entrance.imageUrl),
+    rewardExpiresAtMs:Number(entrance.expiresAtMs||0),
+    eventAtMs,
+  };
+  await roomRef.set({
+    recentEntrance:event,
+    updatedAt:FieldValue.serverTimestamp(),
+  },{merge:true});
+  return {ok:true,announced:true,roomId,event};
+}
+
 async function roomSeatState(db,uid,roomId){
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
   const snap=await db.collection("rooms").doc(roomId).get();
@@ -2917,6 +2952,14 @@ export default async function handler(req,res){
     if(action==="setRoomModerator"){
       return out(res,200,await setRoomModerator(getFirestore(),decoded.uid,req.body||{}));
     }
+    if(action==="announceEntrance"){
+      const roomId=clean(req.body?.roomId);
+      return out(
+        res,
+        200,
+        await announceRoomEntrance(getFirestore(),decoded.uid,roomId),
+      );
+    }
     if(action==="roomSeatState"){
       const roomId=clean(req.body?.roomId);
       return out(res,200,await roomSeatState(getFirestore(),decoded.uid,roomId));
@@ -2964,32 +3007,6 @@ export default async function handler(req,res){
         if(!suppliedPassword)throw new ApiError("room_password_required",403);
         if(!verifyRoomPassword(roomData,suppliedPassword))throw new ApiError("room_password_invalid",403);
       }
-    }
-
-    const cosmetics=await activeCosmetics(
-      db,
-      decoded.uid,
-      ["entrance"],
-    );
-    const entrance=cosmetics.entrance;
-    if(entrance){
-      const profileSnap=await db.collection("public_profiles").doc(decoded.uid).get();
-      const profile=profileSnap.data()||{};
-      const eventAtMs=Date.now();
-      await db.collection("rooms").doc(roomId).set({
-        recentEntrance:{
-          eventId:decoded.uid+"_"+eventAtMs.toString(36),
-          uid:decoded.uid,
-          displayName:clean(profile.displayName||profile.username||"مستخدم Shadow Live"),
-          profileImageUrl:clean(profile.profileImageUrl),
-          rewardId:clean(entrance.rewardId),
-          assetKey:clean(entrance.assetKey),
-          imageUrl:clean(entrance.imageUrl),
-          rewardExpiresAtMs:Number(entrance.expiresAtMs||0),
-          eventAtMs,
-        },
-        updatedAt:FieldValue.serverTimestamp(),
-      },{merge:true});
     }
 
     const effectiveSeconds=1800;
