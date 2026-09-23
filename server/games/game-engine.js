@@ -42,15 +42,35 @@ export function validIdempotencyKey(value){
   return /^[A-Za-z0-9_-]{12,220}$/.test(clean(value));
 }
 
-function allowedBetSet(gameId,mode){
-  if(gameId==="greedy_cat")return new Set(BET_LADDERS.greedy_cat);
-  if(gameId==="slot")return new Set(BET_LADDERS.slot);
+function defaultBets(gameId,mode){
+  if(gameId==="greedy_cat")return BET_LADDERS.greedy_cat;
+  if(gameId==="slot")return BET_LADDERS.slot;
   if(gameId==="witch"){
-    return new Set(mode==="advanced"
+    return mode==="advanced"
       ? BET_LADDERS.witch_advanced
-      : BET_LADDERS.witch_normal);
+      : BET_LADDERS.witch_normal;
   }
   throw Error("unsupported_game");
+}
+
+export function validateBetLadder(gameId,mode,rawBets){
+  const source=Array.isArray(rawBets)&&rawBets.length?rawBets:defaultBets(gameId,mode);
+  if(source.length<1||source.length>20)throw Error("invalid_bet_ladder");
+  const normalized=[];
+  let previous=0;
+  for(const raw of source){
+    const value=Number(raw);
+    if(!Number.isSafeInteger(value)||value<=0||value>100000000||value<=previous){
+      throw Error("invalid_bet_ladder");
+    }
+    previous=value;
+    normalized.push(value);
+  }
+  return Object.freeze(normalized);
+}
+
+function allowedBetSet(gameId,mode,rawBets){
+  return new Set(validateBetLadder(gameId,mode,rawBets));
 }
 
 function choiceMap(gameId,mode){
@@ -59,13 +79,13 @@ function choiceMap(gameId,mode){
   throw Error("unsupported_game");
 }
 
-export function normalizeBetEvents(gameId,mode,rawSelections){
+export function normalizeBetEvents(gameId,mode,rawSelections,allowedBets){
   if(!GAME_IDS.includes(gameId))throw Error("unsupported_game");
   if(gameId==="slot"){
     const amount=Number(Array.isArray(rawSelections)
       ? rawSelections[0]?.amountCoins
       : rawSelections?.amountCoins);
-    if(!allowedBetSet(gameId,mode).has(amount))throw Error("invalid_bet");
+    if(!allowedBetSet(gameId,mode,allowedBets).has(amount))throw Error("invalid_bet");
     return Object.freeze([{choiceId:"spin",amountCoins:amount}]);
   }
 
@@ -76,7 +96,7 @@ export function normalizeBetEvents(gameId,mode,rawSelections){
     throw Error("invalid_bets");
   }
   const choices=choiceMap(gameId,mode);
-  const ladder=allowedBetSet(gameId,mode);
+  const ladder=allowedBetSet(gameId,mode,allowedBets);
   const events=[];
   for(const raw of rawSelections){
     const choiceId=clean(raw?.choiceId);
@@ -92,8 +112,8 @@ export function normalizeBetEvents(gameId,mode,rawSelections){
   return Object.freeze(events);
 }
 
-export function normalizeSelections(gameId,mode,rawSelections){
-  const events=normalizeBetEvents(gameId,mode,rawSelections);
+export function normalizeSelections(gameId,mode,rawSelections,allowedBets){
+  const events=normalizeBetEvents(gameId,mode,rawSelections,allowedBets);
   if(gameId==="slot")return events;
 
   const merged=new Map();
