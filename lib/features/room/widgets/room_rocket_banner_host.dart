@@ -214,16 +214,18 @@ class _RoomRocketBannerHostState extends State<RoomRocketBannerHost> {
 
   Future<void> _openRoom(RoomRocketEvent event) async {
     if (_openingRoom) return;
-    if (_voice.active && _voice.roomId == event.roomId) {
+    if (_voice.roomId.isNotEmpty && _voice.roomId == event.roomId) {
       return;
     }
     _openingRoom = true;
     try {
       final args = await _service.loadRoomNavigationArguments(event.roomId);
       if (args == null) return;
-      await NavigationService.navigateTo(
-        AppRoutes.voiceChatRoom,
-        arguments: args,
+      unawaited(
+        NavigationService.navigateTo(
+          AppRoutes.voiceChatRoom,
+          arguments: args,
+        ),
       );
     } finally {
       _openingRoom = false;
