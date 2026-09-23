@@ -32,14 +32,14 @@ jobs:
 
       - name: Build Shadow Control
         run: |
-          flutter build web --release --target lib/main_control.dart --base-href /Shadow-Live-/
+          flutter build web --release --pwa-strategy=none --target lib/main_control.dart --base-href /Shadow-Live-/
           rm -rf site
           mkdir -p site
           cp -R build/web/. site/
 
       - name: Build Shadow Live app
         run: |
-          flutter build web --release --target lib/main.dart --base-href /Shadow-Live-/app/
+          flutter build web --release --pwa-strategy=none --target lib/main.dart --base-href /Shadow-Live-/app/
           mkdir -p site/app
           cp -R build/web/. site/app/
 
