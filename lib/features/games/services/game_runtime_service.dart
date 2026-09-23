@@ -135,6 +135,9 @@ class GameRuntimeService {
   final http.Client _client;
   final String _baseUrl;
   int _counter = 0;
+  final Map<String, int> _e2eTotals = <String, int>{};
+  int _e2eBalance = 100000;
+  static const bool _e2eRoomTest = bool.fromEnvironment('E2E_ROOM_TEST');
 
   static String _defaultBaseUrl() {
     const configured = String.fromEnvironment('SHADOW_API_BASE_URL');
@@ -177,6 +180,42 @@ class GameRuntimeService {
   }
 
   Future<List<GameCatalogEntry>> loadCatalog() async {
+    if (_e2eRoomTest) {
+      return const [
+        GameCatalogEntry(
+          key: 'greedy_cat',
+          gameId: 'greedy_cat',
+          mode: '',
+          label: 'القط الجشع',
+          targetRtpBps: 8500,
+          bets: [200, 2000, 20000, 200000],
+        ),
+        GameCatalogEntry(
+          key: 'witch_normal',
+          gameId: 'witch',
+          mode: 'normal',
+          label: 'الساحرة — عادي',
+          targetRtpBps: 8500,
+          bets: [100, 1000, 10000, 100000],
+        ),
+        GameCatalogEntry(
+          key: 'witch_advanced',
+          gameId: 'witch',
+          mode: 'advanced',
+          label: 'الساحرة — متقدم',
+          targetRtpBps: 8500,
+          bets: [200, 2000, 20000, 200000],
+        ),
+        GameCatalogEntry(
+          key: 'slot',
+          gameId: 'slot',
+          mode: '',
+          label: 'Shadow Slot',
+          targetRtpBps: 8500,
+          bets: [200, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000],
+        ),
+      ];
+    }
     final body = await _post({'action': 'catalog'});
     final raw = body['items'];
     if (raw is! List) return const [];
@@ -190,6 +229,34 @@ class GameRuntimeService {
   }
 
   Future<GameRuntimeState> loadState(GameCatalogEntry game) async {
+    if (_e2eRoomTest) {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      return GameRuntimeState(
+        gameId: game.gameId,
+        mode: game.mode,
+        serverNowMs: now,
+        bets: game.bets,
+        round: game.gameId == 'slot'
+            ? null
+            : <String, dynamic>{
+                'roundId': '${game.key}:e2e:1',
+                'roundNumber': 1,
+                'dayKey': '2026-09-23',
+                'opensAtMs': now - 5000,
+                'closesAtMs': now + 25000,
+                'locked': false,
+              },
+        currentRoundSelections: Map<String, int>.from(_e2eTotals),
+        lastResult: game.gameId == 'slot'
+            ? null
+            : <String, dynamic>{
+                'roundId': '${game.key}:e2e:0',
+                'roundNumber': 0,
+                'outcomeId': game.gameId == 'greedy_cat' ? 'salad' : 'moon',
+                'closedAtMs': now - 5000,
+              },
+      );
+    }
     final body = await _post({
       'action': 'state',
       'gameId': game.gameId,
@@ -204,6 +271,35 @@ class GameRuntimeService {
     required int amountCoins,
     String? choiceId,
   }) async {
+    if (_e2eRoomTest) {
+      if (_e2eBalance < amountCoins) throw StateError('insufficient_balance');
+      _e2eBalance -= amountCoins;
+      if (game.gameId != 'slot' && choiceId != null && choiceId.isNotEmpty) {
+        _e2eTotals[choiceId] = (_e2eTotals[choiceId] ?? 0) + amountCoins;
+        return GameBetResult(
+          status: 'pending',
+          gameId: game.gameId,
+          roundId: '${game.key}:e2e:1',
+          totalStakeCoins: amountCoins,
+          payoutCoins: null,
+          balanceAfter: _e2eBalance,
+          outcomeId: null,
+          reels: const [],
+        );
+      }
+      final payout = amountCoins * 2;
+      _e2eBalance += payout;
+      return GameBetResult(
+        status: 'settled',
+        gameId: game.gameId,
+        roundId: 'slot:e2e:${DateTime.now().microsecondsSinceEpoch}',
+        totalStakeCoins: amountCoins,
+        payoutCoins: payout,
+        balanceAfter: _e2eBalance,
+        outcomeId: 'pair',
+        reels: const ['crown', 'crown', 'fire'],
+      );
+    }
     final uid = FirebaseAuth.instance.currentUser?.uid ?? 'user';
     _counter++;
     final key =
