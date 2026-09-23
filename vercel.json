@@ -19,6 +19,10 @@
     {
       "source": "/api/recharge-config",
       "destination": "/api/economy-router?route=recharge-config"
+    },
+    {
+      "source": "/api/game-runtime",
+      "destination": "/api/economy-router?route=game-runtime"
     }
   ]
 }
