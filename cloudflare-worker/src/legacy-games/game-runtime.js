@@ -422,7 +422,7 @@ export async function placeGameBet(
   });
 }
 
-async function settleOperationRef(db,operationRef,nowMs){
+async function settleOperationRef(db,operationRef,nowMs,{workerTag=""}={}){
   return db.runTransaction(async(tx)=>{
     const operationSnap=await tx.get(operationRef);
     if(!operationSnap.exists)throw Error("operation_not_found");
@@ -462,6 +462,7 @@ async function settleOperationRef(db,operationRef,nowMs){
       balanceAfter:after,
       settledAt:now,
       updatedAt:now,
+      ...(workerTag?{settlementWorker:workerTag}:{}),
     });
     if(payout>0){
       tx.create(creditLedgerRef,{
@@ -525,6 +526,7 @@ export async function settleDueGameOperations(
   {
     nowMs=Date.now(),
     limit=50,
+    workerTag="",
   }={},
 ){
   const snapshot=await db.collection("game_operations")
@@ -537,7 +539,7 @@ export async function settleDueGameOperations(
   const results=[];
   for(const doc of due){
     try{
-      results.push(await settleOperationRef(db,doc.ref,nowMs));
+      results.push(await settleOperationRef(db,doc.ref,nowMs,{workerTag}));
     }catch(error){
       results.push({
         ok:false,
