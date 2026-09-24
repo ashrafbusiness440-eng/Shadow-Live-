@@ -151,7 +151,8 @@ async function waitForCron(){
     if(op?.status==="settled")return op;
     await new Promise(r=>setTimeout(r,5000));
   }
-  throw Error("Cloudflare cron did not settle due game operation");
+  const marker=await fsGet("system_runtime/game_settlement_cron");
+  throw Error("Cloudflare cron did not settle due game operation; marker="+JSON.stringify(marker));
 }
 
 let ownerToken=null,playerToken=null;
