@@ -1,3 +1,4 @@
+// GAME_RNG_SECRET verification rerun
 import fs from "node:fs";
 import { sign } from "node:crypto";
 
