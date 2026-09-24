@@ -4,6 +4,7 @@ import { appAssets } from "./app-assets.js";
 import { changePublicId } from "./change-public-id.js";
 import { setIdManagementPermission } from "./set-id-management-permission.js";
 import { walletActions } from "./wallet-actions.js";
+import { chatSafetyActions } from "./chat-safety-actions.js";
 
 export default {
   async fetch(request, env) {
@@ -20,7 +21,7 @@ export default {
       return json(request, env, {
         ok: true,
         service: "shadow-live-cloudflare-worker",
-        version: 4,
+        version: 5,
         buildSha: env.BUILD_SHA || null,
         firebaseConfigured: Boolean(String(env.FIREBASE_SERVICE_ACCOUNT || "").trim()),
       });
@@ -40,6 +41,9 @@ export default {
     }
     if (url.pathname === "/api/wallet-actions") {
       return walletActions(request, env);
+    }
+    if (url.pathname === "/api/chat-actions") {
+      return chatSafetyActions(request, env);
     }
 
     return json(request, env, { ok: false, code: "route_not_found" }, 404);
