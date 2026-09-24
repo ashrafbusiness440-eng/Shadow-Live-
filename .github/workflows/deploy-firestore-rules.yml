@@ -30,16 +30,133 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install Firebase CLI
-        run: npm install --global firebase-tools
-
-      - name: Prepare service account
+      - name: Deploy Firestore rules through Rules API
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
-          test -n "$FIREBASE_SERVICE_ACCOUNT"
-          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
-          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/firebase-service-account.json" >> "$GITHUB_ENV"
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import { sign } from 'node:crypto';
 
-      - name: Deploy Firestore rules
-        run: firebase deploy --only firestore:rules --project shadow-live --non-interactive
+          let sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
+          if (typeof sa === 'string') sa = JSON.parse(sa);
+          const projectId = sa.project_id;
+          const clientEmail = sa.client_email;
+          const privateKey = String(sa.private_key || '').replace(/\\n/g, '\n');
+          if (!projectId || !clientEmail || !privateKey) throw new Error('invalid service account');
+
+          const b64url = (value) => Buffer.from(value)
+            .toString('base64')
+            .replace(/=/g, '')
+            .replace(/\+/g, '-')
+            .replace(/\//g, '_');
+
+          const now = Math.floor(Date.now() / 1000);
+          const header = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+          const payload = b64url(JSON.stringify({
+            iss: clientEmail,
+            scope: 'https://www.googleapis.com/auth/firebase',
+            aud: 'https://oauth2.googleapis.com/token',
+            iat: now,
+            exp: now + 3600,
+          }));
+          const unsigned = header + '.' + payload;
+          const assertion = unsigned + '.' + b64url(
+            sign('RSA-SHA256', Buffer.from(unsigned), privateKey),
+          );
+
+          const oauth = await fetch('https://oauth2.googleapis.com/token', {
+            method: 'POST',
+            headers: { 'content-type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+              grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+              assertion,
+            }),
+          });
+          const oauthBody = await oauth.json();
+          if (!oauth.ok || !oauthBody.access_token) {
+            throw new Error('oauth failed ' + oauth.status + ' ' + JSON.stringify(oauthBody));
+          }
+          const token = oauthBody.access_token;
+          const headers = {
+            authorization: 'Bearer ' + token,
+            'content-type': 'application/json',
+          };
+          const source = fs.readFileSync('firestore.rules', 'utf8');
+
+          const createRuleset = await fetch(
+            'https://firebaserules.googleapis.com/v1/projects/' +
+              encodeURIComponent(projectId) +
+              '/rulesets',
+            {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({
+                source: {
+                  files: [{ name: 'firestore.rules', content: source }],
+                },
+              }),
+            },
+          );
+          const ruleset = await createRuleset.json().catch(() => ({}));
+          if (!createRuleset.ok || !ruleset.name) {
+            throw new Error(
+              'ruleset create failed ' +
+                createRuleset.status +
+                ' ' +
+                JSON.stringify(ruleset),
+            );
+          }
+
+          const releaseName = 'projects/' + projectId + '/releases/cloud.firestore';
+          const patch = await fetch(
+            'https://firebaserules.googleapis.com/v1/' + releaseName,
+            {
+              method: 'PATCH',
+              headers,
+              body: JSON.stringify({
+                release: {
+                  name: releaseName,
+                  rulesetName: ruleset.name,
+                },
+                updateMask: 'rulesetName',
+              }),
+            },
+          );
+          let release = await patch.json().catch(() => ({}));
+
+          if (patch.status === 404) {
+            const createRelease = await fetch(
+              'https://firebaserules.googleapis.com/v1/projects/' +
+                encodeURIComponent(projectId) +
+                '/releases',
+              {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                  name: releaseName,
+                  rulesetName: ruleset.name,
+                }),
+              },
+            );
+            release = await createRelease.json().catch(() => ({}));
+            if (!createRelease.ok) {
+              throw new Error(
+                'release create failed ' +
+                  createRelease.status +
+                  ' ' +
+                  JSON.stringify(release),
+              );
+            }
+          } else if (!patch.ok) {
+            throw new Error(
+              'release update failed ' +
+                patch.status +
+                ' ' +
+                JSON.stringify(release),
+            );
+          }
+
+          console.log('Firestore rules released:', ruleset.name);
+          console.log('Release:', release.name || releaseName);
+          NODE
