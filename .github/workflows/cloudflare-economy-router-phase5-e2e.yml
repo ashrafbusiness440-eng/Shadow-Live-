@@ -1,0 +1,37 @@
+name: Cloudflare Economy Router Phase 5 E2E
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'cloudflare-worker/src/economy-router.js'
+      - 'cloudflare-worker/src/economy-router-legacy.js'
+      - 'cloudflare-worker/src/legacy-economy/**'
+      - 'cloudflare-worker/src/legacy-games/**'
+      - 'cloudflare-worker/scripts/economy-router-e2e.mjs'
+      - '.github/workflows/cloudflare-economy-router-phase5-e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shadow-live-cloudflare-economy-router-phase5-e2e
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run Cloudflare economy router phase 5 E2E
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node cloudflare-worker/scripts/economy-router-e2e.mjs
