@@ -238,6 +238,9 @@ try{
   });
   const cronSettled=await waitForCron();
   if(cronSettled.status!=="settled")throw Error("cron settlement status mismatch");
+  if(cronSettled.settlementWorker!=="cloudflare_cron"){
+    throw Error("settlement was not performed by Cloudflare Cron: "+JSON.stringify(cronSettled));
+  }
   const playerAfterCron=await fsGet("users/"+playerUid);
   if(Number(playerAfterCron?.coins)!==22000)throw Error("cron settlement wallet mismatch");
   const cronLedger=await fsGet("financial_ledger/game_credit__"+cronOpId);
