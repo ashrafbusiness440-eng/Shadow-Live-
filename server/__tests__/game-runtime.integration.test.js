@@ -270,6 +270,13 @@ test("same collective round is global across users and rooms",async()=>{
     .doc(uidB+"__global_round_b_"+suffix).get()).data();
   assert.equal(opA.outcomeId,opB.outcomeId);
   assert.equal(opA.entropyDigest,opB.entropyDigest);
+
+  const pressure=await gameState(db,uidA,{gameId:"greedy_cat"},{nowMs,rngSecret});
+  const serverTotals=Object.fromEntries(
+    pressure.serverRoundSelections.map(item=>[item.choiceId,item.amountCoins]),
+  );
+  assert.equal(serverTotals.tomato5,200);
+  assert.equal(serverTotals.fish15,200);
 });
 
 test("slot settles debit and payout atomically in one operation",async()=>{
