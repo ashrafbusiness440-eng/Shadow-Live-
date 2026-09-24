@@ -343,7 +343,8 @@ class _UsersPageState extends State<UsersPage> {
           final d=doc.data();
           final role=text(d['role']).isEmpty?'user':text(d['role']);
           final enabled=d['adminEnabled']==true;
-          final caps=d['capabilities'] is List?(d['capabilities'] as List).length:0;
+          final explicitCaps=d['capabilities'] is List?(d['capabilities'] as List).length:0;
+          final capsLabel=role=='owner'?'كل الصلاحيات (Owner)':'$explicitCaps';
           final email=text(d['email']);
           final publicId=text(d['id']).isNotEmpty?text(d['id']):text(d['userId']);
           return Card(child:ListTile(
@@ -353,7 +354,7 @@ class _UsersPageState extends State<UsersPage> {
               if(email.isNotEmpty) email,
               if(publicId.isNotEmpty) 'ID: $publicId',
               'الدور: $role',
-              'الإدارة: ${enabled?'مفعلة':'غير مفعلة'} • الصلاحيات: $caps'
+              'الإدارة: ${enabled?'مفعلة':'غير مفعلة'} • الصلاحيات: $capsLabel'
             ].join('\n')),
             isThreeLine:true,
             trailing:role=='owner'?const Icon(Icons.verified,color:Color(0xFFD7B85A)):const Icon(Icons.chevron_left),
@@ -371,6 +372,7 @@ class UserReadOnlyPage extends StatelessWidget {
   String t(dynamic v)=>v==null?'—':'$v';
   @override Widget build(BuildContext context){
     final caps=data['capabilities'] is List?(data['capabilities'] as List).map((e)=>'$e').toList():<String>[];
+    final isOwner=t(data['role']??'user')=='owner';
     return Scaffold(
       appBar:AppBar(title:const Text('تفاصيل المستخدم')),
       body:ListView(padding:const EdgeInsets.all(16),children:[
@@ -388,7 +390,9 @@ class UserReadOnlyPage extends StatelessWidget {
         Card(child:ListTile(
           leading:const Icon(Icons.admin_panel_settings_outlined,color:Color(0xFFD7B85A)),
           title:const Text('الصلاحيات'),
-          subtitle:Text(caps.isEmpty?'لا توجد صلاحيات إضافية':caps.join(' • ')),
+          subtitle:Text(isOwner
+              ? 'كل الصلاحيات مفعّلة تلقائيًا للـOwner (الصلاحيات الفعلية لا تعتمد على قائمة capabilities المخزنة).'
+              : (caps.isEmpty?'لا توجد صلاحيات إضافية':caps.join(' • '))),
         )),
         const SizedBox(height:10),
         _RolePolicyCard(role:t(data['role']??'user'),adminEnabled:data['adminEnabled']==true,capabilities:caps),

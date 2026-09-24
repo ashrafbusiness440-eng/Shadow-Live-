@@ -128,9 +128,10 @@ async function fsDelete(path){
 }
 async function deleteAuth(idToken){
   if(!idToken)return;
-  await fetch("https://identitytoolkit.googleapis.com/v1/accounts:delete?key="+encodeURIComponent(apiKey),{
+  const res=await fetch("https://identitytoolkit.googleapis.com/v1/accounts:delete?key="+encodeURIComponent(apiKey),{
     method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({idToken}),
-  }).catch(()=>{});
+  });
+  if(!res.ok)throw Error("deleteAuth failed "+res.status+" "+await res.text());
 }
 async function post(path,token,body){
   const res=await fetch(base+path,{
@@ -183,7 +184,7 @@ const cleanup=[
 for(let d=16;d<=24;d++)cleanup.push("host_mic_activity/"+hostUid+"/days/"+month+"-"+String(d).padStart(2,"0"));
 
 try{
-  await fsSet("users/"+ownerUid,{displayName:"Phase6 Owner",role:"owner",adminEnabled:true,capabilities:["manageEconomy","manageGames","manageSettlements"],coins:0,diamonds:0});
+  await fsSet("users/"+ownerUid,{displayName:"Phase6 Owner",role:"owner",adminEnabled:true,capabilities:[],coins:0,diamonds:0});
   await fsSet("users/"+playerUid,{displayName:"Phase6 Player",role:"user",adminEnabled:false,coins:10000,diamonds:0});
   await fsSet("users/"+hostUid,{
     displayName:"Phase6 Host",role:"user",adminEnabled:false,coins:0,diamonds:0,
@@ -301,9 +302,16 @@ try{
 
   console.log("ALL CLOUDFLARE PHASE-6 SETTLEMENT AND GAME E2E CHECKS PASSED");
 }finally{
+  const cleanupErrors=[];
   for(const p of cleanup.reverse()){
-    try{await fsDelete(p);}catch{}
+    try{await fsDelete(p);}
+    catch(error){cleanupErrors.push(String(error?.message||error));}
   }
-  await deleteAuth(ownerToken);
-  await deleteAuth(playerToken);
+  for(const token of [ownerToken,playerToken]){
+    try{await deleteAuth(token);}
+    catch(error){cleanupErrors.push(String(error?.message||error));}
+  }
+  if(cleanupErrors.length){
+    throw Error("Phase6 E2E cleanup failed: "+cleanupErrors.join(" | "));
+  }
 }

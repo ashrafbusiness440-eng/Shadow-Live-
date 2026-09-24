@@ -1,0 +1,28 @@
+name: Cleanup stale Phase 6 test users
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'cloudflare-worker/scripts/cleanup-phase6-test-users.mjs'
+      - '.github/workflows/cleanup-phase6-test-users.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Remove stale Phase 6 E2E user documents
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node cloudflare-worker/scripts/cleanup-phase6-test-users.mjs
