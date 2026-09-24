@@ -1,7 +1,12 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() { return request.auth != null; }
+    function signedIn() {
+      return request.auth != null
+        && (!exists(/databases/$(database)/documents/users/$(request.auth.uid))
+          || !('accountStatus' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data)
+          || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.accountStatus == 'active');
+    }
     function userDoc() { return get(/databases/$(database)/documents/users/$(request.auth.uid)); }
     function isOwner() { return signedIn() && userDoc().data.role == 'owner'; }
     function hasCapability(capability) {
@@ -37,6 +42,45 @@ service cloud.firestore {
         && (!('capabilities' in resource.data) && !('capabilities' in request.resource.data)
           || ('capabilities' in resource.data) && ('capabilities' in request.resource.data)
              && request.resource.data.capabilities == resource.data.capabilities)
+        && (!('accountStatus' in resource.data) && !('accountStatus' in request.resource.data)
+          || ('accountStatus' in resource.data) && ('accountStatus' in request.resource.data)
+             && request.resource.data.accountStatus == resource.data.accountStatus)
+        && (!('suspendedUntil' in resource.data) && !('suspendedUntil' in request.resource.data)
+          || ('suspendedUntil' in resource.data) && ('suspendedUntil' in request.resource.data)
+             && request.resource.data.suspendedUntil == resource.data.suspendedUntil)
+        && (!('suspensionMinutes' in resource.data) && !('suspensionMinutes' in request.resource.data)
+          || ('suspensionMinutes' in resource.data) && ('suspensionMinutes' in request.resource.data)
+             && request.resource.data.suspensionMinutes == resource.data.suspensionMinutes)
+        && (!('bannedAt' in resource.data) && !('bannedAt' in request.resource.data)
+          || ('bannedAt' in resource.data) && ('bannedAt' in request.resource.data)
+             && request.resource.data.bannedAt == resource.data.bannedAt)
+        && (!('disabledAt' in resource.data) && !('disabledAt' in request.resource.data)
+          || ('disabledAt' in resource.data) && ('disabledAt' in request.resource.data)
+             && request.resource.data.disabledAt == resource.data.disabledAt)
+        && (!('authDeleted' in resource.data) && !('authDeleted' in request.resource.data)
+          || ('authDeleted' in resource.data) && ('authDeleted' in request.resource.data)
+             && request.resource.data.authDeleted == resource.data.authDeleted)
+        && (!('deletedAt' in resource.data) && !('deletedAt' in request.resource.data)
+          || ('deletedAt' in resource.data) && ('deletedAt' in request.resource.data)
+             && request.resource.data.deletedAt == resource.data.deletedAt)
+        && (!('deletedBy' in resource.data) && !('deletedBy' in request.resource.data)
+          || ('deletedBy' in resource.data) && ('deletedBy' in request.resource.data)
+             && request.resource.data.deletedBy == resource.data.deletedBy)
+        && (!('deletionReason' in resource.data) && !('deletionReason' in request.resource.data)
+          || ('deletionReason' in resource.data) && ('deletionReason' in request.resource.data)
+             && request.resource.data.deletionReason == resource.data.deletionReason)
+        && (!('moderatedBy' in resource.data) && !('moderatedBy' in request.resource.data)
+          || ('moderatedBy' in resource.data) && ('moderatedBy' in request.resource.data)
+             && request.resource.data.moderatedBy == resource.data.moderatedBy)
+        && (!('moderatedAt' in resource.data) && !('moderatedAt' in request.resource.data)
+          || ('moderatedAt' in resource.data) && ('moderatedAt' in request.resource.data)
+             && request.resource.data.moderatedAt == resource.data.moderatedAt)
+        && (!('moderationReason' in resource.data) && !('moderationReason' in request.resource.data)
+          || ('moderationReason' in resource.data) && ('moderationReason' in request.resource.data)
+             && request.resource.data.moderationReason == resource.data.moderationReason)
+        && (!('sessionsRevokedAt' in resource.data) && !('sessionsRevokedAt' in request.resource.data)
+          || ('sessionsRevokedAt' in resource.data) && ('sessionsRevokedAt' in request.resource.data)
+             && request.resource.data.sessionsRevokedAt == resource.data.sessionsRevokedAt)
         && (!('coins' in resource.data) && !('coins' in request.resource.data)
           || ('coins' in resource.data) && ('coins' in request.resource.data)
              && request.resource.data.coins == resource.data.coins)
