@@ -2,6 +2,7 @@ name: Deploy Shadow Live API to Cloudflare Workers
 # Asset token verification marker
 # ZEGO secret sync verification marker
 # Secret sync verification marker
+# Game RNG sync verification marker
 
 on:
   push:
