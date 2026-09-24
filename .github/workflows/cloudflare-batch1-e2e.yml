@@ -1,0 +1,33 @@
+name: Cloudflare Batch 1 E2E
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'cloudflare-worker/scripts/e2e-smoke.mjs'
+      - '.github/workflows/cloudflare-batch1-e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shadow-live-cloudflare-batch1-e2e
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run Cloudflare Batch 1 E2E
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node cloudflare-worker/scripts/e2e-smoke.mjs
