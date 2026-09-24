@@ -271,11 +271,11 @@ try {
   if (rate?.data?.count !== 1) throw new Error("duplicate report changed rate count");
   console.log("PASS report idempotency");
 
-  const notMigrated = await api(idToken, "sendMessage", {});
-  if (notMigrated.res.status !== 400 || notMigrated.body.code !== "action_not_migrated") {
-    throw new Error("unmigrated chat action guard failed");
+  const invalidAction = await api(idToken, "__phase8_unknown_action__", {});
+  if (invalidAction.res.status !== 400 || invalidAction.body.code !== "invalid_action") {
+    throw new Error(`unknown chat action guard failed: ${invalidAction.res.status} ${JSON.stringify(invalidAction.body)}`);
   }
-  console.log("PASS unmigrated-action guard");
+  console.log("PASS unknown-action guard");
 
   console.log("ALL CLOUDFLARE CHAT SAFETY E2E CHECKS PASSED");
 } finally {
