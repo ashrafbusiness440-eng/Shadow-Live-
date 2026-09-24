@@ -71,7 +71,7 @@ jobs:
 
       - name: Verify Firebase storage health
         run: |
-          BODY=$(curl --fail --silent --show-error \
+          BODY=$(curl --silent --show-error \
             https://shadow-live.ashraf-business-440.workers.dev/api/storage-health)
           echo "$BODY"
           echo "$BODY" | grep -q '"ok":true'
