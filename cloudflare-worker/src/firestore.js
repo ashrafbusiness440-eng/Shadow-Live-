@@ -156,5 +156,9 @@ export function firestoreClient(env) {
         currentDocument: { exists: false },
       };
     },
+
+    writeDelete(path) {
+      return { delete: documentName(path) };
+    },
   };
 }
