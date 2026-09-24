@@ -7,6 +7,7 @@ import { walletActions } from "./wallet-actions.js";
 import { chatSafetyActions } from "./chat-safety-actions.js";
 import { storageHealth } from "./storage-health.js";
 import { roomGift } from "./room-gift.js";
+import { voiceSession } from "./voice-session.js";
 
 export default {
   async fetch(request, env) {
@@ -23,7 +24,7 @@ export default {
       return json(request, env, {
         ok: true,
         service: "shadow-live-cloudflare-worker",
-        version: 7,
+        version: 8,
         buildSha: env.BUILD_SHA || null,
         firebaseConfigured: Boolean(String(env.FIREBASE_SERVICE_ACCOUNT || "").trim()),
       });
@@ -52,6 +53,9 @@ export default {
     }
     if (url.pathname === "/api/room-gift") {
       return roomGift(request, env);
+    }
+    if (url.pathname === "/api/voice-session") {
+      return voiceSession(request, env);
     }
 
     return json(request, env, { ok: false, code: "route_not_found" }, 404);
