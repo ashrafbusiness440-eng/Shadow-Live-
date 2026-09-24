@@ -200,7 +200,51 @@ async function deleteAuthUser(idToken){
 let ownerToken=null;
 let userToken=null;
 let githubSha=null;
+let probeSha=null;
+const probePath=`assets/images/misc/cf_token_probe_${runId}.txt`;
 try{
+  const repoCheck=await fetch("https://api.github.com/repos/ashrafbusiness440-eng/Shadow-Live-",{
+    headers:{
+      accept:"application/vnd.github+json",
+      authorization:`Bearer ${githubToken}`,
+      "x-github-api-version":"2022-11-28",
+    },
+  });
+  const repoCheckBody=await repoCheck.json().catch(()=>({}));
+  if(!repoCheck.ok){
+    throw new Error(`GitHub token repo access failed: ${repoCheck.status} ${repoCheckBody?.message||""}`);
+  }
+  console.log("PASS GitHub token repository access");
+
+  const probeWrite=await github(probePath,{
+    method:"PUT",
+    headers:{"content-type":"application/json"},
+    body:JSON.stringify({
+      message:"Cloudflare asset token permission probe",
+      content:Buffer.from("shadow-live-asset-token-probe").toString("base64"),
+      branch:"main",
+    }),
+  });
+  if(!probeWrite.res.ok||!probeWrite.body?.content?.sha){
+    throw new Error(`GitHub token direct write probe failed: ${probeWrite.res.status} ${probeWrite.body?.message||JSON.stringify(probeWrite.body)}`);
+  }
+  probeSha=String(probeWrite.body.content.sha);
+  console.log("PASS GitHub token direct write probe");
+
+  const probeDelete=await github(probePath,{
+    method:"DELETE",
+    headers:{"content-type":"application/json"},
+    body:JSON.stringify({
+      message:"Cleanup Cloudflare asset token permission probe",
+      sha:probeSha,
+      branch:"main",
+    }),
+  });
+  if(!probeDelete.res.ok){
+    throw new Error(`GitHub token direct delete probe failed: ${probeDelete.res.status} ${probeDelete.body?.message||JSON.stringify(probeDelete.body)}`);
+  }
+  probeSha=null;
+  console.log("PASS GitHub token direct delete probe");
   await fsSet(`users/${ownerUid}`,{
     displayName:"Cloudflare Asset Owner",
     role:"owner",
@@ -274,6 +318,20 @@ try{
 
   console.log("ALL CLOUDFLARE MANAGE APP ASSET E2E CHECKS PASSED");
 }finally{
+  try{
+    if(probeSha){
+      await github(probePath,{
+        method:"DELETE",
+        headers:{"content-type":"application/json"},
+        body:JSON.stringify({
+          message:"Cleanup Cloudflare asset token permission probe",
+          sha:probeSha,
+          branch:"main",
+        }),
+      });
+    }
+  }catch(error){console.warn(`GitHub probe cleanup warning: ${error.message}`);}
+
   try{
     if(!githubSha){
       const current=await github(fullPath);
