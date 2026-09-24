@@ -1098,9 +1098,9 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
       children: [
         LayoutBuilder(
           builder: (context, constraints) {
-            final boardSize = constraints.maxWidth.clamp(300.0, 430.0);
-            final nodeSize = (boardSize * .215).clamp(68.0, 88.0);
-            final centerSize = (boardSize * .34).clamp(104.0, 142.0);
+            final boardSize = constraints.maxWidth.clamp(300.0, 430.0).toDouble();
+            final nodeSize = (boardSize * .215).clamp(68.0, 88.0).toDouble();
+            final centerSize = (boardSize * .34).clamp(104.0, 142.0).toDouble();
             return Center(
               child: SizedBox(
                 width: boardSize,
@@ -1370,7 +1370,7 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
           : LayoutBuilder(
               builder: (context, constraints) {
                 final itemWidth =
-                    ((constraints.maxWidth - 8) / 8).clamp(38.0, 54.0);
+                    ((constraints.maxWidth - 8) / 8).clamp(38.0, 54.0).toDouble();
                 return ListView.builder(
                   scrollDirection: Axis.horizontal,
                   itemCount: items.length,
