@@ -244,7 +244,7 @@ function roomPermissions(user){
   const role=clean(data.role);
   return {
     appOwner:role==="owner",
-    manageRooms:role==="owner"||(data.adminEnabled===true&&capabilities.includes("manage_rooms")),
+    manageRooms:role==="owner"||(data.adminEnabled===true&&(capabilities.includes("manageRooms")||capabilities.includes("manage_rooms"))),
     hidden:role==="owner"||(data.adminEnabled===true&&capabilities.includes("canCreateHiddenRoom")),
     manageIds:role==="owner"||(data.adminEnabled===true&&(capabilities.includes("manageIds")||capabilities.includes("manage_ids"))),
   };

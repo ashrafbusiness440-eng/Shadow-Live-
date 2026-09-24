@@ -8,10 +8,10 @@ abstract final class ControlPermissionsMatrix {
    return {
     ControlCapabilities.viewDashboard,ControlCapabilities.viewUsers,ControlCapabilities.manageUsers,
     ControlCapabilities.viewReports,ControlCapabilities.reviewReports,ControlCapabilities.muteUsers,
-    ControlCapabilities.suspendUsers,ControlCapabilities.permanentBan,ControlCapabilities.manageRooms,
+    ControlCapabilities.suspendUsers,ControlCapabilities.permanentBan,ControlCapabilities.manageRooms,ControlCapabilities.canCreateHiddenRoom,
     ControlCapabilities.globalRoomControl,ControlCapabilities.manageAgencies,ControlCapabilities.manageVip,
     ControlCapabilities.manageSpecialIds,ControlCapabilities.manageIds,ControlCapabilities.manageStore,ControlCapabilities.manageGames,
-    ControlCapabilities.manageEconomy,ControlCapabilities.manageWithdrawals,ControlCapabilities.manageSettlements,
+    ControlCapabilities.manageEconomy,ControlCapabilities.adjustBalances,ControlCapabilities.manageWithdrawals,ControlCapabilities.manageSettlements,
     ControlCapabilities.manageCampaigns,ControlCapabilities.manageRoles,ControlCapabilities.viewAuditLog,
     ControlCapabilities.emergencyLock,
    };

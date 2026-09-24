@@ -11,6 +11,7 @@ import 'admin/control_api_endpoints.dart';
 import 'admin/control_asset_manager_page.dart';
 import 'admin/economy_control_page.dart';
 import 'admin/games_control_page.dart';
+import 'admin/user_access_control_card.dart';
 
 
 Future<void> main() async {
@@ -397,6 +398,13 @@ class UserReadOnlyPage extends StatelessWidget {
         const SizedBox(height:10),
         _RolePolicyCard(role:t(data['role']??'user'),adminEnabled:data['adminEnabled']==true,capabilities:caps),
         const SizedBox(height:10),
+        OwnerUserAccessCard(
+          uid:uid,
+          targetRole:t(data['role']??'user'),
+          adminEnabled:data['adminEnabled']==true,
+          capabilities:caps,
+        ),
+        const SizedBox(height:10),
         _OwnerIdPermissionCard(uid:uid,targetRole:t(data['role']??'user'),capabilities:caps),
         const SizedBox(height:10),
         _OwnerEconomyCard(uid:uid,coins:data['coins'],diamonds:data['diamonds']),
@@ -512,8 +520,8 @@ class _RolePolicyCard extends StatelessWidget {
       else Wrap(spacing:6,runSpacing:6,children:capabilities.map((c)=>Chip(label:Text(labels[c]??c))).toList()),
       const SizedBox(height:10),
       const Divider(),
-      const Text('التعديل مقفول حاليًا',style:TextStyle(fontWeight:FontWeight.w800)),
-      const Text('تغيير الدور أو الصلاحيات سيُفعّل فقط عبر Backend موثّق مع Audit Log، وليس بكتابة مباشرة من PWA.'),
+      Text(isOwner?'تعديلات هذا الحساب محمية.':'يمكن للـOwner تعديل الدور والصلاحيات من بطاقة الإدارة أدناه.',style:const TextStyle(fontWeight:FontWeight.w800)),
+      const Text('كل تغيير حساس يمر عبر Cloudflare Backend ويُسجل في Audit Log؛ لا توجد كتابة مباشرة من PWA.'),
     ])));
   }
 }

@@ -4,6 +4,7 @@ import { adjustBalance } from "./adjust-balance.js";
 import { appAssets } from "./app-assets.js";
 import { changePublicId } from "./change-public-id.js";
 import { setIdManagementPermission } from "./set-id-management-permission.js";
+import { manageUserAccess } from "./manage-user-access.js";
 import { walletActions } from "./wallet-actions.js";
 import { chatSafetyActions } from "./chat-safety-actions.js";
 import { storageHealth } from "./storage-health.js";
@@ -47,6 +48,9 @@ export default {
     }
     if (url.pathname === "/api/set-id-management-permission") {
       return setIdManagementPermission(request, env);
+    }
+    if (url.pathname === "/api/manage-user-access") {
+      return manageUserAccess(request, env);
     }
     if (url.pathname === "/api/wallet-actions") {
       return walletActions(request, env);
