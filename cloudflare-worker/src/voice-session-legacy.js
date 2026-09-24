@@ -1127,6 +1127,11 @@ async function controlRoomPolicy(db,uid,body){
       publicId:clean(room.publicId),
       name:clean(room.name||room.title||"غرفة صوتية"),
       ownerUid:roomOwnerUid(room),
+      category:clean(room.category),
+      description:clean(room.description),
+      coverImageUrl:clean(room.coverImageUrl),
+      visibility:clean(room.visibility||"public"),
+      tags:Array.isArray(room.tags)?room.tags:[],
       policy:roomControlPolicySnapshot(room),
     };
   }
@@ -1211,6 +1216,41 @@ async function controlRoomPolicy(db,uid,body){
         roomType:enabled?officialType:clean(room.previousRoomType||room.roomType||room.type||"personal"),
         hostUid:enabled?hostUid:"",
         ...(enabled?{previousRoomType:clean(room.roomType||room.type||"personal")}:{previousRoomType:FieldValue.delete()}),
+        officialUpdatedAt:now,
+        officialUpdatedBy:uid,
+        updatedAt:now,
+      };
+    }else if(controlAction==="updateOfficialRoom"){
+      if(!canGlobal)throw new ApiError("global_room_control_required",403);
+      if(!before.official)throw new ApiError("official_room_required",409);
+      const name=clean(body.name);
+      const hostUid=clean(body.hostUid);
+      const officialType=clean(body.officialType||before.type||"official");
+      const category=clean(body.category).slice(0,60);
+      const description=clean(body.description).slice(0,500);
+      const coverImageUrl=clean(body.coverImageUrl).slice(0,1200);
+      const visibility=clean(body.visibility||"public");
+      const tags=Array.isArray(body.tags)
+        ? [...new Set(body.tags.map(clean).filter(Boolean))].slice(0,8)
+        : [];
+      if(name.length<2||name.length>80)throw new ApiError("invalid_room_name",400);
+      if(!["official","administrative","customer_service"].includes(officialType)){
+        throw new ApiError("invalid_official_room_type",400);
+      }
+      if(!["public","hidden"].includes(visibility))throw new ApiError("invalid_room_visibility",400);
+      if(hostUid){
+        const hostSnap=await tx.get(db.collection("users").doc(hostUid));
+        if(!hostSnap.exists)throw new ApiError("host_not_found",404);
+      }
+      patch={
+        name,
+        category,
+        description,
+        coverImageUrl,
+        visibility,
+        tags,
+        roomType:officialType,
+        hostUid,
         officialUpdatedAt:now,
         officialUpdatedBy:uid,
         updatedAt:now,
