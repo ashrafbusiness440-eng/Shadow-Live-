@@ -8,6 +8,7 @@ import { chatSafetyActions } from "./chat-safety-actions.js";
 import { storageHealth } from "./storage-health.js";
 import { roomGift } from "./room-gift.js";
 import { voiceSession } from "./voice-session.js";
+import { googlePlayPurchase } from "./google-play-purchase.js";
 
 export default {
   async fetch(request, env) {
@@ -24,7 +25,7 @@ export default {
       return json(request, env, {
         ok: true,
         service: "shadow-live-cloudflare-worker",
-        version: 8,
+        version: 9,
         buildSha: env.BUILD_SHA || null,
         firebaseConfigured: Boolean(String(env.FIREBASE_SERVICE_ACCOUNT || "").trim()),
       });
@@ -56,6 +57,9 @@ export default {
     }
     if (url.pathname === "/api/voice-session") {
       return voiceSession(request, env);
+    }
+    if (url.pathname === "/api/google-play-purchase") {
+      return googlePlayPurchase(request, env);
     }
 
     return json(request, env, { ok: false, code: "route_not_found" }, 404);
