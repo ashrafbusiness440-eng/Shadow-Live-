@@ -10,6 +10,7 @@ import { roomGift } from "./room-gift.js";
 import { voiceSession } from "./voice-session.js";
 import { googlePlayPurchase } from "./google-play-purchase.js";
 import { manageAppAsset } from "./manage-app-asset.js";
+import { economyRouter } from "./economy-router.js";
 
 export default {
   async fetch(request, env) {
@@ -26,7 +27,7 @@ export default {
       return json(request, env, {
         ok: true,
         service: "shadow-live-cloudflare-worker",
-        version: 10,
+        version: 11,
         buildSha: env.BUILD_SHA || null,
         firebaseConfigured: Boolean(String(env.FIREBASE_SERVICE_ACCOUNT || "").trim()),
       });
@@ -64,6 +65,9 @@ export default {
     }
     if (url.pathname === "/api/manage-app-asset") {
       return manageAppAsset(request, env);
+    }
+    if (url.pathname === "/api/economy-router") {
+      return economyRouter(request, env);
     }
 
     return json(request, env, { ok: false, code: "route_not_found" }, 404);
