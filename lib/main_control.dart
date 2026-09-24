@@ -1263,7 +1263,7 @@ class _RoomsPageState extends State<RoomsPage> {
               if(currentPolicy['official']==true){
                 await execute('setOfficialRoom',extra:{
                   'enabled':true,
-                  'officialType':(currentPolicy['officialType']??'official').toString(),
+                  'officialType':(currentPolicy['type']??'official').toString(),
                   'hostUid':hostUid.text.trim(),
                 });
               }
