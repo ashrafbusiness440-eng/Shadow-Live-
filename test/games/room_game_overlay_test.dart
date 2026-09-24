@@ -72,6 +72,14 @@ class FakeGameRuntimeService extends GameRuntimeService {
               'locked': false,
             },
       currentRoundSelections: Map<String, int>.from(totals),
+      serverRoundSelections: game.gameId == 'greedy_cat'
+          ? const <String, int>{
+              'fish15': 42000,
+              'steak25': 18000,
+              'pepper5': 10000,
+              'tomato5': 8000,
+            }
+          : const <String, int>{},
       lastResult: game.gameId == 'slot'
           ? null
           : <String, dynamic>{
@@ -172,6 +180,16 @@ void main() {
 
     expect(find.text('القط الجشع'), findsOneWidget);
     expect(find.text('New'), findsOneWidget);
+    expect(find.text('بيتزا'), findsOneWidget);
+    expect(find.text('سلطة'), findsOneWidget);
+    expect(find.text('🔥🔥'), findsOneWidget);
+
+    await tester.tap(find.text('بيتزا'));
+    await tester.tap(find.text('سلطة'));
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(service.totals.containsKey('pizza'), isFalse);
+    expect(service.totals.containsKey('salad'), isFalse);
+
     final choice = find.text('فلفل  ×5');
     expect(choice, findsOneWidget);
 
