@@ -1,6 +1,7 @@
 import { json, readJson } from "./http.js";
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
+import { resolveRevenuePolicy } from "./economy-policy.js";
 
 const clean = (value) => String(value ?? "").trim();
 const validKey = (value) => /^[A-Za-z0-9_-]{12,220}$/.test(clean(value));
@@ -24,6 +25,26 @@ function timestampMs(value) {
 
 function randomDocId(prefix) {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, "")}`;
+}
+
+function utcPeriodKeys(date = new Date()) {
+  const day = date.toISOString().slice(0, 10);
+  const month = day.slice(0, 7);
+  const d = new Date(Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate(),
+  ));
+  const weekday = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - weekday);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const week = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  return {
+    day,
+    week: d.getUTCFullYear().toString() + "-W" + week.toString().padStart(2, "0"),
+    month,
+    cycle: month + "-" + (date.getUTCDate() <= 15 ? "C1" : "C2"),
+  };
 }
 
 async function runTransaction(db, body) {
@@ -219,6 +240,495 @@ async function sendMessage(db, uid, body) {
         receiverId,
         conversationId,
         action: "sendMessage",
+        status: "completed",
+        result: resultData,
+        createdAt: now,
+      }),
+    );
+
+    await db.commit(transaction, writes);
+    return { ok: true, code: "ok", ...resultData };
+  });
+}
+
+async function sendGift(db, uid, body) {
+  const receiverId = clean(body.receiverId);
+  const giftId = clean(body.giftId);
+  const conversationId = clean(body.conversationId);
+  const key = clean(body.idempotencyKey);
+  const quantity = Number(body.quantity || 1);
+
+  if (
+    !receiverId ||
+    receiverId === uid ||
+    !giftId ||
+    !conversationId ||
+    conversationId.includes("/") ||
+    ![1, 7, 77, 777].includes(quantity) ||
+    !validKey(key)
+  ) {
+    throw new ApiError("invalid_request", 400);
+  }
+
+  const fallback = [
+    {id:"rose",nameAr:"وردة",priceCoins:100,enabled:true,assetKey:"gifts.placeholder.default"},
+    {id:"coffee",nameAr:"قهوة",priceCoins:300,enabled:true,assetKey:"gifts.placeholder.default"},
+    {id:"heart",nameAr:"قلب",priceCoins:500,enabled:true,assetKey:"gifts.placeholder.default"},
+    {id:"chocolate",nameAr:"شوكولا",priceCoins:1000,enabled:true,assetKey:"gifts.placeholder.default"},
+    {id:"crown",nameAr:"تاج",priceCoins:2500,enabled:true,assetKey:"gifts.placeholder.default"},
+    {id:"ring",nameAr:"خاتم ألماس",priceCoins:5000,enabled:true,assetKey:"gifts.placeholder.default"},
+    {id:"sports_car",nameAr:"سيارة رياضية",priceCoins:10000,enabled:true,assetKey:"gifts.placeholder.default"},
+    {id:"yacht",nameAr:"يخت فاخر",priceCoins:25000,enabled:true,assetKey:"gifts.placeholder.default"},
+    {id:"private_jet",nameAr:"طائرة خاصة",priceCoins:50000,enabled:true,assetKey:"gifts.placeholder.default"},
+    {id:"castle",nameAr:"قصر ملكي",priceCoins:100000,enabled:true,assetKey:"gifts.placeholder.default"},
+    {id:"golden_dragon",nameAr:"التنين الذهبي",priceCoins:250000,enabled:true,assetKey:"gifts.placeholder.default"},
+    {id:"galaxy",nameAr:"مجرة شادو",priceCoins:500000,enabled:true,assetKey:"gifts.placeholder.default"},
+  ];
+
+  return runTransaction(db, async (transaction) => {
+    const opPath = `gift_operations/${key}`;
+    const senderPath = `users/${uid}`;
+    const receiverPath = `users/${receiverId}`;
+    const catalogPath = "system_config/gift_catalog";
+    const economyPath = "system_config/gift_economy";
+    const lockPath = "system_config/emergency_lock";
+    const conversationPath = `conversations/${conversationId}`;
+    const outgoingBlockPath = `user_blocks/${uid}/items/${receiverId}`;
+    const incomingBlockPath = `user_blocks/${receiverId}/items/${uid}`;
+    const periods = utcPeriodKeys();
+
+    const [
+      op,
+      sender,
+      receiver,
+      catalog,
+      economy,
+      lock,
+      conversation,
+      outgoingBlock,
+      incomingBlock,
+    ] = await Promise.all([
+      db.get(opPath, transaction),
+      db.get(senderPath, transaction),
+      db.get(receiverPath, transaction),
+      db.get(catalogPath, transaction),
+      db.get(economyPath, transaction),
+      db.get(lockPath, transaction),
+      db.get(conversationPath, transaction),
+      db.get(outgoingBlockPath, transaction),
+      db.get(incomingBlockPath, transaction),
+    ]);
+
+    if (op.exists) {
+      await db.rollback(transaction);
+      return { ok: true, code: "duplicate", ...(op.data?.result || {}) };
+    }
+    if (!sender.exists || !receiver.exists || !conversation.exists) {
+      throw new ApiError("not_found", 404);
+    }
+
+    const conversationData = conversation.data || {};
+    const participants = Array.isArray(conversationData.participants)
+      ? conversationData.participants
+      : [];
+    if (
+      participants.length !== 2 ||
+      !participants.includes(uid) ||
+      !participants.includes(receiverId)
+    ) {
+      throw new ApiError("invalid_conversation", 409);
+    }
+    if (outgoingBlock.exists || incomingBlock.exists) {
+      throw new ApiError("blocked", 403);
+    }
+
+    const economyLock = lock.data || {};
+    if (
+      economyLock.enabled === true ||
+      economyLock.economyLocked === true ||
+      economyLock.giftsLocked === true
+    ) {
+      throw new ApiError("emergency_locked", 409);
+    }
+
+    const rawCatalog =
+      catalog.exists && Array.isArray(catalog.data?.gifts)
+        ? catalog.data.gifts
+        : fallback;
+    const giftData = rawCatalog.find((item) => clean(item?.id) === giftId);
+    if (!giftData) throw new ApiError("not_found", 404);
+    if (giftData.enabled === false) throw new ApiError("gift_inactive", 409);
+
+    const unitCoins = Number(giftData.priceCoins || 0);
+    if (!Number.isSafeInteger(unitCoins) || unitCoins <= 0) {
+      throw new ApiError("invalid_gift_price", 409);
+    }
+    const totalCost = unitCoins * quantity;
+    if (!Number.isSafeInteger(totalCost) || totalCost <= 0) {
+      throw new ApiError("invalid_gift_price", 409);
+    }
+
+    const senderData = sender.data || {};
+    const receiverData = receiver.data || {};
+    const before = Number(senderData.coins || 0);
+    if (!Number.isSafeInteger(before) || before < totalCost) {
+      throw new ApiError("insufficient_balance", 409);
+    }
+
+    const economyData = economy.data || {};
+    const agencyId = clean(receiverData.agencyId);
+    let activeHostCount = 0;
+    if (agencyId) {
+      const agencyMonth = await db.get(
+        `agency_support_stats/${agencyId}/monthly/${periods.month}`,
+        transaction,
+      );
+      const activeHostIds = Array.isArray(agencyMonth.data?.activeHostIds)
+        ? agencyMonth.data.activeHostIds
+        : [];
+      activeHostCount = activeHostIds.length;
+    }
+
+    const previousMonthCoins =
+      clean(receiverData.giftRevenueMonth) === periods.month
+        ? Math.max(0, Number(receiverData.giftRevenueMonthCoins || 0))
+        : 0;
+    const monthlyGrossCoins = previousMonthCoins + totalCost;
+    const revenue = resolveRevenuePolicy(
+      economyData,
+      receiverData,
+      monthlyGrossCoins,
+      agencyId,
+      periods.month,
+      activeHostCount,
+    );
+
+    const policyEnabled = economyData.enabled !== false;
+    const earningsEnabled = policyEnabled && revenue.hostShareBps > 0;
+    const recipientShareBps = earningsEnabled ? revenue.hostShareBps : 0;
+    const recipientShareCoins = earningsEnabled
+      ? Math.floor((totalCost * recipientShareBps) / 10000)
+      : 0;
+    const agencyShareCoins = policyEnabled && agencyId
+      ? Math.floor((totalCost * revenue.agencyShareBps) / 10000)
+      : 0;
+    const platformShareCoins = policyEnabled
+      ? Math.max(0, totalCost - recipientShareCoins - agencyShareCoins)
+      : totalCost;
+
+    const agencySettlementPending = Boolean(agencyId);
+    const previousPending = Math.max(
+      0,
+      Number(receiverData.pendingGiftEarningCoins || 0),
+    );
+    const accumulated = previousPending + recipientShareCoins;
+    const diamondsEarned = earningsEnabled && !agencySettlementPending
+      ? Math.floor(accumulated / 10000)
+      : 0;
+    const pendingGiftEarningCoins = earningsEnabled && !agencySettlementPending
+      ? accumulated % 10000
+      : previousPending;
+    const pendingAgencyBefore = Math.max(
+      0,
+      Number(receiverData.pendingAgencyGiftEarningCoins || 0),
+    );
+    const pendingAgencyAfter = agencySettlementPending && earningsEnabled
+      ? pendingAgencyBefore + recipientShareCoins
+      : pendingAgencyBefore;
+    const openingDiamonds = Math.max(0, Number(receiverData.diamonds || 0));
+    const closingDiamonds = openingDiamonds + diamondsEarned;
+    const after = before - totalCost;
+
+    const now = new Date();
+    const giftName = clean(giftData.nameAr || "هدية");
+    const imageUrl = clean(giftData.imageUrl);
+    const assetKey = clean(giftData.assetKey || "gifts.placeholder.default");
+    const messageId = randomDocId("msg");
+    const messagePath = `${conversationPath}/messages/${messageId}`;
+    const transactionPath = `gift_transactions/${key}`;
+    const ledgerPath = `financial_ledger/gift_${key}`;
+    const earningsLedgerPath = `financial_ledger/gift_earnings_${key}`;
+    const userDailyPath = `gift_user_stats/${receiverId}/daily/${periods.day}`;
+    const userWeeklyPath = `gift_user_stats/${receiverId}/weekly/${periods.week}`;
+    const userMonthlyPath = `gift_user_stats/${receiverId}/monthly/${periods.month}`;
+    const showcasePath = `public_gift_showcases/${receiverId}/items/${giftId}`;
+    const counts = { ...(conversationData.unreadCounts || {}) };
+    counts[uid] = 0;
+    counts[receiverId] = Number(counts[receiverId] || 0) + 1;
+
+    const writes = [
+      db.writeUpdate(
+        senderPath,
+        { coins: after },
+        ["coins"],
+        [db.increment("totalGiftsSent", quantity)],
+      ),
+    ];
+
+    const receiverFields = {
+      giftRevenueMonth: periods.month,
+      giftRevenueMonthCoins: monthlyGrossCoins,
+      currentGiftRevenueTier: revenue.tierId,
+    };
+    const receiverMask = [
+      "giftRevenueMonth",
+      "giftRevenueMonthCoins",
+      "currentGiftRevenueTier",
+    ];
+    const receiverTransforms = [
+      db.increment("totalGiftsReceived", quantity),
+      db.increment("totalValueReceived", totalCost),
+      db.increment("giftSupportReceivedCoins", totalCost),
+    ];
+
+    if (earningsEnabled) {
+      receiverTransforms.push(
+        db.increment("giftEarningCoinsLifetime", recipientShareCoins),
+      );
+      if (agencySettlementPending) {
+        receiverFields.pendingAgencyGiftEarningCoins = pendingAgencyAfter;
+        receiverMask.push("pendingAgencyGiftEarningCoins");
+      } else {
+        receiverFields.diamonds = closingDiamonds;
+        receiverFields.pendingGiftEarningCoins = pendingGiftEarningCoins;
+        receiverMask.push("diamonds", "pendingGiftEarningCoins");
+        receiverTransforms.push(
+          db.increment("giftDiamondsLifetime", diamondsEarned),
+        );
+      }
+    }
+    writes.push(
+      db.writeUpdate(
+        receiverPath,
+        receiverFields,
+        receiverMask,
+        receiverTransforms,
+      ),
+    );
+
+    const receiverStatsTransforms = [
+      db.increment("receivedCoins", totalCost),
+      db.increment("giftCount", quantity),
+      db.increment("earningCoins", recipientShareCoins),
+      db.increment("diamondsEarned", diamondsEarned),
+    ];
+    for (const path of [userDailyPath, userWeeklyPath, userMonthlyPath]) {
+      writes.push(
+        db.writeUpdate(
+          path,
+          { updatedAt: now },
+          ["updatedAt"],
+          receiverStatsTransforms,
+        ),
+      );
+    }
+
+    if (agencyId) {
+      const agencyStatsTransforms = [
+        db.increment("supportCoins", totalCost),
+        db.increment("giftCount", quantity),
+        db.increment("hostEarningCoins", recipientShareCoins),
+        db.increment("agencyEarningCoins", agencyShareCoins),
+        db.increment("platformShareCoins", platformShareCoins),
+      ];
+      for (const periodPath of [
+        `agency_support_stats/${agencyId}/daily/${periods.day}`,
+        `agency_support_stats/${agencyId}/weekly/${periods.week}`,
+        `agency_support_stats/${agencyId}/monthly/${periods.month}`,
+      ]) {
+        writes.push(
+          db.writeUpdate(
+            periodPath,
+            { activeHostCount, updatedAt: now },
+            ["activeHostCount", "updatedAt"],
+            agencyStatsTransforms,
+          ),
+        );
+      }
+
+      const accrualPath =
+        `agency_settlement_accruals/${agencyId}__${periods.cycle}__${receiverId}`;
+      writes.push(
+        db.writeUpdate(
+          accrualPath,
+          {
+            agencyId,
+            hostUid: receiverId,
+            cycleKey: periods.cycle,
+            month: periods.month,
+            status: "open",
+            updatedAt: now,
+          },
+          ["agencyId", "hostUid", "cycleKey", "month", "status", "updatedAt"],
+          [
+            db.increment("supportCoins", totalCost),
+            db.increment("hostGrossEarningCoins", recipientShareCoins),
+            db.increment("agencyGrossEarningCoins", agencyShareCoins),
+            db.increment("platformShareCoins", platformShareCoins),
+            db.increment("giftCount", quantity),
+          ],
+        ),
+      );
+    }
+
+    if (earningsEnabled && agencySettlementPending && recipientShareCoins > 0) {
+      writes.push(
+        db.writeCreate(earningsLedgerPath, {
+          userId: receiverId,
+          asset: "pendingAgencyGiftEarningCoins",
+          delta: recipientShareCoins,
+          openingBalance: pendingAgencyBefore,
+          closingBalance: pendingAgencyAfter,
+          reason: "agency_gift_earning_accrual",
+          sourceType: "gift",
+          sourceId: key,
+          actorUid: uid,
+          counterpartyUid: uid,
+          settlementCycleKey: periods.cycle,
+          idempotencyKey: key + "_earnings",
+          createdAt: now,
+        }),
+      );
+    } else if (earningsEnabled && diamondsEarned > 0) {
+      writes.push(
+        db.writeCreate(earningsLedgerPath, {
+          userId: receiverId,
+          asset: "diamonds",
+          delta: diamondsEarned,
+          openingBalance: openingDiamonds,
+          closingBalance: closingDiamonds,
+          reason: "gift_earnings",
+          sourceType: "gift",
+          sourceId: key,
+          actorUid: uid,
+          counterpartyUid: uid,
+          idempotencyKey: key + "_earnings",
+          createdAt: now,
+        }),
+      );
+    }
+
+    writes.push(
+      db.writeUpdate(
+        conversationPath,
+        {
+          lastMessage: `🎁 ${giftName} ×${quantity}`,
+          lastSenderId: uid,
+          updatedAt: now,
+          unreadCounts: counts,
+        },
+        ["lastMessage", "lastSenderId", "updatedAt", "unreadCounts"],
+      ),
+      db.writeCreate(messagePath, {
+        senderId: uid,
+        receiverId,
+        type: "gift",
+        giftId,
+        giftName,
+        quantity,
+        unitCoins,
+        totalCost,
+        imageUrl,
+        assetKey,
+        createdAt: now,
+      }),
+      db.writeCreate(transactionPath, {
+        senderId: uid,
+        receiverId,
+        contextType: "chat",
+        conversationId,
+        giftId,
+        giftName,
+        quantity,
+        unitCoins,
+        totalCost,
+        assetKey,
+        policyMode: "tiered_host_agency",
+        revenueTierId: revenue.tierId,
+        revenueTierName: revenue.tierName,
+        revenueTierMinGiftCoins: revenue.tierMinGiftCoins,
+        monthlyGrossCoins,
+        recipientShareBps,
+        recipientShareCoins,
+        hostBaseShareBps: revenue.hostBaseShareBps,
+        hostBonusBps: revenue.hostBonusBps,
+        agencyBaseShareBps: revenue.agencyBaseShareBps,
+        agencyBonusBps: revenue.agencyBonusBps,
+        agencyShareBps: revenue.agencyShareBps,
+        agencyShareCoins,
+        agencyActiveHostCount: revenue.activeHostCount,
+        agencyRequiredActiveHosts: revenue.requiredActiveHosts,
+        platformShareBps: revenue.platformShareBps,
+        platformShareCoins,
+        qualifiedDays: revenue.qualifiedDays,
+        requiredQualifiedDays: revenue.requiredDays,
+        diamondsEarned,
+        pendingGiftEarningCoins,
+        pendingAgencyGiftEarningCoins: pendingAgencyAfter,
+        settlementMode: agencySettlementPending ? "agency_cycle" : "immediate",
+        settlementCycleKey: agencySettlementPending ? periods.cycle : null,
+        earningsStatus: !earningsEnabled
+          ? "disabled"
+          : agencySettlementPending
+            ? "accrued_for_cycle"
+            : "applied",
+        periods,
+        agencyId: agencyId || null,
+        createdAt: now,
+      }),
+      db.writeCreate(ledgerPath, {
+        userId: uid,
+        asset: "coins",
+        delta: -totalCost,
+        openingBalance: before,
+        closingBalance: after,
+        reason: "gift_send",
+        sourceType: "gift",
+        sourceId: key,
+        actorUid: uid,
+        idempotencyKey: key,
+        createdAt: now,
+      }),
+      db.writeUpdate(
+        showcasePath,
+        {
+          giftId,
+          name: giftName,
+          imageUrl,
+          assetKey,
+          updatedAt: now,
+        },
+        ["giftId", "name", "imageUrl", "assetKey", "updatedAt"],
+        [db.increment("count", quantity)],
+      ),
+    );
+
+    const resultData = {
+      giftId,
+      giftName,
+      quantity,
+      totalCost,
+      messageId,
+      balance: after,
+      revenueTierId: revenue.tierId,
+      recipientShareCoins,
+      agencyShareCoins,
+      platformShareCoins,
+      diamondsEarned,
+      earningsApplied: earningsEnabled,
+      earningsStatus: !earningsEnabled
+        ? "disabled"
+        : agencySettlementPending
+          ? "accrued_for_cycle"
+          : "applied",
+      settlementCycleKey: agencySettlementPending ? periods.cycle : null,
+    };
+
+    writes.push(
+      db.writeCreate(opPath, {
+        senderId: uid,
+        receiverId,
+        action: "sendGift",
         status: "completed",
         result: resultData,
         createdAt: now,
@@ -654,7 +1164,8 @@ export async function chatSafetyActions(request, env) {
         result = await reportUser(db, decoded.sub, body);
         break;
       case "sendGift":
-        throw new ApiError("action_not_migrated", 400);
+        result = await sendGift(db, decoded.sub, body);
+        break;
       default:
         throw new ApiError("invalid_action", 400);
     }
