@@ -40,6 +40,10 @@ void main() {
         {'roundNumber': 0, 'outcomeId': 'moon'},
         {'roundNumber': -1, 'outcomeId': 'book'},
       ],
+      'serverRoundSelections': [
+        {'choiceId': 'book', 'amountCoins': 42000},
+        {'choiceId': 'moon', 'amountCoins': 9000},
+      ],
     });
     expect(state.currentRoundSelections['book'], 21000);
     expect(state.currentRoundSelections['moon'], 1000);
@@ -47,6 +51,8 @@ void main() {
     expect(state.lastResult?['outcomeId'], 'moon');
     expect(state.recentResults, hasLength(2));
     expect(state.recentResults.first['outcomeId'], 'moon');
+    expect(state.serverRoundSelections['book'], 42000);
+    expect(state.serverRoundSelections['moon'], 9000);
   });
 
   test('slot result parses server reels and payout', () {
