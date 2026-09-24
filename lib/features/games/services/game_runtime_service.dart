@@ -143,7 +143,7 @@ class GameRuntimeService {
     const configured = String.fromEnvironment('SHADOW_API_BASE_URL');
     if (configured.isNotEmpty) return configured;
 
-    const stableBackend = 'https://shadow-live-six.vercel.app/api';
+    const stableBackend = 'https://shadow-live.ashraf-business-440.workers.dev/api';
     if (!kIsWeb) return stableBackend;
 
     final host = Uri.base.host.toLowerCase();
