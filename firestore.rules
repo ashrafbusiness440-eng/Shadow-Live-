@@ -226,7 +226,20 @@ service cloud.firestore {
         && !('diamondPasswordSet' in request.resource.data)
         && !('diamondPasswordUpdatedAt' in request.resource.data)
         && !('diamondPasswordHash' in request.resource.data)
-        && !('diamondPasswordSalt' in request.resource.data);
+        && !('diamondPasswordSalt' in request.resource.data)
+        && !('accountStatus' in request.resource.data)
+        && !('suspendedUntil' in request.resource.data)
+        && !('suspensionMinutes' in request.resource.data)
+        && !('bannedAt' in request.resource.data)
+        && !('disabledAt' in request.resource.data)
+        && !('authDeleted' in request.resource.data)
+        && !('deletedAt' in request.resource.data)
+        && !('deletedBy' in request.resource.data)
+        && !('deletionReason' in request.resource.data)
+        && !('moderatedBy' in request.resource.data)
+        && !('moderatedAt' in request.resource.data)
+        && !('moderationReason' in request.resource.data)
+        && !('sessionsRevokedAt' in request.resource.data);
       allow read: if signedIn() && (request.auth.uid == userId || hasCapability('viewUsers'));
       allow update: if signedIn() && request.auth.uid == userId
         && protectedUserFieldsUnchanged()
