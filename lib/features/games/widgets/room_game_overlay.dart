@@ -1093,6 +1093,23 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
       ),
     ];
 
+    final serverTotals =
+        _state?.serverRoundSelections ?? const <String, int>{};
+    String? hottestId;
+    var hottestAmount = 0;
+    var totalServerAmount = 0;
+    for (final item in choices) {
+      final amount = serverTotals[item.id] ?? 0;
+      totalServerAmount += amount;
+      if (amount > hottestAmount) {
+        hottestAmount = amount;
+        hottestId = item.id;
+      }
+    }
+    final strongServerHeat = hottestId != null &&
+        totalServerAmount > 0 &&
+        hottestAmount * 100 >= totalServerAmount * 40;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1137,6 +1154,9 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
                           multiplier: item.multiplier,
                           assetPath: item.asset,
                           size: nodeSize,
+                          serverHeat: item.id == hottestId
+                              ? (strongServerHeat ? 2 : 1)
+                              : 0,
                         ),
                       ),
                     Container(
@@ -1214,6 +1234,8 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
             );
           },
         ),
+        const SizedBox(height: 6),
+        _greedySpecialOutcomes(),
         const SizedBox(height: 8),
         _greedyRecentResults(),
         const SizedBox(height: 10),
@@ -1228,6 +1250,7 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
     required String multiplier,
     required String assetPath,
     required double size,
+    required int serverHeat,
   }) {
     final total = _state?.currentRoundSelections[id] ?? 0;
     final selected = total > 0;
@@ -1313,6 +1336,36 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
                 ),
               ),
             ),
+            if (serverHeat > 0)
+              Positioned(
+                top: -18,
+                child: Semantics(
+                  label: 'الأكثر ضغطاً بالسيرفر',
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(999),
+                      color: const Color(0xFF2B1207).withValues(alpha: .92),
+                      border: Border.all(
+                        color: const Color(0xFFFF8A2A).withValues(alpha: .80),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFFFF6B00).withValues(alpha: .24),
+                          blurRadius: 10,
+                        ),
+                      ],
+                    ),
+                    child: Text(
+                      serverHeat >= 2 ? '🔥🔥' : '🔥',
+                      style: const TextStyle(fontSize: 13, height: 1),
+                    ),
+                  ),
+                ),
+              ),
             if (selected)
               Positioned(
                 top: -2,
@@ -1337,6 +1390,89 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
                   ),
                 ),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _greedySpecialOutcomes() {
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: Row(
+        children: [
+          _greedySpecialOutcomeTile(
+            label: 'بيتزا',
+            assetPath: GameAssetPaths.greedyPizza,
+          ),
+          const Spacer(),
+          _greedySpecialOutcomeTile(
+            label: 'سلطة',
+            assetPath: GameAssetPaths.greedySalad,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _greedySpecialOutcomeTile({
+    required String label,
+    required String assetPath,
+  }) {
+    return Semantics(
+      label: '$label • نتيجة خاصة',
+      button: false,
+      child: Container(
+        width: 94,
+        height: 68,
+        padding: const EdgeInsets.fromLTRB(8, 6, 8, 5),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          gradient: const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFF6F4620),
+              Color(0xFF2B1A10),
+            ],
+          ),
+          border: Border.all(
+            color: _gold.withValues(alpha: .62),
+            width: 1.4,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: _gold.withValues(alpha: .12),
+              blurRadius: 12,
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Image.asset(
+                assetPath,
+                fit: BoxFit.contain,
+                filterQuality: FilterQuality.high,
+                errorBuilder: (_, __, ___) => Icon(
+                  label == 'بيتزا'
+                      ? Icons.local_pizza_rounded
+                      : Icons.eco_rounded,
+                  color: _gold,
+                  size: 28,
+                ),
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Color(0xFFFFE2A1),
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
           ],
         ),
       ),
