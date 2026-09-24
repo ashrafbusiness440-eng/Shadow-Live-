@@ -67,7 +67,7 @@ async function runTransaction(db, body) {
   throw new ApiError("transaction_failed", 500);
 }
 
-async function sendRoomGift(db, senderUid, body = {}) {
+export async function sendRoomGift(db, senderUid, body = {}) {
   const roomId = clean(body.roomId);
   const receiverId = clean(body.receiverId);
   const giftId = clean(body.giftId);

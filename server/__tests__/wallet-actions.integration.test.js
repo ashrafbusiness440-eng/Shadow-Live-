@@ -6,10 +6,12 @@ import {
   setWalletPassword,
   exchangeDiamonds,
   giftDiamonds,
-} from "../../api/wallet-actions.js";
+} from "../../cloudflare-worker/src/wallet-actions.js";
+import {cloudflareFirestoreAdapter} from "./helpers/cloudflare-firestore-adapter.js";
 
 const app=getApps()[0]||initializeApp({projectId:"shadow-live-economy-test"});
 const db=getFirestore(app);
+const cloudflareDb=cloudflareFirestoreAdapter(db);
 const fixtureSecret=()=>["fixture","wallet",Date.now().toString()].join("_");
 
 after(async()=>{await deleteApp(app);});
@@ -26,9 +28,9 @@ test("diamond exchange debits once and records both ledgers",async()=>{
       enabled:false,economyLocked:false,transfersLocked:false,
     }),
   ]);
-  await setWalletPassword(db,uid,{password:secret});
+  await setWalletPassword(cloudflareDb,uid,{password:secret});
 
-  const first=await exchangeDiamonds(db,uid,{
+  const first=await exchangeDiamonds(cloudflareDb,uid,{
     diamonds:2,password:secret,idempotencyKey:key,
   });
   assert.equal(first.code,"ok");
@@ -36,7 +38,7 @@ test("diamond exchange debits once and records both ledgers",async()=>{
   assert.equal(first.diamonds,3);
   assert.equal(first.coins,21000);
 
-  const duplicate=await exchangeDiamonds(db,uid,{
+  const duplicate=await exchangeDiamonds(cloudflareDb,uid,{
     diamonds:2,password:secret,idempotencyKey:key,
   });
   assert.equal(duplicate.code,"duplicate");
@@ -68,9 +70,9 @@ test("diamond gift credits recipient coins once",async()=>{
       enabled:false,economyLocked:false,transfersLocked:false,
     }),
   ]);
-  await setWalletPassword(db,sender,{password:secret});
+  await setWalletPassword(cloudflareDb,sender,{password:secret});
 
-  const first=await giftDiamonds(db,sender,{
+  const first=await giftDiamonds(cloudflareDb,sender,{
     recipientUid:recipient,diamonds:3,password:secret,idempotencyKey:key,
   });
   assert.equal(first.code,"ok");
@@ -78,7 +80,7 @@ test("diamond gift credits recipient coins once",async()=>{
   assert.equal(first.coinsReceived,30000);
   assert.equal(first.diamonds,1);
 
-  const duplicate=await giftDiamonds(db,sender,{
+  const duplicate=await giftDiamonds(cloudflareDb,sender,{
     recipientUid:recipient,diamonds:3,password:secret,idempotencyKey:key,
   });
   assert.equal(duplicate.code,"duplicate");
@@ -104,10 +106,10 @@ test("emergency lock blocks exchange without mutating wallet",async()=>{
       enabled:false,economyLocked:true,transfersLocked:false,
     }),
   ]);
-  await setWalletPassword(db,uid,{password:secret});
+  await setWalletPassword(cloudflareDb,uid,{password:secret});
 
   await assert.rejects(
-    exchangeDiamonds(db,uid,{
+    exchangeDiamonds(cloudflareDb,uid,{
       diamonds:1,password:secret,idempotencyKey:"wallet_locked_"+suffix,
     }),
     /emergency_locked/,

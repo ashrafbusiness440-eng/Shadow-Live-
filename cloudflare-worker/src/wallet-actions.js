@@ -67,7 +67,7 @@ async function walletState(db, uid) {
   };
 }
 
-async function setWalletPassword(db, uid, body) {
+export async function setWalletPassword(db, uid, body) {
   const password = String(body.password ?? "");
   if (password.length < 6 || password.length > 64) {
     throw new ApiError("invalid_password", 400);
@@ -119,7 +119,7 @@ async function requireWalletPassword(db, uid, password) {
   }
 }
 
-async function exchangeDiamonds(db, uid, body) {
+export async function exchangeDiamonds(db, uid, body) {
   const diamonds = asInt(body.diamonds);
   if (diamonds < 1 || diamonds > 1000000) {
     throw new ApiError("invalid_amount", 400);
@@ -222,7 +222,7 @@ async function exchangeDiamonds(db, uid, body) {
   throw new ApiError("transaction_failed", 500);
 }
 
-async function giftDiamonds(db, uid, body) {
+export async function giftDiamonds(db, uid, body) {
   const recipientUid = clean(body.recipientUid);
   const diamonds = asInt(body.diamonds);
   if (!recipientUid || recipientUid === uid) {

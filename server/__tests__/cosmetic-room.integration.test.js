@@ -3,7 +3,7 @@ import { after, test } from "node:test";
 import { deleteApp, getApps, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 
-import { announceRoomEntrance } from "../../api/voice-session.js";
+import { announceRoomEntrance } from "../../cloudflare-worker/src/voice-session-legacy.js";
 
 const app=getApps()[0]||initializeApp({projectId:"shadow-live-economy-test"});
 const db=getFirestore(app);

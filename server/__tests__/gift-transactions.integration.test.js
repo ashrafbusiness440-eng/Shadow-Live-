@@ -3,15 +3,17 @@ import {after, test} from "node:test";
 import {deleteApp, getApps, initializeApp} from "firebase-admin/app";
 import {getFirestore} from "firebase-admin/firestore";
 
-import {sendGift as sendChatGift} from "../../api/chat-actions.js";
+import {sendGift as sendChatGift} from "../../cloudflare-worker/src/chat-safety-actions.js";
 import {settleAgencyCycle} from "../economy/economy-control.js";
 import {saveGiftEconomyPolicy} from "../economy/gift-economy-config.js";
 import {calculateAgencyCycleSettlement} from "../economy/economy-policy.js";
-import {sendRoomGift} from "../../api/room-gift.js";
-import {recordMicActivity} from "../../api/voice-session.js";
+import {sendRoomGift} from "../../cloudflare-worker/src/room-gift.js";
+import {recordMicActivity} from "../../cloudflare-worker/src/voice-session-legacy.js";
+import {cloudflareFirestoreAdapter} from "./helpers/cloudflare-firestore-adapter.js";
 
 const app=getApps()[0]||initializeApp({projectId:"shadow-live-economy-test"});
 const db=getFirestore(app);
+const cloudflareDb=cloudflareFirestoreAdapter(db);
 
 after(async()=>{await deleteApp(app);});
 
@@ -105,7 +107,7 @@ test("room gift debits once and records transaction ledger agency link and accru
   const body={
     roomId,receiverId,giftId:"integration_gift",quantity:1,idempotencyKey:key,
   };
-  const first=await sendRoomGift(db,senderId,body);
+  const first=await sendRoomGift(cloudflareDb,senderId,body);
   assert.equal(first.ok,true);
   assert.equal(first.code,"ok");
   assert.equal(first.totalCost,100000);
@@ -147,7 +149,7 @@ test("room gift debits once and records transaction ledger agency link and accru
   assert.equal(accrual.data().agencyGrossEarningCoins,5000);
   assert.equal(accrual.data().platformShareCoins,40000);
 
-  const duplicate=await sendRoomGift(db,senderId,body);
+  const duplicate=await sendRoomGift(cloudflareDb,senderId,body);
   assert.equal(duplicate.code,"duplicate");
   const [senderAfter,accrualAfter]=await Promise.all([
     db.collection("users").doc(senderId).get(),
@@ -196,7 +198,7 @@ test("chat gift uses the same economy shares and duplicate protection as room gi
     receiverId,giftId:"integration_gift",quantity:1,
     conversationId,idempotencyKey:key,
   };
-  const first=await sendChatGift(db,senderId,body);
+  const first=await sendChatGift(cloudflareDb,senderId,body);
   assert.equal(first.ok,true);
   assert.equal(first.code,"ok");
   assert.equal(first.totalCost,100000);
@@ -223,7 +225,7 @@ test("chat gift uses the same economy shares and duplicate protection as room gi
   const chatRocketState=await db.collection("room_rocket_state").doc(conversationId).get();
   assert.equal(chatRocketState.exists,false);
 
-  const duplicate=await sendChatGift(db,senderId,body);
+  const duplicate=await sendChatGift(cloudflareDb,senderId,body);
   assert.equal(duplicate.code,"duplicate");
   const senderAfter=await db.collection("users").doc(senderId).get();
   assert.equal(senderAfter.data().coins,900000);
@@ -257,7 +259,7 @@ test("room gift is rejected when either user has blocked the other",async()=>{
   ]);
 
   await assert.rejects(
-    sendRoomGift(db,senderId,{
+    sendRoomGift(cloudflareDb,senderId,{
       roomId,
       receiverId,
       giftId:"integration_gift",
