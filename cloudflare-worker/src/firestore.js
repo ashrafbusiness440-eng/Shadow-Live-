@@ -215,7 +215,7 @@ export function firestoreClient(env) {
           fields: encodeFields(fields),
         },
       };
-      if (fieldPaths?.length) {
+      if (Array.isArray(fieldPaths)) {
         write.updateMask = { fieldPaths };
       }
       if (updateTransforms?.length) {
