@@ -1,6 +1,6 @@
 import { sign } from "node:crypto";
 
-let tokenCache = null;
+const tokenCache = new Map();
 
 function base64url(input) {
   return Buffer.from(input)
@@ -27,17 +27,21 @@ export function parseServiceAccount(raw) {
   return { projectId, clientEmail, privateKey };
 }
 
-export async function googleAccessToken(env) {
+export async function googleAccessToken(
+  env,
+  scope = "https://www.googleapis.com/auth/datastore",
+) {
   const now = Math.floor(Date.now() / 1000);
-  if (tokenCache && tokenCache.expiresAt > now + 90) {
-    return tokenCache.token;
+  const cached = tokenCache.get(scope);
+  if (cached && cached.expiresAt > now + 90) {
+    return cached.token;
   }
 
   const sa = parseServiceAccount(env.FIREBASE_SERVICE_ACCOUNT);
   const header = base64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
   const payload = base64url(JSON.stringify({
     iss: sa.clientEmail,
-    scope: "https://www.googleapis.com/auth/datastore",
+    scope,
     aud: "https://oauth2.googleapis.com/token",
     iat: now,
     exp: now + 3600,
@@ -60,9 +64,10 @@ export async function googleAccessToken(env) {
     throw new Error("google_oauth_failed");
   }
 
-  tokenCache = {
+  const value = {
     token: body.access_token,
     expiresAt: now + Number(body.expires_in || 3600),
   };
-  return tokenCache.token;
+  tokenCache.set(scope, value);
+  return value.token;
 }
