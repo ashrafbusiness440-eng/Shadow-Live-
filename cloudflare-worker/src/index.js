@@ -6,6 +6,7 @@ import { setIdManagementPermission } from "./set-id-management-permission.js";
 import { walletActions } from "./wallet-actions.js";
 import { chatSafetyActions } from "./chat-safety-actions.js";
 import { storageHealth } from "./storage-health.js";
+import { roomGift } from "./room-gift.js";
 
 export default {
   async fetch(request, env) {
@@ -22,7 +23,7 @@ export default {
       return json(request, env, {
         ok: true,
         service: "shadow-live-cloudflare-worker",
-        version: 6,
+        version: 7,
         buildSha: env.BUILD_SHA || null,
         firebaseConfigured: Boolean(String(env.FIREBASE_SERVICE_ACCOUNT || "").trim()),
       });
@@ -48,6 +49,9 @@ export default {
     }
     if (url.pathname === "/api/storage-health") {
       return storageHealth(request, env);
+    }
+    if (url.pathname === "/api/room-gift") {
+      return roomGift(request, env);
     }
 
     return json(request, env, { ok: false, code: "route_not_found" }, 404);
