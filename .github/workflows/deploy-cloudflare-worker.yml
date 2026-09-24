@@ -81,12 +81,12 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          GITHUB_ASSET_TOKEN: ${{ secrets.GITHUB_ASSET_TOKEN }}
+          SHADOW_ASSET_GITHUB_TOKEN: ${{ secrets.SHADOW_ASSET_GITHUB_TOKEN }}
         run: |
-          if [ -n "$GITHUB_ASSET_TOKEN" ]; then
-            printf '%s' "$GITHUB_ASSET_TOKEN" | npx wrangler secret put GITHUB_ASSET_TOKEN
+          if [ -n "$SHADOW_ASSET_GITHUB_TOKEN" ]; then
+            printf '%s' "$SHADOW_ASSET_GITHUB_TOKEN" | npx wrangler secret put GITHUB_ASSET_TOKEN
           else
-            echo "GITHUB_ASSET_TOKEN is not configured in GitHub yet; skipping."
+            echo "SHADOW_ASSET_GITHUB_TOKEN is not configured in GitHub yet; skipping."
           fi
 
       - name: Deploy Worker
