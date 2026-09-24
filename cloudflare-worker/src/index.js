@@ -93,6 +93,7 @@ export default {
     const task = settleDueGameOperations(getFirestore(), {
       nowMs: Date.now(),
       limit: 100,
+      workerTag: "cloudflare_cron",
     }).then((result) => {
       console.log("Cloudflare game settlement cron", JSON.stringify(result));
       return result;
