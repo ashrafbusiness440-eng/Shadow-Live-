@@ -32,8 +32,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Validate Vercel admin API syntax
-        run: node --check api/change-public-id.js && node --check api/change-room-id.js && node --check api/set-id-management-permission.js && node --check api/manage-app-asset.js && node --check api/app-assets.js && node --check api/chat-actions.js
+      - name: Validate Cloudflare Worker API syntax
+        run: find cloudflare-worker/src -type f -name '*.js' -print0 | xargs -0 -n1 node --check
       - working-directory: functions
         run: npm install
       - working-directory: functions

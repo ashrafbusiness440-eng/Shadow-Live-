@@ -25,6 +25,7 @@ TEXT_SUFFIXES = {
 FORBIDDEN = (
     ("Vercel reference", re.compile(r"vercel", re.IGNORECASE)),
     ("legacy API environment variable", re.compile(r"SHADOW_API_BASE_URL")),
+    ("legacy root API JavaScript reference", re.compile(r"(?<![/\\w])api/[A-Za-z0-9_-]+\\.js")),
 )
 
 REQUIRED_WORKER_ROUTES = (

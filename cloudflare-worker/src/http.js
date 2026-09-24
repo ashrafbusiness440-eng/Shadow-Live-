@@ -1,6 +1,5 @@
 const DEFAULT_ALLOWED_ORIGINS = new Set([
   "https://ashrafbusiness440-eng.github.io",
-  "https://shadow-live-six.vercel.app",
 ]);
 
 export function corsHeaders(request, env) {
