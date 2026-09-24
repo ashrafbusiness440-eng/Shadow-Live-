@@ -1,4 +1,5 @@
 name: Deploy Shadow Live API to Cloudflare Workers
+# ZEGO secret sync verification marker
 # Secret sync verification marker
 
 on:
