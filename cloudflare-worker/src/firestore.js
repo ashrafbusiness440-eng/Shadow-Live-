@@ -134,7 +134,7 @@ export function firestoreClient(env) {
     },
 
 
-    writeUpdate(path, fields, fieldPaths = null) {
+    writeUpdate(path, fields, fieldPaths = null, updateTransforms = null) {
       const write = {
         update: {
           name: documentName(path),
@@ -144,7 +144,17 @@ export function firestoreClient(env) {
       if (fieldPaths?.length) {
         write.updateMask = { fieldPaths };
       }
+      if (updateTransforms?.length) {
+        write.updateTransforms = updateTransforms;
+      }
       return write;
+    },
+
+    increment(fieldPath, amount) {
+      return {
+        fieldPath,
+        increment: encodeValue(Number(amount)),
+      };
     },
 
     writeCreate(path, fields) {
