@@ -84,6 +84,7 @@ function statusPatch(action, body, actorUid, now) {
       bannedAt: null,
       disabledAt: null,
       authDeleted: false,
+      sessionsRevokedAt: now,
     };
   }
   if (action === "ban") {
@@ -95,6 +96,7 @@ function statusPatch(action, body, actorUid, now) {
       bannedAt: now,
       disabledAt: null,
       authDeleted: false,
+      sessionsRevokedAt: now,
     };
   }
   if (action === "disable") {
@@ -105,6 +107,7 @@ function statusPatch(action, body, actorUid, now) {
       suspensionMinutes: null,
       disabledAt: now,
       authDeleted: false,
+      sessionsRevokedAt: now,
     };
   }
   if (action === "unban" || action === "enable") {
@@ -116,6 +119,7 @@ function statusPatch(action, body, actorUid, now) {
       bannedAt: null,
       disabledAt: null,
       authDeleted: false,
+      sessionsRevokedAt: now,
     };
   }
   if (action === "revokeSessions") {
@@ -138,6 +142,7 @@ function statusPatch(action, body, actorUid, now) {
       suspensionMinutes: null,
       bannedAt: null,
       disabledAt: null,
+      sessionsRevokedAt: now,
     };
   }
   throw new ApiError("invalid_action", 400);
