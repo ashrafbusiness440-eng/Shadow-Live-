@@ -46,6 +46,24 @@ jobs:
             echo "FIREBASE_SERVICE_ACCOUNT is not configured in GitHub yet; skipping secret sync."
           fi
 
+      - name: Sync ZEGO credentials
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          ZEGO_APP_ID: ${{ secrets.ZEGO_APP_ID }}
+          ZEGO_SERVER_SECRET: ${{ secrets.ZEGO_SERVER_SECRET }}
+        run: |
+          if [ -n "$ZEGO_APP_ID" ]; then
+            printf '%s' "$ZEGO_APP_ID" | npx wrangler secret put ZEGO_APP_ID
+          else
+            echo "ZEGO_APP_ID is not configured in GitHub yet; skipping."
+          fi
+          if [ -n "$ZEGO_SERVER_SECRET" ]; then
+            printf '%s' "$ZEGO_SERVER_SECRET" | npx wrangler secret put ZEGO_SERVER_SECRET
+          else
+            echo "ZEGO_SERVER_SECRET is not configured in GitHub yet; skipping."
+          fi
+
       - name: Deploy Worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
