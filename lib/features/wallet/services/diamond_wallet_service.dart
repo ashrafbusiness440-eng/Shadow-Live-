@@ -12,7 +12,7 @@ class DiamondWalletService {
   static final FirebaseAuth _auth = FirebaseAuth.instance;
   static final http.Client _client = http.Client();
   static const String _baseUrl = String.fromEnvironment(
-    'SHADOW_API_BASE_URL',
+    'SHADOW_CLOUDFLARE_API_BASE_URL',
     defaultValue: 'https://shadow-live.ashraf-business-440.workers.dev/api',
   );
 
