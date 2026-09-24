@@ -80,6 +80,29 @@ class FakeGameRuntimeService extends GameRuntimeService {
               'outcomeId': game.gameId == 'greedy_cat' ? 'salad' : 'moon',
               'closedAtMs': now - 1000,
             },
+      recentResults: game.gameId == 'slot'
+          ? const []
+          : List.generate(
+              20,
+              (index) => <String, dynamic>{
+                'roundId': '${game.key}:test:${-index}',
+                'roundNumber': -index,
+                'outcomeId': game.gameId == 'greedy_cat'
+                    ? const [
+                        'shell45',
+                        'fish15',
+                        'steak25',
+                        'pepper5',
+                        'tomato5',
+                        'carrot5',
+                        'cabbage5',
+                        'chicken10',
+                      ][index % 8]
+                    : 'moon',
+                'closedAtMs': now - ((index + 1) * 30000),
+              },
+              growable: false,
+            ),
     );
   }
 
@@ -148,6 +171,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.text('القط الجشع'), findsOneWidget);
+    expect(find.text('New'), findsOneWidget);
     final choice = find.text('فلفل  ×5');
     expect(choice, findsOneWidget);
 
