@@ -9,6 +9,7 @@ import { storageHealth } from "./storage-health.js";
 import { roomGift } from "./room-gift.js";
 import { voiceSession } from "./voice-session.js";
 import { googlePlayPurchase } from "./google-play-purchase.js";
+import { manageAppAsset } from "./manage-app-asset.js";
 
 export default {
   async fetch(request, env) {
@@ -25,7 +26,7 @@ export default {
       return json(request, env, {
         ok: true,
         service: "shadow-live-cloudflare-worker",
-        version: 9,
+        version: 10,
         buildSha: env.BUILD_SHA || null,
         firebaseConfigured: Boolean(String(env.FIREBASE_SERVICE_ACCOUNT || "").trim()),
       });
@@ -60,6 +61,9 @@ export default {
     }
     if (url.pathname === "/api/google-play-purchase") {
       return googlePlayPurchase(request, env);
+    }
+    if (url.pathname === "/api/manage-app-asset") {
+      return manageAppAsset(request, env);
     }
 
     return json(request, env, { ok: false, code: "route_not_found" }, 404);
