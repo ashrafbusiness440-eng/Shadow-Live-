@@ -107,6 +107,19 @@ async function deleteAuthUser(idToken){
     },
   ).catch(()=>{});
 }
+async function directApi(endpoint,idToken,body={}){
+  const res=await fetch(`${workerBase}/api/${endpoint}`,{
+    method:"POST",
+    headers:{
+      ...(idToken?{authorization:`Bearer ${idToken}`}:{}),
+      "content-type":"application/json",
+      origin:"https://ashrafbusiness440-eng.github.io",
+    },
+    body:JSON.stringify(body),
+  });
+  const data=await res.json().catch(()=>({}));
+  return {res,body:data};
+}
 async function api(route,idToken,body={},method="POST",extraQuery=""){
   const query="route="+encodeURIComponent(route)+(extraQuery?"&"+extraQuery:"");
   const res=await fetch(`${workerBase}/api/economy-router?${query}`,{
@@ -173,6 +186,8 @@ try{
   expectOk("reward-inventory list",await api("reward-inventory",userToken,{action:"list"}),(b)=>Array.isArray(b.items));
   expectOk("game-runtime catalog",await api("game-runtime",userToken,{action:"catalog"}),(b)=>Array.isArray(b.items));
   expectOk("game-control state",await api("game-control",ownerToken,{action:"state"}),(b)=>Array.isArray(b.variants));
+  expectOk("economy-control direct alias",await directApi("economy-control",ownerToken,{action:"state"}),(b)=>typeof b.emergencyLock==="object");
+  expectOk("game-runtime direct alias",await directApi("game-runtime",userToken,{action:"catalog"}),(b)=>Array.isArray(b.items));
 
   const rocket=await api("room-rocket",userToken,{action:"enter",explosionId:"!"});
   if(rocket.res.status!==400||rocket.body.code!=="invalid_explosion_id"){
