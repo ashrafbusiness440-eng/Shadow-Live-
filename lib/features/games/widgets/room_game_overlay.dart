@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../game_asset_paths.dart';
 import '../services/game_runtime_service.dart';
+import '../../wallet/screens/recharge_screen.dart';
 
 class RoomGameOverlaySheet extends StatefulWidget {
   const RoomGameOverlaySheet({
@@ -640,9 +641,10 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
   Widget _gameView() {
     final game = _selected!;
     final background = GameAssetPaths.backgroundFor(game.gameId, game.mode);
+    final greedy = game.gameId == 'greedy_cat';
     return Column(
       children: [
-        _statusBar(game),
+        if (!greedy) _statusBar(game),
         if (_error != null)
           Container(
             width: double.infinity,
@@ -664,21 +666,156 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
                     image: DecorationImage(
                       image: AssetImage(background),
                       fit: BoxFit.cover,
-                      opacity: .10,
+                      opacity: greedy ? .20 : .10,
                     ),
                   ),
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(14, 12, 14, 20),
+              padding: EdgeInsets.fromLTRB(
+                14,
+                greedy ? 10 : 12,
+                14,
+                20,
+              ),
               children: [
+                if (greedy) _greedyInfoBar(),
+                if (greedy) const SizedBox(height: 10),
                 if (game.gameId == 'witch') _witchModesBar(),
-                if (game.gameId != 'slot') _roundCard(),
-                const SizedBox(height: 10),
-                _betPicker(),
-                const SizedBox(height: 12),
-                if (game.gameId == 'greedy_cat') _greedyBoard(),
+                if (!greedy && game.gameId != 'slot') _roundCard(),
+                if (!greedy) const SizedBox(height: 10),
+                if (!greedy) _betPicker(),
+                if (!greedy) const SizedBox(height: 12),
+                if (greedy) _greedyBoard(),
                 if (game.gameId == 'witch') _witchBoard(),
                 if (game.gameId == 'slot') _slotBoard(),
               ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _openRechargeStore() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const RechargeScreen(initialTab: 0),
+      ),
+    );
+  }
+
+  Widget _greedyInfoBar() {
+    String? uid;
+    try {
+      uid = FirebaseAuth.instance.currentUser?.uid;
+    } catch (_) {
+      uid = null;
+    }
+    final roundNumber =
+        (_state?.round?['roundNumber'] as num?)?.toInt() ?? 0;
+
+    return Row(
+      children: [
+        Expanded(
+          child: Container(
+            height: 48,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF11172A).withValues(alpha: .92),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: _gold.withValues(alpha: .24)),
+            ),
+            child: uid == null
+                ? const Center(
+                    child: Text(
+                      '0 Coins',
+                      style: TextStyle(
+                        color: _gold,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  )
+                : StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                    stream: FirebaseFirestore.instance
+                        .collection('users')
+                        .doc(uid)
+                        .snapshots(),
+                    builder: (_, snapshot) {
+                      final data = snapshot.data?.data();
+                      final coins = (data?['coins'] as num?)?.toInt() ?? 0;
+                      return Row(
+                        children: [
+                          const Icon(
+                            Icons.monetization_on_rounded,
+                            color: _gold,
+                            size: 23,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              _coins(coins),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: _gold,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ),
+                          InkWell(
+                            onTap: _openRechargeStore,
+                            borderRadius: BorderRadius.circular(10),
+                            child: Container(
+                              width: 32,
+                              height: 32,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(10),
+                                color: _purple.withValues(alpha: .18),
+                                border: Border.all(
+                                  color: _purple.withValues(alpha: .45),
+                                ),
+                              ),
+                              child: const Icon(
+                                Icons.add_rounded,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Container(
+            height: 48,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              gradient: LinearGradient(
+                colors: [
+                  const Color(0xFF8D4B1F).withValues(alpha: .96),
+                  const Color(0xFFC27A2B).withValues(alpha: .96),
+                ],
+              ),
+              border: Border.all(color: _gold.withValues(alpha: .55)),
+              boxShadow: [
+                BoxShadow(
+                  color: _gold.withValues(alpha: .14),
+                  blurRadius: 14,
+                ),
+              ],
+            ),
+            child: Text(
+              'الجولة $roundNumber',
+              style: const TextStyle(
+                color: Color(0xFFFFE2A1),
+                fontWeight: FontWeight.w900,
+                fontSize: 16,
+              ),
             ),
           ),
         ),
@@ -891,56 +1028,491 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
   }
 
   Widget _greedyBoard() {
-    final choices = [
-      ('pepper5', '×5 • فلفل', GameAssetPaths.greedyChoices['pepper5']!),
-      ('tomato5', '×5 • طماطم', GameAssetPaths.greedyChoices['tomato5']!),
-      ('cabbage5', '×5 • ملفوف', GameAssetPaths.greedyChoices['cabbage5']!),
-      ('carrot5', '×5 • جزر', GameAssetPaths.greedyChoices['carrot5']!),
-      ('chicken10', '×10', GameAssetPaths.greedyChoices['chicken10']!),
-      ('fish15', '×15', GameAssetPaths.greedyChoices['fish15']!),
-      ('steak25', '×25', GameAssetPaths.greedyChoices['steak25']!),
-      ('shell45', '×45', GameAssetPaths.greedyChoices['shell45']!),
+    final choices = <({
+      String id,
+      String title,
+      String multiplier,
+      String asset,
+      Alignment alignment,
+    })>[
+      (
+        id: 'shell45',
+        title: 'محار',
+        multiplier: '×45',
+        asset: GameAssetPaths.greedyChoices['shell45']!,
+        alignment: const Alignment(0, -1),
+      ),
+      (
+        id: 'steak25',
+        title: 'لحم',
+        multiplier: '×25',
+        asset: GameAssetPaths.greedyChoices['steak25']!,
+        alignment: const Alignment(.72, -.70),
+      ),
+      (
+        id: 'fish15',
+        title: 'سمك',
+        multiplier: '×15',
+        asset: GameAssetPaths.greedyChoices['fish15']!,
+        alignment: const Alignment(1, 0),
+      ),
+      (
+        id: 'chicken10',
+        title: 'دجاج',
+        multiplier: '×10',
+        asset: GameAssetPaths.greedyChoices['chicken10']!,
+        alignment: const Alignment(.72, .70),
+      ),
+      (
+        id: 'cabbage5',
+        title: 'ملفوف',
+        multiplier: '×5',
+        asset: GameAssetPaths.greedyChoices['cabbage5']!,
+        alignment: const Alignment(0, 1),
+      ),
+      (
+        id: 'carrot5',
+        title: 'جزر',
+        multiplier: '×5',
+        asset: GameAssetPaths.greedyChoices['carrot5']!,
+        alignment: const Alignment(-.72, .70),
+      ),
+      (
+        id: 'pepper5',
+        title: 'فلفل',
+        multiplier: '×5',
+        asset: GameAssetPaths.greedyChoices['pepper5']!,
+        alignment: const Alignment(-1, 0),
+      ),
+      (
+        id: 'tomato5',
+        title: 'طماطم',
+        multiplier: '×5',
+        asset: GameAssetPaths.greedyChoices['tomato5']!,
+        alignment: const Alignment(-.72, -.70),
+      ),
     ];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Text(
-          'اضغط على الخيار لإضافة الرهان • كل ضغطة تتراكم',
-          style: TextStyle(color: Colors.white54, fontSize: 10),
-        ),
-        const SizedBox(height: 8),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: choices.length,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 4,
-            childAspectRatio: .88,
-            crossAxisSpacing: 8,
-            mainAxisSpacing: 8,
-          ),
-          itemBuilder: (_, index) {
-            final item = choices[index];
-            return _choiceTile(item.$1, item.$2, item.$3);
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final boardSize = constraints.maxWidth.clamp(300.0, 430.0);
+            final nodeSize = (boardSize * .215).clamp(68.0, 88.0);
+            final centerSize = (boardSize * .34).clamp(104.0, 142.0);
+            return Center(
+              child: SizedBox(
+                width: boardSize,
+                height: boardSize,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    FractionallySizedBox(
+                      widthFactor: .73,
+                      heightFactor: .73,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: const Color(0xFF1B3152).withValues(alpha: .30),
+                          border: Border.all(
+                            color: const Color(0xFF9B5B2D),
+                            width: 10,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: _gold.withValues(alpha: .12),
+                              blurRadius: 30,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    for (final item in choices)
+                      Align(
+                        alignment: item.alignment,
+                        child: _greedyWheelChoice(
+                          id: item.id,
+                          title: item.title,
+                          multiplier: item.multiplier,
+                          assetPath: item.asset,
+                          size: nodeSize,
+                        ),
+                      ),
+                    Container(
+                      width: centerSize,
+                      height: centerSize,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: const RadialGradient(
+                          colors: [
+                            Color(0xFF31588A),
+                            Color(0xFF10172B),
+                          ],
+                        ),
+                        border: Border.all(
+                          color: _gold.withValues(alpha: .75),
+                          width: 4,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: _gold.withValues(alpha: .22),
+                            blurRadius: 22,
+                          ),
+                        ],
+                      ),
+                      padding: const EdgeInsets.all(13),
+                      child: Image.asset(
+                        GameAssetPaths.greedyMascot,
+                        fit: BoxFit.contain,
+                        filterQuality: FilterQuality.high,
+                        errorBuilder: (_, __, ___) => const Icon(
+                          Icons.pets_rounded,
+                          color: _gold,
+                          size: 54,
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      bottom: boardSize * .29,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 13,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(999),
+                          color: const Color(0xFF4B260E),
+                          border: Border.all(
+                            color: _gold.withValues(alpha: .70),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.timer_outlined,
+                              size: 17,
+                              color: Colors.white,
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              '$_remainingSeconds ث',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
           },
         ),
+        const SizedBox(height: 8),
+        _greedyRecentResults(),
         const SizedBox(height: 10),
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            color: Colors.white.withValues(alpha: .03),
-          ),
-          child: const Text(
-            '🥗 سلطة: كل خانات ×5 تربح معاً • 🍕 بيتزا: ×10 + ×15 + ×25 + ×45 تربح معاً',
-            style: TextStyle(
-              color: Colors.white70,
-              fontSize: 10,
-              height: 1.4,
+        _greedyBetValues(),
+      ],
+    );
+  }
+
+  Widget _greedyWheelChoice({
+    required String id,
+    required String title,
+    required String multiplier,
+    required String assetPath,
+    required double size,
+  }) {
+    final total = _state?.currentRoundSelections[id] ?? 0;
+    final selected = total > 0;
+    return InkWell(
+      onTap: _placing ? null : () => _placeChoice(id),
+      customBorder: const CircleBorder(),
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: size * .88,
+              height: size * .88,
+              padding: EdgeInsets.all(size * .12),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: selected
+                      ? [
+                          _gold.withValues(alpha: .40),
+                          const Color(0xFF6B3B1E),
+                        ]
+                      : const [
+                          Color(0xFFF0C27B),
+                          Color(0xFF8A4F25),
+                        ],
+                ),
+                border: Border.all(
+                  color: selected ? _gold : const Color(0xFFE1A14D),
+                  width: selected ? 3 : 2,
+                ),
+                boxShadow: selected
+                    ? [
+                        BoxShadow(
+                          color: _gold.withValues(alpha: .30),
+                          blurRadius: 16,
+                        ),
+                      ]
+                    : const [],
+              ),
+              child: Image.asset(
+                assetPath,
+                fit: BoxFit.contain,
+                filterQuality: FilterQuality.high,
+                errorBuilder: (_, __, ___) => const Icon(
+                  Icons.fastfood_rounded,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+            Positioned(
+              bottom: -2,
+              child: Container(
+                constraints: BoxConstraints(minWidth: size * .82),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 6,
+                  vertical: 3,
+                ),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(999),
+                  color: selected
+                      ? const Color(0xFF7A5310)
+                      : const Color(0xFF7D301C),
+                  border: Border.all(
+                    color: selected
+                        ? _gold
+                        : Colors.white.withValues(alpha: .28),
+                  ),
+                ),
+                child: Text(
+                  '$title  $multiplier',
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ),
+            if (selected)
+              Positioned(
+                top: -2,
+                right: -2,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 5,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(999),
+                    color: const Color(0xFF0A0D15),
+                    border: Border.all(color: _gold),
+                  ),
+                  child: Text(
+                    _coins(total),
+                    style: const TextStyle(
+                      color: _gold,
+                      fontSize: 8,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _greedyRecentResults() {
+    final recent = _state?.recentResults ?? const <Map<String, dynamic>>[];
+    final fallback = _state?.lastResult;
+    final items = recent.isNotEmpty
+        ? recent.take(20).toList(growable: false)
+        : fallback == null
+            ? const <Map<String, dynamic>>[]
+            : <Map<String, dynamic>>[fallback];
+
+    return Container(
+      height: 66,
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 6),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        color: const Color(0xFF10162A).withValues(alpha: .96),
+        border: Border.all(color: _purple.withValues(alpha: .28)),
+      ),
+      child: items.isEmpty
+          ? const Center(
+              child: Text(
+                'تظهر النتائج هنا بعد انتهاء أول جولة',
+                style: TextStyle(color: Colors.white38, fontSize: 10),
+              ),
+            )
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                final itemWidth =
+                    ((constraints.maxWidth - 8) / 8).clamp(38.0, 54.0);
+                return ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: items.length,
+                  itemExtent: itemWidth,
+                  itemBuilder: (_, index) {
+                    final result = items[index];
+                    final outcomeId = (result['outcomeId'] ?? '').toString();
+                    final asset = _outcomeAsset(outcomeId);
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        alignment: Alignment.center,
+                        children: [
+                          Container(
+                            width: itemWidth - 5,
+                            height: itemWidth - 5,
+                            padding: const EdgeInsets.all(5),
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: const Color(0xFF0B1020),
+                              border: Border.all(
+                                color: index == 0
+                                    ? _gold
+                                    : _cyan.withValues(alpha: .55),
+                                width: index == 0 ? 2.5 : 1.2,
+                              ),
+                              boxShadow: index == 0
+                                  ? [
+                                      BoxShadow(
+                                        color: _gold.withValues(alpha: .26),
+                                        blurRadius: 10,
+                                      ),
+                                    ]
+                                  : const [],
+                            ),
+                            child: asset == null
+                                ? const Icon(
+                                    Icons.help_outline_rounded,
+                                    color: Colors.white54,
+                                  )
+                                : Image.asset(
+                                    asset,
+                                    fit: BoxFit.contain,
+                                    filterQuality: FilterQuality.medium,
+                                    errorBuilder: (_, __, ___) => const Icon(
+                                      Icons.help_outline_rounded,
+                                      color: Colors.white54,
+                                    ),
+                                  ),
+                          ),
+                          if (index == 0)
+                            Positioned(
+                              top: -2,
+                              right: -1,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                  vertical: 1,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFF315B),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: const Text(
+                                  'New',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 7,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+    );
+  }
+
+  Widget _greedyBetValues() {
+    final values = _betValues;
+    if (values.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final shown = values.take(4).toList(growable: false);
+    return Row(
+      children: List.generate(shown.length, (index) {
+        final value = shown[index];
+        final sourceIndex = values.indexOf(value);
+        final selected = sourceIndex == _betIndex;
+        return Expanded(
+          child: Padding(
+            padding: EdgeInsetsDirectional.only(
+              end: index == shown.length - 1 ? 0 : 6,
+            ),
+            child: InkWell(
+              onTap: _placing ? null : () => setState(() => _betIndex = sourceIndex),
+              borderRadius: BorderRadius.circular(14),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 160),
+                height: 52,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  color: selected
+                      ? _gold.withValues(alpha: .17)
+                      : const Color(0xFF151B30),
+                  border: Border.all(
+                    color: selected
+                        ? _gold
+                        : Colors.white.withValues(alpha: .10),
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      _coins(value),
+                      style: TextStyle(
+                        color: selected ? _gold : Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      Icons.monetization_on_rounded,
+                      color: selected ? _gold : const Color(0xFFFFBE3F),
+                      size: 18,
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
-        ),
-      ],
+        );
+      }),
     );
   }
 
