@@ -128,9 +128,81 @@ export function firestoreClient(env) {
       const { body } = await call(url.toString(), { method: "GET" });
       return (body?.documents || []).map((doc) => ({
         id: String(doc.name || "").split("/").pop(),
+        path: String(doc.name || "").split("/documents/")[1] || "",
         data: decodeFields(doc.fields || {}),
         updateTime: doc.updateTime || null,
       }));
+    },
+
+    async runQuery(collectionPath, {
+      filters = [],
+      orderBy = [],
+      limit = 100,
+      transaction = null,
+    } = {}) {
+      const parts = String(collectionPath || "").split("/").filter(Boolean);
+      if (!parts.length || parts.length % 2 === 0) {
+        throw new Error("invalid_collection_path");
+      }
+      const collectionId = parts.pop();
+      const parentPath = parts.join("/");
+      const endpoint = parentPath
+        ? `${documentRoot}/${parentPath}:runQuery`
+        : `${root}/documents:runQuery`;
+
+      const fieldFilters = filters.map(({ field, op, value }) => ({
+        fieldFilter: {
+          field: { fieldPath: field },
+          op: ({
+            "==": "EQUAL",
+            "!=": "NOT_EQUAL",
+            "<": "LESS_THAN",
+            "<=": "LESS_THAN_OR_EQUAL",
+            ">": "GREATER_THAN",
+            ">=": "GREATER_THAN_OR_EQUAL",
+            "array-contains": "ARRAY_CONTAINS",
+          })[op] || "EQUAL",
+          value: encodeValue(value),
+        },
+      }));
+
+      let where;
+      if (fieldFilters.length === 1) where = fieldFilters[0];
+      else if (fieldFilters.length > 1) {
+        where = { compositeFilter: { op: "AND", filters: fieldFilters } };
+      }
+
+      const structuredQuery = {
+        from: [{ collectionId }],
+        ...(where ? { where } : {}),
+        ...(orderBy.length ? {
+          orderBy: orderBy.map(({ field, direction }) => ({
+            field: { fieldPath: field },
+            direction: String(direction).toLowerCase() === "desc"
+              ? "DESCENDING"
+              : "ASCENDING",
+          })),
+        } : {}),
+        limit: Math.max(1, Math.min(1000, Number(limit || 100))),
+      };
+
+      const { body } = await call(endpoint, {
+        method: "POST",
+        body: JSON.stringify({
+          structuredQuery,
+          ...(transaction ? { transaction } : {}),
+        }),
+      });
+
+      return (Array.isArray(body) ? body : [])
+        .map((row) => row.document)
+        .filter(Boolean)
+        .map((doc) => ({
+          id: String(doc.name || "").split("/").pop(),
+          path: String(doc.name || "").split("/documents/")[1] || "",
+          data: decodeFields(doc.fields || {}),
+          updateTime: doc.updateTime || null,
+        }));
     },
 
 
