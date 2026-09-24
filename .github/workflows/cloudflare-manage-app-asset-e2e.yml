@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     paths:
+      - 'cloudflare-worker/src/manage-app-asset.js'
       - 'cloudflare-worker/scripts/manage-app-asset-e2e.mjs'
       - '.github/workflows/cloudflare-manage-app-asset-e2e.yml'
   workflow_dispatch:
