@@ -576,17 +576,26 @@ export async function gameState(db,uid,body={},options={}){
     nowMs,
   });
   let lastResult=null;
+  const recentResults=[];
   if(gameId!=="slot"){
-    const previousNow=Math.max(0,nowMs-config.roundDurationSeconds*1000);
-    const previous=buildRound({
-      config,
-      gameId,
-      mode,
-      uid,
-      key:"previous_preview",
-      nowMs:previousNow,
-    });
-    if(previous.roundId!==round.roundId){
+    const seenRoundIds=new Set();
+    for(let index=1;index<=20;index++){
+      const previousNow=Math.max(
+        0,
+        nowMs-config.roundDurationSeconds*1000*index,
+      );
+      const previous=buildRound({
+        config,
+        gameId,
+        mode,
+        uid,
+        key:"previous_preview_"+index,
+        nowMs:previousNow,
+      });
+      if(previous.roundId===round.roundId||seenRoundIds.has(previous.roundId)){
+        continue;
+      }
+      seenRoundIds.add(previous.roundId);
       const resolved=resolveOutcome({
         gameId,
         mode,
@@ -594,14 +603,15 @@ export async function gameState(db,uid,body={},options={}){
         roundId:previous.roundId,
         secret:options.rngSecret||process.env.GAME_RNG_SECRET,
       });
-      lastResult={
+      recentResults.push({
         roundId:previous.roundId,
         dayKey:previous.dayKey,
         roundNumber:previous.roundNumber,
         outcomeId:resolved.outcomeId,
         closedAtMs:previous.closesAtMs,
-      };
+      });
     }
+    lastResult=recentResults[0]||null;
   }
   const pendingSnapshot=await db.collection("game_operations")
     .where("userId","==",uid)
@@ -639,6 +649,7 @@ export async function gameState(db,uid,body={},options={}){
     bets:[...validateBetLadder(gameId,mode,selected.bets)],
     serverNowMs:nowMs,
     lastResult,
+    recentResults,
     round:gameId==="slot"?null:{
       roundId:round.roundId,
       dayKey:round.dayKey,
