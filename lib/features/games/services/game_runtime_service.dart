@@ -140,17 +140,11 @@ class GameRuntimeService {
   static const bool _e2eRoomTest = bool.fromEnvironment('E2E_ROOM_TEST');
 
   static String _defaultBaseUrl() {
-    const configured = String.fromEnvironment('SHADOW_API_BASE_URL');
+    const configured = String.fromEnvironment(
+      'SHADOW_CLOUDFLARE_API_BASE_URL',
+    );
     if (configured.isNotEmpty) return configured;
-
-    const stableBackend = 'https://shadow-live.ashraf-business-440.workers.dev/api';
-    if (!kIsWeb) return stableBackend;
-
-    final host = Uri.base.host.toLowerCase();
-    if (host.endsWith('.vercel.app')) {
-      return '${Uri.base.origin}/api';
-    }
-    return stableBackend;
+    return 'https://shadow-live.ashraf-business-440.workers.dev/api';
   }
 
   Future<String> _token() async {
