@@ -1,7 +1,8 @@
 import { verify } from "node:crypto";
-import { parseServiceAccount } from "./google-auth.js";
+import { googleAccessToken, parseServiceAccount } from "./google-auth.js";
 
 let certCache = { certs: null, expiresAt: 0 };
+const userStateCache = new Map();
 
 function decodeBase64Url(value) {
   const normalized = String(value).replace(/-/g, "+").replace(/_/g, "/");
@@ -31,6 +32,52 @@ async function firebaseCerts() {
   const maxAge = match ? Number(match[1]) : 3600;
   certCache = { certs, expiresAt: now + maxAge * 1000 };
   return certs;
+}
+
+async function assertUserSessionState(payload, env) {
+  const uid = String(payload?.sub || "").trim();
+  if (!uid) throw new Error("unauthorized");
+
+  const cached = userStateCache.get(uid);
+  const nowMs = Date.now();
+  if (cached && cached.expiresAt > nowMs) {
+    if (!cached.active) throw new Error("unauthorized");
+    if (cached.revokedAtMs && Number(payload.iat || 0) * 1000 <= cached.revokedAtMs) {
+      throw new Error("unauthorized");
+    }
+    return;
+  }
+
+  const { projectId } = parseServiceAccount(env.FIREBASE_SERVICE_ACCOUNT);
+  const token = await googleAccessToken(env);
+  const url =
+    `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents/users/${encodeURIComponent(uid)}`;
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (response.status === 404) {
+    userStateCache.set(uid, { active: true, revokedAtMs: 0, expiresAt: nowMs + 5000 });
+    return;
+  }
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error("auth_state_lookup_failed");
+
+  const fields = body?.fields || {};
+  const status = String(fields.accountStatus?.stringValue || "active");
+  const revokedRaw = fields.sessionsRevokedAt?.timestampValue || "";
+  const revokedAtMs = Date.parse(revokedRaw);
+  const state = {
+    active: status === "active",
+    revokedAtMs: Number.isFinite(revokedAtMs) ? revokedAtMs : 0,
+    expiresAt: nowMs + 5000,
+  };
+  userStateCache.set(uid, state);
+
+  if (!state.active) throw new Error("unauthorized");
+  if (state.revokedAtMs && Number(payload.iat || 0) * 1000 <= state.revokedAtMs) {
+    throw new Error("unauthorized");
+  }
 }
 
 export async function verifyFirebaseIdTokenValue(token, env) {
@@ -69,6 +116,7 @@ export async function verifyFirebaseIdTokenValue(token, env) {
   );
   if (!ok) throw new Error("unauthorized");
 
+  await assertUserSessionState(payload, env);
   return payload;
 }
 
