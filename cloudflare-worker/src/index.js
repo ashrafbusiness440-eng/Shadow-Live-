@@ -87,7 +87,7 @@ export default {
     }
 
     return json(request, env, { ok: false, code: "route_not_found" }, 404);
-  },,
+  },
   async scheduled(event, env, ctx) {
     configureLegacyEnv(env);
     const task = settleDueGameOperations(getFirestore(), {
