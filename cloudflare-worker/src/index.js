@@ -11,6 +11,8 @@ import { voiceSession } from "./voice-session.js";
 import { googlePlayPurchase } from "./google-play-purchase.js";
 import { manageAppAsset } from "./manage-app-asset.js";
 import { economyRouter } from "./economy-router.js";
+import { configureLegacyEnv, getFirestore } from "./legacy-firebase-admin-shim.js";
+import { settleDueGameOperations } from "./legacy-games/game-runtime.js";
 
 export default {
   async fetch(request, env) {
@@ -27,7 +29,7 @@ export default {
       return json(request, env, {
         ok: true,
         service: "shadow-live-cloudflare-worker",
-        version: 11,
+        version: 12,
         buildSha: env.BUILD_SHA || null,
         firebaseConfigured: Boolean(String(env.FIREBASE_SERVICE_ACCOUNT || "").trim()),
       });
@@ -85,5 +87,16 @@ export default {
     }
 
     return json(request, env, { ok: false, code: "route_not_found" }, 404);
+  },,
+  async scheduled(event, env, ctx) {
+    configureLegacyEnv(env);
+    const task = settleDueGameOperations(getFirestore(), {
+      nowMs: Date.now(),
+      limit: 100,
+    }).then((result) => {
+      console.log("Cloudflare game settlement cron", JSON.stringify(result));
+      return result;
+    });
+    ctx.waitUntil(task);
   },
 };
