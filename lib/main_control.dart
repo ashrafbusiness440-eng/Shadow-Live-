@@ -585,8 +585,7 @@ class _OwnerAccountActionsCard extends StatelessWidget {
   }
 
   @override Widget build(BuildContext context){
-    final suspendedText=suspendedUntil==null||'$suspendedUntil'.isEmpty?'':'
-حتى: $suspendedUntil';
+    final suspendedText=suspendedUntil==null||'$suspendedUntil'.isEmpty?'':' • حتى: $suspendedUntil';
     return Card(child:Padding(
       padding:const EdgeInsets.all(16),
       child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
