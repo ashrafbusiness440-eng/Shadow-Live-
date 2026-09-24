@@ -148,7 +148,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.text('القط الجشع'), findsOneWidget);
-    final choice = find.text('×5 • فلفل');
+    final choice = find.text('فلفل  ×5');
     expect(choice, findsOneWidget);
 
     await tester.tap(choice);
@@ -157,7 +157,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(service.totals['pepper5'], 400);
-    expect(find.text('رهانك 400'), findsOneWidget);
+    expect(find.text('400'), findsOneWidget);
   });
 
   testWidgets('Witch switches between Normal and Advanced modes',
