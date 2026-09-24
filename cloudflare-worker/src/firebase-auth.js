@@ -33,11 +33,8 @@ async function firebaseCerts() {
   return certs;
 }
 
-export async function verifyFirebaseIdToken(request, env) {
-  const auth = request.headers.get("Authorization") || "";
-  if (!auth.startsWith("Bearer ")) throw new Error("unauthorized");
-
-  const token = auth.slice(7).trim();
+export async function verifyFirebaseIdTokenValue(token, env) {
+  token = String(token || "").trim();
   const parts = token.split(".");
   if (parts.length !== 3) throw new Error("unauthorized");
 
@@ -73,4 +70,10 @@ export async function verifyFirebaseIdToken(request, env) {
   if (!ok) throw new Error("unauthorized");
 
   return payload;
+}
+
+export async function verifyFirebaseIdToken(request, env) {
+  const auth = request.headers.get("Authorization") || "";
+  if (!auth.startsWith("Bearer ")) throw new Error("unauthorized");
+  return verifyFirebaseIdTokenValue(auth.slice(7), env);
 }
