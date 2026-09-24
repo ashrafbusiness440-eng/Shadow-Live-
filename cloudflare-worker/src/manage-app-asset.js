@@ -75,6 +75,7 @@ async function github(env, url, options = {}) {
   headers.set("accept", "application/vnd.github+json");
   headers.set("authorization", `Bearer ${token}`);
   headers.set("x-github-api-version", "2022-11-28");
+  headers.set("user-agent", "Shadow-Live-Cloudflare-Asset-Manager");
 
   const response = await fetch(url, { ...options, headers });
   if (response.status === 404) return { status: 404, body: null };
