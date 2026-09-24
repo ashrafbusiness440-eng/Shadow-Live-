@@ -60,9 +60,19 @@ jobs:
             echo "$BODY"
             if echo "$BODY" | grep -q '"ok":true' && \
                echo "$BODY" | grep -q "\"buildSha\":\"$GITHUB_SHA\""; then
-              exit 0
+              break
+            fi
+            if [ "$ATTEMPT" = "15" ]; then
+              echo "Latest Worker version did not become active."
+              exit 1
             fi
             sleep 2
           done
-          echo "Latest Worker version did not become active."
-          exit 1
+
+      - name: Verify Firebase storage health
+        run: |
+          BODY=$(curl --fail --silent --show-error \
+            https://shadow-live.ashraf-business-440.workers.dev/api/storage-health)
+          echo "$BODY"
+          echo "$BODY" | grep -q '"ok":true'
+          echo "$BODY" | grep -q '"activeBucket":'
