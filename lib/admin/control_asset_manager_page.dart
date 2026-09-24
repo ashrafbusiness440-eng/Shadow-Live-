@@ -50,7 +50,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     return token;
   }
 
-  static final Uri _endpoint = Uri.parse('https://shadow-live-six.vercel.app/api/manage-app-asset');
+  static final Uri _endpoint = Uri.parse('https://shadow-live.ashraf-business-440.workers.dev/api/manage-app-asset');
 
   String _defaultFileNameFromCurrent(String pickedName) {
     final directory = ControlAssetPolicy.normalizeDirectory(_directory.text);
