@@ -25,6 +25,9 @@ const cronOpId=playerUid+"__"+cronKey;
 const manualRound="phase6_manual_round_"+runId;
 const cronRound="phase6_cron_round_"+runId;
 const accrualId="phase6_settlement_"+runId;
+const roomId="phase6_room_"+runId;
+const slotKey="phase6slot_"+runId;
+const slotOpId=playerUid+"__"+slotKey;
 const month="2026-09";
 const cycleKey="2026-09-C2";
 
@@ -165,6 +168,12 @@ const cleanup=[
   "agency_settlements/"+accrualId,
   "financial_ledger/agency_settlement_"+accrualId,
   "agency_support_stats/"+agencyId+"/monthly/"+month,
+  "room_presence/"+roomId+"/users/"+playerUid,
+  "rooms/"+roomId,
+  "game_operations/"+slotOpId,
+  "financial_ledger/game_debit__"+slotOpId,
+  "financial_ledger/game_credit__"+slotOpId,
+  "game_user_history/"+playerUid+"/items/"+slotOpId,
   "users/"+ownerUid,
   "users/"+playerUid,
   "users/"+hostUid,
@@ -249,8 +258,46 @@ try{
 
   const catalog=ok("game runtime catalog after settlement",await post("/api/game-runtime",playerToken,{action:"catalog"}));
   if(!Array.isArray(catalog.items)||catalog.items.length<3)throw Error("game catalog invalid");
+  const slot=catalog.items.find((item)=>item.gameId==="slot");
+  if(!slot||!Array.isArray(slot.bets)||!slot.bets.length)throw Error("slot catalog missing");
+  const slotBet=Number(slot.bets[0]);
+  await fsSet("rooms/"+roomId,{name:"Phase6 E2E Room",isActive:true,ownerId:playerUid});
+  await fsSet("room_presence/"+roomId+"/users/"+playerUid,{userId:playerUid,lastSeenAtMs:Date.now(),isOnline:true});
 
-  console.log("ALL CLOUDFLARE PHASE-6 SETTLEMENT E2E CHECKS PASSED");
+  const beforeSlot=Number((await fsGet("users/"+playerUid))?.coins||0);
+  const slotResult=ok("real slot bet through Cloudflare",await post("/api/game-runtime",playerToken,{
+    action:"placeBet",
+    gameId:"slot",
+    roomId,
+    idempotencyKey:slotKey,
+    bets:[{amountCoins:slotBet}],
+  }));
+  if(slotResult.status!=="settled"||slotResult.operationId!==slotOpId)throw Error("slot operation not settled");
+  if(!Array.isArray(slotResult.reels)||slotResult.reels.length!==3)throw Error("slot reels missing");
+  const slotOp=await fsGet("game_operations/"+slotOpId);
+  if(!slotOp||slotOp.status!=="settled")throw Error("slot operation missing");
+  if(slotOp.roundId)cleanup.push("game_rounds/"+slotOp.roundId);
+  const slotUser=await fsGet("users/"+playerUid);
+  if(Number(slotUser?.coins)!==Number(slotResult.balanceAfter))throw Error("slot wallet mismatch");
+  const slotDebit=await fsGet("financial_ledger/game_debit__"+slotOpId);
+  if(!slotDebit||Number(slotDebit.delta)!==-slotBet)throw Error("slot debit ledger missing");
+  if(Number(slotResult.payoutCoins||0)>0){
+    const slotCredit=await fsGet("financial_ledger/game_credit__"+slotOpId);
+    if(!slotCredit||Number(slotCredit.delta)!==Number(slotResult.payoutCoins))throw Error("slot credit ledger missing");
+  }
+  const afterSlot=Number(slotUser?.coins||0);
+  const slotDuplicate=ok("real slot bet idempotency",await post("/api/game-runtime",playerToken,{
+    action:"placeBet",
+    gameId:"slot",
+    roomId,
+    idempotencyKey:slotKey,
+    bets:[{amountCoins:slotBet}],
+  }));
+  if(slotDuplicate.code!=="duplicate")throw Error("slot duplicate guard failed");
+  if(Number((await fsGet("users/"+playerUid))?.coins)!==afterSlot)throw Error("slot duplicate changed wallet");
+  console.log("PASS real slot wallet + ledger + RNG + idempotency");
+
+  console.log("ALL CLOUDFLARE PHASE-6 SETTLEMENT AND GAME E2E CHECKS PASSED");
 }finally{
   for(const p of cleanup.reverse()){
     try{await fsDelete(p);}catch{}
