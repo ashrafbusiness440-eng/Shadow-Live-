@@ -347,6 +347,16 @@ export async function placeGameBet(
       });
     }
 
+    const choiceTotals={};
+    if(gameId!=="slot"){
+      for(const selection of selections){
+        const choiceId=clean(selection?.choiceId);
+        const amountCoins=Number(selection?.amountCoins||0);
+        if(choiceId&&Number.isSafeInteger(amountCoins)&&amountCoins>0){
+          choiceTotals[choiceId]=FieldValue.increment(amountCoins);
+        }
+      }
+    }
     tx.set(roundRef,{
       gameId,
       mode,
@@ -363,6 +373,7 @@ export async function placeGameBet(
       totalPayoutCoins:FieldValue.increment(settled?payout:0),
       operationCount:FieldValue.increment(1),
       settledOperationCount:FieldValue.increment(settled?1:0),
+      ...(gameId!=="slot"?{choiceTotals}:{}),
       updatedAt:now,
       createdAt:now,
     },{merge:true});
@@ -613,6 +624,23 @@ export async function gameState(db,uid,body={},options={}){
     }
     lastResult=recentResults[0]||null;
   }
+  let serverRoundSelections=[];
+  if(gameId!=="slot"){
+    const roundSnap=await db.collection("game_rounds").doc(round.roundId).get();
+    const choiceTotals=roundSnap.exists?roundSnap.data()?.choiceTotals:{};
+    if(choiceTotals&&typeof choiceTotals==="object"){
+      serverRoundSelections=Object.entries(choiceTotals)
+        .map(([choiceId,amountCoins])=>({
+          choiceId:clean(choiceId),
+          amountCoins:Number(amountCoins||0),
+        }))
+        .filter(item=>
+          item.choiceId&&
+          Number.isSafeInteger(item.amountCoins)&&
+          item.amountCoins>0
+        );
+    }
+  }
   const pendingSnapshot=await db.collection("game_operations")
     .where("userId","==",uid)
     .limit(50)
@@ -659,6 +687,7 @@ export async function gameState(db,uid,body={},options={}){
       locked:nowMs>=round.closesAtMs-config.lockBeforeMs,
     },
     currentRoundSelections,
+    serverRoundSelections,
     pending,
   };
 }
