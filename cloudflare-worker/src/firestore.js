@@ -116,9 +116,11 @@ export function firestoreClient(env) {
     },
 
     async commit(transaction, writes) {
+      const payload = { writes };
+      if (transaction) payload.transaction = transaction;
       const { body } = await call(`${root}/documents:commit`, {
         method: "POST",
-        body: JSON.stringify({ transaction, writes }),
+        body: JSON.stringify(payload),
       });
       return body;
     },
@@ -229,14 +231,34 @@ export function firestoreClient(env) {
       };
     },
 
-    writeCreate(path, fields) {
+    serverTimestamp(fieldPath) {
       return {
+        fieldPath,
+        setToServerValue: "REQUEST_TIME",
+      };
+    },
+
+    arrayUnion(fieldPath, values) {
+      return {
+        fieldPath,
+        appendMissingElements: {
+          values: values.map(encodeValue),
+        },
+      };
+    },
+
+    writeCreate(path, fields, updateTransforms = null) {
+      const write = {
         update: {
           name: documentName(path),
           fields: encodeFields(fields),
         },
         currentDocument: { exists: false },
       };
+      if (updateTransforms?.length) {
+        write.updateTransforms = updateTransforms;
+      }
+      return write;
     },
 
     writeDelete(path) {
