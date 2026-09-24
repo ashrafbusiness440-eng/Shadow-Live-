@@ -121,7 +121,8 @@ function readVariant(config,item){
     : game;
   const base=defaultVariant(item);
   const hasStoredOutcomes=Array.isArray(raw.outcomes)&&raw.outcomes.length>0;
-  const enabled=hasStoredOutcomes?raw.enabled!==false:true;
+  const hasStoredEnabled=Object.prototype.hasOwnProperty.call(raw,"enabled");
+  const enabled=hasStoredEnabled?raw.enabled===true:true;
   return {
     key:item.key,
     gameId:item.gameId,
