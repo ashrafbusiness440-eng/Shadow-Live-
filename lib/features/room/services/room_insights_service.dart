@@ -145,8 +145,8 @@ class RoomInsightsService {
         _auth = auth ?? FirebaseAuth.instance,
         _baseUrl = baseUrl ??
             const String.fromEnvironment(
-              'SHADOW_API_BASE_URL',
-              defaultValue: 'https://shadow-live-six.vercel.app/api',
+              'SHADOW_CLOUDFLARE_API_BASE_URL',
+              defaultValue: 'https://shadow-live.ashraf-business-440.workers.dev/api',
             );
 
   final http.Client _client;
