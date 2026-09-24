@@ -29,7 +29,7 @@ export default {
       return json(request, env, {
         ok: true,
         service: "shadow-live-cloudflare-worker",
-        version: 13,
+        version: 14,
         buildSha: env.BUILD_SHA || null,
         firebaseConfigured: Boolean(String(env.FIREBASE_SERVICE_ACCOUNT || "").trim()),
       });
@@ -90,14 +90,35 @@ export default {
   },
   async scheduled(event, env, ctx) {
     configureLegacyEnv(env);
-    const task = settleDueGameOperations(getFirestore(), {
-      nowMs: Date.now(),
-      limit: 100,
-      workerTag: "cloudflare_cron",
-    }).then((result) => {
+    const db = getFirestore();
+    const marker = db.collection("system_runtime").doc("game_settlement_cron");
+    try {
+      const result = await settleDueGameOperations(db, {
+        nowMs: Date.now(),
+        limit: 100,
+        workerTag: "cloudflare_cron",
+      });
+      if (result.checked > 0) {
+        await marker.set({
+          lastRunAtMs: Date.now(),
+          checked: Number(result.checked || 0),
+          settled: Number(result.settled || 0),
+          lastError: "",
+        }, { merge: true });
+      }
       console.log("Cloudflare game settlement cron", JSON.stringify(result));
-      return result;
-    });
-    ctx.waitUntil(task);
+    } catch (error) {
+      const code = String(error?.message || "cron_failed");
+      try {
+        await marker.set({
+          lastRunAtMs: Date.now(),
+          checked: 0,
+          settled: 0,
+          lastError: code.slice(0, 240),
+        }, { merge: true });
+      } catch (_) {}
+      console.error("Cloudflare game settlement cron failed", code);
+      throw error;
+    }
   },
 };
