@@ -69,6 +69,20 @@ export default {
     if (url.pathname === "/api/economy-router") {
       return economyRouter(request, env);
     }
+    const economyAliases = {
+      "/api/economy-control": "economy-control",
+      "/api/gift-catalog": "gift-catalog",
+      "/api/gift-economy-config": "gift-economy-config",
+      "/api/recharge-config": "recharge-config",
+      "/api/room-rocket-config": "room-rocket-config",
+      "/api/room-rocket": "room-rocket",
+      "/api/reward-inventory": "reward-inventory",
+      "/api/game-runtime": "game-runtime",
+      "/api/game-control": "game-control",
+    };
+    if (economyAliases[url.pathname]) {
+      return economyRouter(request, env, economyAliases[url.pathname]);
+    }
 
     return json(request, env, { ok: false, code: "route_not_found" }, 404);
   },
