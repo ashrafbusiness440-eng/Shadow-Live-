@@ -166,9 +166,9 @@ try{
   console.log("PASS economy auth guard");
 
   expectOk("economy-control state",await api("economy-control",ownerToken,{action:"state"}),(b)=>typeof b.emergencyLock==="object");
-  expectOk("gift-catalog state",await api("gift-catalog",ownerToken,{action:"state"}),(b)=>Array.isArray(b.gifts));
+  expectOk("gift-catalog state",await api("gift-catalog",ownerToken,{action:"state"}),(b)=>typeof b.exists==="boolean"&&Object.prototype.hasOwnProperty.call(b,"config"));
   expectOk("gift-economy-config state",await api("gift-economy-config",ownerToken,{action:"state"}),(b)=>b.config&&typeof b.config==="object");
-  expectOk("recharge-config state",await api("recharge-config",ownerToken,{action:"state"}),(b)=>Array.isArray(b.packages));
+  expectOk("recharge-config state",await api("recharge-config",ownerToken,{action:"state"}),(b)=>typeof b.exists==="boolean"&&Object.prototype.hasOwnProperty.call(b,"config"));
   expectOk("room-rocket-config state",await api("room-rocket-config",ownerToken,{action:"state"}),(b)=>b.config&&typeof b.config==="object");
   expectOk("reward-inventory list",await api("reward-inventory",userToken,{action:"list"}),(b)=>Array.isArray(b.items));
   expectOk("game-runtime catalog",await api("game-runtime",userToken,{action:"catalog"}),(b)=>Array.isArray(b.items));
