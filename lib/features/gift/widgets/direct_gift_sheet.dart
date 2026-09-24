@@ -43,7 +43,7 @@ class _DirectGiftSheet extends StatefulWidget {
 class _DirectGiftSheetState extends State<_DirectGiftSheet> {
   static const _apiBase = String.fromEnvironment(
     'SHADOW_API_BASE_URL',
-    defaultValue: 'https://shadow-live-six.vercel.app/api',
+    defaultValue: 'https://shadow-live.ashraf-business-440.workers.dev/api',
   );
 
   List<GiftCatalogItem> _catalog = const [];
