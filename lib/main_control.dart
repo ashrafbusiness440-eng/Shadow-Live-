@@ -405,6 +405,13 @@ class UserReadOnlyPage extends StatelessWidget {
           capabilities:caps,
         ),
         const SizedBox(height:10),
+        _OwnerAccountActionsCard(
+          uid:uid,
+          targetRole:t(data['role']??'user'),
+          accountStatus:t(data['accountStatus']??'active'),
+          suspendedUntil:data['suspendedUntil'],
+        ),
+        const SizedBox(height:10),
         _OwnerIdPermissionCard(uid:uid,targetRole:t(data['role']??'user'),capabilities:caps),
         const SizedBox(height:10),
         _OwnerEconomyCard(uid:uid,coins:data['coins'],diamonds:data['diamonds']),
@@ -418,6 +425,202 @@ class UserReadOnlyPage extends StatelessWidget {
     );
   }
 }
+class _OwnerAccountActionsCard extends StatelessWidget {
+  const _OwnerAccountActionsCard({
+    required this.uid,
+    required this.targetRole,
+    required this.accountStatus,
+    required this.suspendedUntil,
+  });
+  final String uid,targetRole,accountStatus;
+  final dynamic suspendedUntil;
+
+  bool get protectedOwner=>targetRole=='owner';
+  bool get blocked=>accountStatus=='banned'||accountStatus=='suspended'||accountStatus=='disabled'||accountStatus=='deleted';
+
+  String statusLabel(){
+    if(accountStatus=='suspended')return 'معلّق مؤقتًا';
+    if(accountStatus=='banned')return 'محظور دائمًا';
+    if(accountStatus=='disabled')return 'معطّل';
+    if(accountStatus=='deleted')return 'محذوف';
+    return 'نشط';
+  }
+
+  Future<void> _execute(BuildContext context,String action,String reason,{int? durationMinutes}) async {
+    try{
+      final user=FirebaseAuth.instance.currentUser;
+      if(user==null)throw Exception('not_signed_in');
+      final token=await user.getIdToken().timeout(const Duration(seconds:12));
+      if(token==null||token.isEmpty)throw Exception('empty_token');
+      final prefix=user.uid.length>=6?user.uid.substring(0,6):user.uid;
+      final key='acct_'+DateTime.now().millisecondsSinceEpoch.toString()+'_'+prefix;
+      final response=await http.post(
+        shadowApiEndpoint('manage-user-account'),
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+        body:jsonEncode({
+          'targetUid':uid,
+          'accountAction':action,
+          'reason':reason,
+          'idempotencyKey':key,
+          if(durationMinutes!=null)'durationMinutes':durationMinutes,
+        }),
+      ).timeout(const Duration(seconds:25));
+      final body=response.body.isEmpty?<String,dynamic>{}:jsonDecode(response.body) as Map<String,dynamic>;
+      if(response.statusCode<200||response.statusCode>=300||body['ok']!=true){
+        final code=(body['code']??'request_failed').toString();
+        throw Exception(code);
+      }
+      if(!context.mounted)return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('تم تنفيذ الإجراء وتسجيله في Audit Log.')));
+      Navigator.pop(context);
+    }catch(e){
+      if(!context.mounted)return;
+      final code=e.toString().replaceFirst('Exception: ','');
+      final message=switch(code){
+        'recent_auth_required'=>'يلزم تسجيل دخول حديث للـOwner. سجّل خروج ثم ادخل من جديد.',
+        'owner_protected'=>'حساب Owner محمي ولا يمكن حظره أو حذفه.',
+        'not_found'=>'المستخدم غير موجود.',
+        'invalid_suspend_duration'=>'مدة التعليق غير صالحة.',
+        'PERMISSION_DENIED'=>'حساب الخدمة لا يملك صلاحية Firebase Auth المطلوبة.',
+        _=>'تعذر تنفيذ الإجراء: '+code,
+      };
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(message),duration:const Duration(seconds:6)));
+    }
+  }
+
+  Future<String?> _reason(BuildContext context,String title) async {
+    final controller=TextEditingController();
+    final result=await showDialog<String>(
+      context:context,
+      builder:(c)=>AlertDialog(
+        title:Text(title),
+        content:TextField(
+          controller:controller,
+          maxLength:160,
+          maxLines:2,
+          decoration:const InputDecoration(labelText:'سبب الإجراء *',border:OutlineInputBorder()),
+        ),
+        actions:[
+          TextButton(onPressed:()=>Navigator.pop(c),child:const Text('إلغاء')),
+          FilledButton(onPressed:()=>controller.text.trim().length<3?null:Navigator.pop(c,controller.text.trim()),child:const Text('متابعة')),
+        ],
+      ),
+    );
+    controller.dispose();
+    return result;
+  }
+
+  Future<void> _suspend(BuildContext context) async {
+    final reason=await _reason(context,'تعليق حساب المستخدم');
+    if(reason==null||!context.mounted)return;
+    int minutes=1440;
+    final confirmed=await showDialog<bool>(
+      context:context,
+      builder:(c)=>StatefulBuilder(builder:(context,setState)=>AlertDialog(
+        title:const Text('مدة التعليق'),
+        content:DropdownButtonFormField<int>(
+          initialValue:minutes,
+          decoration:const InputDecoration(labelText:'المدة',border:OutlineInputBorder()),
+          items:const[
+            DropdownMenuItem(value:60,child:Text('ساعة')),
+            DropdownMenuItem(value:360,child:Text('6 ساعات')),
+            DropdownMenuItem(value:1440,child:Text('24 ساعة')),
+            DropdownMenuItem(value:10080,child:Text('7 أيام')),
+            DropdownMenuItem(value:43200,child:Text('30 يومًا')),
+          ],
+          onChanged:(v){if(v!=null)setState(()=>minutes=v);},
+        ),
+        actions:[
+          TextButton(onPressed:()=>Navigator.pop(c,false),child:const Text('إلغاء')),
+          FilledButton(onPressed:()=>Navigator.pop(c,true),child:const Text('تعليق الحساب')),
+        ],
+      )),
+    );
+    if(confirmed==true&&context.mounted)await _execute(context,'suspend',reason,durationMinutes:minutes);
+  }
+
+  Future<void> _simple(BuildContext context,String action,String title,{bool destructive=false}) async {
+    final reason=await _reason(context,title);
+    if(reason==null||!context.mounted)return;
+    final ok=await showDialog<bool>(
+      context:context,
+      builder:(c)=>AlertDialog(
+        title:Text(title),
+        content:Text(destructive
+          ? 'هذا إجراء حساس. سيتم تعطيل وصول المستخدم وتسجيل العملية بالكامل.'
+          : 'سيتم تنفيذ الإجراء عبر Backend وتسجيله في Audit Log.'),
+        actions:[
+          TextButton(onPressed:()=>Navigator.pop(c,false),child:const Text('إلغاء')),
+          FilledButton(onPressed:()=>Navigator.pop(c,true),child:const Text('تأكيد')),
+        ],
+      ),
+    );
+    if(ok==true&&context.mounted)await _execute(context,action,reason);
+  }
+
+  Future<void> _delete(BuildContext context) async {
+    final reason=await _reason(context,'حذف حساب المستخدم');
+    if(reason==null||!context.mounted)return;
+    final confirm=TextEditingController();
+    final ok=await showDialog<bool>(
+      context:context,
+      builder:(c)=>AlertDialog(
+        title:const Text('حذف الحساب نهائيًا'),
+        content:Column(mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.start,children:[
+          const Text('سيتم حذف حساب Firebase Auth ومنع تسجيل الدخول نهائيًا. السجل المالي وAudit Log يبقيان محفوظين للتدقيق.'),
+          const SizedBox(height:12),
+          TextField(controller:confirm,decoration:const InputDecoration(labelText:'اكتب كلمة حذف للتأكيد',border:OutlineInputBorder())),
+        ]),
+        actions:[
+          TextButton(onPressed:()=>Navigator.pop(c,false),child:const Text('إلغاء')),
+          FilledButton(
+            onPressed:()=>confirm.text.trim()=='حذف'?Navigator.pop(c,true):null,
+            child:const Text('حذف نهائي'),
+          ),
+        ],
+      ),
+    );
+    confirm.dispose();
+    if(ok==true&&context.mounted)await _execute(context,'deleteAccount',reason);
+  }
+
+  @override Widget build(BuildContext context){
+    final suspendedText=suspendedUntil==null||'$suspendedUntil'.isEmpty?'':'
+حتى: $suspendedUntil';
+    return Card(child:Padding(
+      padding:const EdgeInsets.all(16),
+      child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+        Row(children:[
+          Icon(protectedOwner?Icons.shield_rounded:Icons.gpp_maybe_outlined,color:protectedOwner?const Color(0xFFD7B85A):Colors.orangeAccent),
+          const SizedBox(width:8),
+          const Expanded(child:Text('إجراءات الحساب والحظر',style:TextStyle(fontWeight:FontWeight.w900,fontSize:17))),
+          Chip(label:Text(statusLabel())),
+        ]),
+        const SizedBox(height:6),
+        Text(protectedOwner
+          ? 'حساب Owner محمي من الحظر والحذف.'
+          : 'تعليق مؤقت، حظر دائم، تعطيل، إنهاء الجلسات أو حذف الحساب. كل إجراء Backend-only ومسجل في Audit Log.'+suspendedText,
+          style:const TextStyle(color:Color(0xFFAAA3B8))),
+        const SizedBox(height:12),
+        Wrap(spacing:8,runSpacing:8,children:[
+          FilledButton.tonalIcon(onPressed:protectedOwner||accountStatus=='deleted'?null:()=>_suspend(context),icon:const Icon(Icons.timer_off_outlined),label:const Text('تعليق مؤقت')),
+          FilledButton.tonalIcon(onPressed:protectedOwner||accountStatus=='deleted'?null:()=>_simple(context,'ban','حظر المستخدم نهائيًا',destructive:true),icon:const Icon(Icons.block),label:const Text('حظر دائم')),
+          OutlinedButton.icon(onPressed:protectedOwner||accountStatus=='deleted'?null:()=>_simple(context,'disable','تعطيل الحساب'),icon:const Icon(Icons.pause_circle_outline),label:const Text('تعطيل')),
+          OutlinedButton.icon(onPressed:protectedOwner||accountStatus=='deleted'?null:()=>_simple(context,'revokeSessions','إنهاء جلسات المستخدم'),icon:const Icon(Icons.phonelink_erase_outlined),label:const Text('إنهاء الجلسات')),
+          if(blocked&&accountStatus!='deleted')
+            FilledButton.icon(onPressed:protectedOwner?null:()=>_simple(context,accountStatus=='banned'?'unban':'enable','إعادة تفعيل الحساب'),icon:const Icon(Icons.lock_open_outlined),label:const Text('فك الحظر / تفعيل')),
+          FilledButton.icon(
+            style:FilledButton.styleFrom(backgroundColor:Colors.red.shade800),
+            onPressed:protectedOwner||accountStatus=='deleted'?null:()=>_delete(context),
+            icon:const Icon(Icons.delete_forever_outlined),
+            label:const Text('حذف الحساب'),
+          ),
+        ]),
+      ]),
+    ));
+  }
+}
+
 class _OwnerEconomyCard extends StatelessWidget {
   const _OwnerEconomyCard({required this.uid,required this.coins,required this.diamonds});
   final String uid; final dynamic coins,diamonds;
@@ -537,12 +740,20 @@ class _RoomsPageState extends State<RoomsPage> {
   final seats=TextEditingController();
   final moderators=TextEditingController();
   final hostUid=TextEditingController();
-  bool busy=false,bypassLevelCapacity=false;
+  final roomName=TextEditingController();
+  final roomCategory=TextEditingController();
+  final roomDescription=TextEditingController();
+  final roomCover=TextEditingController();
+  final roomTags=TextEditingController();
+  bool busy=false,bypassLevelCapacity=false,hiddenOfficialRoom=false;
+  String officialType='official';
   Map<String,dynamic>? room;
   String? error;
 
   @override void dispose(){
-    publicId.dispose();reason.dispose();seats.dispose();moderators.dispose();hostUid.dispose();super.dispose();
+    publicId.dispose();reason.dispose();seats.dispose();moderators.dispose();hostUid.dispose();
+    roomName.dispose();roomCategory.dispose();roomDescription.dispose();roomCover.dispose();roomTags.dispose();
+    super.dispose();
   }
 
   Uri get apiUri=>shadowApiEndpoint('voice-session');
@@ -579,6 +790,7 @@ class _RoomsPageState extends State<RoomsPage> {
     'invalid_official_room_type'=>'نوع الغرفة الرسمية غير صالح.',
     'invalid_room_visibility'=>'خصوصية الغرفة الرسمية غير صالحة.',
     'room_public_id_exhausted'=>'تعذر حجز Room ID تلقائيًا. حاول مرة أخرى.',
+    'official_room_required'=>'هذا التعديل متاح فقط للغرف الرسمية أو الإدارية.',
     _=>'تعذر تنفيذ العملية: '+code,
   };
 
@@ -588,6 +800,14 @@ class _RoomsPageState extends State<RoomsPage> {
     seats.text=overrides['seats']?.toString()??'';
     moderators.text=overrides['moderators']?.toString()??'';
     hostUid.text=policy['hostUid']?.toString()??'';
+    roomName.text=(data['name']??'').toString();
+    roomCategory.text=(data['category']??'').toString();
+    roomDescription.text=(data['description']??'').toString();
+    roomCover.text=(data['coverImageUrl']??'').toString();
+    roomTags.text=data['tags'] is List?(data['tags'] as List).map((e)=>'$e').join(', '):'';
+    officialType=(policy['type']??'official').toString();
+    if(!['official','administrative','customer_service'].contains(officialType))officialType='official';
+    hiddenOfficialRoom=(data['visibility']??'public').toString()=='hidden';
     bypassLevelCapacity=overrides['bypassLevelCapacity']==true;
   }
 
@@ -818,6 +1038,38 @@ class _RoomsPageState extends State<RoomsPage> {
         icon:const Icon(Icons.add_business_rounded),
         label:const Text('+ إنشاء غرفة رسمية'),
       )),
+      const SizedBox(height:12),
+      Card(child:ExpansionTile(
+        leading:const Icon(Icons.admin_panel_settings_outlined,color:Color(0xFFD7B85A)),
+        title:const Text('إدارة الغرف الإدارية والرسمية',style:TextStyle(fontWeight:FontWeight.w900)),
+        subtitle:const Text('اختر غرفة للدخول إلى التحكم والتعديل مباشرة.'),
+        children:[
+          StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(
+            stream:FirebaseFirestore.instance.collection('rooms').where('systemOwned',isEqualTo:true).limit(50).snapshots(),
+            builder:(context,snap){
+              if(snap.connectionState==ConnectionState.waiting)return const Padding(padding:EdgeInsets.all(18),child:CircularProgressIndicator());
+              if(snap.hasError)return Padding(padding:const EdgeInsets.all(16),child:Text('تعذر تحميل الغرف الرسمية: ${snap.error}'));
+              final docs=snap.data?.docs??[];
+              if(docs.isEmpty)return const ListTile(title:Text('لا توجد غرف إدارية/رسمية حتى الآن.'));
+              return Column(children:docs.map((doc){
+                final d=doc.data();
+                final id=(d['publicId']??'').toString();
+                final type=(d['roomType']??d['type']??'official').toString();
+                return ListTile(
+                  leading:Icon(type=='administrative'?Icons.admin_panel_settings:Icons.verified_rounded,color:const Color(0xFFD7B85A)),
+                  title:Text((d['name']??d['title']??'غرفة رسمية').toString(),style:const TextStyle(fontWeight:FontWeight.w800)),
+                  subtitle:Text('ID: ${id.isEmpty?'—':id} • النوع: $type'),
+                  trailing:const Icon(Icons.tune_rounded),
+                  onTap:id.isEmpty?null:() async {
+                    publicId.text=id;
+                    await lookup();
+                  },
+                );
+              }).toList());
+            },
+          ),
+        ],
+      )),
       const SizedBox(height:16),
       Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(children:[
         TextField(
@@ -929,13 +1181,57 @@ class _RoomsPageState extends State<RoomsPage> {
         Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
           const Text('غرفة رسمية / إدارية',style:TextStyle(fontSize:18,fontWeight:FontWeight.w900)),
           const SizedBox(height:6),
-          const Text('الغرفة الرسمية ملك Shadow Live. الـHost يدير الجلسة فقط ولا يصبح Owner.',style:TextStyle(color:Color(0xFFAAA3B8),fontSize:12)),
+          const Text('الغرفة الرسمية ملك Shadow Live. يمكنك تعديل بياناتها والـHost والنوع والخصوصية من هنا.',style:TextStyle(color:Color(0xFFAAA3B8),fontSize:12)),
           const SizedBox(height:12),
-          TextField(
-            controller:hostUid,
-            decoration:const InputDecoration(labelText:'Host UID',hintText:'اختياري',border:OutlineInputBorder(),prefixIcon:Icon(Icons.record_voice_over_outlined)),
-          ),
-          const SizedBox(height:10),
+          if(official)...[
+            TextField(controller:roomName,decoration:const InputDecoration(labelText:'اسم الغرفة',border:OutlineInputBorder())),
+            const SizedBox(height:10),
+            DropdownButtonFormField<String>(
+              initialValue:officialType,
+              decoration:const InputDecoration(labelText:'نوع الغرفة',border:OutlineInputBorder()),
+              items:const[
+                DropdownMenuItem(value:'official',child:Text('رسمية')),
+                DropdownMenuItem(value:'administrative',child:Text('إدارية')),
+                DropdownMenuItem(value:'customer_service',child:Text('خدمة عملاء')),
+              ],
+              onChanged:busy?null:(v){if(v!=null)setState(()=>officialType=v);},
+            ),
+            const SizedBox(height:10),
+            TextField(controller:hostUid,decoration:const InputDecoration(labelText:'Host UID',hintText:'اختياري',border:OutlineInputBorder(),prefixIcon:Icon(Icons.record_voice_over_outlined))),
+            const SizedBox(height:10),
+            TextField(controller:roomCategory,decoration:const InputDecoration(labelText:'التصنيف',border:OutlineInputBorder())),
+            const SizedBox(height:10),
+            TextField(controller:roomDescription,maxLines:2,decoration:const InputDecoration(labelText:'الوصف',border:OutlineInputBorder())),
+            const SizedBox(height:10),
+            TextField(controller:roomCover,decoration:const InputDecoration(labelText:'رابط الغلاف',border:OutlineInputBorder())),
+            const SizedBox(height:10),
+            TextField(controller:roomTags,decoration:const InputDecoration(labelText:'الوسوم — افصل بفاصلة',border:OutlineInputBorder())),
+            SwitchListTile(
+              contentPadding:EdgeInsets.zero,
+              title:const Text('غرفة مخفية'),
+              subtitle:const Text('إخفاؤها من الاكتشاف العام.'),
+              value:hiddenOfficialRoom,
+              onChanged:busy?null:(v)=>setState(()=>hiddenOfficialRoom=v),
+            ),
+            SizedBox(width:double.infinity,child:FilledButton.icon(
+              onPressed:busy?null:()=>execute('updateOfficialRoom',extra:{
+                'name':roomName.text.trim(),
+                'hostUid':hostUid.text.trim(),
+                'officialType':officialType,
+                'category':roomCategory.text.trim(),
+                'description':roomDescription.text.trim(),
+                'coverImageUrl':roomCover.text.trim(),
+                'tags':roomTags.text.split(',').map((e)=>e.trim()).where((e)=>e.isNotEmpty).toList(),
+                'visibility':hiddenOfficialRoom?'hidden':'public',
+              }),
+              icon:const Icon(Icons.edit_note_rounded),
+              label:const Text('حفظ بيانات الغرفة الإدارية'),
+            )),
+            const SizedBox(height:10),
+          ]else...[
+            TextField(controller:hostUid,decoration:const InputDecoration(labelText:'Host UID',hintText:'اختياري',border:OutlineInputBorder(),prefixIcon:Icon(Icons.record_voice_over_outlined))),
+            const SizedBox(height:10),
+          ],
           Row(children:[
             Expanded(child:FilledButton.icon(
               onPressed:busy||official?null:()=>execute('setOfficialRoom',extra:{
