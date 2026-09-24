@@ -27,17 +27,14 @@ export function parseServiceAccount(raw) {
   return { projectId, clientEmail, privateKey };
 }
 
-export async function googleAccessToken(
-  env,
-  scope = "https://www.googleapis.com/auth/datastore",
-) {
+async function accessTokenFromServiceAccount(raw, scope) {
   const now = Math.floor(Date.now() / 1000);
-  const cached = tokenCache.get(scope);
+  const sa = parseServiceAccount(raw);
+  const cacheKey = sa.clientEmail + "|" + scope;
+  const cached = tokenCache.get(cacheKey);
   if (cached && cached.expiresAt > now + 90) {
     return cached.token;
   }
-
-  const sa = parseServiceAccount(env.FIREBASE_SERVICE_ACCOUNT);
   const header = base64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
   const payload = base64url(JSON.stringify({
     iss: sa.clientEmail,
@@ -68,6 +65,20 @@ export async function googleAccessToken(
     token: body.access_token,
     expiresAt: now + Number(body.expires_in || 3600),
   };
-  tokenCache.set(scope, value);
+  tokenCache.set(cacheKey, value);
   return value.token;
+}
+
+export async function googleAccessToken(
+  env,
+  scope = "https://www.googleapis.com/auth/datastore",
+) {
+  return accessTokenFromServiceAccount(env.FIREBASE_SERVICE_ACCOUNT, scope);
+}
+
+export async function googleAccessTokenFromServiceAccount(
+  raw,
+  scope,
+) {
+  return accessTokenFromServiceAccount(raw, scope);
 }
