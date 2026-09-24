@@ -23,6 +23,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Audit Cloudflare cutover
+        run: python3 scripts/phase7_cloudflare_audit.py
+
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -32,11 +35,9 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Check API JavaScript syntax
+      - name: Check Cloudflare Worker JavaScript syntax
         run: |
-          for file in api/*.js; do
-            node --check "$file"
-          done
+          find cloudflare-worker/src -type f -name '*.js' -print0 | xargs -0 -n1 node --check
 
       - name: Run economy and mic policy unit tests
         run: node --test server/__tests__/economy-policy.test.js server/__tests__/mic-activity.test.js server/__tests__/economy-permissions.test.js server/__tests__/room-rocket.test.js server/__tests__/game-engine.test.js
