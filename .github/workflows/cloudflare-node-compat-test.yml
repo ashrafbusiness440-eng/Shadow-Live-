@@ -1,0 +1,57 @@
+name: Cloudflare Node Compatibility Test
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'cloudflare-node-compat-test/**'
+      - '.github/workflows/cloudflare-node-compat-test.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shadow-live-cloudflare-node-compat-test
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cloudflare-node-compat-test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Sync Firebase service account secret
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: printf '%s' "$FIREBASE_SERVICE_ACCOUNT" | npx wrangler secret put FIREBASE_SERVICE_ACCOUNT
+
+      - name: Deploy compatibility test
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy
+
+      - name: Verify Firebase Admin runtime
+        run: |
+          BODY=$(curl --silent --show-error --retry 8 --retry-delay 2 \
+            https://shadow-live-node-compat-test.ashraf-business-440.workers.dev/health)
+          echo "$BODY"
+          echo "$BODY" | grep -q '"ok":true'
+          echo "$BODY" | grep -q '"firebaseAdmin":true'
+          echo "$BODY" | grep -q '"firestore":true'
+          echo "$BODY" | grep -q '"auth":true'
