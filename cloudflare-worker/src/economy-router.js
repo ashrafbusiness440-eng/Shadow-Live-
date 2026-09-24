@@ -32,10 +32,11 @@ function responseAdapter(request, env) {
   };
 }
 
-export async function economyRouter(request, env) {
+export async function economyRouter(request, env, routeOverride = null) {
   configureLegacyEnv(env);
   const url = new URL(request.url);
   const query = Object.fromEntries(url.searchParams.entries());
+  if (routeOverride) query.route = String(routeOverride);
   let body = {};
   if (!["GET", "HEAD"].includes(request.method)) {
     try { body = await request.json(); } catch { body = {}; }
