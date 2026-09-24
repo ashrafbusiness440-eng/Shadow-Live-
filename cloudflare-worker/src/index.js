@@ -1,3 +1,4 @@
+// Phase 8 comprehensive E2E deployment marker
 import { corsHeaders, json } from "./http.js";
 import { adjustBalance } from "./adjust-balance.js";
 import { appAssets } from "./app-assets.js";
