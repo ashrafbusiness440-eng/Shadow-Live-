@@ -36,7 +36,7 @@ jobs:
           for ATTEMPT in $(seq 1 60); do
             BODY=$(curl --silent --show-error https://shadow-live.ashraf-business-440.workers.dev/health || true)
             echo "$BODY"
-            if echo "$BODY" | grep -q '"ok":true' && echo "$BODY" | grep -q ""buildSha":"$GITHUB_SHA""; then
+            if echo "$BODY" | grep -q '"ok":true' && echo "$BODY" | grep -Fq "$GITHUB_SHA"; then
               exit 0
             fi
             sleep 5
