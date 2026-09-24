@@ -56,7 +56,12 @@ async function updateAuthUser(env, targetUid, { disabled, revoke = true } = {}) 
 }
 
 async function deleteAuthUser(env, targetUid) {
-  return identityRequest(env, "delete", { localId: targetUid });
+  try {
+    return await identityRequest(env, "delete", { localId: targetUid });
+  } catch (error) {
+    if (error instanceof ApiError && /USER_NOT_FOUND/i.test(error.code)) return {};
+    throw error;
+  }
 }
 
 function statusPatch(action, body, actorUid, now) {
@@ -161,7 +166,18 @@ async function mutateAccount(db, env, actorUid, body) {
     throw new ApiError("forbidden", 403);
   }
 
-  const targetSnap = await db.get(`users/${targetUid}`);
+  const [targetSnap, operationSnap] = await Promise.all([
+    db.get(`users/${targetUid}`),
+    db.get(`control_operations/${key}`),
+  ]);
+  if (operationSnap.exists) {
+    return {
+      ok: true,
+      code: "duplicate",
+      operationId: key,
+      ...(operationSnap.data?.result || {}),
+    };
+  }
   if (!targetSnap.exists) throw new ApiError("not_found", 404);
   const target = targetSnap.data || {};
   if (clean(target.role) === "owner") throw new ApiError("owner_protected", 409);
