@@ -8,7 +8,7 @@ import {settleAgencyCycle} from "../economy/economy-control.js";
 import {saveGiftEconomyPolicy} from "../economy/gift-economy-config.js";
 import {calculateAgencyCycleSettlement} from "../economy/economy-policy.js";
 import {sendRoomGift} from "../../cloudflare-worker/src/room-gift.js";
-import {recordMicActivity} from "../../cloudflare-worker/src/voice-session-legacy.js";
+import {recordMicActivity} from "../economy/mic-activity-admin.js";
 import {cloudflareFirestoreAdapter} from "./helpers/cloudflare-firestore-adapter.js";
 
 const app=getApps()[0]||initializeApp({projectId:"shadow-live-economy-test"});
