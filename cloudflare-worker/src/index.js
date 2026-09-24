@@ -5,6 +5,7 @@ import { appAssets } from "./app-assets.js";
 import { changePublicId } from "./change-public-id.js";
 import { setIdManagementPermission } from "./set-id-management-permission.js";
 import { manageUserAccess } from "./manage-user-access.js";
+import { manageUserAccount, releaseExpiredSuspensions } from "./manage-user-account.js";
 import { walletActions } from "./wallet-actions.js";
 import { chatSafetyActions } from "./chat-safety-actions.js";
 import { storageHealth } from "./storage-health.js";
@@ -52,6 +53,9 @@ export default {
     if (url.pathname === "/api/manage-user-access") {
       return manageUserAccess(request, env);
     }
+    if (url.pathname === "/api/manage-user-account") {
+      return manageUserAccount(request, env);
+    }
     if (url.pathname === "/api/wallet-actions") {
       return walletActions(request, env);
     }
@@ -95,6 +99,12 @@ export default {
   },
   async scheduled(event, env, ctx) {
     configureLegacyEnv(env);
+    try {
+      const moderation = await releaseExpiredSuspensions(env);
+      if (moderation.released > 0) console.log("Released expired suspensions", JSON.stringify(moderation));
+    } catch (error) {
+      console.error("Expired suspension release failed", String(error?.message || error));
+    }
     const db = getFirestore();
     const marker = db.collection("system_runtime").doc("game_settlement_cron");
     try {
