@@ -90,6 +90,18 @@ jobs:
             echo "SHADOW_ASSET_GITHUB_TOKEN is not configured in GitHub yet; skipping."
           fi
 
+      - name: Sync game RNG secret
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          GAME_RNG_SECRET: ${{ secrets.GAME_RNG_SECRET }}
+        run: |
+          if [ -n "$GAME_RNG_SECRET" ]; then
+            printf '%s' "$GAME_RNG_SECRET" | npx wrangler secret put GAME_RNG_SECRET
+          else
+            echo "GAME_RNG_SECRET is not configured in GitHub yet; real game betting remains blocked."
+          fi
+
       - name: Deploy Worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
