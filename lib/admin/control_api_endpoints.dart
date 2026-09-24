@@ -12,6 +12,7 @@ const Set<String> _cloudflareMigratedEndpoints = <String>{
   'adjust-balance',
   'change-public-id',
   'set-id-management-permission',
+  'economy-router',
 };
 
 Uri shadowApiEndpoint(
