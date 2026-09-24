@@ -13,7 +13,7 @@ class RoomGiftService {
         _baseUrl = baseUrl ??
             const String.fromEnvironment(
               'SHADOW_API_BASE_URL',
-              defaultValue: 'https://shadow-live-six.vercel.app/api',
+              defaultValue: 'https://shadow-live.ashraf-business-440.workers.dev/api',
             );
 
   final FirebaseAuth _auth;
