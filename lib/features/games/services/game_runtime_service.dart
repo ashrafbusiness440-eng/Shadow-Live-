@@ -45,7 +45,7 @@ class GameRuntimeState {
     required this.round,
     required this.currentRoundSelections,
     required this.lastResult,
-    required this.recentResults,
+    this.recentResults = const [],
   });
 
   final String gameId;
