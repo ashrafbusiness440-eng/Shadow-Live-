@@ -497,34 +497,33 @@ async function openPersonalRoom(db,uid){
   const roomRef=db.collection("rooms").doc(roomId);
   const userRef=db.collection("users").doc(uid);
 
+  const existing=await roomRef.get();
+  if(existing.exists){
+    const data=existing.data()||{};
+    if(clean(data.ownerUid||data.hostId)!==uid){
+      throw new ApiError("room_owner_mismatch",409);
+    }
+
+    // Fast path: opening an already-active personal room is read-only.
+    // Avoid rewriting rooms/{roomId} and users/{uid} on every tap.
+    if(data.isActive!==false){
+      return roomResponse(roomId,data);
+    }
+
+    const reactivated={
+      isActive:true,
+      closedAt:FieldValue.delete(),
+      updatedAt:FieldValue.serverTimestamp(),
+    };
+    await roomRef.set(reactivated,{merge:true});
+    return roomResponse(roomId,{...data,...reactivated});
+  }
+
   const userSnap=await userRef.get();
   if(!userSnap.exists)throw new ApiError("user_not_found",404);
   const user=userSnap.data()||{};
   const displayName=clean(user.displayName||user.username||"مستخدم Shadow Live");
   const ownerLocation=clean(user.location);
-
-  const existing=await roomRef.get();
-  if(existing.exists){
-    const data=existing.data()||{};
-    if(clean(data.ownerUid||data.hostId)!==uid)throw new ApiError("room_owner_mismatch",409);
-    const synced={
-      isActive:true,
-      ownerName:displayName,
-      ownerLocation,
-      chatEnabled:data.chatEnabled!==false,
-      closedAt:FieldValue.delete(),
-      searchTokens:searchTokens(
-        clean(data.name||data.title||"غرفتي")+" "+displayName+" "+ownerLocation+" "+clean(data.category),
-        clean(data.publicId),
-      ),
-      updatedAt:FieldValue.serverTimestamp(),
-    };
-    await Promise.all([
-      roomRef.set(synced,{merge:true}),
-      userRef.set({personalRoomId:roomId},{merge:true}),
-    ]);
-    return roomResponse(roomId,{...data,...synced});
-  }
 
   for(let attempt=0;attempt<40;attempt++){
     const publicId=String(randomInt(100000,1000000));
