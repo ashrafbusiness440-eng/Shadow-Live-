@@ -221,11 +221,14 @@ async function mutateAccount(db, env, actorUid, body) {
   if (action === "deleteAccount") {
     await deleteAuthUser(env, targetUid);
   } else if (action === "unban" || action === "enable") {
+    // Also repairs legacy accounts that were disabled in Firebase Auth.
     await updateAuthUser(env, targetUid, { disabled: false, revoke: true });
   } else if (action === "revokeSessions") {
     await updateAuthUser(env, targetUid, { revoke: true });
   } else {
-    await updateAuthUser(env, targetUid, { disabled: true, revoke: true });
+    // suspend / ban / disable are enforced by Firestore accountStatus and
+    // every Shadow API request. Keep Firebase Auth usable so the client can
+    // read only its own moderation record and show the exact reason/expiry.
   }
 
   const transaction = await db.beginTransaction();
