@@ -1,8 +1,14 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() {
+    function verifiedEmailAccess() {
       return request.auth != null
+        && (request.auth.token.firebase.sign_in_provider != 'password'
+          || request.auth.token.email_verified == true);
+    }
+
+    function signedIn() {
+      return verifiedEmailAccess()
         && (!exists(/databases/$(database)/documents/users/$(request.auth.uid))
           || !('accountStatus' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data)
           || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.accountStatus == 'active');
