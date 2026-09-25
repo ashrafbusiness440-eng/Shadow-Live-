@@ -46,6 +46,7 @@ class GameRuntimeState {
     required this.lastResult,
     this.recentResults = const [],
     this.serverRoundSelections = const {},
+    this.totalRoundStakeCoins = 0,
   });
 
   final String gameId;
@@ -57,6 +58,7 @@ class GameRuntimeState {
   final Map<String, dynamic>? lastResult;
   final List<Map<String, dynamic>> recentResults;
   final Map<String, int> serverRoundSelections;
+  final int totalRoundStakeCoins;
 
   factory GameRuntimeState.fromJson(Map<String, dynamic> json) {
     final totals = <String, int>{};
@@ -100,6 +102,8 @@ class GameRuntimeState {
               .toList(growable: false)
           : const [],
       serverRoundSelections: serverTotals,
+      totalRoundStakeCoins:
+          (json['totalRoundStakeCoins'] as num?)?.toInt() ?? 0,
     );
   }
 }
@@ -264,7 +268,9 @@ class GameRuntimeService {
                 'dayKey': '2026-09-23',
                 'opensAtMs': now - 5000,
                 'closesAtMs': now + 25000,
+                'bettingClosesAtMs': now + 22000,
                 'locked': false,
+                'status': 'betting',
               },
         currentRoundSelections: Map<String, int>.from(_e2eTotals),
         serverRoundSelections: game.gameId == 'greedy_cat'
@@ -282,7 +288,47 @@ class GameRuntimeService {
                 'roundNumber': 0,
                 'outcomeId': game.gameId == 'greedy_cat' ? 'salad' : 'moon',
                 'closedAtMs': now - 5000,
+              'topWinners': const <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'rank': 1,
+                  'userId': 'e2e_winner_1',
+                  'displayName': 'Shadow',
+                  'photoUrl': '',
+                  'stakeCoins': 2000,
+                  'payoutCoins': 30000,
+                  'won': true,
+                },
+                <String, dynamic>{
+                  'rank': 2,
+                  'userId': 'e2e_winner_2',
+                  'displayName': 'Luna',
+                  'photoUrl': '',
+                  'stakeCoins': 2000,
+                  'payoutCoins': 20000,
+                  'won': true,
+                },
+                <String, dynamic>{
+                  'rank': 3,
+                  'userId': 'e2e_winner_3',
+                  'displayName': 'Nova',
+                  'photoUrl': '',
+                  'stakeCoins': 2000,
+                  'payoutCoins': 10000,
+                  'won': true,
+                },
+              ],
+              'myRound': const <String, dynamic>{
+                'userId': 'e2e_current',
+                'displayName': 'You',
+                'photoUrl': '',
+                'stakeCoins': 400,
+                'payoutCoins': 0,
+                'won': false,
+                'winnerRank': null,
               },
+              },
+        totalRoundStakeCoins:
+            game.gameId == 'greedy_cat' ? 78000 : 0,
         recentResults: game.gameId == 'slot'
             ? const []
             : List.generate(
