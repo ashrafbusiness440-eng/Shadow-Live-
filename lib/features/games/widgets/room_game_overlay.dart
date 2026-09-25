@@ -1018,7 +1018,7 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
             child: Column(
               children: [
                 const Text(
-                  'قيمة الضغطة الحالية',
+                  'قيمة الرهان الحالية',
                   style: TextStyle(color: Colors.white54, fontSize: 9),
                 ),
                 Text(
