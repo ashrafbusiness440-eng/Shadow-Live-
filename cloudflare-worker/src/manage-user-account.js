@@ -167,7 +167,38 @@ async function mutateAccount(db, env, actorUid, body) {
 
   const actorSnap = await db.get(`users/${actorUid}`);
   const actor = actorSnap.data || {};
-  if (!actorSnap.exists || actor.role !== "owner" || actor.adminEnabled !== true) {
+  const actorRole = clean(actor.role);
+  const actorCapabilities = Array.isArray(actor.capabilities)
+    ? actor.capabilities.map((value) => clean(value))
+    : [];
+  const actorEnabled = actor.adminEnabled === true;
+  const actorIsOwner = actorRole === "owner" && actorEnabled;
+  const hasCapability = (capability) =>
+    actorEnabled && (actorIsOwner || actorCapabilities.includes(capability));
+
+  const canSuspend =
+    actorIsOwner ||
+    hasCapability("suspendUsers") ||
+    hasCapability("manageUsers");
+  const canManageUsers =
+    actorIsOwner ||
+    hasCapability("manageUsers");
+
+  const allowedForActor =
+    action === "deleteAccount"
+      ? actorIsOwner
+      : action === "suspend"
+        ? canSuspend
+        : action === "enable"
+          ? canManageUsers || hasCapability("suspendUsers")
+          : action === "unban" ||
+              action === "ban" ||
+              action === "disable" ||
+              action === "revokeSessions"
+            ? canManageUsers
+            : false;
+
+  if (!actorSnap.exists || !allowedForActor) {
     throw new ApiError("forbidden", 403);
   }
 
