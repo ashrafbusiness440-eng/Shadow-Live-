@@ -26,6 +26,9 @@ jobs:
       - name: Audit Cloudflare cutover
         run: python3 scripts/phase7_cloudflare_audit.py
 
+      - name: Pressure regression guardrails
+        run: python3 scripts/pressure_guardrail_audit.py
+
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
