@@ -297,6 +297,80 @@ test("same collective round is global across users and rooms",async()=>{
   );
 });
 
+test("finished greedy round exposes top winners and player summary",async()=>{
+  await seedRuntime();
+  const suffix=Date.now().toString()+"_round_summary";
+  const uidA="summary_a_"+suffix;
+  const uidB="summary_b_"+suffix;
+  const roomA="summary_room_a_"+suffix;
+  const roomB="summary_room_b_"+suffix;
+  const keyA="summary_a_key_"+suffix;
+  const keyB="summary_b_key_"+suffix;
+  await Promise.all([
+    seedUserRoom(uidA,roomA,10000),
+    seedUserRoom(uidB,roomB,10000),
+  ]);
+
+  const [a,b]=await Promise.all([
+    placeGameBet(db,uidA,{
+      gameId:"greedy_cat",
+      roomId:roomA,
+      idempotencyKey:keyA,
+      bets:[{choiceId:"tomato5",amountCoins:200}],
+    },{nowMs,rngSecret}),
+    placeGameBet(db,uidB,{
+      gameId:"greedy_cat",
+      roomId:roomB,
+      idempotencyKey:keyB,
+      bets:[{choiceId:"chicken10",amountCoins:200}],
+    },{nowMs,rngSecret}),
+  ]);
+  assert.equal(a.roundId,b.roundId);
+
+  const [opA,opB]=await Promise.all([
+    db.collection("game_operations").doc(uidA+"__"+keyA).get(),
+    db.collection("game_operations").doc(uidB+"__"+keyB).get(),
+  ]);
+  const dataA=opA.data();
+  const dataB=opB.data();
+  const settleAt=Math.max(
+    Number(dataA.closesAtMs||0),
+    Number(dataB.closesAtMs||0),
+  )+1;
+
+  await Promise.all([
+    settleGameOperation(db,uidA,{idempotencyKey:keyA},{nowMs:settleAt}),
+    settleGameOperation(db,uidB,{idempotencyKey:keyB},{nowMs:settleAt}),
+  ]);
+
+  const state=await gameState(
+    db,
+    uidA,
+    {gameId:"greedy_cat"},
+    {nowMs:settleAt+1000,rngSecret},
+  );
+  assert.equal(state.lastResult.roundId,a.roundId);
+  assert.equal(state.lastResult.myRound.stakeCoins,200);
+  assert.equal(
+    state.lastResult.myRound.payoutCoins,
+    Number(dataA.payoutCoins||0),
+  );
+  assert.equal(Array.isArray(state.lastResult.topWinners),true);
+
+  const expectedWinner=Number(dataA.payoutCoins||0)>0
+    ? {uid:uidA,payout:Number(dataA.payoutCoins||0)}
+    : {uid:uidB,payout:Number(dataB.payoutCoins||0)};
+  assert.equal(state.lastResult.topWinners[0].userId,expectedWinner.uid);
+  assert.equal(
+    state.lastResult.topWinners[0].payoutCoins,
+    expectedWinner.payout,
+  );
+  assert.equal(
+    state.lastResult.myRound.winnerRank,
+    expectedWinner.uid===uidA?1:null,
+  );
+});
+
 test("slot settles debit and payout atomically in one operation",async()=>{
   await seedRuntime();
   const suffix=Date.now().toString()+"_slot";
