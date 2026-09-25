@@ -162,6 +162,91 @@ class FakeGameRuntimeService extends GameRuntimeService {
   void close() {}
 }
 
+class GreedyResultFakeGameRuntimeService extends FakeGameRuntimeService {
+  int stateCalls = 0;
+
+  @override
+  Future<GameRuntimeState> loadState(GameCatalogEntry game) async {
+    final base = await super.loadState(game);
+    stateCalls++;
+    if (game.gameId != 'greedy_cat' || stateCalls < 2) return base;
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    return GameRuntimeState(
+      gameId: base.gameId,
+      mode: base.mode,
+      serverNowMs: now,
+      bets: base.bets,
+      round: <String, dynamic>{
+        'roundId': 'greedy_cat:test:2',
+        'roundNumber': 2,
+        'dayKey': '2026-09-25',
+        'opensAtMs': now - 1000,
+        'closesAtMs': now + 25000,
+        'bettingClosesAtMs': now + 22000,
+        'locked': false,
+        'status': 'betting',
+      },
+      currentRoundSelections: base.currentRoundSelections,
+      serverRoundSelections: base.serverRoundSelections,
+      totalRoundStakeCoins: base.totalRoundStakeCoins,
+      lastResult: <String, dynamic>{
+        'roundId': 'greedy_cat:test:1',
+        'roundNumber': 1,
+        'outcomeId': 'fish15',
+        'closedAtMs': now - 1000,
+        'topWinners': const <Map<String, dynamic>>[
+          <String, dynamic>{
+            'rank': 1,
+            'userId': 'winner_1',
+            'displayName': 'Shadow',
+            'photoUrl': '',
+            'stakeCoins': 2000,
+            'payoutCoins': 30000,
+            'won': true,
+          },
+          <String, dynamic>{
+            'rank': 2,
+            'userId': 'winner_2',
+            'displayName': 'Luna',
+            'photoUrl': '',
+            'stakeCoins': 2000,
+            'payoutCoins': 20000,
+            'won': true,
+          },
+          <String, dynamic>{
+            'rank': 3,
+            'userId': 'winner_3',
+            'displayName': 'Nova',
+            'photoUrl': '',
+            'stakeCoins': 2000,
+            'payoutCoins': 10000,
+            'won': true,
+          },
+        ],
+        'myRound': const <String, dynamic>{
+          'userId': 'current_user',
+          'displayName': 'You',
+          'photoUrl': '',
+          'stakeCoins': 400,
+          'payoutCoins': 0,
+          'won': false,
+          'winnerRank': null,
+        },
+      },
+      recentResults: <Map<String, dynamic>>[
+        <String, dynamic>{
+          'roundId': 'greedy_cat:test:1',
+          'roundNumber': 1,
+          'outcomeId': 'fish15',
+          'closedAtMs': now - 1000,
+        },
+        ...base.recentResults.take(19),
+      ],
+    );
+  }
+}
+
 Widget host(GameRuntimeService service, String gameKey) => MaterialApp(
       debugShowCheckedModeBanner: false,
       home: Scaffold(
@@ -234,6 +319,29 @@ void main() {
     await tester.tap(choice);
     await tester.pump(const Duration(milliseconds: 150));
     expect(service.totals, isEmpty);
+  });
+
+  testWidgets('Greedy Cat reveals Top 3 and current player round summary',
+      (tester) async {
+    final service = GreedyResultFakeGameRuntimeService();
+    await tester.pumpWidget(host(service, 'greedy_cat'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+
+    expect(find.textContaining('الأكثر ربحاً'), findsNothing);
+
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pump(const Duration(milliseconds: 2600));
+
+    expect(find.text('نتيجة الجولة #1'), findsOneWidget);
+    expect(find.text('الأكثر ربحاً في هذه الجولة'), findsOneWidget);
+    expect(find.text('Shadow'), findsOneWidget);
+    expect(find.text('Luna'), findsOneWidget);
+    expect(find.text('Nova'), findsOneWidget);
+    expect(find.text('نتيجتك في هذه الجولة'), findsOneWidget);
+    expect(find.textContaining('راهنت: 400 Coins'), findsOneWidget);
+    expect(find.textContaining('ربحت: 0 Coins'), findsOneWidget);
+    expect(find.text('حظ أوفر 🍀'), findsOneWidget);
   });
 
   testWidgets('Witch switches between Normal and Advanced modes',
