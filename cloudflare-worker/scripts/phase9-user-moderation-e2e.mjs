@@ -269,13 +269,13 @@ try {
   if (suspendedDoc?.accountStatus !== "suspended" || !suspendedDoc?.suspendedUntil) {
     throw Error("suspend firestore mismatch " + JSON.stringify(suspendedDoc));
   }
-  await firebaseIdToken(targetUid, { expectDisabled: true });
+  const suspendedLoginToken = await firebaseIdToken(targetUid);
   await new Promise((resolve) => setTimeout(resolve, 5500));
-  const deniedWhileSuspended = await workerAuthProbe(targetToken);
+  const deniedWhileSuspended = await workerAuthProbe(suspendedLoginToken);
   if (deniedWhileSuspended.response.status !== 401) {
     throw Error("suspended worker token was not denied " + deniedWhileSuspended.response.status);
   }
-  console.log("PASS suspend + auth disable + worker denial");
+  console.log("PASS suspend + readable auth session + worker/account-status denial");
 
   const enable = await moderationApi(
     actorToken,
