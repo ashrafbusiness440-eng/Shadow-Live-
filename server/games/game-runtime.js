@@ -379,6 +379,9 @@ export async function placeGameBet(
     const creditLedgerRef=db.collection("financial_ledger").doc("game_credit__"+operationId);
     const historyRef=db.collection("game_user_history")
       .doc(uid).collection("items").doc(operationId);
+    const dailyStatsRef=db.collection("game_user_stats")
+      .doc(uid).collection("daily")
+      .doc(clean(operation.gameId)+"__"+clean(operation.dayKey));
 
     tx.update(userRef,{
       coins:finalBalance,
@@ -591,6 +594,14 @@ async function settleOperationRef(db,operationRef,nowMs){
       reels:Array.isArray(operation.reels)?operation.reels:[],
       settledAt:now,
     });
+    tx.set(dailyStatsRef,{
+      userId:uid,
+      gameId:clean(operation.gameId),
+      dayKey:clean(operation.dayKey),
+      payoutCoins:FieldValue.increment(payout),
+      settledOperationCount:FieldValue.increment(1),
+      updatedAt:now,
+    },{merge:true});
 
     return {
       ok:true,
@@ -722,6 +733,14 @@ export async function gameState(db,uid,body={},options={}){
       : nowMs<round.revealAtMs
         ? "spinning"
         : "result_hold";
+  const dailyStatsSnap=await db.collection("game_user_stats")
+    .doc(uid).collection("daily")
+    .doc(gameId+"__"+round.dayKey)
+    .get();
+  const userDailyPayoutCoins=Math.max(
+    0,
+    Number(dailyStatsSnap.exists?dailyStatsSnap.data()?.payoutCoins||0:0),
+  );
   let lastResult=null;
   const recentResults=[];
   if(gameId!=="slot"){
@@ -847,6 +866,7 @@ export async function gameState(db,uid,body={},options={}){
     serverRoundSelections,
     totalRoundStakeCoins:serverRoundSelections
       .reduce((sum,item)=>sum+Number(item.amountCoins||0),0),
+    userDailyPayoutCoins,
     pending,
   };
 }
