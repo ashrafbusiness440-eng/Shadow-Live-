@@ -299,6 +299,7 @@ test("same collective round is global across users and rooms",async()=>{
 
 test("finished greedy round exposes top winners and player summary",async()=>{
   await seedRuntime();
+  const summaryNowMs=nowMs+(5*60*1000);
   const suffix=Date.now().toString()+"_round_summary";
   const uidA="summary_a_"+suffix;
   const uidB="summary_b_"+suffix;
@@ -310,6 +311,12 @@ test("finished greedy round exposes top winners and player summary",async()=>{
     seedUserRoom(uidA,roomA,10000),
     seedUserRoom(uidB,roomB,10000),
   ]);
+  await Promise.all([
+    db.collection("room_presence").doc(roomA).collection("users").doc(uidA)
+      .set({lastSeenAtMs:summaryNowMs},{merge:true}),
+    db.collection("room_presence").doc(roomB).collection("users").doc(uidB)
+      .set({lastSeenAtMs:summaryNowMs},{merge:true}),
+  ]);
 
   const [a,b]=await Promise.all([
     placeGameBet(db,uidA,{
@@ -317,13 +324,13 @@ test("finished greedy round exposes top winners and player summary",async()=>{
       roomId:roomA,
       idempotencyKey:keyA,
       bets:[{choiceId:"tomato5",amountCoins:200}],
-    },{nowMs,rngSecret}),
+    },{nowMs:summaryNowMs,rngSecret}),
     placeGameBet(db,uidB,{
       gameId:"greedy_cat",
       roomId:roomB,
       idempotencyKey:keyB,
       bets:[{choiceId:"chicken10",amountCoins:200}],
-    },{nowMs,rngSecret}),
+    },{nowMs:summaryNowMs,rngSecret}),
   ]);
   assert.equal(a.roundId,b.roundId);
 
