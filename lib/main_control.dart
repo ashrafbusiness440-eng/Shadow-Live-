@@ -514,16 +514,7 @@ class UserReadOnlyPage extends StatelessWidget {
     return Scaffold(
       appBar:AppBar(title:const Text('تفاصيل المستخدم')),
       body:ListView(padding:const EdgeInsets.all(16),children:[
-        Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-          Text(t(data['displayName']??data['name']),style:const TextStyle(fontSize:21,fontWeight:FontWeight.w900)),
-          const SizedBox(height:12),
-          SelectableText('UID: $uid'),
-          Text('البريد: ${t(data['email'])}'),
-          Text('الدور: ${t(data['role']??'user')}'),
-          Text('دخول الإدارة: ${data['adminEnabled']==true?'مفعّل':'غير مفعّل'}'),
-          Text('Coins: ${formatCompactAmount(data['coins'])}'),
-          Text('Diamonds: ${formatCompactAmount(data['diamonds'])}'),
-        ]))),
+        _UserAccountOverviewCard(uid:uid,seed:data),
         const SizedBox(height:10),
         Card(child:ListTile(
           leading:const Icon(Icons.admin_panel_settings_outlined,color:Color(0xFFD7B85A)),
@@ -562,6 +553,261 @@ class UserReadOnlyPage extends StatelessWidget {
     );
   }
 }
+class _UserAccountOverviewCard extends StatefulWidget {
+  const _UserAccountOverviewCard({required this.uid,required this.seed});
+  final String uid;
+  final Map<String,dynamic> seed;
+  @override State<_UserAccountOverviewCard> createState()=>_UserAccountOverviewCardState();
+}
+
+class _UserAccountOverviewCardState extends State<_UserAccountOverviewCard> {
+  late final Future<Map<String,dynamic>> future=_load();
+  bool expanded=false;
+
+  String text(dynamic value){
+    if(value==null)return '';
+    if(value is List)return value.map((e)=>'$e').join('، ');
+    return '$value'.trim();
+  }
+
+  dynamic firstValue(List<dynamic> values){
+    for(final value in values){
+      if(value==null)continue;
+      if(value is String && value.trim().isEmpty)continue;
+      return value;
+    }
+    return null;
+  }
+
+  Future<Map<String,dynamic>> _load() async {
+    final user=FirebaseAuth.instance.currentUser;
+    if(user==null)throw Exception('not_signed_in');
+    final token=await user.getIdToken().timeout(const Duration(seconds:12));
+    if(token==null||token.isEmpty)throw Exception('empty_token');
+    final response=await http.post(
+      shadowApiEndpoint('control-user-details'),
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+      body:jsonEncode({'targetUid':widget.uid}),
+    ).timeout(const Duration(seconds:25));
+    final body=response.body.isEmpty?<String,dynamic>{}:jsonDecode(response.body) as Map<String,dynamic>;
+    if(response.statusCode<200||response.statusCode>=300||body['ok']!=true){
+      throw Exception((body['code']??'request_failed').toString());
+    }
+    return body;
+  }
+
+  Map<String,dynamic> map(dynamic value)=>value is Map
+      ? Map<String,dynamic>.from(value)
+      : <String,dynamic>{};
+
+  ImageProvider? avatar(Map<String,dynamic> user,Map<String,dynamic> profile,Map<String,dynamic> auth){
+    final url=text(firstValue([
+      user['profileImageUrl'],profile['profileImageUrl'],user['avatarUrl'],auth['photoUrl'],
+    ]));
+    if(url.startsWith('http://')||url.startsWith('https://'))return NetworkImage(url);
+    final asset=text(firstValue([user['profileAvatarAsset'],profile['profileAvatarAsset']]));
+    if(asset.isNotEmpty)return AssetImage(asset);
+    return null;
+  }
+
+  String providerLabel(String provider)=>switch(provider){
+    'google.com'=>'Google',
+    'phone'=>'رقم الهاتف',
+    'password'=>'البريد الإلكتروني',
+    'apple.com'=>'Apple',
+    'facebook.com'=>'Facebook',
+    _=>provider,
+  };
+
+  Widget providerChip(String label,IconData icon,bool linked){
+    return Chip(
+      avatar:Icon(linked?Icons.check_circle:Icons.remove_circle_outline,size:18,color:linked?Colors.greenAccent:Colors.white38),
+      label:Text(label),
+      side:BorderSide(color:linked?Colors.greenAccent.withValues(alpha:.35):Colors.white12),
+      backgroundColor:linked?Colors.green.withValues(alpha:.10):Colors.white.withValues(alpha:.03),
+    );
+  }
+
+  Widget detailRow(String label,dynamic value,{bool ltr=false}){
+    final rendered=text(value);
+    return Padding(
+      padding:const EdgeInsets.symmetric(vertical:5),
+      child:Row(crossAxisAlignment:CrossAxisAlignment.start,children:[
+        SizedBox(width:112,child:Text(label,style:const TextStyle(color:Color(0xFFAAA3B8),fontWeight:FontWeight.w700))),
+        const SizedBox(width:8),
+        Expanded(child:SelectableText(
+          rendered.isEmpty?'—':rendered,
+          textDirection:ltr?TextDirection.ltr:null,
+          style:const TextStyle(fontWeight:FontWeight.w700),
+        )),
+      ]),
+    );
+  }
+
+  Widget sectionTitle(String title,IconData icon)=>Padding(
+    padding:const EdgeInsets.only(top:14,bottom:5),
+    child:Row(children:[
+      Icon(icon,size:19,color:const Color(0xFFD7B85A)),
+      const SizedBox(width:7),
+      Text(title,style:const TextStyle(fontWeight:FontWeight.w900,fontSize:16)),
+    ]),
+  );
+
+  @override Widget build(BuildContext context){
+    return FutureBuilder<Map<String,dynamic>>(
+      future:future,
+      builder:(context,snap){
+        final body=snap.data??<String,dynamic>{};
+        final remoteUser=map(body['user']);
+        final profile=map(body['publicProfile']);
+        final auth=map(body['auth']);
+        final room=map(body['room']);
+        final agency=map(body['agency']);
+        final data=<String,dynamic>{...widget.seed,...remoteUser};
+
+        final providers=(auth['providers'] is List)
+            ? (auth['providers'] as List).whereType<Map>().map((e)=>Map<String,dynamic>.from(e)).toList()
+            : <Map<String,dynamic>>[];
+        bool hasProvider(String id)=>providers.any((p)=>text(p['providerId'])==id);
+
+        final email=text(firstValue([auth['email'],data['email']]));
+        final phone=text(firstValue([auth['phoneNumber'],data['phone']]));
+        final hasEmail=email.isNotEmpty||hasProvider('password');
+        final hasPhone=phone.isNotEmpty||hasProvider('phone');
+        final hasGoogle=hasProvider('google.com');
+        final displayName=text(firstValue([
+          data['displayName'],profile['displayName'],data['name'],auth['displayName'],'مستخدم بدون اسم'
+        ]));
+        final publicId=text(firstValue([data['publicId'],profile['publicId']]));
+        final role=text(firstValue([data['role'],'user']));
+        final status=text(firstValue([data['accountStatus'],'active']));
+        final vip=firstValue([data['vipLevel'],profile['vipLevel'],0]);
+        final level=firstValue([data['level'],profile['level'],0]);
+        final charisma=firstValue([
+          data['charisma'],data['charismaLevel'],
+          profile['charisma'],profile['charismaLevel'],
+          data['popularity'],data['popularityLevel'],
+          profile['popularity'],profile['popularityLevel'],
+          data['appeal'],data['appealLevel'],
+          profile['appeal'],profile['appealLevel'],
+        ]);
+        final wealth=firstValue([data['wealth'],data['wealthLevel'],profile['wealth'],profile['wealthLevel']]);
+        final roomId=text(firstValue([room['publicId'],data['personalRoomId'],data['roomId'],room['id']]));
+        final agencyName=text(firstValue([agency['name'],agency['displayName'],agency['agencyName']]));
+        final agencyId=text(firstValue([data['agencyId'],agency['id']]));
+        final image=avatar(data,profile,auth);
+
+        return Card(
+          child:Padding(
+            padding:const EdgeInsets.all(16),
+            child:Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+              Row(crossAxisAlignment:CrossAxisAlignment.center,children:[
+                CircleAvatar(
+                  radius:31,
+                  backgroundImage:image,
+                  child:image==null?const Icon(Icons.person,size:32):null,
+                ),
+                const SizedBox(width:12),
+                Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+                  Text(displayName,style:const TextStyle(fontSize:22,fontWeight:FontWeight.w900)),
+                  const SizedBox(height:3),
+                  if(publicId.isNotEmpty)Text('ID: $publicId',textDirection:TextDirection.ltr,style:const TextStyle(color:Color(0xFFAAA3B8))),
+                  Text('الحالة: $status • الدور: $role',style:const TextStyle(color:Color(0xFFAAA3B8))),
+                ])),
+              ]),
+              const SizedBox(height:12),
+              const Text('ربط الحساب',style:TextStyle(fontWeight:FontWeight.w900)),
+              const SizedBox(height:6),
+              Wrap(spacing:7,runSpacing:7,children:[
+                providerChip('رقم الهاتف',Icons.phone_outlined,hasPhone),
+                providerChip('Google',Icons.g_mobiledata_rounded,hasGoogle),
+                providerChip('البريد',Icons.email_outlined,hasEmail),
+              ]),
+              if(snap.connectionState==ConnectionState.waiting)...[
+                const SizedBox(height:8),
+                const LinearProgressIndicator(minHeight:2),
+              ],
+              if(snap.hasError)...[
+                const SizedBox(height:8),
+                Text('تعذر تحميل التفاصيل الإضافية: \${snap.error}',style:const TextStyle(color:Colors.orangeAccent,fontSize:12)),
+              ],
+              const Divider(height:24),
+              InkWell(
+                borderRadius:BorderRadius.circular(12),
+                onTap:()=>setState(()=>expanded=!expanded),
+                child:Padding(
+                  padding:const EdgeInsets.symmetric(vertical:8),
+                  child:Row(children:[
+                    Icon(expanded?Icons.keyboard_arrow_up:Icons.keyboard_arrow_down,color:const Color(0xFFD7B85A)),
+                    const SizedBox(width:8),
+                    Text(expanded?'إخفاء التفاصيل':'عرض المزيد',style:const TextStyle(fontWeight:FontWeight.w900)),
+                    const Spacer(),
+                    Text('VIP $vip • Lv.$level',style:const TextStyle(color:Color(0xFFAAA3B8))),
+                  ]),
+                ),
+              ),
+              if(expanded)...[
+                sectionTitle('هوية الحساب',Icons.badge_outlined),
+                detailRow('UID',widget.uid,ltr:true),
+                detailRow('Public ID',publicId,ltr:true),
+                detailRow('اسم المستخدم',firstValue([data['username'],profile['username']])),
+                detailRow('البريد',email,ltr:true),
+                detailRow('البريد موثّق',auth['emailVerified']==true?'نعم':'لا'),
+                detailRow('رقم الهاتف',phone,ltr:true),
+                detailRow('طرق الربط',providers.map((p)=>providerLabel(text(p['providerId']))).where((e)=>e.isNotEmpty).join(' • ')),
+                detailRow('Auth معطّل',auth['disabled']==true?'نعم':'لا'),
+
+                sectionTitle('المستويات والحالة',Icons.workspace_premium_outlined),
+                detailRow('المستوى',level),
+                detailRow('VIP',vip),
+                detailRow('الجاذبية',charisma),
+                detailRow('الثروة',wealth),
+                detailRow('الدور',role),
+                detailRow('دخول الإدارة',data['adminEnabled']==true?'مفعّل':'غير مفعّل'),
+                detailRow('حالة الحساب',status),
+
+                sectionTitle('الغرفة والوكالة',Icons.meeting_room_outlined),
+                detailRow('Room ID',roomId,ltr:true),
+                detailRow('اسم الغرفة',firstValue([room['name'],room['title']])),
+                detailRow('نوع الغرفة',firstValue([room['roomType'],room['type']])),
+                detailRow('الوكالة',agencyName.isNotEmpty?agencyName:(agencyId.isNotEmpty?'مسجل':'غير مسجل')),
+                detailRow('Agency ID',agencyId,ltr:true),
+                detailRow('دوره بالوكالة',data['agencyRole']),
+
+                sectionTitle('المحفظة والإحصائيات',Icons.account_balance_wallet_outlined),
+                detailRow('Coins',formatCompactAmount(data['coins'])),
+                detailRow('Diamonds',formatCompactAmount(data['diamonds'])),
+                detailRow('Balance',formatCompactAmount(data['balance'])),
+                detailRow('هدايا أرسلها',formatCompactAmount(data['totalGiftsSent'])),
+                detailRow('هدايا استلمها',formatCompactAmount(data['totalGiftsReceived'])),
+                detailRow('قيمة مستلمة',formatCompactAmount(data['totalValueReceived'])),
+                detailRow('دعم مستلم',formatCompactAmount(data['giftSupportReceivedCoins'])),
+                detailRow('Diamonds Lifetime',formatCompactAmount(data['giftDiamondsLifetime'])),
+
+                sectionTitle('الملف الشخصي',Icons.account_circle_outlined),
+                detailRow('الجنس',data['gender']),
+                detailRow('تاريخ الميلاد',data['birthDate']),
+                detailRow('الدولة',data['country']),
+                detailRow('الموقع',firstValue([data['location'],profile['location']])),
+                detailRow('النبذة',firstValue([data['bio'],profile['bio']])),
+                detailRow('الاهتمامات',firstValue([data['interests'],profile['interests']])),
+                detailRow('متصل الآن',firstValue([data['isOnline'],profile['isOnline']])==true?'نعم':'لا'),
+
+                sectionTitle('تواريخ الحساب',Icons.history_outlined),
+                detailRow('إنشاء Auth',auth['createdAt']),
+                detailRow('آخر دخول',auth['lastLoginAt']),
+                detailRow('آخر Refresh',auth['lastRefreshAt']),
+                detailRow('إنشاء الملف',firstValue([data['createdAt'],profile['createdAt']])),
+                detailRow('آخر تحديث',firstValue([data['updatedAt'],profile['updatedAt']])),
+              ],
+            ]),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _OwnerAccountActionsCard extends StatelessWidget {
   const _OwnerAccountActionsCard({
     required this.uid,
