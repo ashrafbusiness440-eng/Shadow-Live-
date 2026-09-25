@@ -1,0 +1,146 @@
+name: Configure Firebase Auth Email Templates
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/configure-firebase-auth-email-templates.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shadow-live-auth-email-templates
+  cancel-in-progress: true
+
+jobs:
+  configure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Firebase Auth email templates
+        env:
+          FIREBASE_SERVICE_ACCOUNT: \${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { sign } from 'node:crypto';
+
+          let sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
+          if (typeof sa === 'string') sa = JSON.parse(sa);
+          const projectId = sa.project_id;
+          const clientEmail = sa.client_email;
+          const privateKey = String(sa.private_key || '').replace(/\\n/g, '\n');
+          if (!projectId || !clientEmail || !privateKey) throw new Error('invalid service account');
+
+          const b64url = (value) => Buffer.from(value)
+            .toString('base64')
+            .replace(/=/g, '')
+            .replace(/\+/g, '-')
+            .replace(/\//g, '_');
+
+          const now = Math.floor(Date.now() / 1000);
+          const header = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+          const payload = b64url(JSON.stringify({
+            iss: clientEmail,
+            scope: 'https://www.googleapis.com/auth/identitytoolkit',
+            aud: 'https://oauth2.googleapis.com/token',
+            iat: now,
+            exp: now + 3600,
+          }));
+          const unsigned = header + '.' + payload;
+          const assertion = unsigned + '.' + b64url(
+            sign('RSA-SHA256', Buffer.from(unsigned), privateKey),
+          );
+
+          const oauth = await fetch('https://oauth2.googleapis.com/token', {
+            method: 'POST',
+            headers: { 'content-type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+              grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+              assertion,
+            }),
+          });
+          const oauthBody = await oauth.json();
+          if (!oauth.ok || !oauthBody.access_token) {
+            throw new Error('oauth failed ' + oauth.status + ' ' + JSON.stringify(oauthBody));
+          }
+
+          const token = oauthBody.access_token;
+          const headers = {
+            authorization: 'Bearer ' + token,
+            'content-type': 'application/json',
+          };
+
+          const verifySubject = 'تأكيد بريدك الإلكتروني في Shadow Live';
+          const verifyBody = '<div dir="rtl" style="font-family:Arial,sans-serif;line-height:1.8;color:#1f2937"><h2 style="margin:0 0 16px">تأكيد بريدك الإلكتروني</h2><p>مرحبًا،</p><p>شكرًا لانضمامك إلى <strong>Shadow Live</strong>.</p><p>اضغط على الزر أدناه لتأكيد بريدك الإلكتروني وتفعيل حسابك:</p><p style="margin:24px 0"><a href="%LINK%" style="display:inline-block;background:#6d4aff;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:700">تأكيد البريد الإلكتروني</a></p><p>إذا لم تقم بإنشاء هذا الحساب، يمكنك تجاهل هذه الرسالة.</p><p>لن يتم تفعيل حساب البريد داخل Shadow Live قبل إتمام التحقق.</p><p style="margin-top:24px">شكرًا لك،<br>فريق Shadow Live</p></div>';
+
+          const resetSubject = 'إعادة تعيين كلمة المرور في Shadow Live';
+          const resetBody = '<div dir="rtl" style="font-family:Arial,sans-serif;line-height:1.8;color:#1f2937"><h2 style="margin:0 0 16px">إعادة تعيين كلمة المرور</h2><p>مرحبًا،</p><p>تلقينا طلبًا لإعادة تعيين كلمة المرور لحسابك في <strong>Shadow Live</strong>.</p><p>اضغط على الزر أدناه لاختيار كلمة مرور جديدة:</p><p style="margin:24px 0"><a href="%LINK%" style="display:inline-block;background:#6d4aff;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:700">إعادة تعيين كلمة المرور</a></p><p>إذا لم تطلب إعادة تعيين كلمة المرور، يمكنك تجاهل هذه الرسالة بأمان.</p><p style="margin-top:24px">شكرًا لك،<br>فريق Shadow Live</p></div>';
+
+          const configName = 'projects/' + projectId + '/config';
+          const updateMask = [
+            'notification.sendEmail.verifyEmailTemplate.subject',
+            'notification.sendEmail.verifyEmailTemplate.body',
+            'notification.sendEmail.verifyEmailTemplate.bodyFormat',
+            'notification.sendEmail.verifyEmailTemplate.senderDisplayName',
+            'notification.sendEmail.verifyEmailTemplate.senderLocalPart',
+            'notification.sendEmail.resetPasswordTemplate.subject',
+            'notification.sendEmail.resetPasswordTemplate.body',
+            'notification.sendEmail.resetPasswordTemplate.bodyFormat',
+            'notification.sendEmail.resetPasswordTemplate.senderDisplayName',
+            'notification.sendEmail.resetPasswordTemplate.senderLocalPart',
+          ].join(',');
+
+          const response = await fetch(
+            'https://identitytoolkit.googleapis.com/admin/v2/' +
+              configName +
+              '?updateMask=' +
+              encodeURIComponent(updateMask),
+            {
+              method: 'PATCH',
+              headers,
+              body: JSON.stringify({
+                name: configName,
+                notification: {
+                  sendEmail: {
+                    verifyEmailTemplate: {
+                      senderLocalPart: 'noreply',
+                      senderDisplayName: 'Shadow Live',
+                      subject: verifySubject,
+                      body: verifyBody,
+                      bodyFormat: 'HTML',
+                    },
+                    resetPasswordTemplate: {
+                      senderLocalPart: 'noreply',
+                      senderDisplayName: 'Shadow Live',
+                      subject: resetSubject,
+                      body: resetBody,
+                      bodyFormat: 'HTML',
+                    },
+                  },
+                },
+              }),
+            },
+          );
+
+          const body = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(
+              'Auth template update failed ' +
+                response.status +
+                ' ' +
+                JSON.stringify(body),
+            );
+          }
+
+          const verify = body?.notification?.sendEmail?.verifyEmailTemplate || {};
+          const reset = body?.notification?.sendEmail?.resetPasswordTemplate || {};
+          console.log('Verify email subject:', verify.subject || '(not returned)');
+          console.log('Verify email sender:', verify.senderDisplayName || '(not returned)');
+          console.log('Reset password subject:', reset.subject || '(not returned)');
+          console.log('Reset password sender:', reset.senderDisplayName || '(not returned)');
+          NODE
