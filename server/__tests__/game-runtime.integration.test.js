@@ -297,6 +297,64 @@ test("same collective round is global across users and rooms",async()=>{
   );
 });
 
+test("greedy result stays hidden while spinning and holds before next round",async()=>{
+  await seedRuntime();
+  const suffix=Date.now().toString()+"_phase_guard";
+  const uid="phase_user_"+suffix;
+  const roomId="phase_room_"+suffix;
+  const key="phase_key_"+suffix;
+  await seedUserRoom(uid,roomId,10000);
+
+  const bet=await placeGameBet(db,uid,{
+    gameId:"greedy_cat",
+    roomId,
+    idempotencyKey:key,
+    bets:[{choiceId:"tomato5",amountCoins:200}],
+  },{nowMs,rngSecret});
+
+  const op=(await db.collection("game_operations")
+    .doc(uid+"__"+key).get()).data();
+  const revealAt=Number(op.closesAtMs);
+
+  const spinning=await gameState(
+    db,
+    uid,
+    {gameId:"greedy_cat"},
+    {nowMs:revealAt-500,rngSecret},
+  );
+  assert.equal(spinning.round.roundId,bet.roundId);
+  assert.equal(spinning.round.status,"spinning");
+  assert.equal(
+    spinning.recentResults.some(item=>item.roundId===bet.roundId),
+    false,
+  );
+
+  const holding=await gameState(
+    db,
+    uid,
+    {gameId:"greedy_cat"},
+    {nowMs:revealAt+500,rngSecret},
+  );
+  assert.equal(holding.round.roundId,bet.roundId);
+  assert.equal(holding.round.status,"result_hold");
+  assert.equal(holding.recentResults[0].roundId,bet.roundId);
+  assert.equal(holding.lastResult.roundId,bet.roundId);
+  assert.equal(
+    holding.round.resultHoldEndsAtMs-holding.round.revealAtMs,
+    4000,
+  );
+
+  const next=await gameState(
+    db,
+    uid,
+    {gameId:"greedy_cat"},
+    {nowMs:revealAt+4500,rngSecret},
+  );
+  assert.notEqual(next.round.roundId,bet.roundId);
+  assert.equal(next.round.status,"betting");
+  assert.equal(next.lastResult.roundId,bet.roundId);
+});
+
 test("finished greedy round exposes top winners and player summary",async()=>{
   await seedRuntime();
   const summaryNowMs=nowMs+(5*60*1000);
