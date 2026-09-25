@@ -20,6 +20,7 @@ import 'widgets/host_section.dart';
 import 'features/auth/screens/login_screen.dart';
 import 'features/auth/screens/email_login_screen.dart';
 import 'features/auth/screens/email_verification_screen.dart';
+import 'features/auth/widgets/account_enforcement_host.dart';
 import 'features/auth/screens/profile_setup_screen.dart';
 import 'features/auth/screens/account_success_screen.dart';
 import 'features/auth/screens/account_linking_screen.dart';
@@ -108,8 +109,10 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Shadow Live',
       navigatorKey: NavigationService.navigatorKey,
-      builder: (context, child) => RoomRocketBannerHost(
-        child: child ?? const SizedBox.shrink(),
+      builder: (context, child) => AccountEnforcementHost(
+        child: RoomRocketBannerHost(
+          child: child ?? const SizedBox.shrink(),
+        ),
       ),
       theme: ThemeData(
         colorScheme: ColorScheme.dark(
