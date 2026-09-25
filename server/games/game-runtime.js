@@ -220,6 +220,39 @@ function publicOperation(data={}){
   };
 }
 
+function participantPublic(data={},rank=null){
+  const stake=Number(data.totalStakeCoins||0);
+  const payout=Number(data.payoutCoins||0);
+  return {
+    userId:clean(data.userId),
+    displayName:clean(data.displayName),
+    photoUrl:clean(data.photoUrl),
+    stakeCoins:Number.isSafeInteger(stake)&&stake>0?stake:0,
+    payoutCoins:Number.isSafeInteger(payout)&&payout>0?payout:0,
+    won:Number.isSafeInteger(payout)&&payout>0,
+    ...(rank==null?{}:{rank}),
+  };
+}
+
+async function roundResultSummary(db,roundId,uid){
+  const id=clean(roundId);
+  if(!id)return {topWinners:[],myRound:null};
+  const participants=db.collection("game_rounds").doc(id).collection("participants");
+  const [leadersSnap,mySnap]=await Promise.all([
+    participants.orderBy("payoutCoins","desc").limit(3).get(),
+    participants.doc(uid).get(),
+  ]);
+  const topWinners=leadersSnap.docs
+    .map((doc,index)=>participantPublic(doc.data()||{},index+1))
+    .filter(item=>item.payoutCoins>0);
+  let myRound=mySnap.exists?participantPublic(mySnap.data()||{}):null;
+  if(myRound){
+    const ranked=topWinners.find(item=>item.userId===uid);
+    myRound={...myRound,winnerRank:ranked?.rank??null};
+  }
+  return {topWinners,myRound};
+}
+
 function ledgerBase({uid,operationId,gameId,roundId,now}){
   return {
     userId:uid,
@@ -319,6 +352,7 @@ export async function placeGameBet(
     if(!Number.isSafeInteger(finalBalance)||finalBalance<0)throw Error("invalid_wallet_state");
 
     const roundRef=db.collection("game_rounds").doc(round.roundId);
+    const participantRef=roundRef.collection("participants").doc(uid);
     const debitLedgerRef=db.collection("financial_ledger").doc("game_debit__"+operationId);
     const creditLedgerRef=db.collection("financial_ledger").doc("game_credit__"+operationId);
     const historyRef=db.collection("game_user_history")
@@ -407,6 +441,23 @@ export async function placeGameBet(
       updatedAt:now,
       createdAt:now,
     },{merge:true});
+
+    if(gameId!=="slot"){
+      tx.set(participantRef,{
+        userId:uid,
+        displayName:clean(
+          user.displayName||user.name||user.publicName||user.username||uid
+        ),
+        photoUrl:clean(
+          user.photoUrl||user.photoURL||user.profileImageUrl||user.avatarUrl||""
+        ),
+        totalStakeCoins:FieldValue.increment(stake),
+        payoutCoins:FieldValue.increment(payout),
+        operationCount:FieldValue.increment(1),
+        updatedAt:now,
+        createdAt:now,
+      },{merge:true});
+    }
 
     if(settled){
       tx.set(historyRef,{
@@ -653,6 +704,14 @@ export async function gameState(db,uid,body={},options={}){
       });
     }
     lastResult=recentResults[0]||null;
+    if(lastResult){
+      const summary=await roundResultSummary(db,lastResult.roundId,uid);
+      lastResult={
+        ...lastResult,
+        topWinners:summary.topWinners,
+        myRound:summary.myRound,
+      };
+    }
   }
   let serverRoundSelections=[];
   if(gameId!=="slot"){
@@ -714,10 +773,16 @@ export async function gameState(db,uid,body={},options={}){
       roundNumber:round.roundNumber,
       opensAtMs:round.opensAtMs,
       closesAtMs:round.closesAtMs,
+      bettingClosesAtMs:round.closesAtMs-config.lockBeforeMs,
       locked:nowMs>=round.closesAtMs-config.lockBeforeMs,
+      status:nowMs>=round.closesAtMs-config.lockBeforeMs
+        ? "spinning"
+        : "betting",
     },
     currentRoundSelections,
     serverRoundSelections,
+    totalRoundStakeCoins:serverRoundSelections
+      .reduce((sum,item)=>sum+Number(item.amountCoins||0),0),
     pending,
   };
 }
