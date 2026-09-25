@@ -124,9 +124,15 @@ def main() -> int:
     ):
         failures.append("Step 6 regression: 10-second game network polling returned")
     check(lambda: require(
-        r"VoiceRoomSessionController\.instance\.realtimeEvents\.listen",
+        r"widget\.realtimeEvents\s*\?\?[\s\S]{0,160}?VoiceRoomSessionController\.instance\.realtimeEvents",
         game_overlay,
-        "Step 6 regression: game overlay is not consuming the existing room WebSocket",
+        "Step 6 regression: game overlay lost the existing room WebSocket event source",
+        re.S,
+    ))
+    check(lambda: require(
+        r"_gameRealtimeSubscription\s*=\s*realtimeEvents\.listen",
+        game_overlay,
+        "Step 6 regression: game overlay is not consuming realtime room events",
     ))
     check(lambda: require(
         r"_service\.loadState\(\s*game,\s*roomId:\s*widget\.roomId",
