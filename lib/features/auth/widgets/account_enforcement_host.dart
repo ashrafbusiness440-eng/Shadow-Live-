@@ -35,13 +35,15 @@ class _AccountEnforcementHostState extends State<AccountEnforcementHost> {
   _AccountNotice? _notice;
   int? _lastRevokedMs;
   int _sessionAuthTimeSeconds = 0;
+  String? _activeAuthUid;
   bool _handling = false;
 
   @override
   void initState() {
     super.initState();
+    _activeAuthUid = FirebaseAuth.instance.currentUser?.uid;
     _authSubscription = FirebaseAuth.instance.authStateChanges().listen(
-      (user) => unawaited(_bindUser(user)),
+      _handleAuthUser,
     );
     unawaited(_bindUser(FirebaseAuth.instance.currentUser));
   }
@@ -51,6 +53,31 @@ class _AccountEnforcementHostState extends State<AccountEnforcementHost> {
     _authSubscription?.cancel();
     _userSubscription?.cancel();
     super.dispose();
+  }
+
+  void _handleAuthUser(User? user) {
+    if (_handling) return;
+    final nextUid = user?.uid;
+    final previousUid = _activeAuthUid;
+
+    if (previousUid != null &&
+        nextUid != null &&
+        previousUid != nextUid) {
+      _showNotice(
+        const _AccountNotice(
+          title: 'تم إيقاف الجلسة لحماية الحساب',
+          message:
+              'تم اكتشاف تبديل مفاجئ في هوية الحساب. لن يسمح Shadow Live '
+              'بالانتقال تلقائيًا إلى حساب آخر. اضغط موافق ثم سجّل الدخول '
+              'بالحساب الذي تريد استخدامه.',
+          icon: Icons.security_rounded,
+        ),
+      );
+      return;
+    }
+
+    _activeAuthUid = nextUid;
+    unawaited(_bindUser(user));
   }
 
   Future<void> _bindUser(User? user) async {
@@ -209,6 +236,7 @@ class _AccountEnforcementHostState extends State<AccountEnforcementHost> {
       await storage.removeToken();
     } catch (_) {}
     if (!mounted) return;
+    _activeAuthUid = null;
     setState(() {
       _notice = null;
       _handling = false;
