@@ -142,6 +142,75 @@ async function post(path,token,body){
   const data=await res.json().catch(()=>({}));
   return {res,body:data};
 }
+function waitForSocketOpen(socket,timeoutMs=10000){
+  if(socket.readyState===WebSocket.OPEN)return Promise.resolve();
+  return new Promise((resolve,reject)=>{
+    const timer=setTimeout(()=>{
+      cleanup();
+      reject(Error("room realtime websocket open timeout"));
+    },timeoutMs);
+    const onOpen=()=>{cleanup();resolve();};
+    const onError=()=>{cleanup();reject(Error("room realtime websocket open failed"));};
+    const cleanup=()=>{
+      clearTimeout(timer);
+      socket.removeEventListener("open",onOpen);
+      socket.removeEventListener("error",onError);
+    };
+    socket.addEventListener("open",onOpen);
+    socket.addEventListener("error",onError);
+  });
+}
+function waitForRealtimeEvent(socket,predicate,timeoutMs=35000){
+  return new Promise((resolve,reject)=>{
+    const timer=setTimeout(()=>{
+      cleanup();
+      reject(Error("room realtime event timeout"));
+    },timeoutMs);
+    const onMessage=(event)=>{
+      let data=null;
+      try{data=JSON.parse(String(event?.data||""));}catch{return;}
+      if(!predicate(data))return;
+      cleanup();
+      resolve(data);
+    };
+    const onClose=()=>{
+      cleanup();
+      reject(Error("room realtime websocket closed before expected event"));
+    };
+    const onError=()=>{
+      cleanup();
+      reject(Error("room realtime websocket error before expected event"));
+    };
+    const cleanup=()=>{
+      clearTimeout(timer);
+      socket.removeEventListener("message",onMessage);
+      socket.removeEventListener("close",onClose);
+      socket.removeEventListener("error",onError);
+    };
+    socket.addEventListener("message",onMessage);
+    socket.addEventListener("close",onClose);
+    socket.addEventListener("error",onError);
+  });
+}
+async function openRoomRealtime(roomId,token){
+  if(typeof WebSocket!=="function")throw Error("node websocket unavailable");
+  const ticket=ok(
+    "room realtime ticket",
+    await post("/api/room-realtime",token,{action:"ticket",roomId}),
+  );
+  if(!ticket.socketPath)throw Error("room realtime socketPath missing");
+  const url=new URL(ticket.socketPath,base);
+  url.protocol=url.protocol==="https:"?"wss:":"ws:";
+  const socket=new WebSocket(url.toString());
+  const ready=waitForRealtimeEvent(
+    socket,
+    (event)=>event?.type==="server.ready"&&event?.payload?.roomId===roomId,
+    10000,
+  );
+  await waitForSocketOpen(socket,10000);
+  await ready;
+  return socket;
+}
 function ok(label,out){
   if(!out.res.ok||out.body?.ok!==true)throw Error(label+" failed "+out.res.status+" "+JSON.stringify(out.body));
   console.log("PASS "+label);
@@ -158,6 +227,7 @@ async function waitForCron(){
 }
 
 let ownerToken=null,playerToken=null;
+let realtimeSocket=null,realtimeKeepalive=null;
 const cleanup=[
   "game_operations/"+manualOpId,
   "game_operations/"+cronOpId,
@@ -171,7 +241,6 @@ const cleanup=[
   "agency_settlements/"+accrualId,
   "financial_ledger/agency_settlement_"+accrualId,
   "agency_support_stats/"+agencyId+"/monthly/"+month,
-  "room_presence/"+roomId+"/users/"+playerUid,
   "rooms/"+roomId,
   "game_operations/"+slotOpId,
   "financial_ledger/game_debit__"+slotOpId,
@@ -206,6 +275,47 @@ try{
 
   ownerToken=await firebaseIdToken(ownerUid);
   playerToken=await firebaseIdToken(playerUid);
+
+  await fsSet("rooms/"+roomId,{
+    name:"Phase6 E2E Room",
+    isActive:true,
+    ownerId:playerUid,
+  });
+  realtimeSocket=await openRoomRealtime(roomId,playerToken);
+  realtimeKeepalive=setInterval(()=>{
+    try{
+      if(realtimeSocket?.readyState===WebSocket.OPEN)realtimeSocket.send("ping");
+    }catch{}
+  },15000);
+
+  const gamePush=waitForRealtimeEvent(
+    realtimeSocket,
+    (event)=>String(event?.type||"").startsWith("game.")&&
+      event?.payload?.roomId===roomId&&
+      event?.payload?.gameId==="greedy_cat",
+    35000,
+  );
+  const realtimeState=ok(
+    "greedy realtime state registration",
+    await post("/api/game-runtime",playerToken,{
+      action:"state",
+      gameId:"greedy_cat",
+      roomId,
+    }),
+  );
+  if(realtimeState.gameId!=="greedy_cat"||!realtimeState.round){
+    throw Error("greedy realtime state payload invalid");
+  }
+  const pushedGameEvent=await gamePush;
+  if(![
+    "game.round_started",
+    "game.betting_closed",
+    "game.result",
+    "game.next_round",
+  ].includes(pushedGameEvent.type)){
+    throw Error("unexpected pushed game event "+String(pushedGameEvent.type||""));
+  }
+  console.log("PASS room websocket game event "+pushedGameEvent.type);
 
   const agency=ok("agency cycle settlement",await post("/api/economy-control",ownerToken,{action:"settleAgencyCycle",accrualId}));
   if(agency.alreadySettled!==false||agency.settlement?.status!=="settled"||Number(agency.settlement?.hostDiamonds||0)<=0){
@@ -264,8 +374,9 @@ try{
   const slot=catalog.items.find((item)=>item.gameId==="slot");
   if(!slot||!Array.isArray(slot.bets)||!slot.bets.length)throw Error("slot catalog missing");
   const slotBet=Number(slot.bets[0]);
-  await fsSet("rooms/"+roomId,{name:"Phase6 E2E Room",isActive:true,ownerId:playerUid});
-  await fsSet("room_presence/"+roomId+"/users/"+playerUid,{userId:playerUid,lastSeenAtMs:Date.now(),isOnline:true});
+  if(realtimeSocket?.readyState!==WebSocket.OPEN){
+    throw Error("room realtime websocket not open before slot bet");
+  }
 
   const beforeSlot=Number((await fsGet("users/"+playerUid))?.coins||0);
   const slotResult=ok("real slot bet through Cloudflare",await post("/api/game-runtime",playerToken,{
@@ -302,6 +413,11 @@ try{
 
   console.log("ALL CLOUDFLARE PHASE-6 SETTLEMENT AND GAME E2E CHECKS PASSED");
 }finally{
+  if(realtimeKeepalive)clearInterval(realtimeKeepalive);
+  if(realtimeSocket){
+    try{realtimeSocket.close(1000,"phase6_e2e_done");}catch{}
+    await new Promise(r=>setTimeout(r,200));
+  }
   const cleanupErrors=[];
   for(const p of cleanup.reverse()){
     try{await fsDelete(p);}
