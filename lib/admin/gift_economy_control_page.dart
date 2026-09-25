@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import 'control_api_endpoints.dart';
+import 'control_firebase.dart';
 
 typedef GiftEconomyPost = Future<Map<String, dynamic>> Function(
   Map<String, dynamic> payload,
@@ -93,7 +94,7 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
     final override = widget.postOverride;
     if (override != null) return override(payload);
 
-    final user = FirebaseAuth.instance.currentUser;
+    final user = controlAuth.currentUser;
     if (user == null) throw StateError('يجب تسجيل الدخول.');
     final token = await user.getIdToken();
     if (token == null || token.isEmpty) {
