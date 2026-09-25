@@ -621,7 +621,7 @@ class _UserAccountOverviewCardState extends State<_UserAccountOverviewCard> {
 
   Widget providerChip(String label,IconData icon,bool linked){
     return Chip(
-      avatar:Icon(linked?Icons.check_circle:Icons.remove_circle_outline,size:18,color:linked?Colors.greenAccent:Colors.white38),
+      avatar:Icon(icon,size:18,color:linked?Colors.greenAccent:Colors.white38),
       label:Text(label),
       side:BorderSide(color:linked?Colors.greenAccent.withValues(alpha:.35):Colors.white12),
       backgroundColor:linked?Colors.green.withValues(alpha:.10):Colors.white.withValues(alpha:.03),
