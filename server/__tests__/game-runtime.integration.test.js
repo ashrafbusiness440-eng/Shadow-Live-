@@ -248,6 +248,18 @@ test("same collective round is global across users and rooms",async()=>{
     seedUserRoom(uidB,roomB),
   ]);
 
+  const beforePressure=await gameState(
+    db,
+    uidA,
+    {gameId:"greedy_cat"},
+    {nowMs,rngSecret},
+  );
+  const beforeTotals=Object.fromEntries(
+    beforePressure.serverRoundSelections.map(
+      item=>[item.choiceId,item.amountCoins],
+    ),
+  );
+
   const [a,b]=await Promise.all([
     placeGameBet(db,uidA,{
       gameId:"greedy_cat",
@@ -275,8 +287,14 @@ test("same collective round is global across users and rooms",async()=>{
   const serverTotals=Object.fromEntries(
     pressure.serverRoundSelections.map(item=>[item.choiceId,item.amountCoins]),
   );
-  assert.equal(serverTotals.tomato5,200);
-  assert.equal(serverTotals.fish15,200);
+  assert.equal(
+    serverTotals.tomato5-(beforeTotals.tomato5||0),
+    200,
+  );
+  assert.equal(
+    serverTotals.fish15-(beforeTotals.fish15||0),
+    200,
+  );
 });
 
 test("slot settles debit and payout atomically in one operation",async()=>{
