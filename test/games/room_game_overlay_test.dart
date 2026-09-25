@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:voice_chat_room/features/games/game_asset_paths.dart';
 import 'package:voice_chat_room/features/games/services/game_runtime_service.dart';
 import 'package:voice_chat_room/features/games/widgets/room_game_overlay.dart';
 
 class FakeGameRuntimeService extends GameRuntimeService {
-  FakeGameRuntimeService({this.failSlotAfter = 999})
-      : super(baseUrl: 'http://example.invalid');
+  FakeGameRuntimeService({
+    this.failSlotAfter = 999,
+    this.roundStatus = 'betting',
+  }) : super(baseUrl: 'http://example.invalid');
 
   final int failSlotAfter;
+  final String roundStatus;
   final Map<String, int> totals = <String, int>{};
   int slotCalls = 0;
   final List<int> slotAmounts = <int>[];
@@ -69,7 +73,9 @@ class FakeGameRuntimeService extends GameRuntimeService {
               'dayKey': '2026-09-23',
               'opensAtMs': now - 1000,
               'closesAtMs': now + 25000,
-              'locked': false,
+              'bettingClosesAtMs': now + 22000,
+              'locked': roundStatus != 'betting',
+              'status': roundStatus,
             },
       currentRoundSelections: Map<String, int>.from(totals),
       serverRoundSelections: game.gameId == 'greedy_cat'
@@ -183,8 +189,19 @@ void main() {
     expect(find.text('بيتزا'), findsOneWidget);
     expect(find.text('سلطة'), findsOneWidget);
     expect(find.text('🔥🔥'), findsOneWidget);
+    expect(find.text('🌐 42K'), findsOneWidget);
     expect(find.text('قيمة الضغطة الحالية'), findsNothing);
     expect(find.byType(GridView), findsNothing);
+    final greedyImages = tester.widgetList<Image>(find.byType(Image));
+    expect(
+      greedyImages.any(
+        (image) =>
+            image.image is AssetImage &&
+            (image.image as AssetImage).assetName ==
+                GameAssetPaths.greedyBackground,
+      ),
+      isTrue,
+    );
 
     await tester.tap(find.text('بيتزا'));
     await tester.tap(find.text('سلطة'));
@@ -202,6 +219,21 @@ void main() {
 
     expect(service.totals['pepper5'], 400);
     expect(find.text('400'), findsOneWidget);
+  });
+
+  testWidgets('Greedy Cat blocks bets while server round is spinning',
+      (tester) async {
+    final service = FakeGameRuntimeService(roundStatus: 'spinning');
+    await tester.pumpWidget(host(service, 'greedy_cat'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.text('جاري الدوران'), findsOneWidget);
+    final choice = find.text('فلفل  ×5');
+    expect(choice, findsOneWidget);
+    await tester.tap(choice);
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(service.totals, isEmpty);
   });
 
   testWidgets('Witch switches between Normal and Advanced modes',
