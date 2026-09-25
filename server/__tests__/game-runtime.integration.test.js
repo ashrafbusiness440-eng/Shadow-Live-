@@ -355,6 +355,59 @@ test("greedy result stays hidden while spinning and holds before next round",asy
   assert.equal(next.lastResult.roundId,bet.roundId);
 });
 
+test("greedy daily user winnings accumulate from settled payouts",async()=>{
+  await seedRuntime();
+  const suffix=Date.now().toString()+"_daily_user_winnings";
+  const uid="daily_winnings_user_"+suffix;
+  const roomId="daily_winnings_room_"+suffix;
+  const key="daily_winnings_key_"+suffix;
+  await seedUserRoom(uid,roomId,20000);
+
+  const placed=await placeGameBet(db,uid,{
+    gameId:"greedy_cat",
+    roomId,
+    idempotencyKey:key,
+    bets:[
+      {choiceId:"pepper5",amountCoins:200},
+      {choiceId:"tomato5",amountCoins:200},
+      {choiceId:"cabbage5",amountCoins:200},
+      {choiceId:"carrot5",amountCoins:200},
+      {choiceId:"chicken10",amountCoins:200},
+      {choiceId:"fish15",amountCoins:200},
+      {choiceId:"steak25",amountCoins:200},
+      {choiceId:"shell45",amountCoins:200},
+    ],
+  },{nowMs,rngSecret});
+
+  const operationRef=db.collection("game_operations").doc(uid+"__"+key);
+  const operation=(await operationRef.get()).data();
+  const payout=Number(operation.payoutCoins||0);
+  assert.ok(payout>0);
+
+  const settleAt=Number(operation.closesAtMs||0)+1;
+  await settleGameOperation(
+    db,
+    uid,
+    {idempotencyKey:key},
+    {nowMs:settleAt},
+  );
+
+  const statsRef=db.collection("game_user_stats")
+    .doc(uid).collection("daily")
+    .doc("greedy_cat__"+operation.dayKey);
+  const stats=(await statsRef.get()).data();
+  assert.equal(Number(stats.payoutCoins||0),payout);
+
+  const state=await gameState(
+    db,
+    uid,
+    {gameId:"greedy_cat"},
+    {nowMs:settleAt+500,rngSecret},
+  );
+  assert.equal(state.lastResult.roundId,placed.roundId);
+  assert.equal(state.userDailyPayoutCoins,payout);
+});
+
 test("finished greedy round exposes top winners and player summary",async()=>{
   await seedRuntime();
   const summaryNowMs=nowMs+(5*60*1000);
