@@ -78,10 +78,13 @@ function cors(req,res){
 
 const out=(res,status,body)=>res.status(status).json(body);
 
-async function actor(req){
+async function actor(req,{checkUserState=true}={}){
   const authorization=clean(req.headers.authorization);
   if(!authorization.startsWith("Bearer "))throw Error("unauthorized");
-  const decoded=await getAuth().verifyIdToken(authorization.slice(7));
+  const decoded=await getAuth().verifyIdToken(
+    authorization.slice(7),
+    {checkUserState},
+  );
   if(decoded.firebase?.sign_in_provider==="anonymous")throw Error("account_required");
   return decoded;
 }
@@ -887,8 +890,9 @@ export async function handler(req,res){
     }
 
     if(req.method!=="POST")return out(res,405,{ok:false,code:"method_not_allowed"});
-    const {uid}=await actor(req);
     const action=clean(req.body?.action);
+    const readOnlyAction=action==="catalog"||action==="state";
+    const {uid}=await actor(req,{checkUserState:!readOnlyAction});
     if(action==="catalog"){
       return out(res,200,await gameCatalog(db));
     }
