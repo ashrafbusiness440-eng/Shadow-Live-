@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 class GameCatalogEntry {
@@ -135,7 +134,8 @@ class GameBetResult {
             ? (json['payoutCoins'] as num).toInt()
             : null,
         balanceAfter: (json['balanceAfter'] as num?)?.toInt() ?? 0,
-        outcomeId: json['outcomeId']?.toString(),
+        outcomeId:
+            json['outcomeId'] == null ? null : json['outcomeId'].toString(),
         reels: json['reels'] is List
             ? (json['reels'] as List)
                 .map((value) => value.toString())
@@ -159,30 +159,19 @@ class GameRuntimeService {
   static const bool _e2eRoomTest = bool.fromEnvironment('E2E_ROOM_TEST');
 
   static String _defaultBaseUrl() {
-    const configured = String.fromEnvironment('SHADOW_API_BASE_URL');
+    const configured = String.fromEnvironment(
+      'SHADOW_CLOUDFLARE_API_BASE_URL',
+    );
     if (configured.isNotEmpty) return configured;
-
-    const stableBackend = 'https://shadow-live-six.vercel.app/api';
-    if (!kIsWeb) return stableBackend;
-
-    final host = Uri.base.host.toLowerCase();
-    if (host == 'shadow-live-six.vercel.app') {
-      return '${Uri.base.origin}/api';
-    }
-
-    // GitHub Pages and Vercel preview deployments may not expose the
-    // current backend routes. Always use the stable production API there.
-    return stableBackend;
+    return 'https://shadow-live.ashraf-business-440.workers.dev/api';
   }
 
   Future<String> _token() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null || user.isAnonymous) {
-      throw StateError('account_required');
-    }
+    if (user == null || user.isAnonymous) throw StateError('account_required');
     final token = await user.getIdToken();
-    if (token?.isEmpty ?? true) throw StateError('not_signed_in');
-    return token!;
+    if (token == null || token.isEmpty) throw StateError('not_signed_in');
+    return token;
   }
 
   Future<Map<String, dynamic>> _post(Map<String, dynamic> payload) async {
