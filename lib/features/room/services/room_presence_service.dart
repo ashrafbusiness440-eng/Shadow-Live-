@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
+
+import 'room_presence_socket.dart';
 
 class RoomPresenceUser {
   const RoomPresenceUser({
@@ -39,30 +42,35 @@ class RoomPresenceService {
         _baseUrl = baseUrl ??
             const String.fromEnvironment(
               'SHADOW_CLOUDFLARE_API_BASE_URL',
-              defaultValue: 'https://shadow-live.ashraf-business-440.workers.dev/api',
+              defaultValue:
+                  'https://shadow-live.ashraf-business-440.workers.dev/api',
             );
 
   final FirebaseAuth _auth;
   final http.Client _client;
   final String _baseUrl;
 
+  RoomPresenceSocketConnection? _socket;
+  StreamSubscription<Object?>? _socketSubscription;
+  Timer? _reconnectTimer;
+  String _desiredRoomId = '';
+  int _generation = 0;
+  int _reconnectAttempt = 0;
+
   Future<Map<String, dynamic>> _post(
-    String action,
-    String roomId,
+    String endpoint,
+    Map<String, dynamic> body,
   ) async {
     final token = await _auth.currentUser?.getIdToken();
     if (token == null || token.isEmpty) throw StateError('not_signed_in');
 
     final response = await _client.post(
-      Uri.parse('$_baseUrl/voice-session'),
+      Uri.parse('$_baseUrl/$endpoint'),
       headers: {
         'authorization': 'Bearer $token',
         'content-type': 'application/json',
       },
-      body: jsonEncode({
-        'action': action,
-        'roomId': roomId,
-      }),
+      body: jsonEncode(body),
     );
 
     Map<String, dynamic> decoded = <String, dynamic>{};
@@ -79,20 +87,157 @@ class RoomPresenceService {
     return decoded;
   }
 
-  Future<void> join(String roomId) async {
-    await _post('roomPresenceJoin', roomId);
+  Uri _socketUri(String socketPath) {
+    final base = Uri.parse(_baseUrl);
+    final resolved = base.resolve(socketPath);
+    return resolved.replace(
+      scheme: resolved.scheme == 'http' ? 'ws' : 'wss',
+    );
   }
 
-  Future<void> heartbeat(String roomId) async {
-    await _post('roomPresenceHeartbeat', roomId);
+  Future<void> _announceJoin(String roomId) async {
+    try {
+      await _post('voice-session', {
+        'action': 'roomPresenceAnnounceJoin',
+        'roomId': roomId,
+      });
+    } catch (_) {
+      // Presence is authoritative from the socket; a join message must never
+      // tear down an otherwise healthy realtime connection.
+    }
+  }
+
+  void _scheduleReconnect(String roomId, int generation) {
+    if (_desiredRoomId != roomId || generation != _generation) return;
+    if (_reconnectTimer?.isActive == true) return;
+    if (_reconnectAttempt >= 3) return;
+
+    final delaySeconds = 1 << _reconnectAttempt;
+    _reconnectAttempt += 1;
+    _reconnectTimer = Timer(Duration(seconds: delaySeconds), () {
+      if (_desiredRoomId != roomId || generation != _generation) return;
+      unawaited(
+        _connect(
+          roomId,
+          generation,
+          announceOnReady: false,
+        ).catchError((_) {}),
+      );
+    });
+  }
+
+  void _handleSocketEnded(
+    String roomId,
+    int generation,
+    RoomPresenceSocketConnection connection,
+  ) {
+    if (generation != _generation || _desiredRoomId != roomId) return;
+    if (!identical(_socket, connection)) return;
+    _socket = null;
+    _socketSubscription = null;
+    _scheduleReconnect(roomId, generation);
+  }
+
+  Future<void> _connect(
+    String roomId,
+    int generation, {
+    required bool announceOnReady,
+  }) async {
+    if (_desiredRoomId != roomId || generation != _generation) return;
+
+    try {
+      final ticket = await _post('room-realtime', {
+        'action': 'ticket',
+        'roomId': roomId,
+      });
+      if (_desiredRoomId != roomId || generation != _generation) return;
+
+      final socketPath = (ticket['socketPath'] ?? '').toString();
+      if (socketPath.isEmpty) throw StateError('realtime_socket_missing');
+      final connection = await connectRoomPresenceSocket(
+        _socketUri(socketPath),
+      );
+      if (_desiredRoomId != roomId || generation != _generation) {
+        await connection.close();
+        return;
+      }
+
+      final oldSubscription = _socketSubscription;
+      final oldSocket = _socket;
+      _socket = connection;
+      _reconnectAttempt = 0;
+      _reconnectTimer?.cancel();
+      _reconnectTimer = null;
+      await oldSubscription?.cancel();
+      if (oldSocket != null && !identical(oldSocket, connection)) {
+        await oldSocket.close();
+      }
+
+      _socketSubscription = connection.messages.listen(
+        (_) {},
+        onError: (_) => _handleSocketEnded(roomId, generation, connection),
+        onDone: () => _handleSocketEnded(roomId, generation, connection),
+        cancelOnError: false,
+      );
+
+      if (announceOnReady && ticket['alreadyPresent'] != true) {
+        unawaited(_announceJoin(roomId));
+      }
+    } catch (_) {
+      _scheduleReconnect(roomId, generation);
+      rethrow;
+    }
+  }
+
+  Future<void> join(String roomId) async {
+    final id = roomId.trim();
+    if (id.isEmpty) throw StateError('room_id_missing');
+    if (_desiredRoomId == id && _socket != null) return;
+
+    _generation += 1;
+    final generation = _generation;
+    _desiredRoomId = id;
+    _reconnectAttempt = 0;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    await _socketSubscription?.cancel();
+    _socketSubscription = null;
+    final previous = _socket;
+    _socket = null;
+    if (previous != null) await previous.close();
+
+    await _connect(id, generation, announceOnReady: true);
   }
 
   Future<void> leave(String roomId) async {
-    await _post('roomPresenceLeave', roomId);
+    final id = roomId.trim();
+    _generation += 1;
+    _desiredRoomId = '';
+    _reconnectAttempt = 0;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    await _socketSubscription?.cancel();
+    _socketSubscription = null;
+    final connection = _socket;
+    _socket = null;
+    if (connection != null) {
+      try {
+        await connection.close();
+      } catch (_) {}
+    }
+
+    if (id.isEmpty) return;
+    await _post('voice-session', {
+      'action': 'roomSessionLeave',
+      'roomId': id,
+    });
   }
 
   Future<List<RoomPresenceUser>> load(String roomId) async {
-    final body = await _post('roomPresenceState', roomId);
+    final body = await _post('room-realtime', {
+      'action': 'presenceState',
+      'roomId': roomId,
+    });
     final raw = body['participants'];
     if (raw is! List) return const [];
     return raw
@@ -106,5 +251,16 @@ class RoomPresenceService {
         .toList(growable: false);
   }
 
-  void close() => _client.close();
+  void close() {
+    _generation += 1;
+    _desiredRoomId = '';
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    unawaited(_socketSubscription?.cancel());
+    _socketSubscription = null;
+    final connection = _socket;
+    _socket = null;
+    if (connection != null) unawaited(connection.close());
+    _client.close();
+  }
 }

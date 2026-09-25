@@ -17,6 +17,13 @@ function isAnonymous(payload) {
   return String(payload?.firebase?.sign_in_provider || "") === "anonymous";
 }
 
+async function readPresence(stub) {
+  const response = await stub.fetch("https://room-realtime.internal/presence");
+  if (!response.ok) throw new Error("realtime_presence_failed");
+  const body = await response.json().catch(() => ({}));
+  return Array.isArray(body.participants) ? body.participants : [];
+}
+
 export async function roomRealtime(request, env) {
   const url = new URL(request.url);
 
@@ -33,29 +40,53 @@ export async function roomRealtime(request, env) {
         return json(request, env, { ok: false, code: "invalid_room_id" }, 400);
       }
 
+      const stub = roomObject(env, roomId);
+      const action = String(body.action || "ticket").trim();
+      if (action === "presenceState") {
+        const participants = await readPresence(stub);
+        return json(request, env, { ok: true, roomId, participants });
+      }
+      if (action !== "ticket") {
+        return json(request, env, { ok: false, code: "invalid_action" }, 400);
+      }
+
       const db = firestoreClient(env);
-      const room = await db.get(`rooms/${roomId}`);
+      const uid = String(payload.sub || "");
+      const [room, profile] = await Promise.all([
+        db.get(`rooms/${roomId}`),
+        db.get(`public_profiles/${uid}`),
+      ]);
       if (!room.exists || room.data?.isActive === false) {
         return json(request, env, { ok: false, code: "room_unavailable" }, 404);
       }
 
+      const profileData = profile.data || {};
       const ticket = crypto.randomUUID();
       const expiresAtMs = Date.now() + ROOM_REALTIME_TICKET_TTL_MS;
-      const stub = roomObject(env, roomId);
       const stored = await stub.fetch("https://room-realtime.internal/ticket", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           roomId,
-          uid: String(payload.sub || ""),
+          uid,
           ticket,
           expiresAtMs,
+          displayName: String(
+            profileData.displayName ||
+            profileData.username ||
+            payload.name ||
+            "مستخدم Shadow Live",
+          ),
+          profileImageUrl: String(
+            profileData.profileImageUrl || payload.picture || "",
+          ),
         }),
       });
 
       if (!stored.ok) {
         return json(request, env, { ok: false, code: "realtime_ticket_failed" }, 503);
       }
+      const storedBody = await stored.json().catch(() => ({}));
 
       const socketPath =
         `/api/room-realtime?roomId=${encodeURIComponent(roomId)}&ticket=${encodeURIComponent(ticket)}`;
@@ -66,6 +97,7 @@ export async function roomRealtime(request, env) {
         ticket,
         expiresAtMs,
         socketPath,
+        alreadyPresent: storedBody.alreadyPresent === true,
       });
     } catch (error) {
       const code = String(error?.message || "");

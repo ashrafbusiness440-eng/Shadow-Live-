@@ -36,7 +36,7 @@ export default {
       return json(request, env, {
         ok: true,
         service: "shadow-live-cloudflare-worker",
-        version: 17,
+        version: 18,
         buildSha: env.BUILD_SHA || null,
         firebaseConfigured: Boolean(String(env.FIREBASE_SERVICE_ACCOUNT || "").trim()),
       });

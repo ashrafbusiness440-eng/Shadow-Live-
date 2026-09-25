@@ -63,6 +63,7 @@ def main() -> int:
             failures.append(str(error))
 
     voice = read("lib/features/voice/services/voice_room_session_controller.dart")
+    presence_service = read("lib/features/room/services/room_presence_service.dart")
     game_overlay = read("lib/features/games/widgets/room_game_overlay.dart")
     zego = read("lib/features/voice/services/zego_voice_service.dart")
     firestore = read("cloudflare-worker/src/firestore.js")
@@ -74,12 +75,43 @@ def main() -> int:
     realtime_protocol = read("cloudflare-worker/src/room-realtime-protocol.js")
     worker_index = read("cloudflare-worker/src/index.js")
 
+    if "_presenceTimer" in voice or ".heartbeat(" in voice:
+        failures.append("Step 4 regression: Firestore presence heartbeat returned to the room session")
     check(lambda: require(
-        r"_presenceTimer\s*=\s*Timer\.periodic\(\s*const Duration\(seconds:\s*60\)",
+        r"_presenceService\.join\(targetRoomId\)",
         voice,
-        "presence heartbeat interval changed from the 60s baseline",
-        re.S,
+        "Step 4 regression: room session no longer starts WebSocket presence",
     ))
+    check(lambda: require(
+        r"connectRoomPresenceSocket",
+        presence_service,
+        "Step 4 regression: presence service is not using WebSocket transport",
+    ))
+    check(lambda: require(
+        r"'action': 'ticket'",
+        presence_service,
+        "Step 4 regression: presence service no longer requests a realtime ticket",
+    ))
+    check(lambda: require(
+        r"'action': 'presenceState'",
+        presence_service,
+        "Step 4 regression: presence state no longer comes from the Durable Object",
+    ))
+    check(lambda: require(
+        r"'action': 'roomSessionLeave'",
+        presence_service,
+        "Step 4 regression: explicit leave no longer preserves room session cleanup",
+    ))
+    for legacy_action in (
+        "roomPresenceJoin",
+        "roomPresenceHeartbeat",
+        "roomPresenceLeave",
+        "roomPresenceState",
+    ):
+        if legacy_action in presence_service:
+            failures.append(
+                f"Step 4 regression: active app presence path references legacy {legacy_action}"
+            )
     check(lambda: require(
         r"_poller\s*=\s*Timer\.periodic\([\s\S]{0,260}?const Duration\(seconds:\s*10\)",
         game_overlay,
@@ -143,6 +175,15 @@ def main() -> int:
         failures.append("RoomRealtimeObject must use ctx.acceptWebSocket, not ws.accept")
     if "firestore" in realtime_object.lower() or "firebase" in realtime_object.lower():
         failures.append("RoomRealtimeObject must not become a Firestore/Firebase authority")
+    for route in ("/presence", "/presence/has"):
+        if route not in realtime_object:
+            failures.append(f"Step 4 regression: Durable Object route missing: {route}")
+    if "presenceSnapshotFromAttachments" not in realtime_object:
+        failures.append("Step 4 regression: socket attachments are not the presence source")
+    if "assertRoomRealtimePresence(db,roomId,targetUid)" not in worker:
+        failures.append("Step 4 regression: mic target validation is not using realtime presence")
+    if 'action==="roomSessionLeave"' not in worker:
+        failures.append("Step 4 regression: roomSessionLeave cleanup action is missing")
     def no_join_delay() -> None:
         start = voice.find("Future<void> join(")
         end = voice.find("Future<void> toggleMic()", start)
@@ -209,7 +250,7 @@ def main() -> int:
         return 1
 
     print("Pressure regression guardrail passed.")
-    print("Protected baselines: room join, ZEGO, mic path, presence heartbeat, game polling/timing, retries, cron, and critical listener caps.")
+    print("Protected baselines: room join, ZEGO, mic path, WebSocket presence, game polling/timing, retries, cron, and critical listener caps.")
     for note in notes:
         print(f"NOTE: {note}")
     return 0

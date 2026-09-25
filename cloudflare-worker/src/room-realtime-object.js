@@ -6,6 +6,10 @@ import {
   parseClientRealtimeMessage,
   realtimeEnvelope,
 } from "./room-realtime-protocol.js";
+import {
+  hasPresenceUid,
+  presenceSnapshotFromAttachments,
+} from "./room-realtime-presence.js";
 
 const TICKET_PREFIX = "ticket:";
 
@@ -40,6 +44,12 @@ export class RoomRealtimeObject extends DurableObject {
     }
   }
 
+  #presenceAttachments() {
+    return this.ctx.getWebSockets()
+      .map((socket) => socket.deserializeAttachment())
+      .filter((value) => value && typeof value === "object");
+  }
+
   async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname === "/ticket" && request.method === "POST") {
@@ -47,6 +57,24 @@ export class RoomRealtimeObject extends DurableObject {
     }
     if (url.pathname === "/connect" && request.method === "GET") {
       return this.#connect(request, url);
+    }
+    if (url.pathname === "/presence" && request.method === "GET") {
+      return Response.json({
+        ok: true,
+        participants: presenceSnapshotFromAttachments(
+          this.#presenceAttachments(),
+          Date.now(),
+        ),
+      });
+    }
+    if (url.pathname === "/presence/has" && request.method === "GET") {
+      return Response.json({
+        ok: true,
+        present: hasPresenceUid(
+          this.#presenceAttachments(),
+          url.searchParams.get("uid"),
+        ),
+      });
     }
     if (url.pathname === "/broadcast" && request.method === "POST") {
       return this.#broadcast(request);
@@ -60,19 +88,29 @@ export class RoomRealtimeObject extends DurableObject {
     const uid = String(body.uid || "").trim();
     const ticket = String(body.ticket || "").trim();
     const expiresAtMs = Number(body.expiresAtMs || 0);
+    const displayName = String(body.displayName || "").trim();
+    const profileImageUrl = String(body.profileImageUrl || "").trim();
 
     if (!roomId || !uid || !ticket || expiresAtMs <= Date.now()) {
       return Response.json({ ok: false, code: "invalid_ticket" }, { status: 400 });
     }
 
+    const alreadyPresent = hasPresenceUid(this.#presenceAttachments(), uid);
     const key = await ticketStorageKey(ticket);
-    await this.ctx.storage.put(key, { roomId, uid, expiresAtMs });
+    await this.ctx.storage.put(key, {
+      roomId,
+      uid,
+      ticket,
+      expiresAtMs,
+      displayName,
+      profileImageUrl,
+    });
 
     const currentAlarm = await this.ctx.storage.getAlarm();
     if (currentAlarm === null || expiresAtMs < currentAlarm) {
       await this.ctx.storage.setAlarm(expiresAtMs + 1000);
     }
-    return Response.json({ ok: true });
+    return Response.json({ ok: true, alreadyPresent });
   }
 
   async #connect(request, url) {
@@ -95,7 +133,6 @@ export class RoomRealtimeObject extends DurableObject {
       return Response.json({ ok: false, code: "realtime_ticket_invalid" }, { status: 401 });
     }
 
-    // Single-use even if the subsequent WebSocket upgrade cannot complete.
     await this.ctx.storage.delete(key);
     if (String(record.roomId || "") !== roomId || Number(record.expiresAtMs || 0) <= Date.now()) {
       return Response.json({ ok: false, code: "realtime_ticket_expired" }, { status: 401 });
@@ -105,12 +142,23 @@ export class RoomRealtimeObject extends DurableObject {
     const [client, server] = Object.values(pair);
     const uid = String(record.uid || "");
     const connectionId = crypto.randomUUID();
+    const connectedAtMs = Date.now();
+    const existing = presenceSnapshotFromAttachments(
+      this.#presenceAttachments().filter((item) => String(item.uid || "") === uid),
+      connectedAtMs,
+    );
+    const joinedAtMs = existing.length
+      ? Number(existing[0].joinedAtMs || connectedAtMs)
+      : connectedAtMs;
 
     server.serializeAttachment({
       roomId,
       uid,
       connectionId,
-      connectedAtMs: Date.now(),
+      connectedAtMs,
+      joinedAtMs,
+      displayName: String(record.displayName || "").trim(),
+      profileImageUrl: String(record.profileImageUrl || "").trim(),
     });
     this.ctx.acceptWebSocket(server, [`uid:${uid}`]);
 
@@ -149,6 +197,12 @@ export class RoomRealtimeObject extends DurableObject {
   webSocketMessage(webSocket, message) {
     const parsed = parseClientRealtimeMessage(message, Date.now());
     if (parsed.response) safeSend(webSocket, parsed.response);
+  }
+
+  webSocketClose(webSocket, code, reason) {
+    try {
+      webSocket.close(code || 1000, reason || "room_leave");
+    } catch {}
   }
 
   webSocketError(webSocket) {
