@@ -9,10 +9,12 @@ class FakeGameRuntimeService extends GameRuntimeService {
   FakeGameRuntimeService({
     this.failSlotAfter = 999,
     this.roundStatus = 'betting',
+    this.betDelay = Duration.zero,
   }) : super(baseUrl: 'http://example.invalid');
 
   final int failSlotAfter;
   final String roundStatus;
+  final Duration betDelay;
   final Map<String, int> totals = <String, int>{};
   int slotCalls = 0;
   final List<int> slotAmounts = <int>[];
@@ -60,6 +62,16 @@ class FakeGameRuntimeService extends GameRuntimeService {
   Future<GameRuntimeState> loadState(GameCatalogEntry game) async {
     lastLoadedKey = game.key;
     final now = DateTime.now().millisecondsSinceEpoch;
+    final bettingClosesAtMs = roundStatus == 'betting'
+        ? now + 22000
+        : now - 1000;
+    final revealAtMs = roundStatus == 'spinning'
+        ? now + 2200
+        : roundStatus == 'result_hold'
+            ? now - 500
+            : now + 25000;
+    final resultHoldEndsAtMs =
+        roundStatus == 'result_hold' ? now + 3500 : revealAtMs + 4000;
     return GameRuntimeState(
       gameId: game.gameId,
       mode: game.mode,
@@ -72,8 +84,11 @@ class FakeGameRuntimeService extends GameRuntimeService {
               'roundNumber': 1,
               'dayKey': '2026-09-23',
               'opensAtMs': now - 1000,
-              'closesAtMs': now + 25000,
-              'bettingClosesAtMs': now + 22000,
+              'closesAtMs': revealAtMs,
+              'bettingClosesAtMs': bettingClosesAtMs,
+              'revealAtMs': revealAtMs,
+              'resultHoldEndsAtMs': resultHoldEndsAtMs,
+              'nextRoundOpensAtMs': resultHoldEndsAtMs,
               'locked': roundStatus != 'betting',
               'status': roundStatus,
             },
@@ -145,6 +160,9 @@ class FakeGameRuntimeService extends GameRuntimeService {
       );
     }
     final id = choiceId ?? '';
+    if (betDelay > Duration.zero) {
+      await Future<void>.delayed(betDelay);
+    }
     totals[id] = (totals[id] ?? 0) + amountCoins;
     return GameBetResult(
       status: 'pending',
@@ -178,14 +196,17 @@ class GreedyResultFakeGameRuntimeService extends FakeGameRuntimeService {
       serverNowMs: now,
       bets: base.bets,
       round: <String, dynamic>{
-        'roundId': 'greedy_cat:test:2',
-        'roundNumber': 2,
+        'roundId': 'greedy_cat:test:1',
+        'roundNumber': 1,
         'dayKey': '2026-09-25',
-        'opensAtMs': now - 1000,
-        'closesAtMs': now + 25000,
-        'bettingClosesAtMs': now + 22000,
-        'locked': false,
-        'status': 'betting',
+        'opensAtMs': now - 30000,
+        'closesAtMs': now - 500,
+        'bettingClosesAtMs': now - 3500,
+        'revealAtMs': now - 500,
+        'resultHoldEndsAtMs': now + 3500,
+        'nextRoundOpensAtMs': now + 3500,
+        'locked': true,
+        'status': 'result_hold',
       },
       currentRoundSelections: base.currentRoundSelections,
       serverRoundSelections: base.serverRoundSelections,
@@ -304,6 +325,27 @@ void main() {
 
     expect(service.totals['pepper5'], 400);
     expect(find.text('400'), findsOneWidget);
+  });
+
+  testWidgets('Greedy Cat shows server pressure in the same interaction frame',
+      (tester) async {
+    final service = FakeGameRuntimeService(
+      betDelay: const Duration(milliseconds: 450),
+    );
+    await tester.pumpWidget(host(service, 'greedy_cat'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final choice = find.text('ملفوف  ×5');
+    expect(choice, findsOneWidget);
+    await tester.tap(choice);
+    await tester.pump(const Duration(milliseconds: 1));
+
+    expect(find.text('🌐 200'), findsOneWidget);
+    expect(service.totals['cabbage5'], isNull);
+
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(service.totals['cabbage5'], 200);
   });
 
   testWidgets('Greedy Cat blocks bets while server round is spinning',
