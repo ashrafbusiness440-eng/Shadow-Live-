@@ -30,6 +30,8 @@ class _ProfileScreenState extends State<ProfileScreen>
   bool _loggingOut = false;
   bool _openingEdit = false;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _profileSub;
+  StreamSubscription<User?>? _authSub;
+  String? _boundUid;
   final RewardInventoryService _inventoryService = RewardInventoryService();
   MyItemReward? _activeFrame;
 
@@ -37,6 +39,20 @@ class _ProfileScreenState extends State<ProfileScreen>
   void initState() {
     super.initState();
     _tabs = TabController(length: 3, vsync: this);
+    _boundUid = FirebaseAuth.instance.currentUser?.uid;
+    _authSub = FirebaseAuth.instance.userChanges().listen((user) {
+      final nextUid = user?.uid;
+      if (nextUid == _boundUid) return;
+      _boundUid = nextUid;
+      unawaited(_profileSub?.cancel());
+      _profileSub = null;
+      if (!mounted) return;
+      setState(() {});
+      if (user != null && !user.isAnonymous) {
+        _watchProfile();
+        _load();
+      }
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _watchProfile();
       _load();
@@ -45,6 +61,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   @override
   void dispose() {
+    _authSub?.cancel();
     _profileSub?.cancel();
     _inventoryService.close();
     _tabs.dispose();
