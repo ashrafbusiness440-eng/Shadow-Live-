@@ -377,9 +377,6 @@ export async function placeGameBet(
     const creditLedgerRef=db.collection("financial_ledger").doc("game_credit__"+operationId);
     const historyRef=db.collection("game_user_history")
       .doc(uid).collection("items").doc(operationId);
-    const dailyStatsRef=db.collection("game_user_stats")
-      .doc(uid).collection("daily")
-      .doc(clean(operation.gameId)+"__"+clean(operation.dayKey));
 
     tx.update(userRef,{
       coins:finalBalance,
@@ -543,6 +540,9 @@ async function settleOperationRef(db,operationRef,nowMs,{workerTag=""}={}){
     const creditLedgerRef=db.collection("financial_ledger").doc("game_credit__"+operationId);
     const historyRef=db.collection("game_user_history")
       .doc(uid).collection("items").doc(operationId);
+    const dailyStatsRef=db.collection("game_user_stats")
+      .doc(uid).collection("daily")
+      .doc(clean(operation.gameId)+"__"+clean(operation.dayKey));
 
     tx.update(userRef,{
       coins:after,
