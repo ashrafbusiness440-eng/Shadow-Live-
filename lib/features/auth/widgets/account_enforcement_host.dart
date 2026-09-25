@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../../services/navigation_service.dart';
+import '../../../shared/services/storage_service.dart';
 
 class AccountEnforcementHost extends StatefulWidget {
   const AccountEnforcementHost({super.key, required this.child});
@@ -192,15 +193,21 @@ class _AccountEnforcementHostState extends State<AccountEnforcementHost> {
     _handling = true;
     _userSubscription?.cancel();
     setState(() => _notice = notice);
-    unawaited(FirebaseAuth.instance.signOut());
   }
 
-  void _returnToLogin() {
+  Future<void> _returnToLogin() async {
+    try {
+      await FirebaseAuth.instance.signOut();
+    } catch (_) {}
+    final storage = StorageService();
+    try {
+      await storage.removeUser();
+    } catch (_) {}
+    try {
+      await storage.removeToken();
+    } catch (_) {}
     if (!mounted) return;
-    setState(() {
-      _notice = null;
-      _handling = false;
-    });
+    setState(() => _notice = null);
     NavigationService.navigateToAndRemoveUntil(AppRoutes.authChoice);
   }
 
@@ -262,7 +269,7 @@ class _AccountEnforcementHostState extends State<AccountEnforcementHost> {
                                   child: FilledButton(
                                     onPressed: _returnToLogin,
                                     child: const Text(
-                                      'العودة إلى تسجيل الدخول',
+                                      'موافق',
                                       style: TextStyle(
                                         fontWeight: FontWeight.w800,
                                       ),
