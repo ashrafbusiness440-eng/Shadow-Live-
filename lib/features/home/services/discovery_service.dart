@@ -129,12 +129,41 @@ class DiscoveryService {
   final FirebaseFirestore _firestore;
   final FirebaseAuth _auth;
 
-  Future<List<DiscoveryRoom>> loadRooms() async {
-    final roomSnapshot = await _firestore.collection('rooms').limit(60).get();
-    return roomSnapshot.docs
-        .map((doc) => DiscoveryRoom(id: doc.id, data: doc.data()))
-        .where((room) => room.isActive && !room.isHidden)
-        .toList();
+  static List<DiscoveryRoom>? _roomsCache;
+  static DateTime? _roomsCacheUntil;
+  static Future<List<DiscoveryRoom>>? _roomsInFlight;
+
+  Future<List<DiscoveryRoom>> loadRooms({bool forceRefresh = false}) {
+    final now = DateTime.now();
+    final cached = _roomsCache;
+    final cacheUntil = _roomsCacheUntil;
+    if (!forceRefresh &&
+        cached != null &&
+        cacheUntil != null &&
+        cacheUntil.isAfter(now)) {
+      return Future<List<DiscoveryRoom>>.value(
+        List<DiscoveryRoom>.unmodifiable(cached),
+      );
+    }
+
+    final running = _roomsInFlight;
+    if (!forceRefresh && running != null) return running;
+
+    final future = () async {
+      final roomSnapshot = await _firestore.collection('rooms').limit(60).get();
+      final rooms = roomSnapshot.docs
+          .map((doc) => DiscoveryRoom(id: doc.id, data: doc.data()))
+          .where((room) => room.isActive && !room.isHidden)
+          .toList(growable: false);
+      _roomsCache = rooms;
+      _roomsCacheUntil = DateTime.now().add(const Duration(seconds: 10));
+      return List<DiscoveryRoom>.unmodifiable(rooms);
+    }();
+
+    _roomsInFlight = future;
+    return future.whenComplete(() {
+      if (identical(_roomsInFlight, future)) _roomsInFlight = null;
+    });
   }
 
   Future<HomeDiscoveryData> loadHome() async {
