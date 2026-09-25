@@ -11,7 +11,17 @@ import 'voice_service.dart';
 import 'zego_voice_service.dart';
 
 class VoiceRoomSessionController extends ChangeNotifier {
-  VoiceRoomSessionController._();
+  VoiceRoomSessionController._() {
+    _observedAuthUid = FirebaseAuth.instance.currentUser?.uid;
+    _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
+      final nextUid = user?.uid;
+      final changed = _observedAuthUid != nextUid;
+      _observedAuthUid = nextUid;
+      if (changed && (_active || _joining)) {
+        unawaited(leave());
+      }
+    });
+  }
 
   static final VoiceRoomSessionController instance =
       VoiceRoomSessionController._();
@@ -20,6 +30,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
   final RoomPresenceService _presenceService = RoomPresenceService();
   final RoomSeatService _seatService = RoomSeatService();
 
+  StreamSubscription<User?>? _authSubscription;
   StreamSubscription<VoiceConnectionState>? _connectionSubscription;
   StreamSubscription<VoiceMicState>? _micSubscription;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
@@ -41,6 +52,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
   String? _error;
   VoiceConnectionState _connectionState = VoiceConnectionState.idle;
   Map<String, dynamic> _roomArguments = <String, dynamic>{};
+  String? _sessionUserUid;
+  String? _observedAuthUid;
 
   bool get joining => _joining;
   bool get active => _active;
@@ -324,13 +337,51 @@ class VoiceRoomSessionController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<String> _verifiedDisplayName(User user) async {
+    if (user.isAnonymous) {
+      final authName = (user.displayName ?? '').trim();
+      return authName.isEmpty ? 'ضيف' : authName;
+    }
+
+    final snapshot = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .get();
+    final data = snapshot.data() ?? const <String, dynamic>{};
+    final status = (data['accountStatus'] ?? 'active').toString().trim();
+    if (status != 'active') {
+      throw StateError('account_restricted_' + status);
+    }
+
+    final profileName = (data['displayName'] ?? data['username'] ?? '')
+        .toString()
+        .trim();
+    if (profileName.isNotEmpty) return profileName;
+
+    final authName = (user.displayName ?? '').trim();
+    if (authName.isNotEmpty) return authName;
+
+    final email = (user.email ?? '').trim();
+    if (email.contains('@')) return email.split('@').first;
+    return 'مستخدم Shadow Live';
+  }
+
   Future<void> join(Map<String, dynamic> arguments) async {
     final user = FirebaseAuth.instance.currentUser;
     final targetRoomId = (arguments['roomId'] ?? '').toString().trim();
     if (user == null) throw StateError('not_signed_in');
     if (targetRoomId.isEmpty) throw StateError('room_id_missing');
 
-    if (_active && roomId == targetRoomId) {
+    final currentUid = user.uid;
+    if ((_active || _joining) &&
+        _sessionUserUid != null &&
+        _sessionUserUid != currentUid) {
+      await leave();
+    }
+
+    final displayName = await _verifiedDisplayName(user);
+
+    if (_active && roomId == targetRoomId && _sessionUserUid == currentUid) {
       _roomArguments = <String, dynamic>{..._roomArguments, ...arguments};
       _minimized = false;
       _error = null;
@@ -349,13 +400,6 @@ class VoiceRoomSessionController extends ChangeNotifier {
     _error = null;
     notifyListeners();
 
-    final displayName = (user.displayName ??
-            arguments['displayName'] ??
-            arguments['hostName'] ??
-            'Shadow Live')
-        .toString()
-        .trim();
-
     try {
       await _voiceService.joinRoom(
         roomId: targetRoomId,
@@ -365,6 +409,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
       );
       _active = true;
       _joining = false;
+      _sessionUserUid = currentUid;
       _micMuted = true;
       _connectionState = VoiceConnectionState.connected;
       _watchRoomLifecycle(targetRoomId);
@@ -375,6 +420,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
     } catch (error) {
       _active = false;
       _joining = false;
+      _sessionUserUid = null;
       _error = error.toString();
       _connectionState = VoiceConnectionState.failed;
       rethrow;
@@ -444,11 +490,14 @@ class VoiceRoomSessionController extends ChangeNotifier {
     _error = null;
     _connectionState = VoiceConnectionState.disconnected;
     _roomArguments = <String, dynamic>{};
+    _sessionUserUid = null;
     notifyListeners();
   }
 
   Future<void> shutdown() async {
     await leave();
+    await _authSubscription?.cancel();
+    _authSubscription = null;
     await _connectionSubscription?.cancel();
     await _micSubscription?.cancel();
     await _roomLifecycleSubscription?.cancel();
