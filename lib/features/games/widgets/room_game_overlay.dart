@@ -1788,13 +1788,85 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
             assetPath: GameAssetPaths.greedyPizza,
             highlighted: _greedyResolvedOutcomeId == 'pizza',
           ),
-          const Spacer(),
+          const SizedBox(width: 7),
+          Expanded(child: _greedyDailyPayoutTile()),
+          const SizedBox(width: 7),
           _greedySpecialOutcomeTile(
             label: 'سلطة',
             assetPath: GameAssetPaths.greedySalad,
             highlighted: _greedyResolvedOutcomeId == 'salad',
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _greedyDailyPayoutTile() {
+    final value = _state?.userDailyPayoutCoins ?? 0;
+    return Semantics(
+      label: 'أرباحك اليوم ${_coins(value)} Coins',
+      child: Container(
+        height: 58,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          gradient: const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFF253C5D),
+              Color(0xFF111827),
+            ],
+          ),
+          border: Border.all(
+            color: _cyan.withValues(alpha: .52),
+            width: 1.3,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: _cyan.withValues(alpha: .10),
+              blurRadius: 12,
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text(
+              'أرباحك اليوم',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 9,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 3),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _coins(value),
+                    style: const TextStyle(
+                      color: _gold,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(width: 3),
+                  const Icon(
+                    Icons.monetization_on_rounded,
+                    size: 15,
+                    color: Color(0xFFFFBE3F),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2071,7 +2143,6 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
     final myRound = last['myRound'] is Map
         ? Map<String, dynamic>.from(last['myRound'] as Map)
         : null;
-    final myRank = (myRound?['winnerRank'] as num?)?.toInt();
     final stake = (myRound?['stakeCoins'] as num?)?.toInt() ?? 0;
     final payout = (myRound?['payoutCoins'] as num?)?.toInt() ?? 0;
 
@@ -2235,61 +2306,77 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
                     );
                   }),
                 ),
-              if (myRank == null) ...[
-                const SizedBox(height: 12),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(16),
-                    color: _purple.withValues(alpha: .10),
-                    border: Border.all(
-                      color: _purple.withValues(alpha: .24),
-                    ),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  color: _purple.withValues(alpha: .10),
+                  border: Border.all(
+                    color: _purple.withValues(alpha: .24),
                   ),
-                  child: myRound == null
-                      ? const Text(
-                          'لم تشارك في هذه الجولة',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: Colors.white60,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        )
-                      : Column(
-                          children: [
-                            const Text(
-                              'نتيجتك في هذه الجولة',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 11,
-                              ),
-                            ),
-                            const SizedBox(height: 5),
-                            Text(
-                              'راهنت: ${_coins(stake)} Coins  •  '
-                              'ربحت: ${_coins(payout)} Coins',
-                              style: TextStyle(
-                                color: payout > 0 ? _gold : Colors.white60,
-                                fontWeight: FontWeight.w800,
-                                fontSize: 10,
-                              ),
-                            ),
-                            if (payout <= 0) ...[
-                              const SizedBox(height: 3),
-                              const Text(
-                                'حظ أوفر 🍀',
-                                style: TextStyle(
-                                  color: Colors.white54,
-                                  fontSize: 10,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
                 ),
-              ],
+                child: Column(
+                  children: [
+                    const Text(
+                      'نتيجتك في هذه الجولة',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 11,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'دفعت بالجولة: ${_coins(stake)} Coins',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'ربحت بالجولة: ${_coins(payout)} Coins',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: payout > 0 ? _gold : Colors.white60,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (myRound == null) ...[
+                      const SizedBox(height: 4),
+                      const Text(
+                        'لم تشارك في هذه الجولة',
+                        style: TextStyle(
+                          color: Colors.white54,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ] else if (payout <= 0) ...[
+                      const SizedBox(height: 4),
+                      const Text(
+                        'حظ أوفر 🍀',
+                        style: TextStyle(
+                          color: Colors.white54,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ],
           ),
         ),
