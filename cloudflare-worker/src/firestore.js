@@ -71,7 +71,9 @@ export function firestoreClient(env) {
       headers.set("Content-Type", "application/json");
     }
 
-    const maxAttempts = retryTransient ? 5 : 1;
+    // Avoid retry storms when Firestore is throttling. One retry is enough
+    // for transient network noise; repeated 429 retries amplify quota pressure.
+    const maxAttempts = retryTransient ? 2 : 1;
     let response = null;
     let body = {};
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
