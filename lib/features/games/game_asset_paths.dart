@@ -4,6 +4,7 @@ abstract final class GameAssetPaths {
   static const slotRoot = 'assets/images/games/slot';
 
   static const greedyCover = '$greedyRoot/greedy_cat_cover.webp';
+  static const greedyBackground = '$greedyRoot/greedy_cat_background.webp';
   static const greedyMascot = '$greedyRoot/cat_mascot.webp';
   static const greedySalad = '$greedyRoot/salad.webp';
   static const greedyPizza = '$greedyRoot/pizza.webp';
