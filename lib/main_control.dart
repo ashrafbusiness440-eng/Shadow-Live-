@@ -672,8 +672,8 @@ class _UserAccountOverviewCardState extends State<_UserAccountOverviewCard> {
 
         final email=text(firstValue([auth['email'],data['email']]));
         final phone=text(firstValue([auth['phoneNumber'],data['phone']]));
-        final hasEmail=email.isNotEmpty||hasProvider('password');
-        final hasPhone=phone.isNotEmpty||hasProvider('phone');
+        final hasEmail=hasProvider('password');
+        final hasPhone=hasProvider('phone');
         final hasGoogle=hasProvider('google.com');
         final displayName=text(firstValue([
           data['displayName'],profile['displayName'],data['name'],auth['displayName'],'مستخدم بدون اسم'
