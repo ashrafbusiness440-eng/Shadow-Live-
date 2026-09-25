@@ -28,6 +28,8 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
   late final GameRuntimeService _service;
   Timer? _poller;
   Timer? _ticker;
+  Timer? _greedySpinTimer;
+  Timer? _greedyResultTimer;
 
   List<GameCatalogEntry> _catalog = const [];
   GameCatalogEntry? _selected;
@@ -42,6 +44,23 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
   String? _error;
   int _betIndex = 0;
   int _clockTick = 0;
+  int _greedySpinIndex = 0;
+  String? _greedySpinHighlightId;
+  String? _greedyResolvedOutcomeId;
+  String? _seenGreedyResultId;
+  bool _greedyResolving = false;
+  bool _greedyResultVisible = false;
+
+  static const _greedyChoiceOrder = <String>[
+    'shell45',
+    'steak25',
+    'fish15',
+    'chicken10',
+    'cabbage5',
+    'carrot5',
+    'pepper5',
+    'tomato5',
+  ];
 
   static const _gold = Color(0xFFFFC84A);
   static const _purple = Color(0xFFB96CFF);
@@ -65,6 +84,8 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
     _autoPlaying = false;
     _poller?.cancel();
     _ticker?.cancel();
+    _greedySpinTimer?.cancel();
+    _greedyResultTimer?.cancel();
     if (widget.runtimeService == null) {
       _service.close();
     }
@@ -183,10 +204,108 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
           _betIndex = state.bets.length - 1;
         }
       });
+      _syncGreedyRoundVisuals(state);
     } catch (error) {
       if (!mounted || silent) return;
       setState(() => _error = _message(error));
     }
+  }
+
+  String get _greedyRoundStatus =>
+      (_state?.round?['status'] ?? 'betting').toString();
+
+  bool get _greedyBettingOpen =>
+      _greedyRoundStatus == 'betting' &&
+      _state?.round?['locked'] != true;
+
+  void _syncGreedyRoundVisuals(GameRuntimeState next) {
+    if (_selected?.gameId != 'greedy_cat') return;
+    final last = next.lastResult;
+    final resultRoundId = (last?['roundId'] ?? '').toString();
+    final outcomeId = (last?['outcomeId'] ?? '').toString();
+
+    if (_seenGreedyResultId == null && resultRoundId.isNotEmpty) {
+      _seenGreedyResultId = resultRoundId;
+    } else if (resultRoundId.isNotEmpty &&
+        resultRoundId != _seenGreedyResultId) {
+      _seenGreedyResultId = resultRoundId;
+      unawaited(_resolveGreedyOutcome(outcomeId));
+      return;
+    }
+
+    if ((_state?.round?['status'] ?? '').toString() == 'spinning') {
+      _startGreedySpinPreview();
+    } else if (!_greedyResolving) {
+      _stopGreedySpinPreview(clear: true);
+    }
+  }
+
+  void _startGreedySpinPreview() {
+    if (_greedyResolving || _greedySpinTimer?.isActive == true) return;
+    _greedyResolvedOutcomeId = null;
+    _greedySpinTimer = Timer.periodic(
+      const Duration(milliseconds: 115),
+      (_) {
+        if (!mounted || _greedyResolving) return;
+        setState(() {
+          _greedySpinHighlightId =
+              _greedyChoiceOrder[_greedySpinIndex % _greedyChoiceOrder.length];
+          _greedySpinIndex++;
+        });
+      },
+    );
+  }
+
+  void _stopGreedySpinPreview({bool clear = false}) {
+    _greedySpinTimer?.cancel();
+    _greedySpinTimer = null;
+    if (clear && mounted && !_greedyResolving) {
+      setState(() => _greedySpinHighlightId = null);
+    }
+  }
+
+  Future<void> _resolveGreedyOutcome(String outcomeId) async {
+    if (_selected?.gameId != 'greedy_cat' || outcomeId.isEmpty) return;
+    _greedyResolving = true;
+    _stopGreedySpinPreview();
+    _greedyResultTimer?.cancel();
+    if (mounted) {
+      setState(() {
+        _greedyResultVisible = false;
+        _greedyResolvedOutcomeId = null;
+      });
+    }
+
+    final targetIndex = _greedyChoiceOrder.indexOf(outcomeId);
+    final loops = 18 + (targetIndex < 0 ? 0 : targetIndex);
+    for (var step = 0; step < loops; step++) {
+      if (!mounted) return;
+      setState(() {
+        _greedySpinHighlightId =
+            _greedyChoiceOrder[step % _greedyChoiceOrder.length];
+      });
+      final delay = 65 + (step > loops - 7 ? (step - (loops - 7)) * 35 : 0);
+      await Future<void>.delayed(Duration(milliseconds: delay));
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _greedySpinHighlightId =
+          targetIndex >= 0 ? outcomeId : null;
+      _greedyResolvedOutcomeId = outcomeId;
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 420));
+    if (!mounted) return;
+    setState(() => _greedyResultVisible = true);
+    _greedyResolving = false;
+    _greedyResultTimer = Timer(const Duration(seconds: 7), () {
+      if (!mounted) return;
+      setState(() {
+        _greedyResultVisible = false;
+        _greedyResolvedOutcomeId = null;
+        _greedySpinHighlightId = null;
+      });
+    });
   }
 
   int get _currentBet {
@@ -368,7 +487,11 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
   @override
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.sizeOf(context).height;
-    final factor = _minimized ? .16 : (_maximized ? .94 : .70);
+    final factor = _minimized
+        ? .16
+        : (_maximized
+            ? .94
+            : (_selected?.gameId == 'greedy_cat' ? .82 : .70));
     return Semantics(
       container: true,
       label: 'Shadow Live game overlay',
@@ -679,19 +802,50 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
   }
 
   Widget _greedyGameView() {
-    return Column(
+    return Stack(
       children: [
-        if (_error != null) _gameErrorBanner(),
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(14, 10, 14, 20),
-            children: [
-              _greedyInfoBar(),
-              const SizedBox(height: 10),
-              _greedyBoard(),
-            ],
+        Positioned.fill(
+          child: Image.asset(
+            GameAssetPaths.greedyBackground,
+            fit: BoxFit.cover,
+            alignment: Alignment.center,
+            filterQuality: FilterQuality.high,
+            errorBuilder: (_, __, ___) => const ColoredBox(
+              color: Color(0xFF080A12),
+            ),
           ),
         ),
+        Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  const Color(0xFF080A12).withValues(alpha: .38),
+                  const Color(0xFF080A12).withValues(alpha: .68),
+                  const Color(0xFF080A12).withValues(alpha: .82),
+                ],
+              ),
+            ),
+          ),
+        ),
+        Column(
+          children: [
+            if (_error != null) _gameErrorBanner(),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+                children: [
+                  _greedyInfoBar(),
+                  const SizedBox(height: 6),
+                  _greedyBoard(),
+                ],
+              ),
+            ),
+          ],
+        ),
+        if (_greedyResultVisible) _greedyRoundResultOverlay(),
       ],
     );
   }
@@ -1131,9 +1285,9 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
       children: [
         LayoutBuilder(
           builder: (context, constraints) {
-            final boardSize = constraints.maxWidth.clamp(300.0, 430.0).toDouble();
-            final nodeSize = (boardSize * .215).clamp(68.0, 88.0).toDouble();
-            final centerSize = (boardSize * .34).clamp(104.0, 142.0).toDouble();
+            final boardSize = constraints.maxWidth.clamp(276.0, 320.0).toDouble();
+            final nodeSize = (boardSize * .22).clamp(60.0, 72.0).toDouble();
+            final centerSize = (boardSize * .34).clamp(94.0, 112.0).toDouble();
             return Center(
               child: SizedBox(
                 width: boardSize,
@@ -1173,6 +1327,10 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
                           serverHeat: item.id == hottestId
                               ? (strongServerHeat ? 2 : 1)
                               : 0,
+                          serverAmount: serverTotals[item.id] ?? 0,
+                          spinHighlighted:
+                              _greedySpinHighlightId == item.id ||
+                              _greedyResolvedOutcomeId == item.id,
                         ),
                       ),
                     Container(
@@ -1233,7 +1391,9 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
                             ),
                             const SizedBox(width: 5),
                             Text(
-                              '$_remainingSeconds ث',
+                              _greedyRoundStatus == 'spinning'
+                                  ? 'جاري الدوران'
+                                  : '$_remainingSeconds ث',
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w900,
@@ -1267,11 +1427,13 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
     required String assetPath,
     required double size,
     required int serverHeat,
+    required int serverAmount,
+    required bool spinHighlighted,
   }) {
     final total = _state?.currentRoundSelections[id] ?? 0;
     final selected = total > 0;
     return InkWell(
-      onTap: _placing ? null : () => _placeChoice(id),
+      onTap: _placing || !_greedyBettingOpen ? null : () => _placeChoice(id),
       customBorder: const CircleBorder(),
       child: SizedBox(
         width: size,
@@ -1288,28 +1450,43 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: RadialGradient(
-                  colors: selected
+                  colors: spinHighlighted
                       ? [
-                          _gold.withValues(alpha: .40),
-                          const Color(0xFF6B3B1E),
+                          const Color(0xFFFFF1A6),
+                          const Color(0xFFFF8B2A),
                         ]
-                      : const [
-                          Color(0xFFF0C27B),
-                          Color(0xFF8A4F25),
-                        ],
+                      : selected
+                          ? [
+                              _gold.withValues(alpha: .40),
+                              const Color(0xFF6B3B1E),
+                            ]
+                          : const [
+                              Color(0xFFF0C27B),
+                              Color(0xFF8A4F25),
+                            ],
                 ),
                 border: Border.all(
-                  color: selected ? _gold : const Color(0xFFE1A14D),
-                  width: selected ? 3 : 2,
+                  color: spinHighlighted
+                      ? Colors.white
+                      : (selected ? _gold : const Color(0xFFE1A14D)),
+                  width: spinHighlighted ? 4 : (selected ? 3 : 2),
                 ),
-                boxShadow: selected
+                boxShadow: spinHighlighted
                     ? [
                         BoxShadow(
-                          color: _gold.withValues(alpha: .30),
-                          blurRadius: 16,
+                          color: const Color(0xFFFF9B32).withValues(alpha: .72),
+                          blurRadius: 24,
+                          spreadRadius: 3,
                         ),
                       ]
-                    : const [],
+                    : selected
+                        ? [
+                            BoxShadow(
+                              color: _gold.withValues(alpha: .30),
+                              blurRadius: 16,
+                            ),
+                          ]
+                        : const [],
               ),
               child: Image.asset(
                 assetPath,
@@ -1352,6 +1529,32 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
                 ),
               ),
             ),
+            if (serverAmount > 0)
+              Positioned(
+                top: 0,
+                left: -4,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 5,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(999),
+                    color: const Color(0xFF101522).withValues(alpha: .94),
+                    border: Border.all(
+                      color: _cyan.withValues(alpha: .70),
+                    ),
+                  ),
+                  child: Text(
+                    '🌐 ${_coins(serverAmount)}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 7.5,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ),
             if (serverHeat > 0)
               Positioned(
                 top: -18,
@@ -1420,11 +1623,13 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
           _greedySpecialOutcomeTile(
             label: 'بيتزا',
             assetPath: GameAssetPaths.greedyPizza,
+            highlighted: _greedyResolvedOutcomeId == 'pizza',
           ),
           const Spacer(),
           _greedySpecialOutcomeTile(
             label: 'سلطة',
             assetPath: GameAssetPaths.greedySalad,
+            highlighted: _greedyResolvedOutcomeId == 'salad',
           ),
         ],
       ),
@@ -1434,13 +1639,14 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
   Widget _greedySpecialOutcomeTile({
     required String label,
     required String assetPath,
+    required bool highlighted,
   }) {
     return Semantics(
       label: '$label • نتيجة خاصة',
       button: false,
       child: Container(
-        width: 94,
-        height: 68,
+        width: 88,
+        height: 58,
         padding: const EdgeInsets.fromLTRB(8, 6, 8, 5),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(18),
@@ -1453,13 +1659,15 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
             ],
           ),
           border: Border.all(
-            color: _gold.withValues(alpha: .62),
-            width: 1.4,
+            color: highlighted ? Colors.white : _gold.withValues(alpha: .62),
+            width: highlighted ? 3 : 1.4,
           ),
           boxShadow: [
             BoxShadow(
-              color: _gold.withValues(alpha: .12),
-              blurRadius: 12,
+              color: (highlighted ? const Color(0xFFFF8A2A) : _gold)
+                  .withValues(alpha: highlighted ? .60 : .12),
+              blurRadius: highlighted ? 24 : 12,
+              spreadRadius: highlighted ? 2 : 0,
             ),
           ],
         ),
@@ -1505,7 +1713,7 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
             : <Map<String, dynamic>>[fallback];
 
     return Container(
-      height: 66,
+      height: 58,
       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 6),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
@@ -1624,11 +1832,13 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
               end: index == shown.length - 1 ? 0 : 6,
             ),
             child: InkWell(
-              onTap: _placing ? null : () => setState(() => _betIndex = sourceIndex),
+              onTap: _placing || !_greedyBettingOpen
+                  ? null
+                  : () => setState(() => _betIndex = sourceIndex),
               borderRadius: BorderRadius.circular(14),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 160),
-                height: 52,
+                height: 46,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(14),
                   color: selected
@@ -1665,6 +1875,249 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
           ),
         );
       }),
+    );
+  }
+
+  Widget _greedyRoundResultOverlay() {
+    final last = _state?.lastResult;
+    if (last == null) return const SizedBox.shrink();
+
+    final outcomeId = (last['outcomeId'] ?? '').toString();
+    final outcomeAsset = _outcomeAsset(outcomeId);
+    final rawTop = last['topWinners'];
+    final topWinners = rawTop is List
+        ? rawTop
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .take(3)
+            .toList(growable: false)
+        : const <Map<String, dynamic>>[];
+    final myRound = last['myRound'] is Map
+        ? Map<String, dynamic>.from(last['myRound'] as Map)
+        : null;
+    final myRank = (myRound?['winnerRank'] as num?)?.toInt();
+    final stake = (myRound?['stakeCoins'] as num?)?.toInt() ?? 0;
+    final payout = (myRound?['payoutCoins'] as num?)?.toInt() ?? 0;
+
+    return Positioned.fill(
+      child: Container(
+        color: Colors.black.withValues(alpha: .68),
+        alignment: Alignment.center,
+        padding: const EdgeInsets.all(16),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 430),
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            gradient: const LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Color(0xFF241A2D),
+                Color(0xFF111522),
+              ],
+            ),
+            border: Border.all(color: _gold.withValues(alpha: .65)),
+            boxShadow: [
+              BoxShadow(
+                color: _gold.withValues(alpha: .24),
+                blurRadius: 28,
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => setState(() => _greedyResultVisible = false),
+                    icon: const Icon(Icons.close_rounded, color: Colors.white70),
+                  ),
+                  const Spacer(),
+                  Text(
+                    'نتيجة الجولة #${last['roundNumber'] ?? ''}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 15,
+                    ),
+                  ),
+                  const Spacer(),
+                  const SizedBox(width: 40),
+                ],
+              ),
+              if (outcomeAsset != null)
+                SizedBox(
+                  width: 58,
+                  height: 58,
+                  child: Image.asset(
+                    outcomeAsset,
+                    fit: BoxFit.contain,
+                    filterQuality: FilterQuality.high,
+                  ),
+                ),
+              const SizedBox(height: 4),
+              Text(
+                _outcomeLabel(outcomeId),
+                style: const TextStyle(
+                  color: _gold,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 17,
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: Text(
+                  'الأكثر ربحاً في هذه الجولة',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 7),
+              if (topWinners.isEmpty)
+                const Text(
+                  'لا يوجد رابحون في هذه الجولة',
+                  style: TextStyle(color: Colors.white38, fontSize: 10),
+                )
+              else
+                Row(
+                  children: List.generate(topWinners.length, (index) {
+                    final winner = topWinners[index];
+                    final name = (winner['displayName'] ?? 'مستخدم').toString();
+                    final photo = (winner['photoUrl'] ?? '').toString();
+                    final won = (winner['payoutCoins'] as num?)?.toInt() ?? 0;
+                    return Expanded(
+                      child: Container(
+                        margin: EdgeInsetsDirectional.only(
+                          end: index == topWinners.length - 1 ? 0 : 6,
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          color: Colors.white.withValues(alpha: .055),
+                          border: Border.all(
+                            color: index == 0
+                                ? _gold.withValues(alpha: .62)
+                                : Colors.white.withValues(alpha: .10),
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            Text(
+                              '#${index + 1}',
+                              style: TextStyle(
+                                color: index == 0 ? _gold : Colors.white54,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            CircleAvatar(
+                              radius: 18,
+                              backgroundColor: Colors.white10,
+                              backgroundImage:
+                                  photo.isEmpty ? null : NetworkImage(photo),
+                              child: photo.isEmpty
+                                  ? const Icon(
+                                      Icons.person_rounded,
+                                      color: Colors.white54,
+                                      size: 18,
+                                    )
+                                  : null,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            Text(
+                              '+${_coins(won)}',
+                              style: const TextStyle(
+                                color: _gold,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+              if (myRank == null) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    color: _purple.withValues(alpha: .10),
+                    border: Border.all(
+                      color: _purple.withValues(alpha: .24),
+                    ),
+                  ),
+                  child: myRound == null
+                      ? const Text(
+                          'لم تشارك في هذه الجولة',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white60,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        )
+                      : Column(
+                          children: [
+                            const Text(
+                              'نتيجتك في هذه الجولة',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 11,
+                              ),
+                            ),
+                            const SizedBox(height: 5),
+                            Text(
+                              'راهنت: ${_coins(stake)} Coins  •  '
+                              'ربحت: ${_coins(payout)} Coins',
+                              style: TextStyle(
+                                color: payout > 0 ? _gold : Colors.white60,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 10,
+                              ),
+                            ),
+                            if (payout <= 0) ...[
+                              const SizedBox(height: 3),
+                              const Text(
+                                'حظ أوفر 🍀',
+                                style: TextStyle(
+                                  color: Colors.white54,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 
