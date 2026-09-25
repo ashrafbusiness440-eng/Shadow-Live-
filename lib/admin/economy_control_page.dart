@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import 'control_api_endpoints.dart';
+import 'control_firebase.dart';
 
 import '../utils/compact_number.dart';
 import 'gift_catalog_control_page.dart';
@@ -65,7 +66,7 @@ class _EconomyControlPageState extends State<EconomyControlPage> {
     String path,
     Map<String, dynamic> payload,
   ) async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = controlAuth.currentUser;
     if (user == null) throw StateError('not_signed_in');
     final token = await user.getIdToken();
     if (token == null || token.isEmpty) throw StateError('empty_token');
@@ -290,7 +291,7 @@ class _EconomyControlPageState extends State<EconomyControlPage> {
     if (data == null || !mounted) return;
 
     try {
-      final authUser = FirebaseAuth.instance.currentUser!;
+      final authUser = controlAuth.currentUser!;
       final short = authUser.uid.length > 6
           ? authUser.uid.substring(0, 6)
           : authUser.uid;
@@ -701,7 +702,7 @@ class _EconomyCollectionPage extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: Text(title)),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance
+        stream: controlFirestore
             .collection(collection)
             .limit(100)
             .snapshots(),
