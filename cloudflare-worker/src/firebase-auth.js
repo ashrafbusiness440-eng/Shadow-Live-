@@ -1,8 +1,23 @@
 import { verify } from "node:crypto";
 import { googleAccessToken, parseServiceAccount } from "./google-auth.js";
+import {
+  AUTH_STATE_MAX_ATTEMPTS,
+  fetchAuthStateResponse,
+} from "./auth-state-reliability.js";
 
 let certCache = { certs: null, expiresAt: 0 };
 const userStateCache = new Map();
+const userStateInflight = new Map();
+
+const AUTH_STATE_FRESH_TTL_MS = 10_000;
+const AUTH_STATE_STALE_TTL_MS = 30_000;
+const AUTH_STATE_BREAKER_THRESHOLD = 2;
+const AUTH_STATE_BREAKER_MS = 5_000;
+
+let authStateCircuit = {
+  failures: 0,
+  openUntilMs: 0,
+};
 
 function decodeBase64Url(value) {
   const normalized = String(value).replace(/-/g, "+").replace(/_/g, "/");
@@ -34,62 +49,116 @@ async function firebaseCerts() {
   return certs;
 }
 
-async function assertUserSessionState(payload, env) {
-  const uid = String(payload?.sub || "").trim();
-  if (!uid) throw new Error("unauthorized");
+function assertCachedSessionState(state, payload) {
+  if (!state?.active) throw new Error("unauthorized");
+  if (
+    state.revokedAtMs &&
+    Number(payload.iat || 0) * 1000 <= state.revokedAtMs
+  ) {
+    throw new Error("unauthorized");
+  }
+}
 
+function cachedStateFor(uid, nowMs, { allowStale = false } = {}) {
   const cached = userStateCache.get(uid);
-  const nowMs = Date.now();
-  if (cached && cached.expiresAt > nowMs) {
-    if (!cached.active) throw new Error("unauthorized");
-    if (cached.revokedAtMs && Number(payload.iat || 0) * 1000 <= cached.revokedAtMs) {
-      throw new Error("unauthorized");
-    }
-    return;
-  }
+  if (!cached) return null;
+  const deadline = allowStale ? cached.staleUntilMs : cached.expiresAtMs;
+  return deadline > nowMs ? cached : null;
+}
 
-  const { projectId } = parseServiceAccount(env.FIREBASE_SERVICE_ACCOUNT);
-  const token = await googleAccessToken(env);
-  const url =
-    `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents/users/${encodeURIComponent(uid)}`;
-  let response = null;
-  // Keep auth-state verification from multiplying Firestore 429 pressure.
-  for (let attempt = 0; attempt < 2; attempt++) {
-    response = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (response.status !== 429 && response.status < 500) break;
-    if (attempt < 1) {
-      const retryAfter = Number(response.headers.get("retry-after") || 0);
-      const delayMs = retryAfter > 0
-        ? Math.min(1500, retryAfter * 1000)
-        : Math.min(1200, 120 * (2 ** attempt));
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-    }
-  }
+function recordAuthStateSuccess() {
+  authStateCircuit = { failures: 0, openUntilMs: 0 };
+}
 
-  if (response?.status === 404) {
-    userStateCache.set(uid, { active: true, revokedAtMs: 0, expiresAt: nowMs + 5000 });
-    return;
-  }
-  const body = await response?.json().catch(() => ({})) || {};
-  if (!response?.ok) throw new Error("auth_state_lookup_failed");
+function recordAuthStateFailure(nowMs) {
+  const failures = authStateCircuit.failures + 1;
+  authStateCircuit = {
+    failures,
+    openUntilMs:
+      failures >= AUTH_STATE_BREAKER_THRESHOLD
+        ? nowMs + AUTH_STATE_BREAKER_MS
+        : 0,
+  };
+}
 
+function buildSessionState(body, nowMs) {
   const fields = body?.fields || {};
   const status = String(fields.accountStatus?.stringValue || "active");
   const revokedRaw = fields.sessionsRevokedAt?.timestampValue || "";
   const revokedAtMs = Date.parse(revokedRaw);
-  const state = {
+  return {
     active: status === "active",
     revokedAtMs: Number.isFinite(revokedAtMs) ? revokedAtMs : 0,
-    expiresAt: nowMs + 5000,
+    expiresAtMs: nowMs + AUTH_STATE_FRESH_TTL_MS,
+    staleUntilMs: nowMs + AUTH_STATE_STALE_TTL_MS,
   };
-  userStateCache.set(uid, state);
+}
 
-  if (!state.active) throw new Error("unauthorized");
-  if (state.revokedAtMs && Number(payload.iat || 0) * 1000 <= state.revokedAtMs) {
-    throw new Error("unauthorized");
+async function loadUserSessionState(uid, env) {
+  const nowMs = Date.now();
+  const { projectId } = parseServiceAccount(env.FIREBASE_SERVICE_ACCOUNT);
+  const token = await googleAccessToken(env);
+  const url =
+    `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents/users/${encodeURIComponent(uid)}`;
+
+  const { response } = await fetchAuthStateResponse(url, token, {
+    maxAttempts: AUTH_STATE_MAX_ATTEMPTS,
+  });
+
+  if (response?.status === 404) {
+    const state = {
+      active: true,
+      revokedAtMs: 0,
+      expiresAtMs: nowMs + AUTH_STATE_FRESH_TTL_MS,
+      staleUntilMs: nowMs + AUTH_STATE_STALE_TTL_MS,
+    };
+    userStateCache.set(uid, state);
+    recordAuthStateSuccess();
+    return state;
   }
+
+  const body = await response?.json().catch(() => ({})) || {};
+  if (!response?.ok) {
+    recordAuthStateFailure(nowMs);
+    const stale = cachedStateFor(uid, nowMs, { allowStale: true });
+    if (stale) return stale;
+    throw new Error("auth_state_lookup_failed");
+  }
+
+  const state = buildSessionState(body, nowMs);
+  userStateCache.set(uid, state);
+  recordAuthStateSuccess();
+  return state;
+}
+
+async function assertUserSessionState(payload, env) {
+  const uid = String(payload?.sub || "").trim();
+  if (!uid) throw new Error("unauthorized");
+
+  const nowMs = Date.now();
+  const fresh = cachedStateFor(uid, nowMs);
+  if (fresh) {
+    assertCachedSessionState(fresh, payload);
+    return;
+  }
+
+  if (authStateCircuit.openUntilMs > nowMs) {
+    const stale = cachedStateFor(uid, nowMs, { allowStale: true });
+    if (!stale) throw new Error("auth_state_lookup_failed");
+    assertCachedSessionState(stale, payload);
+    return;
+  }
+
+  let inflight = userStateInflight.get(uid);
+  if (!inflight) {
+    inflight = loadUserSessionState(uid, env).finally(() => {
+      userStateInflight.delete(uid);
+    });
+    userStateInflight.set(uid, inflight);
+  }
+
+  const state = await inflight;
+  assertCachedSessionState(state, payload);
 }
 
 export async function verifyFirebaseIdTokenValue(
