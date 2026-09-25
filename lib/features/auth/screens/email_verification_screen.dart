@@ -62,6 +62,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
         await _continueAfterVerification();
         return;
       }
+      await FirebaseAuth.instance.setLanguageCode('ar');
       await current.sendEmailVerification();
       _startCooldown();
       _message('تم إرسال رسالة تحقق جديدة إلى ${current.email??'بريدك الإلكتروني'}');
