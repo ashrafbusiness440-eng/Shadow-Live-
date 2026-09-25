@@ -59,6 +59,7 @@ class _EmailLoginScreenState extends State<EmailLoginScreen>{
     case'invalid-email':m='البريد الإلكتروني غير صحيح';break;
     case'weak-password':m='كلمة المرور ضعيفة';break;
     case'user-not-found':case'invalid-credential':m='البريد الإلكتروني أو كلمة المرور غير صحيحة';break;
+    case'user-disabled':m='هذا الحساب موقوف من إدارة Shadow Live. إذا كان التعليق مؤقتًا، حاول تسجيل الدخول بعد انتهاء مدة التعليق.';break;
     case'wrong-password':m='كلمة المرور غير صحيحة';break;
     case'too-many-requests':m='محاولات كثيرة. حاول لاحقاً';break;
     case'network-request-failed':m='تحقق من اتصال الإنترنت';break;
