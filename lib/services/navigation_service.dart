@@ -14,6 +14,7 @@ class AppRoutes {
   static const String onboarding = '/onboarding';
   static const String authChoice = '/auth-choice';
   static const String emailLogin = '/email-login';
+  static const String emailVerification = '/email-verification';
   static const String phoneAuth = '/phone-auth';
   static const String otp = '/otp';
   static const String profileSetup = '/profile-setup';
