@@ -19,6 +19,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'widgets/host_section.dart';
 import 'features/auth/screens/login_screen.dart';
 import 'features/auth/screens/email_login_screen.dart';
+import 'features/auth/screens/email_verification_screen.dart';
 import 'features/auth/screens/profile_setup_screen.dart';
 import 'features/auth/screens/account_success_screen.dart';
 import 'features/auth/screens/account_linking_screen.dart';
@@ -130,6 +131,7 @@ class MyApp extends StatelessWidget {
         AppRoutes.main: (context) => const MainShellScreen(),
         AppRoutes.login: (context) => const LoginScreen(),
         AppRoutes.emailLogin: (context) => const EmailLoginScreen(),
+        AppRoutes.emailVerification: (context) => const EmailVerificationScreen(),
         AppRoutes.profileSetup: (context) => const ProfileSetupScreen(),
         AppRoutes.accountSuccess: (context) => const AccountSuccessScreen(),
         AppRoutes.accountLinking: (context) => const AccountLinkingScreen(),
