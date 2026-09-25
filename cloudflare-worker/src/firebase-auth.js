@@ -61,7 +61,9 @@ async function assertUserSessionState(payload, env) {
     return;
   }
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error("auth_state_lookup_failed");
+  if (!response.ok) {
+    throw new Error("auth_state_lookup_failed_"+response.status);
+  }
 
   const fields = body?.fields || {};
   const status = String(fields.accountStatus?.stringValue || "active");
