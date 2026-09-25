@@ -246,7 +246,12 @@ service cloud.firestore {
         && !('moderatedAt' in request.resource.data)
         && !('moderationReason' in request.resource.data)
         && !('sessionsRevokedAt' in request.resource.data);
-      allow read: if signedIn() && (request.auth.uid == userId || hasCapability('viewUsers'));
+      allow get: if (
+          request.auth != null
+          && emailVerifiedIfPassword()
+          && request.auth.uid == userId
+        ) || (signedIn() && hasCapability('viewUsers'));
+      allow list: if signedIn() && hasCapability('viewUsers');
       allow update: if signedIn() && request.auth.uid == userId
         && protectedUserFieldsUnchanged()
         && publicIdTransitionAllowed(userId);
