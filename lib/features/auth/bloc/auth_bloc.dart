@@ -61,7 +61,14 @@ class AuthBloc extends Bloc<AuthEvent,AuthState>{
   await _storageService.saveUser(data);
   return data;
  }
- Future<void> _emitUser(User user,Emitter<AuthState> emit,{Map<String,dynamic> seed=const {}})async{final data=await _profile(user,seed:seed);emit(Authenticated(user,data));}
+ Future<void> _emitUser(User user,Emitter<AuthState> emit,{Map<String,dynamic> seed=const {}})async{
+  final passwordUser=user.providerData.any((p)=>p.providerId=='password');
+  if(passwordUser&&user.emailVerified){
+    await user.getIdToken(true);
+  }
+  final data=await _profile(user,seed:seed);
+  emit(Authenticated(user,data));
+ }
 
  Future<void> _onAuthCheckRequested(AuthCheckRequested event,Emitter<AuthState> emit)async{emit(AuthLoading());try{final user=FirebaseAuth.instance.currentUser;if(user==null){emit(Unauthenticated());return;}if(user.isAnonymous){emit(Authenticated(user,{'uid':user.uid,'username':'ضيف','role':'guest','isGuest':true,'coins':0,'diamonds':0}));return;}await user.reload();final current=FirebaseAuth.instance.currentUser??user;if(_needsEmailVerification(current)){emit(EmailVerificationRequired(current));return;}await _emitUser(current,emit);}catch(e){emit(AuthError(e.toString()));}}
 
