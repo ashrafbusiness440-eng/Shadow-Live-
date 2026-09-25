@@ -70,6 +70,9 @@ def main() -> int:
     worker = read("cloudflare-worker/src/voice-session-legacy.js")
     wrangler = read("cloudflare-worker/wrangler.toml")
     game_runtime = read("cloudflare-worker/src/legacy-games/game-runtime.js")
+    realtime_object = read("cloudflare-worker/src/room-realtime-object.js")
+    realtime_protocol = read("cloudflare-worker/src/room-realtime-protocol.js")
+    worker_index = read("cloudflare-worker/src/index.js")
 
     check(lambda: require(
         r"_presenceTimer\s*=\s*Timer\.periodic\(\s*const Duration\(seconds:\s*60\)",
@@ -109,6 +112,37 @@ def main() -> int:
         "Cloudflare settlement cron changed from every 5 minutes",
     ))
 
+    check(lambda: require(
+        r'name\s*=\s*"ROOM_REALTIME"[\s\S]*?class_name\s*=\s*"RoomRealtimeObject"',
+        wrangler,
+        "Room realtime Durable Object binding is missing",
+    ))
+    check(lambda: require(
+        r'new_sqlite_classes\s*=\s*\[\s*"RoomRealtimeObject"\s*\]',
+        wrangler,
+        "RoomRealtimeObject must stay on SQLite-backed Durable Objects",
+    ))
+    check(lambda: require(
+        r'export \{ RoomRealtimeObject \} from "\./room-realtime-object\.js";',
+        worker_index,
+        "RoomRealtimeObject is not exported from the Worker entrypoint",
+    ))
+    check(lambda: require(
+        r'url\.pathname === "/api/room-realtime"',
+        worker_index,
+        "room realtime Worker route is missing",
+    ))
+    check(lambda: require(
+        r"ROOM_REALTIME_TICKET_TTL_MS\s*=\s*45_000",
+        realtime_protocol,
+        "room realtime ticket TTL changed from 45 seconds",
+    ))
+    if "acceptWebSocket" not in realtime_object:
+        failures.append("RoomRealtimeObject is not using the hibernation WebSocket API")
+    if ".accept(" in realtime_object:
+        failures.append("RoomRealtimeObject must use ctx.acceptWebSocket, not ws.accept")
+    if "firestore" in realtime_object.lower() or "firebase" in realtime_object.lower():
+        failures.append("RoomRealtimeObject must not become a Firestore/Firebase authority")
     def no_join_delay() -> None:
         start = voice.find("Future<void> join(")
         end = voice.find("Future<void> toggleMic()", start)

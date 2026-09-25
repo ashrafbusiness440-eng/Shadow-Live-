@@ -10,3 +10,11 @@ enabled = true
 # During development, settlement is also triggered by active game clients.
 # A 5-minute safety sweep avoids a permanent Firestore read loop under quota pressure.
 crons = ["*/5 * * * *"]
+
+[[durable_objects.bindings]]
+name = "ROOM_REALTIME"
+class_name = "RoomRealtimeObject"
+
+[[migrations]]
+tag = "room-realtime-v1"
+new_sqlite_classes = ["RoomRealtimeObject"]

@@ -12,11 +12,14 @@ import { chatSafetyActions } from "./chat-safety-actions.js";
 import { storageHealth } from "./storage-health.js";
 import { roomGift } from "./room-gift.js";
 import { voiceSession } from "./voice-session.js";
+import { roomRealtime } from "./room-realtime.js";
 import { googlePlayPurchase } from "./google-play-purchase.js";
 import { manageAppAsset } from "./manage-app-asset.js";
 import { economyRouter } from "./economy-router.js";
 import { configureLegacyEnv, getFirestore } from "./legacy-firebase-admin-shim.js";
 import { settleDueGameOperations } from "./legacy-games/game-runtime.js";
+
+export { RoomRealtimeObject } from "./room-realtime-object.js";
 
 export default {
   async fetch(request, env) {
@@ -33,7 +36,7 @@ export default {
       return json(request, env, {
         ok: true,
         service: "shadow-live-cloudflare-worker",
-        version: 16,
+        version: 17,
         buildSha: env.BUILD_SHA || null,
         firebaseConfigured: Boolean(String(env.FIREBASE_SERVICE_ACCOUNT || "").trim()),
       });
@@ -74,6 +77,9 @@ export default {
     }
     if (url.pathname === "/api/voice-session") {
       return voiceSession(request, env);
+    }
+    if (url.pathname === "/api/room-realtime") {
+      return roomRealtime(request, env);
     }
     if (url.pathname === "/api/google-play-purchase") {
       return googlePlayPurchase(request, env);
