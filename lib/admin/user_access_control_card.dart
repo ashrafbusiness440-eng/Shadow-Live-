@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import 'control_api_endpoints.dart';
+import 'control_firebase.dart';
 
 class OwnerUserAccessCard extends StatelessWidget {
   const OwnerUserAccessCard({
@@ -88,11 +89,11 @@ class OwnerUserAccessCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final current = FirebaseAuth.instance.currentUser;
+    final current = controlAuth.currentUser;
     return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       future: current == null
           ? null
-          : FirebaseFirestore.instance.collection('users').doc(current.uid).get(),
+          : controlFirestore.collection('users').doc(current.uid).get(),
       builder: (context, snapshot) {
         final actor = snapshot.data?.data();
         final actorIsOwner = actor?['role'] == 'owner' && actor?['adminEnabled'] == true;
@@ -161,7 +162,7 @@ class OwnerUserAccessCard extends StatelessWidget {
             }
             setSheetState(() { saving = true; error = null; });
             try {
-              final user = FirebaseAuth.instance.currentUser;
+              final user = controlAuth.currentUser;
               if (user == null) throw Exception('not_signed_in');
               final token = await user.getIdToken().timeout(const Duration(seconds: 12));
               if (token == null || token.isEmpty) throw Exception('empty_token');
