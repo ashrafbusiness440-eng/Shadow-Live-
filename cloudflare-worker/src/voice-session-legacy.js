@@ -3022,7 +3022,7 @@ async function roomInsights(db,uid,body={}){
     ranking,
   };
 }
-async function roomBootstrap(db,decoded,body={}){
+async function roomBootstrap(db,decoded,body){
   const roomId=clean(body.roomId);
   const uid=clean(decoded?.uid||decoded?.sub);
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId)){
