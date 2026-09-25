@@ -377,7 +377,9 @@ void main() {
 
     expect(find.textContaining('الأكثر ربحاً'), findsNothing);
 
-    await tester.pump(const Duration(seconds: 2));
+    // Runtime state polling is intentionally throttled to 10s to protect
+    // Firestore; advance to the next safety resync before asserting result UI.
+    await tester.pump(const Duration(seconds: 10));
     await tester.pump(const Duration(milliseconds: 2600));
 
     expect(find.text('نتيجة الجولة #1'), findsOneWidget);
