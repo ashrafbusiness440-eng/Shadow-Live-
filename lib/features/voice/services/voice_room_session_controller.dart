@@ -37,8 +37,6 @@ class VoiceRoomSessionController extends ChangeNotifier {
       _roomLifecycleSubscription;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
       _roomBanSubscription;
-  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
-      _roomMusicSubscription;
   Timer? _presenceTimer;
   final Map<String, Uint8List> _localRoomMusic = <String, Uint8List>{};
   Map<String, dynamic>? _lastRoomMusicState;
@@ -166,32 +164,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
     }
   }
 
-  void _watchRoomMusic(String targetRoomId) {
-    unawaited(_roomMusicSubscription?.cancel());
-    _roomMusicSubscription = FirebaseFirestore.instance
-        .collection('rooms')
-        .doc(targetRoomId)
-        .snapshots()
-        .listen((snapshot) {
-      if (!_active || roomId != targetRoomId) return;
-      final data = snapshot.data();
-      final raw = data?['musicState'];
-      final state = raw is Map
-          ? Map<String, dynamic>.from(raw)
-          : <String, dynamic>{
-              'status': 'stopped',
-              'currentTrackId': '',
-              'sourceOwnerUid': '',
-              'commandRevision': 0,
-            };
-      _lastRoomMusicState = state;
-      unawaited(_applyRoomMusicState(state));
-    });
-  }
-
   Future<void> _stopRoomMusicWatch() async {
-    await _roomMusicSubscription?.cancel();
-    _roomMusicSubscription = null;
     _lastRoomMusicState = null;
     _activeRoomMediaKey = '';
     try {
@@ -214,7 +187,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
       await _presenceService.join(targetRoomId);
     } catch (_) {}
     _presenceTimer = Timer.periodic(
-      const Duration(seconds: 30),
+      const Duration(seconds: 60),
       (_) {
         if (!_active || roomId != targetRoomId) return;
         unawaited(_presenceService.heartbeat(targetRoomId));
@@ -289,6 +262,18 @@ class VoiceRoomSessionController extends ChangeNotifier {
       }
 
       if (data != null && _active && roomId == targetRoomId) {
+        final rawMusicState = data['musicState'];
+        final musicState = rawMusicState is Map
+            ? Map<String, dynamic>.from(rawMusicState)
+            : <String, dynamic>{
+                'status': 'stopped',
+                'currentTrackId': '',
+                'sourceOwnerUid': '',
+                'commandRevision': 0,
+              };
+        _lastRoomMusicState = musicState;
+        unawaited(_applyRoomMusicState(musicState));
+
         _roomArguments = <String, dynamic>{
           ..._roomArguments,
           'activeRoomBackgroundRewardId':
@@ -337,33 +322,20 @@ class VoiceRoomSessionController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<String> _verifiedDisplayName(User user) async {
-    if (user.isAnonymous) {
-      final authName = (user.displayName ?? '').trim();
-      return authName.isEmpty ? 'ضيف' : authName;
-    }
-
-    final snapshot = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .get();
-    final data = snapshot.data() ?? const <String, dynamic>{};
-    final status = (data['accountStatus'] ?? 'active').toString().trim();
-    if (status != 'active') {
-      throw StateError('account_restricted_' + status);
-    }
-
-    final profileName = (data['displayName'] ?? data['username'] ?? '')
-        .toString()
-        .trim();
-    if (profileName.isNotEmpty) return profileName;
+  String _displayNameForJoin(
+    User user,
+    Map<String, dynamic> arguments,
+  ) {
+    final supplied = (arguments['displayName'] ?? '').toString().trim();
+    if (supplied.isNotEmpty) return supplied;
 
     final authName = (user.displayName ?? '').trim();
     if (authName.isNotEmpty) return authName;
 
     final email = (user.email ?? '').trim();
     if (email.contains('@')) return email.split('@').first;
-    return 'مستخدم Shadow Live';
+
+    return user.isAnonymous ? 'ضيف' : 'مستخدم Shadow Live';
   }
 
   Future<void> join(Map<String, dynamic> arguments) async {
@@ -379,7 +351,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
       await leave();
     }
 
-    final displayName = await _verifiedDisplayName(user);
+    final displayName = _displayNameForJoin(user, arguments);
 
     if (_active && roomId == targetRoomId && _sessionUserUid == currentUid) {
       _roomArguments = <String, dynamic>{..._roomArguments, ...arguments};
@@ -414,7 +386,6 @@ class VoiceRoomSessionController extends ChangeNotifier {
       _connectionState = VoiceConnectionState.connected;
       _watchRoomLifecycle(targetRoomId);
       _watchRoomBan(targetRoomId);
-      _watchRoomMusic(targetRoomId);
       unawaited(_announceEntrance(targetRoomId));
       unawaited(_startPresence(targetRoomId));
     } catch (error) {
@@ -502,7 +473,6 @@ class VoiceRoomSessionController extends ChangeNotifier {
     await _micSubscription?.cancel();
     await _roomLifecycleSubscription?.cancel();
     await _roomBanSubscription?.cancel();
-    await _roomMusicSubscription?.cancel();
     if (_serviceInitialized) {
       await _voiceService.dispose();
     }
