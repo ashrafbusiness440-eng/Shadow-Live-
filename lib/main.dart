@@ -740,10 +740,6 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       onError: (_) {},
     );
 
-    try {
-      final state = await _roomSeatService.load(roomId);
-      if (mounted) setState(() => _roomSeatState = state);
-    } catch (_) {}
   }
 
   Future<void> _runSeatAction(
@@ -1836,7 +1832,19 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   }
 
   Future<void> _showSupportersSheet() async {
-    final supporters = _roomInsights?.supporters ?? const <RoomSupporter>[];
+    final roomId = (_roomArguments['roomId'] ?? '').toString().trim();
+    var supporters = _roomInsights?.supporters ?? const <RoomSupporter>[];
+    if (roomId.isNotEmpty) {
+      try {
+        final detailed = await _roomInsightsService.load(
+          roomId,
+          includeSupporters: true,
+        );
+        supporters = detailed.supporters;
+        if (mounted) setState(() => _roomInsights = detailed);
+      } catch (_) {}
+    }
+    if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -1950,8 +1958,19 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   }
 
   Future<void> _showRoomRankingSheet() async {
-    final ranking = _roomInsights?.ranking ?? const <RoomRankEntry>[];
     final currentRoomId = (_roomArguments['roomId'] ?? '').toString();
+    var ranking = _roomInsights?.ranking ?? const <RoomRankEntry>[];
+    if (currentRoomId.trim().isNotEmpty) {
+      try {
+        final detailed = await _roomInsightsService.load(
+          currentRoomId,
+          includeRanking: true,
+        );
+        ranking = detailed.ranking;
+        if (mounted) setState(() => _roomInsights = detailed);
+      } catch (_) {}
+    }
+    if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
