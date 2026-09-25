@@ -22,6 +22,7 @@ const FALLBACK_CONFIG=Object.freeze({
   timezoneOffsetMinutes:240,
   roundDurationSeconds:30,
   lockBeforeMs:3000,
+  resultHoldMs:4000,
   games:Object.freeze({
     greedy_cat:Object.freeze({
       enabled:true,
@@ -101,6 +102,9 @@ function runtimeConfig(raw={}){
     lockBeforeMs:Number.isFinite(Number(raw?.lockBeforeMs))
       ? Math.max(500,Math.min(10000,Number(raw.lockBeforeMs)))
       : 3000,
+    resultHoldMs:Number.isFinite(Number(raw?.resultHoldMs))
+      ? Math.max(2000,Math.min(10000,Number(raw.resultHoldMs)))
+      : 4000,
     games:{
       greedy_cat:{
         ...FALLBACK_CONFIG.games.greedy_cat,
@@ -187,15 +191,33 @@ function buildRound({config,gameId,mode,uid,key,nowMs}){
       roundNumber:0,
       opensAtMs:nowMs,
       closesAtMs:nowMs,
+      bettingClosesAtMs:nowMs,
+      revealAtMs:nowMs,
+      resultHoldEndsAtMs:nowMs,
+      nextRoundOpensAtMs:nowMs,
       roundId:gameId+":"+uid+":"+key,
     };
   }
-  return dailyRoundClock({
+  const cycleDurationSeconds=
+    config.roundDurationSeconds+(config.resultHoldMs/1000);
+  const clock=dailyRoundClock({
     nowMs,
-    durationSeconds:config.roundDurationSeconds,
+    durationSeconds:cycleDurationSeconds,
     timezoneOffsetMinutes:config.timezoneOffsetMinutes,
     gameId,
     mode,
+  });
+  const nextRoundOpensAtMs=clock.closesAtMs;
+  const revealAtMs=
+    clock.opensAtMs+(config.roundDurationSeconds*1000);
+  const bettingClosesAtMs=revealAtMs-config.lockBeforeMs;
+  return Object.freeze({
+    ...clock,
+    closesAtMs:revealAtMs,
+    bettingClosesAtMs,
+    revealAtMs,
+    resultHoldEndsAtMs:revealAtMs+config.resultHoldMs,
+    nextRoundOpensAtMs,
   });
 }
 
@@ -317,7 +339,7 @@ export async function placeGameBet(
     const selections=normalizeSelections(gameId,mode,betEvents,selectedConfig.bets);
     const stake=totalStake(selections);
     const round=buildRound({config,gameId,mode,uid,key,nowMs});
-    if(gameId!=="slot"&&nowMs>=round.closesAtMs-config.lockBeforeMs){
+    if(gameId!=="slot"&&nowMs>=round.bettingClosesAtMs){
       throw Error("round_locked");
     }
 
@@ -427,6 +449,10 @@ export async function placeGameBet(
       roundId:round.roundId,
       opensAtMs:round.opensAtMs,
       closesAtMs:round.closesAtMs,
+      bettingClosesAtMs:round.bettingClosesAtMs,
+      revealAtMs:round.revealAtMs,
+      resultHoldEndsAtMs:round.resultHoldEndsAtMs,
+      nextRoundOpensAtMs:round.nextRoundOpensAtMs,
       outcomeId:resolved.outcomeId,
       entropyDigest:resolved.entropyDigest,
       targetRtpBps:selectedConfig.targetRtpBps,
@@ -647,6 +673,8 @@ export async function gameCatalog(db){
     engineEnabled:config.enabled===true,
     timezoneOffsetMinutes:config.timezoneOffsetMinutes,
     roundDurationSeconds:config.roundDurationSeconds,
+    spinDurationMs:config.lockBeforeMs,
+    resultHoldMs:config.resultHoldMs,
     items,
   };
 }
@@ -686,14 +714,26 @@ export async function gameState(db,uid,body={},options={}){
     nowMs,
   });
 
+  const roundStatus=gameId==="slot"
+    ? "settled"
+    : nowMs<round.bettingClosesAtMs
+      ? "betting"
+      : nowMs<round.revealAtMs
+        ? "spinning"
+        : "result_hold";
   let lastResult=null;
   const recentResults=[];
   if(gameId!=="slot"){
     const seenRoundIds=new Set();
-    for(let index=1;index<=20;index++){
+    const roundsToReveal=[];
+    if(roundStatus==="result_hold"){
+      roundsToReveal.push(round);
+    }
+    const cycleMs=(config.roundDurationSeconds*1000)+config.resultHoldMs;
+    for(let index=1;roundsToReveal.length<20&&index<=21;index++){
       const previousNow=Math.max(
         0,
-        nowMs-config.roundDurationSeconds*1000*index,
+        round.opensAtMs-1-(cycleMs*(index-1)),
       );
       const previous=buildRound({
         config,
@@ -707,19 +747,22 @@ export async function gameState(db,uid,body={},options={}){
         continue;
       }
       seenRoundIds.add(previous.roundId);
+      roundsToReveal.push(previous);
+    }
+    for(const resultRound of roundsToReveal.slice(0,20)){
       const resolved=resolveOutcome({
         gameId,
         mode,
         outcomes:selected.outcomes,
-        roundId:previous.roundId,
+        roundId:resultRound.roundId,
         secret:options.rngSecret||legacyEnv.GAME_RNG_SECRET,
       });
       recentResults.push({
-        roundId:previous.roundId,
-        dayKey:previous.dayKey,
-        roundNumber:previous.roundNumber,
+        roundId:resultRound.roundId,
+        dayKey:resultRound.dayKey,
+        roundNumber:resultRound.roundNumber,
         outcomeId:resolved.outcomeId,
-        closedAtMs:previous.closesAtMs,
+        closedAtMs:resultRound.revealAtMs,
       });
     }
     lastResult=recentResults[0]||null;
@@ -732,7 +775,6 @@ export async function gameState(db,uid,body={},options={}){
       };
     }
   }
-
   let serverRoundSelections=[];
   if(gameId!=="slot"){
     const roundSnap=await db.collection("game_rounds").doc(round.roundId).get();
@@ -795,11 +837,12 @@ export async function gameState(db,uid,body={},options={}){
       roundNumber:round.roundNumber,
       opensAtMs:round.opensAtMs,
       closesAtMs:round.closesAtMs,
-      bettingClosesAtMs:round.closesAtMs-config.lockBeforeMs,
-      locked:nowMs>=round.closesAtMs-config.lockBeforeMs,
-      status:nowMs>=round.closesAtMs-config.lockBeforeMs
-        ? "spinning"
-        : "betting",
+      bettingClosesAtMs:round.bettingClosesAtMs,
+      revealAtMs:round.revealAtMs,
+      resultHoldEndsAtMs:round.resultHoldEndsAtMs,
+      nextRoundOpensAtMs:round.nextRoundOpensAtMs,
+      locked:roundStatus!=="betting",
+      status:roundStatus,
     },
     currentRoundSelections,
     serverRoundSelections,
