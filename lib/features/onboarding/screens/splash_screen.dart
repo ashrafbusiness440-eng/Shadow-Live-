@@ -13,6 +13,10 @@ class _SplashScreenState extends State<SplashScreen>{
   final user=FirebaseAuth.instance.currentUser;if(user==null)return AppRoutes.onboarding;
   if(user.isAnonymous)return AppRoutes.main;
   try{
+   await user.reload();
+   final current=FirebaseAuth.instance.currentUser??user;
+   final passwordUser=current.providerData.any((provider)=>provider.providerId=='password');
+   if(passwordUser&&!current.emailVerified)return AppRoutes.emailVerification;
    final snapshot=await FirebaseFirestore.instance.collection('users').doc(user.uid).get().timeout(const Duration(seconds:10));
    return setupDestination(snapshot.data());
   }catch(_){return AppRoutes.profileSetup;}
