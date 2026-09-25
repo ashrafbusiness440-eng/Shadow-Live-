@@ -156,3 +156,15 @@ Pulled forward during Step 6 closure after automatic main-branch E2E workflows c
 - The comprehensive gate triggers for all Worker source/script/wrangler changes and for changes to the E2E workflow definitions.
 - If a commit changes CI only and not Worker source, the gate uses the currently deployed Worker instead of waiting forever for an impossible matching Worker build SHA.
 - This is a borrowed Step 9 CI-pressure subset only; the Step 9 root item remains open.
+
+## Step 7 migration note — One Room Bootstrap
+
+- Room entry uses one non-blocking `roomBootstrap` request for the initial room/seat/permission/Top 3/Rocket/game-availability snapshot.
+- ZEGO join remains independent and is not delayed by Bootstrap.
+- The VoiceRoomSessionController room lifecycle listener is the single shared `rooms/{roomId}` snapshot source for lifecycle, music/background, seats and moderator state.
+- The active room screen must not recreate separate seat/moderator listeners to the same room document.
+- Direct owner-profile loading, initial roomInsights request, initial seat listener and initial moderator listener are removed from the room-entry fan-out.
+- WebSocket/DO remains authoritative for Presence, online count, live room events and game phases.
+- Game overlay should reuse Bootstrap game catalog when available rather than refetching it.
+- Rocket state from Bootstrap is only an initial seed; live Rocket streaming remains on-demand when the sheet is opened.
+- `recordRoomVisit` remains a separate non-blocking analytics write and does not block voice join.

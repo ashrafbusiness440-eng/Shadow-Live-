@@ -41,6 +41,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
       _roomBanSubscription;
   final Map<String, Uint8List> _localRoomMusic = <String, Uint8List>{};
+  final StreamController<Map<String, dynamic>> _roomStateController =
+      StreamController<Map<String, dynamic>>.broadcast();
   Map<String, dynamic>? _lastRoomMusicState;
   String _activeRoomMediaKey = '';
 
@@ -65,6 +67,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
       Map<String, dynamic>.unmodifiable(_roomArguments);
 
   Stream<RoomRealtimeEvent> get realtimeEvents => _presenceService.events;
+  Stream<Map<String, dynamic>> get roomStateEvents =>
+      _roomStateController.stream;
 
   String get roomId => (_roomArguments['roomId'] ?? '').toString();
   String get roomTitle =>
@@ -73,6 +77,16 @@ class VoiceRoomSessionController extends ChangeNotifier {
               _roomArguments['roomName'] ??
               'غرفة صوتية')
           .toString();
+
+  void applyBootstrapRoom(Map<String, dynamic> room) {
+    final targetRoomId = (room['roomId'] ?? '').toString().trim();
+    if (targetRoomId.isEmpty || targetRoomId != roomId) return;
+    _roomArguments = <String, dynamic>{
+      ..._roomArguments,
+      ...room,
+    };
+    notifyListeners();
+  }
 
   bool get isOwner {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -299,6 +313,10 @@ class VoiceRoomSessionController extends ChangeNotifier {
       }
 
       if (data != null && _active && roomId == targetRoomId) {
+        _roomStateController.add(<String, dynamic>{
+          ...data,
+          'roomId': targetRoomId,
+        });
         final rawMusicState = data['musicState'];
         final musicState = rawMusicState is Map
             ? Map<String, dynamic>.from(rawMusicState)

@@ -17,12 +17,14 @@ class RoomGameOverlaySheet extends StatefulWidget {
     this.initialGameKey,
     this.runtimeService,
     this.realtimeEvents,
+    this.initialCatalog,
   });
 
   final String roomId;
   final String? initialGameKey;
   final GameRuntimeService? runtimeService;
   final Stream<RoomRealtimeEvent>? realtimeEvents;
+  final List<GameCatalogEntry>? initialCatalog;
 
   @override
   State<RoomGameOverlaySheet> createState() => _RoomGameOverlaySheetState();
@@ -86,7 +88,12 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
     _gameRealtimeSubscription = realtimeEvents.listen(
       _handleGameRealtimeEvent,
     );
-    _loadCatalog();
+    final bootstrapCatalog = widget.initialCatalog;
+    if (bootstrapCatalog != null) {
+      _applyCatalog(bootstrapCatalog);
+    } else {
+      _loadCatalog();
+    }
     _ticker = Timer.periodic(
       const Duration(milliseconds: 250),
       (_) {
@@ -112,6 +119,26 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
 
   String get _requestedKey => (widget.initialGameKey ?? '').trim();
 
+  void _applyCatalog(List<GameCatalogEntry> catalog) {
+    GameCatalogEntry? selected;
+    if (_requestedKey.isNotEmpty) {
+      selected = _pickByBaseKey(catalog, _requestedKey);
+    }
+    _catalog = List<GameCatalogEntry>.unmodifiable(catalog);
+    _selected = selected;
+    _loading = false;
+    _betIndex = 0;
+    if (selected != null) {
+      unawaited(
+        _loadState().whenComplete(() {
+          if (const bool.fromEnvironment('E2E_GAME_TEST')) {
+            debugPrint('E2E_GAME_OVERLAY_READY:${selected?.key}');
+          }
+        }),
+      );
+    }
+  }
+
   Future<void> _loadCatalog() async {
     setState(() {
       _loading = true;
@@ -120,22 +147,7 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
     try {
       final catalog = await _service.loadCatalog();
       if (!mounted) return;
-      GameCatalogEntry? selected;
-      if (_requestedKey.isNotEmpty) {
-        selected = _pickByBaseKey(catalog, _requestedKey);
-      }
-      setState(() {
-        _catalog = catalog;
-        _selected = selected;
-        _loading = false;
-        _betIndex = 0;
-      });
-      if (selected != null) {
-        await _loadState();
-        if (const bool.fromEnvironment('E2E_GAME_TEST')) {
-          debugPrint('E2E_GAME_OVERLAY_READY:${selected.key}');
-        }
-      }
+      setState(() => _applyCatalog(catalog));
     } catch (error) {
       if (!mounted) return;
       setState(() {

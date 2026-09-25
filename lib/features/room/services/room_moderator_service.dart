@@ -92,37 +92,65 @@ class RoomModeratorService {
     return (agency ? agencyTable : normal)[level - 1];
   }
 
+  RoomModeratorState fromRoomData(
+    String roomId,
+    Map<String, dynamic> room,
+  ) {
+    final uid = _auth.currentUser?.uid ?? '';
+    final ownerUid =
+        (room['ownerUid'] ?? room['ownerId'] ?? room['hostId'] ?? '')
+            .toString();
+    final roomType =
+        (room['roomType'] ?? room['type'] ?? 'personal').toString();
+    final official = room['systemOwned'] == true ||
+        room['officialRoom'] == true ||
+        roomType == 'official' ||
+        roomType == 'administrative' ||
+        roomType == 'customer_service';
+    final hostUid = (room['hostUid'] ?? room['hostId'] ?? '').toString();
+    final raw = room['moderators'];
+    final moderators = raw is List
+        ? raw
+            .whereType<Map>()
+            .map(
+              (item) => RoomModerator.fromMap(
+                Map<String, dynamic>.from(item),
+              ),
+            )
+            .where((item) => item.uid.isNotEmpty)
+            .toList(growable: false)
+        : const <RoomModerator>[];
+    final mine = moderators
+        .where((item) => item.uid == uid)
+        .map((item) => item.capabilities)
+        .fold<Set<String>>(<String>{}, (all, caps) => all..addAll(caps));
+    if (official && uid.isNotEmpty && uid == hostUid) {
+      mine.addAll(const {
+        'manageMic',
+        'moderateUsers',
+        'moderateChat',
+        'manageMusic',
+        'manageMusicPolicy',
+        'managePk',
+      });
+    }
+
+    return RoomModeratorState(
+      roomId: roomId,
+      isOwner: uid.isNotEmpty && !official && uid == ownerUid,
+      limit: _limit(room),
+      myCapabilities: mine,
+      moderators: moderators,
+    );
+  }
+
   Stream<RoomModeratorState> watch(String roomId) {
-    return _firestore.collection('rooms').doc(roomId).snapshots().map((snap) {
-      final room = snap.data() ?? <String, dynamic>{};
-      final uid = _auth.currentUser?.uid ?? '';
-      final ownerUid =
-          (room['ownerUid'] ?? room['ownerId'] ?? room['hostId'] ?? '')
-              .toString();
-      final raw = room['moderators'];
-      final moderators = raw is List
-          ? raw
-              .whereType<Map>()
-              .map(
-                (item) => RoomModerator.fromMap(
-                  Map<String, dynamic>.from(item),
-                ),
-              )
-              .where((item) => item.uid.isNotEmpty)
-              .toList(growable: false)
-          : const <RoomModerator>[];
-      final mine = moderators
-          .where((item) => item.uid == uid)
-          .map((item) => item.capabilities)
-          .fold<Set<String>>(<String>{}, (all, caps) => all..addAll(caps));
-      return RoomModeratorState(
-        roomId: roomId,
-        isOwner: uid.isNotEmpty && uid == ownerUid,
-        limit: _limit(room),
-        myCapabilities: mine,
-        moderators: moderators,
-      );
-    });
+    return _firestore.collection('rooms').doc(roomId).snapshots().map(
+      (snap) => fromRoomData(
+        roomId,
+        snap.data() ?? <String, dynamic>{},
+      ),
+    );
   }
 
   Future<void> setModerator({
