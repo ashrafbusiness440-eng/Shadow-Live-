@@ -14,7 +14,7 @@ class _EmailLoginScreenState extends State<EmailLoginScreen>{
  final _emailController=TextEditingController(),_passwordController=TextEditingController(),_confirmPasswordController=TextEditingController(); bool _loading=false,_obscurePassword=true,_createAccount=false;
  @override void dispose(){_emailController.dispose();_passwordController.dispose();_confirmPasswordController.dispose();super.dispose();}
  void _backToAuthChoice()=>Navigator.of(context).pushNamedAndRemoveUntil('/auth-choice',(route)=>false);
- Future<void> _resetPassword()async{final email=_emailController.text.trim();if(email.isEmpty||!email.contains('@')||!email.contains('.')){_message('أدخل بريدك الإلكتروني الصحيح أولاً');return;}setState(()=>_loading=true);try{await FirebaseAuth.instance.sendPasswordResetEmail(email:email);_message('إذا كان هذا البريد مسجلاً في Shadow Live فستصلك رسالة لإعادة تعيين كلمة المرور. افحص البريد وSpam.');}on FirebaseAuthException catch(e){var m='تعذر إرسال رابط الاستعادة الآن';if(e.code=='invalid-email')m='البريد الإلكتروني غير صحيح';if(e.code=='too-many-requests')m='طلبات كثيرة. حاول لاحقًا';if(e.code=='network-request-failed')m='تحقق من اتصال الإنترنت';_message(m);}finally{if(mounted)setState(()=>_loading=false);}}
+ Future<void> _resetPassword()async{final email=_emailController.text.trim();if(email.isEmpty||!email.contains('@')||!email.contains('.')){_message('أدخل بريدك الإلكتروني الصحيح أولاً');return;}setState(()=>_loading=true);try{await FirebaseAuth.instance.setLanguageCode('ar');await FirebaseAuth.instance.sendPasswordResetEmail(email:email);_message('إذا كان هذا البريد مسجلاً في Shadow Live فستصلك رسالة لإعادة تعيين كلمة المرور. افحص البريد وSpam.');}on FirebaseAuthException catch(e){var m='تعذر إرسال رابط الاستعادة الآن';if(e.code=='invalid-email')m='البريد الإلكتروني غير صحيح';if(e.code=='too-many-requests')m='طلبات كثيرة. حاول لاحقًا';if(e.code=='network-request-failed')m='تحقق من اتصال الإنترنت';_message(m);}finally{if(mounted)setState(()=>_loading=false);}}
  Future<void> _submit()async{
   final email=_emailController.text.trim(),password=_passwordController.text;
   if(email.isEmpty||!email.contains('@')||!email.contains('.')){_message('أدخل بريداً إلكترونياً صحيحاً');return;}
@@ -30,7 +30,7 @@ class _EmailLoginScreenState extends State<EmailLoginScreen>{
     final cr=await FirebaseAuth.instance.createUserWithEmailAndPassword(email:email,password:password);
     final user=cr.user;
     if(user==null)throw FirebaseAuthException(code:'user-not-found');
-    try{await user.sendEmailVerification();}catch(_){}
+    try{await FirebaseAuth.instance.setLanguageCode('ar');await user.sendEmailVerification();}catch(_){}
     if(!mounted)return;
     Navigator.of(context).pushNamedAndRemoveUntil(AppRoutes.emailVerification,(r)=>false);
    }else{
