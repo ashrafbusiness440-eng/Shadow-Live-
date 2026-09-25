@@ -63,7 +63,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
       }
       await current.sendEmailVerification();
       _startCooldown();
-      _message('تم إرسال رسالة تحقق جديدة إلى \${current.email??'بريدك الإلكتروني'}');
+      _message('تم إرسال رسالة تحقق جديدة إلى ${current.email??'بريدك الإلكتروني'}');
     }on FirebaseAuthException catch(e){
       final message=switch(e.code){
         'too-many-requests'=>'تم إرسال طلبات كثيرة. حاول لاحقًا.',
@@ -177,7 +177,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                     ),
                     const SizedBox(height:12),
                     Text(
-                      'أرسلنا رسالة تحقق إلى\\n\$email',
+                      'أرسلنا رسالة تحقق إلى\n$email',
                       textAlign:TextAlign.center,
                       textDirection:TextDirection.rtl,
                       style:const TextStyle(color:Colors.white70,fontSize:16,height:1.7),
@@ -203,7 +203,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                     OutlinedButton.icon(
                       onPressed:_busy||_cooldown>0?null:_resend,
                       icon:const Icon(Icons.refresh_rounded),
-                      label:Text(_cooldown>0?'إعادة الإرسال بعد \$_cooldown ثانية':'إعادة إرسال رسالة التحقق'),
+                      label:Text(_cooldown>0?'إعادة الإرسال بعد $_cooldown ثانية':'إعادة إرسال رسالة التحقق'),
                     ),
                     const SizedBox(height:8),
                     TextButton(
