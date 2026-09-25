@@ -8,6 +8,7 @@ import 'firebase_options.dart';
 import 'utils/compact_number.dart';
 import 'admin/control_admin_id_override.dart';
 import 'admin/control_api_endpoints.dart';
+import 'admin/control_firebase.dart';
 import 'admin/control_asset_manager_page.dart';
 import 'admin/economy_control_page.dart';
 import 'admin/games_control_page.dart';
@@ -16,7 +17,7 @@ import 'admin/user_access_control_card.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await initializeControlFirebase();
   runApp(const ShadowControlApp());
 }
 
@@ -44,7 +45,7 @@ class AdminGate extends StatelessWidget {
   const AdminGate({super.key});
   @override
   Widget build(BuildContext context) => StreamBuilder<User?>(
-    stream: FirebaseAuth.instance.authStateChanges(),
+    stream: controlAuth.authStateChanges(),
     builder: (context, auth) {
       if (auth.connectionState == ConnectionState.waiting) {
         return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -52,7 +53,7 @@ class AdminGate extends StatelessWidget {
       final user = auth.data;
       if (user == null) return const AdminSignInPage();
       return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        future: FirebaseFirestore.instance.collection('users').doc(user.uid).get(),
+        future: controlFirestore.collection('users').doc(user.uid).get(),
         builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) {
             return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -87,7 +88,7 @@ class _AdminSignInPageState extends State<AdminSignInPage> {
     try {
       final provider = GoogleAuthProvider();
       provider.setCustomParameters({'prompt': 'select_account'});
-      await FirebaseAuth.instance.signInWithPopup(provider);
+      await controlAuth.signInWithPopup(provider);
     } on FirebaseAuthException catch (e) {
       if (mounted) setState(() => error = e.message ?? e.code);
     } catch (e) {
@@ -105,7 +106,7 @@ class _AdminSignInPageState extends State<AdminSignInPage> {
     }
     setState(() { busy = true; error = null; });
     try {
-      await FirebaseAuth.instance.sendPasswordResetEmail(email: address);
+      await controlAuth.sendPasswordResetEmail(email: address);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('تم إرسال رابط إعادة تعيين كلمة المرور إلى $address')),
@@ -120,7 +121,7 @@ class _AdminSignInPageState extends State<AdminSignInPage> {
   Future<void> submit() async {
     setState(() { busy = true; error = null; });
     try {
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
+      await controlAuth.signInWithEmailAndPassword(
         email: email.text.trim(),
         password: password.text,
       );
@@ -186,7 +187,7 @@ class AccessDeniedPage extends StatelessWidget {
           const SizedBox(height: 8),
           const Text('الحساب مسجل لكنه غير مخول لدخول Shadow Control.', textAlign: TextAlign.center),
           const SizedBox(height: 18),
-          OutlinedButton.icon(onPressed: () => FirebaseAuth.instance.signOut(), icon: const Icon(Icons.logout), label: const Text('تسجيل الخروج')),
+          OutlinedButton.icon(onPressed: () => controlAuth.signOut(), icon: const Icon(Icons.logout), label: const Text('تسجيل الخروج')),
         ]),
       ),
     ),
@@ -238,7 +239,7 @@ class _ControlShellState extends State<ControlShell> {
                   ],
                 ),
               );
-              if(ok==true)await FirebaseAuth.instance.signOut();
+              if(ok==true)await controlAuth.signOut();
             },
             icon:const Icon(Icons.logout_rounded),
           ),
@@ -246,7 +247,7 @@ class _ControlShellState extends State<ControlShell> {
             padding:const EdgeInsets.symmetric(horizontal:14),
             child:CircleAvatar(
               child:Icon(
-                FirebaseAuth.instance.currentUser==null
+                controlAuth.currentUser==null
                   ? Icons.admin_panel_settings_outlined
                   : Icons.verified_user_outlined,
               ),
@@ -280,7 +281,7 @@ class DashboardPage extends StatelessWidget {
     const Text('لوحة التحكم',style:TextStyle(fontSize:25,fontWeight:FontWeight.w900)),
     const SizedBox(height:4),const Text('حالة Shadow Live الإدارية — قراءة مباشرة وآمنة',style:TextStyle(color:Color(0xFFAAA3B8))),const SizedBox(height:16),
     StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(
-      stream:FirebaseFirestore.instance.collection('users').snapshots(),
+      stream:controlFirestore.collection('users').snapshots(),
       builder:(context,snap){
         final allDocs=snap.data?.docs??[];
         final docs=allDocs.where((d)=>(d.data()['accountStatus']??'active').toString()!='deleted').toList();
@@ -302,7 +303,7 @@ class DashboardPage extends StatelessWidget {
     Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
       const Row(children:[Icon(Icons.verified_user_outlined,color:Color(0xFFD7B85A)),SizedBox(width:8),Text('حالة الأمان',style:TextStyle(fontSize:18,fontWeight:FontWeight.w800))]),
       const SizedBox(height:8),
-      Text(FirebaseAuth.instance.currentUser==null?'لا توجد جلسة Firebase نشطة.':'Firebase متصل والجلسة نشطة. بيانات المستخدمين والسجلات المتاحة تُقرأ مباشرة، بينما تغييرات الرتب والأرصدة والإجراءات الحساسة مقفلة حتى Backend موثّق + Audit Log.',style:const TextStyle(height:1.55,color:Color(0xFFCBC5D6))),
+      Text(controlAuth.currentUser==null?'لا توجد جلسة Firebase نشطة.':'Firebase متصل والجلسة نشطة. بيانات المستخدمين والسجلات المتاحة تُقرأ مباشرة، بينما تغييرات الرتب والأرصدة والإجراءات الحساسة مقفلة حتى Backend موثّق + Audit Log.',style:const TextStyle(height:1.55,color:Color(0xFFCBC5D6))),
     ]))),
     const SizedBox(height:12),const Text('اختصارات آمنة',style:TextStyle(fontSize:18,fontWeight:FontWeight.w800)),const SizedBox(height:8),
     Wrap(spacing:8,runSpacing:8,children:[
@@ -438,7 +439,7 @@ class _UsersPageState extends State<UsersPage> {
       ),
       const SizedBox(height:12),
       StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(
-        stream:FirebaseFirestore.instance.collection('users').snapshots(),
+        stream:controlFirestore.collection('users').snapshots(),
         builder:(context,snap){
           if(snap.connectionState==ConnectionState.waiting){
             return const Padding(
@@ -580,7 +581,7 @@ class _UserAccountOverviewCardState extends State<_UserAccountOverviewCard> {
   }
 
   Future<Map<String,dynamic>> _load() async {
-    final user=FirebaseAuth.instance.currentUser;
+    final user=controlAuth.currentUser;
     if(user==null)throw Exception('not_signed_in');
     final token=await user.getIdToken().timeout(const Duration(seconds:12));
     if(token==null||token.isEmpty)throw Exception('empty_token');
@@ -831,7 +832,7 @@ class _OwnerAccountActionsCard extends StatelessWidget {
 
   Future<void> _execute(BuildContext context,String action,String reason,{int? durationMinutes}) async {
     try{
-      final user=FirebaseAuth.instance.currentUser;
+      final user=controlAuth.currentUser;
       if(user==null)throw Exception('not_signed_in');
       final token=await user.getIdToken().timeout(const Duration(seconds:12));
       if(token==null||token.isEmpty)throw Exception('empty_token');
@@ -1007,9 +1008,9 @@ class _OwnerEconomyCard extends StatelessWidget {
   const _OwnerEconomyCard({required this.uid,required this.coins,required this.diamonds});
   final String uid; final dynamic coins,diamonds;
   @override Widget build(BuildContext context){
-    final current=FirebaseAuth.instance.currentUser;
+    final current=controlAuth.currentUser;
     return FutureBuilder<DocumentSnapshot<Map<String,dynamic>>>(
-      future:current==null?null:FirebaseFirestore.instance.collection('users').doc(current.uid).get(),
+      future:current==null?null:controlFirestore.collection('users').doc(current.uid).get(),
       builder:(context,snap){
         final actor=snap.data?.data();
         final isOwner=actor?['role']=='owner'&&actor?['adminEnabled']==true;
@@ -1067,7 +1068,7 @@ class _OwnerEconomyCard extends StatelessWidget {
     ));
     if(ok!=true||!context.mounted)return;
     try{
-      final user=FirebaseAuth.instance.currentUser;if(user==null)throw Exception('not_signed_in');
+      final user=controlAuth.currentUser;if(user==null)throw Exception('not_signed_in');
       final token=await user.getIdToken().timeout(const Duration(seconds:12));
       if(token==null||token.isEmpty)throw Exception('empty_token');
       final key='bal_${DateTime.now().millisecondsSinceEpoch}_${user.uid.substring(0,6)}';
@@ -1141,7 +1142,7 @@ class _RoomsPageState extends State<RoomsPage> {
   Uri get apiUri=>shadowApiEndpoint('voice-session');
 
   Future<Map<String,dynamic>> post(Map<String,dynamic> payload) async {
-    final user=FirebaseAuth.instance.currentUser;
+    final user=controlAuth.currentUser;
     if(user==null)throw Exception('forbidden');
     final token=await user.getIdToken().timeout(const Duration(seconds:12));
     if(token==null||token.isEmpty)throw Exception('forbidden');
@@ -1216,7 +1217,7 @@ class _RoomsPageState extends State<RoomsPage> {
     final current=room;if(current==null)return;
     final roomId=(current['roomId']??'').toString();if(roomId.isEmpty)return;
     final why=reason.text.trim().isEmpty?'تعديل إعدادات الغرفة من Shadow Control':reason.text.trim();
-    final user=FirebaseAuth.instance.currentUser;if(user==null)return;
+    final user=controlAuth.currentUser;if(user==null)return;
     final prefix=user.uid.length>=6?user.uid.substring(0,6):user.uid;
     final key='roomctl_'+DateTime.now().millisecondsSinceEpoch.toString()+'_'+prefix;
     setState((){busy=true;error=null;});
@@ -1335,7 +1336,7 @@ class _RoomsPageState extends State<RoomsPage> {
               const SizedBox(height:8),
               SizedBox(width:double.infinity,child:FilledButton.icon(
                 onPressed:creating?null:() async {
-                  final user=FirebaseAuth.instance.currentUser;
+                  final user=controlAuth.currentUser;
                   if(user==null)return;
                   final prefix=user.uid.length>=6?user.uid.substring(0,6):user.uid;
                   final key='roomcreate_'+DateTime.now().millisecondsSinceEpoch.toString()+'_'+prefix;
@@ -1427,7 +1428,7 @@ class _RoomsPageState extends State<RoomsPage> {
         subtitle:const Text('اختر غرفة للدخول إلى التحكم والتعديل مباشرة.'),
         children:[
           StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(
-            stream:FirebaseFirestore.instance.collection('rooms').where('systemOwned',isEqualTo:true).limit(50).snapshots(),
+            stream:controlFirestore.collection('rooms').where('systemOwned',isEqualTo:true).limit(50).snapshots(),
             builder:(context,snap){
               if(snap.connectionState==ConnectionState.waiting)return const Padding(padding:EdgeInsets.all(18),child:CircularProgressIndicator());
               if(snap.hasError)return Padding(padding:const EdgeInsets.all(16),child:Text('تعذر تحميل الغرف الرسمية: ${snap.error}'));
@@ -1765,7 +1766,7 @@ class AdminCollectionPage extends StatelessWidget {
   @override Widget build(BuildContext context)=>Scaffold(
     appBar:AppBar(title:Text(title)),
     body:StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(
-      stream:FirebaseFirestore.instance.collection(collection).limit(100).snapshots(),
+      stream:controlFirestore.collection(collection).limit(100).snapshots(),
       builder:(context,snap){
         if(snap.connectionState==ConnectionState.waiting)return const Center(child:CircularProgressIndicator());
         if(snap.hasError)return ListView(padding:const EdgeInsets.all(16),children:[
@@ -1796,7 +1797,7 @@ class AuditLogPage extends StatelessWidget {
   @override Widget build(BuildContext context)=>Scaffold(
     appBar:AppBar(title:const Text('سجل الإدارة')),
     body:StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(
-      stream:FirebaseFirestore.instance.collection('admin_audit_logs').limit(100).snapshots(),
+      stream:controlFirestore.collection('admin_audit_logs').limit(100).snapshots(),
       builder:(context,snap){
         if(snap.connectionState==ConnectionState.waiting)return const Center(child:CircularProgressIndicator());
         if(snap.hasError)return ListView(padding:const EdgeInsets.all(16),children:[
@@ -1868,9 +1869,9 @@ class _RoomIdManagementPageState extends State<RoomIdManagementPage> {
   @override void dispose(){oldId.dispose();newId.dispose();reason.dispose();super.dispose();}
 
   Future<Map<String,dynamic>?> _actor() async {
-    final user=FirebaseAuth.instance.currentUser;
+    final user=controlAuth.currentUser;
     if(user==null)return null;
-    final snap=await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+    final snap=await controlFirestore.collection('users').doc(user.uid).get();
     return snap.data();
   }
 
@@ -1881,13 +1882,13 @@ class _RoomIdManagementPageState extends State<RoomIdManagementPage> {
     }
     setState((){checking=true;error=null;roomDocId=null;roomData=null;});
     try{
-      final idSnap=await FirebaseFirestore.instance.collection('room_ids').doc(currentId).get();
+      final idSnap=await controlFirestore.collection('room_ids').doc(currentId).get();
       final target=idSnap.data()?['roomId']?.toString();
       if(target==null||target.isEmpty){
         final retired=idSnap.exists&&idSnap.data()?['reserved']==true;
         throw Exception(retired?'هذا ID غرفة متقاعد ومحجوز.':'لم يتم العثور على غرفة بهذا ID.');
       }
-      final roomSnap=await FirebaseFirestore.instance.collection('rooms').doc(target).get();
+      final roomSnap=await controlFirestore.collection('rooms').doc(target).get();
       if(!roomSnap.exists)throw Exception('الغرفة المرتبطة بالـID غير موجودة.');
       final data=roomSnap.data()??<String,dynamic>{};
       if('${data['publicId']??''}'!=currentId)throw Exception('هذا ID قديم وليس ID الغرفة الحالي.');
@@ -1935,7 +1936,7 @@ class _RoomIdManagementPageState extends State<RoomIdManagementPage> {
     if(confirmed!=true||!mounted)return;
     setState((){executing=true;error=null;});
     try{
-      final user=FirebaseAuth.instance.currentUser;if(user==null)throw Exception('forbidden');
+      final user=controlAuth.currentUser;if(user==null)throw Exception('forbidden');
       final token=await user.getIdToken().timeout(const Duration(seconds:12));
       if(token==null||token.isEmpty)throw Exception('forbidden');
       final key='rid_${DateTime.now().millisecondsSinceEpoch}_${user.uid.substring(0,6)}';
@@ -2064,9 +2065,9 @@ class _OwnerIdPermissionCardState extends State<_OwnerIdPermissionCard> {
   @override void initState(){super.initState();enabled=widget.capabilities.contains('manageIds');}
 
   Future<bool> _isOwner() async {
-    final current=FirebaseAuth.instance.currentUser;
+    final current=controlAuth.currentUser;
     if(current==null)return false;
-    final snap=await FirebaseFirestore.instance.collection('users').doc(current.uid).get();
+    final snap=await controlFirestore.collection('users').doc(current.uid).get();
     return snap.data()?['role']=='owner'&&snap.data()?['adminEnabled']==true;
   }
 
@@ -2089,7 +2090,7 @@ class _OwnerIdPermissionCardState extends State<_OwnerIdPermissionCard> {
     if(ok!=true||!mounted)return;
     setState(()=>busy=true);
     try{
-      final user=FirebaseAuth.instance.currentUser;if(user==null)throw Exception('not_signed_in');
+      final user=controlAuth.currentUser;if(user==null)throw Exception('not_signed_in');
       final token=await user.getIdToken().timeout(const Duration(seconds:12));
       if(token==null||token.isEmpty)throw Exception('empty_token');
       final key='idcap_${DateTime.now().millisecondsSinceEpoch}_${user.uid.substring(0,6)}';
@@ -2162,9 +2163,9 @@ class _IdManagementPageState extends State<UserIdManagementPage> {
   @override void dispose(){oldId.dispose();newId.dispose();reason.dispose();super.dispose();}
 
   Future<Map<String,dynamic>?> _actor() async {
-    final user=FirebaseAuth.instance.currentUser;
+    final user=controlAuth.currentUser;
     if(user==null)return null;
-    final snap=await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+    final snap=await controlFirestore.collection('users').doc(user.uid).get();
     return snap.data();
   }
 
@@ -2175,13 +2176,13 @@ class _IdManagementPageState extends State<UserIdManagementPage> {
     }
     setState((){checking=true;error=null;targetUid=null;targetData=null;});
     try{
-      final idSnap=await FirebaseFirestore.instance.collection('public_ids').doc(currentId).get();
+      final idSnap=await controlFirestore.collection('public_ids').doc(currentId).get();
       final uid=idSnap.data()?['uid']?.toString();
       if(uid==null||uid.isEmpty){
         final retired=idSnap.exists&&idSnap.data()?['reserved']==true;
         throw Exception(retired?'هذا ID متقاعد ومحجوز وليس ID حاليًا.':'لم يتم العثور على حساب بهذا ID.');
       }
-      final userSnap=await FirebaseFirestore.instance.collection('public_profiles').doc(uid).get();
+      final userSnap=await controlFirestore.collection('public_profiles').doc(uid).get();
       if(!userSnap.exists)throw Exception('الحساب المرتبط بالـID غير موجود.');
       final data=userSnap.data()??<String,dynamic>{};
       if('${data['publicId']??''}'!=currentId)throw Exception('هذا ID قديم/بديل وليس الـID الحالي للحساب.');
@@ -2230,7 +2231,7 @@ class _IdManagementPageState extends State<UserIdManagementPage> {
     if(confirmed!=true||!mounted)return;
     setState((){executing=true;error=null;});
     try{
-      final user=FirebaseAuth.instance.currentUser;if(user==null)throw Exception('forbidden');
+      final user=controlAuth.currentUser;if(user==null)throw Exception('forbidden');
       final token=await user.getIdToken().timeout(const Duration(seconds:12));
       if(token==null||token.isEmpty)throw Exception('forbidden');
       final key='pid_${DateTime.now().millisecondsSinceEpoch}_${user.uid.substring(0,6)}';
@@ -2348,10 +2349,10 @@ class MorePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final uid=FirebaseAuth.instance.currentUser?.uid;
+    final uid=controlAuth.currentUser?.uid;
     if(uid==null)return const Center(child:CircularProgressIndicator());
     return FutureBuilder<DocumentSnapshot<Map<String,dynamic>>>(
-      future:FirebaseFirestore.instance.collection('users').doc(uid).get(),
+      future:controlFirestore.collection('users').doc(uid).get(),
       builder:(context,snap){
         if(!snap.hasData)return const Center(child:CircularProgressIndicator());
         final isOwner=snap.data?.data()?['role']=='owner';
