@@ -34,7 +34,7 @@ class AuthBloc extends Bloc<AuthEvent,AuthState>{
  }
 
  bool _needsEmailVerification(User user)=>!user.isAnonymous&&user.providerData.any((p)=>p.providerId=='password')&&!user.emailVerified;
- Future<void> _sendVerification(User user)async{if(_needsEmailVerification(user))await user.sendEmailVerification();}
+ Future<void> _sendVerification(User user)async{if(_needsEmailVerification(user)){await FirebaseAuth.instance.setLanguageCode('ar');await user.sendEmailVerification();}}
 
  Map<String,dynamic> _safeProfileSeed(Map<String,dynamic> source){
   const allowed={'displayName','username','bio','gender','birthDate','country','location','profileImage','avatarUrl','coverImage','interests','email','phone'};
