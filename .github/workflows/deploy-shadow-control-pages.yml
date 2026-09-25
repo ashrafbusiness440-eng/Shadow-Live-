@@ -134,7 +134,7 @@ jobs:
           cp site/deploy.json site/app/deploy.json
           cp site/deploy.json site/control/deploy.json
 
-          cat > site/refresh-app.html <<EOF
+          cat > site/app/refresh.html <<EOF
           <!doctype html>
           <html lang="ar" dir="rtl">
           <head>
