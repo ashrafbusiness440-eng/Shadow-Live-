@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 import '../firebase_options.dart';
 
@@ -23,7 +24,11 @@ Future<void> initializeControlFirebase() async {
   );
 
   _controlFirebaseApp = app;
-  _controlFirebaseAuth = FirebaseAuth.instanceFor(app: app);
+  final auth = FirebaseAuth.instanceFor(app: app);
+  if (kIsWeb) {
+    await auth.setPersistence(Persistence.SESSION);
+  }
+  _controlFirebaseAuth = auth;
   _controlFirestore = FirebaseFirestore.instanceFor(app: app);
 }
 
