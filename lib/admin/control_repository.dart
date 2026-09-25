@@ -1,8 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'control_access.dart';
+import 'control_firebase.dart';
 
 class ControlRepository {
-  ControlRepository({FirebaseFirestore? firestore}):_db=firestore??FirebaseFirestore.instance;
+  ControlRepository({FirebaseFirestore? firestore}):_db=firestore??controlFirestore;
   final FirebaseFirestore _db;
 
   Future<ControlAccess?> loadAccess(String uid) async {
