@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import 'control_api_endpoints.dart';
+import 'control_firebase.dart';
 
 import '../features/gift/services/gift_catalog_service.dart';
 import '../utils/compact_number.dart';
@@ -32,7 +33,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   }
 
   Future<Map<String, dynamic>> post(Map<String, dynamic> payload) async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = controlAuth.currentUser;
     if (user == null) throw StateError('يجب تسجيل الدخول.');
     final token = await user.getIdToken();
     if (token == null || token.isEmpty) {
