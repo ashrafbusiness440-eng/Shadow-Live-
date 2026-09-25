@@ -85,6 +85,7 @@ def main() -> int:
     manage_user_access = read("cloudflare-worker/src/manage-user-access.js")
     manage_user_account = read("cloudflare-worker/src/manage-user-account.js")
     control_user_details = read("cloudflare-worker/src/control-user-details.js")
+    legacy_admin_shim = read("cloudflare-worker/src/legacy-firebase-admin-shim.js")
 
     if "_presenceTimer" in voice or ".heartbeat(" in voice:
         failures.append("Step 4 regression: Firestore presence heartbeat returned to the room session")
@@ -164,9 +165,19 @@ def main() -> int:
         "ZEGO is no longer the selected VoiceService implementation",
     ))
     check(lambda: require(
-        r"const maxAttempts = retryTransient \? 2 : 1;",
+        r"FIRESTORE_TRANSIENT_MAX_ATTEMPTS\s*=\s*3\b",
         firestore,
-        "Cloudflare Firestore retry ceiling changed from 2 attempts",
+        "Step 9 borrowed Firestore retry cap changed from 3 attempts",
+    ))
+    check(lambda: require(
+        r"FIRESTORE_RETRY_BASE_DELAY_MS\s*=\s*350\b",
+        firestore,
+        "Step 9 borrowed Firestore backoff base changed",
+    ))
+    check(lambda: require(
+        r"FIRESTORE_RETRY_JITTER_MS\s*=\s*250\b",
+        firestore,
+        "Step 9 borrowed Firestore retry jitter changed",
     ))
     check(lambda: require(
         r"AUTH_STATE_MAX_ATTEMPTS\s*=\s*3\b",
@@ -199,6 +210,11 @@ def main() -> int:
 
     if "assertUserDocumentSessionState" not in auth:
         failures.append("Step 9 borrowed regression: user document session validator is missing")
+
+    if "const maxAttempts = 3;" not in legacy_admin_shim:
+        failures.append("Step 9 borrowed regression: legacy transaction retry cap changed")
+    if "firestoreErrorRetryDelayMs" not in legacy_admin_shim:
+        failures.append("Step 9 borrowed regression: legacy transactions lost backoff/jitter")
     room_realtime_body = function_body(room_realtime_entry, "roomRealtime")
     if room_realtime_body is None:
         failures.append("Step 9 borrowed regression: roomRealtime handler is missing")

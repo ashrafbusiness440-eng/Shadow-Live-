@@ -1,5 +1,75 @@
 import { googleAccessToken, parseServiceAccount } from "./google-auth.js";
 
+export const FIRESTORE_TRANSIENT_MAX_ATTEMPTS = 3;
+export const FIRESTORE_RETRY_BASE_DELAY_MS = 350;
+export const FIRESTORE_RETRY_MAX_DELAY_MS = 2500;
+export const FIRESTORE_RETRY_JITTER_MS = 250;
+
+export function isTransientFirestoreStatus(status, body = {}) {
+  const value = Number(status || 0);
+  const code = String(body?.error?.status || body?.error?.message || "");
+  return value === 408 ||
+    value === 429 ||
+    value >= 500 ||
+    code === "RESOURCE_EXHAUSTED" ||
+    code === "UNAVAILABLE" ||
+    code === "ABORTED";
+}
+
+export function isTransientFirestoreError(error) {
+  const code = String(error?.message || "");
+  const status = Number(error?.status || 0);
+  return status === 408 ||
+    status === 409 ||
+    status === 429 ||
+    status >= 500 ||
+    code === "RESOURCE_EXHAUSTED" ||
+    code === "UNAVAILABLE" ||
+    code === "ABORTED" ||
+    code === "firestore_network_error";
+}
+
+export function firestoreRetryDelayMs(
+  response,
+  attempt,
+  { randomImpl = Math.random, nowMs = Date.now() } = {},
+) {
+  const raw = String(response?.headers?.get?.("retry-after") || "").trim();
+  if (raw) {
+    const seconds = Number(raw);
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return Math.min(
+        FIRESTORE_RETRY_MAX_DELAY_MS,
+        Math.round(seconds * 1000),
+      );
+    }
+    const dateMs = Date.parse(raw);
+    if (Number.isFinite(dateMs)) {
+      return Math.min(
+        FIRESTORE_RETRY_MAX_DELAY_MS,
+        Math.max(0, Math.round(dateMs - nowMs)),
+      );
+    }
+  }
+
+  const exponential = Math.min(
+    FIRESTORE_RETRY_MAX_DELAY_MS,
+    FIRESTORE_RETRY_BASE_DELAY_MS * (2 ** Math.max(0, Number(attempt || 0))),
+  );
+  const jitter = Math.floor(
+    Math.max(0, Math.min(1, Number(randomImpl()) || 0)) *
+      FIRESTORE_RETRY_JITTER_MS,
+  );
+  return Math.min(FIRESTORE_RETRY_MAX_DELAY_MS, exponential + jitter);
+}
+
+export function firestoreErrorRetryDelayMs(
+  attempt,
+  { randomImpl = Math.random } = {},
+) {
+  return firestoreRetryDelayMs(null, attempt, { randomImpl });
+}
+
 function encodeValue(value) {
   if (value === null || value === undefined) return { nullValue: null };
   if (value instanceof Date) return { timestampValue: value.toISOString() };
@@ -71,38 +141,51 @@ export function firestoreClient(env) {
       headers.set("Content-Type", "application/json");
     }
 
-    // Avoid retry storms when Firestore is throttling. One retry is enough
-    // for transient network noise; repeated 429 retries amplify quota pressure.
-    const maxAttempts = retryTransient ? 2 : 1;
+    // Step 9 pressure guard: keep retries small, but space transient retries
+    // enough to avoid immediate RESOURCE_EXHAUSTED amplification.
+    const maxAttempts = retryTransient ? FIRESTORE_TRANSIENT_MAX_ATTEMPTS : 1;
     let response = null;
     let body = {};
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      response = await fetch(url, { ...options, headers });
-      if (response.status === 404) return { response, body: null };
-      body = await response.json().catch(() => ({}));
-      if (response.ok) return { response, body };
+    let lastError = null;
 
-      const transient =
-        response.status === 429 ||
-        response.status === 408 ||
-        response.status >= 500 ||
-        body?.error?.status === "RESOURCE_EXHAUSTED" ||
-        body?.error?.status === "UNAVAILABLE";
-      if (!retryTransient || !transient || attempt === maxAttempts - 1) {
-        const code =
-          body?.error?.status ||
-          body?.error?.message ||
-          `http_${response.status}`;
-        const error = new Error(String(code));
-        error.status = response.status;
-        error.details = body;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        response = await fetch(url, { ...options, headers });
+        lastError = null;
+      } catch (error) {
+        response = null;
+        body = {};
+        lastError = error;
+      }
+
+      if (response?.status === 404) return { response, body: null };
+      if (response) {
+        body = await response.json().catch(() => ({}));
+        if (response.ok) return { response, body };
+      }
+
+      const transient = response
+        ? isTransientFirestoreStatus(response.status, body)
+        : true;
+      const canRetry =
+        retryTransient && transient && attempt < maxAttempts - 1;
+      if (!canRetry) {
+        if (response) {
+          const code =
+            body?.error?.status ||
+            body?.error?.message ||
+            `http_${response.status}`;
+          const error = new Error(String(code));
+          error.status = response.status;
+          error.details = body;
+          throw error;
+        }
+        const error = new Error("firestore_network_error");
+        error.cause = lastError || null;
         throw error;
       }
 
-      const retryAfter = Number(response.headers.get("retry-after") || 0);
-      const delayMs = retryAfter > 0
-        ? Math.min(1500, retryAfter * 1000)
-        : Math.min(1200, 100 * (2 ** attempt));
+      const delayMs = firestoreRetryDelayMs(response, attempt);
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
 

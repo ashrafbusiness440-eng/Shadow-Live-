@@ -3,7 +3,11 @@ import {
   assertUserDocumentSessionState,
   verifyFirebaseIdToken,
 } from "./firebase-auth.js";
-import { firestoreClient } from "./firestore.js";
+import {
+  firestoreClient,
+  firestoreErrorRetryDelayMs,
+  isTransientFirestoreError,
+} from "./firestore.js";
 
 class ApiError extends Error {
   constructor(code, status = 400) { super(code); this.code = code; this.status = status; }
@@ -59,9 +63,11 @@ async function execute(db, actorPayload, body) {
   const reason = clean(body.reason);
   const key = clean(body.idempotencyKey);
 
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const transaction = await db.beginTransaction();
+  const maxAttempts = 3;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    let transaction = null;
     try {
+      transaction = await db.beginTransaction();
       const [actorSnap, operationSnap, targetSnap] = await Promise.all([
         db.get(`users/${actorUid}`, transaction),
         db.get(`control_operations/${key}`, transaction),
@@ -144,9 +150,19 @@ async function execute(db, actorPayload, body) {
 
       return { ok: true, code: "ok", operationId: key, ...resultData };
     } catch (error) {
-      await db.rollback(transaction);
+      if (transaction) {
+        await db.rollback(transaction);
+      }
       if (error instanceof ApiError) throw error;
-      if ((error?.message === "ABORTED" || error?.status === 409) && attempt < 2) continue;
+      if (
+        attempt < maxAttempts - 1 &&
+        isTransientFirestoreError(error)
+      ) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, firestoreErrorRetryDelayMs(attempt)),
+        );
+        continue;
+      }
       throw error;
     }
   }
