@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 concurrency:
   group: shadow-live-pages-production
@@ -15,12 +17,18 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout exact production commit
         uses: actions/checkout@v6
         with:
           ref: ${{ github.sha }}
           fetch-depth: 1
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
 
       - name: Set up pinned Flutter
         uses: subosito/flutter-action@v2
@@ -213,4 +221,13 @@ jobs:
           git commit -m "Publish isolated Shadow Live PWAs ${GITHUB_SHA}"
           git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push --force origin gh-pages
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
 
