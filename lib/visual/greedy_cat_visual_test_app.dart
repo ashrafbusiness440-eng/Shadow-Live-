@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../features/games/services/game_runtime_service.dart';
 import '../features/games/widgets/room_game_overlay.dart';
+import '../features/room/services/room_presence_service.dart';
 
 void main() {
   runApp(const GreedyCatVisualTestApp());
@@ -24,6 +25,7 @@ class GreedyCatVisualTestApp extends StatelessWidget {
               roomId: 'visual-room',
               initialGameKey: 'greedy_cat',
               runtimeService: _VisualGameRuntimeService(),
+              realtimeEvents: const Stream<RoomRealtimeEvent>.empty(),
             ),
           ),
         ),
@@ -46,7 +48,10 @@ class _VisualGameRuntimeService extends GameRuntimeService {
   Future<List<GameCatalogEntry>> loadCatalog() async => const [_greedy];
 
   @override
-  Future<GameRuntimeState> loadState(GameCatalogEntry game) async {
+  Future<GameRuntimeState> loadState(
+    GameCatalogEntry game, {
+    String roomId = '',
+  }) async {
     final now = DateTime.now().millisecondsSinceEpoch;
     return GameRuntimeState(
       gameId: 'greedy_cat',

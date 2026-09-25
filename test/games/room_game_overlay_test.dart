@@ -294,7 +294,8 @@ Widget host(
             roomId: 'room_test',
             initialGameKey: gameKey,
             runtimeService: service,
-            realtimeEvents: realtimeEvents,
+            realtimeEvents:
+                realtimeEvents ?? const Stream<RoomRealtimeEvent>.empty(),
           ),
         ),
       ),
