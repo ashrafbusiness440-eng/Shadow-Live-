@@ -10,7 +10,7 @@ const db=getFirestore(app);
 
 after(async()=>{await deleteApp(app);});
 
-test("active entrance reward is projected into the room with a stable fallback asset key",async()=>{
+test("active entrance reward is prepared for realtime broadcast without persisting transient room state",async()=>{
   const suffix=Date.now().toString()+"_entrance";
   const uid="cosmetic_user_"+suffix;
   const roomId="cosmetic_room_"+suffix;
@@ -49,11 +49,12 @@ test("active entrance reward is projected into the room with a stable fallback a
   assert.equal(result.event.rewardId,rewardId);
   assert.equal(result.event.assetKey,"cosmetics.entrance.royal_entry");
 
+  assert.equal(result.event.displayName,"Entrance User");
+  assert.equal(result.event.assetKey,"cosmetics.entrance.royal_entry");
+  assert.ok(Number(result.event.eventAtMs)>0);
+
   const room=await db.collection("rooms").doc(roomId).get();
-  const event=room.data().recentEntrance;
-  assert.equal(event.displayName,"Entrance User");
-  assert.equal(event.assetKey,"cosmetics.entrance.royal_entry");
-  assert.ok(Number(event.eventAtMs)>0);
+  assert.equal(room.data().recentEntrance,undefined);
 });
 
 test("expired entrance reward is not announced",async()=>{
