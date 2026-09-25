@@ -602,7 +602,7 @@ class _UserAccountOverviewCardState extends State<_UserAccountOverviewCard> {
 
   ImageProvider? avatar(Map<String,dynamic> user,Map<String,dynamic> profile,Map<String,dynamic> auth){
     final url=text(firstValue([
-      user['profileImageUrl'],profile['profileImageUrl'],user['avatarUrl'],auth['photoUrl'],
+      user['profileImageUrl'],profile['profileImageUrl'],user['profileImage'],user['avatarUrl'],auth['photoUrl'],
     ]));
     if(url.startsWith('http://')||url.startsWith('https://'))return NetworkImage(url);
     final asset=text(firstValue([user['profileAvatarAsset'],profile['profileAvatarAsset']]));
