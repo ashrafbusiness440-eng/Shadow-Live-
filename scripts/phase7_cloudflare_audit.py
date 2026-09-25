@@ -38,6 +38,7 @@ REQUIRED_WORKER_ROUTES = (
     "/api/storage-health",
     "/api/room-gift",
     "/api/voice-session",
+    "/api/room-realtime",
     "/api/google-play-purchase",
     "/api/manage-app-asset",
     "/api/economy-router",
