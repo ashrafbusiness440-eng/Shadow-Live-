@@ -172,6 +172,17 @@ try{
   }
   console.log("PASS router unknown-route guard");
 
+  expectOk(
+    "game-runtime catalog read under auth lookup pressure",
+    await api("game-runtime",userToken,{action:"catalog"}),
+    (b)=>Array.isArray(b.items)&&b.items.some((item)=>item.gameId==="greedy_cat"),
+  );
+  expectOk(
+    "game-runtime greedy state read under auth lookup pressure",
+    await api("game-runtime",userToken,{action:"state",gameId:"greedy_cat"}),
+    (b)=>b.gameId==="greedy_cat"&&b.round&&typeof b.serverNowMs==="number",
+  );
+
   const noAuth=await api("economy-control",null,{action:"state"});
   if(noAuth.res.status!==401||noAuth.body.code!=="unauthorized"){
     throw new Error(`economy auth guard failed: ${noAuth.res.status} ${JSON.stringify(noAuth.body)}`);
