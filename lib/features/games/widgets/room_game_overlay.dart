@@ -640,24 +640,15 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
 
   Widget _gameView() {
     final game = _selected!;
+    if (game.gameId == 'greedy_cat') {
+      return _greedyGameView();
+    }
+
     final background = GameAssetPaths.backgroundFor(game.gameId, game.mode);
-    final greedy = game.gameId == 'greedy_cat';
     return Column(
       children: [
-        if (!greedy) _statusBar(game),
-        if (_error != null)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-            color: Colors.redAccent.withValues(alpha: .12),
-            child: Text(
-              _error!,
-              style: const TextStyle(
-                color: Colors.orangeAccent,
-                fontSize: 11,
-              ),
-            ),
-          ),
+        _statusBar(game),
+        if (_error != null) _gameErrorBanner(),
         Expanded(
           child: Container(
             decoration: background == null
@@ -666,25 +657,17 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
                     image: DecorationImage(
                       image: AssetImage(background),
                       fit: BoxFit.cover,
-                      opacity: greedy ? .20 : .10,
+                      opacity: .10,
                     ),
                   ),
             child: ListView(
-              padding: EdgeInsets.fromLTRB(
-                14,
-                greedy ? 10 : 12,
-                14,
-                20,
-              ),
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 20),
               children: [
-                if (greedy) _greedyInfoBar(),
-                if (greedy) const SizedBox(height: 10),
                 if (game.gameId == 'witch') _witchModesBar(),
-                if (!greedy && game.gameId != 'slot') _roundCard(),
-                if (!greedy) const SizedBox(height: 10),
-                if (!greedy) _betPicker(),
-                if (!greedy) const SizedBox(height: 12),
-                if (greedy) _greedyBoard(),
+                if (game.gameId != 'slot') _roundCard(),
+                const SizedBox(height: 10),
+                _betPicker(),
+                const SizedBox(height: 12),
                 if (game.gameId == 'witch') _witchBoard(),
                 if (game.gameId == 'slot') _slotBoard(),
               ],
@@ -692,6 +675,39 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _greedyGameView() {
+    return Column(
+      children: [
+        if (_error != null) _gameErrorBanner(),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 20),
+            children: [
+              _greedyInfoBar(),
+              const SizedBox(height: 10),
+              _greedyBoard(),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _gameErrorBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+      color: Colors.redAccent.withValues(alpha: .12),
+      child: Text(
+        _error!,
+        style: const TextStyle(
+          color: Colors.orangeAccent,
+          fontSize: 11,
+        ),
+      ),
     );
   }
 
