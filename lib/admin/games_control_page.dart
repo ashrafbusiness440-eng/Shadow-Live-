@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 
 import '../utils/compact_number.dart';
 import 'control_api_endpoints.dart';
+import 'control_firebase.dart';
 
 class GamesControlPage extends StatefulWidget {
   const GamesControlPage({super.key});
@@ -44,7 +45,7 @@ class _GamesControlPageState extends State<GamesControlPage> {
   }
 
   Future<Map<String, dynamic>> post(Map<String, dynamic> payload) async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = controlAuth.currentUser;
     if (user == null) throw StateError('not_signed_in');
     final token = await user.getIdToken();
     if (token == null || token.isEmpty) throw StateError('empty_token');
