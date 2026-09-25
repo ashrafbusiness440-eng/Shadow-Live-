@@ -317,19 +317,6 @@ try{
   }
   console.log("PASS room websocket game event "+pushedGameEvent.type);
 
-  const agency=ok("agency cycle settlement",await post("/api/economy-control",ownerToken,{action:"settleAgencyCycle",accrualId}));
-  if(agency.alreadySettled!==false||agency.settlement?.status!=="settled"||Number(agency.settlement?.hostDiamonds||0)<=0){
-    throw Error("agency settlement result invalid "+JSON.stringify(agency));
-  }
-  const hostAfter=await fsGet("users/"+hostUid);
-  if(Number(hostAfter?.diamonds||0)<=0)throw Error("agency settlement did not credit host diamonds");
-  const agencyLedger=await fsGet("financial_ledger/agency_settlement_"+accrualId);
-  if(!agencyLedger||agencyLedger.sourceType!=="agency_settlement")throw Error("agency settlement ledger missing");
-  console.log("PASS agency settlement wallet + ledger");
-
-  const agencyDuplicate=ok("agency settlement idempotency",await post("/api/economy-control",ownerToken,{action:"settleAgencyCycle",accrualId}));
-  if(agencyDuplicate.alreadySettled!==true)throw Error("agency settlement duplicate guard failed");
-
   const now=Date.now();
   await fsSet("game_operations/"+manualOpId,{
     operationId:manualOpId,idempotencyKey:manualKey,userId:playerUid,roomId:"phase6_room",
@@ -410,6 +397,19 @@ try{
   if(slotDuplicate.code!=="duplicate")throw Error("slot duplicate guard failed");
   if(Number((await fsGet("users/"+playerUid))?.coins)!==afterSlot)throw Error("slot duplicate changed wallet");
   console.log("PASS real slot wallet + ledger + RNG + idempotency");
+
+  const agency=ok("agency cycle settlement",await post("/api/economy-control",ownerToken,{action:"settleAgencyCycle",accrualId}));
+  if(agency.alreadySettled!==false||agency.settlement?.status!=="settled"||Number(agency.settlement?.hostDiamonds||0)<=0){
+    throw Error("agency settlement result invalid "+JSON.stringify(agency));
+  }
+  const hostAfter=await fsGet("users/"+hostUid);
+  if(Number(hostAfter?.diamonds||0)<=0)throw Error("agency settlement did not credit host diamonds");
+  const agencyLedger=await fsGet("financial_ledger/agency_settlement_"+accrualId);
+  if(!agencyLedger||agencyLedger.sourceType!=="agency_settlement")throw Error("agency settlement ledger missing");
+  console.log("PASS agency settlement wallet + ledger");
+
+  const agencyDuplicate=ok("agency settlement idempotency",await post("/api/economy-control",ownerToken,{action:"settleAgencyCycle",accrualId}));
+  if(agencyDuplicate.alreadySettled!==true)throw Error("agency settlement duplicate guard failed");
 
   console.log("ALL CLOUDFLARE PHASE-6 SETTLEMENT AND GAME E2E CHECKS PASSED");
 }finally{
