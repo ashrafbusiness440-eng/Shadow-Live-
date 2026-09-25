@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../games/services/game_runtime_service.dart';
-import '../games/widgets/room_game_overlay.dart';
+import '../features/games/services/game_runtime_service.dart';
+import '../features/games/widgets/room_game_overlay.dart';
 
 void main() {
   runApp(const GreedyCatVisualTestApp());
