@@ -44,6 +44,8 @@ class GameRuntimeState {
     required this.round,
     required this.currentRoundSelections,
     required this.lastResult,
+    this.recentResults = const [],
+    this.serverRoundSelections = const {},
   });
 
   final String gameId;
@@ -53,6 +55,8 @@ class GameRuntimeState {
   final Map<String, dynamic>? round;
   final Map<String, int> currentRoundSelections;
   final Map<String, dynamic>? lastResult;
+  final List<Map<String, dynamic>> recentResults;
+  final Map<String, int> serverRoundSelections;
 
   factory GameRuntimeState.fromJson(Map<String, dynamic> json) {
     final totals = <String, int>{};
@@ -62,6 +66,15 @@ class GameRuntimeState {
         final id = (item['choiceId'] ?? '').toString();
         final amount = (item['amountCoins'] as num?)?.toInt() ?? 0;
         if (id.isNotEmpty && amount > 0) totals[id] = amount;
+      }
+    }
+    final serverTotals = <String, int>{};
+    final serverRaw = json['serverRoundSelections'];
+    if (serverRaw is List) {
+      for (final item in serverRaw.whereType<Map>()) {
+        final id = (item['choiceId'] ?? '').toString();
+        final amount = (item['amountCoins'] as num?)?.toInt() ?? 0;
+        if (id.isNotEmpty && amount > 0) serverTotals[id] = amount;
       }
     }
     return GameRuntimeState(
@@ -80,6 +93,13 @@ class GameRuntimeState {
       lastResult: json['lastResult'] is Map
           ? Map<String, dynamic>.from(json['lastResult'] as Map)
           : null,
+      recentResults: json['recentResults'] is List
+          ? (json['recentResults'] as List)
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .toList(growable: false)
+          : const [],
+      serverRoundSelections: serverTotals,
     );
   }
 }
@@ -247,6 +267,14 @@ class GameRuntimeService {
                 'locked': false,
               },
         currentRoundSelections: Map<String, int>.from(_e2eTotals),
+        serverRoundSelections: game.gameId == 'greedy_cat'
+            ? const <String, int>{
+                'fish15': 42000,
+                'steak25': 18000,
+                'pepper5': 10000,
+                'tomato5': 8000,
+              }
+            : const <String, int>{},
         lastResult: game.gameId == 'slot'
             ? null
             : <String, dynamic>{
@@ -255,6 +283,29 @@ class GameRuntimeService {
                 'outcomeId': game.gameId == 'greedy_cat' ? 'salad' : 'moon',
                 'closedAtMs': now - 5000,
               },
+        recentResults: game.gameId == 'slot'
+            ? const []
+            : List.generate(
+                20,
+                (index) => <String, dynamic>{
+                  'roundId': '${game.key}:e2e:${-index}',
+                  'roundNumber': -index,
+                  'outcomeId': game.gameId == 'greedy_cat'
+                      ? const [
+                          'shell45',
+                          'fish15',
+                          'steak25',
+                          'pepper5',
+                          'tomato5',
+                          'carrot5',
+                          'cabbage5',
+                          'chicken10',
+                        ][index % 8]
+                      : 'moon',
+                  'closedAtMs': now - ((index + 1) * 30000),
+                },
+                growable: false,
+              ),
       );
     }
     final body = await _post({

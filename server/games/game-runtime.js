@@ -377,6 +377,16 @@ export async function placeGameBet(
       });
     }
 
+    const choiceTotals={};
+    if(gameId!=="slot"){
+      for(const selection of selections){
+        const choiceId=clean(selection?.choiceId);
+        const amountCoins=Number(selection?.amountCoins||0);
+        if(choiceId&&Number.isSafeInteger(amountCoins)&&amountCoins>0){
+          choiceTotals[choiceId]=FieldValue.increment(amountCoins);
+        }
+      }
+    }
     tx.set(roundRef,{
       gameId,
       mode,
@@ -393,6 +403,7 @@ export async function placeGameBet(
       totalPayoutCoins:FieldValue.increment(settled?payout:0),
       operationCount:FieldValue.increment(1),
       settledOperationCount:FieldValue.increment(settled?1:0),
+      ...(gameId!=="slot"?{choiceTotals}:{}),
       updatedAt:now,
       createdAt:now,
     },{merge:true});
@@ -606,17 +617,26 @@ export async function gameState(db,uid,body={},options={}){
     nowMs,
   });
   let lastResult=null;
+  const recentResults=[];
   if(gameId!=="slot"){
-    const previousNow=Math.max(0,nowMs-config.roundDurationSeconds*1000);
-    const previous=buildRound({
-      config,
-      gameId,
-      mode,
-      uid,
-      key:"previous_preview",
-      nowMs:previousNow,
-    });
-    if(previous.roundId!==round.roundId){
+    const seenRoundIds=new Set();
+    for(let index=1;index<=20;index++){
+      const previousNow=Math.max(
+        0,
+        nowMs-config.roundDurationSeconds*1000*index,
+      );
+      const previous=buildRound({
+        config,
+        gameId,
+        mode,
+        uid,
+        key:"previous_preview_"+index,
+        nowMs:previousNow,
+      });
+      if(previous.roundId===round.roundId||seenRoundIds.has(previous.roundId)){
+        continue;
+      }
+      seenRoundIds.add(previous.roundId);
       const resolved=resolveOutcome({
         gameId,
         mode,
@@ -624,13 +644,31 @@ export async function gameState(db,uid,body={},options={}){
         roundId:previous.roundId,
         secret:options.rngSecret||process.env.GAME_RNG_SECRET,
       });
-      lastResult={
+      recentResults.push({
         roundId:previous.roundId,
         dayKey:previous.dayKey,
         roundNumber:previous.roundNumber,
         outcomeId:resolved.outcomeId,
         closedAtMs:previous.closesAtMs,
-      };
+      });
+    }
+    lastResult=recentResults[0]||null;
+  }
+  let serverRoundSelections=[];
+  if(gameId!=="slot"){
+    const roundSnap=await db.collection("game_rounds").doc(round.roundId).get();
+    const choiceTotals=roundSnap.exists?roundSnap.data()?.choiceTotals:{};
+    if(choiceTotals&&typeof choiceTotals==="object"){
+      serverRoundSelections=Object.entries(choiceTotals)
+        .map(([choiceId,amountCoins])=>({
+          choiceId:clean(choiceId),
+          amountCoins:Number(amountCoins||0),
+        }))
+        .filter(item=>
+          item.choiceId&&
+          Number.isSafeInteger(item.amountCoins)&&
+          item.amountCoins>0
+        );
     }
   }
   const pendingSnapshot=await db.collection("game_operations")
@@ -669,6 +707,7 @@ export async function gameState(db,uid,body={},options={}){
     bets:[...validateBetLadder(gameId,mode,selected.bets)],
     serverNowMs:nowMs,
     lastResult,
+    recentResults,
     round:gameId==="slot"?null:{
       roundId:round.roundId,
       dayKey:round.dayKey,
@@ -678,6 +717,7 @@ export async function gameState(db,uid,body={},options={}){
       locked:nowMs>=round.closesAtMs-config.lockBeforeMs,
     },
     currentRoundSelections,
+    serverRoundSelections,
     pending,
   };
 }

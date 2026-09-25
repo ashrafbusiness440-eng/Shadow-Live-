@@ -72,6 +72,14 @@ class FakeGameRuntimeService extends GameRuntimeService {
               'locked': false,
             },
       currentRoundSelections: Map<String, int>.from(totals),
+      serverRoundSelections: game.gameId == 'greedy_cat'
+          ? const <String, int>{
+              'fish15': 42000,
+              'steak25': 18000,
+              'pepper5': 10000,
+              'tomato5': 8000,
+            }
+          : const <String, int>{},
       lastResult: game.gameId == 'slot'
           ? null
           : <String, dynamic>{
@@ -80,6 +88,29 @@ class FakeGameRuntimeService extends GameRuntimeService {
               'outcomeId': game.gameId == 'greedy_cat' ? 'salad' : 'moon',
               'closedAtMs': now - 1000,
             },
+      recentResults: game.gameId == 'slot'
+          ? const []
+          : List.generate(
+              20,
+              (index) => <String, dynamic>{
+                'roundId': '${game.key}:test:${-index}',
+                'roundNumber': -index,
+                'outcomeId': game.gameId == 'greedy_cat'
+                    ? const [
+                        'shell45',
+                        'fish15',
+                        'steak25',
+                        'pepper5',
+                        'tomato5',
+                        'carrot5',
+                        'cabbage5',
+                        'chicken10',
+                      ][index % 8]
+                    : 'moon',
+                'closedAtMs': now - ((index + 1) * 30000),
+              },
+              growable: false,
+            ),
     );
   }
 
@@ -148,7 +179,18 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.text('القط الجشع'), findsOneWidget);
-    final choice = find.text('×5 • فلفل');
+    expect(find.text('New'), findsOneWidget);
+    expect(find.text('بيتزا'), findsOneWidget);
+    expect(find.text('سلطة'), findsOneWidget);
+    expect(find.text('🔥🔥'), findsOneWidget);
+
+    await tester.tap(find.text('بيتزا'));
+    await tester.tap(find.text('سلطة'));
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(service.totals.containsKey('pizza'), isFalse);
+    expect(service.totals.containsKey('salad'), isFalse);
+
+    final choice = find.text('فلفل  ×5');
     expect(choice, findsOneWidget);
 
     await tester.tap(choice);
@@ -157,7 +199,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(service.totals['pepper5'], 400);
-    expect(find.text('رهانك 400'), findsOneWidget);
+    expect(find.text('400'), findsOneWidget);
   });
 
   testWidgets('Witch switches between Normal and Advanced modes',
