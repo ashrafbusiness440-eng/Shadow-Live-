@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { sign } from "node:crypto";
+import { firestoreE2eFetch, sleep } from "./firestore-e2e-retry.mjs";
 
 const workerBase="https://shadow-live.ashraf-business-440.workers.dev";
 let sa=JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT||"{}");
@@ -86,7 +87,7 @@ async function firebaseIdToken(uid){
 const accessToken=await googleAccessToken();
 const docRoot=`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`;
 async function fsSet(path,fields){
-  const res=await fetch(`${docRoot}/${path}`,{
+  const res=await firestoreE2eFetch(`${docRoot}/${path}`,{
     method:"PATCH",
     headers:{authorization:`Bearer ${accessToken}`,"content-type":"application/json"},
     body:JSON.stringify({fields:encodeFields(fields)}),
@@ -94,7 +95,7 @@ async function fsSet(path,fields){
   if(!res.ok)throw new Error(`fsSet failed ${path}: ${res.status}`);
 }
 async function fsDelete(path){
-  const res=await fetch(`${docRoot}/${path}`,{method:"DELETE",headers:{authorization:`Bearer ${accessToken}`}});
+  const res=await firestoreE2eFetch(`${docRoot}/${path}`,{method:"DELETE",headers:{authorization:`Bearer ${accessToken}`}});
   if(!res.ok&&res.status!==404)throw new Error(`fsDelete failed ${path}: ${res.status}`);
 }
 async function deleteAuthUser(idToken){
@@ -165,6 +166,7 @@ try{
   });
   ownerToken=await firebaseIdToken(ownerUid);
   userToken=await firebaseIdToken(userUid);
+  await sleep(750);
 
   const unknown=await api("not-a-route",ownerToken,{action:"state"});
   if(unknown.res.status!==404||unknown.body.code!=="route_not_found"){

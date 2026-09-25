@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { sign } from "node:crypto";
+import { firestoreE2eFetch, sleep } from "./firestore-e2e-retry.mjs";
 
 const base = "https://shadow-live.ashraf-business-440.workers.dev";
 let sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || "{}");
@@ -129,7 +130,7 @@ const identityToken = await googleAccessToken("https://www.googleapis.com/auth/i
 const root = "https://firestore.googleapis.com/v1/projects/" + projectId + "/databases/(default)/documents";
 
 async function fsSet(path, fields) {
-  const response = await fetch(root + "/" + path, {
+  const response = await firestoreE2eFetch(root + "/" + path, {
     method: "PATCH",
     headers: { authorization: "Bearer " + datastoreToken, "content-type": "application/json" },
     body: JSON.stringify({ fields: encodeFields(fields) }),
@@ -138,7 +139,7 @@ async function fsSet(path, fields) {
 }
 
 async function fsGet(path) {
-  const response = await fetch(root + "/" + path, {
+  const response = await firestoreE2eFetch(root + "/" + path, {
     headers: { authorization: "Bearer " + datastoreToken },
   });
   if (response.status === 404) return null;
@@ -148,7 +149,7 @@ async function fsGet(path) {
 }
 
 async function fsDelete(path) {
-  const response = await fetch(root + "/" + path, {
+  const response = await firestoreE2eFetch(root + "/" + path, {
     method: "DELETE",
     headers: { authorization: "Bearer " + datastoreToken },
   });
@@ -253,6 +254,7 @@ try {
   });
 
   actorToken = await firebaseIdToken(actorUid);
+  await sleep(750);
   targetToken = await firebaseIdToken(targetUid);
 
   const suspend = await moderationApi(
