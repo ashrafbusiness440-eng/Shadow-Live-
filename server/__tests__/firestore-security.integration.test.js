@@ -12,13 +12,6 @@ let env;
 const projectId="shadow-live-economy-test";
 const uid="rules_regular_user";
 
-function verifiedUserDb() {
-  return env.authenticatedContext(uid,{
-    email:"verified@example.com",
-    email_verified:true,
-  }).firestore();
-}
-
 function unverifiedUserDb() {
   return env.authenticatedContext(uid,{
     email:"unverified@example.com",
@@ -66,7 +59,7 @@ before(async()=>{
 after(async()=>{if(env)await env.cleanup();});
 
 test("regular user can still update an ordinary profile field",async()=>{
-  const userDb=verifiedUserDb();
+  const userDb=phoneUserDb();
   await assertSucceeds(updateDoc(doc(userDb,"users",uid),{displayName:"After"}));
 });
 
@@ -81,7 +74,7 @@ test("unverified email/password user cannot access Firestore",async()=>{
 });
 
 test("regular user cannot change protected balances earnings agency or mic activity",async()=>{
-  const userDb=verifiedUserDb();
+  const userDb=phoneUserDb();
   const ref=doc(userDb,"users",uid);
   for(const patch of [
     {coins:999999},
@@ -102,7 +95,7 @@ test("regular user cannot change protected balances earnings agency or mic activ
 });
 
 test("client cannot forge gift operations ledgers accrual activity or settlement",async()=>{
-  const userDb=verifiedUserDb();
+  const userDb=phoneUserDb();
   const writes=[
     ["gift_operations","fake_op"],
     ["gift_transactions","fake_tx"],
