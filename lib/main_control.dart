@@ -583,7 +583,10 @@ class _UserAccountOverviewCardState extends State<_UserAccountOverviewCard> {
   Future<Map<String,dynamic>> _load() async {
     final user=controlAuth.currentUser;
     if(user==null)throw Exception('not_signed_in');
-    final token=await user.getIdToken().timeout(const Duration(seconds:12));
+    await user.reload();
+      final refreshed=controlAuth.currentUser;
+      if(refreshed==null)throw Exception('not_signed_in');
+      final token=await refreshed.getIdToken(true).timeout(const Duration(seconds:12));
     if(token==null||token.isEmpty)throw Exception('empty_token');
     final response=await http.post(
       shadowApiEndpoint('control-user-details'),
@@ -865,6 +868,8 @@ class _OwnerAccountActionsCard extends StatelessWidget {
         'owner_protected'=>'حساب Owner محمي ولا يمكن حظره أو حذفه.',
         'not_found'=>'المستخدم غير موجود.',
         'invalid_suspend_duration'=>'مدة التعليق غير صالحة.',
+        'not_signed_in'=>'انتهت جلسة Shadow Control. سجّل دخول الأونر من جديد ثم أعد المحاولة.',
+        'unauthorized'=>'انتهت جلسة Shadow Control. سجّل دخول الأونر من جديد ثم أعد المحاولة.',
         'PERMISSION_DENIED'=>'حساب الخدمة لا يملك صلاحية Firebase Auth المطلوبة.',
         _=>'تعذر تنفيذ الإجراء: '+code,
       };
