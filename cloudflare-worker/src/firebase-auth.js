@@ -91,7 +91,11 @@ async function assertUserSessionState(payload, env) {
   }
 }
 
-export async function verifyFirebaseIdTokenValue(token, env) {
+export async function verifyFirebaseIdTokenValue(
+  token,
+  env,
+  { checkUserState = true } = {},
+) {
   token = String(token || "").trim();
   const parts = token.split(".");
   if (parts.length !== 3) throw new Error("unauthorized");
@@ -132,12 +136,18 @@ export async function verifyFirebaseIdTokenValue(token, env) {
   );
   if (!ok) throw new Error("unauthorized");
 
-  await assertUserSessionState(payload, env);
+  if (checkUserState) {
+    await assertUserSessionState(payload, env);
+  }
   return payload;
 }
 
-export async function verifyFirebaseIdToken(request, env) {
+export async function verifyFirebaseIdToken(
+  request,
+  env,
+  options = {},
+) {
   const auth = request.headers.get("Authorization") || "";
   if (!auth.startsWith("Bearer ")) throw new Error("unauthorized");
-  return verifyFirebaseIdTokenValue(auth.slice(7), env);
+  return verifyFirebaseIdTokenValue(auth.slice(7), env, options);
 }
