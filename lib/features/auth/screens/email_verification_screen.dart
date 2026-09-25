@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../../../services/navigation_service.dart';
+import '../../../shared/services/firebase_service.dart';
 import '../setup_route.dart';
 
 class EmailVerificationScreen extends StatefulWidget {
@@ -107,7 +108,16 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
     await current.getIdToken(true);
     String destination=AppRoutes.profileSetup;
     try{
-      final snapshot=await FirebaseFirestore.instance.collection('users').doc(current.uid).get().timeout(const Duration(seconds:10));
+      final ref=FirebaseFirestore.instance.collection('users').doc(current.uid);
+      var snapshot=await ref.get().timeout(const Duration(seconds:10));
+      if(!snapshot.exists){
+        await FirebaseService().createUserProfile(current.uid,{
+          'email':current.email??'',
+          'setupStep':'profile',
+          'setupComplete':false,
+        }).timeout(const Duration(seconds:12));
+        snapshot=await ref.get().timeout(const Duration(seconds:10));
+      }
       destination=setupDestination(snapshot.data());
     }catch(_){
       destination=AppRoutes.profileSetup;
