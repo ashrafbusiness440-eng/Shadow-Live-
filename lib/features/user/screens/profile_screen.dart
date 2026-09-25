@@ -369,9 +369,13 @@ class _ProfileScreenState extends State<ProfileScreen>
                       );
                     }
 
-                    final profile = state is UserProfileLoaded
+                    final currentUid =
+                        FirebaseAuth.instance.currentUser?.uid ?? '';
+                    final profile = state is UserProfileLoaded &&
+                            state.userId == currentUid
                         ? state.profile
-                        : state is UserProfileUpdated
+                        : state is UserProfileUpdated &&
+                                state.userId == currentUid
                             ? state.profile
                             : null;
 
