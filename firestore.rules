@@ -2,8 +2,9 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function emailVerifiedIfPassword() {
-      return request.auth.token.get('email_verified', false) == true
-        || request.auth.token.get('firebase', {}).get('sign_in_provider', '') != 'password';
+      return !('email' in request.auth.token)
+        || (('email_verified' in request.auth.token)
+          && request.auth.token.email_verified == true);
     }
 
     function signedIn() {
