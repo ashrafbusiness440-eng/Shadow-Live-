@@ -408,6 +408,9 @@ void main() {
 
   testWidgets('Greedy Cat result push triggers one authoritative refresh',
       (tester) async {
+    await tester.binding.setSurfaceSize(const Size(800, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
     final service = GreedyResultFakeGameRuntimeService();
     final events = StreamController<RoomRealtimeEvent>.broadcast();
     addTearDown(events.close);
