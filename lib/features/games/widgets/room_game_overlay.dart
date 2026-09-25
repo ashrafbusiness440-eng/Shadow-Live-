@@ -206,6 +206,10 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
         game,
         roomId: widget.roomId,
       );
+      final currentRoundId =
+          (_state?.round?['roundId'] ?? '').toString();
+      final responseRoundId =
+          (state.round?['roundId'] ?? '').toString();
       final currentRoundOpensAtMs =
           (_state?.round?['opensAtMs'] as num?)?.toInt() ?? 0;
       final responseRoundOpensAtMs =
@@ -213,7 +217,10 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
       if (!mounted ||
           _selected?.key != game.key ||
           requestSequence < _stateAppliedSequence ||
-          (currentRoundOpensAtMs > 0 &&
+          (currentRoundId.isNotEmpty &&
+              responseRoundId.isNotEmpty &&
+              currentRoundId != responseRoundId &&
+              currentRoundOpensAtMs > 0 &&
               responseRoundOpensAtMs > 0 &&
               responseRoundOpensAtMs < currentRoundOpensAtMs)) {
         return;
