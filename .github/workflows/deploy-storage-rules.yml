@@ -109,25 +109,37 @@ jobs:
             );
           }
 
-          const releasesResponse = await fetch(
-            'https://firebaserules.googleapis.com/v1/projects/' +
-              encodeURIComponent(projectId) +
-              '/releases?pageSize=100',
-            { headers },
-          );
-          const releasesBody = await releasesResponse.json().catch(() => ({}));
-          if (!releasesResponse.ok) {
-            throw new Error(
-              'release list failed ' +
-                releasesResponse.status +
-                ' ' +
-                JSON.stringify(releasesBody),
+          const releases = [];
+          let pageToken = '';
+          do {
+            const url = new URL(
+              'https://firebaserules.googleapis.com/v1/projects/' +
+                encodeURIComponent(projectId) +
+                '/releases',
             );
-          }
+            url.searchParams.set('pageSize', '100');
+            if (pageToken) url.searchParams.set('pageToken', pageToken);
+            const releasesResponse = await fetch(url, { headers });
+            const releasesBody = await releasesResponse.json().catch(() => ({}));
+            if (!releasesResponse.ok) {
+              throw new Error(
+                'release list failed ' +
+                  releasesResponse.status +
+                  ' ' +
+                  JSON.stringify(releasesBody),
+              );
+            }
+            if (Array.isArray(releasesBody.releases)) {
+              releases.push(...releasesBody.releases);
+            }
+            pageToken = String(releasesBody.nextPageToken || '');
+          } while (pageToken);
 
-          const releases = Array.isArray(releasesBody.releases)
-            ? releasesBody.releases
-            : [];
+          console.log(
+            'Existing releases:',
+            releases.map((item) => String(item?.name || '')).join(' | '),
+          );
+
           const storageRelease = releases.find((item) =>
             String(item?.name || '').includes('/releases/firebase.storage/')
           );
