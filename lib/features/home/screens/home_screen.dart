@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -23,6 +24,8 @@ class _HomeScreenState extends State<HomeScreen> {
   final GlobalKey _rankingKey = GlobalKey();
 
   HomeDiscoveryData? _data;
+  StreamSubscription<User?>? _authSub;
+  String? _loadedForUid;
   bool _loading = true;
   String? _error;
 
@@ -34,16 +37,27 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _loadedForUid = FirebaseAuth.instance.currentUser?.uid;
+    _authSub = FirebaseAuth.instance.userChanges().listen((user) {
+      final nextUid = user?.uid;
+      if (nextUid == _loadedForUid) return;
+      _loadedForUid = nextUid;
+      if (!mounted) return;
+      setState(() => _data = null);
+      unawaited(_load());
+    });
     _load();
   }
 
   @override
   void dispose() {
+    _authSub?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
 
   Future<void> _load() async {
+    final requestUid = FirebaseAuth.instance.currentUser?.uid;
     if (mounted) {
       setState(() {
         _loading = true;
@@ -53,7 +67,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       final data = await _discoveryService.loadHome();
-      if (mounted) setState(() => _data = data);
+      if (!mounted) return;
+      if (FirebaseAuth.instance.currentUser?.uid != requestUid) return;
+      _loadedForUid = requestUid;
+      setState(() => _data = data);
     } catch (_) {
       if (mounted) {
         setState(() => _error = 'تعذر تحديث الاستكشاف حالياً');
