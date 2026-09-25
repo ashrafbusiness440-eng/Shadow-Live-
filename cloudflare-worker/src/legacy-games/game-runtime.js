@@ -16,6 +16,40 @@ import {
 
 const clean=(value)=>String(value??"").trim();
 
+const runtimeConfigCache={value:null,expiresAtMs:0};
+
+function transientFirestoreError(error){
+  const code=clean(error?.message);
+  const status=Number(error?.status||0);
+  return status===429||
+    status===408||
+    status>=500||
+    [
+      "RESOURCE_EXHAUSTED",
+      "UNAVAILABLE",
+      "DEADLINE_EXCEEDED",
+      "firestore_request_failed",
+    ].includes(code);
+}
+
+async function loadRuntimeConfig(db,{allowFallback=false}={}){
+  const nowMs=Date.now();
+  if(runtimeConfigCache.value&&runtimeConfigCache.expiresAtMs>nowMs){
+    return runtimeConfigCache.value;
+  }
+  try{
+    const snap=await db.collection("system_config").doc("game_runtime").get();
+    const value=runtimeConfig(snap.exists?snap.data()||{}:{});
+    runtimeConfigCache.value=value;
+    runtimeConfigCache.expiresAtMs=nowMs+30000;
+    return value;
+  }catch(error){
+    if(!allowFallback||!transientFirestoreError(error))throw error;
+    if(runtimeConfigCache.value)return runtimeConfigCache.value;
+    return runtimeConfig({});
+  }
+}
+
 const FALLBACK_CONFIG=Object.freeze({
   enabled:true,
   targetRtpBps:TARGET_RTP_BPS,
@@ -654,8 +688,7 @@ export async function settleDueGameOperations(
 }
 
 export async function gameCatalog(db){
-  const configSnap=await db.collection("system_config").doc("game_runtime").get();
-  const config=runtimeConfig(configSnap.exists?configSnap.data()||{}:{});
+  const config=await loadRuntimeConfig(db,{allowFallback:true});
   const items=[];
 
   const add=(key,gameId,mode,label)=>{
@@ -698,26 +731,29 @@ export async function gameState(db,uid,body={},options={}){
   const mode=gameId==="witch"?clean(body.mode||"normal"):"";
   const nowMs=Number(options.nowMs||Date.now());
 
-  const userDueSnapshot=await db.collection("game_operations")
-    .where("userId","==",uid)
-    .limit(50)
-    .get();
-  for(const doc of userDueSnapshot.docs){
-    const operation=doc.data()||{};
-    if(operation.status!=="pending")continue;
-    if(Number(operation.closesAtMs||0)>nowMs)continue;
-    try{
-      await settleOperationRef(db,doc.ref,nowMs);
-    }catch(error){
-      const code=clean(error?.message);
-      if(!["operation_not_found","invalid_operation_state"].includes(code)){
-        throw error;
+  try{
+    const userDueSnapshot=await db.collection("game_operations")
+      .where("userId","==",uid)
+      .limit(50)
+      .get();
+    for(const doc of userDueSnapshot.docs){
+      const operation=doc.data()||{};
+      if(operation.status!=="pending")continue;
+      if(Number(operation.closesAtMs||0)>nowMs)continue;
+      try{
+        await settleOperationRef(db,doc.ref,nowMs);
+      }catch(error){
+        const code=clean(error?.message);
+        if(!["operation_not_found","invalid_operation_state"].includes(code)){
+          throw error;
+        }
       }
     }
+  }catch(error){
+    if(!transientFirestoreError(error))throw error;
   }
 
-  const configSnap=await db.collection("system_config").doc("game_runtime").get();
-  const config=runtimeConfig(configSnap.exists?configSnap.data()||{}:{});
+  const config=await loadRuntimeConfig(db,{allowFallback:true});
   const selected=gameConfig(config,gameId,mode);
   const round=buildRound({
     config,
@@ -735,14 +771,19 @@ export async function gameState(db,uid,body={},options={}){
       : nowMs<round.revealAtMs
         ? "spinning"
         : "result_hold";
-  const dailyStatsSnap=await db.collection("game_user_stats")
-    .doc(uid).collection("daily")
-    .doc(gameId+"__"+round.dayKey)
-    .get();
-  const userDailyPayoutCoins=Math.max(
-    0,
-    Number(dailyStatsSnap.exists?dailyStatsSnap.data()?.payoutCoins||0:0),
-  );
+  let userDailyPayoutCoins=0;
+  try{
+    const dailyStatsSnap=await db.collection("game_user_stats")
+      .doc(uid).collection("daily")
+      .doc(gameId+"__"+round.dayKey)
+      .get();
+    userDailyPayoutCoins=Math.max(
+      0,
+      Number(dailyStatsSnap.exists?dailyStatsSnap.data()?.payoutCoins||0:0),
+    );
+  }catch(error){
+    if(!transientFirestoreError(error))throw error;
+  }
   let lastResult=null;
   const recentResults=[];
   if(gameId!=="slot"){
@@ -789,7 +830,12 @@ export async function gameState(db,uid,body={},options={}){
     }
     lastResult=recentResults[0]||null;
     if(lastResult){
-      const summary=await roundResultSummary(db,lastResult.roundId,uid);
+      let summary={topWinners:[],myRound:null};
+      try{
+        summary=await roundResultSummary(db,lastResult.roundId,uid);
+      }catch(error){
+        if(!transientFirestoreError(error))throw error;
+      }
       lastResult={
         ...lastResult,
         topWinners:summary.topWinners,
@@ -799,29 +845,38 @@ export async function gameState(db,uid,body={},options={}){
   }
   let serverRoundSelections=[];
   if(gameId!=="slot"){
-    const roundSnap=await db.collection("game_rounds").doc(round.roundId).get();
-    const choiceTotals=roundSnap.exists?roundSnap.data()?.choiceTotals:{};
-    if(choiceTotals&&typeof choiceTotals==="object"){
-      serverRoundSelections=Object.entries(choiceTotals)
-        .map(([choiceId,amountCoins])=>({
-          choiceId:clean(choiceId),
-          amountCoins:Number(amountCoins||0),
-        }))
-        .filter(item=>
-          item.choiceId&&
-          Number.isSafeInteger(item.amountCoins)&&
-          item.amountCoins>0
-        );
+    try{
+      const roundSnap=await db.collection("game_rounds").doc(round.roundId).get();
+      const choiceTotals=roundSnap.exists?roundSnap.data()?.choiceTotals:{};
+      if(choiceTotals&&typeof choiceTotals==="object"){
+        serverRoundSelections=Object.entries(choiceTotals)
+          .map(([choiceId,amountCoins])=>({
+            choiceId:clean(choiceId),
+            amountCoins:Number(amountCoins||0),
+          }))
+          .filter(item=>
+            item.choiceId&&
+            Number.isSafeInteger(item.amountCoins)&&
+            item.amountCoins>0
+          );
+      }
+    }catch(error){
+      if(!transientFirestoreError(error))throw error;
     }
   }
 
-  const pendingSnapshot=await db.collection("game_operations")
-    .where("userId","==",uid)
-    .limit(50)
-    .get();
-  const pendingRaw=pendingSnapshot.docs
-    .map(doc=>doc.data()||{})
-    .filter(item=>item.status==="pending");
+  let pendingRaw=[];
+  try{
+    const pendingSnapshot=await db.collection("game_operations")
+      .where("userId","==",uid)
+      .limit(50)
+      .get();
+    pendingRaw=pendingSnapshot.docs
+      .map(doc=>doc.data()||{})
+      .filter(item=>item.status==="pending");
+  }catch(error){
+    if(!transientFirestoreError(error))throw error;
+  }
   const pending=pendingRaw.map(publicOperation);
   const currentRoundTotals=new Map();
   if(gameId!=="slot"){
