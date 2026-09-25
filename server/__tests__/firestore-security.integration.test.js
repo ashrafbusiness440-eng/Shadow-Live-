@@ -28,6 +28,13 @@ function unverifiedUserDb() {
   }).firestore();
 }
 
+function phoneUserDb() {
+  return env.authenticatedContext(uid,{
+    phone_number:"+971500000000",
+    firebase:{sign_in_provider:"phone"},
+  }).firestore();
+}
+
 before(async()=>{
   env=await initializeTestEnvironment({
     projectId,
@@ -63,6 +70,11 @@ after(async()=>{if(env)await env.cleanup();});
 test("regular user can still update an ordinary profile field",async()=>{
   const userDb=verifiedUserDb();
   await assertSucceeds(updateDoc(doc(userDb,"users",uid),{displayName:"After"}));
+});
+
+test("phone-auth user is unaffected by email verification gate",async()=>{
+  const userDb=phoneUserDb();
+  await assertSucceeds(updateDoc(doc(userDb,"users",uid),{displayName:"Phone User"}));
 });
 
 test("unverified email/password user cannot access Firestore",async()=>{
