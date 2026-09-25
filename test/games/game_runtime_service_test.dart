@@ -45,6 +45,7 @@ void main() {
         {'choiceId': 'moon', 'amountCoins': 9000},
       ],
       'totalRoundStakeCoins': 51000,
+      'userDailyPayoutCoins': 126400,
     });
     expect(state.currentRoundSelections['book'], 21000);
     expect(state.currentRoundSelections['moon'], 1000);
@@ -55,6 +56,7 @@ void main() {
     expect(state.serverRoundSelections['book'], 42000);
     expect(state.serverRoundSelections['moon'], 9000);
     expect(state.totalRoundStakeCoins, 51000);
+    expect(state.userDailyPayoutCoins, 126400);
   });
 
   test('slot result parses server reels and payout', () {
