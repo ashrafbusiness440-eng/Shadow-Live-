@@ -1,0 +1,164 @@
+name: Deploy Storage Rules
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'storage.rules'
+      - 'firebase.json'
+      - '.firebaserc'
+      - '.github/workflows/deploy-storage-rules.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shadow-live-storage-rules
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Deploy Storage rules through Rules API
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import { sign } from 'node:crypto';
+
+          let sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
+          if (typeof sa === 'string') sa = JSON.parse(sa);
+          const projectId = sa.project_id;
+          const clientEmail = sa.client_email;
+          const privateKey = String(sa.private_key || '').replace(/\\n/g, '\n');
+          const bucket = 'shadow-live.firebasestorage.app';
+          if (!projectId || !clientEmail || !privateKey) throw new Error('invalid service account');
+
+          const b64url = (value) => Buffer.from(value)
+            .toString('base64')
+            .replace(/=/g, '')
+            .replace(/\+/g, '-')
+            .replace(/\//g, '_');
+
+          const now = Math.floor(Date.now() / 1000);
+          const header = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+          const payload = b64url(JSON.stringify({
+            iss: clientEmail,
+            scope: 'https://www.googleapis.com/auth/firebase',
+            aud: 'https://oauth2.googleapis.com/token',
+            iat: now,
+            exp: now + 3600,
+          }));
+          const unsigned = header + '.' + payload;
+          const assertion = unsigned + '.' + b64url(
+            sign('RSA-SHA256', Buffer.from(unsigned), privateKey),
+          );
+
+          const oauth = await fetch('https://oauth2.googleapis.com/token', {
+            method: 'POST',
+            headers: { 'content-type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+              grant_type: 'urn:ietf:params:oauth-type:jwt-bearer'.replace('oauth-type','oauth-grant-type'),
+              assertion,
+            }),
+          });
+          const oauthBody = await oauth.json();
+          if (!oauth.ok || !oauthBody.access_token) {
+            throw new Error('oauth failed ' + oauth.status + ' ' + JSON.stringify(oauthBody));
+          }
+          const token = oauthBody.access_token;
+          const headers = {
+            authorization: 'Bearer ' + token,
+            'content-type': 'application/json',
+          };
+          const source = fs.readFileSync('storage.rules', 'utf8');
+
+          const createRuleset = await fetch(
+            'https://firebaserules.googleapis.com/v1/projects/' +
+              encodeURIComponent(projectId) +
+              '/rulesets',
+            {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({
+                source: {
+                  files: [{ name: 'storage.rules', content: source }],
+                },
+              }),
+            },
+          );
+          const ruleset = await createRuleset.json().catch(() => ({}));
+          if (!createRuleset.ok || !ruleset.name) {
+            throw new Error(
+              'ruleset create failed ' +
+                createRuleset.status +
+                ' ' +
+                JSON.stringify(ruleset),
+            );
+          }
+
+          const releaseName =
+            'projects/' + projectId + '/releases/firebase.storage/' + bucket;
+          const patch = await fetch(
+            'https://firebaserules.googleapis.com/v1/' + releaseName,
+            {
+              method: 'PATCH',
+              headers,
+              body: JSON.stringify({
+                release: {
+                  name: releaseName,
+                  rulesetName: ruleset.name,
+                },
+                updateMask: 'rulesetName',
+              }),
+            },
+          );
+          let release = await patch.json().catch(() => ({}));
+
+          if (patch.status === 404) {
+            const createRelease = await fetch(
+              'https://firebaserules.googleapis.com/v1/projects/' +
+                encodeURIComponent(projectId) +
+                '/releases',
+              {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                  name: releaseName,
+                  rulesetName: ruleset.name,
+                }),
+              },
+            );
+            release = await createRelease.json().catch(() => ({}));
+            if (!createRelease.ok) {
+              throw new Error(
+                'release create failed ' +
+                  createRelease.status +
+                  ' ' +
+                  JSON.stringify(release),
+              );
+            }
+          } else if (!patch.ok) {
+            throw new Error(
+              'release update failed ' +
+                patch.status +
+                ' ' +
+                JSON.stringify(release),
+            );
+          }
+
+          console.log('Storage rules released:', ruleset.name);
+          console.log('Release:', release.name || releaseName);
+          NODE
