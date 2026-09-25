@@ -4,6 +4,7 @@ import {FieldValue,getFirestore} from "firebase-admin/firestore";
 import {
   TARGET_RTP_BPS,
   calculatePayout,
+  defaultOutcomeWeights,
   dailyRoundClock,
   normalizeBetEvents,
   normalizeSelections,
@@ -18,25 +19,30 @@ import {
 const clean=(value)=>String(value??"").trim();
 
 const FALLBACK_CONFIG=Object.freeze({
-  enabled:false,
+  enabled:true,
   targetRtpBps:TARGET_RTP_BPS,
   timezoneOffsetMinutes:240,
   roundDurationSeconds:30,
   lockBeforeMs:3000,
   games:Object.freeze({
-    greedy_cat:Object.freeze({enabled:false,outcomes:[]}),
+    greedy_cat:Object.freeze({
+      enabled:true,
+      outcomes:Object.freeze(defaultOutcomeWeights("greedy_cat")),
+    }),
     witch:Object.freeze({
-      enabled:false,
-      normal:Object.freeze({outcomes:[]}),
-      advanced:Object.freeze({outcomes:[]}),
+      enabled:true,
+      normal:Object.freeze({
+        enabled:true,
+        outcomes:Object.freeze(defaultOutcomeWeights("witch","normal")),
+      }),
+      advanced:Object.freeze({
+        enabled:true,
+        outcomes:Object.freeze(defaultOutcomeWeights("witch","advanced")),
+      }),
     }),
     slot:Object.freeze({
-      enabled:false,
-      outcomes:Object.freeze([
-        Object.freeze({id:"lose",weightBps:6875}),
-        Object.freeze({id:"pair",weightBps:3000}),
-        Object.freeze({id:"jackpot",weightBps:125}),
-      ]),
+      enabled:true,
+      outcomes:Object.freeze(defaultOutcomeWeights("slot")),
     }),
   }),
 });
@@ -84,7 +90,7 @@ async function actor(req){
 function runtimeConfig(raw={}){
   const games=raw?.games&&typeof raw.games==="object"?raw.games:{};
   return {
-    enabled:raw?.enabled===true,
+    enabled:raw?.enabled!==false,
     targetRtpBps:Number.isSafeInteger(Number(raw?.targetRtpBps))
       ? Math.max(1000,Math.min(9900,Number(raw.targetRtpBps)))
       : TARGET_RTP_BPS,
@@ -101,6 +107,12 @@ function runtimeConfig(raw={}){
       greedy_cat:{
         ...FALLBACK_CONFIG.games.greedy_cat,
         ...(games.greedy_cat||{}),
+        enabled:Object.prototype.hasOwnProperty.call(games.greedy_cat||{},"enabled")
+          ? games.greedy_cat.enabled===true
+          : true,
+        outcomes:Array.isArray(games.greedy_cat?.outcomes)&&games.greedy_cat.outcomes.length
+          ? games.greedy_cat.outcomes
+          : defaultOutcomeWeights("greedy_cat"),
       },
       witch:{
         ...FALLBACK_CONFIG.games.witch,
@@ -108,15 +120,33 @@ function runtimeConfig(raw={}){
         normal:{
           ...FALLBACK_CONFIG.games.witch.normal,
           ...(games.witch?.normal||{}),
+          enabled:Object.prototype.hasOwnProperty.call(games.witch?.normal||{},"enabled")
+            ? games.witch.normal.enabled===true
+            : true,
+          outcomes:Array.isArray(games.witch?.normal?.outcomes)&&games.witch.normal.outcomes.length
+            ? games.witch.normal.outcomes
+            : defaultOutcomeWeights("witch","normal"),
         },
         advanced:{
           ...FALLBACK_CONFIG.games.witch.advanced,
           ...(games.witch?.advanced||{}),
+          enabled:Object.prototype.hasOwnProperty.call(games.witch?.advanced||{},"enabled")
+            ? games.witch.advanced.enabled===true
+            : true,
+          outcomes:Array.isArray(games.witch?.advanced?.outcomes)&&games.witch.advanced.outcomes.length
+            ? games.witch.advanced.outcomes
+            : defaultOutcomeWeights("witch","advanced"),
         },
       },
       slot:{
         ...FALLBACK_CONFIG.games.slot,
         ...(games.slot||{}),
+        enabled:Object.prototype.hasOwnProperty.call(games.slot||{},"enabled")
+          ? games.slot.enabled===true
+          : true,
+        outcomes:Array.isArray(games.slot?.outcomes)&&games.slot.outcomes.length
+          ? games.slot.outcomes
+          : defaultOutcomeWeights("slot"),
       },
     },
   };
