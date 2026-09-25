@@ -39,7 +39,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
     _load();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool forceRefresh = false}) async {
     if (mounted) {
       setState(() {
         _loading = true;
@@ -48,7 +48,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
     }
 
     try {
-      final rooms = await _service.loadRooms();
+      final rooms = await _service.loadRooms(forceRefresh: forceRefresh);
       rooms.sort((a, b) => b.onlineCount.compareTo(a.onlineCount));
       if (mounted) setState(() => _rooms = rooms);
     } catch (_) {
@@ -265,7 +265,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
         body: SafeArea(
           bottom: false,
           child: RefreshIndicator(
-            onRefresh: _load,
+            onRefresh: () => _load(forceRefresh: true),
             child: CustomScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
