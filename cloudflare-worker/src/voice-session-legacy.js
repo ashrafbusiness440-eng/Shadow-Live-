@@ -2316,9 +2316,7 @@ async function roomSessionLeave(db,uid,roomId){
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
   const roomRef=db.collection("rooms").doc(roomId);
   const participants=await realtimePresenceState(roomId);
-  const remaining=Array.isArray(participants)
-    ?participants.filter(item=>clean(item?.uid)!==uid)
-    :null;
+  const remaining=Array.isArray(participants)?participants:null;
 
   await db.runTransaction(async tx=>{
     const roomSnap=await tx.get(roomRef);
