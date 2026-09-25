@@ -655,7 +655,27 @@ export async function gameState(db,uid,body={},options={}){
   const gameId=clean(body.gameId);
   const mode=gameId==="witch"?clean(body.mode||"normal"):"";
   const nowMs=Number(options.nowMs||Date.now());
-  await settleDueGameOperations(db,{nowMs,limit:20});
+
+  // A state read may settle only the current user's due operations.
+  // Global settlement remains the responsibility of the scheduled/cron worker.
+  const userDueSnapshot=await db.collection("game_operations")
+    .where("userId","==",uid)
+    .limit(50)
+    .get();
+  for(const doc of userDueSnapshot.docs){
+    const operation=doc.data()||{};
+    if(operation.status!=="pending")continue;
+    if(Number(operation.closesAtMs||0)>nowMs)continue;
+    try{
+      await settleOperationRef(db,doc.ref,nowMs);
+    }catch(error){
+      const code=clean(error?.message);
+      if(!["operation_not_found","invalid_operation_state"].includes(code)){
+        throw error;
+      }
+    }
+  }
+
   const configSnap=await db.collection("system_config").doc("game_runtime").get();
   const config=runtimeConfig(configSnap.exists?configSnap.data()||{}:{});
   const selected=gameConfig(config,gameId,mode);
