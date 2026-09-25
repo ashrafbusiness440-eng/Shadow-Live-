@@ -24,7 +24,7 @@ jobs:
 
       - name: Configure Firebase Auth email templates
         env:
-          FIREBASE_SERVICE_ACCOUNT: \${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
           node --input-type=module <<'NODE'
           import { sign } from 'node:crypto';
