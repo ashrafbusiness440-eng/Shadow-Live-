@@ -1,4 +1,5 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../../shared/services/firebase_service.dart';
 import '../../../shared/services/storage_service.dart';
 
@@ -48,16 +49,18 @@ class UserInitial extends UserState {}
 class UserLoading extends UserState {}
 
 class UserProfileLoaded extends UserState {
+  final String userId;
   final Map<String, dynamic> profile;
   final Map<String, dynamic> settings;
 
-  UserProfileLoaded(this.profile, this.settings);
+  UserProfileLoaded(this.userId, this.profile, this.settings);
 }
 
 class UserProfileUpdated extends UserState {
+  final String userId;
   final Map<String, dynamic> profile;
 
-  UserProfileUpdated(this.profile);
+  UserProfileUpdated(this.userId, this.profile);
 }
 
 class UserError extends UserState {
@@ -89,7 +92,11 @@ class UserBloc extends Bloc<UserEvent, UserState> {
       final settings = await _storageService.getSettings();
 
       if (profile != null) {
-        emit(UserProfileLoaded(profile, settings));
+        emit(UserProfileLoaded(
+          event.userId,
+          <String, dynamic>{...profile, 'uid': event.userId},
+          settings,
+        ));
       } else {
         emit(UserError('User profile not found'));
       }
@@ -110,7 +117,10 @@ class UserBloc extends Bloc<UserEvent, UserState> {
           await _firebaseService.getUserProfile(event.userId);
       if (updatedProfile != null) {
         await _storageService.saveUser(updatedProfile);
-        emit(UserProfileUpdated(updatedProfile));
+        emit(UserProfileUpdated(
+          event.userId,
+          <String, dynamic>{...updatedProfile, 'uid': event.userId},
+        ));
       } else {
         emit(UserError('Failed to fetch updated profile'));
       }
@@ -126,11 +136,17 @@ class UserBloc extends Bloc<UserEvent, UserState> {
     try {
       await _storageService.saveSettings(event.settings);
 
-      final profile = await _storageService.getUser();
+      final current = FirebaseAuth.instance.currentUser;
       final settings = await _storageService.getSettings();
+      if (current == null || current.isAnonymous) return;
 
+      final profile = await _firebaseService.getUserProfile(current.uid);
       if (profile != null) {
-        emit(UserProfileLoaded(profile, settings));
+        emit(UserProfileLoaded(
+          current.uid,
+          <String, dynamic>{...profile, 'uid': current.uid},
+          settings,
+        ));
       }
     } catch (e) {
       emit(UserError(e.toString()));
@@ -155,7 +171,10 @@ class UserBloc extends Bloc<UserEvent, UserState> {
           await _firebaseService.getUserProfile(event.userId);
       if (updatedProfile != null) {
         await _storageService.saveUser(updatedProfile);
-        emit(UserProfileUpdated(updatedProfile));
+        emit(UserProfileUpdated(
+          event.userId,
+          <String, dynamic>{...updatedProfile, 'uid': event.userId},
+        ));
       } else {
         emit(UserError('Failed to fetch updated profile'));
       }
@@ -194,7 +213,10 @@ class UserBloc extends Bloc<UserEvent, UserState> {
             await _firebaseService.getUserProfile(event.userId);
         if (updatedProfile != null) {
           await _storageService.saveUser(updatedProfile);
-          emit(UserProfileUpdated(updatedProfile));
+          emit(UserProfileUpdated(
+          event.userId,
+          <String, dynamic>{...updatedProfile, 'uid': event.userId},
+        ));
         } else {
           emit(UserError('Failed to fetch updated profile'));
         }
