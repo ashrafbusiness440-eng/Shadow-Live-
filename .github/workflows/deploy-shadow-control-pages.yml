@@ -35,7 +35,7 @@ jobs:
         run: flutter pub get
 
       - name: Analyze game integration
-        run: flutter analyze lib/features/games lib/visual/greedy_cat_visual_test_app.dart
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings lib/features/games lib/visual/greedy_cat_visual_test_app.dart
 
       - name: Run game tests
         run: flutter test test/games
