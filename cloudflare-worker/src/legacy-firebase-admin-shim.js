@@ -1,4 +1,8 @@
-import { firestoreClient } from "./firestore.js";
+import {
+  firestoreClient,
+  firestoreErrorRetryDelayMs,
+  isTransientFirestoreError,
+} from "./firestore.js";
 import { verifyFirebaseIdTokenValue } from "./firebase-auth.js";
 
 let currentEnv = {};
@@ -398,10 +402,12 @@ class LegacyFirestore {
 
   async runTransaction(callback) {
     let lastError;
-    for (let attempt = 0; attempt < 5; attempt++) {
-      const transaction = await this.client.beginTransaction();
-      const tx = new LegacyTransaction(this, transaction);
+    const maxAttempts = 3;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      let transaction = null;
       try {
+        transaction = await this.client.beginTransaction();
+        const tx = new LegacyTransaction(this, transaction);
         const result = await callback(tx);
         if (tx._writes.length) {
           await this.client.commit(transaction, tx._writes);
@@ -411,11 +417,16 @@ class LegacyFirestore {
         return result;
       } catch (error) {
         lastError = error;
-        await this.client.rollback(transaction);
+        if (transaction) {
+          await this.client.rollback(transaction);
+        }
         if (
-          attempt < 4 &&
-          (error?.message === "ABORTED" || error?.status === 409)
+          attempt < maxAttempts - 1 &&
+          isTransientFirestoreError(error)
         ) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, firestoreErrorRetryDelayMs(attempt)),
+          );
           continue;
         }
         throw error;

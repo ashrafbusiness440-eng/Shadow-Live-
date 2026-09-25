@@ -3,7 +3,11 @@ import {
   assertUserDocumentSessionState,
   verifyFirebaseIdToken,
 } from "./firebase-auth.js";
-import { firestoreClient } from "./firestore.js";
+import {
+  firestoreClient,
+  firestoreErrorRetryDelayMs,
+  isTransientFirestoreError,
+} from "./firestore.js";
 import { googleAccessToken, parseServiceAccount } from "./google-auth.js";
 
 class ApiError extends Error {
@@ -238,12 +242,15 @@ async function mutateAccount(db, env, actorPayload, body) {
     // read only its own moderation record and show the exact reason/expiry.
   }
 
-  const transaction = await db.beginTransaction();
-  try {
-    const [operationSnap, freshTargetSnap] = await Promise.all([
-      db.get(`control_operations/${key}`, transaction),
-      db.get(`users/${targetUid}`, transaction),
-    ]);
+  const maxAttempts = 3;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    let transaction = null;
+    try {
+      transaction = await db.beginTransaction();
+      const [operationSnap, freshTargetSnap] = await Promise.all([
+        db.get(`control_operations/${key}`, transaction),
+        db.get(`users/${targetUid}`, transaction),
+      ]);
 
     if (operationSnap.exists) {
       await db.rollback(transaction);
@@ -321,11 +328,26 @@ async function mutateAccount(db, env, actorPayload, body) {
       }),
     ]);
 
-    return { ok: true, code: "ok", operationId: key, ...resultData };
-  } catch (error) {
-    await db.rollback(transaction);
-    throw error;
+      return { ok: true, code: "ok", operationId: key, ...resultData };
+    } catch (error) {
+      if (transaction) {
+        await db.rollback(transaction);
+      }
+      if (error instanceof ApiError) throw error;
+      if (
+        attempt < maxAttempts - 1 &&
+        isTransientFirestoreError(error)
+      ) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, firestoreErrorRetryDelayMs(attempt)),
+        );
+        continue;
+      }
+      throw error;
+    }
   }
+
+  throw new ApiError("transaction_failed", 500);
 }
 
 export async function manageUserAccount(request, env) {

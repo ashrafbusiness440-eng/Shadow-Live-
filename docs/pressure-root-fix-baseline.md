@@ -131,3 +131,16 @@ Pulled forward during Step 6 production closure after version 21 still showed au
 - `presenceState` and other read-only realtime actions keep their existing authentication semantics.
 - User-visible room name/photo behavior is expected to remain unchanged because the application keeps authoritative public profile identity fields synchronized with the user document.
 - This is another completed subset of Step 9 only; the Step 9 root item remains open.
+
+## Step 9 borrowed early — Firestore transient reliability
+
+Pulled forward during Step 6 closure after production E2E returned `RESOURCE_EXHAUSTED` from Firestore.
+
+- Firestore transient reads/queries/begin/rollback use a small cap of 3 attempts.
+- Backoff starts at 350ms and doubles, with up to 250ms jitter.
+- Retry-After is honored up to 2500ms.
+- `RESOURCE_EXHAUSTED`, `UNAVAILABLE`, 408, 429, and 5xx are treated as transient for eligible read/control paths.
+- Legacy transaction loops are reduced from 5 attempts to 3 and now wait with backoff+jitter before retrying.
+- Manage-user-access and manage-user-account transaction retries use the same bounded transient policy.
+- Firestore commits are still not blindly retried at the HTTP layer; transaction/idempotency logic remains the authority for write safety.
+- This is a borrowed subset of Step 9 only; Step 9 root remains open.
