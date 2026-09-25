@@ -29,8 +29,12 @@ export function initializeApp() {
 
 export function getAuth() {
   return {
-    async verifyIdToken(token) {
-      const decoded = await verifyFirebaseIdTokenValue(token, currentEnv);
+    async verifyIdToken(token, options = {}) {
+      const decoded = await verifyFirebaseIdTokenValue(
+        token,
+        currentEnv,
+        options,
+      );
       return {
         ...decoded,
         uid: decoded.sub,
