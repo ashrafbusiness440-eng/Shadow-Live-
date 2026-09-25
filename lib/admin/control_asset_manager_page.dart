@@ -1,3 +1,4 @@
+import 'control_firebase.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -43,7 +44,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
   }
 
   Future<String> _token() async {
-    final token = await FirebaseAuth.instance.currentUser?.getIdToken(true);
+    final token = await controlAuth.currentUser?.getIdToken(true);
     if (token == null || token.trim().isEmpty) {
       throw StateError('تعذر الحصول على جلسة Firebase.');
     }
@@ -514,14 +515,14 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
 
   @override
   Widget build(BuildContext context) {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final uid = controlAuth.currentUser?.uid;
     if (uid == null) {
       return const Scaffold(body: Center(child: Text('سجّل الدخول أولاً')));
     }
     return Scaffold(
       appBar: AppBar(title: const Text('إدارة أصول التطبيق')),
       body: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        future: FirebaseFirestore.instance.collection('users').doc(uid).get(),
+        future: controlFirestore.collection('users').doc(uid).get(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
           final data = snapshot.data?.data();
