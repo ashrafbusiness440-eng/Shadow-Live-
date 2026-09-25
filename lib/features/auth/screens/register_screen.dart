@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../bloc/auth_bloc.dart';
 import '../setup_route.dart';
+import '../../../services/navigation_service.dart';
 import '../../../shared/widgets/custom_button.dart';
 import '../../../shared/widgets/custom_text_field.dart';
 import '../../../shared/widgets/loading_indicator.dart';
@@ -77,6 +78,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
             );
           }
 
+          if (state is EmailVerificationRequired) {
+            Navigator.of(context).pushNamedAndRemoveUntil(
+              AppRoutes.emailVerification,
+              (route) => false,
+            );
+          }
           if (state is Authenticated) {
             Navigator.of(context).pushNamedAndRemoveUntil(
               setupDestination(state.userData),
