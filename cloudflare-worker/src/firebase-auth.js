@@ -106,7 +106,7 @@ export async function verifyFirebaseIdTokenValue(token, env) {
 
   const signInProvider = String(payload?.firebase?.sign_in_provider || "");
   if (signInProvider === "password" && payload.email_verified !== true) {
-    throw new Error("email_not_verified");
+    throw new Error("unauthorized");
   }
 
   const certs = await firebaseCerts();
