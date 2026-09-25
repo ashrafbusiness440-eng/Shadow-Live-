@@ -6,6 +6,7 @@ import { changePublicId } from "./change-public-id.js";
 import { setIdManagementPermission } from "./set-id-management-permission.js";
 import { manageUserAccess } from "./manage-user-access.js";
 import { manageUserAccount, releaseExpiredSuspensions } from "./manage-user-account.js";
+import { controlUserDetails } from "./control-user-details.js";
 import { walletActions } from "./wallet-actions.js";
 import { chatSafetyActions } from "./chat-safety-actions.js";
 import { storageHealth } from "./storage-health.js";
@@ -55,6 +56,9 @@ export default {
     }
     if (url.pathname === "/api/manage-user-account") {
       return manageUserAccount(request, env);
+    }
+    if (url.pathname === "/api/control-user-details") {
+      return controlUserDetails(request, env);
     }
     if (url.pathname === "/api/wallet-actions") {
       return walletActions(request, env);
