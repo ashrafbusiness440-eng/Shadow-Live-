@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { sign } from "node:crypto";
+import { firestoreE2eFetch, sleep } from "./firestore-e2e-retry.mjs";
 
 const base = "https://shadow-live.ashraf-business-440.workers.dev";
 let sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || "{}");
@@ -120,7 +121,7 @@ const accessToken = await googleAccessToken();
 const root = "https://firestore.googleapis.com/v1/projects/" + projectId + "/databases/(default)/documents";
 
 async function fsSet(path, fields) {
-  const response = await fetch(root + "/" + path, {
+  const response = await firestoreE2eFetch(root + "/" + path, {
     method: "PATCH",
     headers: { authorization: "Bearer " + accessToken, "content-type": "application/json" },
     body: JSON.stringify({ fields: encodeFields(fields) }),
@@ -128,14 +129,14 @@ async function fsSet(path, fields) {
   if (!response.ok) throw Error("fsSet " + path + " " + response.status + " " + await response.text());
 }
 async function fsGet(path) {
-  const response = await fetch(root + "/" + path, { headers: { authorization: "Bearer " + accessToken } });
+  const response = await firestoreE2eFetch(root + "/" + path, { headers: { authorization: "Bearer " + accessToken } });
   if (response.status === 404) return null;
   const body = await response.json();
   if (!response.ok) throw Error("fsGet " + path + " " + response.status);
   return decodeFields(body.fields || {});
 }
 async function fsDelete(path) {
-  const response = await fetch(root + "/" + path, { method: "DELETE", headers: { authorization: "Bearer " + accessToken } });
+  const response = await firestoreE2eFetch(root + "/" + path, { method: "DELETE", headers: { authorization: "Bearer " + accessToken } });
   if (!response.ok && response.status !== 404) throw Error("fsDelete " + path + " " + response.status);
 }
 async function api(idToken, body) {
@@ -180,6 +181,7 @@ try {
   });
 
   actorToken = await firebaseIdToken(actorUid);
+  await sleep(750);
 
   const unauthorized = await fetch(base + "/api/manage-user-access", {
     method: "POST",

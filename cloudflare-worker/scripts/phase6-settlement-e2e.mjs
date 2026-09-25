@@ -1,6 +1,7 @@
 // GAME_RNG_SECRET verification rerun
 import fs from "node:fs";
 import { sign } from "node:crypto";
+import { firestoreE2eFetch, sleep } from "./firestore-e2e-retry.mjs";
 
 const base="https://shadow-live.ashraf-business-440.workers.dev";
 let sa=JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT||"{}");
@@ -108,7 +109,7 @@ async function firebaseIdToken(uid){
 const accessToken=await googleAccessToken();
 const root="https://firestore.googleapis.com/v1/projects/"+projectId+"/databases/(default)/documents";
 async function fsSet(path,fields){
-  const res=await fetch(root+"/"+path,{
+  const res=await firestoreE2eFetch(root+"/"+path,{
     method:"PATCH",
     headers:{authorization:"Bearer "+accessToken,"content-type":"application/json"},
     body:JSON.stringify({fields:encodeFields(fields)}),
@@ -116,14 +117,14 @@ async function fsSet(path,fields){
   if(!res.ok)throw Error("fsSet "+path+" "+res.status+" "+await res.text());
 }
 async function fsGet(path){
-  const res=await fetch(root+"/"+path,{headers:{authorization:"Bearer "+accessToken}});
+  const res=await firestoreE2eFetch(root+"/"+path,{headers:{authorization:"Bearer "+accessToken}});
   if(res.status===404)return null;
   const body=await res.json();
   if(!res.ok)throw Error("fsGet "+path+" "+res.status);
   return decodeFields(body.fields||{});
 }
 async function fsDelete(path){
-  const res=await fetch(root+"/"+path,{method:"DELETE",headers:{authorization:"Bearer "+accessToken}});
+  const res=await firestoreE2eFetch(root+"/"+path,{method:"DELETE",headers:{authorization:"Bearer "+accessToken}});
   if(!res.ok&&res.status!==404)throw Error("fsDelete "+path+" "+res.status);
 }
 async function deleteAuth(idToken){
@@ -281,6 +282,9 @@ try{
     isActive:true,
     ownerId:playerUid,
   });
+  // Let the intentionally paced Firestore setup settle before exercising
+  // the production room path. This delay is test-only.
+  await sleep(1000);
   realtimeSocket=await openRoomRealtime(roomId,playerToken);
   realtimeKeepalive=setInterval(()=>{
     try{

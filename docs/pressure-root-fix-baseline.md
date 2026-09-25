@@ -144,3 +144,15 @@ Pulled forward during Step 6 closure after production E2E returned `RESOURCE_EXH
 - Manage-user-access and manage-user-account transaction retries use the same bounded transient policy.
 - Firestore commits are still not blindly retried at the HTTP layer; transaction/idempotency logic remains the authority for write safety.
 - This is a borrowed subset of Step 9 only; Step 9 root remains open.
+
+## Step 9 borrowed early — Production E2E pressure coordination
+
+Pulled forward during Step 6 closure because production validation suites were creating overlapping Firestore bursts that were not representative of one user flow.
+
+- Phase 6, Economy Router, User Access, User Moderation, and Comprehensive production E2E share one GitHub Actions concurrency group.
+- Production E2E runs are queued, not cancelled, so only one heavy production suite mutates/reads Firestore at a time.
+- Firestore setup/cleanup in the focused E2E scripts is paced at 250ms and retries transient 408/429/5xx/RESOURCE_EXHAUSTED/UNAVAILABLE with bounded backoff.
+- Phase 6 adds a test-only 1s settle window before opening the realtime room after setup writes.
+- Access/Moderation/Economy add a short test-only settle window after synthetic account setup.
+- None of these delays exist in the Shadow Live app or production API runtime.
+- This completes the shared CI concurrency / production-test coordination subset of Step 9 early; Step 9 root remains open for remaining runtime reliability work.

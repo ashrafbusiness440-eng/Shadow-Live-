@@ -86,6 +86,12 @@ def main() -> int:
     manage_user_account = read("cloudflare-worker/src/manage-user-account.js")
     control_user_details = read("cloudflare-worker/src/control-user-details.js")
     legacy_admin_shim = read("cloudflare-worker/src/legacy-firebase-admin-shim.js")
+    e2e_retry = read("cloudflare-worker/scripts/firestore-e2e-retry.mjs")
+    phase6_e2e_workflow = read(".github/workflows/cloudflare-phase6-settlement-e2e.yml")
+    economy_e2e_workflow = read(".github/workflows/cloudflare-economy-router-phase5-e2e.yml")
+    access_e2e_workflow = read(".github/workflows/cloudflare-phase9-user-access-e2e.yml")
+    moderation_e2e_workflow = read(".github/workflows/cloudflare-phase9-user-moderation-e2e.yml")
+    comprehensive_e2e_workflow = read(".github/workflows/cloudflare-phase8-comprehensive-e2e.yml")
 
     if "_presenceTimer" in voice or ".heartbeat(" in voice:
         failures.append("Step 4 regression: Firestore presence heartbeat returned to the room session")
@@ -215,6 +221,20 @@ def main() -> int:
         failures.append("Step 9 borrowed regression: legacy transaction retry cap changed")
     if "firestoreErrorRetryDelayMs" not in legacy_admin_shim:
         failures.append("Step 9 borrowed regression: legacy transactions lost backoff/jitter")
+
+    if "firestoreE2eFetch" not in e2e_retry or "DEFAULT_PACE_MS = 250" not in e2e_retry:
+        failures.append("Step 9 borrowed regression: production E2E Firestore pacing/backoff is missing")
+    for label, workflow in (
+        ("phase6", phase6_e2e_workflow),
+        ("economy", economy_e2e_workflow),
+        ("access", access_e2e_workflow),
+        ("moderation", moderation_e2e_workflow),
+        ("comprehensive", comprehensive_e2e_workflow),
+    ):
+        if "group: shadow-live-production-e2e" not in workflow:
+            failures.append(f"Step 9 borrowed regression: {label} production E2E is outside the shared concurrency queue")
+        if "cancel-in-progress: false" not in workflow:
+            failures.append(f"Step 9 borrowed regression: {label} production E2E can cancel another production validation")
     room_realtime_body = function_body(room_realtime_entry, "roomRealtime")
     if room_realtime_body is None:
         failures.append("Step 9 borrowed regression: roomRealtime handler is missing")
