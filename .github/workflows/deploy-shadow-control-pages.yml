@@ -2,7 +2,7 @@ name: Deploy Shadow Live + Shadow Control to GitHub Pages
 
 on:
   push:
-    branches: [main, phase8-games]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -17,18 +17,12 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout exact production commit
         uses: actions/checkout@v6
         with:
           ref: ${{ github.sha }}
           fetch-depth: 1
-
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v5
 
       - name: Set up pinned Flutter
         uses: subosito/flutter-action@v2
@@ -39,12 +33,6 @@ jobs:
 
       - name: Install dependencies
         run: flutter pub get
-
-      - name: Analyze game integration
-        run: flutter analyze lib/features/games
-
-      - name: Run game widget tests
-        run: flutter test test/games
 
       - name: Verify production source before build
         run: |
@@ -64,8 +52,6 @@ jobs:
           flutter build web --release --pwa-strategy=none --target lib/main_control.dart --base-href /Shadow-Live-/control/
           mkdir -p site/control
           cp -R build/web/. site/control/
-          sed -i "s#flutter_bootstrap.js#flutter_bootstrap.js?v=${GITHUB_SHA}#g" site/control/index.html
-          sed -i "s#main.dart.js#main.dart.js?v=${GITHUB_SHA}#g" site/control/flutter_bootstrap.js
 
       - name: Verify Shadow Control build
         run: |
@@ -76,8 +62,6 @@ jobs:
           grep -q '"id": "/Shadow-Live-/control/"' site/control/manifest.json
           grep -q '"scope": "/Shadow-Live-/control/"' site/control/manifest.json
           grep -q 'Shadow Control' site/control/manifest.json
-          grep -q "flutter_bootstrap.js?v=${GITHUB_SHA}" site/control/index.html
-          grep -q "main.dart.js?v=${GITHUB_SHA}" site/control/flutter_bootstrap.js
 
       - name: Build Shadow Live with isolated PWA identity
         run: |
@@ -87,8 +71,6 @@ jobs:
           flutter build web --release --pwa-strategy=none --target lib/main.dart --base-href /Shadow-Live-/app/
           mkdir -p site/app
           cp -R build/web/. site/app/
-          sed -i "s#flutter_bootstrap.js#flutter_bootstrap.js?v=${GITHUB_SHA}#g" site/app/index.html
-          sed -i "s#main.dart.js#main.dart.js?v=${GITHUB_SHA}#g" site/app/flutter_bootstrap.js
 
       - name: Verify Shadow Live build
         run: |
@@ -99,8 +81,6 @@ jobs:
           grep -q '"id": "/Shadow-Live-/app/"' site/app/manifest.json
           grep -q '"scope": "/Shadow-Live-/app/"' site/app/manifest.json
           grep -q '"name": "Shadow Live"' site/app/manifest.json
-          grep -q "flutter_bootstrap.js?v=${GITHUB_SHA}" site/app/index.html
-          grep -q "main.dart.js?v=${GITHUB_SHA}" site/app/flutter_bootstrap.js
 
       - name: Create non-PWA root launcher
         run: |
@@ -141,50 +121,6 @@ jobs:
             > site/deploy.json
           cp site/deploy.json site/app/deploy.json
           cp site/deploy.json site/control/deploy.json
-
-          cat > site/app/refresh.html <<EOF
-          <!doctype html>
-          <html lang="ar" dir="rtl">
-          <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width,initial-scale=1">
-            <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
-            <meta http-equiv="Pragma" content="no-cache">
-            <meta http-equiv="Expires" content="0">
-            <meta name="theme-color" content="#05060D">
-            <title>تحديث Shadow Live</title>
-            <style>
-              html,body{margin:0;min-height:100%;background:#05060d;color:#fff;font-family:Arial,sans-serif}
-              body{display:grid;place-items:center;padding:24px;box-sizing:border-box}
-              main{width:min(460px,100%);text-align:center;background:#0d0f18;border:1px solid #2c2344;border-radius:24px;padding:26px;box-sizing:border-box}
-              h1{margin:0 0 10px;font-size:24px}
-              p{margin:0;color:#bbb;line-height:1.7}
-            </style>
-          </head>
-          <body>
-            <main>
-              <h1>تحديث Shadow Live</h1>
-              <p>جارٍ حذف نسخة الويب القديمة وفتح آخر إصدار…</p>
-            </main>
-            <script>
-            (async () => {
-              try {
-                if ('serviceWorker' in navigator) {
-                  const registrations = await navigator.serviceWorker.getRegistrations();
-                  await Promise.all(registrations.map((registration) => registration.unregister()));
-                }
-                if ('caches' in window) {
-                  const keys = await caches.keys();
-                  await Promise.all(keys.map((key) => caches.delete(key)));
-                }
-              } catch (_) {}
-              location.replace('/Shadow-Live-/app/?build=$GITHUB_SHA&fresh=1');
-            })();
-            </script>
-          </body>
-          </html>
-          EOF
-
           touch site/.nojekyll
 
       - name: Kill all legacy Flutter service workers and caches
@@ -222,12 +158,21 @@ jobs:
           git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push --force origin gh-pages
 
-      - name: Upload GitHub Pages artifact
-        uses: actions/upload-pages-artifact@v3
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
         with:
           path: site
 
-      - name: Deploy GitHub Pages
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy exact verified artifact
         id: deployment
         uses: actions/deploy-pages@v4
-
