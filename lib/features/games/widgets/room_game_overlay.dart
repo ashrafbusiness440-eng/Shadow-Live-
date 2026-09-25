@@ -298,7 +298,7 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
     if (!mounted) return;
     setState(() => _greedyResultVisible = true);
     _greedyResolving = false;
-    _greedyResultTimer = Timer(const Duration(seconds: 7), () {
+    _greedyResultTimer = Timer(const Duration(seconds: 5), () {
       if (!mounted) return;
       setState(() {
         _greedyResultVisible = false;
@@ -1433,7 +1433,9 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
     final total = _state?.currentRoundSelections[id] ?? 0;
     final selected = total > 0;
     return InkWell(
-      onTap: _placing || !_greedyBettingOpen ? null : () => _placeChoice(id),
+      onTap: _placing || _greedyResolving || !_greedyBettingOpen
+          ? null
+          : () => _placeChoice(id),
       customBorder: const CircleBorder(),
       child: SizedBox(
         width: size,
@@ -1529,10 +1531,9 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
                 ),
               ),
             ),
-            if (serverAmount > 0)
-              Positioned(
-                top: 0,
-                left: -4,
+            Positioned(
+              top: 0,
+              left: -4,
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 5,
@@ -1832,7 +1833,7 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
               end: index == shown.length - 1 ? 0 : 6,
             ),
             child: InkWell(
-              onTap: _placing || !_greedyBettingOpen
+              onTap: _placing || _greedyResolving || !_greedyBettingOpen
                   ? null
                   : () => setState(() => _betIndex = sourceIndex),
               borderRadius: BorderRadius.circular(14),
