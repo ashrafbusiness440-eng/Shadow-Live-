@@ -109,48 +109,50 @@ jobs:
             );
           }
 
-          const releaseName =
-            'projects/' + projectId + '/releases/firebase.storage/' + bucket;
+          const releasesResponse = await fetch(
+            'https://firebaserules.googleapis.com/v1/projects/' +
+              encodeURIComponent(projectId) +
+              '/releases?pageSize=100',
+            { headers },
+          );
+          const releasesBody = await releasesResponse.json().catch(() => ({}));
+          if (!releasesResponse.ok) {
+            throw new Error(
+              'release list failed ' +
+                releasesResponse.status +
+                ' ' +
+                JSON.stringify(releasesBody),
+            );
+          }
+
+          const releases = Array.isArray(releasesBody.releases)
+            ? releasesBody.releases
+            : [];
+          const storageRelease = releases.find((item) =>
+            String(item?.name || '').includes('/releases/firebase.storage/')
+          );
+          if (!storageRelease?.name) {
+            throw new Error(
+              'storage release not found; existing Firebase Storage release is required',
+            );
+          }
+
           const patch = await fetch(
-            'https://firebaserules.googleapis.com/v1/' + releaseName,
+            'https://firebaserules.googleapis.com/v1/' + storageRelease.name,
             {
               method: 'PATCH',
               headers,
               body: JSON.stringify({
                 release: {
-                  name: releaseName,
+                  name: storageRelease.name,
                   rulesetName: ruleset.name,
                 },
                 updateMask: 'rulesetName',
               }),
             },
           );
-          let release = await patch.json().catch(() => ({}));
-
-          if (patch.status === 404) {
-            const createRelease = await fetch(
-              'https://firebaserules.googleapis.com/v1/projects/' +
-                encodeURIComponent(projectId) +
-                '/releases',
-              {
-                method: 'POST',
-                headers,
-                body: JSON.stringify({
-                  name: releaseName,
-                  rulesetName: ruleset.name,
-                }),
-              },
-            );
-            release = await createRelease.json().catch(() => ({}));
-            if (!createRelease.ok) {
-              throw new Error(
-                'release create failed ' +
-                  createRelease.status +
-                  ' ' +
-                  JSON.stringify(release),
-              );
-            }
-          } else if (!patch.ok) {
+          const release = await patch.json().catch(() => ({}));
+          if (!patch.ok) {
             throw new Error(
               'release update failed ' +
                 patch.status +
@@ -160,5 +162,5 @@ jobs:
           }
 
           console.log('Storage rules released:', ruleset.name);
-          console.log('Release:', release.name || releaseName);
+          console.log('Release:', release.name || storageRelease.name);
           NODE
