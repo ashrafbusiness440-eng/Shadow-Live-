@@ -207,7 +207,10 @@ class _AccountEnforcementHostState extends State<AccountEnforcementHost> {
       await storage.removeToken();
     } catch (_) {}
     if (!mounted) return;
-    setState(() => _notice = null);
+    setState(() {
+      _notice = null;
+      _handling = false;
+    });
     NavigationService.navigateToAndRemoveUntil(AppRoutes.authChoice);
   }
 
