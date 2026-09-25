@@ -1,7 +1,9 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../bloc/auth_bloc.dart';
+import '../setup_route.dart';
 import '../../../services/navigation_service.dart';
 
 class EmailLoginScreen extends StatefulWidget {
@@ -43,7 +45,12 @@ class _EmailLoginScreenState extends State<EmailLoginScreen>{
      Navigator.of(context).pushNamedAndRemoveUntil(AppRoutes.emailVerification,(r)=>false);
      return;
     }
+    await current.getIdToken(true);
+    final doc=await FirebaseFirestore.instance.collection('users').doc(current.uid).get();
+    final destination=setupDestination(doc.data());
+    if(!mounted)return;
     context.read<AuthBloc>().add(AuthCheckRequested());
+    Navigator.of(context).pushNamedAndRemoveUntil(destination,(r)=>false);
    }
   }on FirebaseAuthException catch(e){
    var m='حدث خطأ، حاول مرة أخرى';
