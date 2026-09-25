@@ -16,7 +16,6 @@ function verifiedUserDb() {
   return env.authenticatedContext(uid,{
     email:"verified@example.com",
     email_verified:true,
-    firebase:{sign_in_provider:"password"},
   }).firestore();
 }
 
@@ -24,7 +23,6 @@ function unverifiedUserDb() {
   return env.authenticatedContext(uid,{
     email:"unverified@example.com",
     email_verified:false,
-    firebase:{sign_in_provider:"password"},
   }).firestore();
 }
 
