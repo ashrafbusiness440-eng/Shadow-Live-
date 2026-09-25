@@ -183,6 +183,8 @@ void main() {
     expect(find.text('بيتزا'), findsOneWidget);
     expect(find.text('سلطة'), findsOneWidget);
     expect(find.text('🔥🔥'), findsOneWidget);
+    expect(find.text('قيمة الضغطة الحالية'), findsNothing);
+    expect(find.byType(GridView), findsNothing);
 
     await tester.tap(find.text('بيتزا'));
     await tester.tap(find.text('سلطة'));
