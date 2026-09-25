@@ -256,7 +256,10 @@ class GameRuntimeService {
         .toList(growable: false);
   }
 
-  Future<GameRuntimeState> loadState(GameCatalogEntry game) async {
+  Future<GameRuntimeState> loadState(
+    GameCatalogEntry game, {
+    String roomId = '',
+  }) async {
     if (_e2eRoomTest) {
       final now = DateTime.now().millisecondsSinceEpoch;
       return GameRuntimeState(
@@ -367,6 +370,7 @@ class GameRuntimeService {
       'action': 'state',
       'gameId': game.gameId,
       if (game.mode.isNotEmpty) 'mode': game.mode,
+      if (roomId.trim().isNotEmpty) 'roomId': roomId.trim(),
     });
     return GameRuntimeState.fromJson(body);
   }

@@ -91,3 +91,15 @@ Volatile room count/event state is no longer allowed to return to Firestore on t
 - Discovery uses one batch count request with bounded Durable Object fan-out.
 - Seat Firestore snapshots must not overwrite the WebSocket online count.
 - Games remain on the Step 4 baseline until Step 6.
+
+## Step 6 migration note — Game WebSocket phases
+
+The old 10-second non-slot game state poll is intentionally removed in Step 6.
+
+- Periodic game network polling must remain absent from `RoomGameOverlaySheet`.
+- The 250ms game ticker is UI-only and must not perform network I/O.
+- Game phase delivery uses the existing room WebSocket: `game.round_started`, `game.betting_closed`, `game.result`, and `game.next_round`.
+- A pushed `game.result` may trigger exactly an event-driven authoritative state refresh for personal settlement/result details; this is not periodic polling.
+- Bets, balances, outcomes, payouts, settlement, and financial ledger remain in the server-authoritative game runtime.
+- Durable Object game scheduling must remain transient and must not import Firestore/Firebase.
+- Production bet presence validation uses room WebSocket Presence, with legacy `room_presence` only as a migration fallback.

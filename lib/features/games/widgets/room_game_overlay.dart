@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 
 import '../game_asset_paths.dart';
 import '../services/game_runtime_service.dart';
+import '../../room/services/room_presence_service.dart';
+import '../../voice/services/voice_room_session_controller.dart';
 import '../../wallet/screens/recharge_screen.dart';
 
 class RoomGameOverlaySheet extends StatefulWidget {
@@ -14,11 +16,13 @@ class RoomGameOverlaySheet extends StatefulWidget {
     required this.roomId,
     this.initialGameKey,
     this.runtimeService,
+    this.realtimeEvents,
   });
 
   final String roomId;
   final String? initialGameKey;
   final GameRuntimeService? runtimeService;
+  final Stream<RoomRealtimeEvent>? realtimeEvents;
 
   @override
   State<RoomGameOverlaySheet> createState() => _RoomGameOverlaySheetState();
@@ -26,11 +30,11 @@ class RoomGameOverlaySheet extends StatefulWidget {
 
 class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
   late final GameRuntimeService _service;
-  Timer? _poller;
   Timer? _ticker;
   Timer? _greedySpinTimer;
   Timer? _greedyResultTimer;
   Timer? _greedyPhaseTimer;
+  StreamSubscription<RoomRealtimeEvent>? _gameRealtimeSubscription;
 
   List<GameCatalogEntry> _catalog = const [];
   GameCatalogEntry? _selected;
@@ -77,6 +81,11 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
   void initState() {
     super.initState();
     _service = widget.runtimeService ?? GameRuntimeService();
+    final realtimeEvents = widget.realtimeEvents ??
+        VoiceRoomSessionController.instance.realtimeEvents;
+    _gameRealtimeSubscription = realtimeEvents.listen(
+      _handleGameRealtimeEvent,
+    );
     _loadCatalog();
     _ticker = Timer.periodic(
       const Duration(milliseconds: 250),
@@ -89,11 +98,12 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
   @override
   void dispose() {
     _autoPlaying = false;
-    _poller?.cancel();
     _ticker?.cancel();
     _greedySpinTimer?.cancel();
     _greedyResultTimer?.cancel();
     _greedyPhaseTimer?.cancel();
+    unawaited(_gameRealtimeSubscription?.cancel());
+    _gameRealtimeSubscription = null;
     if (widget.runtimeService == null) {
       _service.close();
     }
@@ -122,7 +132,6 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
       });
       if (selected != null) {
         await _loadState();
-        _startPolling();
         if (const bool.fromEnvironment('E2E_GAME_TEST')) {
           debugPrint('E2E_GAME_OVERLAY_READY:${selected.key}');
         }
@@ -164,17 +173,6 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
   bool get _hasWitch => _catalog.any((item) => item.gameId == 'witch');
   bool get _hasSlot => _catalog.any((item) => item.gameId == 'slot');
 
-  void _startPolling() {
-    _poller?.cancel();
-    if (_selected?.gameId == 'slot') return;
-    _poller = Timer.periodic(
-      // Local timers already drive the countdown and phase transitions.
-      // Ten-second polling is only a safety resync, not the animation clock.
-      const Duration(seconds: 10),
-      (_) => _loadState(silent: true),
-    );
-  }
-
   Future<void> _selectBase(String key) async {
     final next = _pickByBaseKey(_catalog, key);
     if (next == null) return;
@@ -186,7 +184,6 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
       _error = null;
     });
     await _loadState();
-    _startPolling();
   }
 
   Future<void> _selectWitchMode(GameCatalogEntry next) async {
@@ -198,7 +195,6 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
       _error = null;
     });
     await _loadState();
-    _startPolling();
   }
 
   Future<void> _loadState({bool silent = false}) async {
@@ -206,10 +202,20 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
     if (game == null) return;
     final requestSequence = ++_stateRequestSequence;
     try {
-      final state = await _service.loadState(game);
+      final state = await _service.loadState(
+        game,
+        roomId: widget.roomId,
+      );
+      final currentRoundOpensAtMs =
+          (_state?.round?['opensAtMs'] as num?)?.toInt() ?? 0;
+      final responseRoundOpensAtMs =
+          (state.round?['opensAtMs'] as num?)?.toInt() ?? 0;
       if (!mounted ||
           _selected?.key != game.key ||
-          requestSequence < _stateAppliedSequence) {
+          requestSequence < _stateAppliedSequence ||
+          (currentRoundOpensAtMs > 0 &&
+              responseRoundOpensAtMs > 0 &&
+              responseRoundOpensAtMs < currentRoundOpensAtMs)) {
         return;
       }
       _stateAppliedSequence = requestSequence;
@@ -265,22 +271,29 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
   void _scheduleGreedyPhaseRefresh(GameRuntimeState next) {
     _greedyPhaseTimer?.cancel();
     if (_selected?.gameId != 'greedy_cat' || next.round == null) return;
-    final status = (next.round?['status'] ?? '').toString();
+
+    final round = next.round!;
+    final holdEnds =
+        (round['resultHoldEndsAtMs'] as num?)?.toInt() ?? 0;
+    if (holdEnds > 0 && _estimatedServerNowMs >= holdEnds) return;
+
+    final status = _greedyRoundStatus;
     final boundary = status == 'betting'
-        ? (next.round?['bettingClosesAtMs'] as num?)?.toInt()
+        ? (round['bettingClosesAtMs'] as num?)?.toInt()
         : status == 'spinning'
-            ? (next.round?['revealAtMs'] as num?)?.toInt()
+            ? (round['revealAtMs'] as num?)?.toInt()
             : status == 'result_hold'
-                ? (next.round?['resultHoldEndsAtMs'] as num?)?.toInt()
+                ? holdEnds
                 : null;
     if (boundary == null || boundary <= 0) return;
-    final delayMs = (boundary - next.serverNowMs + 40).clamp(40, 60000);
+
+    final delayMs =
+        (boundary - _estimatedServerNowMs + 40).clamp(40, 60000).toInt();
     _greedyPhaseTimer = Timer(Duration(milliseconds: delayMs), () {
       if (!mounted || _selected?.gameId != 'greedy_cat') return;
       if (status == 'betting') {
         _startGreedySpinPreview();
-      }
-      if (status == 'result_hold') {
+      } else if (status == 'result_hold') {
         setState(() {
           _greedyResultVisible = false;
           _greedyResolvedOutcomeId = null;
@@ -289,8 +302,115 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
       } else {
         setState(() => _clockTick++);
       }
-      unawaited(_loadState(silent: true));
+      final current = _state;
+      if (current != null) _scheduleGreedyPhaseRefresh(current);
     });
+  }
+
+  bool _eventMatchesSelectedGame(RoomRealtimeEvent event) {
+    final game = _selected;
+    if (game == null) return false;
+    final payload = event.payload;
+    final eventRoomId = (payload['roomId'] ?? '').toString();
+    final eventGameId = (payload['gameId'] ?? '').toString();
+    final eventMode = (payload['mode'] ?? '').toString();
+    if (eventRoomId.isNotEmpty && eventRoomId != widget.roomId) return false;
+    if (eventGameId != game.gameId) return false;
+    if (game.gameId == 'witch' && eventMode != game.mode) return false;
+    return true;
+  }
+
+  void _applyRealtimeRound(Map<String, dynamic> round, int serverTimeMs) {
+    final current = _state;
+    final game = _selected;
+    if (current == null || game == null) return;
+
+    final incomingOpensAtMs =
+        (round['opensAtMs'] as num?)?.toInt() ?? 0;
+    final currentOpensAtMs =
+        (current.round?['opensAtMs'] as num?)?.toInt() ?? 0;
+    if (incomingOpensAtMs > 0 &&
+        currentOpensAtMs > incomingOpensAtMs) {
+      return;
+    }
+
+    final next = GameRuntimeState(
+      gameId: current.gameId,
+      mode: current.mode,
+      serverNowMs: serverTimeMs > 0
+          ? serverTimeMs
+          : DateTime.now().millisecondsSinceEpoch,
+      bets: current.bets,
+      round: round,
+      currentRoundSelections: const <String, int>{},
+      lastResult: current.lastResult,
+      recentResults: current.recentResults,
+      serverRoundSelections: const <String, int>{},
+      totalRoundStakeCoins: 0,
+      userDailyPayoutCoins: current.userDailyPayoutCoins,
+    );
+    setState(() {
+      _state = next;
+      _stateReceivedAtLocalMs = DateTime.now().millisecondsSinceEpoch;
+      _greedyOptimisticRoundId = null;
+      _greedyOptimisticUserTargets.clear();
+      _greedyOptimisticServerTargets.clear();
+      _clockTick++;
+    });
+    _syncGreedyRoundVisuals(next);
+    _scheduleGreedyPhaseRefresh(next);
+  }
+
+  void _handleGameRealtimeEvent(RoomRealtimeEvent event) {
+    if (!mounted) return;
+
+    if (event.type == 'server.ready') {
+      final game = _selected;
+      if (game != null && game.gameId != 'slot' && _state != null) {
+        unawaited(_loadState(silent: true));
+      }
+      return;
+    }
+    if (!_eventMatchesSelectedGame(event)) return;
+
+    if (event.type == 'game.betting_closed') {
+      if (_selected?.gameId == 'greedy_cat') {
+        _startGreedySpinPreview();
+      }
+      setState(() => _clockTick++);
+      return;
+    }
+
+    if (event.type == 'game.result') {
+      final outcomeId = (event.payload['outcomeId'] ?? '').toString();
+      if (_selected?.gameId == 'greedy_cat' && outcomeId.isNotEmpty) {
+        _stopGreedySpinPreview();
+        setState(() {
+          _greedySpinHighlightId =
+              _greedyChoiceOrder.contains(outcomeId) ? outcomeId : null;
+          _greedyResolvedOutcomeId = outcomeId;
+          _clockTick++;
+        });
+      }
+      // One authoritative refresh is triggered by the pushed result event.
+      // This settles the current user's due operation and returns their
+      // personal payout/ranking. It is event-driven, never periodic polling.
+      unawaited(_loadState(silent: true));
+      return;
+    }
+
+    if (event.type == 'game.next_round' ||
+        event.type == 'game.round_started') {
+      final rawRound = event.type == 'game.next_round'
+          ? event.payload['nextRound']
+          : event.payload['round'];
+      if (rawRound is Map) {
+        _applyRealtimeRound(
+          Map<String, dynamic>.from(rawRound),
+          event.serverTimeMs,
+        );
+      }
+    }
   }
 
   void _syncGreedyRoundVisuals(GameRuntimeState next) {

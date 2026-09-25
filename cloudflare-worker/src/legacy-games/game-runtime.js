@@ -15,6 +15,51 @@ import {
 } from "./game-engine.js";
 
 const clean=(value)=>String(value??"").trim();
+const validRoomId=(value)=>/^[A-Za-z0-9_-]{1,180}$/.test(clean(value));
+
+function realtimeRoomStub(roomId){
+  const namespace=legacyEnv.ROOM_REALTIME;
+  if(!namespace||!validRoomId(roomId))return null;
+  try{
+    return namespace.get(namespace.idFromName(roomId));
+  }catch(_){
+    return null;
+  }
+}
+
+async function realtimeGameUserPresent(roomId,uid){
+  const stub=realtimeRoomStub(roomId);
+  if(!stub)return null;
+  try{
+    const target=new URL("https://room-realtime.internal/presence/has");
+    target.searchParams.set("uid",clean(uid));
+    const response=await stub.fetch(target.toString());
+    if(!response.ok)return null;
+    const body=await response.json().catch(()=>({}));
+    return body.present===true;
+  }catch(_){
+    return null;
+  }
+}
+
+async function registerGameRealtimeSchedules(roomId,uid,schedules){
+  const stub=realtimeRoomStub(roomId);
+  if(!stub||!Array.isArray(schedules)||schedules.length===0)return false;
+  try{
+    const response=await stub.fetch("https://room-realtime.internal/game/register",{
+      method:"POST",
+      headers:{"content-type":"application/json"},
+      body:JSON.stringify({
+        roomId:clean(roomId),
+        uid:clean(uid),
+        schedules,
+      }),
+    });
+    return response.ok;
+  }catch(_){
+    return false;
+  }
+}
 
 const runtimeConfigCache={value:null,expiresAtMs:0};
 
@@ -258,6 +303,78 @@ function buildRound({config,gameId,mode,uid,key,nowMs}){
   });
 }
 
+function realtimeRoundPayload(gameId,mode,round){
+  return {
+    gameId,
+    mode,
+    roundId:clean(round?.roundId),
+    dayKey:clean(round?.dayKey),
+    roundNumber:Number(round?.roundNumber||0),
+    opensAtMs:Number(round?.opensAtMs||0),
+    closesAtMs:Number(round?.closesAtMs||round?.revealAtMs||0),
+    bettingClosesAtMs:Number(round?.bettingClosesAtMs||0),
+    revealAtMs:Number(round?.revealAtMs||round?.closesAtMs||0),
+    resultHoldEndsAtMs:Number(round?.resultHoldEndsAtMs||0),
+    nextRoundOpensAtMs:Number(round?.nextRoundOpensAtMs||0),
+  };
+}
+
+function gameRealtimeSchedules({
+  config,
+  selected,
+  gameId,
+  mode,
+  uid,
+  nowMs,
+  rngSecret,
+}){
+  if(gameId==="slot")return [];
+  const current=buildRound({
+    config,
+    gameId,
+    mode,
+    uid,
+    key:"realtime_current",
+    nowMs,
+  });
+  const next=buildRound({
+    config,
+    gameId,
+    mode,
+    uid,
+    key:"realtime_next",
+    nowMs:Number(current.nextRoundOpensAtMs||0)+1,
+  });
+  const following=buildRound({
+    config,
+    gameId,
+    mode,
+    uid,
+    key:"realtime_following",
+    nowMs:Number(next.nextRoundOpensAtMs||0)+1,
+  });
+  const resolve=(round)=>resolveOutcome({
+    gameId,
+    mode,
+    outcomes:selected.outcomes,
+    roundId:round.roundId,
+    secret:rngSecret,
+  }).outcomeId;
+
+  return [
+    {
+      round:realtimeRoundPayload(gameId,mode,current),
+      outcomeId:resolve(current),
+      nextRound:realtimeRoundPayload(gameId,mode,next),
+    },
+    {
+      round:realtimeRoundPayload(gameId,mode,next),
+      outcomeId:resolve(next),
+      nextRound:realtimeRoundPayload(gameId,mode,following),
+    },
+  ];
+}
+
 function publicOperation(data={}){
   return {
     operationId:clean(data.operationId),
@@ -334,7 +451,7 @@ export async function placeGameBet(
   const mode=gameId==="witch"?clean(body.mode||"normal"):"";
   const roomId=clean(body.roomId);
   const key=clean(body.idempotencyKey);
-  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId)||!validIdempotencyKey(key)){
+  if(!validRoomId(roomId)||!validIdempotencyKey(key)){
     throw Error("invalid_request");
   }
 
@@ -346,12 +463,22 @@ export async function placeGameBet(
   const lockRef=db.collection("system_config").doc("emergency_lock");
   const operationRef=db.collection("game_operations").doc(operationId);
 
+  const realtimePresent=await realtimeGameUserPresent(roomId,uid);
+  if(realtimePresent===false){
+    const existing=await operationRef.get();
+    if(existing.exists){
+      return {ok:true,code:"duplicate",...publicOperation(existing.data()||{})};
+    }
+    throw Error("user_not_in_room");
+  }
+  const useLegacyPresence=realtimePresent===null;
+
   return db.runTransaction(async(tx)=>{
     const [userSnap,roomSnap,presenceSnap,configSnap,lockSnap,operationSnap]=
       await Promise.all([
         tx.get(userRef),
         tx.get(roomRef),
-        tx.get(presenceRef),
+        useLegacyPresence?tx.get(presenceRef):Promise.resolve(null),
         tx.get(configRef),
         tx.get(lockRef),
         tx.get(operationRef),
@@ -362,8 +489,12 @@ export async function placeGameBet(
     }
     if(!userSnap.exists)throw Error("user_not_found");
     if(!roomSnap.exists||roomSnap.data()?.isActive===false)throw Error("room_unavailable");
-    const lastSeenAtMs=Number(presenceSnap.data()?.lastSeenAtMs||0);
-    if(!presenceSnap.exists||nowMs-lastSeenAtMs>90000)throw Error("user_not_in_room");
+    if(useLegacyPresence){
+      const lastSeenAtMs=Number(presenceSnap?.data()?.lastSeenAtMs||0);
+      if(!presenceSnap?.exists||nowMs-lastSeenAtMs>90000){
+        throw Error("user_not_in_room");
+      }
+    }
 
     const lock=lockSnap.exists?(lockSnap.data()||{}):{};
     if(lock.enabled===true||lock.economyLocked===true||lock.gamesLocked===true){
@@ -729,6 +860,7 @@ export async function gameCatalog(db){
 export async function gameState(db,uid,body={},options={}){
   const gameId=clean(body.gameId);
   const mode=gameId==="witch"?clean(body.mode||"normal"):"";
+  const roomId=clean(body.roomId);
   const nowMs=Number(options.nowMs||Date.now());
 
   try{
@@ -897,6 +1029,19 @@ export async function gameState(db,uid,body={},options={}){
   }
   const currentRoundSelections=[...currentRoundTotals.entries()]
     .map(([choiceId,amountCoins])=>({choiceId,amountCoins}));
+
+  if(gameId!=="slot"&&validRoomId(roomId)&&legacyEnv.ROOM_REALTIME){
+    const schedules=gameRealtimeSchedules({
+      config,
+      selected,
+      gameId,
+      mode,
+      uid,
+      nowMs,
+      rngSecret:options.rngSecret||legacyEnv.GAME_RNG_SECRET,
+    });
+    await registerGameRealtimeSchedules(roomId,uid,schedules);
+  }
 
   return {
     ok:true,
