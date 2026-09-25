@@ -284,20 +284,30 @@ Widget host(
   GameRuntimeService service,
   String gameKey, {
   Stream<RoomRealtimeEvent>? realtimeEvents,
+  Size? mediaSize,
 }) =>
     MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: Scaffold(
-        body: Align(
-          alignment: Alignment.bottomCenter,
-          child: RoomGameOverlaySheet(
-            roomId: 'room_test',
-            initialGameKey: gameKey,
-            runtimeService: service,
-            realtimeEvents:
-                realtimeEvents ?? const Stream<RoomRealtimeEvent>.empty(),
-          ),
-        ),
+      home: Builder(
+        builder: (context) {
+          final child = Scaffold(
+            body: Align(
+              alignment: Alignment.bottomCenter,
+              child: RoomGameOverlaySheet(
+                roomId: 'room_test',
+                initialGameKey: gameKey,
+                runtimeService: service,
+                realtimeEvents:
+                    realtimeEvents ?? const Stream<RoomRealtimeEvent>.empty(),
+              ),
+            ),
+          );
+          if (mediaSize == null) return child;
+          return MediaQuery(
+            data: MediaQuery.of(context).copyWith(size: mediaSize),
+            child: child,
+          );
+        },
       ),
     );
 
@@ -408,9 +418,6 @@ void main() {
 
   testWidgets('Greedy Cat result push triggers one authoritative refresh',
       (tester) async {
-    await tester.binding.setSurfaceSize(const Size(800, 900));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-
     final service = GreedyResultFakeGameRuntimeService();
     final events = StreamController<RoomRealtimeEvent>.broadcast();
     addTearDown(events.close);
@@ -420,6 +427,7 @@ void main() {
         service,
         'greedy_cat',
         realtimeEvents: events.stream,
+        mediaSize: const Size(800, 900),
       ),
     );
     await tester.pump();
