@@ -37,6 +37,52 @@ function cors(req,res){
 const out=(res,status,body)=>res.status(status).json(body);
 const clean=(v)=>String(v??"").trim();
 
+async function realtimePresenceState(roomId){
+  const namespace=legacyEnv.ROOM_REALTIME;
+  if(!namespace)return null;
+  try{
+    const id=namespace.idFromName(roomId);
+    const stub=namespace.get(id);
+    const response=await stub.fetch("https://room-realtime.internal/presence");
+    if(!response.ok)return null;
+    const body=await response.json().catch(()=>({}));
+    return Array.isArray(body.participants)?body.participants:[];
+  }catch(_){
+    return null;
+  }
+}
+
+async function realtimeUserPresent(roomId,uid){
+  const namespace=legacyEnv.ROOM_REALTIME;
+  if(!namespace)return null;
+  try{
+    const id=namespace.idFromName(roomId);
+    const stub=namespace.get(id);
+    const target=new URL("https://room-realtime.internal/presence/has");
+    target.searchParams.set("uid",uid);
+    const response=await stub.fetch(target.toString());
+    if(!response.ok)return null;
+    const body=await response.json().catch(()=>({}));
+    return body.present===true;
+  }catch(_){
+    return null;
+  }
+}
+
+async function assertRoomRealtimePresence(db,roomId,uid){
+  const realtime=await realtimeUserPresent(roomId,uid);
+  if(realtime===true)return;
+  if(realtime===false)throw new ApiError("target_not_in_room",409);
+
+  // Compatibility fallback for local/legacy environments without the DO.
+  const presenceRef=db.collection("room_presence").doc(roomId).collection("users").doc(uid);
+  const presenceSnap=await presenceRef.get();
+  const lastSeenAtMs=Number(presenceSnap.data()?.lastSeenAtMs||0);
+  if(!presenceSnap.exists||Date.now()-lastSeenAtMs>90000){
+    throw new ApiError("target_not_in_room",409);
+  }
+}
+
 function cosmeticDocId(type,id){
   return (clean(type)+"__"+clean(id))
     .replace(/[^A-Za-z0-9_.-]/g,"_")
@@ -1374,14 +1420,7 @@ async function roomSeatAction(db,uid,body){
     const actorSnap=await tx.get(db.collection("users").doc(uid));
     const actor=actorSnap.data()||{};
     const canManageMic=canManageRoomAction(room,actor,uid,"manageMic");
-    const assertTargetPresent=async targetUserId=>{
-      const presenceRef=db.collection("room_presence").doc(roomId).collection("users").doc(targetUserId);
-      const presenceSnap=await tx.get(presenceRef);
-      const lastSeenAtMs=Number(presenceSnap.data()?.lastSeenAtMs||0);
-      if(!presenceSnap.exists||Date.now()-lastSeenAtMs>90000){
-        throw new ApiError("target_not_in_room",409);
-      }
-    };
+
     let seats=normalizeSeats(room);
     let invites=Array.isArray(room.micInvites)?[...room.micInvites]:[];
     let requests=Array.isArray(room.micRequests)?[...room.micRequests]:[];
@@ -1419,13 +1458,13 @@ async function roomSeatAction(db,uid,body){
     }else if(action==="inviteToMic"){
       if(!canManageMic)throw new ApiError("forbidden",403);
       if(!targetUid||targetUid===uid)throw new ApiError("invalid_target",400);
-      await assertTargetPresent(targetUid);
+      await assertRoomRealtimePresence(db,roomId,targetUid);
       if(!invites.includes(targetUid))invites.push(targetUid);
     }else if(action==="approveMicRequest"){
       if(!canManageMic)throw new ApiError("forbidden",403);
       if(!targetUid||targetUid===uid)throw new ApiError("invalid_target",400);
       if(!requests.includes(targetUid))throw new ApiError("mic_request_not_found",404);
-      await assertTargetPresent(targetUid);
+      await assertRoomRealtimePresence(db,roomId,targetUid);
       requests=requests.filter(id=>id!==targetUid);
       if(!invites.includes(targetUid))invites.push(targetUid);
     }else if(action==="rejectMicRequest"){
@@ -2215,6 +2254,111 @@ async function refreshRoomPresenceSummary(db,roomId){
   return active;
 }
 
+async function roomPresenceAnnounceJoin(db,uid,roomId){
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+  const roomRef=db.collection("rooms").doc(roomId);
+  const profileRef=db.collection("public_profiles").doc(uid);
+  const userRef=db.collection("users").doc(uid);
+  const [roomSnap,profileSnap,userSnap,participants]=await Promise.all([
+    roomRef.get(),
+    profileRef.get(),
+    userRef.get(),
+    realtimePresenceState(roomId),
+  ]);
+  if(!roomSnap.exists||roomSnap.data()?.isActive===false)throw new ApiError("room_unavailable",404);
+  if(Array.isArray(participants)&&!participants.some(item=>clean(item?.uid)===uid)){
+    throw new ApiError("presence_socket_required",409);
+  }
+
+  const profile=profileSnap.data()||{};
+  const user=userSnap.data()||{};
+  const privacy=user.privacy&&typeof user.privacy==="object"?user.privacy:{};
+  const ghostMode=user.roomGhostMode===true||privacy.ghostMode===true;
+  const vipObject=user.vip&&typeof user.vip==="object"?user.vip:{};
+  const vipLevel=Math.max(0,Math.min(99,Number(
+    user.vipLevel??profile.vipLevel??vipObject.level??0
+  )||0));
+  const entryEffectKey=clean(
+    user.vipEntryEffectKey||profile.vipEntryEffectKey||vipObject.entryEffectKey
+  );
+  const displayName=clean(profile.displayName||profile.username||user.displayName||user.username||"مستخدم Shadow Live");
+  const profileImageUrl=clean(profile.profileImageUrl||user.profileImageUrl);
+
+  if(!ghostMode){
+    const messageRef=roomRef.collection("messages").doc();
+    await messageRef.set({
+      type:"system",
+      systemKind:"room_join",
+      senderUid:uid,
+      displayName,
+      profileImageUrl,
+      text:vipLevel>0
+        ?displayName+" دخل الغرفة — VIP "+String(vipLevel)
+        :displayName+" دخل الغرفة",
+      vipLevel,
+      entryEffectKey,
+      createdAt:FieldValue.serverTimestamp(),
+    });
+  }
+
+  if(Array.isArray(participants)){
+    await roomRef.set({
+      onlineCount:participants.length,
+      participantsCount:participants.length,
+      lastPresenceAtMs:Date.now(),
+      updatedAt:FieldValue.serverTimestamp(),
+    },{merge:true});
+  }
+  return {ok:true,roomId};
+}
+
+async function roomSessionLeave(db,uid,roomId){
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+  const roomRef=db.collection("rooms").doc(roomId);
+  const participants=await realtimePresenceState(roomId);
+  const remaining=Array.isArray(participants)
+    ?participants.filter(item=>clean(item?.uid)!==uid)
+    :null;
+
+  await db.runTransaction(async tx=>{
+    const roomSnap=await tx.get(roomRef);
+    if(!roomSnap.exists)return;
+    const room=roomSnap.data()||{};
+    let seats=normalizeSeats(room);
+    const seat=seats.find(item=>item.uid===uid);
+    const update={};
+    if(seat){
+      await recordMicActivity(tx,db,uid,seat);
+      seats=seats.map(item=>item.uid===uid
+        ? {...item,uid:"",displayName:"",profileImageUrl:"",muted:true,micStartedAtMs:0}
+        : item);
+      update.seats=seats;
+    }
+
+    const musicState=normalizeRoomMusicState(room);
+    if(musicState.status==="playing"&&musicState.sourceOwnerUid===uid){
+      update.musicState={
+        ...musicState,
+        status:"stopped",
+        currentTrackId:"",
+        sourceOwnerUid:"",
+        requestedBy:"system_source_left",
+        startedAtMs:0,
+        commandRevision:musicState.commandRevision+1,
+      };
+    }
+    if(remaining){
+      update.onlineCount=remaining.length;
+      update.participantsCount=remaining.length;
+      update.lastPresenceAtMs=Date.now();
+    }
+    if(Object.keys(update).length){
+      update.updatedAt=FieldValue.serverTimestamp();
+      tx.update(roomRef,update);
+    }
+  });
+  return {ok:true,roomId};
+}
 async function roomPresenceJoin(db,uid,roomId){
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
   const roomRef=db.collection("rooms").doc(roomId);
@@ -2870,7 +3014,8 @@ export default async function handler(req,res){
     const lightweightPresenceAction=
       action==="roomPresenceHeartbeat"||
       action==="roomPresenceLeave"||
-      action==="roomPresenceState";
+      action==="roomPresenceState"||
+      action==="roomSessionLeave";
     const decoded=await getAuth().verifyIdToken(
       authorization.slice(7),
       {checkUserState:!lightweightPresenceAction},
@@ -2951,6 +3096,14 @@ export default async function handler(req,res){
     }
     if(action==="setRoomGhostMode"){
       return out(res,200,await setRoomGhostMode(getFirestore(),decoded.uid,req.body||{}));
+    }
+    if(action==="roomPresenceAnnounceJoin"){
+      const roomId=clean(req.body?.roomId);
+      return out(res,200,await roomPresenceAnnounceJoin(getFirestore(),decoded.uid,roomId));
+    }
+    if(action==="roomSessionLeave"){
+      const roomId=clean(req.body?.roomId);
+      return out(res,200,await roomSessionLeave(getFirestore(),decoded.uid,roomId));
     }
     if(action==="roomPresenceJoin"){
       const roomId=clean(req.body?.roomId);

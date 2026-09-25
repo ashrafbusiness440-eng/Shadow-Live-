@@ -67,3 +67,16 @@ Step 2 does not alter production behavior. The following remain documented for l
 - Multiple room features still use independent Firestore listeners.
 - Global Rocket events still watch up to 80 recent explosions.
 - A Firebase scheduled `gameSettlementWorker` remains in source at one-minute cadence; its deployed production status must be verified before settlement migration.
+
+## Step 4 migration note — WebSocket Presence
+
+The original 60-second Firestore heartbeat was intentionally removed in Step 4. The regression guardrail now forbids reintroducing a presence timer or legacy presence actions into the active room-session path.
+
+The new protected baseline is:
+
+- Presence authority: accepted WebSockets in the room Durable Object.
+- Steady-state Firestore presence reads/writes per connected user: 0/minute.
+- Presence collection scans on the active app path: 0.
+- Presence reconnect attempts: bounded to three short attempts.
+- ZEGO, room-open behavior, mic behavior, game timing, gifts, wallet, and button behavior remain unchanged.
+- `rooms.onlineCount` and `participantsCount` remain compatibility fields until Step 5 moves count/event delivery.

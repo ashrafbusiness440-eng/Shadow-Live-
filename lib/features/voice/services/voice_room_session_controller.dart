@@ -37,7 +37,6 @@ class VoiceRoomSessionController extends ChangeNotifier {
       _roomLifecycleSubscription;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
       _roomBanSubscription;
-  Timer? _presenceTimer;
   final Map<String, Uint8List> _localRoomMusic = <String, Uint8List>{};
   Map<String, dynamic>? _lastRoomMusicState;
   String _activeRoomMediaKey = '';
@@ -182,27 +181,23 @@ class VoiceRoomSessionController extends ChangeNotifier {
   }
 
   Future<void> _startPresence(String targetRoomId) async {
-    _presenceTimer?.cancel();
     try {
       await _presenceService.join(targetRoomId);
-    } catch (_) {}
-    _presenceTimer = Timer.periodic(
-      const Duration(seconds: 60),
-      (_) {
-        if (!_active || roomId != targetRoomId) return;
-        unawaited(_presenceService.heartbeat(targetRoomId));
-      },
-    );
+    } catch (_) {
+      // Voice join must stay independent from realtime presence startup.
+      // The presence service performs a small bounded reconnect sequence.
+    }
   }
 
   Future<void> _stopPresence([String? targetRoomId]) async {
-    _presenceTimer?.cancel();
-    _presenceTimer = null;
     final id = (targetRoomId ?? roomId).trim();
     if (id.isEmpty) return;
     try {
       await _presenceService.leave(id);
-    } catch (_) {}
+    } catch (_) {
+      // Realtime presence is removed by WebSocket close even if session
+      // cleanup cannot reach the API.
+    }
   }
 
   void _watchRoomBan(String targetRoomId) {
