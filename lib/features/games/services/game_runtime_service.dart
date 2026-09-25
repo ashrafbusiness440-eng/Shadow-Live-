@@ -47,6 +47,7 @@ class GameRuntimeState {
     this.recentResults = const [],
     this.serverRoundSelections = const {},
     this.totalRoundStakeCoins = 0,
+    this.userDailyPayoutCoins = 0,
   });
 
   final String gameId;
@@ -59,6 +60,7 @@ class GameRuntimeState {
   final List<Map<String, dynamic>> recentResults;
   final Map<String, int> serverRoundSelections;
   final int totalRoundStakeCoins;
+  final int userDailyPayoutCoins;
 
   factory GameRuntimeState.fromJson(Map<String, dynamic> json) {
     final totals = <String, int>{};
@@ -104,6 +106,8 @@ class GameRuntimeState {
       serverRoundSelections: serverTotals,
       totalRoundStakeCoins:
           (json['totalRoundStakeCoins'] as num?)?.toInt() ?? 0,
+      userDailyPayoutCoins:
+          (json['userDailyPayoutCoins'] as num?)?.toInt() ?? 0,
     );
   }
 }
@@ -332,6 +336,8 @@ class GameRuntimeService {
               },
         totalRoundStakeCoins:
             game.gameId == 'greedy_cat' ? 78000 : 0,
+        userDailyPayoutCoins:
+            game.gameId == 'greedy_cat' ? 126400 : 0,
         recentResults: game.gameId == 'slot'
             ? const []
             : List.generate(
