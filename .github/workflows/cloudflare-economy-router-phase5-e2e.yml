@@ -1,15 +1,6 @@
 name: Cloudflare Economy Router Phase 5 E2E
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'cloudflare-worker/src/economy-router.js'
-      - 'cloudflare-worker/src/economy-router-legacy.js'
-      - 'cloudflare-worker/src/legacy-economy/**'
-      - 'cloudflare-worker/src/legacy-games/**'
-      - 'cloudflare-worker/scripts/economy-router-e2e.mjs'
-      - '.github/workflows/cloudflare-economy-router-phase5-e2e.yml'
   workflow_dispatch:
 
 permissions:

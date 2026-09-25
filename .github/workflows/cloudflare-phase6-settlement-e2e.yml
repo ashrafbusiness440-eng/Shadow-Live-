@@ -1,15 +1,6 @@
 name: Cloudflare Phase 6 Settlement E2E
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'cloudflare-worker/src/index.js'
-      - 'cloudflare-worker/src/legacy-games/**'
-      - 'cloudflare-worker/src/legacy-economy/**'
-      - 'cloudflare-worker/wrangler.toml'
-      - 'cloudflare-worker/scripts/phase6-settlement-e2e.mjs'
-      - '.github/workflows/cloudflare-phase6-settlement-e2e.yml'
   workflow_dispatch:
 
 permissions:

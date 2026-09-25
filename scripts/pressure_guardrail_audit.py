@@ -86,6 +86,11 @@ def main() -> int:
     manage_user_account = read("cloudflare-worker/src/manage-user-account.js")
     control_user_details = read("cloudflare-worker/src/control-user-details.js")
     legacy_admin_shim = read("cloudflare-worker/src/legacy-firebase-admin-shim.js")
+    prod_gate = read(".github/workflows/cloudflare-phase8-comprehensive-e2e.yml")
+    phase6_e2e = read(".github/workflows/cloudflare-phase6-settlement-e2e.yml")
+    economy_e2e = read(".github/workflows/cloudflare-economy-router-phase5-e2e.yml")
+    moderation_e2e = read(".github/workflows/cloudflare-phase9-user-moderation-e2e.yml")
+    access_e2e = read(".github/workflows/cloudflare-phase9-user-access-e2e.yml")
 
     if "_presenceTimer" in voice or ".heartbeat(" in voice:
         failures.append("Step 4 regression: Firestore presence heartbeat returned to the room session")
@@ -207,6 +212,25 @@ def main() -> int:
 
     if "group: shadow-live-flutter-ci-${{ github.ref }}" not in flutter_ci:
         failures.append("Step 9 borrowed regression: Flutter CI concurrency is not isolated per ref")
+
+    for label, workflow in (
+        ("phase6", phase6_e2e),
+        ("economy", economy_e2e),
+        ("moderation", moderation_e2e),
+        ("access", access_e2e),
+    ):
+        if re.search(r"(?m)^\s*push:\s*$", workflow):
+            failures.append(f"Step 9 borrowed regression: standalone {label} production E2E auto-runs on main")
+    for required_script in (
+        "phase9-user-moderation-e2e.mjs",
+        "phase9-user-access-e2e.mjs",
+        "economy-router-e2e.mjs",
+        "phase6-settlement-e2e.mjs",
+    ):
+        if required_script not in prod_gate:
+            failures.append(f"Step 9 borrowed regression: serial production gate missing {required_script}")
+    if "Firestore cooldown after moderation" not in prod_gate or "Firestore cooldown after economy router" not in prod_gate:
+        failures.append("Step 9 borrowed regression: serial production gate lost Firestore cooldown spacing")
 
     if "assertUserDocumentSessionState" not in auth:
         failures.append("Step 9 borrowed regression: user document session validator is missing")
