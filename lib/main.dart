@@ -41,6 +41,7 @@ import 'features/voice/services/voice_room_session_controller.dart';
 import 'features/room/services/room_action_service.dart';
 import 'features/room/services/room_invite_service.dart';
 import 'features/room/services/room_insights_service.dart';
+import 'features/room/services/room_bootstrap_service.dart';
 import 'features/room/services/room_moderation_service.dart';
 import 'features/room/services/room_moderator_service.dart';
 import 'features/room/services/room_presence_service.dart';
@@ -55,6 +56,7 @@ import 'features/room/services/room_rocket_service.dart';
 import 'core/assets/shadow_asset_registry.dart';
 import 'features/room/widgets/star_battle_sheet.dart';
 import 'features/room/services/room_seat_service.dart';
+import 'features/games/services/game_runtime_service.dart';
 import 'features/games/widgets/room_game_overlay.dart';
 import 'features/profile/screens/my_items_screen.dart';
 
@@ -165,6 +167,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   final RoomActionService _roomActions = RoomActionService();
   final RoomInviteService _roomInvites = RoomInviteService();
   final RoomInsightsService _roomInsightsService = RoomInsightsService();
+  final RoomBootstrapService _roomBootstrapService = RoomBootstrapService();
   final RoomModerationService _roomModeration = RoomModerationService();
   final RoomModeratorService _roomModeratorService = RoomModeratorService();
   final RoomPresenceService _roomPresence = RoomPresenceService();
@@ -228,9 +231,10 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   bool _changingRoomFavorite = false;
   RoomSeatState? _roomSeatState;
   bool _changingSeat = false;
-  StreamSubscription<RoomSeatState>? _roomSeatSubscription;
   RoomModeratorState? _roomModeratorState;
-  StreamSubscription<RoomModeratorState>? _roomModeratorSubscription;
+  StreamSubscription<Map<String, dynamic>>? _roomLiveSubscription;
+  RoomRocketState? _bootstrapRocketState;
+  List<GameCatalogEntry>? _bootstrapGames;
   bool _roomClosedHandled = false;
   bool _initialGameOpened = false;
 
@@ -341,7 +345,11 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     final raw = ModalRoute.of(context)?.settings.arguments;
     final args = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
     _roomArguments = args;
-    unawaited(_loadOwnerProfile(args));
+    final fallbackOwnerName =
+        (args['hostName'] ?? args['ownerName'] ?? '').toString().trim();
+    if (fallbackOwnerName.isNotEmpty) {
+      _ownerDisplayName = fallbackOwnerName;
+    }
     final roomId = (args['roomId'] ?? '').toString().trim();
     final user = FirebaseAuth.instance.currentUser;
     if (roomId.isEmpty || user == null) {
@@ -376,9 +384,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         });
       }
       unawaited(_roomActions.recordRoomVisit(roomId));
-      unawaited(_loadRoomInsights(roomId));
-      unawaited(_loadRoomSeatState(roomId));
-      unawaited(_watchRoomModerators(roomId));
+      unawaited(_watchRoomLiveState(roomId));
+      unawaited(_loadRoomBootstrap(roomId));
       _openInitialGameIfNeeded(args);
     } catch (error) {
       if (mounted) {
@@ -605,6 +612,95 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     }
   }
 
+  Future<void> _loadRoomBootstrap(String roomId) async {
+    if (roomId.isEmpty) return;
+    if (mounted) setState(() => _loadingRoomInsights = true);
+    try {
+      final snapshot = await _roomBootstrapService.load(roomId);
+      if (!mounted ||
+          (_roomArguments['roomId'] ?? '').toString().trim() != roomId) {
+        return;
+      }
+
+      _voiceSession.applyBootstrapRoom(snapshot.room);
+      final owner = snapshot.ownerProfile;
+      final ownerName =
+          (owner['displayName'] ?? '').toString().trim();
+      final ownerPhoto =
+          (owner['profileImageUrl'] ?? '').toString().trim();
+      final ownerLocation =
+          (owner['location'] ?? '').toString().trim();
+
+      setState(() {
+        _roomArguments = <String, dynamic>{
+          ..._roomArguments,
+          ...snapshot.room,
+        };
+        if (ownerName.isNotEmpty) _ownerDisplayName = ownerName;
+        _ownerPhotoUrl = ownerPhoto;
+        _ownerLocation = ownerLocation;
+        _roomSeatState = snapshot.seatState;
+        _roomModeratorState = snapshot.moderatorState;
+        _roomInsights = snapshot.insights;
+        _bootstrapRocketState = snapshot.rocketState;
+        _bootstrapGames = snapshot.games;
+      });
+      _applyRoomSeatSafety(snapshot.seatState);
+    } catch (_) {
+      // Voice/audio stay independent. The shared room snapshot stream keeps
+      // seats/moderators live even when the non-critical bootstrap is blocked.
+    } finally {
+      if (mounted) setState(() => _loadingRoomInsights = false);
+    }
+  }
+
+  void _applyRoomSeatSafety(RoomSeatState state) {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final hasSeat = state.seats.any((seat) => seat.uid == uid);
+    if (!hasSeat && !_voiceSession.micMuted && _voiceSession.active) {
+      unawaited(_voiceSession.setMicMuted(true));
+    }
+    if (!state.isActive && _voiceSession.active) {
+      unawaited(_voiceSession.leave());
+    }
+  }
+
+  Future<void> _watchRoomLiveState(String roomId) async {
+    if (roomId.isEmpty) return;
+    await _roomLiveSubscription?.cancel();
+    _roomLiveSubscription = _voiceSession.roomStateEvents
+        .where(
+          (data) =>
+              (data['roomId'] ?? '').toString().trim() == roomId,
+        )
+        .listen(
+      (data) {
+        if (!mounted) return;
+        final onlineCount =
+            (_voiceSession.roomArguments['onlineCount'] as num?)?.toInt();
+        final seatState = _roomSeatService.fromRoomData(
+          roomId,
+          data,
+          onlineCountOverride: onlineCount,
+        );
+        final moderatorState =
+            _roomModeratorService.fromRoomData(roomId, data);
+        setState(() {
+          _roomArguments = <String, dynamic>{
+            ..._roomArguments,
+            ...data,
+            if (onlineCount != null) 'onlineCount': onlineCount,
+            if (onlineCount != null) 'participantsCount': onlineCount,
+          };
+          _roomSeatState = seatState;
+          _roomModeratorState = moderatorState;
+        });
+        _applyRoomSeatSafety(seatState);
+      },
+      onError: (_) {},
+    );
+  }
+
   Future<void> _toggleRoomFavorite() async {
     final roomId = (_roomArguments['roomId'] ?? '').toString().trim();
     final current = _roomInsights;
@@ -657,17 +753,6 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     }
   }
 
-  Future<void> _watchRoomModerators(String roomId) async {
-    if (roomId.isEmpty) return;
-    await _roomModeratorSubscription?.cancel();
-    _roomModeratorSubscription =
-        _roomModeratorService.watch(roomId).listen(
-      (state) {
-        if (mounted) setState(() => _roomModeratorState = state);
-      },
-      onError: (_) {},
-    );
-  }
 
   bool get _canManageMic =>
       _voiceSession.isOwner ||
@@ -711,32 +796,6 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     );
   }
 
-  Future<void> _loadRoomSeatState(String roomId) async {
-    if (roomId.isEmpty) return;
-    await _roomSeatSubscription?.cancel();
-    _roomSeatSubscription = _roomSeatService.watch(roomId).listen(
-      (state) {
-        if (!mounted) return;
-        setState(() {
-          _roomSeatState = state;
-        });
-
-        final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-        final hasSeat = state.seats.any((seat) => seat.uid == uid);
-        if (!hasSeat &&
-            !_voiceSession.micMuted &&
-            _voiceSession.active) {
-          unawaited(_voiceSession.setMicMuted(true));
-        }
-
-        if (!state.isActive && _voiceSession.active) {
-          unawaited(_voiceSession.leave());
-        }
-      },
-      onError: (_) {},
-    );
-
-  }
 
   Future<void> _runSeatAction(
     Future<RoomSeatState> Function() action,
@@ -2400,6 +2459,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       builder: (_) => RoomGameOverlaySheet(
         roomId: roomId,
         initialGameKey: initialGameKey,
+        initialCatalog: _bootstrapGames,
       ),
     );
   }
@@ -3795,10 +3855,11 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
 
   @override
   void dispose() {
-    unawaited(_roomModeratorSubscription?.cancel());
+    unawaited(_roomLiveSubscription?.cancel());
     _voiceSession.removeListener(_syncVoiceSession);
     _roomActions.close();
     _roomInvites.close();
+    _roomBootstrapService.close();
     _roomInsightsService.close();
     _roomModeration.close();
     _roomModeratorService.close();
@@ -4127,6 +4188,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           child: SafeArea(
             child: StreamBuilder<RoomRocketState>(
               stream: service.watchRoomState(roomId),
+              initialData: _bootstrapRocketState,
               builder: (context, snapshot) {
                 final state = snapshot.data ??
                     const RoomRocketState(

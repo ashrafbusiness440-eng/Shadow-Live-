@@ -20,6 +20,7 @@ class FakeGameRuntimeService extends GameRuntimeService {
   final Duration betDelay;
   final Map<String, int> totals = <String, int>{};
   int slotCalls = 0;
+  int catalogCalls = 0;
   final List<int> slotAmounts = <int>[];
   String lastLoadedKey = '';
 
@@ -59,7 +60,10 @@ class FakeGameRuntimeService extends GameRuntimeService {
   ];
 
   @override
-  Future<List<GameCatalogEntry>> loadCatalog() async => catalog;
+  Future<List<GameCatalogEntry>> loadCatalog() async {
+    catalogCalls++;
+    return catalog;
+  }
 
   @override
   Future<GameRuntimeState> loadState(
@@ -285,6 +289,7 @@ Widget host(
   String gameKey, {
   Stream<RoomRealtimeEvent>? realtimeEvents,
   Size? mediaSize,
+  List<GameCatalogEntry>? initialCatalog,
 }) =>
     MaterialApp(
       debugShowCheckedModeBanner: false,
@@ -299,6 +304,7 @@ Widget host(
                 runtimeService: service,
                 realtimeEvents:
                     realtimeEvents ?? const Stream<RoomRealtimeEvent>.empty(),
+                initialCatalog: initialCatalog,
               ),
             ),
           );
@@ -312,6 +318,24 @@ Widget host(
     );
 
 void main() {
+  testWidgets('Bootstrap game catalog skips a second catalog request',
+      (tester) async {
+    final service = FakeGameRuntimeService();
+    await tester.pumpWidget(
+      host(
+        service,
+        'greedy_cat',
+        initialCatalog: service.catalog,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(service.catalogCalls, 0);
+    expect(service.lastLoadedKey, 'greedy_cat');
+    expect(find.text('القط الجشع'), findsOneWidget);
+  });
+
   testWidgets('Greedy Cat repeated taps accumulate on the same choice',
       (tester) async {
     final service = FakeGameRuntimeService();

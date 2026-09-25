@@ -172,108 +172,120 @@ class RoomSeatService {
     return decoded;
   }
 
-  Stream<RoomSeatState> watch(String roomId) {
+  RoomSeatState fromRoomData(
+    String roomId,
+    Map<String, dynamic> data, {
+    int? onlineCountOverride,
+    bool exists = true,
+  }) {
     final uid = _auth.currentUser?.uid ?? '';
-    return _firestore.collection('rooms').doc(roomId).snapshots().map((snapshot) {
-      final data = snapshot.data() ?? <String, dynamic>{};
-      final rawBattle = data['starBattleState'];
-      final battle = rawBattle is Map
-          ? Map<String, dynamic>.from(rawBattle)
-          : const <String, dynamic>{};
-      final rawScores = battle['scores'];
-      final scores = rawScores is Map
-          ? Map<String, dynamic>.from(rawScores)
-          : const <String, dynamic>{};
-      final roomType =
-          (data['roomType'] ?? data['type'] ?? 'personal').toString();
-      final official = data['systemOwned'] == true ||
-          data['officialRoom'] == true ||
-          roomType == 'official' ||
-          roomType == 'administrative' ||
-          roomType == 'customer_service';
+    final rawBattle = data['starBattleState'];
+    final battle = rawBattle is Map
+        ? Map<String, dynamic>.from(rawBattle)
+        : const <String, dynamic>{};
+    final rawScores = battle['scores'];
+    final scores = rawScores is Map
+        ? Map<String, dynamic>.from(rawScores)
+        : const <String, dynamic>{};
+    final roomType =
+        (data['roomType'] ?? data['type'] ?? 'personal').toString();
+    final official = data['systemOwned'] == true ||
+        data['officialRoom'] == true ||
+        roomType == 'official' ||
+        roomType == 'administrative' ||
+        roomType == 'customer_service';
 
-      // Firestore may still contain an older seats array (for example 8
-      // entries) after a room was promoted to a higher level. Never let that
-      // stale array shrink the realtime UI. Rebuild the visible seat list
-      // from the same capacity policy used by the backend.
-      final level = ((data['level'] as num?)?.toInt() ?? 1).clamp(1, 6);
-      final rawOverrides = data['controlOverrides'];
-      final overrides = rawOverrides is Map
-          ? Map<String, dynamic>.from(rawOverrides)
-          : const <String, dynamic>{};
-      final overrideSeats = (overrides['seats'] as num?)?.toInt();
-      final validOverrideSeats =
-          overrideSeats != null && overrideSeats >= 1 && overrideSeats <= 50
-              ? overrideSeats
-              : null;
-      final bypassLevelCapacity =
-          overrides['bypassLevelCapacity'] == true;
-      final baseCapacity = roomType == 'customer_service'
-          ? 5
-          : roomType == 'agency'
-              ? const [10, 12, 14, 16, 20, 22][level - 1]
-              : const [8, 10, 12, 15, 20, 20][level - 1];
-      final capacity =
-          (official || bypassLevelCapacity) && validOverrideSeats != null
-              ? validOverrideSeats
-              : baseCapacity;
+    final level = ((data['level'] as num?)?.toInt() ?? 1).clamp(1, 6);
+    final rawOverrides = data['controlOverrides'];
+    final overrides = rawOverrides is Map
+        ? Map<String, dynamic>.from(rawOverrides)
+        : const <String, dynamic>{};
+    final overrideSeats = (overrides['seats'] as num?)?.toInt();
+    final validOverrideSeats =
+        overrideSeats != null && overrideSeats >= 1 && overrideSeats <= 50
+            ? overrideSeats
+            : null;
+    final bypassLevelCapacity = overrides['bypassLevelCapacity'] == true;
+    final baseCapacity = roomType == 'customer_service'
+        ? 5
+        : roomType == 'agency'
+            ? const [10, 12, 14, 16, 20, 22][level - 1]
+            : const [8, 10, 12, 15, 20, 20][level - 1];
+    final capacity =
+        (official || bypassLevelCapacity) && validOverrideSeats != null
+            ? validOverrideSeats
+            : baseCapacity;
 
-      final rawSeats = data['seats'];
-      final seatsByIndex = <int, Map<String, dynamic>>{};
-      if (rawSeats is List) {
-        for (final raw in rawSeats.whereType<Map>()) {
-          final item = Map<String, dynamic>.from(raw);
-          final index = (item['index'] as num?)?.toInt();
-          if (index == null || index < 0 || index >= capacity) continue;
-          seatsByIndex[index] = item;
-        }
-      }
-      final seats = List<Map<String, dynamic>>.generate(capacity, (index) {
-        final item = seatsByIndex[index] ??
-            <String, dynamic>{
-              'index': index,
-              'uid': '',
-              'displayName': '',
-              'profileImageUrl': '',
-              'muted': true,
-            };
-        final seatUid = (item['uid'] ?? '').toString();
-        final scoreRaw = scores[seatUid];
-        final score = scoreRaw is Map
-            ? Map<String, dynamic>.from(scoreRaw)
-            : const <String, dynamic>{};
-        return {
-          ...item,
-          'index': index,
-          'starBattleCoins': battle['status'] == 'active'
-              ? ((score['coins'] as num?)?.toInt() ?? 0)
-              : 0,
-        };
-      }, growable: false);
-      final ownerUid = (data['ownerUid'] ?? data['ownerId'] ?? '').toString();
-      final hostUid = (data['hostUid'] ?? data['hostId'] ?? '').toString();
-      final moderators = data['moderators'] is List ? data['moderators'] as List : const [];
-      final moderatorCanManageMic = moderators.whereType<Map>().any((raw) {
+    final rawSeats = data['seats'];
+    final seatsByIndex = <int, Map<String, dynamic>>{};
+    if (rawSeats is List) {
+      for (final raw in rawSeats.whereType<Map>()) {
         final item = Map<String, dynamic>.from(raw);
-        final moderatorUid = (item['uid'] ?? '').toString();
-        final capabilities = item['capabilities'] is List
-            ? (item['capabilities'] as List).map((e) => e.toString())
-            : const <String>[];
-        return moderatorUid == uid && capabilities.contains('manageMic');
-      });
-      final isOwner = uid.isNotEmpty && !official && ownerUid == uid;
-      final isHost = uid.isNotEmpty && official && hostUid == uid;
-      return RoomSeatState.fromJson({
-        ...data,
-        'seats': seats,
-        'roomId': roomId,
-        'starBattleActive': battle['status'] == 'active',
-        'isOwner': isOwner,
-        'isHost': isHost,
-        'canManageMic': isOwner || isHost || moderatorCanManageMic,
-        'isActive': snapshot.exists && data['isActive'] != false,
-      });
+        final index = (item['index'] as num?)?.toInt();
+        if (index == null || index < 0 || index >= capacity) continue;
+        seatsByIndex[index] = item;
+      }
+    }
+    final seats = List<Map<String, dynamic>>.generate(capacity, (index) {
+      final item = seatsByIndex[index] ??
+          <String, dynamic>{
+            'index': index,
+            'uid': '',
+            'displayName': '',
+            'profileImageUrl': '',
+            'muted': true,
+          };
+      final seatUid = (item['uid'] ?? '').toString();
+      final scoreRaw = scores[seatUid];
+      final score = scoreRaw is Map
+          ? Map<String, dynamic>.from(scoreRaw)
+          : const <String, dynamic>{};
+      return {
+        ...item,
+        'index': index,
+        'starBattleCoins': battle['status'] == 'active'
+            ? ((score['coins'] as num?)?.toInt() ?? 0)
+            : 0,
+      };
+    }, growable: false);
+
+    final ownerUid = (data['ownerUid'] ?? data['ownerId'] ?? '').toString();
+    final hostUid = (data['hostUid'] ?? data['hostId'] ?? '').toString();
+    final moderators =
+        data['moderators'] is List ? data['moderators'] as List : const [];
+    final moderatorCanManageMic = moderators.whereType<Map>().any((raw) {
+      final item = Map<String, dynamic>.from(raw);
+      final moderatorUid = (item['uid'] ?? '').toString();
+      final capabilities = item['capabilities'] is List
+          ? (item['capabilities'] as List).map((e) => e.toString())
+          : const <String>[];
+      return moderatorUid == uid && capabilities.contains('manageMic');
     });
+    final isOwner = uid.isNotEmpty && !official && ownerUid == uid;
+    final isHost = uid.isNotEmpty && official && hostUid == uid;
+
+    return RoomSeatState.fromJson({
+      ...data,
+      'seats': seats,
+      'roomId': roomId,
+      'starBattleActive': battle['status'] == 'active',
+      'isOwner': isOwner,
+      'isHost': isHost,
+      'canManageMic': isOwner || isHost || moderatorCanManageMic,
+      'isActive': exists && data['isActive'] != false,
+      if (onlineCountOverride != null)
+        'onlineCount': onlineCountOverride,
+    });
+  }
+
+  Stream<RoomSeatState> watch(String roomId) {
+    return _firestore.collection('rooms').doc(roomId).snapshots().map(
+      (snapshot) => fromRoomData(
+        roomId,
+        snapshot.data() ?? <String, dynamic>{},
+        exists: snapshot.exists,
+      ),
+    );
   }
 
   Future<RoomSeatState> load(String roomId) async {

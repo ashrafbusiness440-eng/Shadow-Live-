@@ -1,6 +1,8 @@
 import {createCipheriv,randomBytes,randomInt,createHash,scryptSync,timingSafeEqual} from "node:crypto";
 import {getApps,initializeApp,cert,getAuth,getFirestore,FieldValue,legacyEnv} from "./legacy-firebase-admin-shim.js";
 import {activeMicSegments} from "./mic-activity.js";
+import {assertUserDocumentSessionState} from "./firebase-auth.js";
+import {gameCatalog} from "./legacy-games/game-runtime.js";
 
 class ApiError extends Error {
   constructor(code,status=400){super(code);this.code=code;this.status=status;}
@@ -3020,6 +3022,204 @@ async function roomInsights(db,uid,body={}){
     ranking,
   };
 }
+async function roomBootstrap(db,decoded,body={}){
+  const roomId=clean(body.roomId);
+  const uid=clean(decoded?.uid||decoded?.sub);
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId)){
+    throw new ApiError("invalid_room_id",400);
+  }
+  if(!uid)throw new ApiError("unauthorized",401);
+
+  const periods=utcSupportPeriods();
+  const roomRef=db.collection("rooms").doc(roomId);
+  const actorRef=db.collection("users").doc(uid);
+  const followRef=db.collection("room_follows").doc(roomId).collection("users").doc(uid);
+  const favoriteRef=db.collection("room_favorites").doc(uid).collection("items").doc(roomId);
+  const dailySupportRef=roomRef.collection("support_daily").doc(periods.day);
+  const rocketRef=db.collection("room_rocket_state").doc(roomId);
+
+  const [
+    roomSnap,
+    actorSnap,
+    followSnap,
+    favoriteSnap,
+    dailySupportSnap,
+    topSupportersSnap,
+    rocketSnap,
+    liveRoomCount,
+    games,
+  ]=await Promise.all([
+    roomRef.get(),
+    actorRef.get(),
+    followRef.get(),
+    favoriteRef.get(),
+    dailySupportRef.get(),
+    dailySupportRef.collection("users").limit(3).get(),
+    rocketRef.get(),
+    realtimeRoomCount(roomId),
+    gameCatalog(db),
+  ]);
+
+  if(!roomSnap.exists)throw new ApiError("room_not_found",404);
+  if(!actorSnap.exists)throw new ApiError("user_not_found",404);
+
+  const room=roomSnap.data()||{};
+  const actor=actorSnap.data()||{};
+  assertUserDocumentSessionState(decoded,actor);
+  if(room.isActive===false)throw new ApiError("room_unavailable",409);
+
+  const ownerUid=roomOwnerUid(room);
+  const hostUid=roomHostUid(room);
+  const official=isOfficialRoom(room);
+  const global=roomPermissions(actor);
+  const myModerator=roomModeratorEntry(room,uid);
+  const hostCapabilities=official&&hostUid===uid
+    ? OFFICIAL_HOST_CAPABILITIES
+    : [];
+  const myCapabilities=!official&&ownerUid===uid
+    ? ROOM_MODERATOR_CAPABILITIES
+    : [...new Set([...hostCapabilities,...(myModerator?.capabilities||[])])];
+  const onlineCount=liveRoomCount??Math.max(
+    0,
+    Number(room.onlineCount||room.participantsCount||0),
+  );
+  const battle=activeStarBattle(room);
+  const seats=normalizeSeats(room).map((seat)=>{
+    const scoreRaw=battle?.scores?.[seat.uid];
+    const score=scoreRaw&&typeof scoreRaw==="object"?scoreRaw:{};
+    return {
+      ...seat,
+      starBattleCoins:battle?Math.max(0,Number(score.coins||0)):0,
+    };
+  });
+
+  const supporters=topSupportersSnap.docs
+    .map(doc=>{
+      const data=doc.data()||{};
+      return {
+        uid:doc.id,
+        displayName:clean(data.displayName||data.username||"مستخدم Shadow Live"),
+        profileImageUrl:clean(data.profileImageUrl),
+        dailySupport:Math.max(0,Number(data.supportCoins||0)),
+        giftCount:Math.max(0,Number(data.giftCount||0)),
+      };
+    })
+    .sort((a,b)=>b.dailySupport-a.dailySupport)
+    .slice(0,3)
+    .map((item,index)=>({...item,rank:index+1,totalSupport:item.dailySupport}));
+
+  const dailySupport=room.dailySupportDate===periods.day
+    ?Math.max(0,Number(room.dailySupport||0))
+    :Math.max(0,Number(dailySupportSnap.data()?.supportCoins||0));
+  const weeklySupport=room.weeklySupportKey===periods.week
+    ?Math.max(0,Number(room.weeklySupport||0))
+    :0;
+  const monthlySupport=room.monthlySupportKey===periods.month
+    ?Math.max(0,Number(room.monthlySupport||0))
+    :0;
+
+  const profileUid=clean(ownerUid||hostUid);
+  let ownerProfile={
+    displayName:clean(room.ownerName||room.hostName),
+    profileImageUrl:clean(room.ownerProfileImageUrl||room.hostProfileImageUrl),
+    location:clean(room.ownerLocation),
+  };
+  if(profileUid){
+    if(profileUid===uid){
+      ownerProfile={
+        displayName:clean(actor.displayName||actor.username||ownerProfile.displayName),
+        profileImageUrl:clean(actor.profileImageUrl||actor.photoUrl||ownerProfile.profileImageUrl),
+        location:clean(actor.location||ownerProfile.location),
+      };
+    }else{
+      try{
+        const ownerSnap=await db.collection("public_profiles").doc(profileUid).get();
+        if(ownerSnap.exists){
+          const profile=ownerSnap.data()||{};
+          ownerProfile={
+            displayName:clean(profile.displayName||profile.username||ownerProfile.displayName),
+            profileImageUrl:clean(profile.profileImageUrl||profile.photoUrl||ownerProfile.profileImageUrl),
+            location:clean(profile.location||ownerProfile.location),
+          };
+        }
+      }catch(_){
+        // Owner identity fallback from room metadata is enough for bootstrap.
+      }
+    }
+  }
+
+  const roomData={
+    ...roomResponse(roomId,room),
+    onlineCount,
+    participantsCount:onlineCount,
+    activeRoomBackgroundRewardId:clean(room.activeRoomBackgroundRewardId),
+    activeRoomBackgroundImageUrl:clean(room.activeRoomBackgroundImageUrl),
+    activeRoomBackgroundAssetKey:clean(room.activeRoomBackgroundAssetKey),
+    activeRoomBackgroundExpiresAtMs:Number(room.activeRoomBackgroundExpiresAtMs||0),
+  };
+
+  return {
+    ok:true,
+    roomId,
+    serverNowMs:Date.now(),
+    room:roomData,
+    ownerProfile,
+    seatState:{
+      roomId,
+      seats,
+      micInvites:Array.isArray(room.micInvites)?room.micInvites:[],
+      micRequests:Array.isArray(room.micRequests)?room.micRequests:[],
+      micInviteOnly:room.micInviteOnly===true,
+      starBattleActive:Boolean(battle),
+      isOwner:!official&&ownerUid===uid,
+      isHost:official&&hostUid===uid,
+      canManageMic:canManageRoomAction(room,actor,uid,"manageMic"),
+      isActive:true,
+      onlineCount,
+    },
+    moderatorState:{
+      roomId,
+      ownerUid,
+      hostUid,
+      isOwner:!official&&ownerUid===uid,
+      isHost:official&&hostUid===uid,
+      canManage:(!official&&ownerUid===uid)||global.manageRooms||hostCapabilities.length>0,
+      limit:roomModeratorLimit(room),
+      capabilities:ROOM_MODERATOR_CAPABILITIES,
+      myCapabilities,
+      moderators:normalizeRoomModerators(room),
+    },
+    insights:{
+      roomId,
+      level:Math.max(1,Number(room.level||1)),
+      levelPoints:Math.max(0,Number(room.levelPoints||0)),
+      levelTarget:Math.max(1,Number(room.levelTarget||1000)),
+      followerCount:Math.max(0,Number(room.followerCount||0)),
+      followed:followSnap.exists,
+      favorited:favoriteSnap.exists,
+      dailySupport,
+      weeklySupport,
+      monthlySupport,
+      supportPeriods:periods,
+      activityScore:roomActivityScore(room,onlineCount),
+      dailyRank:Number.isFinite(Number(room.dailyRank))
+        ?Math.max(1,Number(room.dailyRank))
+        :null,
+      supporters,
+      ranking:[],
+    },
+    rocketState:rocketSnap.exists
+      ? rocketSnap.data()||{}
+      : {
+          currentLevel:1,
+          progressCoins:0,
+          levelThresholdCoins:100000,
+          levelContributors:{},
+        },
+    games,
+  };
+}
+
 async function setRoomFollow(db,uid,roomId,following){
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
   const roomRef=db.collection("rooms").doc(roomId);
@@ -3082,7 +3282,8 @@ export default async function handler(req,res){
       action==="roomPresenceHeartbeat"||
       action==="roomPresenceLeave"||
       action==="roomPresenceState"||
-      action==="roomSessionLeave";
+      action==="roomSessionLeave"||
+      action==="roomBootstrap";
     const decoded=await getAuth().verifyIdToken(
       authorization.slice(7),
       {checkUserState:!lightweightPresenceAction},
@@ -3105,6 +3306,9 @@ export default async function handler(req,res){
     }
     if(action==="changeRoomPublicId"){
       return out(res,200,await changeRoomPublicId(getFirestore(),decoded.uid,req.body||{}));
+    }
+    if(action==="roomBootstrap"){
+      return out(res,200,await roomBootstrap(getFirestore(),decoded,req.body||{}));
     }
     if(action==="roomInsights"){
       return out(res,200,await roomInsights(getFirestore(),decoded.uid,req.body||{}));

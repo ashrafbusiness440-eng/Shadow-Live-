@@ -91,6 +91,9 @@ def main() -> int:
     economy_e2e = read(".github/workflows/cloudflare-economy-router-phase5-e2e.yml")
     moderation_e2e = read(".github/workflows/cloudflare-phase9-user-moderation-e2e.yml")
     access_e2e = read(".github/workflows/cloudflare-phase9-user-access-e2e.yml")
+    room_bootstrap_service = read("lib/features/room/services/room_bootstrap_service.dart")
+    room_seat_service = read("lib/features/room/services/room_seat_service.dart")
+    room_moderator_service = read("lib/features/room/services/room_moderator_service.dart")
 
     if "_presenceTimer" in voice or ".heartbeat(" in voice:
         failures.append("Step 4 regression: Firestore presence heartbeat returned to the room session")
@@ -129,6 +132,57 @@ def main() -> int:
             failures.append(
                 f"Step 4 regression: active app presence path references legacy {legacy_action}"
             )
+    room_bootstrap = function_body(worker, "roomBootstrap")
+    if room_bootstrap is None:
+        failures.append("Step 7 regression: roomBootstrap backend action is missing")
+    else:
+        for required in (
+            "seatState",
+            "moderatorState",
+            "insights",
+            "rocketState",
+            "games",
+            "gameCatalog(db)",
+            "assertUserDocumentSessionState(decoded,actor)",
+        ):
+            if required not in room_bootstrap:
+                failures.append(
+                    f"Step 7 regression: roomBootstrap missing required contract: {required}"
+                )
+    if 'action==="roomBootstrap"' not in worker:
+        failures.append("Step 7 regression: voice-session handler no longer exposes roomBootstrap")
+    if 'action==="roomSessionLeave"||\n      action==="roomBootstrap"' not in worker:
+        failures.append("Step 7 regression: bootstrap reintroduced a duplicate auth-state user read")
+
+    if "RoomBootstrapService _roomBootstrapService" not in app_main:
+        failures.append("Step 7 regression: room entry no longer owns one RoomBootstrapService")
+    if "unawaited(_loadRoomBootstrap(roomId))" not in app_main:
+        failures.append("Step 7 regression: room entry no longer starts the non-blocking bootstrap")
+    if "_voiceSession.roomStateEvents" not in app_main:
+        failures.append("Step 7 regression: seats/moderators are not fed by the shared room snapshot stream")
+    for forbidden in (
+        "unawaited(_loadRoomInsights(roomId))",
+        "unawaited(_loadRoomSeatState(roomId))",
+        "unawaited(_watchRoomModerators(roomId))",
+        "unawaited(_loadOwnerProfile(args))",
+        "_roomSeatSubscription",
+        "_roomModeratorSubscription",
+    ):
+        if forbidden in app_main:
+            failures.append(f"Step 7 regression: old room-entry fan-out returned: {forbidden}")
+    if "_roomStateController" not in voice or "_roomStateController.add" not in voice:
+        failures.append("Step 7 regression: existing room lifecycle listener is not sharing its snapshot")
+    if "RoomSeatState fromRoomData" not in room_seat_service:
+        failures.append("Step 7 regression: seat parser cannot consume the shared room snapshot")
+    if "RoomModeratorState fromRoomData" not in room_moderator_service:
+        failures.append("Step 7 regression: moderator parser cannot consume the shared room snapshot")
+    if "initialCatalog" not in game_overlay or "initialCatalog: _bootstrapGames" not in app_main:
+        failures.append("Step 7 regression: game availability no longer reuses bootstrap catalog")
+    if "initialData: _bootstrapRocketState" not in app_main:
+        failures.append("Step 7 regression: Rocket sheet no longer seeds from bootstrap state")
+    if "'action': 'roomBootstrap'" not in room_bootstrap_service:
+        failures.append("Step 7 regression: Flutter bootstrap service lost its single bootstrap request")
+
     if "_poller" in game_overlay or "_startPolling" in game_overlay:
         failures.append("Step 6 regression: periodic game state polling returned")
     if re.search(
