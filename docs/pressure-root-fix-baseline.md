@@ -116,4 +116,5 @@ This subset was pulled forward during Step 6 because production Economy/Settleme
 - A previously verified session state may be used stale for at most 30 seconds only during transient upstream failure; unknown users still fail closed.
 - Normal fresh auth-state cache TTL is 10 seconds.
 - No change to token signature verification, accountStatus semantics, session revocation checks, roles, capabilities, games, balances, or settlement authority.
-- This completes only the auth-state reliability subset of Step 9. The Step 9 root item remains open for the broader retry/circuit-breaker work.
+- Flutter CI concurrency is isolated per Git ref, so a main run or unrelated PR no longer cancels the active Step 6 validation run.
+- This completes only the auth-state reliability + Flutter CI isolation subsets of Step 9. The Step 9 root item remains open for broader retry/circuit-breaker and production-test coordination work.

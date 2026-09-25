@@ -79,6 +79,7 @@ def main() -> int:
     discovery = read("lib/features/home/services/discovery_service.dart")
     realtime_query = read("lib/features/room/services/room_realtime_query_service.dart")
     realtime_game = read("cloudflare-worker/src/room-realtime-game.js")
+    flutter_ci = read(".github/workflows/flutter-ci.yml")
 
     if "_presenceTimer" in voice or ".heartbeat(" in voice:
         failures.append("Step 4 regression: Firestore presence heartbeat returned to the room session")
@@ -187,6 +188,9 @@ def main() -> int:
         failures.append("Step 9 borrowed regression: bounded stale-safe auth cache changed")
     if "fetchAuthStateResponse" not in auth:
         failures.append("Step 9 borrowed regression: auth-state path bypasses retry/backoff helper")
+
+    if "group: shadow-live-flutter-ci-${{ github.ref }}" not in flutter_ci:
+        failures.append("Step 9 borrowed regression: Flutter CI concurrency is not isolated per ref")
     check(lambda: require(
         r'crons\s*=\s*\["\*/5 \* \* \* \*"\]',
         wrangler,
