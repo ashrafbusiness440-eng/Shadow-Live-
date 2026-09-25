@@ -53,12 +53,13 @@ async function assertUserSessionState(payload, env) {
   const url =
     `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents/users/${encodeURIComponent(uid)}`;
   let response = null;
-  for (let attempt = 0; attempt < 5; attempt++) {
+  // Keep auth-state verification from multiplying Firestore 429 pressure.
+  for (let attempt = 0; attempt < 2; attempt++) {
     response = await fetch(url, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (response.status !== 429 && response.status < 500) break;
-    if (attempt < 4) {
+    if (attempt < 1) {
       const retryAfter = Number(response.headers.get("retry-after") || 0);
       const delayMs = retryAfter > 0
         ? Math.min(1500, retryAfter * 1000)

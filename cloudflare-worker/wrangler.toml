@@ -7,4 +7,6 @@ workers_dev = true
 enabled = true
 
 [triggers]
-crons = ["* * * * *"]
+# During development, settlement is also triggered by active game clients.
+# A 5-minute safety sweep avoids a permanent Firestore read loop under quota pressure.
+crons = ["*/5 * * * *"]

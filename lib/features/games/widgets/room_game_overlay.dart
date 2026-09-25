@@ -168,7 +168,9 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
     _poller?.cancel();
     if (_selected?.gameId == 'slot') return;
     _poller = Timer.periodic(
-      const Duration(seconds: 2),
+      // Local timers already drive the countdown and phase transitions.
+      // Ten-second polling is only a safety resync, not the animation clock.
+      const Duration(seconds: 10),
       (_) => _loadState(silent: true),
     );
   }
