@@ -52,6 +52,9 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
   bool _greedyResolving = false;
   bool _greedyResultVisible = false;
   int _stateReceivedAtLocalMs = 0;
+  int _stateRequestSequence = 0;
+  int _stateAppliedSequence = 0;
+  String? _greedyOptimisticRoundId;
   final Map<String, int> _greedyOptimisticUserTargets = <String, int>{};
   final Map<String, int> _greedyOptimisticServerTargets = <String, int>{};
 
@@ -199,9 +202,15 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
   Future<void> _loadState({bool silent = false}) async {
     final game = _selected;
     if (game == null) return;
+    final requestSequence = ++_stateRequestSequence;
     try {
       final state = await _service.loadState(game);
-      if (!mounted || _selected?.key != game.key) return;
+      if (!mounted ||
+          _selected?.key != game.key ||
+          requestSequence < _stateAppliedSequence) {
+        return;
+      }
+      _stateAppliedSequence = requestSequence;
       setState(() {
         _state = state;
         _stateReceivedAtLocalMs = DateTime.now().millisecondsSinceEpoch;
@@ -386,6 +395,7 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
   }
 
   void _addGreedyOptimisticBet(String choiceId, int amount) {
+    _greedyOptimisticRoundId = (_state?.round?['roundId'] ?? '').toString();
     final userNow = _greedyUserTotal(choiceId);
     final serverNow = _greedyServerTotal(choiceId);
     _greedyOptimisticUserTargets[choiceId] = userNow + amount;
@@ -413,6 +423,16 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
   }
 
   void _reconcileGreedyOptimistic(GameRuntimeState next) {
+    final nextRoundId = (next.round?['roundId'] ?? '').toString();
+    if (_greedyOptimisticRoundId != null &&
+        _greedyOptimisticRoundId!.isNotEmpty &&
+        nextRoundId.isNotEmpty &&
+        nextRoundId != _greedyOptimisticRoundId) {
+      _greedyOptimisticUserTargets.clear();
+      _greedyOptimisticServerTargets.clear();
+      _greedyOptimisticRoundId = null;
+      return;
+    }
     for (final choiceId in _greedyOptimisticUserTargets.keys.toList()) {
       final authoritative = next.currentRoundSelections[choiceId] ?? 0;
       if (authoritative >= (_greedyOptimisticUserTargets[choiceId] ?? 0)) {
@@ -424,6 +444,10 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
       if (authoritative >= (_greedyOptimisticServerTargets[choiceId] ?? 0)) {
         _greedyOptimisticServerTargets.remove(choiceId);
       }
+    }
+    if (_greedyOptimisticUserTargets.isEmpty &&
+        _greedyOptimisticServerTargets.isEmpty) {
+      _greedyOptimisticRoundId = null;
     }
   }
 
