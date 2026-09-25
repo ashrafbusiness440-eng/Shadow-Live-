@@ -32,8 +32,13 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Wait for exact Cloudflare build
+      - name: Wait for exact Cloudflare build when Worker changed
         run: |
+          CHANGED=$(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA")
+          if ! echo "$CHANGED" | grep -Eq '^cloudflare-worker/(src|wrangler\.toml)'; then
+            echo "Worker source unchanged in this commit; using current deployed Worker."
+            exit 0
+          fi
           for ATTEMPT in $(seq 1 45); do
             BODY=$(curl --silent --show-error https://shadow-live.ashraf-business-440.workers.dev/health || true)
             echo "$BODY"
