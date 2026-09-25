@@ -62,6 +62,7 @@ Future<void> main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  await FirebaseAuth.instance.setLanguageCode('ar');
 
   const e2eTest = bool.fromEnvironment('E2E_TEST');
   const e2eRoomTest = bool.fromEnvironment('E2E_ROOM_TEST');
