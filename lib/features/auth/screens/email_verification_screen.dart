@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../../../services/navigation_service.dart';
+import '../setup_route.dart';
 
 class EmailVerificationScreen extends StatefulWidget {
   const EmailVerificationScreen({super.key});
@@ -102,8 +104,16 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
     final current=FirebaseAuth.instance.currentUser;
     if(current==null)return;
     if(_isPasswordUser(current)&&!current.emailVerified)return;
+    await current.getIdToken(true);
+    String destination=AppRoutes.profileSetup;
+    try{
+      final snapshot=await FirebaseFirestore.instance.collection('users').doc(current.uid).get().timeout(const Duration(seconds:10));
+      destination=setupDestination(snapshot.data());
+    }catch(_){
+      destination=AppRoutes.profileSetup;
+    }
     if(!mounted)return;
-    Navigator.of(context).pushNamedAndRemoveUntil(AppRoutes.profileSetup,(_)=>false);
+    Navigator.of(context).pushNamedAndRemoveUntil(destination,(_)=>false);
   }
 
   Future<void> _changeAccount()async{
