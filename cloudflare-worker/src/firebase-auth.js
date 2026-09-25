@@ -52,18 +52,27 @@ async function assertUserSessionState(payload, env) {
   const token = await googleAccessToken(env);
   const url =
     `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents/users/${encodeURIComponent(uid)}`;
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  let response = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (response.status !== 429 && response.status < 500) break;
+    if (attempt < 4) {
+      const retryAfter = Number(response.headers.get("retry-after") || 0);
+      const delayMs = retryAfter > 0
+        ? Math.min(1500, retryAfter * 1000)
+        : Math.min(1200, 120 * (2 ** attempt));
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
 
-  if (response.status === 404) {
+  if (response?.status === 404) {
     userStateCache.set(uid, { active: true, revokedAtMs: 0, expiresAt: nowMs + 5000 });
     return;
   }
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error("auth_state_lookup_failed_"+response.status);
-  }
+  const body = await response?.json().catch(() => ({})) || {};
+  if (!response?.ok) throw new Error("auth_state_lookup_failed");
 
   const fields = body?.fields || {};
   const status = String(fields.accountStatus?.stringValue || "active");
