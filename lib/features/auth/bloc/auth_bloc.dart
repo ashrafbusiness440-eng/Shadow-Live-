@@ -1,6 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../shared/services/firebase_service.dart';
 import '../../../shared/services/storage_service.dart';
 
@@ -24,6 +25,10 @@ class AuthLoading extends AuthState {}
 class Authenticated extends AuthState {final User user;final Map<String,dynamic>? userData;Authenticated(this.user,this.userData);}
 class PhoneCodeSent extends AuthState {final String verificationId;PhoneCodeSent(this.verificationId);}
 class EmailVerificationRequired extends AuthState {final User user;EmailVerificationRequired(this.user);}
+class AccountRestricted extends AuthState {
+ final User user; final String status; final Map<String,dynamic> data;
+ AccountRestricted(this.user,this.status,this.data);
+}
 class Unauthenticated extends AuthState {}
 class AuthError extends AuthState {final String message;AuthError(this.message);}
 
@@ -85,6 +90,17 @@ class AuthBloc extends Bloc<AuthEvent,AuthState>{
  Future<void> _emitUser(User user,Emitter<AuthState> emit,{Map<String,dynamic> seed=const {}})async{
   await _ensureVerifiedEmailToken(user);
   final current=FirebaseAuth.instance.currentUser??user;
+  if(!current.isAnonymous){
+   final snap=await FirebaseFirestore.instance.collection('users').doc(current.uid).get();
+   final raw=snap.data()??<String,dynamic>{};
+   final status=(raw['accountStatus']??'active').toString();
+   if(status!='active'){
+    await _storageService.removeUser();
+    await _storageService.removeToken();
+    emit(AccountRestricted(current,status,raw));
+    return;
+   }
+  }
   final data=await _profile(current,seed:seed);
   emit(Authenticated(current,data));
  }
