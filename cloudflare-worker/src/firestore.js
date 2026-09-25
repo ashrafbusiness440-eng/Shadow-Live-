@@ -59,24 +59,52 @@ export function firestoreClient(env) {
   const root = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)`;
   const documentRoot = `${root}/documents`;
 
-  async function call(url, options = {}) {
+  async function call(
+    url,
+    options = {},
+    { retryTransient = false } = {},
+  ) {
     const accessToken = await googleAccessToken(env);
     const headers = new Headers(options.headers || {});
     headers.set("Authorization", `Bearer ${accessToken}`);
     if (options.body && !headers.has("Content-Type")) {
       headers.set("Content-Type", "application/json");
     }
-    const response = await fetch(url, { ...options, headers });
-    if (response.status === 404) return { response, body: null };
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const code = body?.error?.status || body?.error?.message || `http_${response.status}`;
-      const error = new Error(String(code));
-      error.status = response.status;
-      error.details = body;
-      throw error;
+
+    const maxAttempts = retryTransient ? 5 : 1;
+    let response = null;
+    let body = {};
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      response = await fetch(url, { ...options, headers });
+      if (response.status === 404) return { response, body: null };
+      body = await response.json().catch(() => ({}));
+      if (response.ok) return { response, body };
+
+      const transient =
+        response.status === 429 ||
+        response.status === 408 ||
+        response.status >= 500 ||
+        body?.error?.status === "RESOURCE_EXHAUSTED" ||
+        body?.error?.status === "UNAVAILABLE";
+      if (!retryTransient || !transient || attempt === maxAttempts - 1) {
+        const code =
+          body?.error?.status ||
+          body?.error?.message ||
+          `http_${response.status}`;
+        const error = new Error(String(code));
+        error.status = response.status;
+        error.details = body;
+        throw error;
+      }
+
+      const retryAfter = Number(response.headers.get("retry-after") || 0);
+      const delayMs = retryAfter > 0
+        ? Math.min(1500, retryAfter * 1000)
+        : Math.min(1200, 100 * (2 ** attempt));
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
-    return { response, body };
+
+    throw new Error("firestore_request_failed");
   }
 
   function documentName(path) {
@@ -88,25 +116,37 @@ export function firestoreClient(env) {
     documentName,
 
     async beginTransaction() {
-      const { body } = await call(`${root}/documents:beginTransaction`, {
-        method: "POST",
-        body: JSON.stringify({ options: { readWrite: {} } }),
-      });
+      const { body } = await call(
+        `${root}/documents:beginTransaction`,
+        {
+          method: "POST",
+          body: JSON.stringify({ options: { readWrite: {} } }),
+        },
+        { retryTransient: true },
+      );
       return body.transaction;
     },
 
     async rollback(transaction) {
       if (!transaction) return;
-      await call(`${root}/documents:rollback`, {
-        method: "POST",
-        body: JSON.stringify({ transaction }),
-      }).catch(() => {});
+      await call(
+        `${root}/documents:rollback`,
+        {
+          method: "POST",
+          body: JSON.stringify({ transaction }),
+        },
+        { retryTransient: true },
+      ).catch(() => {});
     },
 
     async get(path, transaction = null) {
       const url = new URL(`${documentRoot}/${path}`);
       if (transaction) url.searchParams.set("transaction", transaction);
-      const { body } = await call(url.toString(), { method: "GET" });
+      const { body } = await call(
+        url.toString(),
+        { method: "GET" },
+        { retryTransient: true },
+      );
       if (!body) return { exists: false, data: null, updateTime: null };
       return {
         exists: true,
@@ -127,7 +167,11 @@ export function firestoreClient(env) {
     async list(collectionPath, pageSize = 200) {
       const url = new URL(`${documentRoot}/${collectionPath}`);
       url.searchParams.set("pageSize", String(Math.max(1, Math.min(1000, pageSize))));
-      const { body } = await call(url.toString(), { method: "GET" });
+      const { body } = await call(
+        url.toString(),
+        { method: "GET" },
+        { retryTransient: true },
+      );
       return (body?.documents || []).map((doc) => ({
         id: String(doc.name || "").split("/").pop(),
         path: String(doc.name || "").split("/documents/")[1] || "",
@@ -188,13 +232,17 @@ export function firestoreClient(env) {
         limit: Math.max(1, Math.min(1000, Number(limit || 100))),
       };
 
-      const { body } = await call(endpoint, {
-        method: "POST",
-        body: JSON.stringify({
-          structuredQuery,
-          ...(transaction ? { transaction } : {}),
-        }),
-      });
+      const { body } = await call(
+        endpoint,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            structuredQuery,
+            ...(transaction ? { transaction } : {}),
+          }),
+        },
+        { retryTransient: true },
+      );
 
       return (Array.isArray(body) ? body : [])
         .map((row) => row.document)
