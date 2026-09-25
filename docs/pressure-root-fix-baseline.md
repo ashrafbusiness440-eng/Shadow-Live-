@@ -25,7 +25,7 @@ This file freezes the user-visible behavior and pressure-sensitive runtime assum
 | Game fallback round duration | 30 seconds | Exact until an explicitly approved game-timing change |
 | Game fallback lock-before-result | 3000 ms | Exact |
 | Game fallback result hold | 4000 ms | Exact |
-| Cloudflare Firestore transient attempts | max 2 | Must not increase |
+| Cloudflare Firestore transient attempts | Step 9 borrowed: max 3 with bounded backoff + jitter | Must stay bounded; no tight retry loops |
 | Auth-state transient attempts | Step 9 borrowed: max 3 with bounded exponential backoff + jitter | Circuit breaker + in-flight coalescing prevent amplification |
 | Cloudflare settlement cron | every 5 minutes | Exact until settlement architecture is intentionally changed |
 | Room realtime listeners | current per-file caps | May decrease/remove; may not increase without updating this baseline |
@@ -144,3 +144,15 @@ Pulled forward during Step 6 closure after production E2E returned `RESOURCE_EXH
 - Manage-user-access and manage-user-account transaction retries use the same bounded transient policy.
 - Firestore commits are still not blindly retried at the HTTP layer; transaction/idempotency logic remains the authority for write safety.
 - This is a borrowed subset of Step 9 only; Step 9 root remains open.
+
+## Step 9 borrowed early — Serial production validation
+
+Pulled forward during Step 6 closure after automatic main-branch E2E workflows created simultaneous Firestore spikes and repeatedly produced `RESOURCE_EXHAUSTED` / 429 failures.
+
+- The standalone Phase 6, Economy Router, User Moderation, and User Access production E2E workflows remain available through `workflow_dispatch` but no longer auto-run in parallel on every `main` push.
+- `Cloudflare Phase 8 Comprehensive E2E` becomes the single automatic production gate for relevant Worker changes.
+- The comprehensive gate now includes moderation, role/capability, economy-router, and Phase 6 settlement/game checks sequentially.
+- Short Firestore cooldown gaps are inserted between heavy suites so CI itself does not generate a burst that resembles production load.
+- The comprehensive gate triggers for all Worker source/script/wrangler changes and for changes to the E2E workflow definitions.
+- If a commit changes CI only and not Worker source, the gate uses the currently deployed Worker instead of waiting forever for an impossible matching Worker build SHA.
+- This is a borrowed Step 9 CI-pressure subset only; the Step 9 root item remains open.

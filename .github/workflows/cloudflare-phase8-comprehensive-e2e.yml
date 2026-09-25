@@ -4,8 +4,14 @@ on:
   push:
     branches: [main]
     paths:
-      - 'cloudflare-worker/src/index.js'
+      - 'cloudflare-worker/src/**'
+      - 'cloudflare-worker/scripts/**'
+      - 'cloudflare-worker/wrangler.toml'
       - '.github/workflows/cloudflare-phase8-comprehensive-e2e.yml'
+      - '.github/workflows/cloudflare-phase6-settlement-e2e.yml'
+      - '.github/workflows/cloudflare-economy-router-phase5-e2e.yml'
+      - '.github/workflows/cloudflare-phase9-user-moderation-e2e.yml'
+      - '.github/workflows/cloudflare-phase9-user-access-e2e.yml'
   workflow_dispatch:
 
 permissions:
@@ -34,12 +40,18 @@ jobs:
       - name: Recheck Phase 7 Cloudflare cutover
         run: python3 scripts/phase7_cloudflare_audit.py
 
-      - name: Wait for exact Cloudflare Worker build
+      - name: Wait for exact Cloudflare Worker build when Worker changed
         run: |
+          CHANGED=$(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA")
+          if ! echo "$CHANGED" | grep -Eq '^cloudflare-worker/(src|wrangler\.toml)'; then
+            echo "Worker source unchanged in this commit; using current deployed Worker."
+            curl --fail --silent --show-error https://shadow-live.ashraf-business-440.workers.dev/health
+            exit 0
+          fi
           for ATTEMPT in $(seq 1 60); do
             BODY=$(curl --silent --show-error https://shadow-live.ashraf-business-440.workers.dev/health || true)
             echo "$BODY"
-            if echo "$BODY" | grep -q '"ok":true' &&                echo "$BODY" | grep -q "\"buildSha\":\"$GITHUB_SHA\""; then
+            if echo "$BODY" | grep -q '"ok":true' && echo "$BODY" | grep -q "\"buildSha\":\"$GITHUB_SHA\""; then
               exit 0
             fi
             sleep 5
@@ -73,50 +85,96 @@ jobs:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: node cloudflare-worker/scripts/e2e-smoke.mjs
 
+      - name: Firestore cooldown after core smoke
+        run: sleep 8
+
+      - name: Phase 9 user moderation E2E
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node cloudflare-worker/scripts/phase9-user-moderation-e2e.mjs
+
+      - name: Firestore cooldown after moderation
+        run: sleep 8
+
+      - name: Phase 9 role and capability E2E
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node cloudflare-worker/scripts/phase9-user-access-e2e.mjs
+
+      - name: Firestore cooldown after access
+        run: sleep 8
+
       - name: Chat core E2E
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: node cloudflare-worker/scripts/chat-core-e2e.mjs
+
+      - name: Firestore cooldown after chat core
+        run: sleep 5
 
       - name: Chat safety E2E
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: node cloudflare-worker/scripts/chat-safety-e2e.mjs
 
+      - name: Firestore cooldown after chat safety
+        run: sleep 5
+
       - name: Chat gift E2E
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: node cloudflare-worker/scripts/chat-gift-e2e.mjs
+
+      - name: Firestore cooldown after chat gift
+        run: sleep 5
 
       - name: Wallet E2E
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: node cloudflare-worker/scripts/wallet-e2e.mjs
 
+      - name: Firestore cooldown after wallet
+        run: sleep 5
+
       - name: Room gift E2E
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: node cloudflare-worker/scripts/room-gift-e2e.mjs
+
+      - name: Firestore cooldown after room gift
+        run: sleep 5
 
       - name: Voice phase 1 E2E
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: node cloudflare-worker/scripts/voice-session-e2e.mjs
 
+      - name: Firestore cooldown after voice phase 1
+        run: sleep 5
+
       - name: Voice phase 2 and ZEGO E2E
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: node cloudflare-worker/scripts/voice-phase2-e2e.mjs
+
+      - name: Firestore cooldown after voice phase 2
+        run: sleep 5
 
       - name: Economy router E2E
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: node cloudflare-worker/scripts/economy-router-e2e.mjs
 
+      - name: Firestore cooldown after economy router
+        run: sleep 8
+
       - name: Games settlements cron and RNG E2E
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: node cloudflare-worker/scripts/phase6-settlement-e2e.mjs
+
+      - name: Firestore cooldown after game settlement
+        run: sleep 8
 
       - name: Google Play migration guards E2E
         env:
@@ -154,6 +212,7 @@ jobs:
             echo "- Cloudflare Worker exact build: PASS"
             echo "- Production Pages exact build: PASS"
             echo "- Core API / Chat / Safety / Gifts: PASS"
+            echo "- User moderation / roles / capabilities: PASS"
             echo "- Wallet / Room Gifts: PASS"
             echo "- Voice / ZEGO / Mic activity: PASS"
             echo "- Economy Router: PASS"

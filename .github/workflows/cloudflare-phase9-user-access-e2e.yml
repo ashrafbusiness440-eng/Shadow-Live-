@@ -1,14 +1,6 @@
 name: Cloudflare Phase 9 User Access E2E
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'cloudflare-worker/src/manage-user-access.js'
-      - 'cloudflare-worker/src/index.js'
-      - 'cloudflare-worker/src/voice-session-legacy.js'
-      - 'cloudflare-worker/scripts/phase9-user-access-e2e.mjs'
-      - '.github/workflows/cloudflare-phase9-user-access-e2e.yml'
   workflow_dispatch:
 
 permissions:
