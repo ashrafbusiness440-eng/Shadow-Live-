@@ -109,6 +109,8 @@ class FakeGameRuntimeService extends GameRuntimeService {
               'outcomeId': game.gameId == 'greedy_cat' ? 'salad' : 'moon',
               'closedAtMs': now - 1000,
             },
+      userDailyPayoutCoins:
+          game.gameId == 'greedy_cat' ? 126400 : 0,
       recentResults: game.gameId == 'slot'
           ? const []
           : List.generate(
@@ -211,6 +213,7 @@ class GreedyResultFakeGameRuntimeService extends FakeGameRuntimeService {
       currentRoundSelections: base.currentRoundSelections,
       serverRoundSelections: base.serverRoundSelections,
       totalRoundStakeCoins: base.totalRoundStakeCoins,
+      userDailyPayoutCoins: base.userDailyPayoutCoins,
       lastResult: <String, dynamic>{
         'roundId': 'greedy_cat:test:1',
         'roundNumber': 1,
@@ -228,10 +231,10 @@ class GreedyResultFakeGameRuntimeService extends FakeGameRuntimeService {
           },
           <String, dynamic>{
             'rank': 2,
-            'userId': 'winner_2',
-            'displayName': 'Luna',
+            'userId': 'current_user',
+            'displayName': 'You',
             'photoUrl': '',
-            'stakeCoins': 2000,
+            'stakeCoins': 400,
             'payoutCoins': 20000,
             'won': true,
           },
@@ -250,9 +253,9 @@ class GreedyResultFakeGameRuntimeService extends FakeGameRuntimeService {
           'displayName': 'You',
           'photoUrl': '',
           'stakeCoins': 400,
-          'payoutCoins': 0,
-          'won': false,
-          'winnerRank': null,
+          'payoutCoins': 20000,
+          'won': true,
+          'winnerRank': 2,
         },
       },
       recentResults: <Map<String, dynamic>>[
@@ -296,6 +299,8 @@ void main() {
     expect(find.text('سلطة'), findsOneWidget);
     expect(find.text('🔥🔥'), findsOneWidget);
     expect(find.text('🌐 42K'), findsOneWidget);
+    expect(find.text('أرباحك اليوم'), findsOneWidget);
+    expect(find.text('126.4K'), findsOneWidget);
     expect(find.text('قيمة الضغطة الحالية'), findsNothing);
     expect(find.byType(GridView), findsNothing);
     final greedyImages = tester.widgetList<Image>(find.byType(Image));
@@ -378,12 +383,12 @@ void main() {
     expect(find.text('نتيجة الجولة #1'), findsOneWidget);
     expect(find.text('الأكثر ربحاً في هذه الجولة'), findsOneWidget);
     expect(find.text('Shadow'), findsOneWidget);
-    expect(find.text('Luna'), findsOneWidget);
+    expect(find.text('You'), findsOneWidget);
     expect(find.text('Nova'), findsOneWidget);
     expect(find.text('نتيجتك في هذه الجولة'), findsOneWidget);
-    expect(find.textContaining('راهنت: 400 Coins'), findsOneWidget);
-    expect(find.textContaining('ربحت: 0 Coins'), findsOneWidget);
-    expect(find.text('حظ أوفر 🍀'), findsOneWidget);
+    expect(find.textContaining('دفعت بالجولة: 400 Coins'), findsOneWidget);
+    expect(find.textContaining('ربحت بالجولة: 20K Coins'), findsOneWidget);
+    expect(find.text('حظ أوفر 🍀'), findsNothing);
   });
 
   testWidgets('Witch switches between Normal and Advanced modes',
