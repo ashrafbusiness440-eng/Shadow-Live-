@@ -354,12 +354,13 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       return;
     }
 
-    final displayName = (user.displayName ??
-            args['displayName'] ??
-            args['hostName'] ??
-            'Shadow Live')
-        .toString()
-        .trim();
+    final authDisplayName = (user.displayName ?? '').trim();
+    final emailName = (user.email ?? '').trim();
+    final displayName = authDisplayName.isNotEmpty
+        ? authDisplayName
+        : emailName.contains('@')
+            ? emailName.split('@').first
+            : 'مستخدم Shadow Live';
 
     try {
       await _voiceSession.join({
