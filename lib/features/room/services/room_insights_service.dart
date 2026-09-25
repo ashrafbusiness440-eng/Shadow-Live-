@@ -152,6 +152,10 @@ class RoomInsightsService {
   final http.Client _client;
   final FirebaseAuth _auth;
   final String _baseUrl;
+  final Map<String, RoomInsights> _cache = <String, RoomInsights>{};
+  final Map<String, DateTime> _cacheExpiresAt = <String, DateTime>{};
+  final Map<String, Future<RoomInsights>> _inFlight =
+      <String, Future<RoomInsights>>{};
 
   Future<Map<String, dynamic>> _post(Map<String, dynamic> body) async {
     final token = await _auth.currentUser?.getIdToken();
@@ -178,12 +182,52 @@ class RoomInsightsService {
     return decoded;
   }
 
-  Future<RoomInsights> load(String roomId) async {
-    final body = await _post({
-      'action': 'roomInsights',
-      'roomId': roomId,
-    });
-    return RoomInsights.fromJson(body);
+  Future<RoomInsights> load(
+    String roomId, {
+    bool includeSupporters = false,
+    bool includeRanking = false,
+    bool bypassCache = false,
+  }) {
+    final key =
+        '$roomId|supporters=$includeSupporters|ranking=$includeRanking';
+    final now = DateTime.now();
+    final cached = _cache[key];
+    final expiresAt = _cacheExpiresAt[key];
+    if (!bypassCache &&
+        cached != null &&
+        expiresAt != null &&
+        expiresAt.isAfter(now)) {
+      return Future<RoomInsights>.value(cached);
+    }
+
+    final running = _inFlight[key];
+    if (running != null) return running;
+
+    final future = () async {
+      final body = await _post({
+        'action': 'roomInsights',
+        'roomId': roomId,
+        'includeSupporters': includeSupporters,
+        'includeRanking': includeRanking,
+      });
+      final value = RoomInsights.fromJson(body);
+      _cache[key] = value;
+      _cacheExpiresAt[key] = DateTime.now().add(
+        Duration(seconds: includeSupporters || includeRanking ? 15 : 10),
+      );
+      return value;
+    }();
+
+    _inFlight[key] = future;
+    return future.whenComplete(() => _inFlight.remove(key));
+  }
+
+  void _invalidateRoom(String roomId) {
+    final prefix = '$roomId|';
+    for (final key in _cache.keys.where((key) => key.startsWith(prefix)).toList()) {
+      _cache.remove(key);
+      _cacheExpiresAt.remove(key);
+    }
   }
 
   Future<RoomInsights> setFavorite({
@@ -195,7 +239,8 @@ class RoomInsightsService {
       'roomId': roomId,
       'favorite': favorite,
     });
-    return load(roomId);
+    _invalidateRoom(roomId);
+    return load(roomId, bypassCache: true);
   }
 
   Future<RoomInsights> setFollowing({
@@ -207,7 +252,8 @@ class RoomInsightsService {
       'roomId': roomId,
       'following': following,
     });
-    return load(roomId);
+    _invalidateRoom(roomId);
+    return load(roomId, bypassCache: true);
   }
 
   void close() => _client.close();
