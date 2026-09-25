@@ -719,10 +719,6 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         if (!mounted) return;
         setState(() {
           _roomSeatState = state;
-          _roomArguments = {
-            ..._roomArguments,
-            'onlineCount': state.onlineCount,
-          };
         });
 
         final uid = FirebaseAuth.instance.currentUser?.uid ?? '';

@@ -21,7 +21,19 @@ async function readPresence(stub) {
   const response = await stub.fetch("https://room-realtime.internal/presence");
   if (!response.ok) throw new Error("realtime_presence_failed");
   const body = await response.json().catch(() => ({}));
-  return Array.isArray(body.participants) ? body.participants : [];
+  return {
+    participants: Array.isArray(body.participants) ? body.participants : [],
+    onlineCount: Math.max(0, Number(body.onlineCount || 0)),
+  };
+}
+
+async function readPresenceCount(stub) {
+  const response = await stub.fetch(
+    "https://room-realtime.internal/presence/count",
+  );
+  if (!response.ok) throw new Error("realtime_presence_failed");
+  const body = await response.json().catch(() => ({}));
+  return Math.max(0, Number(body.onlineCount || 0));
 }
 
 export async function roomRealtime(request, env) {
@@ -29,22 +41,53 @@ export async function roomRealtime(request, env) {
 
   if (request.method === "POST") {
     try {
+      const body = await readJson(request);
+      const action = String(body.action || "ticket").trim();
+
+      if (action === "presenceCounts") {
+        await verifyFirebaseIdToken(request, env, { checkUserState: false });
+        const rawRoomIds = Array.isArray(body.roomIds) ? body.roomIds : [];
+        const roomIds = Array.from(
+          new Set(rawRoomIds.map(normalizeRoomId).filter(Boolean)),
+        ).slice(0, 60);
+        const counts = {};
+        const batchSize = 12;
+        for (let index = 0; index < roomIds.length; index += batchSize) {
+          const batch = roomIds.slice(index, index + batchSize);
+          await Promise.all(
+            batch.map(async (roomId) => {
+              try {
+                counts[roomId] = await readPresenceCount(
+                  roomObject(env, roomId),
+                );
+              } catch {
+                // Omit failed rooms so clients can use their rollout fallback.
+              }
+            }),
+          );
+        }
+        return json(request, env, { ok: true, counts });
+      }
+
       const payload = await verifyFirebaseIdToken(request, env);
       if (isAnonymous(payload)) {
         return json(request, env, { ok: false, code: "account_required" }, 403);
       }
 
-      const body = await readJson(request);
       const roomId = normalizeRoomId(body.roomId);
       if (!roomId) {
         return json(request, env, { ok: false, code: "invalid_room_id" }, 400);
       }
 
       const stub = roomObject(env, roomId);
-      const action = String(body.action || "ticket").trim();
       if (action === "presenceState") {
-        const participants = await readPresence(stub);
-        return json(request, env, { ok: true, roomId, participants });
+        const state = await readPresence(stub);
+        return json(request, env, {
+          ok: true,
+          roomId,
+          onlineCount: state.onlineCount,
+          participants: state.participants,
+        });
       }
       if (action !== "ticket") {
         return json(request, env, { ok: false, code: "invalid_action" }, 400);

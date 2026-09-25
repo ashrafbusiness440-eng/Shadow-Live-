@@ -69,6 +69,60 @@ async function realtimeUserPresent(roomId,uid){
   }
 }
 
+async function realtimeRoomCount(roomId){
+  const namespace=legacyEnv.ROOM_REALTIME;
+  if(!namespace)return null;
+  try{
+    const id=namespace.idFromName(roomId);
+    const stub=namespace.get(id);
+    const response=await stub.fetch("https://room-realtime.internal/presence/count");
+    if(!response.ok)return null;
+    const body=await response.json().catch(()=>({}));
+    return Math.max(0,Number(body.onlineCount||0));
+  }catch(_){
+    return null;
+  }
+}
+
+async function broadcastRoomRealtimeEvent(roomId,type,payload={}){
+  const namespace=legacyEnv.ROOM_REALTIME;
+  if(!namespace)return 0;
+  try{
+    const id=namespace.idFromName(roomId);
+    const stub=namespace.get(id);
+    const response=await stub.fetch("https://room-realtime.internal/broadcast",{
+      method:"POST",
+      headers:{"content-type":"application/json"},
+      body:JSON.stringify({event:{type,payload}}),
+    });
+    if(!response.ok)return 0;
+    const body=await response.json().catch(()=>({}));
+    return Math.max(0,Number(body.delivered||0));
+  }catch(_){
+    return 0;
+  }
+}
+
+async function realtimeRoomCounts(roomIds){
+  const ids=Array.from(new Set(
+    (Array.isArray(roomIds)?roomIds:[])
+      .map(clean)
+      .filter(id=>/^[A-Za-z0-9_-]{1,180}$/.test(id))
+  ));
+  const counts=new Map();
+  const batchSize=12;
+  for(let index=0;index<ids.length;index+=batchSize){
+    const batch=ids.slice(index,index+batchSize);
+    const values=await Promise.all(
+      batch.map(roomId=>realtimeRoomCount(roomId))
+    );
+    for(let offset=0;offset<batch.length;offset++){
+      if(values[offset]!==null)counts.set(batch[offset],values[offset]);
+    }
+  }
+  return counts;
+}
+
 async function assertRoomRealtimePresence(db,roomId,uid){
   const realtime=await realtimeUserPresent(roomId,uid);
   if(realtime===true)return;
@@ -1366,19 +1420,23 @@ export async function announceRoomEntrance(db,uid,roomId){
     rewardExpiresAtMs:Number(entrance.expiresAtMs||0),
     eventAtMs,
   };
-  await roomRef.set({
-    recentEntrance:event,
-    updatedAt:FieldValue.serverTimestamp(),
-  },{merge:true});
-  return {ok:true,announced:true,roomId,event};
+  const delivered=await broadcastRoomRealtimeEvent(
+    roomId,
+    "room.entrance",
+    {roomId,event},
+  );
+  return {ok:true,announced:true,roomId,event,delivered};
 }
 
 async function roomSeatState(db,uid,roomId){
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
-  const snap=await db.collection("rooms").doc(roomId).get();
+  const [snap,actorSnap,liveOnlineCount]=await Promise.all([
+    db.collection("rooms").doc(roomId).get(),
+    db.collection("users").doc(uid).get(),
+    realtimeRoomCount(roomId),
+  ]);
   if(!snap.exists)throw new ApiError("room_not_found",404);
   const room=snap.data()||{};
-  const actorSnap=await db.collection("users").doc(uid).get();
   const actor=actorSnap.data()||{};
   const isOwner=!isOfficialRoom(room)&&roomOwnerUid(room)===uid;
   const isHost=isOfficialRoom(room)&&roomHostUid(room)===uid;
@@ -1394,7 +1452,7 @@ async function roomSeatState(db,uid,roomId){
     isHost,
     canManageMic:canManageRoomAction(room,actor,uid,"manageMic"),
     isActive:room.isActive!==false,
-    onlineCount:Math.max(0,Number(room.onlineCount||0)),
+    onlineCount:liveOnlineCount??Math.max(0,Number(room.onlineCount||0)),
   };
 }
 
@@ -1408,7 +1466,7 @@ async function roomSeatAction(db,uid,body){
   const roomRef=db.collection("rooms").doc(roomId);
   const myProfileRef=db.collection("public_profiles").doc(uid);
 
-  return db.runTransaction(async tx=>{
+  const result=await db.runTransaction(async tx=>{
     const roomSnap=await tx.get(roomRef);
     if(!roomSnap.exists)throw new ApiError("room_not_found",404);
     const room=roomSnap.data()||{};
@@ -1598,6 +1656,11 @@ async function roomSeatAction(db,uid,body){
       onlineCount:Math.max(0,Number(room.onlineCount||0)),
     };
   });
+  const liveOnlineCount=await realtimeRoomCount(roomId);
+  return {
+    ...result,
+    onlineCount:liveOnlineCount??result.onlineCount,
+  };
 }
 
 async function sendRoomChat(db,uid,body){
@@ -1886,7 +1949,11 @@ async function roomLibrary(db,uid){
       if(!roomSnap.exists)continue;
       const data=roomSnap.data()||{};
       if(data.isActive===false||data.isHidden===true||clean(data.visibility)==="hidden")continue;
-      result.push(roomResponse(roomId,data));
+      const liveOnlineCount=await realtimeRoomCount(roomId);
+      result.push({
+        ...roomResponse(roomId,data),
+        onlineCount:liveOnlineCount??Math.max(0,Number(data.onlineCount||data.participantsCount||0)),
+      });
     }
     return result;
   }
@@ -2259,16 +2326,15 @@ async function roomPresenceAnnounceJoin(db,uid,roomId){
   const roomRef=db.collection("rooms").doc(roomId);
   const profileRef=db.collection("public_profiles").doc(uid);
   const userRef=db.collection("users").doc(uid);
-  const [roomSnap,profileSnap,userSnap,participants]=await Promise.all([
+  const [roomSnap,profileSnap,userSnap,present]=await Promise.all([
     roomRef.get(),
     profileRef.get(),
     userRef.get(),
-    realtimePresenceState(roomId),
+    realtimeUserPresent(roomId,uid),
   ]);
   if(!roomSnap.exists||roomSnap.data()?.isActive===false)throw new ApiError("room_unavailable",404);
-  if(Array.isArray(participants)&&!participants.some(item=>clean(item?.uid)===uid)){
-    throw new ApiError("presence_socket_required",409);
-  }
+  if(present===false)throw new ApiError("presence_socket_required",409);
+  if(present===null)await assertRoomRealtimePresence(db,roomId,uid);
 
   const profile=profileSnap.data()||{};
   const user=userSnap.data()||{};
@@ -2301,22 +2367,12 @@ async function roomPresenceAnnounceJoin(db,uid,roomId){
     });
   }
 
-  if(Array.isArray(participants)){
-    await roomRef.set({
-      onlineCount:participants.length,
-      participantsCount:participants.length,
-      lastPresenceAtMs:Date.now(),
-      updatedAt:FieldValue.serverTimestamp(),
-    },{merge:true});
-  }
   return {ok:true,roomId};
 }
 
 async function roomSessionLeave(db,uid,roomId){
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
   const roomRef=db.collection("rooms").doc(roomId);
-  const participants=await realtimePresenceState(roomId);
-  const remaining=Array.isArray(participants)?participants:null;
 
   await db.runTransaction(async tx=>{
     const roomSnap=await tx.get(roomRef);
@@ -2344,11 +2400,6 @@ async function roomSessionLeave(db,uid,roomId){
         startedAtMs:0,
         commandRevision:musicState.commandRevision+1,
       };
-    }
-    if(remaining){
-      update.onlineCount=remaining.length;
-      update.participantsCount=remaining.length;
-      update.lastPresenceAtMs=Date.now();
     }
     if(Object.keys(update).length){
       update.updatedAt=FieldValue.serverTimestamp();
@@ -2815,15 +2866,15 @@ function timestampMillis(value){
   return 0;
 }
 
-function roomActivityScore(room){
+function roomActivityScore(room,onlineOverride=null){
   const now=Date.now();
-  const online=Math.max(0,Number(room.onlineCount||room.participantsCount||0));
+  const online=Math.max(0,Number(
+    onlineOverride??room.onlineCount??room.participantsCount??0
+  ));
   const followers=Math.max(0,Number(room.followerCount||0));
-  const lastPresence=Number(room.lastPresenceAtMs||0);
   const lastChat=timestampMillis(room.lastChatAt);
-  const presenceAge=lastPresence>0?Math.max(0,now-lastPresence):Number.POSITIVE_INFINITY;
   const chatAge=lastChat>0?Math.max(0,now-lastChat):Number.POSITIVE_INFINITY;
-  const presenceBonus=presenceAge<=5*60*1000?50:0;
+  const presenceBonus=online>0?50:0;
   const chatBonus=chatAge<24*60*60*1000
     ? Math.max(0,120-Math.floor(chatAge/(60*60*1000))*5)
     : 0;
@@ -2865,12 +2916,13 @@ async function roomInsights(db,uid,body={}){
   const periods=utcSupportPeriods();
   const dailySupportRef=roomRef.collection("support_daily").doc(periods.day);
 
-  const [roomSnap,followSnap,favoriteSnap,dailySupportSnap,topSupportersSnap]=await Promise.all([
+  const [roomSnap,followSnap,favoriteSnap,dailySupportSnap,topSupportersSnap,liveRoomCount]=await Promise.all([
     roomRef.get(),
     followRef.get(),
     favoriteRef.get(),
     dailySupportRef.get(),
     dailySupportRef.collection("users").limit(includeSupporters?50:3).get(),
+    realtimeRoomCount(roomId),
   ]);
   if(!roomSnap.exists)throw new ApiError("room_not_found",404);
 
@@ -2899,10 +2951,24 @@ async function roomInsights(db,uid,body={}){
       .where("isActive","==",true)
       .limit(100)
       .get();
-    const ranked=activeRooms.docs
+    const visibleRooms=activeRooms.docs
       .map(doc=>({id:doc.id,...(doc.data()||{})}))
-      .filter(item=>item.isHidden!==true&&clean(item.visibility)!=="hidden")
-      .map(item=>({...item,activityScore:roomActivityScore(item)}))
+      .filter(item=>item.isHidden!==true&&clean(item.visibility)!=="hidden");
+    const counts=await realtimeRoomCounts(
+      visibleRooms.map(item=>item.id),
+    );
+    const ranked=visibleRooms
+      .map((item)=>{
+        const onlineCount=counts.get(item.id)??Math.max(
+          0,
+          Number(item.onlineCount||item.participantsCount||0),
+        );
+        return {
+          ...item,
+          onlineCount,
+          activityScore:roomActivityScore(item,onlineCount),
+        };
+      })
       .sort((a,b)=>{
         const activityDelta=Number(b.activityScore||0)-Number(a.activityScore||0);
         if(activityDelta!==0)return activityDelta;
@@ -2945,7 +3011,10 @@ async function roomInsights(db,uid,body={}){
     weeklySupport,
     monthlySupport,
     supportPeriods:periods,
-    activityScore:roomActivityScore(room),
+    activityScore:roomActivityScore(
+      room,
+      liveRoomCount??Math.max(0,Number(room.onlineCount||room.participantsCount||0)),
+    ),
     dailyRank,
     supporters,
     ranking,

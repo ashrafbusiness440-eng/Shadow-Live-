@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../../room/services/room_realtime_query_service.dart';
+
 class DiscoveryRoom {
   const DiscoveryRoom({
     required this.id,
@@ -10,17 +12,21 @@ class DiscoveryRoom {
   final String id;
   final Map<String, dynamic> data;
 
-  String get title => (data['name'] ?? data['title'] ?? 'غرفة صوتية').toString();
+  String get title =>
+      (data['name'] ?? data['title'] ?? 'غرفة صوتية').toString();
 
   String get publicId => (data['publicId'] ?? '').toString();
 
   int get onlineCount {
-    final value =
-        data['onlineCount'] ?? data['memberCount'] ?? data['participantsCount'] ?? 0;
+    final value = data['onlineCount'] ??
+        data['memberCount'] ??
+        data['participantsCount'] ??
+        0;
     return value is num ? value.toInt() : int.tryParse(value.toString()) ?? 0;
   }
 
-  bool get isFeatured => data['isFeatured'] == true || data['featured'] == true;
+  bool get isFeatured =>
+      data['isFeatured'] == true || data['featured'] == true;
 
   bool get isActive => data['isActive'] != false;
 
@@ -47,7 +53,8 @@ class DiscoveryPerson {
   final Map<String, dynamic> data;
 
   String get displayName =>
-      (data['displayName'] ?? data['username'] ?? 'مستخدم Shadow Live').toString();
+      (data['displayName'] ?? data['username'] ?? 'مستخدم Shadow Live')
+          .toString();
 
   String get publicId => (data['publicId'] ?? '').toString();
 
@@ -107,7 +114,8 @@ class HomeDiscoveryData {
 
   List<Map<String, dynamic>> get events => _configList('events');
 
-  List<Map<String, dynamic>> get rankingPreview => _configList('rankingPreview');
+  List<Map<String, dynamic>> get rankingPreview =>
+      _configList('rankingPreview');
 
   List<Map<String, dynamic>> _configList(String key) {
     final raw = config[key];
@@ -123,15 +131,51 @@ class DiscoveryService {
   DiscoveryService({
     FirebaseFirestore? firestore,
     FirebaseAuth? auth,
+    RoomRealtimeQueryService? realtime,
   })  : _firestore = firestore ?? FirebaseFirestore.instance,
-        _auth = auth ?? FirebaseAuth.instance;
+        _auth = auth ?? FirebaseAuth.instance,
+        _realtime = realtime ??
+            RoomRealtimeQueryService(
+              auth: auth ?? FirebaseAuth.instance,
+            );
 
   final FirebaseFirestore _firestore;
   final FirebaseAuth _auth;
+  final RoomRealtimeQueryService _realtime;
 
   static List<DiscoveryRoom>? _roomsCache;
   static DateTime? _roomsCacheUntil;
   static Future<List<DiscoveryRoom>>? _roomsInFlight;
+
+  Future<List<DiscoveryRoom>> hydrateRealtimeCounts(
+    Iterable<DiscoveryRoom> source,
+  ) async {
+    final rooms = source.toList(growable: false);
+    if (rooms.isEmpty) return const <DiscoveryRoom>[];
+
+    Map<String, int> counts = const <String, int>{};
+    try {
+      counts = await _realtime.loadCounts(rooms.map((room) => room.id));
+    } catch (_) {
+      // During a realtime rollout keep the persistent room metadata usable.
+      // Old onlineCount values are a temporary compatibility fallback only.
+    }
+
+    return rooms
+        .map((room) {
+          final liveCount = counts[room.id];
+          if (liveCount == null) return room;
+          return DiscoveryRoom(
+            id: room.id,
+            data: {
+              ...room.data,
+              'onlineCount': liveCount,
+              'participantsCount': liveCount,
+            },
+          );
+        })
+        .toList(growable: false);
+  }
 
   Future<List<DiscoveryRoom>> loadRooms({bool forceRefresh = false}) {
     final now = DateTime.now();
@@ -151,10 +195,11 @@ class DiscoveryService {
 
     final future = () async {
       final roomSnapshot = await _firestore.collection('rooms').limit(60).get();
-      final rooms = roomSnapshot.docs
+      final persistentRooms = roomSnapshot.docs
           .map((doc) => DiscoveryRoom(id: doc.id, data: doc.data()))
           .where((room) => room.isActive && !room.isHidden)
           .toList(growable: false);
+      final rooms = await hydrateRealtimeCounts(persistentRooms);
       _roomsCache = rooms;
       _roomsCacheUntil = DateTime.now().add(const Duration(seconds: 10));
       return List<DiscoveryRoom>.unmodifiable(rooms);
@@ -199,8 +244,10 @@ class DiscoveryService {
 
     Map<String, dynamic> config = const {};
     try {
-      final configSnapshot =
-          await _firestore.collection('system_config').doc('home_discovery').get();
+      final configSnapshot = await _firestore
+          .collection('system_config')
+          .doc('home_discovery')
+          .get();
       config = configSnapshot.data() ?? const {};
     } catch (_) {
       // Home must keep its lightweight local fallback when remote content
@@ -214,4 +261,6 @@ class DiscoveryService {
       config: config,
     );
   }
+
+  void close() => _realtime.close();
 }

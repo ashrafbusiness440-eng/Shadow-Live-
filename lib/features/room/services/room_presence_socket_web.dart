@@ -37,7 +37,7 @@ class _WebRoomPresenceSocketConnection
 Future<RoomPresenceSocketConnection> connectRoomPresenceSocket(Uri uri) {
   final completer = Completer<RoomPresenceSocketConnection>();
   final socket = html.WebSocket(uri.toString());
-  final controller = StreamController<Object?>.broadcast();
+  final controller = StreamController<Object?>();
   late StreamSubscription<html.Event> openSubscription;
   late StreamSubscription<html.MessageEvent> messageSubscription;
   late StreamSubscription<html.CloseEvent> closeSubscription;

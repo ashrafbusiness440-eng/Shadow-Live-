@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   hasPresenceUid,
+  presenceCountFromAttachments,
   presenceSnapshotFromAttachments,
 } from "../../cloudflare-worker/src/room-realtime-presence.js";
 
@@ -62,4 +63,16 @@ test("invalid attachments never create phantom users", () => {
     { uid: "   " },
   ], 5000);
   assert.deepEqual(participants, []);
+});
+
+
+test("online count deduplicates multiple sockets for the same uid", () => {
+  assert.equal(
+    presenceCountFromAttachments([
+      { uid: "u1", connectedAtMs: 1000 },
+      { uid: "u1", connectedAtMs: 2000 },
+      { uid: "u2", connectedAtMs: 3000 },
+    ]),
+    2,
+  );
 });
