@@ -12,7 +12,7 @@ class FirebaseService {
  Future<void> verifyPhoneNumber({required String phoneNumber,required void Function(PhoneAuthCredential credential) verificationCompleted,required void Function(FirebaseAuthException error) verificationFailed,required void Function(String verificationId,int? resendToken) codeSent,required void Function(String verificationId) codeAutoRetrievalTimeout})async{await _auth.verifyPhoneNumber(phoneNumber:phoneNumber,verificationCompleted:verificationCompleted,verificationFailed:verificationFailed,codeSent:codeSent,codeAutoRetrievalTimeout:codeAutoRetrievalTimeout);}
  Future<UserCredential> signInWithPhoneCode({required String verificationId,required String smsCode})async=>_auth.signInWithCredential(PhoneAuthProvider.credential(verificationId:verificationId,smsCode:smsCode));
  Future<UserCredential> signInAnonymously()async{try{return await _auth.signInAnonymously();}catch(e){throw _handleAuthError(e);}}
- Future<void> signOut()=>_auth.signOut();Future<void> resetPassword(String email)async{try{await _auth.sendPasswordResetEmail(email:email.trim());}catch(e){throw _handleAuthError(e);}}
+ Future<void> signOut()=>_auth.signOut();Future<void> resetPassword(String email)async{try{await _auth.setLanguageCode('ar');await _auth.sendPasswordResetEmail(email:email.trim());}catch(e){throw _handleAuthError(e);}}
  Future<void> touchLastLogin(String userId)=>updateUserProfile(userId,{'lastLoginAt':FieldValue.serverTimestamp(),'isOnline':true});
 
  Map<String,dynamic> _publicProfileData(String userId,Map<String,dynamic> data){
