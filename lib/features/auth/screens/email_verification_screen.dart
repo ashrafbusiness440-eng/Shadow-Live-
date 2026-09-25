@@ -13,26 +13,45 @@ class EmailVerificationScreen extends StatefulWidget {
   State<EmailVerificationScreen> createState()=>_EmailVerificationScreenState();
 }
 
-class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
+class _EmailVerificationScreenState extends State<EmailVerificationScreen> with WidgetsBindingObserver {
   bool _busy=false;
+  bool _checkingVerification=false;
+  bool _navigating=false;
   int _cooldown=0;
-  Timer? _timer;
+  Timer? _cooldownTimer;
+  Timer? _verificationPollTimer;
 
   User? get user=>FirebaseAuth.instance.currentUser;
 
   @override
   void initState(){
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_){
       if(user==null && mounted){
         Navigator.of(context).pushNamedAndRemoveUntil(AppRoutes.authChoice,(_)=>false);
+        return;
       }
+      _checkVerification(silent:true);
+      _verificationPollTimer=Timer.periodic(
+        const Duration(seconds:4),
+        (_)=>_checkVerification(silent:true),
+      );
     });
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state){
+    if(state==AppLifecycleState.resumed){
+      _checkVerification(silent:true);
+    }
+  }
+
+  @override
   void dispose(){
-    _timer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    _cooldownTimer?.cancel();
+    _verificationPollTimer?.cancel();
     super.dispose();
   }
 
@@ -40,9 +59,9 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
       current.providerData.any((provider)=>provider.providerId=='password');
 
   void _startCooldown(){
-    _timer?.cancel();
+    _cooldownTimer?.cancel();
     setState(()=>_cooldown=60);
-    _timer=Timer.periodic(const Duration(seconds:1),(timer){
+    _cooldownTimer=Timer.periodic(const Duration(seconds:1),(timer){
       if(!mounted){timer.cancel();return;}
       if(_cooldown<=1){
         timer.cancel();
@@ -78,27 +97,39 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
     }
   }
 
-  Future<void> _check()async{
+  Future<void> _check()async=>_checkVerification(silent:false);
+
+  Future<void> _checkVerification({required bool silent})async{
     final current=user;
-    if(current==null||_busy)return;
-    setState(()=>_busy=true);
+    if(current==null||_checkingVerification||_navigating)return;
+    _checkingVerification=true;
+    if(!silent&&mounted)setState(()=>_busy=true);
     try{
       await current.reload();
       final refreshed=FirebaseAuth.instance.currentUser;
       if(refreshed==null)throw FirebaseAuthException(code:'user-not-found');
       if(_isPasswordUser(refreshed)&&!refreshed.emailVerified){
-        _message('البريد لم يتم تأكيده بعد. افتح رسالة Shadow Live واضغط رابط التحقق.');
+        if(!silent){
+          _message('البريد لم يتم تأكيده بعد. افتح رسالة Shadow Live واضغط رابط التحقق.');
+        }
         return;
       }
+      _navigating=true;
+      _verificationPollTimer?.cancel();
       await refreshed.getIdToken(true);
       await _continueAfterVerification();
     }on FirebaseAuthException catch(e){
-      final message=e.code=='network-request-failed'
-          ?'تحقق من اتصال الإنترنت.'
-          :'تعذر التحقق من حالة البريد الآن.';
-      _message(message);
+      if(!silent){
+        final message=e.code=='network-request-failed'
+            ?'تحقق من اتصال الإنترنت.'
+            :'تعذر التحقق من حالة البريد الآن.';
+        _message(message);
+      }
+    }catch(_){
+      if(!silent)_message('تعذر التحقق من حالة البريد الآن.');
     }finally{
-      if(mounted)setState(()=>_busy=false);
+      _checkingVerification=false;
+      if(mounted&&!silent)setState(()=>_busy=false);
     }
   }
 
@@ -195,7 +226,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                     ),
                     const SizedBox(height:10),
                     const Text(
-                      'لن يتم تفعيل حساب البريد داخل Shadow Live قبل إثبات ملكية هذا البريد.',
+                      'لن يتم تفعيل حساب البريد داخل Shadow Live قبل إثبات ملكية هذا البريد. بعد التأكيد سنكمل تلقائيًا.',
                       textAlign:TextAlign.center,
                       style:TextStyle(color:Colors.white54,fontSize:14,height:1.6),
                     ),
