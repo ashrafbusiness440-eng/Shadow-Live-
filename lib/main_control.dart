@@ -837,7 +837,10 @@ class _OwnerAccountActionsCard extends StatelessWidget {
     try{
       final user=controlAuth.currentUser;
       if(user==null)throw Exception('not_signed_in');
-      final token=await user.getIdToken().timeout(const Duration(seconds:12));
+      await user.reload();
+      final refreshed=controlAuth.currentUser;
+      if(refreshed==null)throw Exception('not_signed_in');
+      final token=await refreshed.getIdToken(true).timeout(const Duration(seconds:12));
       if(token==null||token.isEmpty)throw Exception('empty_token');
       final prefix=user.uid.length>=6?user.uid.substring(0,6):user.uid;
       final key='acct_'+DateTime.now().millisecondsSinceEpoch.toString()+'_'+prefix;
@@ -869,7 +872,8 @@ class _OwnerAccountActionsCard extends StatelessWidget {
         'not_found'=>'المستخدم غير موجود.',
         'invalid_suspend_duration'=>'مدة التعليق غير صالحة.',
         'not_signed_in'=>'انتهت جلسة Shadow Control. سجّل دخول الأونر من جديد ثم أعد المحاولة.',
-        'unauthorized'=>'انتهت جلسة Shadow Control. سجّل دخول الأونر من جديد ثم أعد المحاولة.',
+        'unauthorized'=>'انتهت جلسة Shadow Control. سجّل دخولك من جديد ثم أعد المحاولة.',
+        'forbidden'=>'هذا الحساب الإداري لا يملك الصلاحية المطلوبة لتنفيذ هذا الإجراء.',
         'PERMISSION_DENIED'=>'حساب الخدمة لا يملك صلاحية Firebase Auth المطلوبة.',
         _=>'تعذر تنفيذ الإجراء: '+code,
       };
@@ -975,37 +979,94 @@ class _OwnerAccountActionsCard extends StatelessWidget {
 
   @override Widget build(BuildContext context){
     final suspendedText=suspendedUntil==null||'$suspendedUntil'.isEmpty?'':' • حتى: $suspendedUntil';
-    return Card(child:Padding(
-      padding:const EdgeInsets.all(16),
-      child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-        Row(children:[
-          Icon(protectedOwner?Icons.shield_rounded:Icons.gpp_maybe_outlined,color:protectedOwner?const Color(0xFFD7B85A):Colors.orangeAccent),
-          const SizedBox(width:8),
-          const Expanded(child:Text('إجراءات الحساب والحظر',style:TextStyle(fontWeight:FontWeight.w900,fontSize:17))),
-          Chip(label:Text(statusLabel())),
-        ]),
-        const SizedBox(height:6),
-        Text(protectedOwner
-          ? 'حساب Owner محمي من الحظر والحذف.'
-          : 'تعليق مؤقت، حظر دائم، تعطيل، إنهاء الجلسات أو حذف الحساب. كل إجراء Backend-only ومسجل في Audit Log.'+suspendedText,
-          style:const TextStyle(color:Color(0xFFAAA3B8))),
-        const SizedBox(height:12),
-        Wrap(spacing:8,runSpacing:8,children:[
-          FilledButton.tonalIcon(onPressed:protectedOwner||accountStatus=='deleted'?null:()=>_suspend(context),icon:const Icon(Icons.timer_off_outlined),label:const Text('تعليق مؤقت')),
-          FilledButton.tonalIcon(onPressed:protectedOwner||accountStatus=='deleted'?null:()=>_simple(context,'ban','حظر المستخدم نهائيًا',destructive:true),icon:const Icon(Icons.block),label:const Text('حظر دائم')),
-          OutlinedButton.icon(onPressed:protectedOwner||accountStatus=='deleted'?null:()=>_simple(context,'disable','تعطيل الحساب'),icon:const Icon(Icons.pause_circle_outline),label:const Text('تعطيل')),
-          OutlinedButton.icon(onPressed:protectedOwner||accountStatus=='deleted'?null:()=>_simple(context,'revokeSessions','إنهاء جلسات المستخدم'),icon:const Icon(Icons.phonelink_erase_outlined),label:const Text('إنهاء الجلسات')),
-          if(blocked&&accountStatus!='deleted')
-            FilledButton.icon(onPressed:protectedOwner?null:()=>_simple(context,accountStatus=='banned'?'unban':'enable','إعادة تفعيل الحساب'),icon:const Icon(Icons.lock_open_outlined),label:const Text('فك الحظر / تفعيل')),
-          FilledButton.icon(
-            style:FilledButton.styleFrom(backgroundColor:Colors.red.shade800),
-            onPressed:protectedOwner||accountStatus=='deleted'?null:()=>_delete(context),
-            icon:const Icon(Icons.delete_forever_outlined),
-            label:const Text('حذف الحساب'),
-          ),
-        ]),
-      ]),
-    ));
+    final current=controlAuth.currentUser;
+    return FutureBuilder<DocumentSnapshot<Map<String,dynamic>>>(
+      future:current==null?null:controlFirestore.collection('users').doc(current.uid).get(),
+      builder:(context,snap){
+        final actor=snap.data?.data();
+        final actorRole='${actor?['role']??'user'}';
+        final actorEnabled=actor?['adminEnabled']==true;
+        final caps=actor?['capabilities'] is List
+            ?(actor!['capabilities'] as List).map((e)=>'$e').toSet()
+            :<String>{};
+        final isOwner=actorEnabled&&actorRole=='owner';
+        final canManageUsers=isOwner||(actorEnabled&&caps.contains('manageUsers'));
+        final canSuspend=isOwner||(actorEnabled&&(caps.contains('suspendUsers')||caps.contains('manageUsers')));
+        final canReactivate=isOwner||
+            (actorEnabled&&(
+              caps.contains('manageUsers')||
+              (accountStatus=='suspended'&&caps.contains('suspendUsers'))
+            ));
+        final canDelete=isOwner;
+        final locked=protectedOwner||accountStatus=='deleted';
+
+        return Card(child:Padding(
+          padding:const EdgeInsets.all(16),
+          child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+            Row(children:[
+              Icon(protectedOwner?Icons.shield_rounded:Icons.gpp_maybe_outlined,color:protectedOwner?const Color(0xFFD7B85A):Colors.orangeAccent),
+              const SizedBox(width:8),
+              const Expanded(child:Text('إجراءات الحساب والحظر',style:TextStyle(fontWeight:FontWeight.w900,fontSize:17))),
+              Chip(label:Text(statusLabel())),
+            ]),
+            const SizedBox(height:6),
+            Text(
+              protectedOwner
+                ? 'حساب Owner محمي من الحظر والحذف.'
+                : 'الإجراءات تظهر حسب صلاحيات الحساب الإداري وتُنفذ Backend-only وتُسجّل في Audit Log.'+suspendedText,
+              style:const TextStyle(color:Color(0xFFAAA3B8)),
+            ),
+            const SizedBox(height:12),
+            Wrap(spacing:8,runSpacing:8,children:[
+              FilledButton.tonalIcon(
+                onPressed:locked||!canSuspend?null:()=>_suspend(context),
+                icon:const Icon(Icons.timer_off_outlined),
+                label:const Text('تعليق مؤقت'),
+              ),
+              FilledButton.tonalIcon(
+                onPressed:locked||!canManageUsers?null:()=>_simple(context,'ban','حظر المستخدم نهائيًا',destructive:true),
+                icon:const Icon(Icons.block),
+                label:const Text('حظر دائم'),
+              ),
+              OutlinedButton.icon(
+                onPressed:locked||!canManageUsers?null:()=>_simple(context,'disable','تعطيل الحساب'),
+                icon:const Icon(Icons.pause_circle_outline),
+                label:const Text('تعطيل'),
+              ),
+              OutlinedButton.icon(
+                onPressed:locked||!canManageUsers?null:()=>_simple(context,'revokeSessions','إنهاء جلسات المستخدم'),
+                icon:const Icon(Icons.phonelink_erase_outlined),
+                label:const Text('إنهاء الجلسات'),
+              ),
+              if(blocked&&accountStatus!='deleted')
+                FilledButton.icon(
+                  onPressed:protectedOwner||!canReactivate?null:()=>_simple(context,accountStatus=='banned'?'unban':'enable','إعادة تفعيل الحساب'),
+                  icon:const Icon(Icons.lock_open_outlined),
+                  label:const Text('فك الحظر / تفعيل'),
+                ),
+              if(canDelete)
+                FilledButton.icon(
+                  style:FilledButton.styleFrom(backgroundColor:Colors.red.shade800),
+                  onPressed:locked?null:()=>_delete(context),
+                  icon:const Icon(Icons.delete_forever_outlined),
+                  label:const Text('حذف الحساب'),
+                ),
+            ]),
+            if(!isOwner&&actorEnabled)...[
+              const SizedBox(height:10),
+              Text(
+                canManageUsers
+                  ? 'صلاحياتك الإدارية مفعلة. حذف الحساب النهائي يبقى للـOwner فقط.'
+                  : canSuspend
+                    ? 'صلاحية التعليق المؤقت مفعلة فقط. بقية إجراءات الحساب تحتاج manageUsers.'
+                    : 'لا توجد صلاحية لإدارة هذا الحساب.',
+                style:const TextStyle(fontSize:12,color:Color(0xFFAAA3B8)),
+              ),
+            ],
+          ]),
+        ));
+      },
+    );
   }
 }
 
