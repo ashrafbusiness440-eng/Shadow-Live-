@@ -218,7 +218,7 @@ def main() -> int:
     ):
         if "assertUserDocumentSessionState" not in content:
             failures.append(f"Step 9 borrowed regression: {label} does not validate session state from its actor snapshot")
-        if "checkUserState: false" not in content:
+        if re.search(r"checkUserState\s*:\s*false", content) is None:
             failures.append(f"Step 9 borrowed regression: {label} reintroduced a duplicate auth-state Firestore lookup")
     check(lambda: require(
         r'crons\s*=\s*\["\*/5 \* \* \* \*"\]',
