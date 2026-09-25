@@ -42,6 +42,7 @@ class _DiscoverySearchScreenState extends State<DiscoverySearchScreen> {
   @override
   void dispose() {
     _debounce?.cancel();
+    _discoveryService.close();
     _controller.dispose();
     super.dispose();
   }

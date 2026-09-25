@@ -52,6 +52,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _authSub?.cancel();
+    _discoveryService.close();
     _scrollController.dispose();
     super.dispose();
   }

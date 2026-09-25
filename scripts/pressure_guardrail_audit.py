@@ -74,6 +74,9 @@ def main() -> int:
     realtime_object = read("cloudflare-worker/src/room-realtime-object.js")
     realtime_protocol = read("cloudflare-worker/src/room-realtime-protocol.js")
     worker_index = read("cloudflare-worker/src/index.js")
+    app_main = read("lib/main.dart")
+    discovery = read("lib/features/home/services/discovery_service.dart")
+    realtime_query = read("lib/features/room/services/room_realtime_query_service.dart")
 
     if "_presenceTimer" in voice or ".heartbeat(" in voice:
         failures.append("Step 4 regression: Firestore presence heartbeat returned to the room session")
@@ -175,15 +178,58 @@ def main() -> int:
         failures.append("RoomRealtimeObject must use ctx.acceptWebSocket, not ws.accept")
     if "firestore" in realtime_object.lower() or "firebase" in realtime_object.lower():
         failures.append("RoomRealtimeObject must not become a Firestore/Firebase authority")
-    for route in ("/presence", "/presence/has"):
+    for route in ("/presence", "/presence/has", "/presence/count"):
         if route not in realtime_object:
-            failures.append(f"Step 4 regression: Durable Object route missing: {route}")
+            failures.append(f"Realtime Durable Object route missing: {route}")
+    for event_type in (
+        "room.online_count",
+        "room.presence_joined",
+        "room.presence_left",
+    ):
+        if event_type not in realtime_object:
+            failures.append(f"Step 5 regression: realtime event missing: {event_type}")
     if "presenceSnapshotFromAttachments" not in realtime_object:
         failures.append("Step 4 regression: socket attachments are not the presence source")
     if "assertRoomRealtimePresence(db,roomId,targetUid)" not in worker:
         failures.append("Step 4 regression: mic target validation is not using realtime presence")
     if 'action==="roomSessionLeave"' not in worker:
         failures.append("Step 4 regression: roomSessionLeave cleanup action is missing")
+
+    if "_handleSocketMessage" not in presence_service or "RoomRealtimeEvent" not in presence_service:
+        failures.append("Step 5 regression: client no longer parses realtime room events")
+    if "_presenceService.events.listen(_handleRealtimeEvent)" not in voice:
+        failures.append("Step 5 regression: voice session is not consuming the single room WebSocket event stream")
+    if "'recentEntrance': data['recentEntrance']" in voice:
+        failures.append("Step 5 regression: transient entrance event returned to the Firestore room listener")
+    if re.search(r"'onlineCount'\s*:\s*state\.onlineCount", app_main):
+        failures.append("Step 5 regression: seat Firestore snapshots overwrite WebSocket online count")
+    if "RoomRealtimeQueryService" not in discovery or "hydrateRealtimeCounts" not in discovery:
+        failures.append("Step 5 regression: discovery no longer hydrates online counts from Durable Objects")
+    if "'action': 'presenceCounts'" not in realtime_query:
+        failures.append("Step 5 regression: discovery batch count API is missing")
+    room_realtime = read("cloudflare-worker/src/room-realtime.js")
+    if "checkUserState: false" not in room_realtime:
+        failures.append("Step 5 regression: read-only presenceCounts performs avoidable user-state Firestore checks")
+    if "const batchSize = 12;" not in room_realtime:
+        failures.append("Step 5 regression: presenceCounts lost its bounded Durable Object fan-out")
+    for function_name in ("roomPresenceAnnounceJoin", "roomSessionLeave"):
+        body = function_body(worker, function_name)
+        if body is None:
+            failures.append(f"Step 5 regression: {function_name} missing")
+            continue
+        for volatile_field in ("onlineCount", "participantsCount", "lastPresenceAtMs"):
+            if volatile_field in body:
+                failures.append(
+                    f"Step 5 regression: {function_name} writes/depends on volatile room field {volatile_field}"
+                )
+    entrance = function_body(worker, "announceRoomEntrance")
+    if entrance is None:
+        failures.append("Step 5 regression: announceRoomEntrance missing")
+    else:
+        if "recentEntrance" in entrance:
+            failures.append("Step 5 regression: entrance effect is persisted back into rooms/{roomId}")
+        if 'broadcastRoomRealtimeEvent' not in entrance or '"room.entrance"' not in entrance:
+            failures.append("Step 5 regression: entrance effect is not broadcast over room WebSocket")
     def no_join_delay() -> None:
         start = voice.find("Future<void> join(")
         end = voice.find("Future<void> toggleMic()", start)
@@ -250,7 +296,7 @@ def main() -> int:
         return 1
 
     print("Pressure regression guardrail passed.")
-    print("Protected baselines: room join, ZEGO, mic path, WebSocket presence, game polling/timing, retries, cron, and critical listener caps.")
+    print("Protected baselines: room join, ZEGO, mic path, WebSocket presence/count/events, game polling/timing, retries, cron, and critical listener caps.")
     for note in notes:
         print(f"NOTE: {note}")
     return 0

@@ -32,6 +32,18 @@ class RoomPresenceUser {
       );
 }
 
+class RoomRealtimeEvent {
+  const RoomRealtimeEvent({
+    required this.type,
+    required this.payload,
+    required this.serverTimeMs,
+  });
+
+  final String type;
+  final Map<String, dynamic> payload;
+  final int serverTimeMs;
+}
+
 class RoomPresenceService {
   RoomPresenceService({
     FirebaseAuth? auth,
@@ -49,6 +61,8 @@ class RoomPresenceService {
   final FirebaseAuth _auth;
   final http.Client _client;
   final String _baseUrl;
+  final StreamController<RoomRealtimeEvent> _eventsController =
+      StreamController<RoomRealtimeEvent>.broadcast();
 
   RoomPresenceSocketConnection? _socket;
   StreamSubscription<Object?>? _socketSubscription;
@@ -56,6 +70,8 @@ class RoomPresenceService {
   String _desiredRoomId = '';
   int _generation = 0;
   int _reconnectAttempt = 0;
+
+  Stream<RoomRealtimeEvent> get events => _eventsController.stream;
 
   Future<Map<String, dynamic>> _post(
     String endpoint,
@@ -93,6 +109,32 @@ class RoomPresenceService {
     return resolved.replace(
       scheme: resolved.scheme == 'http' ? 'ws' : 'wss',
     );
+  }
+
+  void _handleSocketMessage(Object? raw) {
+    if (raw is! String || raw.isEmpty) return;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return;
+      final map = Map<String, dynamic>.from(decoded);
+      final type = (map['type'] ?? '').toString().trim();
+      if (type.isEmpty) return;
+      final rawPayload = map['payload'];
+      final payload = rawPayload is Map
+          ? Map<String, dynamic>.from(rawPayload)
+          : <String, dynamic>{};
+      if (!_eventsController.isClosed) {
+        _eventsController.add(
+          RoomRealtimeEvent(
+            type: type,
+            payload: payload,
+            serverTimeMs: (map['serverTimeMs'] as num?)?.toInt() ?? 0,
+          ),
+        );
+      }
+    } catch (_) {
+      // Ignore malformed or future protocol messages without affecting voice.
+    }
   }
 
   Future<void> _announceJoin(String roomId) async {
@@ -174,7 +216,7 @@ class RoomPresenceService {
       }
 
       _socketSubscription = connection.messages.listen(
-        (_) {},
+        _handleSocketMessage,
         onError: (_) => _handleSocketEnded(roomId, generation, connection),
         onDone: () => _handleSocketEnded(roomId, generation, connection),
         cancelOnError: false,
@@ -261,6 +303,9 @@ class RoomPresenceService {
     final connection = _socket;
     _socket = null;
     if (connection != null) unawaited(connection.close());
+    if (!_eventsController.isClosed) {
+      unawaited(_eventsController.close());
+    }
     _client.close();
   }
 }

@@ -250,6 +250,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
 
   @override
   void dispose() {
+    _service.close();
     _roomActions.close();
     super.dispose();
   }

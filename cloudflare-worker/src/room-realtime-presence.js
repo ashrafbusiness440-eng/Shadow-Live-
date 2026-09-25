@@ -43,6 +43,10 @@ export function presenceSnapshotFromAttachments(
   );
 }
 
+export function presenceCountFromAttachments(attachments) {
+  return presenceSnapshotFromAttachments(attachments, Date.now()).length;
+}
+
 export function hasPresenceUid(attachments, uid) {
   const target = clean(uid);
   if (!target) return false;

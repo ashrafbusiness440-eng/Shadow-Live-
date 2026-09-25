@@ -44,10 +44,47 @@ export class RoomRealtimeObject extends DurableObject {
     }
   }
 
-  #presenceAttachments() {
+  #presenceAttachments(excludeConnectionId = "") {
+    const excluded = String(excludeConnectionId || "");
     return this.ctx.getWebSockets()
-      .map((socket) => socket.deserializeAttachment())
-      .filter((value) => value && typeof value === "object");
+      .map((socket) => {
+        try {
+          return socket.deserializeAttachment();
+        } catch {
+          return null;
+        }
+      })
+      .filter((value) => value && typeof value === "object")
+      .filter(
+        (value) =>
+          !excluded || String(value.connectionId || "") !== excluded,
+      );
+  }
+
+  #presenceSnapshot(excludeConnectionId = "") {
+    return presenceSnapshotFromAttachments(
+      this.#presenceAttachments(excludeConnectionId),
+      Date.now(),
+    );
+  }
+
+  #broadcastEvent(type, payload) {
+    const envelope = realtimeEnvelope(type, payload);
+    let delivered = 0;
+    for (const socket of this.ctx.getWebSockets()) {
+      if (safeSend(socket, envelope)) delivered += 1;
+    }
+    return delivered;
+  }
+
+  #publishOnlineCount(roomId, participants) {
+    const onlineCount = participants.length;
+    this.#broadcastEvent("room.online_count", {
+      roomId,
+      onlineCount,
+      participantsCount: onlineCount,
+    });
+    return onlineCount;
   }
 
   async fetch(request) {
@@ -59,12 +96,17 @@ export class RoomRealtimeObject extends DurableObject {
       return this.#connect(request, url);
     }
     if (url.pathname === "/presence" && request.method === "GET") {
+      const participants = this.#presenceSnapshot();
       return Response.json({
         ok: true,
-        participants: presenceSnapshotFromAttachments(
-          this.#presenceAttachments(),
-          Date.now(),
-        ),
+        onlineCount: participants.length,
+        participants,
+      });
+    }
+    if (url.pathname === "/presence/count" && request.method === "GET") {
+      return Response.json({
+        ok: true,
+        onlineCount: this.#presenceSnapshot().length,
       });
     }
     if (url.pathname === "/presence/has" && request.method === "GET") {
@@ -143,13 +185,17 @@ export class RoomRealtimeObject extends DurableObject {
     const uid = String(record.uid || "");
     const connectionId = crypto.randomUUID();
     const connectedAtMs = Date.now();
+    const existingAttachments = this.#presenceAttachments();
+    const alreadyPresent = hasPresenceUid(existingAttachments, uid);
     const existing = presenceSnapshotFromAttachments(
-      this.#presenceAttachments().filter((item) => String(item.uid || "") === uid),
+      existingAttachments.filter((item) => String(item.uid || "") === uid),
       connectedAtMs,
     );
     const joinedAtMs = existing.length
       ? Number(existing[0].joinedAtMs || connectedAtMs)
       : connectedAtMs;
+    const displayName = String(record.displayName || "").trim();
+    const profileImageUrl = String(record.profileImageUrl || "").trim();
 
     server.serializeAttachment({
       roomId,
@@ -157,19 +203,35 @@ export class RoomRealtimeObject extends DurableObject {
       connectionId,
       connectedAtMs,
       joinedAtMs,
-      displayName: String(record.displayName || "").trim(),
-      profileImageUrl: String(record.profileImageUrl || "").trim(),
+      displayName,
+      profileImageUrl,
     });
     this.ctx.acceptWebSocket(server, [`uid:${uid}`]);
 
+    const participants = this.#presenceSnapshot();
+    const onlineCount = participants.length;
     safeSend(
       server,
       realtimeEnvelope("server.ready", {
         protocolVersion: ROOM_REALTIME_PROTOCOL_VERSION,
         roomId,
         connectionId,
+        onlineCount,
+        participantsCount: onlineCount,
       }),
     );
+    this.#publishOnlineCount(roomId, participants);
+
+    if (!alreadyPresent) {
+      this.#broadcastEvent("room.presence_joined", {
+        roomId,
+        uid,
+        displayName: displayName || "مستخدم Shadow Live",
+        profileImageUrl,
+        joinedAtMs,
+        onlineCount,
+      });
+    }
 
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -186,12 +248,10 @@ export class RoomRealtimeObject extends DurableObject {
       return Response.json({ ok: false, code: "invalid_server_event" }, { status: 400 });
     }
 
-    const envelope = realtimeEnvelope(type, payload);
-    let delivered = 0;
-    for (const socket of this.ctx.getWebSockets()) {
-      if (safeSend(socket, envelope)) delivered += 1;
-    }
-    return Response.json({ ok: true, delivered });
+    return Response.json({
+      ok: true,
+      delivered: this.#broadcastEvent(type, payload),
+    });
   }
 
   webSocketMessage(webSocket, message) {
@@ -199,13 +259,45 @@ export class RoomRealtimeObject extends DurableObject {
     if (parsed.response) safeSend(webSocket, parsed.response);
   }
 
+  #handleDeparture(webSocket) {
+    let attachment = {};
+    try {
+      attachment = webSocket.deserializeAttachment() || {};
+    } catch {}
+    if (attachment.departureHandled === true) return;
+
+    try {
+      webSocket.serializeAttachment({
+        ...attachment,
+        departureHandled: true,
+      });
+    } catch {}
+
+    const roomId = normalizeRoomId(attachment.roomId);
+    const uid = String(attachment.uid || "").trim();
+    const connectionId = String(attachment.connectionId || "").trim();
+    if (!roomId || !connectionId) return;
+
+    const participants = this.#presenceSnapshot(connectionId);
+    const onlineCount = this.#publishOnlineCount(roomId, participants);
+    if (uid && !hasPresenceUid(participants, uid)) {
+      this.#broadcastEvent("room.presence_left", {
+        roomId,
+        uid,
+        onlineCount,
+      });
+    }
+  }
+
   webSocketClose(webSocket, code, reason) {
+    this.#handleDeparture(webSocket);
     try {
       webSocket.close(code || 1000, reason || "room_leave");
     } catch {}
   }
 
   webSocketError(webSocket) {
+    this.#handleDeparture(webSocket);
     try {
       webSocket.close(1011, "realtime_error");
     } catch {}

@@ -21,6 +21,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
         unawaited(leave());
       }
     });
+    _realtimeSubscription =
+        _presenceService.events.listen(_handleRealtimeEvent);
   }
 
   static final VoiceRoomSessionController instance =
@@ -33,6 +35,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
   StreamSubscription<User?>? _authSubscription;
   StreamSubscription<VoiceConnectionState>? _connectionSubscription;
   StreamSubscription<VoiceMicState>? _micSubscription;
+  StreamSubscription<RoomRealtimeEvent>? _realtimeSubscription;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
       _roomLifecycleSubscription;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
@@ -172,6 +175,40 @@ class VoiceRoomSessionController extends ChangeNotifier {
     _localRoomMusic.clear();
   }
 
+  void _handleRealtimeEvent(RoomRealtimeEvent event) {
+    if (!_active) return;
+    final eventRoomId = (event.payload['roomId'] ?? '').toString();
+    if (eventRoomId.isNotEmpty && eventRoomId != roomId) return;
+
+    var changed = false;
+    final onlineRaw = event.payload['onlineCount'];
+    if (onlineRaw is num) {
+      final onlineCount = onlineRaw.toInt().clamp(0, 1000000000);
+      if (_roomArguments['onlineCount'] != onlineCount ||
+          _roomArguments['participantsCount'] != onlineCount) {
+        _roomArguments = <String, dynamic>{
+          ..._roomArguments,
+          'onlineCount': onlineCount,
+          'participantsCount': onlineCount,
+        };
+        changed = true;
+      }
+    }
+
+    if (event.type == 'room.entrance') {
+      final rawEntrance = event.payload['event'];
+      if (rawEntrance is Map) {
+        _roomArguments = <String, dynamic>{
+          ..._roomArguments,
+          'recentEntrance': Map<String, dynamic>.from(rawEntrance),
+        };
+        changed = true;
+      }
+    }
+
+    if (changed) notifyListeners();
+  }
+
   Future<void> _announceEntrance(String targetRoomId) async {
     try {
       await _seatService.announceEntrance(targetRoomId);
@@ -183,6 +220,9 @@ class VoiceRoomSessionController extends ChangeNotifier {
   Future<void> _startPresence(String targetRoomId) async {
     try {
       await _presenceService.join(targetRoomId);
+      if (_active && roomId == targetRoomId) {
+        await _announceEntrance(targetRoomId);
+      }
     } catch (_) {
       // Voice join must stay independent from realtime presence startup.
       // The presence service performs a small bounded reconnect sequence.
@@ -279,7 +319,6 @@ class VoiceRoomSessionController extends ChangeNotifier {
               data['activeRoomBackgroundAssetKey'] ?? '',
           'activeRoomBackgroundExpiresAtMs':
               data['activeRoomBackgroundExpiresAtMs'] ?? 0,
-          'recentEntrance': data['recentEntrance'],
         };
         final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
         final ownerUid =
@@ -361,7 +400,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
     }
 
     await _ensureService();
-    _roomArguments = Map<String, dynamic>.from(arguments);
+    _roomArguments = Map<String, dynamic>.from(arguments)
+      ..remove('recentEntrance');
     _joining = true;
     _minimized = false;
     _error = null;
@@ -381,7 +421,6 @@ class VoiceRoomSessionController extends ChangeNotifier {
       _connectionState = VoiceConnectionState.connected;
       _watchRoomLifecycle(targetRoomId);
       _watchRoomBan(targetRoomId);
-      unawaited(_announceEntrance(targetRoomId));
       unawaited(_startPresence(targetRoomId));
     } catch (error) {
       _active = false;
@@ -466,6 +505,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
     _authSubscription = null;
     await _connectionSubscription?.cancel();
     await _micSubscription?.cancel();
+    await _realtimeSubscription?.cancel();
+    _realtimeSubscription = null;
     await _roomLifecycleSubscription?.cancel();
     await _roomBanSubscription?.cancel();
     if (_serviceInitialized) {

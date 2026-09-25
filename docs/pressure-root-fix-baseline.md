@@ -80,3 +80,14 @@ The new protected baseline is:
 - Presence reconnect attempts: bounded to three short attempts.
 - ZEGO, room-open behavior, mic behavior, game timing, gifts, wallet, and button behavior remain unchanged.
 - `rooms.onlineCount` and `participantsCount` remain compatibility fields until Step 5 moves count/event delivery.
+
+## Step 5 migration note — Online Count + Live Events
+
+Volatile room count/event state is no longer allowed to return to Firestore on the active path.
+
+- `onlineCount`, `participantsCount`, and `lastPresenceAtMs` must not be written by active join/leave actions.
+- In-room online count comes from the existing room WebSocket.
+- `recentEntrance` must not be persisted to `rooms/{roomId}`; entrance effects are WebSocket events.
+- Discovery uses one batch count request with bounded Durable Object fan-out.
+- Seat Firestore snapshots must not overwrite the WebSocket online count.
+- Games remain on the Step 4 baseline until Step 6.
