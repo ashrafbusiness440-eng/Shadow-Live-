@@ -2272,8 +2272,8 @@ async function roomPresenceJoin(db,uid,roomId){
 
 async function roomPresenceHeartbeat(db,uid,roomId){
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
-  const roomSnap=await db.collection("rooms").doc(roomId).get();
-  if(!roomSnap.exists||roomSnap.data()?.isActive===false)throw new ApiError("room_unavailable",404);
+  // Heartbeats must stay O(1). Do not scan the whole room or rewrite the room
+  // summary on every user's timer; join/leave/state refresh the aggregate instead.
   const presenceRef=db.collection("room_presence").doc(roomId).collection("users").doc(uid);
   const snap=await presenceRef.get();
   const now=Date.now();
@@ -2290,8 +2290,7 @@ async function roomPresenceHeartbeat(db,uid,roomId){
       lastSeenAtMs:now,
     });
   }
-  const participants=await refreshRoomPresenceSummary(db,roomId);
-  return {ok:true,roomId,onlineCount:participants.length};
+  return {ok:true,roomId};
 }
 
 async function roomPresenceLeave(db,uid,roomId){
@@ -2865,12 +2864,18 @@ export default async function handler(req,res){
 
   try{
     initFirebase();
+    const action=clean(req.body?.action)||"token";
     const authorization=clean(req.headers.authorization);
     if(!authorization.startsWith("Bearer "))throw new ApiError("unauthorized",401);
-    const decoded=await getAuth().verifyIdToken(authorization.slice(7));
+    const lightweightPresenceAction=
+      action==="roomPresenceHeartbeat"||
+      action==="roomPresenceLeave"||
+      action==="roomPresenceState";
+    const decoded=await getAuth().verifyIdToken(
+      authorization.slice(7),
+      {checkUserState:!lightweightPresenceAction},
+    );
     if(decoded.firebase?.sign_in_provider==="anonymous")throw new ApiError("account_required",403);
-
-    const action=clean(req.body?.action)||"token";
     if(action==="personalRoom"){
       const room=await openPersonalRoom(getFirestore(),decoded.uid);
       return out(res,200,{ok:true,room});
