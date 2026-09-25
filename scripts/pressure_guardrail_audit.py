@@ -68,6 +68,7 @@ def main() -> int:
     zego = read("lib/features/voice/services/zego_voice_service.dart")
     firestore = read("cloudflare-worker/src/firestore.js")
     auth = read("cloudflare-worker/src/firebase-auth.js")
+    auth_reliability = read("cloudflare-worker/src/auth-state-reliability.js")
     worker = read("cloudflare-worker/src/voice-session-legacy.js")
     wrangler = read("cloudflare-worker/wrangler.toml")
     game_runtime = read("cloudflare-worker/src/legacy-games/game-runtime.js")
@@ -78,6 +79,7 @@ def main() -> int:
     discovery = read("lib/features/home/services/discovery_service.dart")
     realtime_query = read("lib/features/room/services/room_realtime_query_service.dart")
     realtime_game = read("cloudflare-worker/src/room-realtime-game.js")
+    flutter_ci = read(".github/workflows/flutter-ci.yml")
 
     if "_presenceTimer" in voice or ".heartbeat(" in voice:
         failures.append("Step 4 regression: Firestore presence heartbeat returned to the room session")
@@ -162,10 +164,33 @@ def main() -> int:
         "Cloudflare Firestore retry ceiling changed from 2 attempts",
     ))
     check(lambda: require(
-        r"for \(let attempt = 0; attempt < 2; attempt\+\+\)",
-        auth,
-        "auth-state retry ceiling changed from 2 attempts",
+        r"AUTH_STATE_MAX_ATTEMPTS\s*=\s*3\b",
+        auth_reliability,
+        "Step 9 borrowed auth-state retry cap changed from 3 attempts",
     ))
+    check(lambda: require(
+        r"AUTH_STATE_BASE_DELAY_MS\s*=\s*350\b",
+        auth_reliability,
+        "Step 9 borrowed auth-state base backoff changed",
+    ))
+    check(lambda: require(
+        r"AUTH_STATE_JITTER_MS\s*=\s*220\b",
+        auth_reliability,
+        "Step 9 borrowed auth-state jitter changed",
+    ))
+    if "userStateInflight" not in auth:
+        failures.append("Step 9 borrowed regression: auth-state in-flight request coalescing is missing")
+    if "AUTH_STATE_BREAKER_THRESHOLD = 2" not in auth:
+        failures.append("Step 9 borrowed regression: auth-state circuit breaker threshold changed")
+    if "AUTH_STATE_BREAKER_MS = 5_000" not in auth:
+        failures.append("Step 9 borrowed regression: auth-state circuit breaker duration changed")
+    if "AUTH_STATE_STALE_TTL_MS = 30_000" not in auth:
+        failures.append("Step 9 borrowed regression: bounded stale-safe auth cache changed")
+    if "fetchAuthStateResponse" not in auth:
+        failures.append("Step 9 borrowed regression: auth-state path bypasses retry/backoff helper")
+
+    if "group: shadow-live-flutter-ci-${{ github.ref }}" not in flutter_ci:
+        failures.append("Step 9 borrowed regression: Flutter CI concurrency is not isolated per ref")
     check(lambda: require(
         r'crons\s*=\s*\["\*/5 \* \* \* \*"\]',
         wrangler,
@@ -348,7 +373,7 @@ def main() -> int:
         return 1
 
     print("Pressure regression guardrail passed.")
-    print("Protected baselines: room join, ZEGO, mic path, WebSocket presence/count/events/game phases, local game timing, server-authoritative bets/results, retries, cron, and critical listener caps.")
+    print("Protected baselines: room join, ZEGO, mic path, WebSocket presence/count/events/game phases, local game timing, server-authoritative bets/results, bounded retries/backoff, cron, and critical listener caps.")
     for note in notes:
         print(f"NOTE: {note}")
     return 0

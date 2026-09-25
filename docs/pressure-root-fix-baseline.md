@@ -26,7 +26,7 @@ This file freezes the user-visible behavior and pressure-sensitive runtime assum
 | Game fallback lock-before-result | 3000 ms | Exact |
 | Game fallback result hold | 4000 ms | Exact |
 | Cloudflare Firestore transient attempts | max 2 | Must not increase |
-| Auth-state transient attempts | max 2 | Must not increase |
+| Auth-state transient attempts | Step 9 borrowed: max 3 with bounded exponential backoff + jitter | Circuit breaker + in-flight coalescing prevent amplification |
 | Cloudflare settlement cron | every 5 minutes | Exact until settlement architecture is intentionally changed |
 | Room realtime listeners | current per-file caps | May decrease/remove; may not increase without updating this baseline |
 | RoomInsights cache | 10s normal / 15s expanded | Existing behavior retained during Step 2 |
@@ -103,3 +103,18 @@ The old 10-second non-slot game state poll is intentionally removed in Step 6.
 - Bets, balances, outcomes, payouts, settlement, and financial ledger remain in the server-authoritative game runtime.
 - Durable Object game scheduling must remain transient and must not import Firestore/Firebase.
 - Production bet presence validation uses room WebSocket Presence, with legacy `room_presence` only as a migration fallback.
+
+## Step 9 borrowed early — Auth-state reliability
+
+This subset was pulled forward during Step 6 because production Economy/Settlement E2E repeatedly failed before game logic with `auth_state_lookup_failed`.
+
+- Auth-state transient retry cap: 3 attempts.
+- Backoff: bounded exponential delay starting at 350ms with up to 220ms jitter.
+- Retry-After is honored but capped at 2500ms.
+- Same-UID concurrent auth-state reads are coalesced in-flight.
+- Circuit breaker opens after 2 exhausted transient lookup failures for 5 seconds.
+- A previously verified session state may be used stale for at most 30 seconds only during transient upstream failure; unknown users still fail closed.
+- Normal fresh auth-state cache TTL is 10 seconds.
+- No change to token signature verification, accountStatus semantics, session revocation checks, roles, capabilities, games, balances, or settlement authority.
+- Flutter CI concurrency is isolated per Git ref, so a main run or unrelated PR no longer cancels the active Step 6 validation run.
+- This completes only the auth-state reliability + Flutter CI isolation subsets of Step 9. The Step 9 root item remains open for broader retry/circuit-breaker and production-test coordination work.
