@@ -22,6 +22,7 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 8
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,6 +31,19 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+
+      - name: Wait for exact Cloudflare build
+        run: |
+          for ATTEMPT in $(seq 1 45); do
+            BODY=$(curl --silent --show-error https://shadow-live.ashraf-business-440.workers.dev/health || true)
+            echo "$BODY"
+            if echo "$BODY" | grep -q "\"buildSha\":\"$GITHUB_SHA\""; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Exact Cloudflare build did not become active."
+          exit 1
 
       - name: Run Cloudflare economy router phase 5 E2E
         env:
