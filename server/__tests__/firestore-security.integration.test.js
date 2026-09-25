@@ -12,6 +12,22 @@ let env;
 const projectId="shadow-live-economy-test";
 const uid="rules_regular_user";
 
+function verifiedUserDb() {
+  return env.authenticatedContext(uid,{
+    email:"verified@example.com",
+    email_verified:true,
+    firebase:{sign_in_provider:"password"},
+  }).firestore();
+}
+
+function unverifiedUserDb() {
+  return env.authenticatedContext(uid,{
+    email:"unverified@example.com",
+    email_verified:false,
+    firebase:{sign_in_provider:"password"},
+  }).firestore();
+}
+
 before(async()=>{
   env=await initializeTestEnvironment({
     projectId,
@@ -45,12 +61,17 @@ before(async()=>{
 after(async()=>{if(env)await env.cleanup();});
 
 test("regular user can still update an ordinary profile field",async()=>{
-  const userDb=env.authenticatedContext(uid).firestore();
+  const userDb=verifiedUserDb();
   await assertSucceeds(updateDoc(doc(userDb,"users",uid),{displayName:"After"}));
 });
 
+test("unverified email/password user cannot access Firestore",async()=>{
+  const userDb=unverifiedUserDb();
+  await assertFails(updateDoc(doc(userDb,"users",uid),{displayName:"Blocked"}));
+});
+
 test("regular user cannot change protected balances earnings agency or mic activity",async()=>{
-  const userDb=env.authenticatedContext(uid).firestore();
+  const userDb=verifiedUserDb();
   const ref=doc(userDb,"users",uid);
   for(const patch of [
     {coins:999999},
@@ -71,7 +92,7 @@ test("regular user cannot change protected balances earnings agency or mic activ
 });
 
 test("client cannot forge gift operations ledgers accrual activity or settlement",async()=>{
-  const userDb=env.authenticatedContext(uid).firestore();
+  const userDb=verifiedUserDb();
   const writes=[
     ["gift_operations","fake_op"],
     ["gift_transactions","fake_tx"],
