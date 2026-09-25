@@ -80,6 +80,11 @@ def main() -> int:
     realtime_query = read("lib/features/room/services/room_realtime_query_service.dart")
     realtime_game = read("cloudflare-worker/src/room-realtime-game.js")
     flutter_ci = read(".github/workflows/flutter-ci.yml")
+    room_realtime_entry = read("cloudflare-worker/src/room-realtime.js")
+    economy_control = read("cloudflare-worker/src/legacy-economy/economy-control.js")
+    manage_user_access = read("cloudflare-worker/src/manage-user-access.js")
+    manage_user_account = read("cloudflare-worker/src/manage-user-account.js")
+    control_user_details = read("cloudflare-worker/src/control-user-details.js")
 
     if "_presenceTimer" in voice or ".heartbeat(" in voice:
         failures.append("Step 4 regression: Firestore presence heartbeat returned to the room session")
@@ -191,6 +196,30 @@ def main() -> int:
 
     if "group: shadow-live-flutter-ci-${{ github.ref }}" not in flutter_ci:
         failures.append("Step 9 borrowed regression: Flutter CI concurrency is not isolated per ref")
+
+    if "assertUserDocumentSessionState" not in auth:
+        failures.append("Step 9 borrowed regression: user document session validator is missing")
+    room_realtime_body = function_body(room_realtime_entry, "roomRealtime")
+    if room_realtime_body is None:
+        failures.append("Step 9 borrowed regression: roomRealtime handler is missing")
+    else:
+        if 'checkUserState: action !== "ticket"' not in room_realtime_body:
+            failures.append("Step 9 borrowed regression: room ticket does not reuse its user document for session state")
+        if "public_profiles" in room_realtime_body:
+            failures.append("Step 9 borrowed regression: room ticket reintroduced the duplicate public profile read")
+        if 'db.get(`users/${uid}`)' not in room_realtime_body:
+            failures.append("Step 9 borrowed regression: room ticket no longer loads the authoritative user document")
+
+    for label, content in (
+        ("economy-control", economy_control),
+        ("manage-user-access", manage_user_access),
+        ("manage-user-account", manage_user_account),
+        ("control-user-details", control_user_details),
+    ):
+        if "assertUserDocumentSessionState" not in content:
+            failures.append(f"Step 9 borrowed regression: {label} does not validate session state from its actor snapshot")
+        if "checkUserState: false" not in content:
+            failures.append(f"Step 9 borrowed regression: {label} reintroduced a duplicate auth-state Firestore lookup")
     check(lambda: require(
         r'crons\s*=\s*\["\*/5 \* \* \* \*"\]',
         wrangler,

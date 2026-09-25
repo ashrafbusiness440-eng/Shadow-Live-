@@ -7,6 +7,9 @@ import {
   fetchAuthStateResponse,
   isTransientAuthStateStatus,
 } from "../../cloudflare-worker/src/auth-state-reliability.js";
+import {
+  assertUserDocumentSessionState,
+} from "../../cloudflare-worker/src/firebase-auth.js";
 
 function response(status, retryAfter = null) {
   return new Response("{}", {
@@ -81,4 +84,46 @@ test("auth-state network failures stop at the retry cap", async () => {
   assert.equal(sleeps.length, 2);
   assert.equal(result.response, null);
   assert.equal(result.error.message, "network");
+});
+
+test("user document session state accepts active non-revoked users", () => {
+  assert.equal(
+    assertUserDocumentSessionState(
+      { iat: 100 },
+      { accountStatus: "active" },
+    ),
+    true,
+  );
+});
+
+test("user document session state rejects suspended accounts", () => {
+  assert.throws(
+    () =>
+      assertUserDocumentSessionState(
+        { iat: 100 },
+        { accountStatus: "suspended" },
+      ),
+    /unauthorized/,
+  );
+});
+
+test("user document session state rejects tokens issued before revocation", () => {
+  assert.throws(
+    () =>
+      assertUserDocumentSessionState(
+        { iat: 100 },
+        { accountStatus: "active", sessionsRevokedAt: "1970-01-01T00:01:41.000Z" },
+      ),
+    /unauthorized/,
+  );
+});
+
+test("user document session state accepts tokens issued after revocation", () => {
+  assert.equal(
+    assertUserDocumentSessionState(
+      { iat: 102 },
+      { accountStatus: "active", sessionsRevokedAt: "1970-01-01T00:01:41.000Z" },
+    ),
+    true,
+  );
 });

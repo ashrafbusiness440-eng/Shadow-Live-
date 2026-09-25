@@ -118,3 +118,16 @@ This subset was pulled forward during Step 6 because production Economy/Settleme
 - No change to token signature verification, accountStatus semantics, session revocation checks, roles, capabilities, games, balances, or settlement authority.
 - Flutter CI concurrency is isolated per Git ref, so a main run or unrelated PR no longer cancels the active Step 6 validation run.
 - This completes only the auth-state reliability + Flutter CI isolation subsets of Step 9. The Step 9 root item remains open for broader retry/circuit-breaker and production-test coordination work.
+
+## Step 9 borrowed early — Single authoritative user read
+
+Pulled forward during Step 6 production closure after version 21 still showed auth/session pressure.
+
+- Admin/economy actor requests that already load `users/{uid}` now verify the Firebase token signature first with `checkUserState:false`, then apply `accountStatus` and `sessionsRevokedAt` checks to that same actor snapshot.
+- This removes the duplicate `users/{uid}` lookup while preserving the same session-revocation and account-status enforcement. There is no fail-open behavior.
+- Room realtime `ticket` now uses `users/{uid}` as the authoritative user/session/profile source together with `rooms/{roomId}`; the duplicate `public_profiles/{uid}` read is removed from the normal ticket path.
+- Room ticket pressure changes from 3 Firestore reads (auth user + room + public profile) to 2 reads (user + room).
+- Economy/admin actor pressure changes from 2 user reads (auth-state + permissions) to 1 user read.
+- `presenceState` and other read-only realtime actions keep their existing authentication semantics.
+- User-visible room name/photo behavior is expected to remain unchanged because the application keeps authoritative public profile identity fields synchronized with the user document.
+- This is another completed subset of Step 9 only; the Step 9 root item remains open.

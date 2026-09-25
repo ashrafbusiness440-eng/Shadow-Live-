@@ -1,5 +1,8 @@
 import { json, readJson } from "./http.js";
-import { verifyFirebaseIdToken } from "./firebase-auth.js";
+import {
+  assertUserDocumentSessionState,
+  verifyFirebaseIdToken,
+} from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { googleAccessToken, parseServiceAccount } from "./google-auth.js";
 
@@ -148,7 +151,8 @@ function statusPatch(action, body, actorUid, now) {
   throw new ApiError("invalid_action", 400);
 }
 
-async function mutateAccount(db, env, actorUid, body) {
+async function mutateAccount(db, env, actorPayload, body) {
+  const actorUid = clean(actorPayload?.sub);
   const targetUid = clean(body.targetUid);
   const action = clean(body.accountAction);
   const reason = clean(body.reason);
@@ -167,6 +171,9 @@ async function mutateAccount(db, env, actorUid, body) {
 
   const actorSnap = await db.get(`users/${actorUid}`);
   const actor = actorSnap.data || {};
+  if (actorSnap.exists) {
+    assertUserDocumentSessionState(actorPayload, actor);
+  }
   const actorRole = clean(actor.role);
   const actorCapabilities = Array.isArray(actor.capabilities)
     ? actor.capabilities.map((value) => clean(value))
@@ -327,7 +334,9 @@ export async function manageUserAccount(request, env) {
   }
 
   try {
-    const decoded = await verifyFirebaseIdToken(request, env);
+    const decoded = await verifyFirebaseIdToken(request, env, {
+      checkUserState: false,
+    });
     const authAge = Math.floor(Date.now() / 1000) - Number(decoded.auth_time || 0);
     if (!Number.isFinite(authAge) || authAge > 1800) {
       throw new ApiError("recent_auth_required", 401);
@@ -336,7 +345,7 @@ export async function manageUserAccount(request, env) {
     const result = await mutateAccount(
       firestoreClient(env),
       env,
-      decoded.sub,
+      decoded,
       body,
     );
     return json(request, env, result, 200);

@@ -1,4 +1,5 @@
 import { getApps, initializeApp, cert, getAuth, FieldValue, getFirestore, legacyEnv } from "../legacy-firebase-admin-shim.js";
+import { assertUserDocumentSessionState } from "../firebase-auth.js";
 import {
   defaultRoomRocketConfig,
   normalizeRoomRocketConfig,
@@ -32,11 +33,12 @@ const out=(res,status,body)=>res.status(status).json(body);
 async function actor(req){
   const authorization=clean(req.headers.authorization);
   if(!authorization.startsWith("Bearer ")) throw Error("unauthorized");
-  const decoded=await getAuth().verifyIdToken(authorization.slice(7));
+  const decoded=await getAuth().verifyIdToken(authorization.slice(7), {checkUserState:false});
   const db=getFirestore();
   const snap=await db.collection("users").doc(decoded.uid).get();
   if(!snap.exists) throw Error("forbidden");
   const user=snap.data()||{};
+  assertUserDocumentSessionState(decoded, user);
   const caps=Array.isArray(user.capabilities)?user.capabilities:[];
   if(!(user.role==="owner"||(user.adminEnabled===true&&caps.includes("manageEconomy")))){
     throw Error("forbidden");
