@@ -30,6 +30,7 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
   Timer? _ticker;
   Timer? _greedySpinTimer;
   Timer? _greedyResultTimer;
+  Timer? _greedyPhaseTimer;
 
   List<GameCatalogEntry> _catalog = const [];
   GameCatalogEntry? _selected;
@@ -50,6 +51,9 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
   String? _seenGreedyResultId;
   bool _greedyResolving = false;
   bool _greedyResultVisible = false;
+  int _stateReceivedAtLocalMs = 0;
+  final Map<String, int> _greedyOptimisticUserTargets = <String, int>{};
+  final Map<String, int> _greedyOptimisticServerTargets = <String, int>{};
 
   static const _greedyChoiceOrder = <String>[
     'shell45',
@@ -72,7 +76,7 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
     _service = widget.runtimeService ?? GameRuntimeService();
     _loadCatalog();
     _ticker = Timer.periodic(
-      const Duration(seconds: 1),
+      const Duration(milliseconds: 250),
       (_) {
         if (mounted) setState(() => _clockTick++);
       },
@@ -86,6 +90,7 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
     _ticker?.cancel();
     _greedySpinTimer?.cancel();
     _greedyResultTimer?.cancel();
+    _greedyPhaseTimer?.cancel();
     if (widget.runtimeService == null) {
       _service.close();
     }
@@ -199,54 +204,132 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
       if (!mounted || _selected?.key != game.key) return;
       setState(() {
         _state = state;
+        _stateReceivedAtLocalMs = DateTime.now().millisecondsSinceEpoch;
+        _reconcileGreedyOptimistic(state);
         _error = null;
         if (state.bets.isNotEmpty && _betIndex >= state.bets.length) {
           _betIndex = state.bets.length - 1;
         }
       });
       _syncGreedyRoundVisuals(state);
+      _scheduleGreedyPhaseRefresh(state);
     } catch (error) {
       if (!mounted || silent) return;
       setState(() => _error = _message(error));
     }
   }
 
-  String get _greedyRoundStatus =>
-      (_state?.round?['status'] ?? 'betting').toString();
+  int get _estimatedServerNowMs {
+    final state = _state;
+    if (state == null || state.serverNowMs <= 0 || _stateReceivedAtLocalMs <= 0) {
+      return DateTime.now().millisecondsSinceEpoch;
+    }
+    final elapsed =
+        DateTime.now().millisecondsSinceEpoch - _stateReceivedAtLocalMs;
+    return state.serverNowMs + elapsed.clamp(0, 60000);
+  }
+
+  int _roundTime(String key) =>
+      (_state?.round?[key] as num?)?.toInt() ?? 0;
+
+  String get _greedyRoundStatus {
+    final round = _state?.round;
+    if (round == null) return 'betting';
+    final now = _estimatedServerNowMs;
+    final bettingCloses = (round['bettingClosesAtMs'] as num?)?.toInt() ?? 0;
+    final reveal = (round['revealAtMs'] as num?)?.toInt() ??
+        (round['closesAtMs'] as num?)?.toInt() ??
+        0;
+    final holdEnds = (round['resultHoldEndsAtMs'] as num?)?.toInt() ?? reveal;
+    if (bettingCloses > 0 && now < bettingCloses) return 'betting';
+    if (reveal > 0 && now < reveal) return 'spinning';
+    if (holdEnds > 0 && now < holdEnds) return 'result_hold';
+    return (round['status'] ?? 'transition').toString();
+  }
 
   bool get _greedyBettingOpen =>
       _greedyRoundStatus == 'betting' &&
       _state?.round?['locked'] != true;
 
+  void _scheduleGreedyPhaseRefresh(GameRuntimeState next) {
+    _greedyPhaseTimer?.cancel();
+    if (_selected?.gameId != 'greedy_cat' || next.round == null) return;
+    final status = (next.round?['status'] ?? '').toString();
+    final boundary = status == 'betting'
+        ? (next.round?['bettingClosesAtMs'] as num?)?.toInt()
+        : status == 'spinning'
+            ? (next.round?['revealAtMs'] as num?)?.toInt()
+            : status == 'result_hold'
+                ? (next.round?['resultHoldEndsAtMs'] as num?)?.toInt()
+                : null;
+    if (boundary == null || boundary <= 0) return;
+    final delayMs = (boundary - next.serverNowMs + 40).clamp(40, 60000);
+    _greedyPhaseTimer = Timer(Duration(milliseconds: delayMs), () {
+      if (!mounted || _selected?.gameId != 'greedy_cat') return;
+      if (status == 'betting') {
+        _startGreedySpinPreview();
+      }
+      if (status == 'result_hold') {
+        setState(() {
+          _greedyResultVisible = false;
+          _greedyResolvedOutcomeId = null;
+          _greedySpinHighlightId = null;
+        });
+      } else {
+        setState(() => _clockTick++);
+      }
+      unawaited(_loadState(silent: true));
+    });
+  }
+
   void _syncGreedyRoundVisuals(GameRuntimeState next) {
     if (_selected?.gameId != 'greedy_cat') return;
+    final status = _greedyRoundStatus;
     final last = next.lastResult;
     final resultRoundId = (last?['roundId'] ?? '').toString();
     final outcomeId = (last?['outcomeId'] ?? '').toString();
 
-    if (_seenGreedyResultId == null && resultRoundId.isNotEmpty) {
-      _seenGreedyResultId = resultRoundId;
-    } else if (resultRoundId.isNotEmpty &&
-        resultRoundId != _seenGreedyResultId) {
-      _seenGreedyResultId = resultRoundId;
-      unawaited(_resolveGreedyOutcome(outcomeId));
+    if (status == 'spinning') {
+      _greedyResultTimer?.cancel();
+      if (_greedyResultVisible && mounted) {
+        setState(() {
+          _greedyResultVisible = false;
+          _greedyResolvedOutcomeId = null;
+        });
+      }
+      _startGreedySpinPreview();
       return;
     }
 
-    if ((_state?.round?['status'] ?? '').toString() == 'spinning') {
-      _startGreedySpinPreview();
-    } else if (!_greedyResolving) {
+    if (status == 'result_hold' && resultRoundId.isNotEmpty && outcomeId.isNotEmpty) {
+      _seenGreedyResultId = resultRoundId;
+      _revealGreedyOutcome(outcomeId);
+      return;
+    }
+
+    if (_seenGreedyResultId == null && resultRoundId.isNotEmpty) {
+      _seenGreedyResultId = resultRoundId;
+    }
+    if (status == 'betting') {
       _stopGreedySpinPreview(clear: true);
+      _greedyResultTimer?.cancel();
+      if (mounted && (_greedyResultVisible || _greedyResolvedOutcomeId != null)) {
+        setState(() {
+          _greedyResultVisible = false;
+          _greedyResolvedOutcomeId = null;
+          _greedySpinHighlightId = null;
+        });
+      }
     }
   }
 
   void _startGreedySpinPreview() {
-    if (_greedyResolving || _greedySpinTimer?.isActive == true) return;
+    if (_greedySpinTimer?.isActive == true) return;
     _greedyResolvedOutcomeId = null;
     _greedySpinTimer = Timer.periodic(
-      const Duration(milliseconds: 115),
+      const Duration(milliseconds: 90),
       (_) {
-        if (!mounted || _greedyResolving) return;
+        if (!mounted || _greedyRoundStatus != 'spinning') return;
         setState(() {
           _greedySpinHighlightId =
               _greedyChoiceOrder[_greedySpinIndex % _greedyChoiceOrder.length];
@@ -259,46 +342,28 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
   void _stopGreedySpinPreview({bool clear = false}) {
     _greedySpinTimer?.cancel();
     _greedySpinTimer = null;
-    if (clear && mounted && !_greedyResolving) {
+    if (clear && mounted) {
       setState(() => _greedySpinHighlightId = null);
     }
   }
 
-  Future<void> _resolveGreedyOutcome(String outcomeId) async {
+  void _revealGreedyOutcome(String outcomeId) {
     if (_selected?.gameId != 'greedy_cat' || outcomeId.isEmpty) return;
-    _greedyResolving = true;
+    _greedyResolving = false;
     _stopGreedySpinPreview();
     _greedyResultTimer?.cancel();
+    final targetIndex = _greedyChoiceOrder.indexOf(outcomeId);
     if (mounted) {
       setState(() {
-        _greedyResultVisible = false;
-        _greedyResolvedOutcomeId = null;
+        _greedySpinHighlightId = targetIndex >= 0 ? outcomeId : null;
+        _greedyResolvedOutcomeId = outcomeId;
+        _greedyResultVisible = true;
       });
     }
-
-    final targetIndex = _greedyChoiceOrder.indexOf(outcomeId);
-    final loops = 18 + (targetIndex < 0 ? 0 : targetIndex);
-    for (var step = 0; step < loops; step++) {
-      if (!mounted) return;
-      setState(() {
-        _greedySpinHighlightId =
-            _greedyChoiceOrder[step % _greedyChoiceOrder.length];
-      });
-      final delay = 65 + (step > loops - 7 ? (step - (loops - 7)) * 35 : 0);
-      await Future<void>.delayed(Duration(milliseconds: delay));
-    }
-
-    if (!mounted) return;
-    setState(() {
-      _greedySpinHighlightId =
-          targetIndex >= 0 ? outcomeId : null;
-      _greedyResolvedOutcomeId = outcomeId;
-    });
-    await Future<void>.delayed(const Duration(milliseconds: 420));
-    if (!mounted) return;
-    setState(() => _greedyResultVisible = true);
-    _greedyResolving = false;
-    _greedyResultTimer = Timer(const Duration(seconds: 5), () {
+    final holdEnds = _roundTime('resultHoldEndsAtMs');
+    final remainingMs =
+        (holdEnds - _estimatedServerNowMs).clamp(120, 10000).toInt();
+    _greedyResultTimer = Timer(Duration(milliseconds: remainingMs), () {
       if (!mounted) return;
       setState(() {
         _greedyResultVisible = false;
@@ -306,6 +371,60 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
         _greedySpinHighlightId = null;
       });
     });
+  }
+
+  int _greedyUserTotal(String choiceId) {
+    final authoritative = _state?.currentRoundSelections[choiceId] ?? 0;
+    final optimistic = _greedyOptimisticUserTargets[choiceId] ?? 0;
+    return authoritative > optimistic ? authoritative : optimistic;
+  }
+
+  int _greedyServerTotal(String choiceId) {
+    final authoritative = _state?.serverRoundSelections[choiceId] ?? 0;
+    final optimistic = _greedyOptimisticServerTargets[choiceId] ?? 0;
+    return authoritative > optimistic ? authoritative : optimistic;
+  }
+
+  void _addGreedyOptimisticBet(String choiceId, int amount) {
+    final userNow = _greedyUserTotal(choiceId);
+    final serverNow = _greedyServerTotal(choiceId);
+    _greedyOptimisticUserTargets[choiceId] = userNow + amount;
+    _greedyOptimisticServerTargets[choiceId] = serverNow + amount;
+  }
+
+  void _rollbackGreedyOptimisticBet(String choiceId, int amount) {
+    final userAuthoritative = _state?.currentRoundSelections[choiceId] ?? 0;
+    final serverAuthoritative = _state?.serverRoundSelections[choiceId] ?? 0;
+    final userTarget =
+        (_greedyOptimisticUserTargets[choiceId] ?? userAuthoritative) - amount;
+    final serverTarget =
+        (_greedyOptimisticServerTargets[choiceId] ?? serverAuthoritative) -
+            amount;
+    if (userTarget <= userAuthoritative) {
+      _greedyOptimisticUserTargets.remove(choiceId);
+    } else {
+      _greedyOptimisticUserTargets[choiceId] = userTarget;
+    }
+    if (serverTarget <= serverAuthoritative) {
+      _greedyOptimisticServerTargets.remove(choiceId);
+    } else {
+      _greedyOptimisticServerTargets[choiceId] = serverTarget;
+    }
+  }
+
+  void _reconcileGreedyOptimistic(GameRuntimeState next) {
+    for (final choiceId in _greedyOptimisticUserTargets.keys.toList()) {
+      final authoritative = next.currentRoundSelections[choiceId] ?? 0;
+      if (authoritative >= (_greedyOptimisticUserTargets[choiceId] ?? 0)) {
+        _greedyOptimisticUserTargets.remove(choiceId);
+      }
+    }
+    for (final choiceId in _greedyOptimisticServerTargets.keys.toList()) {
+      final authoritative = next.serverRoundSelections[choiceId] ?? 0;
+      if (authoritative >= (_greedyOptimisticServerTargets[choiceId] ?? 0)) {
+        _greedyOptimisticServerTargets.remove(choiceId);
+      }
+    }
   }
 
   int get _currentBet {
@@ -332,11 +451,26 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
   }) async {
     final game = _selected;
     final amount = amountOverride ?? _currentBet;
-    if (game == null || amount <= 0 || _placing) return false;
-    setState(() {
-      _placing = true;
-      _error = null;
-    });
+    final isGreedy = game?.gameId == 'greedy_cat';
+    if (game == null ||
+        amount <= 0 ||
+        (!isGreedy && _placing) ||
+        (isGreedy && !_greedyBettingOpen)) {
+      return false;
+    }
+
+    if (isGreedy) {
+      setState(() {
+        _addGreedyOptimisticBet(choiceId, amount);
+        _error = null;
+      });
+    } else {
+      setState(() {
+        _placing = true;
+        _error = null;
+      });
+    }
+
     try {
       final result = await _service.placeBet(
         game: game,
@@ -348,7 +482,7 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
       setState(() => _slotResult = result);
       await _loadState(silent: true);
       if (!mounted) return false;
-      if (!silent) {
+      if (!silent && !isGreedy) {
         final text = game.gameId == 'slot'
             ? 'تمت اللفة • الدفع: ${_coins(result.payoutCoins ?? 0)}'
             : 'تمت إضافة ${_coins(amount)} على الخيار';
@@ -359,10 +493,15 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
       return true;
     } catch (error) {
       if (!mounted) return false;
-      setState(() => _error = _message(error));
+      setState(() {
+        if (isGreedy) {
+          _rollbackGreedyOptimisticBet(choiceId, amount);
+        }
+        _error = _message(error);
+      });
       return false;
     } finally {
-      if (mounted) setState(() => _placing = false);
+      if (mounted && !isGreedy) setState(() => _placing = false);
     }
   }
 
@@ -440,14 +579,12 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
   }
 
   int get _remainingSeconds {
-    final round = _state?.round;
-    if (round == null) return 0;
-    final closes = (round['closesAtMs'] as num?)?.toInt() ?? 0;
-    final serverAtFetch = _state?.serverNowMs ?? 0;
-    if (closes <= 0 || serverAtFetch <= 0) return 0;
-    final delta = serverAtFetch - DateTime.now().millisecondsSinceEpoch;
-    final serverNow = DateTime.now().millisecondsSinceEpoch + delta;
-    return ((closes - serverNow) / 1000).ceil().clamp(0, 999).toInt();
+    final bettingCloses = _roundTime('bettingClosesAtMs');
+    if (bettingCloses <= 0) return 0;
+    return ((bettingCloses - _estimatedServerNowMs) / 1000)
+        .ceil()
+        .clamp(0, 999)
+        .toInt();
   }
 
   Color get _accent {
@@ -1263,8 +1400,9 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
       ),
     ];
 
-    final serverTotals =
-        _state?.serverRoundSelections ?? const <String, int>{};
+    final serverTotals = <String, int>{
+      for (final item in choices) item.id: _greedyServerTotal(item.id),
+    };
     String? hottestId;
     var hottestAmount = 0;
     var totalServerAmount = 0;
@@ -1393,7 +1531,9 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
                             Text(
                               _greedyRoundStatus == 'spinning'
                                   ? 'جاري الدوران'
-                                  : '$_remainingSeconds ث',
+                                  : _greedyRoundStatus == 'result_hold'
+                                      ? 'إعلان النتيجة'
+                                      : '$_remainingSeconds ث',
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w900,
@@ -1430,12 +1570,10 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
     required int serverAmount,
     required bool spinHighlighted,
   }) {
-    final total = _state?.currentRoundSelections[id] ?? 0;
+    final total = _greedyUserTotal(id);
     final selected = total > 0;
     return InkWell(
-      onTap: _placing || _greedyResolving || !_greedyBettingOpen
-          ? null
-          : () => _placeChoice(id),
+      onTap: !_greedyBettingOpen ? null : () => _placeChoice(id),
       customBorder: const CircleBorder(),
       child: SizedBox(
         width: size,
@@ -1707,11 +1845,24 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
   Widget _greedyRecentResults() {
     final recent = _state?.recentResults ?? const <Map<String, dynamic>>[];
     final fallback = _state?.lastResult;
-    final items = recent.isNotEmpty
-        ? recent.take(20).toList(growable: false)
-        : fallback == null
+    final currentRoundId = (_state?.round?['roundId'] ?? '').toString();
+    final canRevealCurrent = _greedyRoundStatus == 'result_hold';
+    final safeRecent = recent
+        .where((result) =>
+            (result['roundId'] ?? '').toString() != currentRoundId ||
+            canRevealCurrent)
+        .take(20)
+        .toList(growable: false);
+    final safeFallback = fallback != null &&
+            ((fallback['roundId'] ?? '').toString() != currentRoundId ||
+                canRevealCurrent)
+        ? fallback
+        : null;
+    final items = safeRecent.isNotEmpty
+        ? safeRecent
+        : safeFallback == null
             ? const <Map<String, dynamic>>[]
-            : <Map<String, dynamic>>[fallback];
+            : <Map<String, dynamic>>[safeFallback];
 
     return Container(
       height: 58,
@@ -1833,7 +1984,7 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
               end: index == shown.length - 1 ? 0 : 6,
             ),
             child: InkWell(
-              onTap: _placing || _greedyResolving || !_greedyBettingOpen
+              onTap: !_greedyBettingOpen
                   ? null
                   : () => setState(() => _betIndex = sourceIndex),
               borderRadius: BorderRadius.circular(14),
