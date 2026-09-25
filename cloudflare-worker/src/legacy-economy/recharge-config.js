@@ -1,4 +1,5 @@
 import { getApps, initializeApp, cert, getAuth, FieldValue, getFirestore, legacyEnv } from "../legacy-firebase-admin-shim.js";
+import { assertUserDocumentSessionState } from "../firebase-auth.js";
 
 function parseServiceAccount(raw) {
   const text = String(raw || "").trim();
@@ -36,11 +37,12 @@ const clean = (value) => String(value ?? "").trim();
 async function getActor(req) {
   const authorization = clean(req.headers.authorization);
   if (!authorization.startsWith("Bearer ")) throw Error("unauthorized");
-  const decoded = await getAuth().verifyIdToken(authorization.slice(7));
+  const decoded = await getAuth().verifyIdToken(authorization.slice(7), {checkUserState:false});
   const db = getFirestore();
   const snap = await db.collection("users").doc(decoded.uid).get();
   if (!snap.exists) throw Error("forbidden");
   const actor = snap.data() || {};
+  assertUserDocumentSessionState(decoded, actor);
   const caps = Array.isArray(actor.capabilities) ? actor.capabilities : [];
   const allowed =
     actor.role === "owner" ||

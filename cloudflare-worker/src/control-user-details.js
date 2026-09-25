@@ -1,5 +1,8 @@
 import { json, readJson } from "./http.js";
-import { verifyFirebaseIdToken } from "./firebase-auth.js";
+import {
+  assertUserDocumentSessionState,
+  verifyFirebaseIdToken,
+} from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { googleAccessToken, parseServiceAccount } from "./google-auth.js";
 
@@ -240,7 +243,9 @@ export async function controlUserDetails(request, env) {
   }
 
   try {
-    const decoded = await verifyFirebaseIdToken(request, env);
+    const decoded = await verifyFirebaseIdToken(request, env, {
+      checkUserState: false,
+    });
     const body = await readJson(request);
     const targetUid = clean(body.targetUid);
     if (!targetUid) throw new ApiError("invalid_request", 400);
@@ -248,6 +253,9 @@ export async function controlUserDetails(request, env) {
     const db = firestoreClient(env);
     const actorSnap = await db.get(`users/${decoded.sub}`);
     const actor = actorSnap.data || {};
+    if (actorSnap.exists) {
+      assertUserDocumentSessionState(decoded, actor);
+    }
     const caps = Array.isArray(actor.capabilities) ? actor.capabilities : [];
     const canRead =
       actorSnap.exists &&

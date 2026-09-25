@@ -1,4 +1,5 @@
 import { getApps, initializeApp, cert, getAuth, FieldValue, getFirestore, legacyEnv } from "../legacy-firebase-admin-shim.js";
+import { assertUserDocumentSessionState } from "../firebase-auth.js";
 import {
   BET_LADDERS,
   GREEDY_CAT_CHOICES,
@@ -43,11 +44,12 @@ function cors(req,res){
 async function actor(req){
   const authorization=clean(req.headers.authorization);
   if(!authorization.startsWith("Bearer "))throw Error("unauthorized");
-  const decoded=await getAuth().verifyIdToken(authorization.slice(7));
+  const decoded=await getAuth().verifyIdToken(authorization.slice(7), {checkUserState:false});
   const db=getFirestore();
   const snap=await db.collection("users").doc(decoded.uid).get();
   if(!snap.exists)throw Error("forbidden");
   const data=snap.data()||{};
+  assertUserDocumentSessionState(decoded, data);
   const role=clean(data.role);
   const capabilities=Array.isArray(data.capabilities)?data.capabilities.map(clean):[];
   const enabled=data.adminEnabled!==false;

@@ -1,5 +1,8 @@
 import { firestoreClient } from "./firestore.js";
-import { verifyFirebaseIdToken } from "./firebase-auth.js";
+import {
+  assertUserDocumentSessionState,
+  verifyFirebaseIdToken,
+} from "./firebase-auth.js";
 import { json, readJson } from "./http.js";
 import {
   ROOM_REALTIME_PROTOCOL_VERSION,
@@ -69,7 +72,9 @@ export async function roomRealtime(request, env) {
         return json(request, env, { ok: true, counts });
       }
 
-      const payload = await verifyFirebaseIdToken(request, env);
+      const payload = await verifyFirebaseIdToken(request, env, {
+        checkUserState: action !== "ticket",
+      });
       if (isAnonymous(payload)) {
         return json(request, env, { ok: false, code: "account_required" }, 403);
       }
@@ -95,15 +100,18 @@ export async function roomRealtime(request, env) {
 
       const db = firestoreClient(env);
       const uid = String(payload.sub || "");
-      const [room, profile] = await Promise.all([
+      const [room, user] = await Promise.all([
         db.get(`rooms/${roomId}`),
-        db.get(`public_profiles/${uid}`),
+        db.get(`users/${uid}`),
       ]);
       if (!room.exists || room.data?.isActive === false) {
         return json(request, env, { ok: false, code: "room_unavailable" }, 404);
       }
 
-      const profileData = profile.data || {};
+      const profileData = user.data || {};
+      if (user.exists) {
+        assertUserDocumentSessionState(payload, profileData);
+      }
       const ticket = crypto.randomUUID();
       const expiresAtMs = Date.now() + ROOM_REALTIME_TICKET_TTL_MS;
       const stored = await stub.fetch("https://room-realtime.internal/ticket", {

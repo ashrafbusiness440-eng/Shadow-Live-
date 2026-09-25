@@ -1,5 +1,8 @@
 import { json, readJson } from "./http.js";
-import { verifyFirebaseIdToken } from "./firebase-auth.js";
+import {
+  assertUserDocumentSessionState,
+  verifyFirebaseIdToken,
+} from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 
 class ApiError extends Error {
@@ -47,7 +50,8 @@ function normalizeCapabilities(value) {
   return next;
 }
 
-async function execute(db, actorUid, body) {
+async function execute(db, actorPayload, body) {
+  const actorUid = clean(actorPayload?.sub);
   const targetUid = clean(body.targetUid);
   const role = clean(body.role);
   const adminEnabled = body.adminEnabled === true;
@@ -65,6 +69,9 @@ async function execute(db, actorUid, body) {
       ]);
 
       const actor = actorSnap.data || {};
+      if (actorSnap.exists) {
+        assertUserDocumentSessionState(actorPayload, actor);
+      }
       if (!actorSnap.exists || actor.role !== "owner" || actor.adminEnabled !== true) {
         await db.rollback(transaction);
         throw new ApiError("forbidden", 403);
@@ -153,7 +160,9 @@ export async function manageUserAccess(request, env) {
   }
 
   try {
-    const decoded = await verifyFirebaseIdToken(request, env);
+    const decoded = await verifyFirebaseIdToken(request, env, {
+      checkUserState: false,
+    });
     const authAge = Math.floor(Date.now() / 1000) - Number(decoded.auth_time || 0);
     if (!Number.isFinite(authAge) || authAge > 1800) {
       throw new ApiError("recent_auth_required", 401);
@@ -178,7 +187,7 @@ export async function manageUserAccess(request, env) {
     }
 
     normalizeCapabilities(body.capabilities);
-    const result = await execute(firestoreClient(env), decoded.sub, body);
+    const result = await execute(firestoreClient(env), decoded, body);
     return json(request, env, result, 200);
   } catch (error) {
     if (error instanceof ApiError) {

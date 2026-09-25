@@ -49,6 +49,33 @@ async function firebaseCerts() {
   return certs;
 }
 
+function sessionTimestampMs(value) {
+  if (value && typeof value.toMillis === "function") {
+    const ms = Number(value.toMillis());
+    return Number.isFinite(ms) ? ms : 0;
+  }
+  if (value instanceof Date) {
+    const ms = value.getTime();
+    return Number.isFinite(ms) ? ms : 0;
+  }
+  const ms = Date.parse(String(value || ""));
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+export function assertUserDocumentSessionState(payload, userData = {}) {
+  const status = String(userData?.accountStatus || "active");
+  if (status !== "active") throw new Error("unauthorized");
+
+  const revokedAtMs = sessionTimestampMs(userData?.sessionsRevokedAt);
+  if (
+    revokedAtMs > 0 &&
+    Number(payload?.iat || 0) * 1000 <= revokedAtMs
+  ) {
+    throw new Error("unauthorized");
+  }
+  return true;
+}
+
 function assertCachedSessionState(state, payload) {
   if (!state?.active) throw new Error("unauthorized");
   if (
@@ -85,10 +112,10 @@ function buildSessionState(body, nowMs) {
   const fields = body?.fields || {};
   const status = String(fields.accountStatus?.stringValue || "active");
   const revokedRaw = fields.sessionsRevokedAt?.timestampValue || "";
-  const revokedAtMs = Date.parse(revokedRaw);
+  const revokedAtMs = sessionTimestampMs(revokedRaw);
   return {
     active: status === "active",
-    revokedAtMs: Number.isFinite(revokedAtMs) ? revokedAtMs : 0,
+    revokedAtMs,
     expiresAtMs: nowMs + AUTH_STATE_FRESH_TTL_MS,
     staleUntilMs: nowMs + AUTH_STATE_STALE_TTL_MS,
   };
