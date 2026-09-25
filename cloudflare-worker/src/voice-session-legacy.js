@@ -2712,37 +2712,29 @@ function utcSupportPeriods(date=new Date()){
   };
 }
 
-async function roomInsights(db,uid,roomId){
+async function roomInsights(db,uid,body={}){
+  const roomId=clean(body.roomId);
+  const includeRanking=body.includeRanking===true;
+  const includeSupporters=body.includeSupporters===true;
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
+
   const roomRef=db.collection("rooms").doc(roomId);
   const followRef=db.collection("room_follows").doc(roomId).collection("users").doc(uid);
-
   const favoriteRef=db.collection("room_favorites").doc(uid).collection("items").doc(roomId);
   const periods=utcSupportPeriods();
   const dailySupportRef=roomRef.collection("support_daily").doc(periods.day);
-  const [roomSnap,followSnap,favoriteSnap,activeRooms,dailySupportSnap,supportersSnap]=await Promise.all([
+
+  const [roomSnap,followSnap,favoriteSnap,dailySupportSnap,topSupportersSnap]=await Promise.all([
     roomRef.get(),
     followRef.get(),
     favoriteRef.get(),
-    db.collection("rooms").where("isActive","==",true).limit(200).get(),
     dailySupportRef.get(),
-    dailySupportRef.collection("users").limit(200).get(),
+    dailySupportRef.collection("users").limit(includeSupporters?50:3).get(),
   ]);
   if(!roomSnap.exists)throw new ApiError("room_not_found",404);
 
   const room=roomSnap.data()||{};
-  const ranked=activeRooms.docs
-    .map(doc=>({id:doc.id,...(doc.data()||{})}))
-    .filter(item=>item.isHidden!==true&&clean(item.visibility)!=="hidden")
-    .map(item=>({...item,activityScore:roomActivityScore(item)}))
-    .sort((a,b)=>{
-      const activityDelta=Number(b.activityScore||0)-Number(a.activityScore||0);
-      if(activityDelta!==0)return activityDelta;
-      return Number(b.onlineCount||0)-Number(a.onlineCount||0);
-    });
-  const rankIndex=ranked.findIndex(item=>item.id===roomId);
-
-  const supporters=supportersSnap.docs
+  const supporters=topSupportersSnap.docs
     .map(doc=>{
       const data=doc.data()||{};
       return {
@@ -2754,8 +2746,40 @@ async function roomInsights(db,uid,roomId){
       };
     })
     .sort((a,b)=>b.dailySupport-a.dailySupport)
-    .slice(0,50)
+    .slice(0,includeSupporters?50:3)
     .map((item,index)=>({...item,rank:index+1,totalSupport:item.dailySupport}));
+
+  let ranking=[];
+  let dailyRank=Number.isFinite(Number(room.dailyRank))
+    ?Math.max(1,Number(room.dailyRank))
+    :null;
+  if(includeRanking){
+    const activeRooms=await db.collection("rooms")
+      .where("isActive","==",true)
+      .limit(100)
+      .get();
+    const ranked=activeRooms.docs
+      .map(doc=>({id:doc.id,...(doc.data()||{})}))
+      .filter(item=>item.isHidden!==true&&clean(item.visibility)!=="hidden")
+      .map(item=>({...item,activityScore:roomActivityScore(item)}))
+      .sort((a,b)=>{
+        const activityDelta=Number(b.activityScore||0)-Number(a.activityScore||0);
+        if(activityDelta!==0)return activityDelta;
+        return Number(b.onlineCount||0)-Number(a.onlineCount||0);
+      });
+    const rankIndex=ranked.findIndex(item=>item.id===roomId);
+    dailyRank=rankIndex>=0?rankIndex+1:dailyRank;
+    ranking=ranked.slice(0,100).map((item,index)=>({
+      roomId:item.id,
+      rank:index+1,
+      name:String(item.name||item.title||"غرفة صوتية"),
+      publicId:String(item.publicId||""),
+      activityScore:Number(item.activityScore||0),
+      dailySupport:item.dailySupportDate===periods.day?Number(item.dailySupport||0):0,
+      weeklySupport:item.weeklySupportKey===periods.week?Number(item.weeklySupport||0):0,
+      monthlySupport:item.monthlySupportKey===periods.month?Number(item.monthlySupport||0):0,
+    }));
+  }
 
   const dailySupport=room.dailySupportDate===periods.day
     ?Math.max(0,Number(room.dailySupport||0))
@@ -2781,21 +2805,11 @@ async function roomInsights(db,uid,roomId){
     monthlySupport,
     supportPeriods:periods,
     activityScore:roomActivityScore(room),
-    dailyRank:rankIndex>=0?rankIndex+1:null,
+    dailyRank,
     supporters,
-    ranking:ranked.slice(0,100).map((item,index)=>({
-      roomId:item.id,
-      rank:index+1,
-      name:String(item.name||item.title||"غرفة صوتية"),
-      publicId:String(item.publicId||""),
-      activityScore:Number(item.activityScore||0),
-      dailySupport:item.dailySupportDate===periods.day?Number(item.dailySupport||0):0,
-      weeklySupport:item.weeklySupportKey===periods.week?Number(item.weeklySupport||0):0,
-      monthlySupport:item.monthlySupportKey===periods.month?Number(item.monthlySupport||0):0,
-    })),
+    ranking,
   };
 }
-
 async function setRoomFollow(db,uid,roomId,following){
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
   const roomRef=db.collection("rooms").doc(roomId);
@@ -2876,8 +2890,7 @@ export default async function handler(req,res){
       return out(res,200,await changeRoomPublicId(getFirestore(),decoded.uid,req.body||{}));
     }
     if(action==="roomInsights"){
-      const roomId=clean(req.body?.roomId);
-      return out(res,200,await roomInsights(getFirestore(),decoded.uid,roomId));
+      return out(res,200,await roomInsights(getFirestore(),decoded.uid,req.body||{}));
     }
     if(action==="setRoomFollow"){
       const roomId=clean(req.body?.roomId);
