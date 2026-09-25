@@ -64,6 +64,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
   Map<String, dynamic> get roomArguments =>
       Map<String, dynamic>.unmodifiable(_roomArguments);
 
+  Stream<RoomRealtimeEvent> get realtimeEvents => _presenceService.events;
+
   String get roomId => (_roomArguments['roomId'] ?? '').toString();
   String get roomTitle =>
       (_roomArguments['name'] ??

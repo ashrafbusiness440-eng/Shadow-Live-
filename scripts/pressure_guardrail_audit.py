@@ -77,6 +77,7 @@ def main() -> int:
     app_main = read("lib/main.dart")
     discovery = read("lib/features/home/services/discovery_service.dart")
     realtime_query = read("lib/features/room/services/room_realtime_query_service.dart")
+    realtime_game = read("cloudflare-worker/src/room-realtime-game.js")
 
     if "_presenceTimer" in voice or ".heartbeat(" in voice:
         failures.append("Step 4 regression: Firestore presence heartbeat returned to the room session")
@@ -115,10 +116,34 @@ def main() -> int:
             failures.append(
                 f"Step 4 regression: active app presence path references legacy {legacy_action}"
             )
-    check(lambda: require(
-        r"_poller\s*=\s*Timer\.periodic\([\s\S]{0,260}?const Duration\(seconds:\s*10\)",
+    if "_poller" in game_overlay or "_startPolling" in game_overlay:
+        failures.append("Step 6 regression: periodic game state polling returned")
+    if re.search(
+        r"Timer\.periodic\([\s\S]{0,260}?Duration\(seconds:\s*10\)",
         game_overlay,
-        "game safety polling changed from the 10s baseline",
+    ):
+        failures.append("Step 6 regression: 10-second game network polling returned")
+    check(lambda: require(
+        r"widget\.realtimeEvents\s*\?\?[\s\S]{0,160}?VoiceRoomSessionController\.instance\.realtimeEvents",
+        game_overlay,
+        "Step 6 regression: game overlay lost the existing room WebSocket event source",
+        re.S,
+    ))
+    check(lambda: require(
+        r"_gameRealtimeSubscription\s*=\s*realtimeEvents\.listen",
+        game_overlay,
+        "Step 6 regression: game overlay is not consuming realtime room events",
+    ))
+    check(lambda: require(
+        r"_service\.loadState\(\s*game,\s*roomId:\s*widget\.roomId",
+        game_overlay,
+        "Step 6 regression: authoritative game state no longer registers the room realtime schedule",
+        re.S,
+    ))
+    check(lambda: require(
+        r"event\.type\s*==\s*'game\.result'",
+        game_overlay,
+        "Step 6 regression: pushed game.result no longer triggers authoritative refresh",
     ))
     check(lambda: require(
         r"_ticker\s*=\s*Timer\.periodic\(\s*const Duration\(milliseconds:\s*250\)",
@@ -181,6 +206,18 @@ def main() -> int:
     for route in ("/presence", "/presence/has", "/presence/count"):
         if route not in realtime_object:
             failures.append(f"Realtime Durable Object route missing: {route}")
+    if "/game/register" not in realtime_object:
+        failures.append("Step 6 regression: Durable Object game schedule registration route is missing")
+    for event_type in (
+        "game.round_started",
+        "game.betting_closed",
+        "game.result",
+        "game.next_round",
+    ):
+        if event_type not in realtime_game:
+            failures.append(f"Step 6 regression: realtime game event missing: {event_type}")
+    if "outcomeId" not in realtime_game or "game.result" not in realtime_game:
+        failures.append("Step 6 regression: result outcome is not held for the reveal event")
     for event_type in (
         "room.online_count",
         "room.presence_joined",
@@ -230,6 +267,21 @@ def main() -> int:
             failures.append("Step 5 regression: entrance effect is persisted back into rooms/{roomId}")
         if 'broadcastRoomRealtimeEvent' not in entrance or '"room.entrance"' not in entrance:
             failures.append("Step 5 regression: entrance effect is not broadcast over room WebSocket")
+
+    if "registerGameRealtimeSchedules" not in game_runtime:
+        failures.append("Step 6 regression: game state no longer registers server-built realtime schedules")
+    if "realtimeGameUserPresent" not in game_runtime:
+        failures.append("Step 6 regression: game bets no longer validate Durable Object presence")
+    if "useLegacyPresence=realtimePresent===null" not in game_runtime:
+        failures.append("Step 6 regression: controlled legacy presence fallback changed")
+    if 'collection("room_presence")' not in game_runtime:
+        notes.append("legacy game room_presence fallback removed")
+    if "resolveOutcome({" not in game_runtime:
+        failures.append("Step 6 regression: game outcome is no longer server-authoritative")
+    if "calculatePayout({" not in game_runtime:
+        failures.append("Step 6 regression: game payout is no longer server-authoritative")
+    if "financial_ledger" not in game_runtime:
+        failures.append("Step 6 regression: game financial ledger path is missing")
     def no_join_delay() -> None:
         start = voice.find("Future<void> join(")
         end = voice.find("Future<void> toggleMic()", start)
@@ -296,7 +348,7 @@ def main() -> int:
         return 1
 
     print("Pressure regression guardrail passed.")
-    print("Protected baselines: room join, ZEGO, mic path, WebSocket presence/count/events, game polling/timing, retries, cron, and critical listener caps.")
+    print("Protected baselines: room join, ZEGO, mic path, WebSocket presence/count/events/game phases, local game timing, server-authoritative bets/results, retries, cron, and critical listener caps.")
     for note in notes:
         print(f"NOTE: {note}")
     return 0

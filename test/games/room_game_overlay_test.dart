@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:voice_chat_room/features/games/game_asset_paths.dart';
 import 'package:voice_chat_room/features/games/services/game_runtime_service.dart';
 import 'package:voice_chat_room/features/games/widgets/room_game_overlay.dart';
+import 'package:voice_chat_room/features/room/services/room_presence_service.dart';
 
 class FakeGameRuntimeService extends GameRuntimeService {
   FakeGameRuntimeService({
@@ -59,7 +62,10 @@ class FakeGameRuntimeService extends GameRuntimeService {
   Future<List<GameCatalogEntry>> loadCatalog() async => catalog;
 
   @override
-  Future<GameRuntimeState> loadState(GameCatalogEntry game) async {
+  Future<GameRuntimeState> loadState(
+    GameCatalogEntry game, {
+    String roomId = '',
+  }) async {
     lastLoadedKey = game.key;
     final now = DateTime.now().millisecondsSinceEpoch;
     final bettingClosesAtMs = roundStatus == 'betting'
@@ -186,8 +192,11 @@ class GreedyResultFakeGameRuntimeService extends FakeGameRuntimeService {
   int stateCalls = 0;
 
   @override
-  Future<GameRuntimeState> loadState(GameCatalogEntry game) async {
-    final base = await super.loadState(game);
+  Future<GameRuntimeState> loadState(
+    GameCatalogEntry game, {
+    String roomId = '',
+  }) async {
+    final base = await super.loadState(game, roomId: roomId);
     stateCalls++;
     if (game.gameId != 'greedy_cat' || stateCalls < 2) return base;
 
@@ -271,17 +280,34 @@ class GreedyResultFakeGameRuntimeService extends FakeGameRuntimeService {
   }
 }
 
-Widget host(GameRuntimeService service, String gameKey) => MaterialApp(
+Widget host(
+  GameRuntimeService service,
+  String gameKey, {
+  Stream<RoomRealtimeEvent>? realtimeEvents,
+  Size? mediaSize,
+}) =>
+    MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: Scaffold(
-        body: Align(
-          alignment: Alignment.bottomCenter,
-          child: RoomGameOverlaySheet(
-            roomId: 'room_test',
-            initialGameKey: gameKey,
-            runtimeService: service,
-          ),
-        ),
+      home: Builder(
+        builder: (context) {
+          final child = Scaffold(
+            body: Align(
+              alignment: Alignment.bottomCenter,
+              child: RoomGameOverlaySheet(
+                roomId: 'room_test',
+                initialGameKey: gameKey,
+                runtimeService: service,
+                realtimeEvents:
+                    realtimeEvents ?? const Stream<RoomRealtimeEvent>.empty(),
+              ),
+            ),
+          );
+          if (mediaSize == null) return child;
+          return MediaQuery(
+            data: MediaQuery.of(context).copyWith(size: mediaSize),
+            child: child,
+          );
+        },
       ),
     );
 
@@ -368,20 +394,65 @@ void main() {
     expect(service.totals, isEmpty);
   });
 
-  testWidgets('Greedy Cat reveals Top 3 and current player round summary',
+  testWidgets('Greedy Cat does not poll state after ten seconds',
       (tester) async {
     final service = GreedyResultFakeGameRuntimeService();
-    await tester.pumpWidget(host(service, 'greedy_cat'));
+    final events = StreamController<RoomRealtimeEvent>.broadcast();
+    addTearDown(events.close);
+
+    await tester.pumpWidget(
+      host(
+        service,
+        'greedy_cat',
+        realtimeEvents: events.stream,
+      ),
+    );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 150));
 
+    expect(service.stateCalls, 1);
+    await tester.pump(const Duration(seconds: 10));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(service.stateCalls, 1);
+  });
+
+  testWidgets('Greedy Cat result push triggers one authoritative refresh',
+      (tester) async {
+    final service = GreedyResultFakeGameRuntimeService();
+    final events = StreamController<RoomRealtimeEvent>.broadcast();
+    addTearDown(events.close);
+
+    await tester.pumpWidget(
+      host(
+        service,
+        'greedy_cat',
+        realtimeEvents: events.stream,
+        mediaSize: const Size(800, 900),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+
+    expect(service.stateCalls, 1);
     expect(find.textContaining('الأكثر ربحاً'), findsNothing);
 
-    // Runtime state polling is intentionally throttled to 10s to protect
-    // Firestore; advance to the next safety resync before asserting result UI.
-    await tester.pump(const Duration(seconds: 10));
-    await tester.pump(const Duration(milliseconds: 2600));
+    events.add(
+      RoomRealtimeEvent(
+        type: 'game.result',
+        payload: const <String, dynamic>{
+          'roomId': 'room_test',
+          'gameId': 'greedy_cat',
+          'mode': '',
+          'roundId': 'greedy_cat:test:1',
+          'outcomeId': 'fish15',
+        },
+        serverTimeMs: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
 
+    expect(service.stateCalls, 2);
     expect(find.text('نتيجة الجولة #1'), findsOneWidget);
     expect(find.text('الأكثر ربحاً في هذه الجولة'), findsOneWidget);
     expect(find.text('Shadow'), findsOneWidget);

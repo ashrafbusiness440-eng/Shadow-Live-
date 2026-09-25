@@ -10,6 +10,12 @@ import {
   hasPresenceUid,
   presenceSnapshotFromAttachments,
 } from "./room-realtime-presence.js";
+import {
+  GAME_SCHEDULE_PREFIX,
+  gameScheduleStorageKey,
+  normalizeGameSchedule,
+  processGameSchedule,
+} from "./room-realtime-game.js";
 
 const TICKET_PREFIX = "ticket:";
 
@@ -117,6 +123,9 @@ export class RoomRealtimeObject extends DurableObject {
           url.searchParams.get("uid"),
         ),
       });
+    }
+    if (url.pathname === "/game/register" && request.method === "POST") {
+      return this.#registerGameSchedules(request);
     }
     if (url.pathname === "/broadcast" && request.method === "POST") {
       return this.#broadcast(request);
@@ -236,6 +245,69 @@ export class RoomRealtimeObject extends DurableObject {
     return new Response(null, { status: 101, webSocket: client });
   }
 
+  async #registerGameSchedules(request) {
+    const body = await request.json().catch(() => ({}));
+    const roomId = normalizeRoomId(body.roomId);
+    const uid = String(body.uid || "").trim();
+    const schedules = Array.isArray(body.schedules)
+      ? body.schedules.slice(0, 4)
+      : [];
+
+    if (!roomId || !uid || schedules.length === 0) {
+      return Response.json(
+        { ok: false, code: "invalid_game_schedule" },
+        { status: 400 },
+      );
+    }
+    if (!hasPresenceUid(this.#presenceAttachments(), uid)) {
+      return Response.json(
+        { ok: false, code: "user_not_in_room" },
+        { status: 409 },
+      );
+    }
+
+    const nowMs = Date.now();
+    let nextAtMs = null;
+    let stored = 0;
+    for (const raw of schedules) {
+      const candidate = normalizeGameSchedule(
+        { ...raw, roomId },
+        nowMs,
+      );
+      if (!candidate) continue;
+      const key = gameScheduleStorageKey(candidate);
+      const existing = await this.ctx.storage.get(key);
+      const normalized = normalizeGameSchedule(
+        { ...raw, roomId },
+        nowMs,
+        existing,
+      );
+      if (!normalized) continue;
+      await this.ctx.storage.put(key, normalized);
+      const processed = processGameSchedule(normalized, nowMs);
+      if (processed.nextAtMs !== null &&
+          (nextAtMs === null || processed.nextAtMs < nextAtMs)) {
+        nextAtMs = processed.nextAtMs;
+      }
+      stored += 1;
+    }
+
+    if (stored === 0) {
+      return Response.json(
+        { ok: false, code: "invalid_game_schedule" },
+        { status: 400 },
+      );
+    }
+
+    if (nextAtMs !== null) {
+      const currentAlarm = await this.ctx.storage.getAlarm();
+      if (currentAlarm === null || nextAtMs < currentAlarm) {
+        await this.ctx.storage.setAlarm(Math.max(Date.now() + 20, nextAtMs));
+      }
+    }
+    return Response.json({ ok: true, stored });
+  }
+
   async #broadcast(request) {
     const body = await request.json().catch(() => ({}));
     const type = String(body?.event?.type || "").trim();
@@ -306,19 +378,47 @@ export class RoomRealtimeObject extends DurableObject {
   async alarm() {
     const nowMs = Date.now();
     const tickets = await this.ctx.storage.list({ prefix: TICKET_PREFIX });
-    const expired = [];
-    let nextExpiry = null;
+    const schedules = await this.ctx.storage.list({
+      prefix: GAME_SCHEDULE_PREFIX,
+    });
+    const deletes = [];
+    let nextAlarmAtMs = null;
 
     for (const [key, value] of tickets) {
       const expiresAtMs = Number(value?.expiresAtMs || 0);
       if (expiresAtMs <= nowMs) {
-        expired.push(key);
-      } else if (nextExpiry === null || expiresAtMs < nextExpiry) {
-        nextExpiry = expiresAtMs;
+        deletes.push(key);
+      } else if (
+        nextAlarmAtMs === null ||
+        expiresAtMs + 1000 < nextAlarmAtMs
+      ) {
+        nextAlarmAtMs = expiresAtMs + 1000;
       }
     }
 
-    if (expired.length) await this.ctx.storage.delete(expired);
-    if (nextExpiry !== null) await this.ctx.storage.setAlarm(nextExpiry + 1000);
+    for (const [key, value] of schedules) {
+      const processed = processGameSchedule(value, nowMs);
+      for (const event of processed.events) {
+        this.#broadcastEvent(event.type, event.payload);
+      }
+      if (processed.complete) {
+        deletes.push(key);
+      } else {
+        await this.ctx.storage.put(key, processed.schedule);
+        if (
+          processed.nextAtMs !== null &&
+          (nextAlarmAtMs === null || processed.nextAtMs < nextAlarmAtMs)
+        ) {
+          nextAlarmAtMs = processed.nextAtMs;
+        }
+      }
+    }
+
+    if (deletes.length) await this.ctx.storage.delete(deletes);
+    if (nextAlarmAtMs !== null) {
+      await this.ctx.storage.setAlarm(
+        Math.max(Date.now() + 20, nextAlarmAtMs),
+      );
+    }
   }
 }
