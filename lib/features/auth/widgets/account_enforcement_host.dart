@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../../../services/navigation_service.dart';
 import '../../../shared/services/storage_service.dart';
+import '../../voice/services/voice_room_session_controller.dart';
 
 class AccountEnforcementHost extends StatefulWidget {
   const AccountEnforcementHost({super.key, required this.child});
@@ -192,6 +193,7 @@ class _AccountEnforcementHostState extends State<AccountEnforcementHost> {
     if (_handling || !mounted) return;
     _handling = true;
     _userSubscription?.cancel();
+    unawaited(VoiceRoomSessionController.instance.leave());
     setState(() => _notice = notice);
   }
 
