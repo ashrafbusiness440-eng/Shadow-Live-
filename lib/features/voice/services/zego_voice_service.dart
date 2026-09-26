@@ -30,6 +30,7 @@ class ZegoVoiceService implements VoiceService {
   String? _accessCode;
   int? _seatIndex;
   bool _tokenRenewalInFlight = false;
+  String? _realtimeAdmission;
   ZegoMediaPlayer? _roomMediaPlayer;
   bool _publishingForRoomMedia = false;
 
@@ -39,6 +40,9 @@ class ZegoVoiceService implements VoiceService {
 
   @override
   Stream<VoiceMicState> get micStates => _micController.stream;
+
+  @override
+  String? get realtimeAdmission => _realtimeAdmission;
 
   @override
   Future<void> initialize() async {
@@ -197,6 +201,9 @@ class ZegoVoiceService implements VoiceService {
         roomId,
         roomPassword: _accessCode,
       );
+      _realtimeAdmission = session.realtimeAdmission.isEmpty
+          ? null
+          : session.realtimeAdmission;
       await _ensureEngine(session.appId);
 
       _roomId = roomId;
@@ -222,6 +229,7 @@ class ZegoVoiceService implements VoiceService {
       _connectionController.add(VoiceConnectionState.connected);
       _micController.add(VoiceMicState.muted);
     } catch (error) {
+      _realtimeAdmission = null;
       if (error is VoiceException) rethrow;
       _connectionController.add(VoiceConnectionState.failed);
       throw VoiceException('join_failed', error.toString());
@@ -258,6 +266,7 @@ class ZegoVoiceService implements VoiceService {
       _streamId = null;
       _accessCode = null;
       _seatIndex = null;
+      _realtimeAdmission = null;
       _micController.add(VoiceMicState.muted);
       _connectionController.add(VoiceConnectionState.disconnected);
     }
