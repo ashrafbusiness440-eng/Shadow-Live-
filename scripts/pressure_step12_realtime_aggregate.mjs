@@ -24,7 +24,6 @@ const shards = files.map((f) => JSON.parse(fs.readFileSync(f, "utf8")));
 
 let users = 0;
 let uniqueAuthUsers = 0;
-let uniqueAuthUsers = 0;
 let readyConnections = 0;
 let successfulUsers = 0;
 let failedUsers = 0;
@@ -41,7 +40,6 @@ const fatalErrors = [];
 
 for (const shard of shards) {
   users += Number(shard.users || 0);
-  uniqueAuthUsers += Number(shard.uniqueAuthUsers || 0);
   uniqueAuthUsers += Number(shard.uniqueAuthUsers || 0);
   readyConnections += Number(shard.readyConnections || 0);
   successfulUsers += Number(shard.successfulUsers || 0);
@@ -72,7 +70,6 @@ const result = {
   users,
   shards: shards.length,
   uniqueAuthUsers,
-  uniqueAuthUsers,
   readyConnections,
   successfulUsers,
   failedUsers,
@@ -98,7 +95,6 @@ fs.writeFileSync("step12-realtime-level5000-summary.json", JSON.stringify(result
 const pass =
   shards.length === 10 &&
   users === 5000 &&
-  uniqueAuthUsers === 5000 &&
   uniqueAuthUsers === 5000 &&
   readyConnections === 5000 &&
   successfulUsers === 5000 &&
