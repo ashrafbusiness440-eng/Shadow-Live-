@@ -1,7 +1,7 @@
 import { performance } from "node:perf_hooks";
 
 const base = "https://shadow-live.ashraf-business-440.workers.dev";
-const users = 100;
+const users = 5000;
 const durationMs = 30_000;
 const latencies = [];
 const statuses = new Map();
@@ -45,5 +45,5 @@ const result = {
   p99Ms: Number(pct(.99).toFixed(1)),
   statuses: Object.fromEntries(statuses),
 };
-console.log("STEP12_LEVEL100 " + JSON.stringify(result));
+console.log("STEP12_LEVEL5000 " + JSON.stringify(result));
 if (errors > 0) process.exit(1);
