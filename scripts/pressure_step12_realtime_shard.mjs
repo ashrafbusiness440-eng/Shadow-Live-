@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { performance } from "node:perf_hooks";
 import { sign } from "node:crypto";
+import { issueRealtimeAdmission } from "../cloudflare-worker/src/realtime-admission.js";
 
 const workerBase = process.env.SHADOW_WORKER_URL || "https://shadow-live.ashraf-business-440.workers.dev";
 const shardIndex = Number(process.env.SHARD_INDEX || 0);
@@ -10,6 +11,7 @@ const roomsPerShard = Number(process.env.ROOMS_PER_SHARD || 10);
 const rampMs = Number(process.env.RAMP_MS || 10000);
 const holdMs = Number(process.env.HOLD_MS || 30000);
 const runId = String(process.env.GITHUB_RUN_ID || Date.now());
+const zegoServerSecret = String(process.env.ZEGO_SERVER_SECRET || "").trim();
 
 let sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || "{}");
 if (typeof sa === "string") sa = JSON.parse(sa);
@@ -274,7 +276,18 @@ async function openVu(vuIndex) {
 
   let ticket;
   try {
-    ticket = await realtimePost({ action: "ticket", roomId }, vuTokens[vuIndex]);
+    const realtimeAdmission = issueRealtimeAdmission(
+      zegoServerSecret,
+      {
+        uid: vuUids[vuIndex],
+        roomId,
+        displayName: `Step12 User ${shardIndex}-${vuIndex}`,
+      },
+    );
+    ticket = await realtimePost(
+      { action: "ticket", roomId, realtimeAdmission },
+      vuTokens[vuIndex],
+    );
   } catch (error) {
     failedUsers.add(vuIndex);
     if (diagnostics.length < 20) {
@@ -439,6 +452,7 @@ let finalPresence = null;
 
 try {
   if (typeof WebSocket !== "function") throw new Error("node_websocket_unavailable");
+  if (!zegoServerSecret) throw new Error("zego_server_secret_missing");
   accessToken = await googleAccessToken();
 
   await Promise.all(roomIds.map((roomId, i) => fsSet(`rooms/${roomId}`, {
