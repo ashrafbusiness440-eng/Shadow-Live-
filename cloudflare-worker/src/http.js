@@ -32,6 +32,26 @@ export function json(request, env, body, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(body), { status, headers });
 }
 
+export function firestoreQuotaResponse(request, env, error) {
+  const code = String(error?.code || error?.message || "").trim();
+  if (code !== "firestore_quota_exhausted") return null;
+  const retryAfterSeconds = Math.max(
+    1,
+    Math.min(60, Number(error?.retryAfterSeconds || 10)),
+  );
+  return json(
+    request,
+    env,
+    {
+      ok: false,
+      code: "firestore_quota_exhausted",
+      retryAfterSeconds,
+    },
+    503,
+    { "Retry-After": String(retryAfterSeconds) },
+  );
+}
+
 export async function readJson(request) {
   try {
     const body = await request.json();
