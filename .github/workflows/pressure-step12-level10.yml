@@ -70,9 +70,29 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  worker-ready:
+    name: worker-admission-ready
+    needs: aggregate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Wait for Worker v29 admission fast path
+        run: |
+          for ATTEMPT in $(seq 1 60); do
+            BODY=$(curl --silent --show-error https://shadow-live.ashraf-business-440.workers.dev/health || true)
+            echo "$BODY"
+            if echo "$BODY" | grep -q '"version":29' && \
+               echo "$BODY" | grep -q '"realtimeAdmissionConfigured":true'; then
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "Worker admission fast path did not become ready."
+          exit 1
+
   realtime:
     name: realtime-shard-${{ matrix.shard }}
-    needs: aggregate
+    needs: [aggregate, worker-ready]
     strategy:
       fail-fast: false
       max-parallel: 10
@@ -82,6 +102,7 @@ jobs:
     timeout-minutes: 10
     env:
       FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      ZEGO_SERVER_SECRET: ${{ secrets.ZEGO_SERVER_SECRET }}
       SHARD_INDEX: ${{ matrix.shard }}
       SHARD_COUNT: 10
       VUS_PER_SHARD: 500
