@@ -94,6 +94,19 @@ def main() -> int:
     room_bootstrap_service = read("lib/features/room/services/room_bootstrap_service.dart")
     room_seat_service = read("lib/features/room/services/room_seat_service.dart")
     room_moderator_service = read("lib/features/room/services/room_moderator_service.dart")
+    config_cache = read("cloudflare-worker/src/config-cache.js")
+    gift_catalog_api = read("cloudflare-worker/src/legacy-economy/gift-catalog.js")
+    recharge_config_api = read("cloudflare-worker/src/legacy-economy/recharge-config.js")
+    gift_economy_config = read("cloudflare-worker/src/legacy-economy/gift-economy-config.js")
+    room_rocket_config = read("cloudflare-worker/src/legacy-economy/room-rocket-config.js")
+    game_control = read("cloudflare-worker/src/legacy-games/game-control.js")
+    room_gift = read("cloudflare-worker/src/room-gift.js")
+    google_play_purchase = read("cloudflare-worker/src/google-play-purchase.js")
+    app_assets = read("cloudflare-worker/src/app-assets.js")
+    manage_app_asset = read("cloudflare-worker/src/manage-app-asset.js")
+    gift_catalog_service = read("lib/features/gift/services/gift_catalog_service.dart")
+    recharge_config_service = read("lib/features/wallet/services/recharge_config_service.dart")
+    recharge_screen = read("lib/features/wallet/screens/recharge_screen.dart")
 
     if "_presenceTimer" in voice or ".heartbeat(" in voice:
         failures.append("Step 4 regression: Firestore presence heartbeat returned to the room session")
@@ -182,6 +195,97 @@ def main() -> int:
         failures.append("Step 7 regression: Rocket sheet no longer seeds from bootstrap state")
     if "'action': 'roomBootstrap'" not in room_bootstrap_service:
         failures.append("Step 7 regression: Flutter bootstrap service lost its single bootstrap request")
+
+    # Step 8: low-change configuration cache must reduce hot Firestore reads
+    # without moving financial authority out of Firestore transactions.
+    for required in (
+        "const inflight = new Map()",
+        "readThroughConfigCache",
+        "primeConfigCache",
+        "invalidateConfigCache",
+        "staleUntilMs",
+        "isTransientConfigReadError",
+    ):
+        if required not in config_cache:
+            failures.append(f"Step 8 regression: shared config cache missing {required}")
+
+    for label, service, loader in (
+        ("gift catalog", gift_catalog_service, "loadCatalog"),
+        ("recharge config", recharge_config_service, "loadPackages"),
+    ):
+        if "FirebaseFirestore" in service or ".snapshots()" in service:
+            failures.append(
+                f"Step 8 regression: {label} client reopened a direct Firestore config listener"
+            )
+        if loader not in service:
+            failures.append(f"Step 8 regression: {label} cached API loader is missing")
+
+    if "GiftCatalogService.loadCatalog()" not in app_main and "GiftCatalogService.loadCatalog()" not in read("lib/features/gift/widgets/room_gift_sheet.dart"):
+        failures.append("Step 8 regression: active gift UI is not using the cached catalog API")
+    if "RechargeConfigService.watchPackages()" in recharge_screen or "_packageSubscription" in recharge_screen:
+        failures.append("Step 8 regression: recharge screen reopened the Firestore config stream")
+    if "RechargeConfigService.loadPackages()" not in recharge_screen:
+        failures.append("Step 8 regression: recharge screen is not using the cached packages API")
+
+    for label, api, action in (
+        ("gift catalog", gift_catalog_api, 'action === "catalog"'),
+        ("recharge config", recharge_config_api, 'action === "packages"'),
+    ):
+        if "readThroughConfigCache" not in api:
+            failures.append(f"Step 8 regression: {label} backend read-through cache is missing")
+        if action not in api:
+            failures.append(f"Step 8 regression: {label} user-facing cached API action is missing")
+
+    if '"config:game_runtime"' not in game_runtime or "readThroughConfigCache" not in game_runtime:
+        failures.append("Step 8 regression: game runtime config is not using the shared cache")
+    if "ttlMs:30000" not in game_runtime:
+        failures.append("Step 8 regression: game runtime cache changed from the approved 30s fresh TTL")
+    if 'invalidateConfigCache("config:game_runtime")' not in game_control:
+        failures.append("Step 8 regression: admin game saves no longer invalidate cached config")
+
+    if "readThroughConfigCache" not in gift_economy_config or "primeConfigCache" not in gift_economy_config:
+        failures.append("Step 8 regression: gift economy admin state cache is missing")
+    if "readThroughConfigCache" not in room_rocket_config or "primeConfigCache" not in room_rocket_config:
+        failures.append("Step 8 regression: room Rocket admin config cache is missing")
+
+    # Financial paths must keep authoritative Firestore reads.
+    for required in (
+        'db.get(catalogPath, transaction)',
+        'db.get(economyPath, transaction)',
+        'db.get(rocketConfigPath, transaction)',
+    ):
+        if required not in room_gift:
+            failures.append(
+                f"Step 8 financial-authority regression: room gift path lost {required}"
+            )
+    if "config-cache" in room_gift:
+        failures.append("Step 8 financial-authority regression: room gift transaction imports config cache")
+    if 'db.get("system_config/recharge")' not in google_play_purchase:
+        failures.append("Step 8 financial-authority regression: Google Play package validation no longer reads Firestore")
+    if "config-cache" in google_play_purchase:
+        failures.append("Step 8 financial-authority regression: Google Play purchase path imports config cache")
+
+    mic_activity = function_body(worker, "recordMicActivity")
+    if mic_activity is None or "tx.get(economyRef)" not in mic_activity:
+        failures.append("Step 8 financial-authority regression: mic activity payout policy is no longer read transactionally")
+
+    # Room level/capacity policy is code-resident today; do not add a Firestore
+    # config dependency merely to satisfy the cache step.
+    if 'doc("room_levels")' in worker or 'doc("level_config")' in worker:
+        failures.append("Step 8 regression: room level policy gained a new Firestore config read")
+    for baseline in (
+        "const normal=[8,10,12,15,20,20]",
+        "const agency=[10,12,14,16,20,22]",
+    ):
+        if baseline not in worker:
+            failures.append("Step 8 regression: approved room level seat-capacity baseline changed")
+
+    if "readThroughConfigCache" not in app_assets:
+        failures.append("Step 8 regression: app asset registry hot reads are not cached")
+    if 'invalidateConfigCache("registry:app_assets:list")' not in manage_app_asset:
+        failures.append("Step 8 regression: app asset updates no longer invalidate list cache")
+    if 'registry:app_assets:key:' not in manage_app_asset:
+        failures.append("Step 8 regression: app asset updates no longer invalidate per-key cache")
 
     if "_poller" in game_overlay or "_startPolling" in game_overlay:
         failures.append("Step 6 regression: periodic game state polling returned")
@@ -496,7 +600,7 @@ def main() -> int:
         return 1
 
     print("Pressure regression guardrail passed.")
-    print("Protected baselines: room join, ZEGO, mic path, WebSocket presence/count/events/game phases, local game timing, server-authoritative bets/results, bounded retries/backoff, cron, and critical listener caps.")
+    print("Protected baselines: room join, ZEGO, mic path, WebSocket presence/count/events/game phases, local game timing, server-authoritative bets/results, cached low-change config with direct financial authority, bounded retries/backoff, cron, and critical listener caps.")
     for note in notes:
         print(f"NOTE: {note}")
     return 0
