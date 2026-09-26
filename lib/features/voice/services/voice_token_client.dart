@@ -10,6 +10,7 @@ class VoiceSessionCredentials {
     required this.userId,
     required this.roomId,
     required this.expiresAt,
+    required this.realtimeAdmission,
   });
 
   final int appId;
@@ -17,6 +18,7 @@ class VoiceSessionCredentials {
   final String userId;
   final String roomId;
   final DateTime expiresAt;
+  final String realtimeAdmission;
 
   factory VoiceSessionCredentials.fromJson(Map<String, dynamic> json) {
     final appId = (json['appId'] as num?)?.toInt();
@@ -38,6 +40,7 @@ class VoiceSessionCredentials {
       userId: userId,
       roomId: roomId,
       expiresAt: DateTime.fromMillisecondsSinceEpoch(expiresAt * 1000, isUtc: true),
+      realtimeAdmission: (json['realtimeAdmission'] ?? '').toString(),
     );
   }
 }
