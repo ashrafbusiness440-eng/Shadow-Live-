@@ -6,6 +6,10 @@ import {
   presenceCountFromAttachments,
   presenceSnapshotFromAttachments,
 } from "../../cloudflare-worker/src/room-realtime-presence.js";
+import {
+  legacyPresenceFresh,
+  realtimeUserPresentFromNamespace,
+} from "../../cloudflare-worker/src/room-presence-authority.js";
 
 test("open socket attachments define room presence", () => {
   const participants = presenceSnapshotFromAttachments([
@@ -76,3 +80,93 @@ test("online count deduplicates multiple sockets for the same uid", () => {
     2,
   );
 });
+
+function mockNamespace({present=true,status=200,throws=false}={}) {
+  return {
+    idFromName(roomId) {
+      return `room:${roomId}`;
+    },
+    get(id) {
+      return {
+        async fetch(url) {
+          if (throws) throw new Error("realtime unavailable");
+          assert.ok(String(id).startsWith("room:"));
+          assert.ok(String(url).includes("/presence/has"));
+          return Response.json(
+            { ok: status >= 200 && status < 300, present },
+            { status },
+          );
+        },
+      };
+    },
+  };
+}
+
+test("shared presence authority returns true/false from the Durable Object", async () => {
+  assert.equal(
+    await realtimeUserPresentFromNamespace(
+      mockNamespace({ present: true }),
+      "room_1",
+      "u1",
+    ),
+    true,
+  );
+  assert.equal(
+    await realtimeUserPresentFromNamespace(
+      mockNamespace({ present: false }),
+      "room_1",
+      "u1",
+    ),
+    false,
+  );
+});
+
+test("shared presence authority returns null only when realtime is unavailable", async () => {
+  assert.equal(
+    await realtimeUserPresentFromNamespace(null, "room_1", "u1"),
+    null,
+  );
+  assert.equal(
+    await realtimeUserPresentFromNamespace(
+      mockNamespace({ status: 503 }),
+      "room_1",
+      "u1",
+    ),
+    null,
+  );
+  assert.equal(
+    await realtimeUserPresentFromNamespace(
+      mockNamespace({ throws: true }),
+      "room_1",
+      "u1",
+    ),
+    null,
+  );
+});
+
+test("legacy presence freshness works only as bounded fallback", () => {
+  const now = 100000;
+  assert.equal(
+    legacyPresenceFresh(
+      { exists: true, data: { lastSeenAtMs: now - 1000 } },
+      now,
+    ),
+    true,
+  );
+  assert.equal(
+    legacyPresenceFresh(
+      { exists: true, data: () => ({ lastSeenAtMs: now - 1000 }) },
+      now,
+    ),
+    true,
+  );
+  assert.equal(
+    legacyPresenceFresh(
+      { exists: true, data: { lastSeenAtMs: now - 91000 } },
+      now,
+    ),
+    false,
+  );
+  assert.equal(legacyPresenceFresh({ exists: false, data: {} }, now), false);
+});
+
