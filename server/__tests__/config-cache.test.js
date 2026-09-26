@@ -146,6 +146,47 @@ test("invalidating during an in-flight load prevents stale cache refill", async 
   assert.equal(loads, 1);
 });
 
+test("older invalidated load cannot clear a newer in-flight request", async () => {
+  resetConfigCacheForTests();
+
+  let releaseOld;
+  let releaseNew;
+  const oldGate = new Promise((resolve) => { releaseOld = resolve; });
+  const newGate = new Promise((resolve) => { releaseNew = resolve; });
+  let oldLoads = 0;
+  let newLoads = 0;
+
+  const oldRequest = readThroughConfigCache(
+    "game_runtime",
+    async () => {
+      oldLoads += 1;
+      await oldGate;
+      return { revision: 1 };
+    },
+  );
+
+  invalidateConfigCache("game_runtime");
+
+  const newLoader = async () => {
+    newLoads += 1;
+    await newGate;
+    return { revision: 2 };
+  };
+  const newRequest = readThroughConfigCache("game_runtime", newLoader);
+
+  releaseOld();
+  assert.deepEqual(await oldRequest, { revision: 1 });
+
+  const joinedRequest = readThroughConfigCache("game_runtime", newLoader);
+  assert.equal(newLoads, 1);
+
+  releaseNew();
+  assert.deepEqual(await newRequest, { revision: 2 });
+  assert.deepEqual(await joinedRequest, { revision: 2 });
+  assert.equal(oldLoads, 1);
+  assert.equal(newLoads, 1);
+});
+
 test("transient classifier covers Firestore quota and availability errors", () => {
   assert.equal(isTransientConfigReadError({ status: 429 }), true);
   assert.equal(isTransientConfigReadError(new Error("RESOURCE_EXHAUSTED")), true);
