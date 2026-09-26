@@ -6,9 +6,11 @@ workers_dev = true
 [observability]
 enabled = true
 
-[[analytics_engine_datasets]]
-binding = "PRESSURE_ANALYTICS"
-dataset = "shadow_live_pressure_v1"
+# Step 11 external prerequisite:
+# Cloudflare account currently rejects Analytics Engine bindings with code 10089.
+# Re-enable the PRESSURE_ANALYTICS binding only after Analytics Engine is enabled
+# at the account level. The Worker telemetry code is intentionally safe/no-op
+# while the binding is absent so Production deploys remain healthy.
 
 [triggers]
 # During development, settlement is also triggered by active game clients.

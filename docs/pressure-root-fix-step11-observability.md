@@ -13,6 +13,26 @@ Binding: `PRESSURE_ANALYTICS`
 
 Workers Logs stay enabled for diagnostic invocation/error logs. Custom request telemetry is written to Analytics Engine and does not await network/storage work on the product path.
 
+## Current production prerequisite
+
+On 26 Sep 2026, Worker deploy #157 reached Cloudflare with the correct
+`PRESSURE_ANALYTICS (shadow_live_pressure_v1)` binding but Cloudflare rejected
+the version with API error **10089**: Analytics Engine is not enabled for this
+account.
+
+This is an **account-level** prerequisite, not a dataset or Worker-code error.
+Until the account feature is enabled, the default production Wrangler config
+keeps the Analytics Engine binding disabled so the existing Worker can continue
+to deploy. The telemetry runtime treats a missing binding as a safe no-op and
+`/health` is expected to report `pressureAnalyticsConfigured:false`.
+
+After Analytics Engine is enabled in the Cloudflare dashboard:
+1. restore the `PRESSURE_ANALYTICS` binding to `wrangler.toml`;
+2. deploy Worker v28+;
+3. verify `/health` reports `pressureAnalyticsConfigured:true`;
+4. run the SQL smoke queries below;
+5. then close Step 11.
+
 ## Privacy and safety
 
 The telemetry schema intentionally excludes:
