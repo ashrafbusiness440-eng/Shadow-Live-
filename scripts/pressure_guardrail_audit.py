@@ -475,25 +475,14 @@ def main() -> int:
     if "cancel-in-progress: false" not in cleanup_phase6_e2e:
         failures.append("Step 9 regression: Phase 6 cleanup can overlap/cancel Production validation")
 
-    if re.search(r"(?m)^\s*push:\s*$", prod_gate) is None:
-        failures.append("Step 9 regression: comprehensive production gate is no longer automatic")
+    if re.search(r"(?m)^\\s*push:\\s*$", prod_gate):
+        failures.append("Step 9 regression: comprehensive production gate auto-runs on main")
+    if "workflow_dispatch:" not in prod_gate:
+        failures.append("Step 9 regression: comprehensive production gate lost manual dispatch")
     if "group: shadow-live-production-firestore-e2e" not in prod_gate:
         failures.append("Step 9 regression: comprehensive production gate left shared Firestore serialization")
     if "cancel-in-progress: false" not in prod_gate:
         failures.append("Step 9 regression: comprehensive gate may cancel/overlap another production suite")
-    if "'.github/workflows/cloudflare-*-e2e.yml'" not in prod_gate:
-        failures.append("Step 9 regression: production gate does not watch standalone E2E workflow policy changes")
-
-    for required in (
-        "Skip superseded automatic production gate",
-        "run_gate:",
-        "Current main:",
-        "superseded by a newer main commit",
-        "needs: freshness",
-    ):
-        if required not in prod_gate:
-            failures.append(f"Step 9 regression: production gate lost superseded-commit protection: {required}")
-
     for required_script in (
         "e2e-smoke.mjs",
         "phase9-user-moderation-e2e.mjs",
