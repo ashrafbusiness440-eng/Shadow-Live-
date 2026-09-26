@@ -1,4 +1,5 @@
 import { googleAccessToken, parseServiceAccount } from "./google-auth.js";
+import { recordFirestoreTelemetry } from "./pressure-telemetry.js";
 
 export const FIRESTORE_TRANSIENT_MAX_ATTEMPTS = 3;
 export const FIRESTORE_RETRY_BASE_DELAY_MS = 350;
@@ -196,12 +197,62 @@ export function firestoreClient(env) {
   async function call(
     url,
     options = {},
-    { retryTransient = false } = {},
+    {
+      retryTransient = false,
+      operation = "unknown",
+      readMode = "none",
+      writeCount = 0,
+    } = {},
   ) {
+    const startedAtMs = Date.now();
+    let attempts = 0;
+    let sawQuota = false;
+
+    const estimateReads = (body, status = 0) => {
+      if (readMode === "single") return 1;
+      if (readMode === "list") {
+        return Math.max(1, Array.isArray(body?.documents) ? body.documents.length : 0);
+      }
+      if (readMode === "query") {
+        const rows = Array.isArray(body) ? body : [];
+        return Math.max(
+          1,
+          rows.reduce((count, row) => count + (row?.document ? 1 : 0), 0),
+        );
+      }
+      return 0;
+    };
+
+    const observe = ({
+      status = 0,
+      body = null,
+      error = false,
+      quota = false,
+      circuitOpen = false,
+    } = {}) => {
+      recordFirestoreTelemetry(env, {
+        operation,
+        status,
+        durationMs: Date.now() - startedAtMs,
+        reads: estimateReads(body, status),
+        writes: Math.max(0, Number(writeCount || 0)),
+        attempts: Math.max(1, attempts),
+        quota: quota || sawQuota,
+        circuitOpen,
+        error,
+      });
+    };
+
     if (
       retryTransient &&
       isFirestoreQuotaCircuitOpen(firestoreQuotaCircuit)
     ) {
+      observe({
+        status: 503,
+        error: true,
+        quota: true,
+        circuitOpen: true,
+      });
       throw firestoreQuotaUnavailableError();
     }
 
@@ -220,6 +271,7 @@ export function firestoreClient(env) {
     let lastError = null;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      attempts = attempt + 1;
       try {
         response = await fetch(url, { ...options, headers });
         lastError = null;
@@ -231,12 +283,14 @@ export function firestoreClient(env) {
 
       if (response?.status === 404) {
         if (retryTransient) resetFirestoreQuotaCircuit(firestoreQuotaCircuit);
+        observe({ status: 404, body: null });
         return { response, body: null };
       }
       if (response) {
         body = await response.json().catch(() => ({}));
         if (response.ok) {
           if (retryTransient) resetFirestoreQuotaCircuit(firestoreQuotaCircuit);
+          observe({ status: response.status, body });
           return { response, body };
         }
       }
@@ -245,6 +299,7 @@ export function firestoreClient(env) {
         ? isFirestoreQuotaStatus(response.status, body)
         : false;
       if (retryTransient && quotaLimited) {
+        sawQuota = true;
         registerFirestoreQuotaFailure(firestoreQuotaCircuit);
       }
 
@@ -265,6 +320,13 @@ export function firestoreClient(env) {
       if (!canRetry) {
         if (response) {
           if (retryTransient && quotaLimited) {
+            observe({
+              status: response.status,
+              body,
+              error: true,
+              quota: true,
+              circuitOpen: isFirestoreQuotaCircuitOpen(firestoreQuotaCircuit),
+            });
             throw firestoreQuotaUnavailableError(Date.now(), body);
           }
           const code =
@@ -274,10 +336,17 @@ export function firestoreClient(env) {
           const error = new Error(String(code));
           error.status = response.status;
           error.details = body;
+          observe({
+            status: response.status,
+            body,
+            error: true,
+            quota: quotaLimited,
+          });
           throw error;
         }
         const error = new Error("firestore_network_error");
         error.cause = lastError || null;
+        observe({ status: 0, error: true });
         throw error;
       }
 
@@ -288,6 +357,7 @@ export function firestoreClient(env) {
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
 
+    observe({ status: 0, error: true });
     throw new Error("firestore_request_failed");
   }
 
@@ -306,7 +376,7 @@ export function firestoreClient(env) {
           method: "POST",
           body: JSON.stringify({ options: { readWrite: {} } }),
         },
-        { retryTransient: true },
+        { retryTransient: true, operation: "begin_transaction" },
       );
       return body.transaction;
     },
@@ -319,7 +389,7 @@ export function firestoreClient(env) {
           method: "POST",
           body: JSON.stringify({ transaction }),
         },
-        { retryTransient: true },
+        { retryTransient: true, operation: "rollback" },
       ).catch(() => {});
     },
 
@@ -329,7 +399,11 @@ export function firestoreClient(env) {
       const { body } = await call(
         url.toString(),
         { method: "GET" },
-        { retryTransient: true },
+        {
+          retryTransient: true,
+          operation: "get",
+          readMode: "single",
+        },
       );
       if (!body) return { exists: false, data: null, updateTime: null };
       return {
@@ -342,10 +416,17 @@ export function firestoreClient(env) {
     async commit(transaction, writes) {
       const payload = { writes };
       if (transaction) payload.transaction = transaction;
-      const { body } = await call(`${root}/documents:commit`, {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
+      const { body } = await call(
+        `${root}/documents:commit`,
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        },
+        {
+          operation: "commit",
+          writeCount: Array.isArray(writes) ? writes.length : 0,
+        },
+      );
       return body;
     },
     async list(collectionPath, pageSize = 200) {
@@ -354,7 +435,11 @@ export function firestoreClient(env) {
       const { body } = await call(
         url.toString(),
         { method: "GET" },
-        { retryTransient: true },
+        {
+          retryTransient: true,
+          operation: "list",
+          readMode: "list",
+        },
       );
       return (body?.documents || []).map((doc) => ({
         id: String(doc.name || "").split("/").pop(),
@@ -425,7 +510,11 @@ export function firestoreClient(env) {
             ...(transaction ? { transaction } : {}),
           }),
         },
-        { retryTransient: true },
+        {
+          retryTransient: true,
+          operation: "run_query",
+          readMode: "query",
+        },
       );
 
       return (Array.isArray(body) ? body : [])
