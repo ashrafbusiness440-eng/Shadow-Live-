@@ -3,6 +3,10 @@ import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { resolveRevenuePolicy } from "./economy-policy.js";
 import { advanceRoomRocket } from "./room-rocket.js";
+import {
+  legacyPresenceFresh,
+  realtimeUserPresentFromNamespace,
+} from "./room-presence-authority.js";
 
 const clean = (value) => String(value ?? "").trim();
 const validKey = (value) => /^[A-Za-z0-9_-]{12,220}$/.test(clean(value));
@@ -13,6 +17,30 @@ class ApiError extends Error {
     this.code = code;
     this.status = status;
   }
+}
+
+async function requireRoomPresence(
+  db,
+  realtimeNamespace,
+  roomId,
+  uid,
+  errorCode,
+) {
+  const realtimePresent = await realtimeUserPresentFromNamespace(
+    realtimeNamespace,
+    roomId,
+    uid,
+  );
+  if (realtimePresent === true) return "room_realtime";
+  if (realtimePresent === false) throw new ApiError(errorCode, 409);
+
+  const legacyPresence = await db.get(
+    `room_presence/${roomId}/users/${uid}`,
+  );
+  if (!legacyPresenceFresh(legacyPresence)) {
+    throw new ApiError(errorCode, 409);
+  }
+  return "legacy_room_presence";
 }
 
 function randomDocId(prefix) {
@@ -67,7 +95,7 @@ async function runTransaction(db, body) {
   throw new ApiError("transaction_failed", 500);
 }
 
-export async function sendRoomGift(db, senderUid, body = {}) {
+export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
   const roomId = clean(body.roomId);
   const receiverId = clean(body.receiverId);
   const giftId = clean(body.giftId);
@@ -86,13 +114,29 @@ export async function sendRoomGift(db, senderUid, body = {}) {
   }
 
   const periods = utcPeriodKeys();
+  const realtimeNamespace = options?.realtimeNamespace || null;
+
+  await Promise.all([
+    requireRoomPresence(
+      db,
+      realtimeNamespace,
+      roomId,
+      senderUid,
+      "sender_not_in_room",
+    ),
+    requireRoomPresence(
+      db,
+      realtimeNamespace,
+      roomId,
+      receiverId,
+      "receiver_not_in_room",
+    ),
+  ]);
 
   return runTransaction(db, async (transaction) => {
     const roomPath = `rooms/${roomId}`;
     const senderPath = `users/${senderUid}`;
     const receiverPath = `users/${receiverId}`;
-    const senderPresencePath = `room_presence/${roomId}/users/${senderUid}`;
-    const receiverPresencePath = `room_presence/${roomId}/users/${receiverId}`;
     const senderBlockPath = `user_blocks/${senderUid}/items/${receiverId}`;
     const receiverBlockPath = `user_blocks/${receiverId}/items/${senderUid}`;
     const catalogPath = "system_config/gift_catalog";
@@ -107,8 +151,6 @@ export async function sendRoomGift(db, senderUid, body = {}) {
       roomSnap,
       senderSnap,
       receiverSnap,
-      senderPresence,
-      receiverPresence,
       senderBlock,
       receiverBlock,
       catalogSnap,
@@ -122,8 +164,6 @@ export async function sendRoomGift(db, senderUid, body = {}) {
       db.get(roomPath, transaction),
       db.get(senderPath, transaction),
       db.get(receiverPath, transaction),
-      db.get(senderPresencePath, transaction),
-      db.get(receiverPresencePath, transaction),
       db.get(senderBlockPath, transaction),
       db.get(receiverBlockPath, transaction),
       db.get(catalogPath, transaction),
@@ -156,16 +196,6 @@ export async function sendRoomGift(db, senderUid, body = {}) {
       economyLock.giftsLocked === true
     ) {
       throw new ApiError("emergency_locked", 409);
-    }
-
-    const nowMs = Date.now();
-    const senderLastSeen = Number(senderPresence.data?.lastSeenAtMs || 0);
-    const receiverLastSeen = Number(receiverPresence.data?.lastSeenAtMs || 0);
-    if (!senderPresence.exists || nowMs - senderLastSeen > 90000) {
-      throw new ApiError("sender_not_in_room", 409);
-    }
-    if (!receiverPresence.exists || nowMs - receiverLastSeen > 90000) {
-      throw new ApiError("receiver_not_in_room", 409);
     }
 
     const rawCatalog =
@@ -745,7 +775,12 @@ export async function roomGift(request, env) {
       throw new ApiError("account_required", 403);
     }
     const body = await readJson(request);
-    const result = await sendRoomGift(firestoreClient(env), decoded.sub, body);
+    const result = await sendRoomGift(
+      firestoreClient(env),
+      decoded.sub,
+      body,
+      { realtimeNamespace: env.ROOM_REALTIME },
+    );
     return json(request, env, result, 200);
   } catch (error) {
     if (error instanceof ApiError) {
