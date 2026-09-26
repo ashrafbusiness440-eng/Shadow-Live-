@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { recordRealtimeTelemetry } from "./pressure-telemetry.js";
 
 import {
   ROOM_REALTIME_PROTOCOL_VERSION,
@@ -43,6 +44,8 @@ export class RoomRealtimeObject extends DurableObject {
     this.ctx = ctx;
     this.env = env;
 
+    recordRealtimeTelemetry(this.env, { event: "activate" });
+
     if (typeof WebSocketRequestResponsePair === "function") {
       this.ctx.setWebSocketAutoResponse(
         new WebSocketRequestResponsePair("ping", "pong"),
@@ -80,6 +83,12 @@ export class RoomRealtimeObject extends DurableObject {
     for (const socket of this.ctx.getWebSockets()) {
       if (safeSend(socket, envelope)) delivered += 1;
     }
+    recordRealtimeTelemetry(this.env, {
+      event: "broadcast",
+      outcome: String(type || "unknown"),
+      fanout: delivered,
+      onlineCount: this.#presenceSnapshot().length,
+    });
     return delivered;
   }
 
@@ -110,18 +119,29 @@ export class RoomRealtimeObject extends DurableObject {
       });
     }
     if (url.pathname === "/presence/count" && request.method === "GET") {
+      const onlineCount = this.#presenceSnapshot().length;
+      recordRealtimeTelemetry(this.env, {
+        event: "presence_count",
+        onlineCount,
+      });
       return Response.json({
         ok: true,
-        onlineCount: this.#presenceSnapshot().length,
+        onlineCount,
       });
     }
     if (url.pathname === "/presence/has" && request.method === "GET") {
+      const present = hasPresenceUid(
+        this.#presenceAttachments(),
+        url.searchParams.get("uid"),
+      );
+      recordRealtimeTelemetry(this.env, {
+        event: "presence_has",
+        outcome: present ? "present" : "absent",
+        onlineCount: this.#presenceSnapshot().length,
+      });
       return Response.json({
         ok: true,
-        present: hasPresenceUid(
-          this.#presenceAttachments(),
-          url.searchParams.get("uid"),
-        ),
+        present,
       });
     }
     if (url.pathname === "/game/register" && request.method === "POST") {
@@ -141,6 +161,10 @@ export class RoomRealtimeObject extends DurableObject {
     const expiresAtMs = Number(body.expiresAtMs || 0);
     const displayName = String(body.displayName || "").trim();
     const profileImageUrl = String(body.profileImageUrl || "").trim();
+    const reconnectAttempt = Math.max(
+      0,
+      Math.min(3, Number(body.reconnectAttempt || 0)),
+    );
 
     if (!roomId || !uid || !ticket || expiresAtMs <= Date.now()) {
       return Response.json({ ok: false, code: "invalid_ticket" }, { status: 400 });
@@ -155,6 +179,7 @@ export class RoomRealtimeObject extends DurableObject {
       expiresAtMs,
       displayName,
       profileImageUrl,
+      reconnectAttempt,
     });
 
     const currentAlarm = await this.ctx.storage.getAlarm();
@@ -205,6 +230,10 @@ export class RoomRealtimeObject extends DurableObject {
       : connectedAtMs;
     const displayName = String(record.displayName || "").trim();
     const profileImageUrl = String(record.profileImageUrl || "").trim();
+    const reconnectAttempt = Math.max(
+      0,
+      Math.min(3, Number(record.reconnectAttempt || 0)),
+    );
 
     server.serializeAttachment({
       roomId,
@@ -214,6 +243,7 @@ export class RoomRealtimeObject extends DurableObject {
       joinedAtMs,
       displayName,
       profileImageUrl,
+      reconnectAttempt,
     });
     this.ctx.acceptWebSocket(server, [`uid:${uid}`]);
 
@@ -230,6 +260,11 @@ export class RoomRealtimeObject extends DurableObject {
       }),
     );
     this.#publishOnlineCount(roomId, participants);
+    recordRealtimeTelemetry(this.env, {
+      event: "connect",
+      reconnect: reconnectAttempt > 0,
+      onlineCount,
+    });
 
     if (!alreadyPresent) {
       this.#broadcastEvent("room.presence_joined", {
@@ -331,7 +366,7 @@ export class RoomRealtimeObject extends DurableObject {
     if (parsed.response) safeSend(webSocket, parsed.response);
   }
 
-  #handleDeparture(webSocket) {
+  #handleDeparture(webSocket, reason = "close") {
     let attachment = {};
     try {
       attachment = webSocket.deserializeAttachment() || {};
@@ -352,6 +387,12 @@ export class RoomRealtimeObject extends DurableObject {
 
     const participants = this.#presenceSnapshot(connectionId);
     const onlineCount = this.#publishOnlineCount(roomId, participants);
+    recordRealtimeTelemetry(this.env, {
+      event: "departure",
+      outcome: String(reason || "close"),
+      onlineCount,
+      error: reason === "error",
+    });
     if (uid && !hasPresenceUid(participants, uid)) {
       this.#broadcastEvent("room.presence_left", {
         roomId,
@@ -362,21 +403,22 @@ export class RoomRealtimeObject extends DurableObject {
   }
 
   webSocketClose(webSocket, code, reason) {
-    this.#handleDeparture(webSocket);
+    this.#handleDeparture(webSocket, "close");
     try {
       webSocket.close(code || 1000, reason || "room_leave");
     } catch {}
   }
 
   webSocketError(webSocket) {
-    this.#handleDeparture(webSocket);
+    this.#handleDeparture(webSocket, "error");
     try {
       webSocket.close(1011, "realtime_error");
     } catch {}
   }
 
   async alarm() {
-    const nowMs = Date.now();
+    const alarmStartedAtMs = Date.now();
+    const nowMs = alarmStartedAtMs;
     const tickets = await this.ctx.storage.list({ prefix: TICKET_PREFIX });
     const schedules = await this.ctx.storage.list({
       prefix: GAME_SCHEDULE_PREFIX,
@@ -420,5 +462,11 @@ export class RoomRealtimeObject extends DurableObject {
         Math.max(Date.now() + 20, nextAlarmAtMs),
       );
     }
+    recordRealtimeTelemetry(this.env, {
+      event: "alarm",
+      durationMs: Date.now() - alarmStartedAtMs,
+      fanout: schedules.size,
+      onlineCount: this.#presenceSnapshot().length,
+    });
   }
 }
