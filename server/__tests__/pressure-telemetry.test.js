@@ -147,3 +147,23 @@ test("missing Analytics Engine binding is a safe no-op", () => {
     false,
   );
 });
+
+test("normalized Firestore quota context is counted on HTTP 503", () => {
+  const { env, points } = analyticsEnv();
+  const request = new Request("https://example.test/api/app-assets");
+  annotatePressureRequest(request, {
+    route: "/api/app-assets",
+    action: "list",
+    quota: true,
+  });
+  recordRequestTelemetry(
+    request,
+    env,
+    new Response("quota", { status: 503 }),
+    Date.now() - 10,
+  );
+  assert.equal(points.length, 1);
+  assert.equal(points[0].blobs[3], "503");
+  assert.equal(points[0].doubles[6], 1);
+});
+
