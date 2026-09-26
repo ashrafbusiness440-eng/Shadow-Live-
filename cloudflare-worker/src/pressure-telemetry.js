@@ -8,23 +8,29 @@ function finite(value, fallback = 0) {
   return Number.isFinite(number) ? number : fallback;
 }
 
-function statusClass(status) {
-  const value = Math.max(0, Math.trunc(finite(status)));
-  if (value >= 500) return "5xx";
-  if (value >= 400) return "4xx";
-  if (value >= 300) return "3xx";
-  if (value >= 200) return "2xx";
-  if (value >= 100) return "1xx";
-  return "unknown";
-}
+export const PRESSURE_LOG_SCHEMA = Object.freeze([
+  "kind",
+  "pressureKind",
+  "primary",
+  "action",
+  "outcome",
+  "method",
+  "colo",
+  "durationMs",
+  "firestoreReadsEstimate",
+  "firestoreWritesEstimate",
+  "retries",
+  "errorFlag",
+  "quotaFlag",
+  "reconnectFlag",
+  "onlineCount",
+  "fanout",
+]);
 
 export function annotatePressureRequest(request, patch = {}) {
   if (!request || typeof request !== "object") return {};
   const current = REQUEST_CONTEXT.get(request) || {};
-  const next = {
-    ...current,
-    ...patch,
-  };
+  const next = { ...current, ...patch };
   REQUEST_CONTEXT.set(request, next);
   return next;
 }
@@ -33,7 +39,7 @@ export function pressureRequestContext(request) {
   return REQUEST_CONTEXT.get(request) || {};
 }
 
-export function writePressureDataPoint(env, {
+export function writePressureDataPoint(_env, {
   kind = "event",
   primary = "",
   action = "",
@@ -50,48 +56,31 @@ export function writePressureDataPoint(env, {
   onlineCount = 0,
   fanout = 0,
 } = {}) {
-  const binding = env?.PRESSURE_ANALYTICS;
-  if (!binding || typeof binding.writeDataPoint !== "function") return false;
-
-  const safeKind = clean(kind, "event") || "event";
-  const safePrimary = clean(primary, "unknown") || "unknown";
-  const safeAction = clean(action);
-  const safeOutcome = clean(outcome);
-  const safeMethod = clean(method);
-  const safeColo = clean(colo);
-  const samplingKey = clean(
-    [safeKind, safePrimary, safeAction].filter(Boolean).join(":"),
-    safeKind,
-  ).slice(0, 96);
+  const event = {
+    kind: "shadow_pressure",
+    pressureKind: clean(kind, "event") || "event",
+    primary: clean(primary, "unknown") || "unknown",
+    action: clean(action),
+    outcome: clean(outcome),
+    method: clean(method),
+    colo: clean(colo),
+    durationMs: Math.max(0, finite(durationMs)),
+    firestoreReadsEstimate: Math.max(0, finite(reads)),
+    firestoreWritesEstimate: Math.max(0, finite(writes)),
+    retries: Math.max(0, finite(retries)),
+    errorFlag: error ? 1 : 0,
+    quotaFlag: quota ? 1 : 0,
+    reconnectFlag: reconnect ? 1 : 0,
+    onlineCount: Math.max(0, finite(onlineCount)),
+    fanout: Math.max(0, finite(fanout)),
+  };
 
   try {
-    binding.writeDataPoint({
-      blobs: [
-        safeKind,
-        safePrimary,
-        safeAction,
-        safeOutcome,
-        safeMethod,
-        safeColo,
-      ],
-      doubles: [
-        1,
-        Math.max(0, finite(durationMs)),
-        Math.max(0, finite(reads)),
-        Math.max(0, finite(writes)),
-        Math.max(0, finite(retries)),
-        error ? 1 : 0,
-        quota ? 1 : 0,
-        reconnect ? 1 : 0,
-        Math.max(0, finite(onlineCount)),
-        Math.max(0, finite(fanout)),
-      ],
-      indexes: [samplingKey],
-    });
-    return true;
+    console.log(event);
+    return event;
   } catch {
-    // Telemetry must never affect the product path.
-    return false;
+    // Observability must never affect the product path.
+    return null;
   }
 }
 
@@ -129,17 +118,16 @@ export function recordRequestTelemetry(
   });
 
   if (isError || status === 429) {
-    const requestId = clean(request.headers.get("cf-ray"));
-    console.error(JSON.stringify({
+    console.error({
       kind: "shadow_request_error",
-      requestId,
+      requestId: clean(request.headers.get("cf-ray")),
       route,
       action,
       method: request.method,
       status,
       durationMs,
       code: clean(error?.code || error?.message || ""),
-    }));
+    });
   }
 }
 
@@ -154,17 +142,15 @@ export function recordFirestoreTelemetry(env, {
   circuitOpen = false,
   error = false,
 } = {}) {
-  const retries = Math.max(0, Number(attempts || 1) - 1);
   writePressureDataPoint(env, {
     kind: "firestore",
     primary: clean(operation, "unknown"),
     action: circuitOpen ? "circuit_open" : "",
     outcome: status ? String(status) : (error ? "error" : "ok"),
-    method: "",
     durationMs,
     reads,
     writes,
-    retries,
+    retries: Math.max(0, Number(attempts || 1) - 1),
     error,
     quota,
   });
@@ -191,26 +177,3 @@ export function recordRealtimeTelemetry(env, {
     error,
   });
 }
-
-export const PRESSURE_ANALYTICS_SCHEMA = Object.freeze({
-  blobs: [
-    "kind",
-    "primary",
-    "action",
-    "outcome",
-    "method",
-    "colo",
-  ],
-  doubles: [
-    "count",
-    "duration_ms",
-    "firestore_reads_estimate",
-    "firestore_writes_estimate",
-    "retries",
-    "error_flag",
-    "quota_flag",
-    "reconnect_flag",
-    "online_count",
-    "fanout",
-  ],
-});
