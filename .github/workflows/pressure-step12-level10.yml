@@ -1,4 +1,4 @@
-name: Pressure Step 12 Level 100
+name: Pressure Step 12 Level 500
 
 on:
   workflow_dispatch:
@@ -20,5 +20,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Run Step 12 level 100
+      - name: Run Step 12 level 500
         run: node scripts/pressure_step12_level10.mjs
