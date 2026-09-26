@@ -70,6 +70,7 @@ class RoomPresenceService {
   String _desiredRoomId = '';
   int _generation = 0;
   int _reconnectAttempt = 0;
+  String _pendingAdmission = '';
 
   Stream<RoomRealtimeEvent> get events => _eventsController.stream;
 
@@ -192,6 +193,8 @@ class RoomPresenceService {
         'action': 'ticket',
         'roomId': roomId,
         'reconnectAttempt': _reconnectAttempt,
+        if (_pendingAdmission.isNotEmpty)
+          'realtimeAdmission': _pendingAdmission,
       });
       if (_desiredRoomId != roomId || generation != _generation) return;
 
@@ -209,6 +212,7 @@ class RoomPresenceService {
       final oldSocket = _socket;
       _socket = connection;
       _reconnectAttempt = 0;
+      _pendingAdmission = '';
       _reconnectTimer?.cancel();
       _reconnectTimer = null;
       await oldSubscription?.cancel();
@@ -232,7 +236,10 @@ class RoomPresenceService {
     }
   }
 
-  Future<void> join(String roomId) async {
+  Future<void> join(
+    String roomId, {
+    String? realtimeAdmission,
+  }) async {
     final id = roomId.trim();
     if (id.isEmpty) throw StateError('room_id_missing');
     if (_desiredRoomId == id && _socket != null) return;
@@ -241,6 +248,7 @@ class RoomPresenceService {
     final generation = _generation;
     _desiredRoomId = id;
     _reconnectAttempt = 0;
+    _pendingAdmission = (realtimeAdmission ?? '').trim();
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     await _socketSubscription?.cancel();
@@ -257,6 +265,7 @@ class RoomPresenceService {
     _generation += 1;
     _desiredRoomId = '';
     _reconnectAttempt = 0;
+    _pendingAdmission = '';
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     await _socketSubscription?.cancel();
@@ -297,6 +306,7 @@ class RoomPresenceService {
   void close() {
     _generation += 1;
     _desiredRoomId = '';
+    _pendingAdmission = '';
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     unawaited(_socketSubscription?.cancel());
