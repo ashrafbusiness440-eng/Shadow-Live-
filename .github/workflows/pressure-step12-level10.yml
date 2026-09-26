@@ -9,9 +9,6 @@ on:
       - 'scripts/pressure_step12_5000_aggregate.mjs'
       - 'scripts/pressure_step12_realtime_shard.mjs'
       - 'scripts/pressure_step12_realtime_aggregate.mjs'
-      - 'scripts/pressure_step12_realtime_identity.mjs'
-      - 'scripts/pressure_step12_realtime_unique_shard.mjs'
-      - 'scripts/pressure_step12_realtime_unique_aggregate.mjs'
       - '.github/workflows/pressure-step12-level10.yml'
 
 permissions:
@@ -73,20 +70,9 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  realtime-plan:
-    name: realtime-sync-plan
-    needs: aggregate
-    runs-on: ubuntu-latest
-    outputs:
-      start_at_ms: ${{ steps.plan.outputs.start_at_ms }}
-    steps:
-      - id: plan
-        name: Plan synchronized realtime start
-        run: echo "start_at_ms=$(( ( $(date +%s) + 120 ) * 1000 ))" >> "$GITHUB_OUTPUT"
-
   realtime:
     name: realtime-shard-${{ matrix.shard }}
-    needs: [aggregate, realtime-plan]
+    needs: aggregate
     strategy:
       fail-fast: false
       max-parallel: 10
@@ -100,16 +86,15 @@ jobs:
       SHARD_COUNT: 10
       VUS_PER_SHARD: 500
       ROOMS_PER_SHARD: 10
-      RAMP_MS: 15000
-      HOLD_MS: 30000
-      SYNC_AT_MS: ${{ needs.realtime-plan.outputs.start_at_ms }}
+      RAMP_MS: 10000
+      HOLD_MS: 90000
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - name: Run 500-user realtime shard
-        run: node scripts/pressure_step12_realtime_unique_shard.mjs
+        run: node scripts/pressure_step12_realtime_shard.mjs
       - name: Upload realtime shard metrics
         if: always()
         uses: actions/upload-artifact@v4
@@ -135,7 +120,7 @@ jobs:
           pattern: step12-realtime-shard-*
           path: step12-realtime-artifacts
       - name: Aggregate realtime 5000-user result
-        run: node scripts/pressure_step12_realtime_unique_aggregate.mjs step12-realtime-artifacts
+        run: node scripts/pressure_step12_realtime_aggregate.mjs step12-realtime-artifacts
       - name: Upload realtime aggregate metrics
         if: always()
         uses: actions/upload-artifact@v4
