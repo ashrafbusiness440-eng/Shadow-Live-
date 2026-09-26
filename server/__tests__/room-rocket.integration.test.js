@@ -60,19 +60,23 @@ test("present room user registers during 10s window then claims one private rewa
 
   await Promise.all([
     db.collection("users").doc(uid).set({coins:1000,role:"user"}),
-    db.collection("room_presence").doc(roomId).collection("users").doc(uid).set({
-      uid,
-      displayName:"Present User",
-      lastSeenAtMs:start+5000,
-    }),
     db.collection("room_rocket_explosions").doc(explosionId).set(
       explosionData({roomId,startsAtMs:start,endsAtMs:end}),
     ),
   ]);
 
-  const entry=await registerRocketEntry(db,uid,explosionId,start+5000);
+  const entry=await registerRocketEntry(
+    db,
+    uid,
+    explosionId,
+    start+5000,
+    {realtimeUserPresent:async(r,u)=>r===roomId&&u===uid},
+  );
   assert.equal(entry.ok,true);
   assert.equal(entry.attempts,1);
+  const entryDoc=await db.collection("room_rocket_explosions").doc(explosionId)
+    .collection("entries").doc(uid).get();
+  assert.equal(entryDoc.data().source,"room_realtime");
 
   const first=await claimRocketReward(db,uid,explosionId,end+1);
   assert.equal(first.ok,true);
@@ -234,3 +238,65 @@ test("room background reward is stored in My Items and is not auto-activated",as
   assert.equal(reward.data().imageUrl,"https://example.com/neon.webp");
   assert.equal(reward.data().expiresAtMs,end+72*60*60*1000);
 });
+
+test("realtime absence overrides a fresh legacy Rocket presence document",async()=>{
+  const suffix=Date.now().toString()+"_authoritative_absence";
+  const uid="rocket_absent_"+suffix;
+  const roomId="rocket_room_"+suffix;
+  const explosionId="rocket_explosion_"+suffix;
+  const start=500000;
+  const end=510000;
+
+  await Promise.all([
+    db.collection("room_presence").doc(roomId).collection("users").doc(uid).set({
+      uid,
+      lastSeenAtMs:start+5000,
+    }),
+    db.collection("room_rocket_explosions").doc(explosionId).set(
+      explosionData({roomId,startsAtMs:start,endsAtMs:end}),
+    ),
+  ]);
+
+  await assert.rejects(
+    registerRocketEntry(
+      db,
+      uid,
+      explosionId,
+      start+5000,
+      {realtimeUserPresent:async()=>false},
+    ),
+    /not_in_room/,
+  );
+});
+
+test("Rocket uses legacy presence only when realtime lookup is unavailable",async()=>{
+  const suffix=Date.now().toString()+"_legacy_fallback";
+  const uid="rocket_legacy_"+suffix;
+  const roomId="rocket_room_"+suffix;
+  const explosionId="rocket_explosion_"+suffix;
+  const start=600000;
+  const end=610000;
+
+  await Promise.all([
+    db.collection("room_presence").doc(roomId).collection("users").doc(uid).set({
+      uid,
+      lastSeenAtMs:start+5000,
+    }),
+    db.collection("room_rocket_explosions").doc(explosionId).set(
+      explosionData({roomId,startsAtMs:start,endsAtMs:end}),
+    ),
+  ]);
+
+  const entry=await registerRocketEntry(
+    db,
+    uid,
+    explosionId,
+    start+5000,
+    {realtimeUserPresent:async()=>null},
+  );
+  assert.equal(entry.ok,true);
+  const entryDoc=await db.collection("room_rocket_explosions").doc(explosionId)
+    .collection("entries").doc(uid).get();
+  assert.equal(entryDoc.data().source,"legacy_room_presence");
+});
+
