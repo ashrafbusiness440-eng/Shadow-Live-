@@ -9,6 +9,8 @@ on:
       - 'scripts/pressure_step12_5000_aggregate.mjs'
       - 'scripts/pressure_step12_realtime_shard.mjs'
       - 'scripts/pressure_step12_realtime_aggregate.mjs'
+      - 'cloudflare-worker/src/room-realtime.js'
+      - 'cloudflare-worker/src/room-realtime-pressure.js'
       - '.github/workflows/pressure-step12-level10.yml'
 
 permissions:
