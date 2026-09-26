@@ -9,6 +9,7 @@ import {
 } from "../../cloudflare-worker/src/auth-state-reliability.js";
 import {
   assertUserDocumentSessionState,
+  parseAuthStateBatchGetResponse,
 } from "../../cloudflare-worker/src/firebase-auth.js";
 
 function response(status, retryAfter = null) {
@@ -126,4 +127,30 @@ test("user document session state accepts tokens issued after revocation", () =>
     ),
     true,
   );
+});
+
+
+test("auth-state batch parser accepts Firestore streamed-array responses", () => {
+  const rows = parseAuthStateBatchGetResponse(JSON.stringify([
+    {
+      found: {
+        name: "projects/p/databases/(default)/documents/users/u1",
+        fields: { accountStatus: { stringValue: "active" } },
+      },
+    },
+    {
+      missing: "projects/p/databases/(default)/documents/users/u2",
+    },
+  ]));
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].found.fields.accountStatus.stringValue, "active");
+  assert.match(rows[1].missing, /users\/u2$/);
+});
+
+test("auth-state batch parser accepts newline-delimited streamed responses", () => {
+  const rows = parseAuthStateBatchGetResponse(
+    '{"missing":"projects/p/databases/(default)/documents/users/u1"}\n' +
+    '{"missing":"projects/p/databases/(default)/documents/users/u2"}',
+  );
+  assert.equal(rows.length, 2);
 });
