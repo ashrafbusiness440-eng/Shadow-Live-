@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
-import { json, readJson } from "./http.js";
-import { verifyFirebaseIdToken } from "./firebase-auth.js";
+import { firestoreQuotaResponse, json, readJson } from "./http.js";
+import {
+  assertUserDocumentSessionState,
+  verifyFirebaseIdToken,
+} from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { invalidateConfigCache } from "./config-cache.js";
 
@@ -98,7 +101,9 @@ async function github(env, url, options = {}) {
 }
 
 async function verifyOwner(request, env) {
-  const decoded = await verifyFirebaseIdToken(request, env);
+  const decoded = await verifyFirebaseIdToken(request, env, {
+    checkUserState: false,
+  });
   const authAge = Math.floor(Date.now() / 1000) - Number(decoded.auth_time || 0);
   if (!Number.isFinite(authAge) || authAge > 1800) {
     throw new ApiError("recent_auth_required", 401);
@@ -107,7 +112,9 @@ async function verifyOwner(request, env) {
   const db = firestoreClient(env);
   const user = await db.get(`users/${decoded.sub}`);
   const actor = user.data || {};
-  if (!user.exists || actor.role !== "owner" || actor.adminEnabled !== true) {
+  if (!user.exists) throw new ApiError("forbidden", 403);
+  assertUserDocumentSessionState(decoded, actor);
+  if (actor.role !== "owner" || actor.adminEnabled !== true) {
     throw new ApiError("forbidden", 403);
   }
   return { decoded, db };
@@ -317,6 +324,8 @@ export async function manageAppAsset(request, env) {
     invalidateConfigCache(`registry:app_assets:key:${assetKey}`);
     return json(request, env, { ok: true, code: "ok", ...result });
   } catch (error) {
+    const quotaResponse = firestoreQuotaResponse(request, env, error);
+    if (quotaResponse) return quotaResponse;
     if (error instanceof ApiError) {
       return json(request, env, { ok: false, code: error.code }, error.status);
     }
