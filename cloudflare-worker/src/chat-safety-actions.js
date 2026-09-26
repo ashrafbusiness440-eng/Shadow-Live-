@@ -1,6 +1,7 @@
 import { json, readJson } from "./http.js";
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
+import { annotatePressureRequest } from "./pressure-telemetry.js";
 import { resolveRevenuePolicy } from "./economy-policy.js";
 import {
   legacyPresenceFresh,
@@ -1154,6 +1155,7 @@ export async function chatSafetyActions(request, env) {
     const decoded = await verifyFirebaseIdToken(request, env);
     const body = await readJson(request);
     const action = clean(body.action);
+    annotatePressureRequest(request, { action });
     const db = firestoreClient(env);
 
     let result;
