@@ -6,10 +6,22 @@ import {
 import { firestoreQuotaResponse, json, readJson } from "./http.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 import {
+  createAsyncLimiter,
+  createAsyncTtlCache,
+} from "./room-realtime-pressure.js";
+import {
   ROOM_REALTIME_PROTOCOL_VERSION,
   ROOM_REALTIME_TICKET_TTL_MS,
   normalizeRoomId,
 } from "./room-realtime-protocol.js";
+
+const REALTIME_TICKET_FIRESTORE_CONCURRENCY = 32;
+const REALTIME_ROOM_CACHE_TTL_MS = 30000;
+const ticketFirestoreLimiter = createAsyncLimiter(REALTIME_TICKET_FIRESTORE_CONCURRENCY);
+const roomAdmissionCache = createAsyncTtlCache({
+  ttlMs: REALTIME_ROOM_CACHE_TTL_MS,
+  maxEntries: 4096,
+});
 
 function roomObject(env, roomId) {
   if (!env?.ROOM_REALTIME) throw new Error("room_realtime_not_configured");
@@ -107,8 +119,11 @@ export async function roomRealtime(request, env) {
       const db = firestoreClient(env);
       const uid = String(payload.sub || "");
       const [room, user] = await Promise.all([
-        db.get(`rooms/${roomId}`),
-        db.get(`users/${uid}`),
+        roomAdmissionCache.get(
+          roomId,
+          () => ticketFirestoreLimiter.run(() => db.get(`rooms/${roomId}`)),
+        ),
+        ticketFirestoreLimiter.run(() => db.get(`users/${uid}`)),
       ]);
       if (!room.exists || room.data?.isActive === false) {
         return json(request, env, { ok: false, code: "room_unavailable" }, 404);
