@@ -3,6 +3,11 @@ export const CONFIG_CACHE_STALE_MS = 5 * 60_000;
 
 const entries = new Map();
 const inflight = new Map();
+const generations = new Map();
+
+function generationFor(key) {
+  return Number(generations.get(key) || 0);
+}
 
 function positiveMs(value, fallback) {
   const number = Number(value);
@@ -52,6 +57,7 @@ export async function readThroughConfigCache(
   const running = inflight.get(cacheKey);
   if (running) return running;
 
+  const generation = generationFor(cacheKey);
   const freshTtlMs = positiveMs(ttlMs, CONFIG_CACHE_TTL_MS);
   const staleWindowMs = Math.max(
     freshTtlMs,
@@ -62,11 +68,13 @@ export async function readThroughConfigCache(
     try {
       const value = await loader();
       const loadedAtMs = Number(now());
-      entries.set(cacheKey, {
-        value,
-        expiresAtMs: loadedAtMs + freshTtlMs,
-        staleUntilMs: loadedAtMs + staleWindowMs,
-      });
+      if (generationFor(cacheKey) === generation) {
+        entries.set(cacheKey, {
+          value,
+          expiresAtMs: loadedAtMs + freshTtlMs,
+          staleUntilMs: loadedAtMs + staleWindowMs,
+        });
+      }
       return value;
     } catch (error) {
       const stale = entries.get(cacheKey);
@@ -107,6 +115,7 @@ export function primeConfigCache(
   );
   const loadedAtMs = Number(now());
 
+  generations.set(cacheKey, generationFor(cacheKey) + 1);
   entries.set(cacheKey, {
     value,
     expiresAtMs: loadedAtMs + freshTtlMs,
@@ -119,6 +128,7 @@ export function primeConfigCache(
 export function invalidateConfigCache(key) {
   const cacheKey = String(key || "").trim();
   if (!cacheKey) return;
+  generations.set(cacheKey, generationFor(cacheKey) + 1);
   entries.delete(cacheKey);
   inflight.delete(cacheKey);
 }
@@ -126,4 +136,5 @@ export function invalidateConfigCache(key) {
 export function resetConfigCacheForTests() {
   entries.clear();
   inflight.clear();
+  generations.clear();
 }
