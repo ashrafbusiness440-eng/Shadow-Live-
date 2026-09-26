@@ -109,6 +109,7 @@ export function recordRequestTelemetry(
   const action = clean(context.action);
   const durationMs = Math.max(0, Date.now() - Number(startedAtMs || Date.now()));
   const quota =
+    context.quota === true ||
     status === 429 ||
     clean(error?.code || error?.message).includes("firestore_quota_exhausted");
   const isError = Boolean(error) || status >= 500;
