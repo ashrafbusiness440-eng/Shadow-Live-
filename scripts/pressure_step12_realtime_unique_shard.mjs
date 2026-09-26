@@ -9,6 +9,7 @@ import {
   loadFirebaseTestIdentity,
   mapLimit,
 } from "./pressure_step12_realtime_identity.mjs";
+import { issueRealtimeAdmission } from "../cloudflare-worker/src/realtime-admission.js";
 
 const workerBase = process.env.SHADOW_WORKER_URL || "https://shadow-live.ashraf-business-440.workers.dev";
 const shardIndex = Number(process.env.SHARD_INDEX || 0);
@@ -19,6 +20,7 @@ const rampMs = Number(process.env.RAMP_MS || 15000);
 const holdMs = Number(process.env.HOLD_MS || 30000);
 const syncAtMs = Number(process.env.SYNC_AT_MS || 0);
 const runId = String(process.env.GITHUB_RUN_ID || Date.now());
+const zegoServerSecret = String(process.env.ZEGO_SERVER_SECRET || "").trim();
 
 const identity = loadFirebaseTestIdentity();
 const uidPrefix = `ci_step12_rt_${runId}_${shardIndex}`;
@@ -115,8 +117,16 @@ async function openVu(vuIndex) {
 
   let ticket;
   try {
+    const realtimeAdmission = issueRealtimeAdmission(
+      zegoServerSecret,
+      {
+        uid: uids[vuIndex],
+        roomId,
+        displayName: `Step12 User ${shardIndex}-${vuIndex}`,
+      },
+    );
     ticket = await realtimePost(
-      { action: "ticket", roomId },
+      { action: "ticket", roomId, realtimeAdmission },
       idTokens[vuIndex],
     );
   } catch (error) {
@@ -282,6 +292,7 @@ let finalPresence = null;
 
 try {
   if (typeof WebSocket !== "function") throw new Error("node_websocket_unavailable");
+  if (!zegoServerSecret) throw new Error("zego_server_secret_missing");
 
   accessToken = await googleDatastoreAccessToken(identity);
 
