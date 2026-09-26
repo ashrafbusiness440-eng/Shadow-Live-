@@ -174,7 +174,6 @@ test("room gift debits once and records transaction ledger agency link and accru
     body,
     {realtimeNamespace:realtimeNamespaceWithPresentUids([])},
   );
-  assert.equal(duplicate.code,"duplicate");
   assert.equal(
     duplicate.code,
     "duplicate",
