@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  PRESSURE_ANALYTICS_SCHEMA,
+  PRESSURE_LOG_SCHEMA,
   annotatePressureRequest,
   pressureRequestContext,
   recordFirestoreTelemetry,
@@ -10,42 +10,42 @@ import {
   writePressureDataPoint,
 } from "../../cloudflare-worker/src/pressure-telemetry.js";
 
-function analyticsEnv() {
-  const points = [];
-  return {
-    points,
-    env: {
-      PRESSURE_ANALYTICS: {
-        writeDataPoint(point) {
-          points.push(point);
-        },
-      },
-    },
-  };
+async function captureLogs(callback) {
+  const logs = [];
+  const errors = [];
+  const originalLog = console.log;
+  const originalError = console.error;
+  console.log = (value) => logs.push(value);
+  console.error = (value) => errors.push(value);
+  try {
+    await callback();
+  } finally {
+    console.log = originalLog;
+    console.error = originalError;
+  }
+  return { logs, errors };
 }
 
-test("pressure telemetry schema stays stable and privacy-safe", () => {
-  assert.deepEqual(PRESSURE_ANALYTICS_SCHEMA.blobs, [
+test("pressure log schema stays stable and privacy-safe", () => {
+  assert.deepEqual(PRESSURE_LOG_SCHEMA, [
     "kind",
+    "pressureKind",
     "primary",
     "action",
     "outcome",
     "method",
     "colo",
-  ]);
-  assert.deepEqual(PRESSURE_ANALYTICS_SCHEMA.doubles, [
-    "count",
-    "duration_ms",
-    "firestore_reads_estimate",
-    "firestore_writes_estimate",
+    "durationMs",
+    "firestoreReadsEstimate",
+    "firestoreWritesEstimate",
     "retries",
-    "error_flag",
-    "quota_flag",
-    "reconnect_flag",
-    "online_count",
+    "errorFlag",
+    "quotaFlag",
+    "reconnectFlag",
+    "onlineCount",
     "fanout",
   ]);
-  const serialized = JSON.stringify(PRESSURE_ANALYTICS_SCHEMA);
+  const serialized = JSON.stringify(PRESSURE_LOG_SCHEMA);
   for (const forbidden of [
     "uid",
     "roomId",
@@ -54,6 +54,7 @@ test("pressure telemetry schema stays stable and privacy-safe", () => {
     "idempotencyKey",
     "coins",
     "diamonds",
+    "authorization",
   ]) {
     assert.equal(serialized.includes(forbidden), false);
   }
@@ -79,91 +80,108 @@ test("request telemetry context merges action fanout and reconnect attempt", () 
   });
 });
 
-test("request telemetry writes one non-blocking analytics point", () => {
-  const { env, points } = analyticsEnv();
-  const request = new Request("https://example.test/api/room-realtime", {
-    method: "POST",
+test("pressure telemetry emits structured Workers Logs fields", async () => {
+  const { logs } = await captureLogs(() => {
+    const event = writePressureDataPoint({}, {
+      kind: "request",
+      primary: "/api/room-realtime",
+      action: "presenceCounts",
+      outcome: "200",
+      method: "POST",
+      durationMs: 25,
+      fanout: 24,
+    });
+    assert.equal(event.kind, "shadow_pressure");
   });
-  annotatePressureRequest(request, {
-    route: "/api/room-realtime",
+
+  assert.equal(logs.length, 1);
+  assert.deepEqual(logs[0], {
+    kind: "shadow_pressure",
+    pressureKind: "request",
+    primary: "/api/room-realtime",
     action: "presenceCounts",
-    reconnectAttempt: 0,
+    outcome: "200",
+    method: "POST",
+    colo: "",
+    durationMs: 25,
+    firestoreReadsEstimate: 0,
+    firestoreWritesEstimate: 0,
+    retries: 0,
+    errorFlag: 0,
+    quotaFlag: 0,
+    reconnectFlag: 0,
+    onlineCount: 0,
     fanout: 24,
   });
-
-  recordRequestTelemetry(
-    request,
-    env,
-    new Response("ok", { status: 200 }),
-    Date.now() - 25,
-  );
-
-  assert.equal(points.length, 1);
-  assert.equal(points[0].blobs[0], "request");
-  assert.equal(points[0].blobs[1], "/api/room-realtime");
-  assert.equal(points[0].blobs[2], "presenceCounts");
-  assert.equal(points[0].blobs[3], "200");
-  assert.equal(points[0].doubles[0], 1);
-  assert.ok(points[0].doubles[1] >= 0);
-  assert.equal(points[0].doubles[7], 0);
-  assert.equal(points[0].doubles[9], 24);
-  assert.equal(points[0].indexes.length, 1);
 });
 
-test("Firestore telemetry maps logical read write retry and quota metrics", () => {
-  const { env, points } = analyticsEnv();
-
-  recordFirestoreTelemetry(env, {
-    operation: "run_query",
-    status: 429,
-    durationMs: 1200,
-    reads: 7,
-    writes: 0,
-    attempts: 2,
-    quota: true,
-    circuitOpen: true,
-    error: true,
+test("Firestore telemetry maps logical read write retry and quota metrics", async () => {
+  const { logs } = await captureLogs(() => {
+    recordFirestoreTelemetry({}, {
+      operation: "run_query",
+      status: 429,
+      durationMs: 1200,
+      reads: 7,
+      writes: 0,
+      attempts: 2,
+      quota: true,
+      circuitOpen: true,
+      error: true,
+    });
   });
 
-  assert.equal(points.length, 1);
-  assert.equal(points[0].blobs[0], "firestore");
-  assert.equal(points[0].blobs[1], "run_query");
-  assert.equal(points[0].blobs[2], "circuit_open");
-  assert.equal(points[0].blobs[3], "429");
-  assert.equal(points[0].doubles[2], 7);
-  assert.equal(points[0].doubles[3], 0);
-  assert.equal(points[0].doubles[4], 1);
-  assert.equal(points[0].doubles[5], 1);
-  assert.equal(points[0].doubles[6], 1);
+  assert.equal(logs.length, 1);
+  assert.equal(logs[0].pressureKind, "firestore");
+  assert.equal(logs[0].primary, "run_query");
+  assert.equal(logs[0].action, "circuit_open");
+  assert.equal(logs[0].outcome, "429");
+  assert.equal(logs[0].firestoreReadsEstimate, 7);
+  assert.equal(logs[0].firestoreWritesEstimate, 0);
+  assert.equal(logs[0].retries, 1);
+  assert.equal(logs[0].errorFlag, 1);
+  assert.equal(logs[0].quotaFlag, 1);
 });
 
-test("missing Analytics Engine binding is a safe no-op", () => {
-  assert.equal(
-    writePressureDataPoint({}, {
-      kind: "request",
-      primary: "/api/test",
-      durationMs: 10,
-    }),
-    false,
-  );
-});
-
-test("normalized Firestore quota context is counted on HTTP 503", () => {
-  const { env, points } = analyticsEnv();
+test("normalized Firestore quota context is counted on HTTP 503", async () => {
   const request = new Request("https://example.test/api/app-assets");
   annotatePressureRequest(request, {
     route: "/api/app-assets",
     action: "list",
     quota: true,
   });
-  recordRequestTelemetry(
-    request,
-    env,
-    new Response("quota", { status: 503 }),
-    Date.now() - 10,
-  );
-  assert.equal(points.length, 1);
-  assert.equal(points[0].blobs[3], "503");
-  assert.equal(points[0].doubles[6], 1);
+
+  const { logs, errors } = await captureLogs(() => {
+    recordRequestTelemetry(
+      request,
+      {},
+      new Response("quota", { status: 503 }),
+      Date.now() - 10,
+    );
+  });
+
+  assert.equal(logs.length, 1);
+  assert.equal(logs[0].outcome, "503");
+  assert.equal(logs[0].quotaFlag, 1);
+  assert.equal(logs[0].errorFlag, 1);
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0].kind, "shadow_request_error");
 });
 
+test("telemetry remains safe when console logging throws", () => {
+  const originalLog = console.log;
+  console.log = () => {
+    throw new Error("log_failed");
+  };
+  try {
+    assert.equal(
+      writePressureDataPoint({}, {
+        kind: "request",
+        primary: "/api/test",
+        durationMs: 10,
+      }),
+      null,
+    );
+  } finally {
+    console.log = originalLog;
+  }
+});
