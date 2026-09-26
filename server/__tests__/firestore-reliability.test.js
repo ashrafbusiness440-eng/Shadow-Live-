@@ -20,6 +20,7 @@ import {
   resetFirestoreQuotaCircuit,
 } from "../../cloudflare-worker/src/firestore.js";
 import { firestoreQuotaResponse } from "../../cloudflare-worker/src/http.js";
+import { shouldRetryLegacyTransaction } from "../../cloudflare-worker/src/legacy-firebase-admin-shim.js";
 
 test("Firestore transient retry cap stays small", () => {
   assert.equal(FIRESTORE_TRANSIENT_MAX_ATTEMPTS, 3);
@@ -114,6 +115,22 @@ test("Firestore Retry-After is honored but bounded", () => {
     firestoreRetryDelayMs(response, 0, { randomImpl: () => 0 }),
     FIRESTORE_RETRY_MAX_DELAY_MS,
   );
+});
+
+test("Legacy transaction retries fail fast once quota breaker is explicit", () => {
+  assert.equal(
+    shouldRetryLegacyTransaction(
+      Object.assign(new Error("firestore_quota_exhausted"), {
+        code: "firestore_quota_exhausted",
+        status: 503,
+      }),
+      0,
+      3,
+    ),
+    false,
+  );
+  assert.equal(shouldRetryLegacyTransaction(new Error("UNAVAILABLE"), 0, 3), true);
+  assert.equal(shouldRetryLegacyTransaction(new Error("UNAVAILABLE"), 2, 3), false);
 });
 
 test("Firestore transient error detection supports transaction retries", () => {
