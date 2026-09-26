@@ -674,27 +674,36 @@ def main() -> int:
         if marker not in prod_gate:
             failures.append(f"Step 10 regression: automatic Production summary lost policy marker: {marker}")
 
-    # Step 11: observability must measure pressure without writing telemetry to Firestore.
+    # Step 11: observability must measure pressure without a new storage dependency.
     for required in (
-        'binding = "PRESSURE_ANALYTICS"',
-        'dataset = "shadow_live_pressure_v1"',
+        "[observability.logs]",
+        "invocation_logs = true",
+        "head_sampling_rate = 1",
     ):
         if required not in wrangler:
-            failures.append(f"Step 11 regression: Analytics Engine binding missing: {required}")
+            failures.append(f"Step 11 regression: Workers Logs configuration missing: {required}")
+    for forbidden in (
+        "analytics_engine_datasets",
+        "PRESSURE_ANALYTICS",
+        "shadow_live_pressure_v1",
+    ):
+        if forbidden in wrangler:
+            failures.append(f"Step 11 deploy regression: optional Analytics Engine dependency returned: {forbidden}")
 
     for required in (
-        "PRESSURE_ANALYTICS_SCHEMA",
+        "PRESSURE_LOG_SCHEMA",
         "recordRequestTelemetry",
         "recordFirestoreTelemetry",
         "recordRealtimeTelemetry",
-        "writeDataPoint",
-        "firestore_reads_estimate",
-        "firestore_writes_estimate",
-        "reconnect_flag",
+        'kind: "shadow_pressure"',
+        "console.log(event)",
+        "firestoreReadsEstimate",
+        "firestoreWritesEstimate",
+        "reconnectFlag",
         "fanout",
     ):
         if required not in pressure_telemetry:
-            failures.append(f"Step 11 regression: pressure telemetry schema/runtime missing {required}")
+            failures.append(f"Step 11 regression: structured Workers Logs telemetry missing {required}")
 
     for forbidden in (
         "idempotencyKey",
@@ -709,7 +718,8 @@ def main() -> int:
 
     for required in (
         "recordRequestTelemetry",
-        "pressureAnalyticsConfigured",
+        'pressureObservability: "workers_logs"',
+        "workersLogsConfigured: true",
         "version: 28",
     ):
         if required not in worker_index:
@@ -748,19 +758,21 @@ def main() -> int:
     if "server/__tests__/pressure-telemetry.test.js" not in flutter_ci:
         failures.append("Step 11 regression: telemetry unit test is not part of Flutter CI")
     for required in (
-        "quantileExactWeighted(0.50)",
-        "quantileExactWeighted(0.95)",
-        "quantileExactWeighted(0.99)",
+        "Workers Logs",
+        "Query Builder",
+        "/workers/observability/telemetry/query",
+        "p95",
+        "p99",
         "System Health read model",
-        "Account Analytics Read",
+        "Workers Observability Read",
     ):
         if required not in step11_doc:
             failures.append(f"Step 11 regression: observability query/read-model documentation missing {required}")
 
     if "FirebaseFirestore" in pressure_telemetry or "room_presence" in pressure_telemetry:
         failures.append("Step 11 regression: telemetry module must not use Firestore as a high-frequency sink")
-    if "PRESSURE_ANALYTICS_SCHEMA" not in pressure_telemetry_test:
-        failures.append("Step 11 regression: telemetry schema is not unit-tested")
+    if "PRESSURE_LOG_SCHEMA" not in pressure_telemetry_test:
+        failures.append("Step 11 regression: structured log schema is not unit-tested")
 
     check(lambda: require(
         r'crons\s*=\s*\["\*/5 \* \* \* \*"\]',
