@@ -25,6 +25,37 @@ void main() {
     }
   });
 
+  test('API catalog parser filters disabled gifts and preserves sort order', () {
+    final gifts = GiftCatalogService.parseCatalog(<Map<String, dynamic>>[
+      <String, dynamic>{
+        'id': 'later',
+        'nameAr': 'لاحق',
+        'priceCoins': 200,
+        'category': 'general',
+        'enabled': true,
+        'sortOrder': 2,
+      },
+      <String, dynamic>{
+        'id': 'disabled',
+        'nameAr': 'متوقف',
+        'priceCoins': 100,
+        'category': 'general',
+        'enabled': false,
+        'sortOrder': 0,
+      },
+      <String, dynamic>{
+        'id': 'first',
+        'nameAr': 'أول',
+        'priceCoins': 100,
+        'category': 'general',
+        'enabled': true,
+        'sortOrder': 1,
+      },
+    ]);
+
+    expect(gifts.map((gift) => gift.id).toList(), <String>['first', 'later']);
+  });
+
   test('default gift prices match approved starter table', () {
     expect(
       GiftCatalogService.fallbackGifts

@@ -1,5 +1,6 @@
 import { getApps, initializeApp, cert, getAuth, FieldValue, getFirestore, legacyEnv } from "../legacy-firebase-admin-shim.js";
 import { assertUserDocumentSessionState } from "../firebase-auth.js";
+import { invalidateConfigCache } from "../config-cache.js";
 import {
   BET_LADDERS,
   GREEDY_CAT_CHOICES,
@@ -298,6 +299,7 @@ export async function saveGameVariant(db,actorUid,body={}){
     });
     return afterVariant;
   });
+  invalidateConfigCache("config:game_runtime");
   return result;
 }
 
@@ -353,6 +355,7 @@ export async function saveGameTiming(db,actorUid,body={}){
       createdAt:now,
     });
   });
+  invalidateConfigCache("config:game_runtime");
   return {
     timezoneOffsetMinutes,
     roundDurationSeconds,

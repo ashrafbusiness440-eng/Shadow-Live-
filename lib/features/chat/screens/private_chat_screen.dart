@@ -387,7 +387,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   Future<void> _openGiftPicker() async {
     List<GiftCatalogItem> gifts;
     try {
-      gifts = await GiftCatalogService.watchCatalog().first;
+      gifts = await GiftCatalogService.loadCatalog();
     } catch (_) {
       _snack('تعذر تحميل الهدايا حالياً.');
       return;

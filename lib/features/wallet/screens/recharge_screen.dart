@@ -23,7 +23,6 @@ class _RechargeScreenState extends State<RechargeScreen> {
   bool _checkedPassword = false;
   final TextEditingController _diamondAmount = TextEditingController();
 
-  StreamSubscription<List<RechargePackageConfig>>? _packageSubscription;
   List<RechargePackageConfig> _packages =
       List<RechargePackageConfig>.from(RechargeConfigService.fallbackPackages);
 
@@ -31,18 +30,7 @@ class _RechargeScreenState extends State<RechargeScreen> {
   void initState() {
     super.initState();
     tab = widget.initialTab == 1 ? 1 : 0;
-    _packageSubscription = RechargeConfigService.watchPackages().listen(
-      (items) {
-        if (!mounted) return;
-        setState(() {
-          _packages = List<RechargePackageConfig>.from(items);
-          if (selected >= _packages.length) {
-            selected = _packages.isEmpty ? 0 : _packages.length - 1;
-          }
-        });
-      },
-      onError: (_) {},
-    );
+    unawaited(_loadPackages());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (tab == 1) _ensurePassword();
     });
@@ -50,9 +38,23 @@ class _RechargeScreenState extends State<RechargeScreen> {
 
   @override
   void dispose() {
-    _packageSubscription?.cancel();
     _diamondAmount.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadPackages() async {
+    try {
+      final items = await RechargeConfigService.loadPackages();
+      if (!mounted) return;
+      setState(() {
+        _packages = List<RechargePackageConfig>.from(items);
+        if (selected >= _packages.length) {
+          selected = _packages.isEmpty ? 0 : _packages.length - 1;
+        }
+      });
+    } catch (_) {
+      // Keep the approved fallback packages already rendered by the screen.
+    }
   }
 
   void _msg(String text) {

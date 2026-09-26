@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { json, readJson } from "./http.js";
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
+import { invalidateConfigCache } from "./config-cache.js";
 
 const OWNER = "ashrafbusiness440-eng";
 const REPO = "Shadow-Live-";
@@ -312,6 +313,8 @@ export async function manageAppAsset(request, env) {
       }),
     ]);
 
+    invalidateConfigCache("registry:app_assets:list");
+    invalidateConfigCache(`registry:app_assets:key:${assetKey}`);
     return json(request, env, { ok: true, code: "ok", ...result });
   } catch (error) {
     if (error instanceof ApiError) {

@@ -62,7 +62,7 @@ class _DirectGiftSheetState extends State<_DirectGiftSheet> {
 
   Future<void> _load() async {
     try {
-      final catalog = await GiftCatalogService.watchCatalog().first;
+      final catalog = await GiftCatalogService.loadCatalog();
       if (!mounted) return;
       setState(() {
         _catalog = catalog;

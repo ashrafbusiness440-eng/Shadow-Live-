@@ -49,7 +49,7 @@ jobs:
           npx wrangler deploy --dry-run --outdir ../wrangler-dry-run
 
       - name: Run economy, mic, and realtime policy unit tests
-        run: node --test server/__tests__/economy-policy.test.js server/__tests__/mic-activity.test.js server/__tests__/economy-permissions.test.js server/__tests__/room-rocket.test.js server/__tests__/game-engine.test.js server/__tests__/room-realtime-protocol.test.js server/__tests__/room-realtime-presence.test.js server/__tests__/room-realtime-game.test.js server/__tests__/auth-state-reliability.test.js server/__tests__/firestore-reliability.test.js
+        run: node --test server/__tests__/economy-policy.test.js server/__tests__/mic-activity.test.js server/__tests__/economy-permissions.test.js server/__tests__/room-rocket.test.js server/__tests__/game-engine.test.js server/__tests__/room-realtime-protocol.test.js server/__tests__/room-realtime-presence.test.js server/__tests__/room-realtime-game.test.js server/__tests__/auth-state-reliability.test.js server/__tests__/firestore-reliability.test.js server/__tests__/config-cache.test.js
 
       - name: Set up Java for Firestore emulator
         uses: actions/setup-java@v4

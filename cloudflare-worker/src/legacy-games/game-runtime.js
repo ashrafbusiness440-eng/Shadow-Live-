@@ -13,6 +13,7 @@ import {
   validateBetLadder,
   validateOutcomeWeights,
 } from "./game-engine.js";
+import { readThroughConfigCache } from "../config-cache.js";
 
 const clean=(value)=>String(value??"").trim();
 const validRoomId=(value)=>/^[A-Za-z0-9_-]{1,180}$/.test(clean(value));
@@ -61,7 +62,7 @@ async function registerGameRealtimeSchedules(roomId,uid,schedules){
   }
 }
 
-const runtimeConfigCache={value:null,expiresAtMs:0};
+const GAME_RUNTIME_CACHE_KEY="config:game_runtime";
 
 function transientFirestoreError(error){
   const code=clean(error?.message);
@@ -78,19 +79,21 @@ function transientFirestoreError(error){
 }
 
 async function loadRuntimeConfig(db,{allowFallback=false}={}){
-  const nowMs=Date.now();
-  if(runtimeConfigCache.value&&runtimeConfigCache.expiresAtMs>nowMs){
-    return runtimeConfigCache.value;
-  }
   try{
-    const snap=await db.collection("system_config").doc("game_runtime").get();
-    const value=runtimeConfig(snap.exists?snap.data()||{}:{});
-    runtimeConfigCache.value=value;
-    runtimeConfigCache.expiresAtMs=nowMs+30000;
-    return value;
+    return await readThroughConfigCache(
+      GAME_RUNTIME_CACHE_KEY,
+      async()=>{
+        const snap=await db.collection("system_config").doc("game_runtime").get();
+        return runtimeConfig(snap.exists?snap.data()||{}:{});
+      },
+      {
+        ttlMs:30000,
+        staleMs:5*60*1000,
+        allowStaleOnError:allowFallback,
+      },
+    );
   }catch(error){
     if(!allowFallback||!transientFirestoreError(error))throw error;
-    if(runtimeConfigCache.value)return runtimeConfigCache.value;
     return runtimeConfig({});
   }
 }

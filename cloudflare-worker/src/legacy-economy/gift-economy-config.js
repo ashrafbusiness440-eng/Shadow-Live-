@@ -1,5 +1,6 @@
 import { getApps, initializeApp, cert, getAuth, FieldValue, getFirestore, legacyEnv } from "../legacy-firebase-admin-shim.js";
 import { assertUserDocumentSessionState } from "../firebase-auth.js";
+import { primeConfigCache, readThroughConfigCache } from "../config-cache.js";
 
 function clean(value){return String(value??"").trim();}
 function parseServiceAccount(raw){
@@ -160,6 +161,20 @@ export function normalizePolicy(raw={}){
   };
 }
 
+async function cachedGiftEconomyPolicy(db){
+  return readThroughConfigCache(
+    "config:gift_economy",
+    async()=>{
+      const snap=await db.collection("system_config").doc("gift_economy").get();
+      if(!snap.exists)return defaultPolicy();
+      const data=snap.data()||{};
+      try{return normalizePolicy(data);}
+      catch(_){return {...defaultPolicy(),...data};}
+    },
+    {ttlMs:60000,staleMs:5*60*1000},
+  );
+}
+
 export async function saveGiftEconomyPolicy(db,uid,raw={}){
   const policy=normalizePolicy(raw);
   const ref=db.collection("system_config").doc("gift_economy");
@@ -181,6 +196,7 @@ export async function saveGiftEconomyPolicy(db,uid,raw={}){
       createdAt:FieldValue.serverTimestamp(),
     });
   });
+  primeConfigCache("config:gift_economy",policy,{ttlMs:60000,staleMs:5*60*1000});
   return policy;
 }
 
@@ -194,13 +210,7 @@ export async function handler(req,res){
     const ref=db.collection("system_config").doc("gift_economy");
 
     if(action==="state"){
-      const snap=await ref.get();
-      let config=defaultPolicy();
-      if(snap.exists){
-        const data=snap.data()||{};
-        try{config=normalizePolicy(data);}
-        catch(_){config={...defaultPolicy(),...data};}
-      }
+      const config=await cachedGiftEconomyPolicy(db);
       return out(res,200,{ok:true,config});
     }
 

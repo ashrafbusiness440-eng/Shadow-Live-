@@ -1,5 +1,6 @@
 import { getApps, initializeApp, cert, getAuth, FieldValue, getFirestore, legacyEnv } from "../legacy-firebase-admin-shim.js";
 import { assertUserDocumentSessionState } from "../firebase-auth.js";
+import { invalidateConfigCache, readThroughConfigCache } from "../config-cache.js";
 
 function parseServiceAccount(raw) {
   const text = String(raw || "").trim();
@@ -34,10 +35,14 @@ function cors(req, res) {
 const out = (res, status, body) => res.status(status).json(body);
 const clean = (value) => String(value ?? "").trim();
 
-async function getActor(req) {
+async function authenticatedUser(req) {
   const authorization = clean(req.headers.authorization);
   if (!authorization.startsWith("Bearer ")) throw Error("unauthorized");
-  const decoded = await getAuth().verifyIdToken(authorization.slice(7), {checkUserState:false});
+  return getAuth().verifyIdToken(authorization.slice(7), {checkUserState:false});
+}
+
+async function getActor(req) {
+  const decoded = await authenticatedUser(req);
   const db = getFirestore();
   const snap = await db.collection("users").doc(decoded.uid).get();
   if (!snap.exists) throw Error("forbidden");
@@ -49,6 +54,48 @@ async function getActor(req) {
     (actor.adminEnabled === true && caps.includes("manageEconomy"));
   if (!allowed) throw Error("forbidden");
   return { uid: decoded.uid, actor, db };
+}
+
+async function cachedRechargeState(db) {
+  return readThroughConfigCache(
+    "config:recharge",
+    async () => {
+      const snap = await db.collection("system_config").doc("recharge").get();
+      return {
+        exists: snap.exists,
+        config: snap.exists ? snap.data() : null,
+      };
+    },
+    { ttlMs: 30_000, staleMs: 5 * 60_000 },
+  );
+}
+
+function publicPackages(config) {
+  const raw = Array.isArray(config?.packages) ? config.packages : [];
+  return raw
+    .filter((item) => item && item.enabled !== false)
+    .map((item) => ({
+      id: clean(item.id),
+      productId: clean(item.productId),
+      priceUsd: Number(item.priceUsd || 0),
+      baseCoins: Number(item.baseCoins || 0),
+      bonusCoins: Number(item.bonusCoins || 0),
+      enabled: item.enabled !== false,
+      badge: clean(item.badge),
+      sortOrder: Number(item.sortOrder || 0),
+      imageAsset: clean(item.imageAsset),
+    }))
+    .filter((item) =>
+      item.id &&
+      item.productId &&
+      Number.isFinite(item.priceUsd) &&
+      item.priceUsd > 0 &&
+      Number.isSafeInteger(item.baseCoins) &&
+      item.baseCoins > 0 &&
+      Number.isSafeInteger(item.bonusCoins) &&
+      item.bonusCoins >= 0
+    )
+    .sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
 function validatePackages(raw) {
@@ -95,15 +142,27 @@ export async function handler(req, res) {
 
   try {
     initFirebase();
-    const { uid, db } = await getActor(req);
     const action = clean(req.body?.action);
 
-    if (action === "state") {
-      const snap = await db.collection("system_config").doc("recharge").get();
+    if (action === "packages") {
+      await authenticatedUser(req);
+      const db = getFirestore();
+      const state = await cachedRechargeState(db);
       return out(res, 200, {
         ok: true,
-        exists: snap.exists,
-        config: snap.exists ? snap.data() : null,
+        coinsPerUsd: 10000,
+        packages: publicPackages(state.config),
+      });
+    }
+
+    const { uid, db } = await getActor(req);
+
+    if (action === "state") {
+      const state = await cachedRechargeState(db);
+      return out(res, 200, {
+        ok: true,
+        exists: state.exists,
+        config: state.config,
       });
     }
 
@@ -134,6 +193,7 @@ export async function handler(req, res) {
           createdAt: FieldValue.serverTimestamp(),
         });
       });
+      invalidateConfigCache("config:recharge");
       return out(res, 200, { ok: true, packages });
     }
 

@@ -26,6 +26,43 @@ void main() {
     }
   });
 
+  test('API package parser filters disabled packages and sorts them', () {
+    final packages = RechargeConfigService.parsePackages(<Map<String, dynamic>>[
+      <String, dynamic>{
+        'id': 'later',
+        'productId': 'shadow_later',
+        'priceUsd': 2.99,
+        'baseCoins': 29900,
+        'bonusCoins': 100,
+        'enabled': true,
+        'sortOrder': 2,
+      },
+      <String, dynamic>{
+        'id': 'disabled',
+        'productId': 'shadow_disabled',
+        'priceUsd': 0.99,
+        'baseCoins': 9900,
+        'bonusCoins': 100,
+        'enabled': false,
+        'sortOrder': 0,
+      },
+      <String, dynamic>{
+        'id': 'first',
+        'productId': 'shadow_first',
+        'priceUsd': 1.99,
+        'baseCoins': 19900,
+        'bonusCoins': 100,
+        'enabled': true,
+        'sortOrder': 1,
+      },
+    ]);
+
+    expect(
+      packages.map((package) => package.id).toList(),
+      <String>['first', 'later'],
+    );
+  });
+
   test('fallback recharge totals match approved package totals', () {
     final totals = RechargeConfigService.fallbackPackages
         .map((package) => package.totalCoins)

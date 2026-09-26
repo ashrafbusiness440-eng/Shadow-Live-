@@ -64,7 +64,7 @@ class _RoomGiftSheetState extends State<_RoomGiftSheet> {
     });
     try {
       final participants = await _presence.load(widget.roomId);
-      final catalog = await GiftCatalogService.watchCatalog().first;
+      final catalog = await GiftCatalogService.loadCatalog();
       final others =
           participants.where((user) => user.uid != _uid).toList(growable: false);
       if (!mounted) return;

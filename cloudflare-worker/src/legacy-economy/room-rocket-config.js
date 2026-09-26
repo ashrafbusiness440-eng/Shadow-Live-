@@ -1,5 +1,6 @@
 import { getApps, initializeApp, cert, getAuth, FieldValue, getFirestore, legacyEnv } from "../legacy-firebase-admin-shim.js";
 import { assertUserDocumentSessionState } from "../firebase-auth.js";
+import { primeConfigCache, readThroughConfigCache } from "../config-cache.js";
 import {
   defaultRoomRocketConfig,
   normalizeRoomRocketConfig,
@@ -46,6 +47,19 @@ async function actor(req){
   return {uid:decoded.uid,db};
 }
 
+async function cachedRoomRocketConfig(db){
+  return readThroughConfigCache(
+    "config:room_rocket",
+    async()=>{
+      const snap=await db.collection("system_config").doc("room_rocket").get();
+      if(!snap.exists)return defaultRoomRocketConfig();
+      try{return normalizeRoomRocketConfig(snap.data()||{});}
+      catch(_){return {...defaultRoomRocketConfig(),...(snap.data()||{})};}
+    },
+    {ttlMs:60000,staleMs:5*60*1000},
+  );
+}
+
 export async function saveRoomRocketConfig(db,uid,raw={}){
   const config=normalizeRoomRocketConfig(raw);
   const ref=db.collection("system_config").doc("room_rocket");
@@ -68,6 +82,7 @@ export async function saveRoomRocketConfig(db,uid,raw={}){
       createdAt:FieldValue.serverTimestamp(),
     });
   });
+  primeConfigCache("config:room_rocket",config,{ttlMs:60000,staleMs:5*60*1000});
   return config;
 }
 
@@ -81,12 +96,7 @@ export async function handler(req,res){
     const ref=db.collection("system_config").doc("room_rocket");
 
     if(action==="state"){
-      const snap=await ref.get();
-      let config=defaultRoomRocketConfig();
-      if(snap.exists){
-        try{config=normalizeRoomRocketConfig(snap.data()||{});}
-        catch(_){config={...defaultRoomRocketConfig(),...(snap.data()||{})};}
-      }
+      const config=await cachedRoomRocketConfig(db);
       return out(res,200,{ok:true,config});
     }
 
