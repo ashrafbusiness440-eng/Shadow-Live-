@@ -1,3 +1,5 @@
+import { annotatePressureRequest } from "./pressure-telemetry.js";
+
 const DEFAULT_ALLOWED_ORIGINS = new Set([
   "https://ashrafbusiness440-eng.github.io",
 ]);
@@ -35,6 +37,7 @@ export function json(request, env, body, status = 200, extraHeaders = {}) {
 export function firestoreQuotaResponse(request, env, error) {
   const code = String(error?.code || error?.message || "").trim();
   if (code !== "firestore_quota_exhausted") return null;
+  annotatePressureRequest(request, { quota: true });
   const retryAfterSeconds = Math.max(
     1,
     Math.min(60, Number(error?.retryAfterSeconds || 10)),
