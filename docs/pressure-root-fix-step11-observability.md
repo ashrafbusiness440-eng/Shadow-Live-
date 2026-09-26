@@ -6,16 +6,43 @@ Date: 26 Sep 2026
 
 Measure pressure without creating another pressure source.
 
-Shadow Live uses Cloudflare Workers Analytics Engine for custom high-frequency telemetry. Firestore is never used as a telemetry sink.
+Shadow Live uses Cloudflare Workers Logs as the custom operational telemetry sink.
+Firestore is never used as a telemetry sink.
 
-Dataset: `shadow_live_pressure_v1`
-Binding: `PRESSURE_ANALYTICS`
+Workers Logs / Query Builder were selected as the deployable final path because:
+- Workers Logs are already available through the existing Worker observability setting.
+- Query Builder requires no separate product enablement.
+- Structured `console.log({...})` fields are indexed automatically.
+- The Workers Observability REST API can query the same telemetry programmatically.
+- Query calculations include count, sum, avg, p50/median, p90, p95, p99 and other aggregates.
 
-Workers Logs stay enabled for diagnostic invocation/error logs. Custom request telemetry is written to Analytics Engine and does not await network/storage work on the product path.
+Official references:
+- https://developers.cloudflare.com/workers/observability/logs/workers-logs/
+- https://developers.cloudflare.com/workers/observability/query-builder/
+- https://developers.cloudflare.com/api/resources/workers/subresources/observability/subresources/telemetry/methods/query/
+
+An earlier Analytics Engine binding attempt was rejected at deployment with Cloudflare code 10089 because that product was not enabled on the account. The final design therefore has no Analytics Engine dependency.
+
+## Wrangler configuration
+
+```toml
+[observability]
+enabled = true
+
+[observability.logs]
+invocation_logs = true
+head_sampling_rate = 1
+```
+
+No Analytics Engine, Firestore, KV, D1 or R2 binding is required for pressure telemetry.
 
 ## Privacy and safety
 
-The telemetry schema intentionally excludes:
+Every custom pressure event has:
+
+`kind = "shadow_pressure"`
+
+The schema intentionally excludes:
 - UID
 - Room ID
 - display/profile data
@@ -25,31 +52,29 @@ The telemetry schema intentionally excludes:
 - gift amounts
 - passwords / tokens / authorization headers
 
-Only operational dimensions and counters are stored.
+Only operational dimensions and counters are logged.
 
-## Schema
+## Structured log schema
 
-Blobs:
-1. `kind` — request / firestore / realtime / cron
-2. `primary` — endpoint, Firestore operation, or subsystem
-3. `action` — bounded action/event name
-4. `outcome` — HTTP status or bounded outcome
-5. `method`
-6. `colo`
+Fields:
+- `kind` — always `shadow_pressure`
+- `pressureKind` — request / firestore / realtime / cron
+- `primary` — endpoint, Firestore operation, or subsystem
+- `action` — bounded action/event name
+- `outcome` — HTTP status or bounded outcome
+- `method`
+- `colo`
+- `durationMs`
+- `firestoreReadsEstimate`
+- `firestoreWritesEstimate`
+- `retries`
+- `errorFlag`
+- `quotaFlag`
+- `reconnectFlag`
+- `onlineCount`
+- `fanout`
 
-Doubles:
-1. count
-2. duration_ms
-3. firestore_reads_estimate
-4. firestore_writes_estimate
-5. retries
-6. error_flag
-7. quota_flag
-8. reconnect_flag
-9. online_count
-10. fanout
-
-Read/write values are application-layer pressure estimates, not a replacement for Cloud billing exports.
+Read/write values are application-layer pressure estimates, not a replacement for Cloudflare/Firebase billing exports.
 
 ## Instrumented pressure sources
 
@@ -67,9 +92,11 @@ Every Worker request records:
 
 Action-aware routers annotate the existing request object. No request body is cloned and no extra network request is made.
 
+The existing Cloudflare `cf-ray` value is emitted only in the separate structured error record for correlation.
+
 ### Firestore
 
-The shared `firestoreClient` records one logical datapoint per Firestore call:
+The shared `firestoreClient` emits one logical event per Firestore call:
 - get
 - list
 - run_query
@@ -82,7 +109,7 @@ The shared `firestoreClient` records one logical datapoint per Firestore call:
 - circuit-open event
 - latency
 
-Retries are counted inside the existing retry loop. Telemetry does not alter retry or financial behavior.
+Retries are measured inside the existing retry loop. Telemetry does not alter retry or financial behavior.
 
 ### Room Durable Object / WebSocket
 
@@ -99,122 +126,150 @@ The per-room Durable Object records:
 
 The Flutter presence client sends its bounded `reconnectAttempt` value inside the ticket request it already makes. This adds no extra request.
 
-## Query cookbook
+### Settlement cron
 
-All examples query the last hour.
+The Worker records:
+- game settlement cron duration
+- success/failure
+- checked-operation fanout
+- quota/error flag
 
-### Requests per minute by endpoint/action
+This is observational only; Step 12 still owns the known settlement query/scheduler blocker.
 
-```sql
-SELECT
-  toStartOfMinute(timestamp) AS minute,
-  blob2 AS endpoint,
-  blob3 AS action,
-  SUM(_sample_interval) AS requests
-FROM shadow_live_pressure_v1
-WHERE blob1 = 'request'
-  AND timestamp > NOW() - INTERVAL '1' HOUR
-GROUP BY minute, endpoint, action
-ORDER BY minute DESC, requests DESC
+## Query Builder cookbook
+
+Open:
+Workers & Pages → shadow-live → Observability → Query Builder.
+
+Base filter for all custom pressure metrics:
+
+```text
+kind = "shadow_pressure"
 ```
 
-### p50 / p95 / p99 request latency
+### Requests per minute
 
-```sql
-SELECT
-  blob2 AS endpoint,
-  blob3 AS action,
-  quantileExactWeighted(0.50)(double2, _sample_interval) AS p50_ms,
-  quantileExactWeighted(0.95)(double2, _sample_interval) AS p95_ms,
-  quantileExactWeighted(0.99)(double2, _sample_interval) AS p99_ms
-FROM shadow_live_pressure_v1
-WHERE blob1 = 'request'
-  AND timestamp > NOW() - INTERVAL '1' HOUR
-GROUP BY endpoint, action
-ORDER BY p95_ms DESC
-```
+Filters:
+- `kind = "shadow_pressure"`
+- `pressureKind = "request"`
 
-### HTTP status / 429 / 5xx distribution
+Group by:
+- `primary`
+- `action`
 
-```sql
-SELECT
-  blob2 AS endpoint,
-  blob3 AS action,
-  blob4 AS status,
-  SUM(_sample_interval) AS requests
-FROM shadow_live_pressure_v1
-WHERE blob1 = 'request'
-  AND timestamp > NOW() - INTERVAL '1' HOUR
-GROUP BY endpoint, action, status
-ORDER BY requests DESC
-```
+Visualization:
+- Count
+
+Use one-minute time buckets in Query Builder.
+
+### p50 / p95 / p99 latency
+
+Filters:
+- `kind = "shadow_pressure"`
+- `pressureKind = "request"`
+
+Group by:
+- `primary`
+- `action`
+
+Calculations on `durationMs`:
+- Median / p50
+- p95
+- p99
+
+### 429 / 5xx
+
+Filter by:
+- `quotaFlag = 1` for normalized quota events
+- or `outcome = "429"`
+- or `errorFlag = 1`
+
+Group by:
+- `primary`
+- `action`
+- `outcome`
 
 ### Firestore reads / writes / retries / quota
 
-```sql
-SELECT
-  blob2 AS operation,
-  SUM(_sample_interval * double3) AS read_estimate,
-  SUM(_sample_interval * double4) AS write_estimate,
-  SUM(_sample_interval * double5) AS retries,
-  SUM(_sample_interval * double7) AS quota_events,
-  quantileExactWeighted(0.95)(double2, _sample_interval) AS p95_ms
-FROM shadow_live_pressure_v1
-WHERE blob1 = 'firestore'
-  AND timestamp > NOW() - INTERVAL '1' HOUR
-GROUP BY operation
-ORDER BY read_estimate DESC
-```
+Filters:
+- `pressureKind = "firestore"`
+
+Group by:
+- `primary` (get/list/run_query/commit/etc.)
+
+Calculations:
+- Sum `firestoreReadsEstimate`
+- Sum `firestoreWritesEstimate`
+- Sum `retries`
+- Sum `quotaFlag`
+- p95 `durationMs`
 
 ### Realtime reconnect and socket health
 
-```sql
-SELECT
-  blob3 AS event,
-  blob4 AS outcome,
-  SUM(_sample_interval) AS events,
-  SUM(_sample_interval * double8) AS reconnects,
-  SUM(_sample_interval * double6) AS errors,
-  quantileExactWeighted(0.95)(double9, _sample_interval) AS p95_online
-FROM shadow_live_pressure_v1
-WHERE blob1 = 'realtime'
-  AND timestamp > NOW() - INTERVAL '1' HOUR
-GROUP BY event, outcome
-ORDER BY events DESC
-```
+Filters:
+- `pressureKind = "realtime"`
+
+Group by:
+- `action`
+- `outcome`
+
+Calculations:
+- Count
+- Sum `reconnectFlag`
+- Sum `errorFlag`
+- p95 `onlineCount`
+- p95 `fanout`
 
 ### Home presenceCounts DO fanout
 
-```sql
-SELECT
-  quantileExactWeighted(0.50)(double10, _sample_interval) AS p50_rooms,
-  quantileExactWeighted(0.95)(double10, _sample_interval) AS p95_rooms,
-  quantileExactWeighted(0.99)(double10, _sample_interval) AS p99_rooms
-FROM shadow_live_pressure_v1
-WHERE blob1 = 'request'
-  AND blob2 = '/api/room-realtime'
-  AND blob3 = 'presenceCounts'
-  AND timestamp > NOW() - INTERVAL '1' HOUR
-```
+Filters:
+- `pressureKind = "request"`
+- `primary = "/api/room-realtime"`
+- `action = "presenceCounts"`
+
+Calculations:
+- Median `fanout`
+- p95 `fanout`
+- p99 `fanout`
 
 ### Room broadcast fanout
 
-```sql
-SELECT
-  blob4 AS event_type,
-  SUM(_sample_interval) AS broadcasts,
-  quantileExactWeighted(0.95)(double10, _sample_interval) AS p95_delivered
-FROM shadow_live_pressure_v1
-WHERE blob1 = 'realtime'
-  AND blob3 = 'broadcast'
-  AND timestamp > NOW() - INTERVAL '1' HOUR
-GROUP BY event_type
-ORDER BY broadcasts DESC
+Filters:
+- `pressureKind = "realtime"`
+- `action = "broadcast"`
+
+Group by:
+- `outcome` (event type)
+
+Calculations:
+- Count
+- p95 `fanout`
+- p99 `fanout`
+
+## Workers Observability REST API
+
+System Health can query the same data programmatically:
+
+```text
+POST /accounts/{account_id}/workers/observability/telemetry/query
 ```
+
+The API supports calculation operators including:
+- count
+- sum
+- avg
+- median
+- p90
+- p95
+- p99
+
+The API token must have a Workers observability permission appropriate for querying telemetry. Current Cloudflare role documentation maps observability read access to the Workers `Metadata Read-Only` role / Workers Observability Read capability.
+
+The account ID and token must remain server-side secrets and must never be shipped to Flutter.
 
 ## Shadow Control — System Health read model
 
-The future Owner-only System Health page should use Analytics Engine queries, not Firestore listeners.
+The future Owner-only System Health page should query Workers Observability, not Firestore listeners.
 
 Initial cards:
 - requests/min
@@ -228,16 +283,15 @@ Initial cards:
 - broadcast p95 fanout
 - settlement cron success/failure
 
-The page/API requires an Account Analytics Read token and Cloudflare account ID. Those credentials must be server-side secrets; they must never be shipped to Flutter.
-
-Step 11 establishes the write schema and read-query contract. The visual Shadow Control page remains the later UI task already approved in the root plan.
+Step 11 establishes the write schema and read-query contract.
+The visual Shadow Control page remains the later UI task already approved in the root plan.
 
 ## Closure rule
 
 Step 11 can close when:
-- the binding is deployed,
-- `/health` reports `pressureAnalyticsConfigured:true`,
-- CI validates the schema and guardrails,
+- Worker v28 deploys without an external observability-product dependency,
+- `/health` reports `pressureObservability:"workers_logs"` and `workersLogsConfigured:true`,
+- CI validates the structured-log schema and guardrails,
 - existing room/audio/game/economy behavior has no regression.
 
-Step 12 still owns progressive stress tests and upstream quota capacity.
+Step 12 still owns progressive stress tests, upstream Firestore quota capacity, and the known settlement query/scheduler blocker.
