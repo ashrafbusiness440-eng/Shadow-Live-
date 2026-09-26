@@ -6,9 +6,9 @@ workers_dev = true
 [observability]
 enabled = true
 
-[[analytics_engine_datasets]]
-binding = "PRESSURE_ANALYTICS"
-dataset = "shadow_live_pressure_v1"
+[observability.logs]
+invocation_logs = true
+head_sampling_rate = 1
 
 [triggers]
 # During development, settlement is also triggered by active game clients.
