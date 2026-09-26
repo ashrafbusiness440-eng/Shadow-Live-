@@ -125,6 +125,9 @@ def main() -> int:
     chat_safety_actions = read("cloudflare-worker/src/chat-safety-actions.js")
     room_gift_script = read("cloudflare-worker/scripts/room-gift-e2e.mjs")
     chat_safety_script = read("cloudflare-worker/scripts/chat-safety-e2e.mjs")
+    pressure_telemetry = read("cloudflare-worker/src/pressure-telemetry.js")
+    step11_doc = read("docs/pressure-root-fix-step11-observability.md")
+    pressure_telemetry_test = read("server/__tests__/pressure-telemetry.test.js")
 
     if "_presenceTimer" in voice or ".heartbeat(" in voice:
         failures.append("Step 4 regression: Firestore presence heartbeat returned to the room session")
@@ -670,6 +673,94 @@ def main() -> int:
     ):
         if marker not in prod_gate:
             failures.append(f"Step 10 regression: automatic Production summary lost policy marker: {marker}")
+
+    # Step 11: observability must measure pressure without writing telemetry to Firestore.
+    for required in (
+        'binding = "PRESSURE_ANALYTICS"',
+        'dataset = "shadow_live_pressure_v1"',
+    ):
+        if required not in wrangler:
+            failures.append(f"Step 11 regression: Analytics Engine binding missing: {required}")
+
+    for required in (
+        "PRESSURE_ANALYTICS_SCHEMA",
+        "recordRequestTelemetry",
+        "recordFirestoreTelemetry",
+        "recordRealtimeTelemetry",
+        "writeDataPoint",
+        "firestore_reads_estimate",
+        "firestore_writes_estimate",
+        "reconnect_flag",
+        "fanout",
+    ):
+        if required not in pressure_telemetry:
+            failures.append(f"Step 11 regression: pressure telemetry schema/runtime missing {required}")
+
+    for forbidden in (
+        "idempotencyKey",
+        "displayName",
+        "profileImageUrl",
+        "diamonds",
+        "coins",
+        "authorization",
+    ):
+        if forbidden in pressure_telemetry:
+            failures.append(f"Step 11 privacy regression: sensitive field leaked into telemetry module: {forbidden}")
+
+    for required in (
+        "recordRequestTelemetry",
+        "pressureAnalyticsConfigured",
+        "version: 28",
+    ):
+        if required not in worker_index:
+            failures.append(f"Step 11 regression: Worker request observability missing {required}")
+
+    for required in (
+        "recordFirestoreTelemetry",
+        'operation: "get"',
+        'operation: "list"',
+        'operation: "run_query"',
+        'operation: "commit"',
+        'operation: "begin_transaction"',
+        'operation: "rollback"',
+    ):
+        if required not in firestore:
+            failures.append(f"Step 11 regression: Firestore observability missing {required}")
+
+    for required in (
+        "recordRealtimeTelemetry",
+        'event: "activate"',
+        'event: "connect"',
+        'event: "departure"',
+        'event: "presence_count"',
+        'event: "presence_has"',
+        'event: "broadcast"',
+        'event: "alarm"',
+    ):
+        if required not in realtime_object:
+            failures.append(f"Step 11 regression: Room DO observability missing {required}")
+
+    if "'reconnectAttempt': _reconnectAttempt" not in presence_service:
+        failures.append("Step 11 regression: client reconnect attempt is no longer piggybacked on the existing ticket request")
+    if "reconnectAttempt" not in room_realtime_entry:
+        failures.append("Step 11 regression: room realtime endpoint no longer forwards reconnect telemetry")
+
+    if "server/__tests__/pressure-telemetry.test.js" not in flutter_ci:
+        failures.append("Step 11 regression: telemetry unit test is not part of Flutter CI")
+    for required in (
+        "quantileExactWeighted(0.50)",
+        "quantileExactWeighted(0.95)",
+        "quantileExactWeighted(0.99)",
+        "System Health read model",
+        "Account Analytics Read",
+    ):
+        if required not in step11_doc:
+            failures.append(f"Step 11 regression: observability query/read-model documentation missing {required}")
+
+    if "FirebaseFirestore" in pressure_telemetry or "room_presence" in pressure_telemetry:
+        failures.append("Step 11 regression: telemetry module must not use Firestore as a high-frequency sink")
+    if "PRESSURE_ANALYTICS_SCHEMA" not in pressure_telemetry_test:
+        failures.append("Step 11 regression: telemetry schema is not unit-tested")
 
     check(lambda: require(
         r'crons\s*=\s*\["\*/5 \* \* \* \*"\]',
