@@ -344,6 +344,13 @@ class LegacyWriteBatch {
   }
 }
 
+export function shouldRetryLegacyTransaction(error, attempt, maxAttempts = 3) {
+  const code = String(error?.code || error?.message || "").trim();
+  if (code === "firestore_quota_exhausted") return false;
+  return Number(attempt) < Number(maxAttempts) - 1 &&
+    isTransientFirestoreError(error);
+}
+
 class LegacyFirestore {
   constructor(env) {
     this.client = firestoreClient(env);
@@ -420,10 +427,7 @@ class LegacyFirestore {
         if (transaction) {
           await this.client.rollback(transaction);
         }
-        if (
-          attempt < maxAttempts - 1 &&
-          isTransientFirestoreError(error)
-        ) {
+        if (shouldRetryLegacyTransaction(error, attempt, maxAttempts)) {
           await new Promise((resolve) =>
             setTimeout(resolve, firestoreErrorRetryDelayMs(attempt)),
           );
