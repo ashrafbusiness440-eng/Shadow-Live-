@@ -1,8 +1,6 @@
 import { firestoreClient } from "./firestore.js";
-import {
-  assertUserDocumentSessionState,
-  verifyFirebaseIdToken,
-} from "./firebase-auth.js";
+import { verifyFirebaseIdToken } from "./firebase-auth.js";
+import { readThroughConfigCache } from "./config-cache.js";
 import { firestoreQuotaResponse, json, readJson } from "./http.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 import {
@@ -19,6 +17,26 @@ function roomObject(env, roomId) {
 
 function isAnonymous(payload) {
   return String(payload?.firebase?.sign_in_provider || "") === "anonymous";
+}
+
+const ROOM_ACCESS_CACHE_TTL_MS = 5_000;
+const ROOM_ACCESS_CACHE_STALE_MS = 15_000;
+
+async function roomAvailability(db, roomId) {
+  return readThroughConfigCache(
+    `room-realtime:availability:${roomId}`,
+    async () => {
+      const room = await db.get(`rooms/${roomId}`);
+      return {
+        exists: room.exists,
+        isActive: room.data?.isActive !== false,
+      };
+    },
+    {
+      ttlMs: ROOM_ACCESS_CACHE_TTL_MS,
+      staleMs: ROOM_ACCESS_CACHE_STALE_MS,
+    },
+  );
 }
 
 async function readPresence(stub) {
@@ -79,7 +97,7 @@ export async function roomRealtime(request, env) {
       }
 
       const payload = await verifyFirebaseIdToken(request, env, {
-        checkUserState: action !== "ticket",
+        checkUserState: true,
       });
       if (isAnonymous(payload)) {
         return json(request, env, { ok: false, code: "account_required" }, 403);
@@ -106,18 +124,20 @@ export async function roomRealtime(request, env) {
 
       const db = firestoreClient(env);
       const uid = String(payload.sub || "");
-      const [room, user] = await Promise.all([
-        db.get(`rooms/${roomId}`),
-        db.get(`users/${uid}`),
-      ]);
-      if (!room.exists || room.data?.isActive === false) {
+      const room = await roomAvailability(db, roomId);
+      if (!room.exists || !room.isActive) {
         return json(request, env, { ok: false, code: "room_unavailable" }, 404);
       }
 
-      const profileData = user.data || {};
-      if (user.exists) {
-        assertUserDocumentSessionState(payload, profileData);
-      }
+      const profileData = {
+        displayName: String(
+          payload.name ||
+          payload.display_name ||
+          (String(payload.email || "").split("@")[0]) ||
+          "",
+        ),
+        profileImageUrl: String(payload.picture || ""),
+      };
       const ticket = crypto.randomUUID();
       const expiresAtMs = Date.now() + ROOM_REALTIME_TICKET_TTL_MS;
       const stored = await stub.fetch("https://room-realtime.internal/ticket", {

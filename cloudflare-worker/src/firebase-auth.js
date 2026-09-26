@@ -2,13 +2,17 @@ import { verify } from "node:crypto";
 import { googleAccessToken, parseServiceAccount } from "./google-auth.js";
 import {
   AUTH_STATE_MAX_ATTEMPTS,
-  fetchAuthStateResponse,
+  authStateRetryDelayMs,
+  isTransientAuthStateStatus,
 } from "./auth-state-reliability.js";
 
 let certCache = { certs: null, expiresAt: 0 };
 const userStateCache = new Map();
 const userStateInflight = new Map();
+const authStateBatchQueues = new Map();
 
+const AUTH_STATE_BATCH_MAX = 100;
+const AUTH_STATE_BATCH_WINDOW_MS = 10;
 const AUTH_STATE_FRESH_TTL_MS = 10_000;
 const AUTH_STATE_STALE_TTL_MS = 30_000;
 const AUTH_STATE_BREAKER_THRESHOLD = 2;
@@ -121,41 +125,176 @@ function buildSessionState(body, nowMs) {
   };
 }
 
-async function loadUserSessionState(uid, env) {
-  const nowMs = Date.now();
+function activeMissingSessionState(nowMs) {
+  return {
+    active: true,
+    revokedAtMs: 0,
+    expiresAtMs: nowMs + AUTH_STATE_FRESH_TTL_MS,
+    staleUntilMs: nowMs + AUTH_STATE_STALE_TTL_MS,
+  };
+}
+
+export function parseAuthStateBatchGetResponse(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    return raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+  }
+}
+
+async function fetchAuthStateBatch(uids, env) {
+  const uniqueUids = Array.from(
+    new Set((uids || []).map((value) => String(value || "").trim()).filter(Boolean)),
+  ).slice(0, AUTH_STATE_BATCH_MAX);
+  if (!uniqueUids.length) return new Map();
+
   const { projectId } = parseServiceAccount(env.FIREBASE_SERVICE_ACCOUNT);
   const token = await googleAccessToken(env);
-  const url =
-    `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents/users/${encodeURIComponent(uid)}`;
+  const database =
+    `projects/${projectId}/databases/(default)`;
+  const endpoint =
+    `https://firestore.googleapis.com/v1/${database}/documents:batchGet`;
+  const names = uniqueUids.map(
+    (uid) => `${database}/documents/users/${uid}`,
+  );
+  const uidByName = new Map(names.map((name, index) => [name, uniqueUids[index]]));
 
-  const { response } = await fetchAuthStateResponse(url, token, {
-    maxAttempts: AUTH_STATE_MAX_ATTEMPTS,
-  });
+  let response = null;
+  let lastError = null;
+  for (let attempt = 0; attempt < AUTH_STATE_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          documents: names,
+          mask: { fieldPaths: ["accountStatus", "sessionsRevokedAt"] },
+        }),
+      });
+      lastError = null;
+    } catch (error) {
+      response = null;
+      lastError = error;
+    }
 
-  if (response?.status === 404) {
-    const state = {
-      active: true,
-      revokedAtMs: 0,
-      expiresAtMs: nowMs + AUTH_STATE_FRESH_TTL_MS,
-      staleUntilMs: nowMs + AUTH_STATE_STALE_TTL_MS,
-    };
-    userStateCache.set(uid, state);
-    recordAuthStateSuccess();
-    return state;
+    if (response?.ok) break;
+    const transient =
+      response === null || isTransientAuthStateStatus(response.status);
+    if (!transient || attempt >= AUTH_STATE_MAX_ATTEMPTS - 1) break;
+    await new Promise((resolve) =>
+      setTimeout(resolve, authStateRetryDelayMs(response, attempt)),
+    );
   }
 
-  const body = await response?.json().catch(() => ({})) || {};
   if (!response?.ok) {
-    recordAuthStateFailure(nowMs);
-    const stale = cachedStateFor(uid, nowMs, { allowStale: true });
-    if (stale) return stale;
-    throw new Error("auth_state_lookup_failed");
+    const error = new Error("auth_state_lookup_failed");
+    error.cause = lastError;
+    error.status = Number(response?.status || 0);
+    throw error;
   }
 
-  const state = buildSessionState(body, nowMs);
-  userStateCache.set(uid, state);
-  recordAuthStateSuccess();
-  return state;
+  const rows = parseAuthStateBatchGetResponse(await response.text());
+  const nowMs = Date.now();
+  const states = new Map();
+  const seen = new Set();
+
+  for (const row of rows) {
+    const name = String(row?.found?.name || row?.missing || "");
+    const uid = uidByName.get(name);
+    if (!uid) continue;
+    seen.add(uid);
+    states.set(
+      uid,
+      row?.found
+        ? buildSessionState(row.found, nowMs)
+        : activeMissingSessionState(nowMs),
+    );
+  }
+
+  if (seen.size !== uniqueUids.length) {
+    throw new Error("auth_state_batch_incomplete");
+  }
+  return states;
+}
+
+async function flushAuthStateBatch(projectId, env) {
+  const queue = authStateBatchQueues.get(projectId);
+  if (!queue || queue.flushing) return;
+  queue.flushing = true;
+  if (queue.timer) {
+    clearTimeout(queue.timer);
+    queue.timer = null;
+  }
+
+  try {
+    while (queue.items.length) {
+      const batch = queue.items.splice(0, AUTH_STATE_BATCH_MAX);
+      const nowMs = Date.now();
+      try {
+        const states = await fetchAuthStateBatch(
+          batch.map((item) => item.uid),
+          env,
+        );
+        recordAuthStateSuccess();
+        for (const item of batch) {
+          const state = states.get(item.uid);
+          if (!state) {
+            item.reject(new Error("auth_state_batch_incomplete"));
+            continue;
+          }
+          userStateCache.set(item.uid, state);
+          item.resolve(state);
+        }
+      } catch (error) {
+        recordAuthStateFailure(nowMs);
+        for (const item of batch) {
+          const stale = cachedStateFor(item.uid, nowMs, { allowStale: true });
+          if (stale) item.resolve(stale);
+          else item.reject(error);
+        }
+      }
+    }
+  } finally {
+    queue.flushing = false;
+    if (!queue.items.length && !queue.timer) {
+      authStateBatchQueues.delete(projectId);
+    }
+  }
+}
+
+async function loadUserSessionState(uid, env) {
+  const { projectId } = parseServiceAccount(env.FIREBASE_SERVICE_ACCOUNT);
+  let queue = authStateBatchQueues.get(projectId);
+  if (!queue) {
+    queue = { items: [], timer: null, flushing: false };
+    authStateBatchQueues.set(projectId, queue);
+  }
+
+  return new Promise((resolve, reject) => {
+    queue.items.push({ uid, resolve, reject });
+    if (queue.items.length >= AUTH_STATE_BATCH_MAX) {
+      queueMicrotask(() => {
+        void flushAuthStateBatch(projectId, env);
+      });
+      return;
+    }
+    if (!queue.timer) {
+      queue.timer = setTimeout(() => {
+        queue.timer = null;
+        void flushAuthStateBatch(projectId, env);
+      }, AUTH_STATE_BATCH_WINDOW_MS);
+    }
+  });
 }
 
 async function assertUserSessionState(payload, env) {
