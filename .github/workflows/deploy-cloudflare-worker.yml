@@ -112,12 +112,19 @@ jobs:
       - name: Verify Worker health
         run: |
           for ATTEMPT in $(seq 1 15); do
-            BODY=$(curl --fail --silent --show-error \
+            TMP=$(mktemp)
+            STATUS=$(curl --silent --show-error --output "$TMP" --write-out '%{http_code}' \
               https://shadow-live.ashraf-business-440.workers.dev/health || true)
+            BODY=$(cat "$TMP")
+            rm -f "$TMP"
             echo "$BODY"
-            if echo "$BODY" | grep -q '"ok":true' && \
+            if [ "$STATUS" = "429" ]; then
+              echo "::error::Cloudflare Worker request quota/rate limit is active; stopping health retries to avoid more traffic."
+              exit 1
+            fi
+            if [ "$STATUS" = "200" ] && echo "$BODY" | grep -q '"ok":true' && \
                echo "$BODY" | grep -q "\"buildSha\":\"$GITHUB_SHA\""; then
-              break
+              exit 0
             fi
             if [ "$ATTEMPT" = "15" ]; then
               echo "Latest Worker version did not become active."
