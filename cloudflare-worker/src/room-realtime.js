@@ -4,6 +4,7 @@ import {
   verifyFirebaseIdToken,
 } from "./firebase-auth.js";
 import { firestoreQuotaResponse, json, readJson } from "./http.js";
+import { annotatePressureRequest } from "./pressure-telemetry.js";
 import {
   ROOM_REALTIME_PROTOCOL_VERSION,
   ROOM_REALTIME_TICKET_TTL_MS,
@@ -46,6 +47,10 @@ export async function roomRealtime(request, env) {
     try {
       const body = await readJson(request);
       const action = String(body.action || "ticket").trim();
+      annotatePressureRequest(request, {
+        action,
+        reconnectAttempt: Math.max(0, Math.min(3, Number(body.reconnectAttempt || 0))),
+      });
 
       if (action === "presenceCounts") {
         await verifyFirebaseIdToken(request, env, { checkUserState: false });
@@ -53,6 +58,7 @@ export async function roomRealtime(request, env) {
         const roomIds = Array.from(
           new Set(rawRoomIds.map(normalizeRoomId).filter(Boolean)),
         ).slice(0, 60);
+        annotatePressureRequest(request, { fanout: roomIds.length });
         const counts = {};
         const batchSize = 12;
         for (let index = 0; index < roomIds.length; index += batchSize) {
@@ -168,6 +174,7 @@ export async function roomRealtime(request, env) {
   }
 
   if (request.method === "GET") {
+    annotatePressureRequest(request, { action: "connect" });
     const roomId = normalizeRoomId(url.searchParams.get("roomId"));
     const ticket = String(url.searchParams.get("ticket") || "").trim();
     if (!roomId || !ticket) {
