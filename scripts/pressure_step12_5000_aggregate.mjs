@@ -50,5 +50,5 @@ const result = {
 };
 console.log("STEP12_LEVEL5000_SHARDED " + JSON.stringify(result));
 fs.writeFileSync("step12-level5000-summary.json", JSON.stringify(result,null,2));
-if (users !== 5000 || shards !== 10) process.exitCode=2;
+if (users !== 5000 || shards.length !== 10) process.exitCode=2;
 if (errors > 0) process.exitCode=1;
