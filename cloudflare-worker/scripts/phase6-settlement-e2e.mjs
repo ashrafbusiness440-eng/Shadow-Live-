@@ -31,6 +31,8 @@ const slotKey="phase6slot_"+runId;
 const slotOpId=playerUid+"__"+slotKey;
 const month="2026-09";
 const cycleKey="2026-09-C2";
+const allowProductionDurableObjectE2E=
+  process.env.ALLOW_PRODUCTION_DURABLE_OBJECT_E2E==="1";
 
 function b64url(value){
   return Buffer.from(value).toString("base64").replace(/=/g,"").replace(/\+/g,"-").replace(/\//g,"_");
@@ -281,41 +283,45 @@ try{
     isActive:true,
     ownerId:playerUid,
   });
-  realtimeSocket=await openRoomRealtime(roomId,playerToken);
-  realtimeKeepalive=setInterval(()=>{
-    try{
-      if(realtimeSocket?.readyState===WebSocket.OPEN)realtimeSocket.send("ping");
-    }catch{}
-  },15000);
+  if(allowProductionDurableObjectE2E){
+    realtimeSocket=await openRoomRealtime(roomId,playerToken);
+    realtimeKeepalive=setInterval(()=>{
+      try{
+        if(realtimeSocket?.readyState===WebSocket.OPEN)realtimeSocket.send("ping");
+      }catch{}
+    },15000);
 
-  const gamePush=waitForRealtimeEvent(
-    realtimeSocket,
-    (event)=>String(event?.type||"").startsWith("game.")&&
-      event?.payload?.roomId===roomId&&
-      event?.payload?.gameId==="greedy_cat",
-    35000,
-  );
-  const realtimeState=ok(
-    "greedy realtime state registration",
-    await post("/api/game-runtime",playerToken,{
-      action:"state",
-      gameId:"greedy_cat",
-      roomId,
-    }),
-  );
-  if(realtimeState.gameId!=="greedy_cat"||!realtimeState.round){
-    throw Error("greedy realtime state payload invalid");
+    const gamePush=waitForRealtimeEvent(
+      realtimeSocket,
+      (event)=>String(event?.type||"").startsWith("game.")&&
+        event?.payload?.roomId===roomId&&
+        event?.payload?.gameId==="greedy_cat",
+      35000,
+    );
+    const realtimeState=ok(
+      "greedy realtime state registration",
+      await post("/api/game-runtime",playerToken,{
+        action:"state",
+        gameId:"greedy_cat",
+        roomId,
+      }),
+    );
+    if(realtimeState.gameId!=="greedy_cat"||!realtimeState.round){
+      throw Error("greedy realtime state payload invalid");
+    }
+    const pushedGameEvent=await gamePush;
+    if(![
+      "game.round_started",
+      "game.betting_closed",
+      "game.result",
+      "game.next_round",
+    ].includes(pushedGameEvent.type)){
+      throw Error("unexpected pushed game event "+String(pushedGameEvent.type||""));
+    }
+    console.log("PASS room websocket game event "+pushedGameEvent.type);
+  }else{
+    console.log("SKIP automatic production Durable Object realtime coverage");
   }
-  const pushedGameEvent=await gamePush;
-  if(![
-    "game.round_started",
-    "game.betting_closed",
-    "game.result",
-    "game.next_round",
-  ].includes(pushedGameEvent.type)){
-    throw Error("unexpected pushed game event "+String(pushedGameEvent.type||""));
-  }
-  console.log("PASS room websocket game event "+pushedGameEvent.type);
 
   const now=Date.now();
   await fsSet("game_operations/"+manualOpId,{
@@ -360,43 +366,48 @@ try{
   if(!Array.isArray(catalog.items)||catalog.items.length<3)throw Error("game catalog invalid");
   const slot=catalog.items.find((item)=>item.gameId==="slot");
   if(!slot||!Array.isArray(slot.bets)||!slot.bets.length)throw Error("slot catalog missing");
-  const slotBet=Number(slot.bets[0]);
-  if(realtimeSocket?.readyState!==WebSocket.OPEN){
-    throw Error("room realtime websocket not open before slot bet");
-  }
 
-  const beforeSlot=Number((await fsGet("users/"+playerUid))?.coins||0);
-  const slotResult=ok("real slot bet through Cloudflare",await post("/api/game-runtime",playerToken,{
-    action:"placeBet",
-    gameId:"slot",
-    roomId,
-    idempotencyKey:slotKey,
-    bets:[{amountCoins:slotBet}],
-  }));
-  if(slotResult.status!=="settled"||slotResult.operationId!==slotOpId)throw Error("slot operation not settled");
-  if(!Array.isArray(slotResult.reels)||slotResult.reels.length!==3)throw Error("slot reels missing");
-  const slotOp=await fsGet("game_operations/"+slotOpId);
-  if(!slotOp||slotOp.status!=="settled")throw Error("slot operation missing");
-  if(slotOp.roundId)cleanup.push("game_rounds/"+slotOp.roundId);
-  const slotUser=await fsGet("users/"+playerUid);
-  if(Number(slotUser?.coins)!==Number(slotResult.balanceAfter))throw Error("slot wallet mismatch");
-  const slotDebit=await fsGet("financial_ledger/game_debit__"+slotOpId);
-  if(!slotDebit||Number(slotDebit.delta)!==-slotBet)throw Error("slot debit ledger missing");
-  if(Number(slotResult.payoutCoins||0)>0){
-    const slotCredit=await fsGet("financial_ledger/game_credit__"+slotOpId);
-    if(!slotCredit||Number(slotCredit.delta)!==Number(slotResult.payoutCoins))throw Error("slot credit ledger missing");
+  if(allowProductionDurableObjectE2E){
+    const slotBet=Number(slot.bets[0]);
+    if(realtimeSocket?.readyState!==WebSocket.OPEN){
+      throw Error("room realtime websocket not open before slot bet");
+    }
+
+    const beforeSlot=Number((await fsGet("users/"+playerUid))?.coins||0);
+    const slotResult=ok("real slot bet through Cloudflare",await post("/api/game-runtime",playerToken,{
+      action:"placeBet",
+      gameId:"slot",
+      roomId,
+      idempotencyKey:slotKey,
+      bets:[{amountCoins:slotBet}],
+    }));
+    if(slotResult.status!=="settled"||slotResult.operationId!==slotOpId)throw Error("slot operation not settled");
+    if(!Array.isArray(slotResult.reels)||slotResult.reels.length!==3)throw Error("slot reels missing");
+    const slotOp=await fsGet("game_operations/"+slotOpId);
+    if(!slotOp||slotOp.status!=="settled")throw Error("slot operation missing");
+    if(slotOp.roundId)cleanup.push("game_rounds/"+slotOp.roundId);
+    const slotUser=await fsGet("users/"+playerUid);
+    if(Number(slotUser?.coins)!==Number(slotResult.balanceAfter))throw Error("slot wallet mismatch");
+    const slotDebit=await fsGet("financial_ledger/game_debit__"+slotOpId);
+    if(!slotDebit||Number(slotDebit.delta)!==-slotBet)throw Error("slot debit ledger missing");
+    if(Number(slotResult.payoutCoins||0)>0){
+      const slotCredit=await fsGet("financial_ledger/game_credit__"+slotOpId);
+      if(!slotCredit||Number(slotCredit.delta)!==Number(slotResult.payoutCoins))throw Error("slot credit ledger missing");
+    }
+    const afterSlot=Number(slotUser?.coins||0);
+    const slotDuplicate=ok("real slot bet idempotency",await post("/api/game-runtime",playerToken,{
+      action:"placeBet",
+      gameId:"slot",
+      roomId,
+      idempotencyKey:slotKey,
+      bets:[{amountCoins:slotBet}],
+    }));
+    if(slotDuplicate.code!=="duplicate")throw Error("slot duplicate guard failed");
+    if(Number((await fsGet("users/"+playerUid))?.coins)!==afterSlot)throw Error("slot duplicate changed wallet");
+    console.log("PASS real slot wallet + ledger + RNG + idempotency");
+  }else{
+    console.log("SKIP automatic production Durable Object slot-bet coverage");
   }
-  const afterSlot=Number(slotUser?.coins||0);
-  const slotDuplicate=ok("real slot bet idempotency",await post("/api/game-runtime",playerToken,{
-    action:"placeBet",
-    gameId:"slot",
-    roomId,
-    idempotencyKey:slotKey,
-    bets:[{amountCoins:slotBet}],
-  }));
-  if(slotDuplicate.code!=="duplicate")throw Error("slot duplicate guard failed");
-  if(Number((await fsGet("users/"+playerUid))?.coins)!==afterSlot)throw Error("slot duplicate changed wallet");
-  console.log("PASS real slot wallet + ledger + RNG + idempotency");
 
   const agency=ok("agency cycle settlement",await post("/api/economy-control",ownerToken,{action:"settleAgencyCycle",accrualId}));
   if(agency.alreadySettled!==false||agency.settlement?.status!=="settled"||Number(agency.settlement?.hostDiamonds||0)<=0){

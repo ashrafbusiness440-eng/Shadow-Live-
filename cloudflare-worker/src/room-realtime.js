@@ -3,7 +3,7 @@ import {
   assertUserDocumentSessionState,
   verifyFirebaseIdToken,
 } from "./firebase-auth.js";
-import { json, readJson } from "./http.js";
+import { firestoreQuotaResponse, json, readJson } from "./http.js";
 import {
   ROOM_REALTIME_PROTOCOL_VERSION,
   ROOM_REALTIME_TICKET_TTL_MS,
@@ -151,9 +151,14 @@ export async function roomRealtime(request, env) {
         alreadyPresent: storedBody.alreadyPresent === true,
       });
     } catch (error) {
+      const quotaResponse = firestoreQuotaResponse(request, env, error);
+      if (quotaResponse) return quotaResponse;
       const code = String(error?.message || "");
       if (code === "unauthorized") {
         return json(request, env, { ok: false, code: "unauthorized" }, 401);
+      }
+      if (code === "auth_state_lookup_failed") {
+        return json(request, env, { ok: false, code }, 503);
       }
       if (code === "room_realtime_not_configured") {
         return json(request, env, { ok: false, code }, 503);

@@ -3504,6 +3504,14 @@ export default async function handler(req,res){
     if(e instanceof ApiError)return out(res,e.status,{ok:false,code:e.code});
     const authCode=String(e?.code||e?.message||"");
     if(authCode.includes("auth/id-token"))return out(res,401,{ok:false,code:"unauthorized"});
+    if(authCode==="firestore_quota_exhausted"){
+      const retryAfterSeconds=Math.max(1,Math.min(60,Number(e?.retryAfterSeconds||10)));
+      res.setHeader?.("Retry-After",String(retryAfterSeconds));
+      return out(res,503,{ok:false,code:authCode,retryAfterSeconds});
+    }
+    if(authCode==="auth_state_lookup_failed"){
+      return out(res,503,{ok:false,code:authCode});
+    }
     return out(res,500,{ok:false,code:"server_failed"});
   }
 }

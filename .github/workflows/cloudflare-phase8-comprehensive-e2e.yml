@@ -8,21 +8,47 @@ on:
       - 'cloudflare-worker/scripts/**'
       - 'cloudflare-worker/wrangler.toml'
       - '.github/workflows/cloudflare-phase8-comprehensive-e2e.yml'
-      - '.github/workflows/cloudflare-phase6-settlement-e2e.yml'
-      - '.github/workflows/cloudflare-economy-router-phase5-e2e.yml'
-      - '.github/workflows/cloudflare-phase9-user-moderation-e2e.yml'
-      - '.github/workflows/cloudflare-phase9-user-access-e2e.yml'
+      - '.github/workflows/cloudflare-*-e2e.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: shadow-live-cloudflare-phase8-comprehensive-e2e
-  cancel-in-progress: true
+  group: shadow-live-production-firestore-e2e
+  cancel-in-progress: false
 
 jobs:
+  freshness:
+    runs-on: ubuntu-latest
+    outputs:
+      run_gate: ${{ steps.decide.outputs.run_gate }}
+    steps:
+      - name: Skip superseded automatic production gate
+        id: decide
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "run_gate=true" >> "$GITHUB_OUTPUT"
+            echo "Manual production validation requested."
+            exit 0
+          fi
+          MAIN_SHA=$(curl --fail --silent --show-error \
+            https://api.github.com/repos/ashrafbusiness440-eng/Shadow-Live-/commits/main | \
+            python3 -c 'import json,sys; print(json.load(sys.stdin)["sha"])')
+          echo "Current main: $MAIN_SHA"
+          echo "Triggered SHA: $GITHUB_SHA"
+          if [ "$MAIN_SHA" = "$GITHUB_SHA" ]; then
+            echo "run_gate=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_gate=false" >> "$GITHUB_OUTPUT"
+            echo "This automatic run was superseded by a newer main commit; skipping production load."
+          fi
+
   comprehensive-e2e:
+    needs: freshness
+    if: needs.freshness.outputs.run_gate == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -171,6 +197,7 @@ jobs:
       - name: Games settlements cron and RNG E2E
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          ALLOW_PRODUCTION_DURABLE_OBJECT_E2E: '0'
         run: node cloudflare-worker/scripts/phase6-settlement-e2e.mjs
 
       - name: Firestore cooldown after game settlement
@@ -180,28 +207,6 @@ jobs:
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: node cloudflare-worker/scripts/google-play-e2e.mjs
-
-      - name: App asset manager E2E with cleanup
-        env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          GITHUB_ASSET_TOKEN: ${{ secrets.SHADOW_ASSET_GITHUB_TOKEN }}
-        run: node cloudflare-worker/scripts/manage-app-asset-e2e.mjs
-
-      - name: Wait for final Pages state after asset cleanup
-        run: |
-          HEAD_SHA=$(curl --fail --silent --show-error             https://api.github.com/repos/ashrafbusiness440-eng/Shadow-Live-/commits/main |             python3 -c 'import json,sys; print(json.load(sys.stdin)["sha"])')
-          echo "Final main head after cleanup: $HEAD_SHA"
-          URL="https://ashrafbusiness440-eng.github.io/Shadow-Live-/app/deploy.json"
-          for ATTEMPT in $(seq 1 90); do
-            BODY=$(curl --silent --show-error "$URL?phase8final=$GITHUB_RUN_ID" || true)
-            echo "$BODY"
-            if echo "$BODY" | grep -q "\"commit\":\"$HEAD_SHA\""; then
-              exit 0
-            fi
-            sleep 5
-          done
-          echo "Production Pages did not reach final main head $HEAD_SHA"
-          exit 1
 
       - name: Phase 8 summary
         run: |
@@ -218,6 +223,6 @@ jobs:
             echo "- Economy Router: PASS"
             echo "- Games / Settlements / Cron / RNG: PASS"
             echo "- Google Play guards: PASS"
-            echo "- App Asset Manager + cleanup: PASS"
-            echo "- Final production Pages after cleanup: PASS"
+            echo "- App Asset Manager full write/delete E2E: MANUAL / RELEASE-ONLY"
+            echo "- Automatic gate performs no GitHub asset mutation commits"
           } >> "$GITHUB_STEP_SUMMARY"

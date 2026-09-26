@@ -7,8 +7,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: shadow-live-cloudflare-phase6-settlement-e2e
-  cancel-in-progress: true
+  group: shadow-live-production-firestore-e2e
+  cancel-in-progress: false
 
 jobs:
   test:
@@ -39,4 +39,5 @@ jobs:
       - name: Run Cloudflare phase 6 settlement E2E
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          ALLOW_PRODUCTION_DURABLE_OBJECT_E2E: '1'
         run: node cloudflare-worker/scripts/phase6-settlement-e2e.mjs

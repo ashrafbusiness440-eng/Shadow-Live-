@@ -1,4 +1,4 @@
-import { json } from "./http.js";
+import { firestoreQuotaResponse, json } from "./http.js";
 import { firestoreClient } from "./firestore.js";
 import { readThroughConfigCache } from "./config-cache.js";
 
@@ -58,6 +58,8 @@ export async function appAssets(request, env) {
 
     return json(request, env, { ok: true, assets }, 200, cacheHeaders);
   } catch (error) {
+    const quotaResponse = firestoreQuotaResponse(request, env, error);
+    if (quotaResponse) return quotaResponse;
     const raw = clean(error?.message);
     if (raw === "server_not_configured" || raw === "invalid_service_account_json") {
       return json(request, env, { ok: false, code: raw }, 503);

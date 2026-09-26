@@ -91,6 +91,19 @@ def main() -> int:
     economy_e2e = read(".github/workflows/cloudflare-economy-router-phase5-e2e.yml")
     moderation_e2e = read(".github/workflows/cloudflare-phase9-user-moderation-e2e.yml")
     access_e2e = read(".github/workflows/cloudflare-phase9-user-access-e2e.yml")
+    batch1_e2e = read(".github/workflows/cloudflare-batch1-e2e.yml")
+    chat_core_e2e = read(".github/workflows/cloudflare-chat-core-e2e.yml")
+    chat_gift_e2e = read(".github/workflows/cloudflare-chat-gift-e2e.yml")
+    chat_safety_e2e = read(".github/workflows/cloudflare-chat-safety-e2e.yml")
+    google_play_e2e = read(".github/workflows/cloudflare-google-play-e2e.yml")
+    app_asset_e2e = read(".github/workflows/cloudflare-manage-app-asset-e2e.yml")
+    cleanup_phase6_e2e = read(".github/workflows/cleanup-phase6-test-users.yml")
+    room_gift_e2e = read(".github/workflows/cloudflare-room-gift-e2e.yml")
+    voice_phase1_e2e = read(".github/workflows/cloudflare-voice-phase1-e2e.yml")
+    voice_phase2_e2e = read(".github/workflows/cloudflare-voice-phase2-e2e.yml")
+    wallet_e2e = read(".github/workflows/cloudflare-wallet-e2e.yml")
+    phase6_settlement_script = read("cloudflare-worker/scripts/phase6-settlement-e2e.mjs")
+    http_helpers = read("cloudflare-worker/src/http.js")
     room_bootstrap_service = read("lib/features/room/services/room_bootstrap_service.dart")
     room_seat_service = read("lib/features/room/services/room_seat_service.dart")
     room_moderator_service = read("lib/features/room/services/room_moderator_service.dart")
@@ -343,6 +356,46 @@ def main() -> int:
         "Step 9 borrowed Firestore retry jitter changed",
     ))
     check(lambda: require(
+        r"FIRESTORE_QUOTA_MAX_ATTEMPTS\s*=\s*2\b",
+        firestore,
+        "Step 9 regression: Firestore quota retry cap changed from 2 attempts",
+    ))
+    check(lambda: require(
+        r"FIRESTORE_QUOTA_MIN_RETRY_DELAY_MS\s*=\s*1000\b",
+        firestore,
+        "Step 9 regression: Firestore quota retry spacing changed",
+    ))
+    check(lambda: require(
+        r"FIRESTORE_QUOTA_BREAKER_THRESHOLD\s*=\s*2\b",
+        firestore,
+        "Step 9 regression: Firestore quota breaker threshold changed",
+    ))
+    check(lambda: require(
+        r"FIRESTORE_QUOTA_BREAKER_MS\s*=\s*10_000\b",
+        firestore,
+        "Step 9 regression: Firestore quota breaker duration changed",
+    ))
+    for required in (
+        "firestoreQuotaCircuit",
+        "registerFirestoreQuotaFailure",
+        "isFirestoreQuotaCircuitOpen",
+        "firestoreQuotaUnavailableError",
+        "firestore_quota_exhausted",
+    ):
+        if required not in firestore:
+            failures.append(f"Step 9 regression: Firestore quota circuit missing {required}")
+    if "firestoreQuotaResponse" not in http_helpers:
+        failures.append("Step 9 regression: explicit 503 quota response helper is missing")
+    for label, content in (
+        ("app-assets", app_assets),
+        ("manage-app-asset", manage_app_asset),
+        ("room-realtime", room_realtime_entry),
+    ):
+        if "firestoreQuotaResponse" not in content:
+            failures.append(f"Step 9 regression: {label} hides Firestore quota state behind generic 500")
+    if "checkUserState: false" not in manage_app_asset or "assertUserDocumentSessionState" not in manage_app_asset:
+        failures.append("Step 9 regression: app asset owner auth reintroduced duplicate user-state reads")
+    check(lambda: require(
         r"AUTH_STATE_MAX_ATTEMPTS\s*=\s*3\b",
         auth_reliability,
         "Step 9 borrowed auth-state retry cap changed from 3 attempts",
@@ -371,24 +424,104 @@ def main() -> int:
     if "group: shadow-live-flutter-ci-${{ github.ref }}" not in flutter_ci:
         failures.append("Step 9 borrowed regression: Flutter CI concurrency is not isolated per ref")
 
-    for label, workflow in (
-        ("phase6", phase6_e2e),
+    standalone_production_workflows = (
+        ("batch1", batch1_e2e),
+        ("chat-core", chat_core_e2e),
+        ("chat-gift", chat_gift_e2e),
+        ("chat-safety", chat_safety_e2e),
         ("economy", economy_e2e),
+        ("google-play", google_play_e2e),
+        ("app-asset", app_asset_e2e),
+        ("phase6", phase6_e2e),
         ("moderation", moderation_e2e),
         ("access", access_e2e),
-    ):
+        ("room-gift", room_gift_e2e),
+        ("voice-phase1", voice_phase1_e2e),
+        ("voice-phase2", voice_phase2_e2e),
+        ("wallet", wallet_e2e),
+    )
+    for label, workflow in standalone_production_workflows:
         if re.search(r"(?m)^\s*push:\s*$", workflow):
-            failures.append(f"Step 9 borrowed regression: standalone {label} production E2E auto-runs on main")
+            failures.append(
+                f"Step 9 regression: standalone {label} production E2E auto-runs on main"
+            )
+        if "workflow_dispatch:" not in workflow:
+            failures.append(
+                f"Step 9 regression: standalone {label} production E2E lost manual dispatch"
+            )
+        if "group: shadow-live-production-firestore-e2e" not in workflow:
+            failures.append(
+                f"Step 9 regression: standalone {label} E2E is outside shared Firestore serialization"
+            )
+        if "cancel-in-progress: false" not in workflow:
+            failures.append(
+                f"Step 9 regression: standalone {label} E2E may cancel/overlap another production suite"
+            )
+
+    if re.search(r"(?m)^\s*push:\s*$", cleanup_phase6_e2e):
+        failures.append("Step 9 regression: Phase 6 cleanup auto-runs against Production Firestore")
+    if "workflow_dispatch:" not in cleanup_phase6_e2e:
+        failures.append("Step 9 regression: Phase 6 cleanup lost manual dispatch")
+    if "group: shadow-live-production-firestore-e2e" not in cleanup_phase6_e2e:
+        failures.append("Step 9 regression: Phase 6 cleanup is outside Production Firestore serialization")
+    if "cancel-in-progress: false" not in cleanup_phase6_e2e:
+        failures.append("Step 9 regression: Phase 6 cleanup can overlap/cancel Production validation")
+
+    if re.search(r"(?m)^\s*push:\s*$", prod_gate) is None:
+        failures.append("Step 9 regression: comprehensive production gate is no longer automatic")
+    if "group: shadow-live-production-firestore-e2e" not in prod_gate:
+        failures.append("Step 9 regression: comprehensive production gate left shared Firestore serialization")
+    if "cancel-in-progress: false" not in prod_gate:
+        failures.append("Step 9 regression: comprehensive gate may cancel/overlap another production suite")
+    if "'.github/workflows/cloudflare-*-e2e.yml'" not in prod_gate:
+        failures.append("Step 9 regression: production gate does not watch standalone E2E workflow policy changes")
+
+    for required in (
+        "Skip superseded automatic production gate",
+        "run_gate:",
+        "Current main:",
+        "superseded by a newer main commit",
+        "needs: freshness",
+    ):
+        if required not in prod_gate:
+            failures.append(f"Step 9 regression: production gate lost superseded-commit protection: {required}")
+
     for required_script in (
+        "e2e-smoke.mjs",
         "phase9-user-moderation-e2e.mjs",
         "phase9-user-access-e2e.mjs",
+        "chat-core-e2e.mjs",
+        "chat-safety-e2e.mjs",
+        "chat-gift-e2e.mjs",
+        "wallet-e2e.mjs",
+        "room-gift-e2e.mjs",
+        "voice-session-e2e.mjs",
+        "voice-phase2-e2e.mjs",
         "economy-router-e2e.mjs",
         "phase6-settlement-e2e.mjs",
+        "google-play-e2e.mjs",
     ):
         if required_script not in prod_gate:
-            failures.append(f"Step 9 borrowed regression: serial production gate missing {required_script}")
+            failures.append(f"Step 9 regression: serial production gate missing {required_script}")
     if "Firestore cooldown after moderation" not in prod_gate or "Firestore cooldown after economy router" not in prod_gate:
-        failures.append("Step 9 borrowed regression: serial production gate lost Firestore cooldown spacing")
+        failures.append("Step 9 regression: serial production gate lost Firestore cooldown spacing")
+
+    if "manage-app-asset-e2e.mjs" in prod_gate:
+        failures.append("Step 9 regression: automatic Production gate reintroduced GitHub asset mutation E2E")
+    if "MANUAL / RELEASE-ONLY" not in prod_gate:
+        failures.append("Step 9 regression: Production gate summary no longer documents manual App Asset E2E policy")
+
+    if "ALLOW_PRODUCTION_DURABLE_OBJECT_E2E: '0'" not in prod_gate:
+        failures.append("Step 9 regression: automatic comprehensive E2E may create production Durable Objects")
+    if "ALLOW_PRODUCTION_DURABLE_OBJECT_E2E: '1'" not in phase6_e2e:
+        failures.append("Step 9 regression: manual Phase 6 workflow lost explicit production DO opt-in")
+    for required in (
+        "allowProductionDurableObjectE2E",
+        "SKIP automatic production Durable Object realtime coverage",
+        "SKIP automatic production Durable Object slot-bet coverage",
+    ):
+        if required not in phase6_settlement_script:
+            failures.append(f"Step 9 regression: Phase 6 script missing DO guard: {required}")
 
     if "assertUserDocumentSessionState" not in auth:
         failures.append("Step 9 borrowed regression: user document session validator is missing")
@@ -397,6 +530,10 @@ def main() -> int:
         failures.append("Step 9 borrowed regression: legacy transaction retry cap changed")
     if "firestoreErrorRetryDelayMs" not in legacy_admin_shim:
         failures.append("Step 9 borrowed regression: legacy transactions lost backoff/jitter")
+    if "shouldRetryLegacyTransaction" not in legacy_admin_shim:
+        failures.append("Step 9 regression: legacy transaction quota fail-fast helper is missing")
+    if 'code === "firestore_quota_exhausted"' not in legacy_admin_shim:
+        failures.append("Step 9 regression: legacy transactions may back off again after quota breaker opens")
     room_realtime_body = function_body(room_realtime_entry, "roomRealtime")
     if room_realtime_body is None:
         failures.append("Step 9 borrowed regression: roomRealtime handler is missing")

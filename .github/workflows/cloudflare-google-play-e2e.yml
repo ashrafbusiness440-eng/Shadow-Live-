@@ -1,19 +1,14 @@
 name: Cloudflare Google Play E2E
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'cloudflare-worker/scripts/google-play-e2e.mjs'
-      - '.github/workflows/cloudflare-google-play-e2e.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: shadow-live-cloudflare-google-play-e2e
-  cancel-in-progress: true
+  group: shadow-live-production-firestore-e2e
+  cancel-in-progress: false
 
 jobs:
   test:

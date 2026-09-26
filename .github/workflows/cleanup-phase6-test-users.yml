@@ -1,15 +1,14 @@
 name: Cleanup stale Phase 6 test users
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'cloudflare-worker/scripts/cleanup-phase6-test-users.mjs'
-      - '.github/workflows/cleanup-phase6-test-users.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: shadow-live-production-firestore-e2e
+  cancel-in-progress: false
 
 jobs:
   cleanup:
