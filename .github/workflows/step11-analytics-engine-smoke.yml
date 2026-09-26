@@ -1,0 +1,40 @@
+name: Step 11 Analytics Engine SQL Smoke
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/step11-analytics-engine-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sql-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify Analytics Engine SQL API
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+
+          API="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/analytics_engine/sql"
+
+          echo "Running SHOW TABLES smoke query..."
+          curl --fail-with-body --silent --show-error "$API" \
+            --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            --data "SHOW TABLES"
+
+          echo
+          echo "Running Shadow Live dataset schema/read smoke query..."
+          curl --fail-with-body --silent --show-error "$API" \
+            --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            --data "SELECT blob1 AS kind, blob2 AS primary_name, SUM(_sample_interval) AS samples FROM shadow_live_pressure_v1 WHERE timestamp > NOW() - INTERVAL '1' HOUR GROUP BY kind, primary_name ORDER BY samples DESC LIMIT 20"
+
+          echo
+          echo "STEP11_ANALYTICS_ENGINE_SQL_SMOKE_OK"
