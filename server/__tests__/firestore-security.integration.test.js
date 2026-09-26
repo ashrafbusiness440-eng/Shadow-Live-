@@ -6,7 +6,7 @@ import {
   assertSucceeds,
   initializeTestEnvironment,
 } from "@firebase/rules-unit-testing";
-import {doc, setDoc, updateDoc} from "firebase/firestore";
+import {doc, getDoc, setDoc, updateDoc} from "firebase/firestore";
 
 let env;
 const projectId="shadow-live-economy-test";
@@ -63,6 +63,11 @@ before(async()=>{
       giftHostMicSecondsMonth:0,
       giftHostQualifiedDays:0,
     });
+    await setDoc(doc(context.firestore(),"rooms","rules_room"),{
+      name:"Rules Room",
+      isActive:true,
+      createdAt:new Date(),
+    });
   });
 });
 
@@ -83,9 +88,15 @@ test("phone-auth user with an unverified linked email claim still has Firestore 
   await assertSucceeds(updateDoc(doc(userDb,"users",uid),{displayName:"Phone With Email"}));
 });
 
+test("phone-auth user with an unverified linked email can still read rooms",async()=>{
+  const userDb=phoneUserWithEmailClaimDb();
+  await assertSucceeds(getDoc(doc(userDb,"rooms","rules_room")));
+});
+
 test("unverified email/password user cannot access Firestore",async()=>{
   const userDb=unverifiedUserDb();
   await assertFails(updateDoc(doc(userDb,"users",uid),{displayName:"Blocked"}));
+  await assertFails(getDoc(doc(userDb,"rooms","rules_room")));
 });
 
 test("regular user cannot change protected balances earnings agency or mic activity",async()=>{
