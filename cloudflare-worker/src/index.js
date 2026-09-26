@@ -46,7 +46,8 @@ async function dispatchRequest(request, env) {
       version: 28,
       buildSha: env.BUILD_SHA || null,
       firebaseConfigured: Boolean(String(env.FIREBASE_SERVICE_ACCOUNT || "").trim()),
-      pressureAnalyticsConfigured: Boolean(env.PRESSURE_ANALYTICS),
+      pressureObservability: "workers_logs",
+      workersLogsConfigured: true,
     });
   }
 
