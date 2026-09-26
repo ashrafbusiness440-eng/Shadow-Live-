@@ -1,16 +1,8 @@
 name: Cloudflare Phase 8 Comprehensive E2E
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'cloudflare-worker/src/**'
-      - 'cloudflare-worker/scripts/**'
-      - 'cloudflare-worker/wrangler.toml'
-      - '.github/workflows/cloudflare-phase8-comprehensive-e2e.yml'
-      - '.github/workflows/cloudflare-*-e2e.yml'
+  # This suite mutates production test data and is intentionally manual-only.
   workflow_dispatch:
-
 permissions:
   contents: read
 
