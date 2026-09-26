@@ -48,8 +48,9 @@ class _RoomListScreenState extends State<RoomListScreen> {
     }
 
     try {
-      final rooms = await _service.loadRooms(forceRefresh: forceRefresh);
-      rooms.sort((a, b) => b.onlineCount.compareTo(a.onlineCount));
+      final rooms = [
+        ...await _service.loadRooms(forceRefresh: forceRefresh),
+      ]..sort((a, b) => b.onlineCount.compareTo(a.onlineCount));
       if (mounted) setState(() => _rooms = rooms);
     } catch (_) {
       if (mounted) setState(() => _error = 'تعذر تحميل الغرف حالياً');
