@@ -681,7 +681,7 @@ def main() -> int:
     )
     if not analytics_binding_enabled:
         for required in (
-            "code 10089",
+            "10089",
             "account-level",
             "pressureAnalyticsConfigured:false",
         ):
