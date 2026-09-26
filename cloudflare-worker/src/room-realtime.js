@@ -157,6 +157,9 @@ export async function roomRealtime(request, env) {
       if (code === "unauthorized") {
         return json(request, env, { ok: false, code: "unauthorized" }, 401);
       }
+      if (code === "auth_state_lookup_failed") {
+        return json(request, env, { ok: false, code }, 503);
+      }
       if (code === "room_realtime_not_configured") {
         return json(request, env, { ok: false, code }, 503);
       }
