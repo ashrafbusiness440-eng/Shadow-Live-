@@ -20,13 +20,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Install server dependencies
-        working-directory: server
-        run: npm ci
+      - name: Install Firebase Admin for smoke
+        run: npm install --no-save --ignore-scripts firebase-admin@^13
       - name: Query production rooms through Firebase Auth and Firestore Rules
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-        working-directory: server
         run: |
           node <<'NODE'
           const fs = require('fs');
@@ -39,7 +37,7 @@ jobs:
           const uid = 'ci-room-list-rules-smoke';
           const customToken = await admin.auth().createCustomToken(uid);
 
-          const options = fs.readFileSync('../lib/firebase_options.dart', 'utf8');
+          const options = fs.readFileSync('lib/firebase_options.dart', 'utf8');
           const match = options.match(/apiKey:\s*'([^']+)'/);
           if (!match) throw new Error('firebase_web_api_key_not_found');
           const apiKey = match[1];
