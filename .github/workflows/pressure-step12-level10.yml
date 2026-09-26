@@ -5,6 +5,7 @@ on:
   push:
     branches: [main]
     paths:
+      - 'scripts/pressure_step12_level10.mjs'
       - '.github/workflows/pressure-step12-level10.yml'
 
 permissions:
