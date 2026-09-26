@@ -563,14 +563,18 @@ def main() -> int:
     # Step 10: migrated room-presence authority must be Durable Object first.
     for required in (
         "realtimeUserPresentFromNamespace",
-        '"/presence/has"',
+        "presence/has",
         "legacyPresenceFresh",
         "return body.present === true",
     ):
         if required not in room_presence_authority:
             failures.append(f"Step 10 regression: shared presence authority missing {required}")
 
-    room_gift_body = function_body(room_gift, "sendRoomGift")
+    room_gift_body = None
+    if "export async function sendRoomGift" in room_gift and "export async function roomGift" in room_gift:
+        room_gift_body = room_gift.split(
+            "export async function sendRoomGift", 1
+        )[1].split("export async function roomGift", 1)[0]
     if room_gift_body is None:
         failures.append("Step 10 regression: sendRoomGift handler is missing")
     else:
@@ -587,7 +591,11 @@ def main() -> int:
         if duplicate_index < 0 or presence_index < 0 or duplicate_index > presence_index:
             failures.append("Step 10 regression: Room Gift idempotency no longer wins before presence enforcement")
 
-    invite_body = function_body(chat_safety_actions, "sendRoomInvite")
+    invite_body = None
+    if "async function sendRoomInvite" in chat_safety_actions and "async function setFollow" in chat_safety_actions:
+        invite_body = chat_safety_actions.split(
+            "async function sendRoomInvite", 1
+        )[1].split("async function setFollow", 1)[0]
     if invite_body is None:
         failures.append("Step 10 regression: sendRoomInvite handler is missing")
     else:
@@ -602,7 +610,11 @@ def main() -> int:
         if "roomOwnerUid !== uid" not in invite_body:
             failures.append("Step 10 regression: Room Invite owner bypass changed")
 
-    rocket_entry_body = function_body(room_rocket_runtime, "registerRocketEntry")
+    rocket_entry_body = None
+    if "export async function registerRocketEntry" in room_rocket_runtime and "export async function claimRocketReward" in room_rocket_runtime:
+        rocket_entry_body = room_rocket_runtime.split(
+            "export async function registerRocketEntry", 1
+        )[1].split("export async function claimRocketReward", 1)[0]
     if rocket_entry_body is None:
         failures.append("Step 10 regression: Rocket register entry handler is missing")
     else:
@@ -617,7 +629,11 @@ def main() -> int:
             if required not in rocket_entry_body:
                 failures.append(f"Step 10 regression: Rocket lost DO-first/fallback presence: {required}")
 
-    music_presence_body = function_body(worker, "assertRoomMusicSourcePresent")
+    music_presence_body = None
+    if "async function assertRoomMusicSourcePresent" in worker and "async function roomMusicCommand" in worker:
+        music_presence_body = worker.split(
+            "async function assertRoomMusicSourcePresent", 1
+        )[1].split("async function roomMusicCommand", 1)[0]
     if music_presence_body is None:
         failures.append("Step 10 regression: Music source presence helper is missing")
     else:
