@@ -2,6 +2,7 @@ import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { json, readJson } from "./http.js";
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
+import { annotatePressureRequest } from "./pressure-telemetry.js";
 
 const COINS_PER_DIAMOND = 10000;
 const clean = (value) => String(value ?? "").trim();
@@ -357,6 +358,7 @@ export async function walletActions(request, env) {
     const decoded = await authenticatedActor(request, env);
     const body = await readJson(request);
     const action = clean(body.action);
+    annotatePressureRequest(request, { action });
     const db = firestoreClient(env);
 
     if (action === "state") return json(request, env, await walletState(db, decoded.sub));

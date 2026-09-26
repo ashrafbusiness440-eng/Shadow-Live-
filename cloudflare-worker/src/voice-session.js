@@ -1,6 +1,7 @@
 import { corsHeaders } from "./http.js";
 import { configureLegacyEnv } from "./legacy-firebase-admin-shim.js";
 import legacyVoiceHandler from "./voice-session-legacy.js";
+import { annotatePressureRequest } from "./pressure-telemetry.js";
 
 function requestHeaders(request) {
   const headers = {};
@@ -50,6 +51,10 @@ export async function voiceSession(request, env) {
       body = {};
     }
   }
+
+  annotatePressureRequest(request, {
+    action: String(body.action || request.method || "").trim(),
+  });
 
   const req = {
     method: request.method,
