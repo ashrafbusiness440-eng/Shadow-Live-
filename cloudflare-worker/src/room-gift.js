@@ -19,23 +19,20 @@ class ApiError extends Error {
   }
 }
 
-async function requireRoomPresence(
+async function assertRoomPresence(
   db,
-  realtimeNamespace,
+  transaction,
+  realtimePresent,
   roomId,
   uid,
   errorCode,
 ) {
-  const realtimePresent = await realtimeUserPresentFromNamespace(
-    realtimeNamespace,
-    roomId,
-    uid,
-  );
   if (realtimePresent === true) return "room_realtime";
   if (realtimePresent === false) throw new ApiError(errorCode, 409);
 
   const legacyPresence = await db.get(
     `room_presence/${roomId}/users/${uid}`,
+    transaction,
   );
   if (!legacyPresenceFresh(legacyPresence)) {
     throw new ApiError(errorCode, 409);
@@ -115,21 +112,16 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
 
   const periods = utcPeriodKeys();
   const realtimeNamespace = options?.realtimeNamespace || null;
-
-  await Promise.all([
-    requireRoomPresence(
-      db,
+  const [senderRealtimePresence, receiverRealtimePresence] = await Promise.all([
+    realtimeUserPresentFromNamespace(
       realtimeNamespace,
       roomId,
       senderUid,
-      "sender_not_in_room",
     ),
-    requireRoomPresence(
-      db,
+    realtimeUserPresentFromNamespace(
       realtimeNamespace,
       roomId,
       receiverId,
-      "receiver_not_in_room",
     ),
   ]);
 
@@ -179,6 +171,26 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       await db.rollback(transaction);
       return { ok: true, code: "duplicate", ...(opSnap.data?.result || {}) };
     }
+
+    await Promise.all([
+      assertRoomPresence(
+        db,
+        transaction,
+        senderRealtimePresence,
+        roomId,
+        senderUid,
+        "sender_not_in_room",
+      ),
+      assertRoomPresence(
+        db,
+        transaction,
+        receiverRealtimePresence,
+        roomId,
+        receiverId,
+        "receiver_not_in_room",
+      ),
+    ]);
+
     if (!roomSnap.exists || roomSnap.data?.isActive === false) {
       throw new ApiError("room_unavailable", 409);
     }
