@@ -16,6 +16,7 @@ function unverifiedUserDb() {
   return env.authenticatedContext(uid,{
     email:"unverified@example.com",
     email_verified:false,
+    firebase:{sign_in_provider:"password"},
   }).firestore();
 }
 
