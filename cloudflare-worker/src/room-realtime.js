@@ -5,6 +5,7 @@ import {
 } from "./firebase-auth.js";
 import { firestoreQuotaResponse, json, readJson } from "./http.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
+import { verifyRealtimeAdmission } from "./realtime-admission.js";
 import {
   ROOM_REALTIME_PROTOCOL_VERSION,
   ROOM_REALTIME_TICKET_TTL_MS,
@@ -104,19 +105,48 @@ export async function roomRealtime(request, env) {
         return json(request, env, { ok: false, code: "invalid_action" }, 400);
       }
 
-      const db = firestoreClient(env);
       const uid = String(payload.sub || "");
-      const [room, user] = await Promise.all([
-        db.get(`rooms/${roomId}`),
-        db.get(`users/${uid}`),
-      ]);
-      if (!room.exists || room.data?.isActive === false) {
-        return json(request, env, { ok: false, code: "room_unavailable" }, 404);
+      const rawAdmission = String(body.realtimeAdmission || "").trim();
+      let admission = null;
+      if (rawAdmission) {
+        admission = verifyRealtimeAdmission(
+          env.ZEGO_SERVER_SECRET,
+          rawAdmission,
+          { uid, roomId },
+        );
+        if (!admission) {
+          return json(
+            request,
+            env,
+            { ok: false, code: "invalid_realtime_admission" },
+            401,
+          );
+        }
+        annotatePressureRequest(request, { action: "ticket_admission" });
       }
 
-      const profileData = user.data || {};
-      if (user.exists) {
-        assertUserDocumentSessionState(payload, profileData);
+      let profileData = {};
+      if (admission) {
+        profileData = {
+          displayName: admission.displayName,
+          profileImageUrl: admission.profileImageUrl,
+        };
+      } else {
+        // Compatibility / reconnect path. Initial joins should use the
+        // short-lived admission proof issued by /api/voice-session so we do
+        // not repeat the same Firestore user + room authorization reads.
+        const db = firestoreClient(env);
+        const [room, user] = await Promise.all([
+          db.get(`rooms/${roomId}`),
+          db.get(`users/${uid}`),
+        ]);
+        if (!room.exists || room.data?.isActive === false) {
+          return json(request, env, { ok: false, code: "room_unavailable" }, 404);
+        }
+        profileData = user.data || {};
+        if (user.exists) {
+          assertUserDocumentSessionState(payload, profileData);
+        }
       }
       const ticket = crypto.randomUUID();
       const expiresAtMs = Date.now() + ROOM_REALTIME_TICKET_TTL_MS;
