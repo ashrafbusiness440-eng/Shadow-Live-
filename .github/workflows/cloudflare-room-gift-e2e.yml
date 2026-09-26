@@ -25,4 +25,5 @@ jobs:
       - name: Run Cloudflare Room Gift E2E
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          ALLOW_PRODUCTION_DURABLE_OBJECT_E2E: '1'
         run: node cloudflare-worker/scripts/room-gift-e2e.mjs
