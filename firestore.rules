@@ -4,10 +4,12 @@ service cloud.firestore {
     function emailVerifiedIfPassword() {
       // Only password-auth sessions require verified email.
       // Phone/social sessions may legitimately carry an email claim too.
-      let firebaseClaims = request.auth.token.get('firebase', {});
-      let provider = firebaseClaims.get('sign_in_provider', '');
-      return provider != 'password'
-        || request.auth.token.get('email_verified', false) == true;
+      return !('email' in request.auth.token)
+        || (('email_verified' in request.auth.token)
+          && request.auth.token.email_verified == true)
+        || (('firebase' in request.auth.token)
+          && ('sign_in_provider' in request.auth.token.firebase)
+          && request.auth.token.firebase.sign_in_provider != 'password');
     }
 
     function signedIn() {
