@@ -3,6 +3,10 @@ import {getApps,initializeApp,cert,getAuth,getFirestore,FieldValue,legacyEnv} fr
 import {activeMicSegments} from "./mic-activity.js";
 import {assertUserDocumentSessionState} from "./firebase-auth.js";
 import {gameCatalog} from "./legacy-games/game-runtime.js";
+import {
+  legacyPresenceFresh,
+  realtimeUserPresentFromNamespace,
+} from "./room-presence-authority.js";
 
 class ApiError extends Error {
   constructor(code,status=400){super(code);this.code=code;this.status=status;}
@@ -55,20 +59,11 @@ async function realtimePresenceState(roomId){
 }
 
 async function realtimeUserPresent(roomId,uid){
-  const namespace=legacyEnv.ROOM_REALTIME;
-  if(!namespace)return null;
-  try{
-    const id=namespace.idFromName(roomId);
-    const stub=namespace.get(id);
-    const target=new URL("https://room-realtime.internal/presence/has");
-    target.searchParams.set("uid",uid);
-    const response=await stub.fetch(target.toString());
-    if(!response.ok)return null;
-    const body=await response.json().catch(()=>({}));
-    return body.present===true;
-  }catch(_){
-    return null;
-  }
+  return realtimeUserPresentFromNamespace(
+    legacyEnv.ROOM_REALTIME,
+    roomId,
+    uid,
+  );
 }
 
 async function realtimeRoomCount(roomId){
@@ -2163,6 +2158,20 @@ async function clearRoomMusicQueue(db,uid,body){
   });
 }
 
+async function assertRoomMusicSourcePresent(db,tx,roomId,sourceOwnerUid){
+  const realtimePresent=await realtimeUserPresent(roomId,sourceOwnerUid);
+  if(realtimePresent===true)return "room_realtime";
+  if(realtimePresent===false)throw new ApiError("music_source_offline",409);
+
+  const sourcePresence=await tx.get(
+    db.collection("room_presence").doc(roomId).collection("users").doc(sourceOwnerUid),
+  );
+  if(!legacyPresenceFresh(sourcePresence)){
+    throw new ApiError("music_source_offline",409);
+  }
+  return "legacy_room_presence";
+}
+
 async function roomMusicCommand(db,uid,body){
   const roomId=clean(body.roomId);
   const command=clean(body.command);
@@ -2186,13 +2195,12 @@ async function roomMusicCommand(db,uid,body){
       const track=queue.find(item=>item.id===trackId);
       if(!track)throw new ApiError("music_track_not_found",404);
       if(!access.manage&&track.sourceOwnerUid!==uid)throw new ApiError("forbidden",403);
-      const sourcePresence=await tx.get(
-        db.collection("room_presence").doc(roomId).collection("users").doc(track.sourceOwnerUid),
+      await assertRoomMusicSourcePresent(
+        db,
+        tx,
+        roomId,
+        track.sourceOwnerUid,
       );
-      const sourceLastSeen=Number(sourcePresence.data()?.lastSeenAtMs||0);
-      if(!sourcePresence.exists||Date.now()-sourceLastSeen>90000){
-        throw new ApiError("music_source_offline",409);
-      }
       nextState={
         status:"playing",
         currentTrackId:track.id,
@@ -2218,13 +2226,12 @@ async function roomMusicCommand(db,uid,body){
       const currentIndex=queue.findIndex(item=>item.id===state.currentTrackId);
       const nextTrack=currentIndex>=0&&currentIndex+1<queue.length?queue[currentIndex+1]:null;
       if(nextTrack){
-        const sourcePresence=await tx.get(
-          db.collection("room_presence").doc(roomId).collection("users").doc(nextTrack.sourceOwnerUid),
+        await assertRoomMusicSourcePresent(
+          db,
+          tx,
+          roomId,
+          nextTrack.sourceOwnerUid,
         );
-        const sourceLastSeen=Number(sourcePresence.data()?.lastSeenAtMs||0);
-        if(!sourcePresence.exists||Date.now()-sourceLastSeen>90000){
-          throw new ApiError("music_source_offline",409);
-        }
       }
       nextState=nextTrack
         ? {
