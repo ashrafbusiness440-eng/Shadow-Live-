@@ -303,23 +303,17 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     const openingDiamonds = Math.max(0, Number(receiver.diamonds || 0));
     const closingDiamonds = openingDiamonds + diamondsEarned;
 
-    const senderPresenceData = senderPresence.data || {};
-    const receiverPresenceData = receiverPresence.data || {};
     const senderName = clean(
-      senderPresenceData.displayName ||
       sender.displayName ||
       sender.username ||
       "مستخدم Shadow Live",
     );
     const receiverName = clean(
-      receiverPresenceData.displayName ||
       receiver.displayName ||
       receiver.username ||
       "مستخدم Shadow Live",
     );
-    const senderPhoto = clean(
-      senderPresenceData.profileImageUrl || sender.profileImageUrl,
-    );
+    const senderPhoto = clean(sender.profileImageUrl);
     const giftName = clean(gift.nameAr || "هدية");
     const assetKey = clean(gift.assetKey || "gifts.placeholder.default");
     const imageUrl = clean(gift.imageUrl);
