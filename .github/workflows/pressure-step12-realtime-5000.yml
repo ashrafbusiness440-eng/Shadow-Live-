@@ -1,0 +1,75 @@
+name: Pressure Step 12 Realtime 5000
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/pressure_step12_5000_realtime_shard.mjs'
+      - 'scripts/pressure_step12_5000_realtime_aggregate.mjs'
+      - '.github/workflows/pressure-step12-realtime-5000.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  realtime:
+    name: realtime-shard-${{ matrix.shard }}
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      SHARD_INDEX: ${{ matrix.shard }}
+      SHARD_COUNT: 10
+      VUS_PER_SHARD: 500
+      DURATION_MS: 30000
+      RAMP_MS: 10000
+      INTERVAL_MS: 5000
+      ROOMS_PER_REQUEST: 5
+      TOTAL_SYNTHETIC_ROOMS: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Firebase Admin
+        run: npm install --no-save --ignore-scripts firebase-admin@^13
+      - name: Run 500-user realtime shard
+        run: node scripts/pressure_step12_5000_realtime_shard.mjs
+      - name: Upload realtime shard metrics
+        uses: actions/upload-artifact@v4
+        with:
+          name: step12-rt-shard-${{ matrix.shard }}
+          path: step12-rt-shard-${{ matrix.shard }}.json
+          retention-days: 3
+
+  aggregate:
+    name: aggregate-realtime-5000
+    needs: realtime
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: step12-rt-shard-*
+          path: step12-rt-artifacts
+      - name: Aggregate realtime 5000-user result
+        run: node scripts/pressure_step12_5000_realtime_aggregate.mjs step12-rt-artifacts
+      - name: Upload realtime aggregate metrics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: step12-realtime-level5000-summary
+          path: step12-realtime-level5000-summary.json
+          if-no-files-found: ignore
+          retention-days: 7
