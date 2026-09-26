@@ -2,6 +2,10 @@ name: Pressure Step 12 Level 10
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/pressure-step12-level10.yml'
 
 permissions:
   contents: read
