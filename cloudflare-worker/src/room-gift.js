@@ -172,25 +172,6 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       return { ok: true, code: "duplicate", ...(opSnap.data?.result || {}) };
     }
 
-    await Promise.all([
-      assertRoomPresence(
-        db,
-        transaction,
-        senderRealtimePresence,
-        roomId,
-        senderUid,
-        "sender_not_in_room",
-      ),
-      assertRoomPresence(
-        db,
-        transaction,
-        receiverRealtimePresence,
-        roomId,
-        receiverId,
-        "receiver_not_in_room",
-      ),
-    ]);
-
     if (!roomSnap.exists || roomSnap.data?.isActive === false) {
       throw new ApiError("room_unavailable", 409);
     }
@@ -209,6 +190,25 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     ) {
       throw new ApiError("emergency_locked", 409);
     }
+
+    await Promise.all([
+      assertRoomPresence(
+        db,
+        transaction,
+        senderRealtimePresence,
+        roomId,
+        senderUid,
+        "sender_not_in_room",
+      ),
+      assertRoomPresence(
+        db,
+        transaction,
+        receiverRealtimePresence,
+        roomId,
+        receiverId,
+        "receiver_not_in_room",
+      ),
+    ]);
 
     const rawCatalog =
       catalogSnap.exists && Array.isArray(catalogSnap.data?.gifts)
