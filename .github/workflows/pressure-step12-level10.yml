@@ -1,19 +1,51 @@
-name: Pressure Step 12 Level 5000
+name: Pressure Step 12 Level 5000 Sharded
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
     paths:
-      - 'scripts/pressure_step12_level10.mjs'
+      - 'scripts/pressure_step12_5000_shard.mjs'
+      - 'scripts/pressure_step12_5000_aggregate.mjs'
       - '.github/workflows/pressure-step12-level10.yml'
-      - 'scripts/pressure_step12_level10.mjs'
 
 permissions:
   contents: read
 
 jobs:
   stress:
+    name: stress-shard-${{ matrix.shard }}
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9]
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      SHARD_INDEX: ${{ matrix.shard }}
+      SHARD_COUNT: 10
+      VUS_PER_SHARD: 500
+      DURATION_MS: 30000
+      RAMP_MS: 10000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run 500-user shard
+        run: node scripts/pressure_step12_5000_shard.mjs
+      - name: Upload shard metrics
+        uses: actions/upload-artifact@v4
+        with:
+          name: step12-shard-${{ matrix.shard }}
+          path: step12-shard-${{ matrix.shard }}.json
+          retention-days: 3
+
+  aggregate:
+    name: aggregate-5000
+    needs: stress
+    if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -21,5 +53,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Run Step 12 level 5000
-        run: node scripts/pressure_step12_level10.mjs
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: step12-shard-*
+          path: step12-artifacts
+      - name: Aggregate 5000-user result
+        run: node scripts/pressure_step12_5000_aggregate.mjs step12-artifacts
+      - name: Upload aggregate metrics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: step12-level5000-summary
+          path: step12-level5000-summary.json
+          if-no-files-found: ignore
+          retention-days: 7
