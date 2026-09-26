@@ -190,6 +190,14 @@ test("older invalidated load cannot clear a newer in-flight request", async () =
 test("transient classifier covers Firestore quota and availability errors", () => {
   assert.equal(isTransientConfigReadError({ status: 429 }), true);
   assert.equal(isTransientConfigReadError(new Error("RESOURCE_EXHAUSTED")), true);
+  assert.equal(
+    isTransientConfigReadError({ code: 8, message: "8 RESOURCE_EXHAUSTED" }),
+    true,
+  );
+  assert.equal(
+    isTransientConfigReadError({ code: "resource-exhausted" }),
+    true,
+  );
   assert.equal(isTransientConfigReadError(new Error("UNAVAILABLE")), true);
   assert.equal(isTransientConfigReadError(new Error("permission_denied")), false);
 });
