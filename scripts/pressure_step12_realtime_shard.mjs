@@ -20,7 +20,9 @@ const privateKey = String(sa.private_key || "").replace(/\\n/g, "\n");
 const firebaseOptions = fs.readFileSync("lib/firebase_options.dart", "utf8");
 const apiKey = firebaseOptions.match(/apiKey:\s*'([^']+)'/)?.[1] || "";
 
-const uid = `ci_step12_rt_${runId}_${shardIndex}`;
+const controlUid = `ci_step12_rt_control_${runId}_${shardIndex}`;
+const vuUids = Array.from({ length: users }, (_, i) => `ci_step12_rt_${runId}_${shardIndex}_${i}`);
+const vuTokens = new Array(users).fill("");
 const roomIds = Array.from(
   { length: roomsPerShard },
   (_, i) => `ci_step12_rt_${runId}_${shardIndex}_${i}`,
@@ -38,7 +40,7 @@ let pingFailures = 0;
 let presenceMismatches = 0;
 let presenceFailures = 0;
 let fatalError = "";
-let idToken = "";
+let controlIdToken = "";
 let accessToken = "";
 let plannedClosing = false;
 
@@ -98,19 +100,42 @@ function customToken(targetUid) {
 
 async function firebaseIdToken(targetUid) {
   if (!apiKey) throw new Error("firebase_api_key_missing");
-  const res = await fetch(
-    `https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=${encodeURIComponent(apiKey)}`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ token: customToken(targetUid), returnSecureToken: true }),
-    },
-  );
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok || !body.idToken) {
-    throw new Error(`custom_token_exchange_failed_${res.status}`);
+  let lastStatus = 0;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const res = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token: customToken(targetUid), returnSecureToken: true }),
+      },
+    );
+    const body = await res.json().catch(() => ({}));
+    lastStatus = res.status;
+    if (res.ok && body.idToken) return body.idToken;
+    if (![429, 500, 502, 503, 504].includes(res.status)) break;
+    await sleep(250 * (2 ** attempt));
   }
-  return body.idToken;
+  throw new Error(`custom_token_exchange_failed_${lastStatus}`);
+}
+
+async function prepareVuTokens() {
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(25, users) }, async () => {
+    while (true) {
+      const i = cursor++;
+      if (i >= users) return;
+      try {
+        vuTokens[i] = await firebaseIdToken(vuUids[i]);
+      } catch (error) {
+        failedUsers.add(i);
+        if (diagnostics.length < 20) {
+          diagnostics.push({ type: "auth", vuIndex: i, message: String(error?.message || error) });
+        }
+      }
+    }
+  });
+  await Promise.all(workers);
 }
 
 function encodeValue(value) {
@@ -155,23 +180,36 @@ async function fsDelete(path) {
   }
 }
 
-async function deleteAuthUser() {
-  if (!idToken || !apiKey) return;
+async function deleteAuthUser(token) {
+  if (!token || !apiKey) return;
   await fetch(
     `https://identitytoolkit.googleapis.com/v1/accounts:delete?key=${encodeURIComponent(apiKey)}`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ idToken }),
+      body: JSON.stringify({ idToken: token }),
     },
   ).catch(() => {});
 }
 
-async function realtimePost(body) {
+async function deleteAuthUsers(tokens) {
+  let cursor = 0;
+  const clean = Array.from(new Set(tokens.filter(Boolean)));
+  const workers = Array.from({ length: Math.min(25, clean.length) }, async () => {
+    while (true) {
+      const i = cursor++;
+      if (i >= clean.length) return;
+      await deleteAuthUser(clean[i]);
+    }
+  });
+  await Promise.all(workers);
+}
+
+async function realtimePost(body, token = controlIdToken) {
   const res = await fetch(`${workerBase}/api/room-realtime`, {
     method: "POST",
     headers: {
-      authorization: `Bearer ${idToken}`,
+      authorization: `Bearer ${token}`,
       "content-type": "application/json",
       origin: "https://ashrafbusiness440-eng.github.io",
       "user-agent": "ShadowLive-Step12-Realtime/1.0",
@@ -236,7 +274,7 @@ async function openVu(vuIndex) {
 
   let ticket;
   try {
-    ticket = await realtimePost({ action: "ticket", roomId });
+    ticket = await realtimePost({ action: "ticket", roomId }, vuTokens[vuIndex]);
   } catch (error) {
     failedUsers.add(vuIndex);
     if (diagnostics.length < 20) {
@@ -409,11 +447,13 @@ try {
     isHidden: true,
     visibility: "hidden",
     pressureTest: true,
-    ownerUid: uid,
+    ownerUid: controlUid,
     createdAt: new Date(),
   })));
 
-  idToken = await firebaseIdToken(uid);
+  controlIdToken = await firebaseIdToken(controlUid);
+  await prepareVuTokens();
+  if (vuTokens.filter(Boolean).length !== users) throw new Error("vu_auth_tokens_incomplete");
 
   await Promise.all(Array.from({ length: users }, (_, i) => openVu(i)));
 
@@ -436,7 +476,7 @@ try {
   }
   await sleep(1000);
   for (const roomId of roomIds) await fsDelete(`rooms/${roomId}`);
-  await deleteAuthUser();
+  await deleteAuthUsers([controlIdToken, ...vuTokens]);
 }
 
 for (const record of records) {
@@ -454,6 +494,7 @@ const result = {
   shardCount,
   users,
   rooms: roomIds.length,
+  uniqueAuthUsers: vuTokens.filter(Boolean).length,
   readyConnections: records.filter((r) => r.ready).length,
   successfulUsers: users - failedUsers.size,
   failedUsers: failedUsers.size,
