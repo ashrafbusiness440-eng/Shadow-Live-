@@ -6,7 +6,7 @@ import {
   assertSucceeds,
   initializeTestEnvironment,
 } from "@firebase/rules-unit-testing";
-import {doc, setDoc, updateDoc} from "firebase/firestore";
+import {doc, getDoc, setDoc, updateDoc} from "firebase/firestore";
 
 let env;
 const projectId="shadow-live-economy-test";
@@ -16,12 +16,22 @@ function unverifiedUserDb() {
   return env.authenticatedContext(uid,{
     email:"unverified@example.com",
     email_verified:false,
+    firebase:{sign_in_provider:"password"},
   }).firestore();
 }
 
 function phoneUserDb() {
   return env.authenticatedContext(uid,{
     phone_number:"+971500000000",
+    firebase:{sign_in_provider:"phone"},
+  }).firestore();
+}
+
+function phoneUserWithEmailClaimDb() {
+  return env.authenticatedContext(uid,{
+    phone_number:"+971500000000",
+    email:"linked-unverified@example.com",
+    email_verified:false,
     firebase:{sign_in_provider:"phone"},
   }).firestore();
 }
@@ -53,6 +63,11 @@ before(async()=>{
       giftHostMicSecondsMonth:0,
       giftHostQualifiedDays:0,
     });
+    await setDoc(doc(context.firestore(),"rooms","rules_room"),{
+      name:"Rules Room",
+      isActive:true,
+      createdAt:new Date(),
+    });
   });
 });
 
@@ -68,9 +83,20 @@ test("phone-auth user is unaffected by email verification gate",async()=>{
   await assertSucceeds(updateDoc(doc(userDb,"users",uid),{displayName:"Phone User"}));
 });
 
+test("phone-auth user with an unverified linked email claim still has Firestore access",async()=>{
+  const userDb=phoneUserWithEmailClaimDb();
+  await assertSucceeds(updateDoc(doc(userDb,"users",uid),{displayName:"Phone With Email"}));
+});
+
+test("phone-auth user with an unverified linked email can still read rooms",async()=>{
+  const userDb=phoneUserWithEmailClaimDb();
+  await assertSucceeds(getDoc(doc(userDb,"rooms","rules_room")));
+});
+
 test("unverified email/password user cannot access Firestore",async()=>{
   const userDb=unverifiedUserDb();
   await assertFails(updateDoc(doc(userDb,"users",uid),{displayName:"Blocked"}));
+  await assertFails(getDoc(doc(userDb,"rooms","rules_room")));
 });
 
 test("regular user cannot change protected balances earnings agency or mic activity",async()=>{
