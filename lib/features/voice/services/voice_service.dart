@@ -33,6 +33,10 @@ abstract interface class VoiceService {
   Stream<VoiceConnectionState> get connectionStates;
   Stream<VoiceMicState> get micStates;
 
+  /// Short-lived proof that the current room join already passed Shadow
+  /// account + room admission checks. Consumed by realtime presence once.
+  String? get realtimeAdmission;
+
   Future<void> dispose();
 }
 
