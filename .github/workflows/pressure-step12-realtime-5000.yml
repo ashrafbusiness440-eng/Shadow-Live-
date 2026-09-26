@@ -1,13 +1,8 @@
 name: Pressure Step 12 Realtime 5000
 
 on:
+  # Production load tests are manual-only.
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'scripts/pressure_step12_5000_realtime_shard.mjs'
-      - 'scripts/pressure_step12_5000_realtime_aggregate.mjs'
-      - '.github/workflows/pressure-step12-realtime-5000.yml'
 
 permissions:
   contents: read
