@@ -8,18 +8,15 @@ on:
       - 'cloudflare-worker/scripts/**'
       - 'cloudflare-worker/wrangler.toml'
       - '.github/workflows/cloudflare-phase8-comprehensive-e2e.yml'
-      - '.github/workflows/cloudflare-phase6-settlement-e2e.yml'
-      - '.github/workflows/cloudflare-economy-router-phase5-e2e.yml'
-      - '.github/workflows/cloudflare-phase9-user-moderation-e2e.yml'
-      - '.github/workflows/cloudflare-phase9-user-access-e2e.yml'
+      - '.github/workflows/cloudflare-*-e2e.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: shadow-live-cloudflare-phase8-comprehensive-e2e
-  cancel-in-progress: true
+  group: shadow-live-production-firestore-e2e
+  cancel-in-progress: false
 
 jobs:
   comprehensive-e2e:
@@ -171,6 +168,7 @@ jobs:
       - name: Games settlements cron and RNG E2E
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          ALLOW_PRODUCTION_DURABLE_OBJECT_E2E: '0'
         run: node cloudflare-worker/scripts/phase6-settlement-e2e.mjs
 
       - name: Firestore cooldown after game settlement
