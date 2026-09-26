@@ -2,6 +2,7 @@ import {createCipheriv,randomBytes,randomInt,createHash,scryptSync,timingSafeEqu
 import {getApps,initializeApp,cert,getAuth,getFirestore,FieldValue,legacyEnv} from "./legacy-firebase-admin-shim.js";
 import {activeMicSegments} from "./mic-activity.js";
 import {assertUserDocumentSessionState} from "./firebase-auth.js";
+import {issueRealtimeAdmission} from "./realtime-admission.js";
 import {gameCatalog} from "./legacy-games/game-runtime.js";
 import {
   legacyPresenceFresh,
@@ -3498,6 +3499,12 @@ export default async function handler(req,res){
     const effectiveSeconds=1800;
     const userId=zegoUserId(decoded.uid);
     const generated=generateToken04(cfg.appId,userId,cfg.secret,effectiveSeconds);
+    const realtimeAdmission=issueRealtimeAdmission(cfg.secret,{
+      uid:decoded.uid,
+      roomId,
+      displayName:clean(decoded.name),
+      profileImageUrl:clean(decoded.picture),
+    });
     return out(res,200,{
       ok:true,
       provider:"zego",
@@ -3506,6 +3513,7 @@ export default async function handler(req,res){
       userId,
       roomId,
       expiresAt:generated.expiresAt,
+      realtimeAdmission,
     });
   }catch(e){
     if(e instanceof ApiError)return out(res,e.status,{ok:false,code:e.code});
