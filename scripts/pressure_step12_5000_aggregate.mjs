@@ -32,13 +32,13 @@ for (const s of shards) {
   for (const [k,v] of Object.entries(s.statuses||{})) statuses[k]=(statuses[k]||0)+Number(v||0);
   diagnostics.push(...(s.diagnostics||[]).slice(0,3).map((d)=>({shard:s.shardIndex,...d})));
 }
-const durationSec = Math.max(...shards.map((s)=>Number(s.durationSec||0)));
+const totalWindowSec = Math.max(...shards.map((s)=>Number(s.durationSec||0) + Number(s.rampSec||0)));
 const result = {
   users,
   shards: shards.length,
-  durationSec,
+  totalWindowSec,
   requests,
-  rps: Number((requests / Math.max(1,durationSec)).toFixed(2)),
+  rps: Number((requests / Math.max(1,totalWindowSec)).toFixed(2)),
   errors,
   networkErrors,
   errorRate: Number((errors / Math.max(1,requests)).toFixed(6)),
