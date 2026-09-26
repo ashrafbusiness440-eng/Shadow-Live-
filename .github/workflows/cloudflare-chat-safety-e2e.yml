@@ -25,4 +25,5 @@ jobs:
       - name: Run Cloudflare Chat Safety E2E
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          ALLOW_PRODUCTION_DURABLE_OBJECT_E2E: '1'
         run: node cloudflare-worker/scripts/chat-safety-e2e.mjs
