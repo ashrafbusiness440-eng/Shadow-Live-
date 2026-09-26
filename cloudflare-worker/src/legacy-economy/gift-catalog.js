@@ -1,5 +1,6 @@
 import { getApps, initializeApp, cert, getAuth, FieldValue, getFirestore, legacyEnv } from "../legacy-firebase-admin-shim.js";
 import { assertUserDocumentSessionState } from "../firebase-auth.js";
+import { invalidateConfigCache, readThroughConfigCache } from "../config-cache.js";
 
 const CATEGORIES = new Set([
   "general",
@@ -51,10 +52,14 @@ function cors(req, res) {
 
 const out = (res, status, body) => res.status(status).json(body);
 
-async function actor(req) {
+async function authenticatedUser(req) {
   const authorization = clean(req.headers.authorization);
   if (!authorization.startsWith("Bearer ")) throw Error("unauthorized");
-  const decoded = await getAuth().verifyIdToken(authorization.slice(7), {checkUserState:false});
+  return getAuth().verifyIdToken(authorization.slice(7), {checkUserState:false});
+}
+
+async function actor(req) {
+  const decoded = await authenticatedUser(req);
   const db = getFirestore();
   const snap = await db.collection("users").doc(decoded.uid).get();
   if (!snap.exists) throw Error("forbidden");
@@ -66,6 +71,47 @@ async function actor(req) {
     (user.adminEnabled === true && caps.includes("manageEconomy"));
   if (!allowed) throw Error("forbidden");
   return { uid: decoded.uid, db };
+}
+
+async function cachedCatalogState(db) {
+  return readThroughConfigCache(
+    "config:gift_catalog",
+    async () => {
+      const snap = await db.collection("system_config").doc("gift_catalog").get();
+      return {
+        exists: snap.exists,
+        config: snap.exists ? snap.data() : null,
+      };
+    },
+    { ttlMs: 30_000, staleMs: 5 * 60_000 },
+  );
+}
+
+function publicCatalog(config) {
+  const raw = Array.isArray(config?.gifts) ? config.gifts : [];
+  return raw
+    .filter((item) => item && item.enabled !== false)
+    .map((item) => ({
+      id: clean(item.id),
+      nameAr: clean(item.nameAr),
+      priceCoins: Number(item.priceCoins || 0),
+      category: clean(item.category || "general"),
+      enabled: item.enabled !== false,
+      featured: item.featured === true,
+      sortOrder: Number(item.sortOrder || 0),
+      assetKey: clean(item.assetKey || "gifts.placeholder.default"),
+      localPlaceholder: clean(
+        item.localPlaceholder || "assets/images/gifts/gift_placeholder.webp",
+      ),
+    }))
+    .filter((item) =>
+      item.id &&
+      item.nameAr &&
+      Number.isSafeInteger(item.priceCoins) &&
+      item.priceCoins > 0 &&
+      CATEGORIES.has(item.category)
+    )
+    .sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
 function validateGifts(raw) {
@@ -131,16 +177,27 @@ export async function handler(req, res) {
 
   try {
     initFirebase();
-    const { uid, db } = await actor(req);
     const action = clean(req.body?.action);
+
+    if (action === "catalog") {
+      await authenticatedUser(req);
+      const db = getFirestore();
+      const state = await cachedCatalogState(db);
+      return out(res, 200, {
+        ok: true,
+        gifts: publicCatalog(state.config),
+      });
+    }
+
+    const { uid, db } = await actor(req);
     const ref = db.collection("system_config").doc("gift_catalog");
 
     if (action === "state") {
-      const snap = await ref.get();
+      const state = await cachedCatalogState(db);
       return out(res, 200, {
         ok: true,
-        exists: snap.exists,
-        config: snap.exists ? snap.data() : null,
+        exists: state.exists,
+        config: state.config,
       });
     }
 
@@ -178,6 +235,7 @@ export async function handler(req, res) {
         });
       });
 
+      invalidateConfigCache("config:gift_catalog");
       return out(res, 200, { ok: true, gifts });
     }
 
