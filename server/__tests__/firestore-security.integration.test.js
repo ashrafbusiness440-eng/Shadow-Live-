@@ -6,7 +6,7 @@ import {
   assertSucceeds,
   initializeTestEnvironment,
 } from "@firebase/rules-unit-testing";
-import {doc, getDoc, setDoc, updateDoc} from "firebase/firestore";
+import {collection, doc, getDoc, getDocs, limit, query, setDoc, updateDoc} from "firebase/firestore";
 
 let env;
 const projectId="shadow-live-economy-test";
@@ -68,6 +68,13 @@ before(async()=>{
       isActive:true,
       createdAt:new Date(),
     });
+    for (let i = 0; i < 59; i += 1) {
+      await setDoc(doc(context.firestore(),"rooms",`rules_room_${i}`),{
+        name:`Rules Room ${i}`,
+        isActive:true,
+        createdAt:new Date(),
+      });
+    }
   });
 });
 
@@ -91,6 +98,13 @@ test("phone-auth user with an unverified linked email claim still has Firestore 
 test("phone-auth user with an unverified linked email can still read rooms",async()=>{
   const userDb=phoneUserWithEmailClaimDb();
   await assertSucceeds(getDoc(doc(userDb,"rooms","rules_room")));
+});
+
+test("phone-auth user can execute the production room-list query at limit 60",async()=>{
+  const userDb=phoneUserWithEmailClaimDb();
+  const roomQuery=query(collection(userDb,"rooms"),limit(60));
+  const snapshot=await assertSucceeds(getDocs(roomQuery));
+  assert.equal(snapshot.size,60);
 });
 
 test("unverified email/password user cannot access Firestore",async()=>{
