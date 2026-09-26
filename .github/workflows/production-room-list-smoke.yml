@@ -30,6 +30,7 @@ jobs:
           const fs = require('fs');
           const admin = require('firebase-admin');
 
+          (async () => {
           let serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
           if (typeof serviceAccount === 'string') serviceAccount = JSON.parse(serviceAccount);
           admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
@@ -79,4 +80,8 @@ jobs:
           const rows = JSON.parse(body);
           const docs = rows.filter((row) => row.document).length;
           console.log('PRODUCTION_ROOM_LIST_QUERY_OK docs=' + docs);
+          })().catch((error) => {
+            console.error(error);
+            process.exit(1);
+          });
           NODE
