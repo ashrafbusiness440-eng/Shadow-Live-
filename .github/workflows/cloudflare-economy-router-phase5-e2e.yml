@@ -7,8 +7,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: shadow-live-cloudflare-economy-router-phase5-e2e
-  cancel-in-progress: true
+  group: shadow-live-production-firestore-e2e
+  cancel-in-progress: false
 
 jobs:
   test:
