@@ -1,4 +1,7 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:convert';
+
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
 
 class RechargePackageConfig {
   const RechargePackageConfig({
@@ -55,8 +58,16 @@ class RechargePackageConfig {
 class RechargeConfigService {
   RechargeConfigService._();
 
-  static final FirebaseFirestore _db = FirebaseFirestore.instance;
+  static const String _apiBase = String.fromEnvironment(
+    'SHADOW_CLOUDFLARE_API_BASE_URL',
+    defaultValue: 'https://shadow-live.ashraf-business-440.workers.dev/api',
+  );
+  static const Duration _freshFor = Duration(seconds: 30);
+  static const Duration _staleFor = Duration(minutes: 5);
   static const int coinsPerUsd = 10000;
+  static List<RechargePackageConfig>? _cachedPackages;
+  static DateTime? _loadedAt;
+  static Future<List<RechargePackageConfig>>? _inflight;
 
   static const List<RechargePackageConfig> fallbackPackages = [
     RechargePackageConfig(
@@ -138,26 +149,107 @@ class RechargeConfigService {
     ),
   ];
 
-  static Stream<List<RechargePackageConfig>> watchPackages() {
-    return _db.collection('system_config').doc('recharge').snapshots().map(
-      (snapshot) {
-        final data = snapshot.data();
-        final raw = data?['packages'];
-        if (raw is! List) return fallbackPackages;
-        final items = raw
-            .whereType<Map>()
-            .map((item) => RechargePackageConfig.fromMap(
-                  Map<String, dynamic>.from(item),
-                ))
-            .where((item) =>
-                item.enabled &&
-                item.id.isNotEmpty &&
-                item.priceUsd > 0 &&
-                item.totalCoins > 0)
-            .toList()
-          ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
-        return items.isEmpty ? fallbackPackages : items;
-      },
-    );
+  static List<RechargePackageConfig> parsePackages(dynamic raw) {
+    if (raw is! List) return fallbackPackages;
+    final items = raw
+        .whereType<Map>()
+        .map(
+          (item) => RechargePackageConfig.fromMap(
+            Map<String, dynamic>.from(item),
+          ),
+        )
+        .where(
+          (item) =>
+              item.enabled &&
+              item.id.isNotEmpty &&
+              item.productId.isNotEmpty &&
+              item.priceUsd > 0 &&
+              item.totalCoins > 0,
+        )
+        .toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    return items.isEmpty ? fallbackPackages : items;
   }
+
+  static Future<List<RechargePackageConfig>> loadPackages({
+    bool forceRefresh = false,
+    http.Client? client,
+  }) async {
+    final now = DateTime.now();
+    final cached = _cachedPackages;
+    final loadedAt = _loadedAt;
+    if (!forceRefresh &&
+        cached != null &&
+        loadedAt != null &&
+        now.difference(loadedAt) < _freshFor) {
+      return cached;
+    }
+    if (!forceRefresh && _inflight != null) return _inflight!;
+
+    final request = _loadPackagesFromApi(client: client);
+    _inflight = request;
+    try {
+      final items = await request;
+      _cachedPackages = List<RechargePackageConfig>.unmodifiable(items);
+      _loadedAt = DateTime.now();
+      return _cachedPackages!;
+    } catch (_) {
+      if (cached != null &&
+          loadedAt != null &&
+          now.difference(loadedAt) < _staleFor) {
+        return cached;
+      }
+      rethrow;
+    } finally {
+      if (identical(_inflight, request)) _inflight = null;
+    }
+  }
+
+  static Future<List<RechargePackageConfig>> _loadPackagesFromApi({
+    http.Client? client,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.isAnonymous) {
+      throw StateError('account_required');
+    }
+    final token = await user.getIdToken();
+    if (token == null || token.isEmpty) throw StateError('not_signed_in');
+
+    final ownedClient = client == null;
+    final httpClient = client ?? http.Client();
+    try {
+      final response = await httpClient
+          .post(
+            Uri.parse('$_apiBase/recharge-config'),
+            headers: <String, String>{
+              'authorization': 'Bearer $token',
+              'content-type': 'application/json',
+            },
+            body: jsonEncode(<String, dynamic>{'action': 'packages'}),
+          )
+          .timeout(const Duration(seconds: 20));
+
+      Map<String, dynamic> body = <String, dynamic>{};
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map) {
+          body = Map<String, dynamic>.from(decoded);
+        }
+      } catch (_) {}
+
+      if (response.statusCode != 200 || body['ok'] != true) {
+        throw StateError((body['code'] ?? 'recharge_config_failed').toString());
+      }
+      return parsePackages(body['packages']);
+    } finally {
+      if (ownedClient) httpClient.close();
+    }
+  }
+
+  static void clearCacheForTests() {
+    _cachedPackages = null;
+    _loadedAt = null;
+    _inflight = null;
+  }
+
 }
