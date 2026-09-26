@@ -137,6 +137,10 @@ export async function roomRealtime(request, env) {
           profileImageUrl: String(
             profileData.profileImageUrl || payload.picture || "",
           ),
+          reconnectAttempt: Math.max(
+            0,
+            Math.min(3, Number(body.reconnectAttempt || 0)),
+          ),
         }),
       });
 
