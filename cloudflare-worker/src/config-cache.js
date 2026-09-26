@@ -88,7 +88,9 @@ export async function readThroughConfigCache(
       }
       throw error;
     } finally {
-      inflight.delete(cacheKey);
+      if (inflight.get(cacheKey) === request) {
+        inflight.delete(cacheKey);
+      }
     }
   })();
 
