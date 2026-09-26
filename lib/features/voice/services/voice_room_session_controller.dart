@@ -233,9 +233,15 @@ class VoiceRoomSessionController extends ChangeNotifier {
     }
   }
 
-  Future<void> _startPresence(String targetRoomId) async {
+  Future<void> _startPresence(
+    String targetRoomId, {
+    String? realtimeAdmission,
+  }) async {
     try {
-      await _presenceService.join(targetRoomId);
+      await _presenceService.join(
+        targetRoomId,
+        realtimeAdmission: realtimeAdmission,
+      );
       if (_active && roomId == targetRoomId) {
         await _announceEntrance(targetRoomId);
       }
@@ -441,7 +447,12 @@ class VoiceRoomSessionController extends ChangeNotifier {
       _connectionState = VoiceConnectionState.connected;
       _watchRoomLifecycle(targetRoomId);
       _watchRoomBan(targetRoomId);
-      unawaited(_startPresence(targetRoomId));
+      unawaited(
+        _startPresence(
+          targetRoomId,
+          realtimeAdmission: _voiceService.realtimeAdmission,
+        ),
+      );
     } catch (error) {
       _active = false;
       _joining = false;
