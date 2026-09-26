@@ -181,3 +181,13 @@ Pulled forward during Step 6 closure after automatic main-branch E2E workflows c
 - Firestore remains authoritative for room gifts, Google Play package validation, mic-activity payout policy, bets, Coins, outcomes, payouts, and settlement. These financial paths must not import the config cache.
 - No polling was introduced.
 - No queue is introduced into financial paths. Existing config+audit writes remain transactional/batched; dedicated analytics queueing is deferred unless measured pressure justifies it.
+
+## Step 9 finalization note — Quota and Production CI
+
+- Firestore explicit quota exhaustion is capped at two upstream attempts and opens a short process-local circuit breaker; cold misses fail closed with explicit retryable service-unavailable semantics rather than fabricated state.
+- Legacy transaction wrappers must fail immediately on explicit `firestore_quota_exhausted` instead of starting another local transaction retry after the breaker has opened.
+- Standalone Production E2E suites and stale Phase 6 cleanup are manual-only and serialized through the shared Production Firestore concurrency group.
+- Automatic Comprehensive E2E skips itself when its main-branch SHA has been superseded, preventing an old queued run from waiting for Worker/Pages artifacts that the latest-only deployment workflows will never publish.
+- Automatic CI does not create Production room Durable Objects.
+- Full App Asset write/delete E2E is manual/release-only because it mutates the GitHub `main` branch and otherwise creates additional CI/Pages churn.
+- Actual upstream Firestore quota/capacity remains an infrastructure dependency for Step 12; application backoff/circuit breaking reduces amplification but does not manufacture quota.
