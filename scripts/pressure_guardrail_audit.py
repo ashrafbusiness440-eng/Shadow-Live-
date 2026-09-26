@@ -675,12 +675,20 @@ def main() -> int:
             failures.append(f"Step 10 regression: automatic Production summary lost policy marker: {marker}")
 
     # Step 11: observability must measure pressure without writing telemetry to Firestore.
-    for required in (
-        'binding = "PRESSURE_ANALYTICS"',
-        'dataset = "shadow_live_pressure_v1"',
-    ):
-        if required not in wrangler:
-            failures.append(f"Step 11 regression: Analytics Engine binding missing: {required}")
+    analytics_binding_enabled = (
+        'binding = "PRESSURE_ANALYTICS"' in wrangler
+        and 'dataset = "shadow_live_pressure_v1"' in wrangler
+    )
+    if not analytics_binding_enabled:
+        for required in (
+            "code 10089",
+            "account-level",
+            "pressureAnalyticsConfigured:false",
+        ):
+            if required not in step11_doc:
+                failures.append(
+                    f"Step 11 blocked-state regression: Analytics Engine prerequisite documentation missing {required}"
+                )
 
     for required in (
         "PRESSURE_ANALYTICS_SCHEMA",
