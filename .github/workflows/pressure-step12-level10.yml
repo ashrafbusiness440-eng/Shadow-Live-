@@ -1,4 +1,4 @@
-name: Pressure Step 12 Level 10
+name: Pressure Step 12 Level 100
 
 on:
   workflow_dispatch:
@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/pressure-step12-level10.yml'
+      - 'scripts/pressure_step12_level10.mjs'
 
 permissions:
   contents: read
@@ -19,5 +20,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Run Step 12 level 10
+      - name: Run Step 12 level 100
         run: node scripts/pressure_step12_level10.mjs
