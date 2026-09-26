@@ -34,6 +34,24 @@ export function tierForMonthlyGross(economy, monthlyGrossCoins) {
   return tier;
 }
 
+function effectiveAgencyEconomy(economy = {}, receiverData = {}, agencyId = "") {
+  const snapshot = agencyId && receiverData?.agencyPolicySnapshot &&
+    typeof receiverData.agencyPolicySnapshot === "object"
+    ? receiverData.agencyPolicySnapshot
+    : null;
+  if (!snapshot) return economy;
+  return {
+    ...economy,
+    ...snapshot,
+    tiers: Array.isArray(snapshot.tiers) && snapshot.tiers.length
+      ? snapshot.tiers
+      : economy?.tiers,
+    agencyTargets: Array.isArray(snapshot.targets) && snapshot.targets.length
+      ? snapshot.targets
+      : economy?.agencyTargets,
+  };
+}
+
 export function resolveRevenuePolicy(
   economy,
   receiverData,
@@ -42,18 +60,23 @@ export function resolveRevenuePolicy(
   monthKey,
   activeHostCount = 0,
 ) {
-  const tier = tierForMonthlyGross(economy, monthlyGrossCoins);
+  const effectiveEconomy = effectiveAgencyEconomy(
+    economy,
+    receiverData,
+    agencyId,
+  );
+  const tier = tierForMonthlyGross(effectiveEconomy, monthlyGrossCoins);
   const activityMonth = clean(receiverData?.giftHostActivityMonth);
   const qualifiedDays = activityMonth === monthKey
     ? Math.max(0, Number(receiverData?.giftHostQualifiedDays || 0))
     : 0;
   const requiredDays = Math.max(
     1,
-    Math.min(31, Number(economy?.hostBonusQualifiedDays || 9)),
+    Math.min(31, Number(effectiveEconomy?.hostBonusQualifiedDays || 9)),
   );
   const configuredHostBonus = Math.max(
     0,
-    Math.min(3000, Number(economy?.hostPerformanceBonusBps ?? 200)),
+    Math.min(3000, Number(effectiveEconomy?.hostPerformanceBonusBps ?? 200)),
   );
   const hostBonusBps = qualifiedDays >= requiredDays
     ? configuredHostBonus
@@ -62,11 +85,11 @@ export function resolveRevenuePolicy(
 
   const requiredActiveHosts = Math.max(
     1,
-    Math.min(100000, Number(economy?.agencyBonusActiveHosts || 10)),
+    Math.min(100000, Number(effectiveEconomy?.agencyBonusActiveHosts || 10)),
   );
   const configuredAgencyBonus = Math.max(
     0,
-    Math.min(3000, Number(economy?.agencyPerformanceBonusBps ?? 200)),
+    Math.min(3000, Number(effectiveEconomy?.agencyPerformanceBonusBps ?? 200)),
   );
   const agencyBonusBps = agencyId && activeHostCount >= requiredActiveHosts
     ? configuredAgencyBonus
@@ -127,7 +150,7 @@ export function calculateAgencyCycleSettlement(
   const tier = tierForMonthlyGross(economy, monthlyGrossCoins);
   const fullDays = Math.max(
     1,
-    Math.min(31, Number(economy?.hostBonusQualifiedDays || 9)),
+    Math.min(31, Number(effectiveEconomy?.hostBonusQualifiedDays || 9)),
   );
   const hostBonusBps = qualifiedDays >= fullDays
     ? Math.max(
@@ -137,7 +160,7 @@ export function calculateAgencyCycleSettlement(
     : 0;
   const agencyBonusThreshold = Math.max(
     1,
-    Number(economy?.agencyBonusActiveHosts || 10),
+    Number(effectiveEconomy?.agencyBonusActiveHosts || 10),
   );
   const agencyBonusBps = hasAgency && activeHostCount >= agencyBonusThreshold
     ? Math.max(
