@@ -168,3 +168,16 @@ Pulled forward during Step 6 closure after automatic main-branch E2E workflows c
 - Game overlay should reuse Bootstrap game catalog when available rather than refetching it.
 - Rocket state from Bootstrap is only an initial seed; live Rocket streaming remains on-demand when the sheet is opened.
 - `recordRoomVisit` remains a separate non-blocking analytics write and does not block voice join.
+
+
+## Step 8 migration note — Low-change config cache
+
+- Gift Catalog and Recharge Config no longer open direct Firestore configuration listeners in the user app; they use authenticated on-demand Cloudflare API reads with a 30-second client cache and same-request coalescing.
+- Worker low-change config reads share a read-through cache with per-config fresh TTL, same-key in-flight coalescing, and bounded stale reuse only for transient Firestore failures.
+- Game runtime keeps its approved 30-second fresh config TTL but now uses the shared cache; game admin saves invalidate it.
+- Gift economy and Room Rocket admin state reads are cached and successful saves prime the validated config.
+- App Asset registry list/per-key reads are cached for 60 seconds and invalidated after asset updates.
+- Room level/capacity rules remain code-resident and continue to perform zero Firestore config reads.
+- Firestore remains authoritative for room gifts, Google Play package validation, mic-activity payout policy, bets, Coins, outcomes, payouts, and settlement. These financial paths must not import the config cache.
+- No polling was introduced.
+- No queue is introduced into financial paths. Existing config+audit writes remain transactional/batched; dedicated analytics queueing is deferred unless measured pressure justifies it.
