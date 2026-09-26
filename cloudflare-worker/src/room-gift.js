@@ -318,6 +318,8 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     const assetKey = clean(gift.assetKey || "gifts.placeholder.default");
     const imageUrl = clean(gift.imageUrl);
 
+    const nowMs = Date.now();
+
     const rocketAdvance = advanceRoomRocket({
       state: {
         ...(rocketStateSnap.data || {}),
