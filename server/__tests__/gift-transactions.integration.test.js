@@ -27,6 +27,21 @@ function periodKeys(date=new Date()){
   };
 }
 
+function realtimeNamespaceWithPresentUids(uids=[]){
+  const present=new Set(uids);
+  return {
+    idFromName(roomId){return `room:${roomId}`;},
+    get(){
+      return {
+        async fetch(url){
+          const uid=new URL(url).searchParams.get("uid");
+          return Response.json({ok:true,present:present.has(uid)});
+        },
+      };
+    },
+  };
+}
+
 const approvedPolicy={
   enabled:true,
   policyMode:"tiered_host_agency",
@@ -93,12 +108,6 @@ test("room gift debits once and records transaction ledger agency link and accru
     db.collection("rooms").doc(roomId).set({
       isActive:true,agencyId:roomAgencyId,totalSupport:0,
     }),
-    db.collection("room_presence").doc(roomId).collection("users").doc(senderId).set({
-      lastSeenAtMs:Date.now(),displayName:"Sender",
-    }),
-    db.collection("room_presence").doc(roomId).collection("users").doc(receiverId).set({
-      lastSeenAtMs:Date.now(),displayName:"Host",
-    }),
     db.collection("agency_support_stats").doc(agencyId).collection("monthly").doc(periods.month).set({
       activeHostIds:[],
     }),
@@ -107,7 +116,17 @@ test("room gift debits once and records transaction ledger agency link and accru
   const body={
     roomId,receiverId,giftId:"integration_gift",quantity:1,idempotencyKey:key,
   };
-  const first=await sendRoomGift(cloudflareDb,senderId,body);
+  const first=await sendRoomGift(
+    cloudflareDb,
+    senderId,
+    body,
+    {
+      realtimeNamespace:realtimeNamespaceWithPresentUids([
+        senderId,
+        receiverId,
+      ]),
+    },
+  );
   assert.equal(first.ok,true);
   assert.equal(first.code,"ok");
   assert.equal(first.totalCost,100000);
@@ -149,8 +168,17 @@ test("room gift debits once and records transaction ledger agency link and accru
   assert.equal(accrual.data().agencyGrossEarningCoins,5000);
   assert.equal(accrual.data().platformShareCoins,40000);
 
-  const duplicate=await sendRoomGift(cloudflareDb,senderId,body);
-  assert.equal(duplicate.code,"duplicate");
+  const duplicate=await sendRoomGift(
+    cloudflareDb,
+    senderId,
+    body,
+    {realtimeNamespace:realtimeNamespaceWithPresentUids([])},
+  );
+  assert.equal(
+    duplicate.code,
+    "duplicate",
+    "duplicate remains idempotent after realtime presence changes",
+  );
   const [senderAfter,accrualAfter]=await Promise.all([
     db.collection("users").doc(senderId).get(),
     db.collection("agency_settlement_accruals").doc(

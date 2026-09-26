@@ -120,6 +120,11 @@ def main() -> int:
     gift_catalog_service = read("lib/features/gift/services/gift_catalog_service.dart")
     recharge_config_service = read("lib/features/wallet/services/recharge_config_service.dart")
     recharge_screen = read("lib/features/wallet/screens/recharge_screen.dart")
+    room_presence_authority = read("cloudflare-worker/src/room-presence-authority.js")
+    room_rocket_runtime = read("cloudflare-worker/src/legacy-economy/room-rocket-runtime.js")
+    chat_safety_actions = read("cloudflare-worker/src/chat-safety-actions.js")
+    room_gift_script = read("cloudflare-worker/scripts/room-gift-e2e.mjs")
+    chat_safety_script = read("cloudflare-worker/scripts/chat-safety-e2e.mjs")
 
     if "_presenceTimer" in voice or ".heartbeat(" in voice:
         failures.append("Step 4 regression: Firestore presence heartbeat returned to the room session")
@@ -555,6 +560,117 @@ def main() -> int:
             failures.append(f"Step 9 borrowed regression: {label} does not validate session state from its actor snapshot")
         if re.search(r"checkUserState\s*:\s*false", content) is None:
             failures.append(f"Step 9 borrowed regression: {label} reintroduced a duplicate auth-state Firestore lookup")
+    # Step 10: migrated room-presence authority must be Durable Object first.
+    for required in (
+        "realtimeUserPresentFromNamespace",
+        "presence/has",
+        "legacyPresenceFresh",
+        "return body.present === true",
+    ):
+        if required not in room_presence_authority:
+            failures.append(f"Step 10 regression: shared presence authority missing {required}")
+
+    room_gift_body = None
+    if "export async function sendRoomGift" in room_gift and "export async function roomGift" in room_gift:
+        room_gift_body = room_gift.split(
+            "export async function sendRoomGift", 1
+        )[1].split("export async function roomGift", 1)[0]
+    if room_gift_body is None:
+        failures.append("Step 10 regression: sendRoomGift handler is missing")
+    else:
+        for required in (
+            "senderRealtimePresence",
+            "receiverRealtimePresence",
+            "realtimeUserPresentFromNamespace",
+            "assertRoomPresence",
+        ):
+            if required not in room_gift_body:
+                failures.append(f"Step 10 regression: Room Gift lost DO-first presence: {required}")
+        duplicate_index = room_gift_body.find("if (opSnap.exists)")
+        presence_index = room_gift_body.find("assertRoomPresence(")
+        if duplicate_index < 0 or presence_index < 0 or duplicate_index > presence_index:
+            failures.append("Step 10 regression: Room Gift idempotency no longer wins before presence enforcement")
+
+    invite_body = None
+    if "async function sendRoomInvite" in chat_safety_actions and "async function setFollow" in chat_safety_actions:
+        invite_body = chat_safety_actions.split(
+            "async function sendRoomInvite", 1
+        )[1].split("async function setFollow", 1)[0]
+    if invite_body is None:
+        failures.append("Step 10 regression: sendRoomInvite handler is missing")
+    else:
+        for required in (
+            "realtimeUserPresentFromNamespace",
+            "realtimePresence === false",
+            "realtimePresence === null",
+            "legacyPresenceFresh",
+        ):
+            if required not in invite_body:
+                failures.append(f"Step 10 regression: Room Invite lost DO-first/fallback presence: {required}")
+        if "roomOwnerUid !== uid" not in invite_body:
+            failures.append("Step 10 regression: Room Invite owner bypass changed")
+
+    rocket_entry_body = None
+    if "export async function registerRocketEntry" in room_rocket_runtime and "export async function claimRocketReward" in room_rocket_runtime:
+        rocket_entry_body = room_rocket_runtime.split(
+            "export async function registerRocketEntry", 1
+        )[1].split("export async function claimRocketReward", 1)[0]
+    if rocket_entry_body is None:
+        failures.append("Step 10 regression: Rocket register entry handler is missing")
+    else:
+        for required in (
+            "realtimeUserPresentFromNamespace",
+            "realtimePresent===false",
+            "realtimePresent===null",
+            "legacyPresenceFresh",
+            'presenceSource="room_realtime"',
+            'presenceSource="legacy_room_presence"',
+        ):
+            if required not in rocket_entry_body:
+                failures.append(f"Step 10 regression: Rocket lost DO-first/fallback presence: {required}")
+
+    music_presence_body = None
+    if "async function assertRoomMusicSourcePresent" in worker and "async function roomMusicCommand" in worker:
+        music_presence_body = worker.split(
+            "async function assertRoomMusicSourcePresent", 1
+        )[1].split("async function roomMusicCommand", 1)[0]
+    if music_presence_body is None:
+        failures.append("Step 10 regression: Music source presence helper is missing")
+    else:
+        for required in (
+            "realtimeUserPresent",
+            "realtimePresent===false",
+            "legacyPresenceFresh",
+            "music_source_offline",
+        ):
+            if required not in music_presence_body:
+                failures.append(f"Step 10 regression: Music source check lost DO-first/fallback presence: {required}")
+
+    for label, workflow in (
+        ("Room Gift", room_gift_e2e),
+        ("Chat Safety", chat_safety_e2e),
+    ):
+        if "ALLOW_PRODUCTION_DURABLE_OBJECT_E2E: '1'" not in workflow:
+            failures.append(f"Step 10 regression: manual {label} E2E lost explicit Production DO opt-in")
+
+    for label, script, marker in (
+        ("Room Gift", room_gift_script, "PASS sender + receiver realtime room presence"),
+        ("Room Invite", chat_safety_script, "PASS room invite with realtime Durable Object presence"),
+    ):
+        if "ALLOW_PRODUCTION_DURABLE_OBJECT_E2E" not in script:
+            failures.append(f"Step 10 regression: {label} script lost DO safety flag")
+        if "openRoomRealtime" not in script or marker not in script:
+            failures.append(f"Step 10 regression: {label} script no longer exercises live DO presence")
+
+    if prod_gate.count("ALLOW_PRODUCTION_DURABLE_OBJECT_E2E: '0'") < 3:
+        failures.append("Step 10 regression: automatic Production gate may create DOs in Phase6/RoomGift/RoomInvite coverage")
+    for marker in (
+        "Room Gift realtime Production E2E: MANUAL / RELEASE-ONLY",
+        "Room Invite realtime DO coverage: MANUAL / RELEASE-ONLY",
+    ):
+        if marker not in prod_gate:
+            failures.append(f"Step 10 regression: automatic Production summary lost policy marker: {marker}")
+
     check(lambda: require(
         r'crons\s*=\s*\["\*/5 \* \* \* \*"\]',
         wrangler,

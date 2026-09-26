@@ -141,6 +141,7 @@ jobs:
       - name: Chat safety E2E
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          ALLOW_PRODUCTION_DURABLE_OBJECT_E2E: '0'
         run: node cloudflare-worker/scripts/chat-safety-e2e.mjs
 
       - name: Firestore cooldown after chat safety
@@ -165,6 +166,7 @@ jobs:
       - name: Room gift E2E
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          ALLOW_PRODUCTION_DURABLE_OBJECT_E2E: '0'
         run: node cloudflare-worker/scripts/room-gift-e2e.mjs
 
       - name: Firestore cooldown after room gift
@@ -217,8 +219,10 @@ jobs:
             echo "- Cloudflare Worker exact build: PASS"
             echo "- Production Pages exact build: PASS"
             echo "- Core API / Chat / Safety / Gifts: PASS"
+            echo "- Room Invite realtime DO coverage: MANUAL / RELEASE-ONLY"
             echo "- User moderation / roles / capabilities: PASS"
-            echo "- Wallet / Room Gifts: PASS"
+            echo "- Wallet: PASS"
+            echo "- Room Gift realtime Production E2E: MANUAL / RELEASE-ONLY"
             echo "- Voice / ZEGO / Mic activity: PASS"
             echo "- Economy Router: PASS"
             echo "- Games / Settlements / Cron / RNG: PASS"

@@ -120,7 +120,7 @@ function rewardDocId(type,id){
   return (type+"__"+id).replace(/[^A-Za-z0-9_.-]/g,"_").slice(0,220);
 }
 
-export async function registerRocketEntry(db,uid,explosionId,nowMs=Date.now()){
+export async function registerRocketEntry(db,uid,explosionId,nowMs=Date.now(),options={}){
   if(!validId(explosionId)) throw Error("invalid_explosion_id");
   const explosionRef=db.collection("room_rocket_explosions").doc(explosionId);
   const explosionSnap=await explosionRef.get();
@@ -132,10 +132,21 @@ export async function registerRocketEntry(db,uid,explosionId,nowMs=Date.now()){
 
   const roomId=clean(explosion.roomId);
   if(!roomId) throw Error("invalid_room");
-  const presence=await db.collection("room_presence")
-    .doc(roomId).collection("users").doc(uid).get();
-  const lastSeenAtMs=Number(presence.data()?.lastSeenAtMs||0);
-  if(!presence.exists||nowMs-lastSeenAtMs>90000) throw Error("not_in_room");
+  const realtimeLookup=typeof options?.realtimeUserPresent==="function"
+    ?options.realtimeUserPresent
+    :null;
+  const realtimePresent=realtimeLookup
+    ?await realtimeLookup(roomId,uid)
+    :null;
+  let presenceSource="room_realtime";
+  if(realtimePresent===false) throw Error("not_in_room");
+  if(realtimePresent===null){
+    const presence=await db.collection("room_presence")
+      .doc(roomId).collection("users").doc(uid).get();
+    const lastSeenAtMs=Number(presence.data()?.lastSeenAtMs||0);
+    if(!presence.exists||nowMs-lastSeenAtMs>90000) throw Error("not_in_room");
+    presenceSource="legacy_room_presence";
+  }
 
   const attempts=isTop3(explosion,uid)?2:1;
   const ref=explosionRef.collection("entries").doc(uid);
@@ -144,7 +155,7 @@ export async function registerRocketEntry(db,uid,explosionId,nowMs=Date.now()){
     roomId,
     explosionId,
     attempts,
-    source:isContributor(explosion,uid)?"contributor_and_room":"room_presence",
+    source:isContributor(explosion,uid)?"contributor_and_room":presenceSource,
     enteredAtMs:nowMs,
     createdAt:FieldValue.serverTimestamp(),
   },{merge:true});

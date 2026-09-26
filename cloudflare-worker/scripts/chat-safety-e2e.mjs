@@ -2,6 +2,8 @@ import fs from "node:fs";
 import { sign } from "node:crypto";
 
 const workerBase = "https://shadow-live.ashraf-business-440.workers.dev";
+const allowProductionDurableObjectE2E =
+  process.env.ALLOW_PRODUCTION_DURABLE_OBJECT_E2E === "1";
 let sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || "{}");
 if (typeof sa === "string") sa = JSON.parse(sa);
 const projectId = sa.project_id;
@@ -17,6 +19,8 @@ const runId = String(process.env.GITHUB_RUN_ID || Date.now());
 const reporterUid = `__cf_chat_reporter_${runId}`;
 const targetUid = `__cf_chat_target_${runId}`;
 const conversationId = `cf_chat_conv_${runId}`;
+const roomId = `cf_chat_invite_room_${runId}`;
+const inviteKey = `cfinvite_${runId}_${Date.now()}`;
 const reportKey = `cfreport_${runId}_${Date.now()}`;
 
 function b64url(value) {
@@ -155,6 +159,80 @@ async function api(idToken, action, extra = {}) {
   const body = await res.json().catch(() => ({}));
   return { res, body };
 }
+async function realtimePost(path,idToken,body){
+  const res=await fetch(`${workerBase}${path}`,{
+    method:"POST",
+    headers:{
+      authorization:`Bearer ${idToken}`,
+      "content-type":"application/json",
+      origin:"https://ashrafbusiness440-eng.github.io",
+    },
+    body:JSON.stringify(body),
+  });
+  const data=await res.json().catch(()=>({}));
+  return {res,body:data};
+}
+function waitForSocketOpen(socket,timeoutMs=10000){
+  if(socket.readyState===WebSocket.OPEN)return Promise.resolve();
+  return new Promise((resolve,reject)=>{
+    const timer=setTimeout(()=>{cleanup();reject(new Error("room realtime websocket open timeout"));},timeoutMs);
+    const onOpen=()=>{cleanup();resolve();};
+    const onError=()=>{cleanup();reject(new Error("room realtime websocket open failed"));};
+    const cleanup=()=>{
+      clearTimeout(timer);
+      socket.removeEventListener("open",onOpen);
+      socket.removeEventListener("error",onError);
+    };
+    socket.addEventListener("open",onOpen);
+    socket.addEventListener("error",onError);
+  });
+}
+function waitForRealtimeEvent(socket,predicate,timeoutMs=10000){
+  return new Promise((resolve,reject)=>{
+    const timer=setTimeout(()=>{cleanup();reject(new Error("room realtime event timeout"));},timeoutMs);
+    const onMessage=(event)=>{
+      let data=null;
+      try{data=JSON.parse(String(event?.data||""));}catch{return;}
+      if(!predicate(data))return;
+      cleanup();
+      resolve(data);
+    };
+    const onClose=()=>{cleanup();reject(new Error("room realtime websocket closed before ready"));};
+    const onError=()=>{cleanup();reject(new Error("room realtime websocket error before ready"));};
+    const cleanup=()=>{
+      clearTimeout(timer);
+      socket.removeEventListener("message",onMessage);
+      socket.removeEventListener("close",onClose);
+      socket.removeEventListener("error",onError);
+    };
+    socket.addEventListener("message",onMessage);
+    socket.addEventListener("close",onClose);
+    socket.addEventListener("error",onError);
+  });
+}
+async function openRoomRealtime(roomId,idToken){
+  if(typeof WebSocket!=="function")throw new Error("node websocket unavailable");
+  const ticket=await realtimePost(
+    "/api/room-realtime",
+    idToken,
+    {action:"ticket",roomId},
+  );
+  if(!ticket.res.ok||ticket.body?.ok!==true||!ticket.body.socketPath){
+    throw new Error(
+      `room realtime ticket failed: ${ticket.res.status} ${JSON.stringify(ticket.body)}`,
+    );
+  }
+  const url=new URL(ticket.body.socketPath,workerBase);
+  url.protocol=url.protocol==="https:"?"wss:":"ws:";
+  const socket=new WebSocket(url.toString());
+  const ready=waitForRealtimeEvent(
+    socket,
+    (event)=>event?.type==="server.ready"&&event?.payload?.roomId===roomId,
+  );
+  await waitForSocketOpen(socket);
+  await ready;
+  return socket;
+}
 async function deleteAuthUser(idToken) {
   await fetch(
     `https://identitytoolkit.googleapis.com/v1/accounts:delete?key=${encodeURIComponent(apiKey)}`,
@@ -167,6 +245,7 @@ async function deleteAuthUser(idToken) {
 }
 
 let idToken = null;
+let realtimeSocket = null;
 const paths = [
   `users/${reporterUid}`,
   `users/${targetUid}`,
@@ -177,6 +256,10 @@ const paths = [
   `report_rate_limits/${reporterUid}`,
   `report_operations/${reportKey}`,
   `reports/report_${reportKey}`,
+  `rooms/${roomId}`,
+  `room_invite_rate_limits/${roomId}__${reporterUid}__${targetUid}`,
+  `room_invites/${roomId}/users/${targetUid}`,
+  `message_operations/${inviteKey}`,
 ];
 
 try {
@@ -206,7 +289,44 @@ try {
     createdAt: new Date(),
   });
 
+  if (allowProductionDurableObjectE2E) {
+    await fsSet(`rooms/${roomId}`, {
+      name: "Cloudflare Room Invite E2E",
+      publicId: "77221100",
+      ownerUid: targetUid,
+      isActive: true,
+      createdAt: new Date(),
+    });
+  }
+
   idToken = await firebaseIdToken(reporterUid);
+
+  if (allowProductionDurableObjectE2E) {
+    realtimeSocket = await openRoomRealtime(roomId, idToken);
+    const invite = await api(idToken, "sendRoomInvite", {
+      receiverId: targetUid,
+      conversationId,
+      roomId,
+      idempotencyKey: inviteKey,
+    });
+    if (!invite.res.ok || invite.body?.ok !== true || !invite.body?.messageId) {
+      throw new Error(
+        `room invite failed: ${invite.res.status} ${JSON.stringify(invite.body)}`,
+      );
+    }
+    paths.push(`conversations/${conversationId}/messages/${invite.body.messageId}`);
+    const [inviteAccess, inviteOperation] = await Promise.all([
+      fsGet(`room_invites/${roomId}/users/${targetUid}`),
+      fsGet(`message_operations/${inviteKey}`),
+    ]);
+    if (!inviteAccess || inviteAccess.data?.invitedBy !== reporterUid ||
+        !inviteOperation || inviteOperation.data?.action !== "sendRoomInvite") {
+      throw new Error("room invite realtime presence persistence mismatch");
+    }
+    console.log("PASS room invite with realtime Durable Object presence");
+  } else {
+    console.log("SKIP automatic Production DO Room Invite coverage");
+  }
 
   const initial = await api(idToken, "safetyStatus", { targetUserId: targetUid });
   if (!initial.res.ok || initial.body.blocked !== false) {
@@ -279,6 +399,9 @@ try {
 
   console.log("ALL CLOUDFLARE CHAT SAFETY E2E CHECKS PASSED");
 } finally {
+  if (realtimeSocket) {
+    try { realtimeSocket.close(1000, "chat_safety_e2e_done"); } catch {}
+  }
   for (const path of paths.reverse()) {
     try { await fsDelete(path); } catch (error) {
       console.warn(`cleanup warning ${path}: ${error.message}`);

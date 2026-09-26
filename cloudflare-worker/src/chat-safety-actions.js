@@ -2,6 +2,10 @@ import { json, readJson } from "./http.js";
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { resolveRevenuePolicy } from "./economy-policy.js";
+import {
+  legacyPresenceFresh,
+  realtimeUserPresentFromNamespace,
+} from "./room-presence-authority.js";
 
 const clean = (value) => String(value ?? "").trim();
 const validKey = (value) => /^[A-Za-z0-9_-]{12,220}$/.test(clean(value));
@@ -740,7 +744,7 @@ export async function sendGift(db, uid, body) {
   });
 }
 
-async function sendRoomInvite(db, uid, body) {
+async function sendRoomInvite(db, uid, body, options = {}) {
   const receiverId = clean(body.receiverId);
   const conversationId = clean(body.conversationId);
   const roomId = clean(body.roomId);
@@ -757,6 +761,12 @@ async function sendRoomInvite(db, uid, body) {
   ) {
     throw new ApiError("invalid_request", 400);
   }
+
+  const realtimePresence = await realtimeUserPresentFromNamespace(
+    options?.realtimeNamespace || null,
+    roomId,
+    uid,
+  );
 
   return runTransaction(db, async (transaction) => {
     const opPath = `message_operations/${key}`;
@@ -775,7 +785,6 @@ async function sendRoomInvite(db, uid, body) {
       receiver,
       conversation,
       room,
-      senderPresence,
       inviteRate,
       outgoingFollow,
       incomingFollow,
@@ -786,7 +795,6 @@ async function sendRoomInvite(db, uid, body) {
       db.get(receiverPath, transaction),
       db.get(conversationPath, transaction),
       db.get(roomPath, transaction),
-      db.get(senderPresencePath, transaction),
       db.get(inviteRatePath, transaction),
       db.get(outgoingFollowPath, transaction),
       db.get(incomingFollowPath, transaction),
@@ -824,11 +832,16 @@ async function sendRoomInvite(db, uid, body) {
     const roomOwnerUid = clean(
       roomData.ownerUid || roomData.ownerId || roomData.hostId || "",
     );
-    const presenceLastSeen = Number(senderPresence.data?.lastSeenAtMs || 0);
-    const senderPresent =
-      senderPresence.exists && (Date.now() - presenceLastSeen) <= 90000;
-    if (roomOwnerUid !== uid && !senderPresent) {
-      throw new ApiError("not_in_room", 403);
+    if (roomOwnerUid !== uid) {
+      if (realtimePresence === false) {
+        throw new ApiError("not_in_room", 403);
+      }
+      if (realtimePresence === null) {
+        const senderPresence = await db.get(senderPresencePath, transaction);
+        if (!legacyPresenceFresh(senderPresence)) {
+          throw new ApiError("not_in_room", 403);
+        }
+      }
     }
 
     const nowMs = Date.now();
@@ -1149,7 +1162,12 @@ export async function chatSafetyActions(request, env) {
         result = await sendMessage(db, decoded.sub, body);
         break;
       case "sendRoomInvite":
-        result = await sendRoomInvite(db, decoded.sub, body);
+        result = await sendRoomInvite(
+          db,
+          decoded.sub,
+          body,
+          { realtimeNamespace: env.ROOM_REALTIME },
+        );
         break;
       case "setFollow":
         result = await setFollow(db, decoded.sub, body);

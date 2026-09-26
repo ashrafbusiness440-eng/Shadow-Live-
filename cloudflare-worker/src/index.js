@@ -1,4 +1,4 @@
-// Phase 8 comprehensive E2E deployment marker v2
+// Pressure Root Fix Step 10 presence migration marker
 import { corsHeaders, json } from "./http.js";
 import { adjustBalance } from "./adjust-balance.js";
 import { appAssets } from "./app-assets.js";
@@ -36,7 +36,7 @@ export default {
       return json(request, env, {
         ok: true,
         service: "shadow-live-cloudflare-worker",
-        version: 26,
+        version: 27,
         buildSha: env.BUILD_SHA || null,
         firebaseConfigured: Boolean(String(env.FIREBASE_SERVICE_ACCOUNT || "").trim()),
       });

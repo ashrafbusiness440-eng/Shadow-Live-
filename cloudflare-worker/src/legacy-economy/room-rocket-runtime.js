@@ -1,5 +1,9 @@
 import { getApps, initializeApp, cert, getAuth, FieldValue, getFirestore, legacyEnv } from "../legacy-firebase-admin-shim.js";
 import crypto from "node:crypto";
+import {
+  legacyPresenceFresh,
+  realtimeUserPresentFromNamespace,
+} from "../room-presence-authority.js";
 
 function clean(value){return String(value??"").trim();}
 function parseServiceAccount(raw){
@@ -130,10 +134,19 @@ export async function registerRocketEntry(db,uid,explosionId,nowMs=Date.now()){
 
   const roomId=clean(explosion.roomId);
   if(!roomId) throw Error("invalid_room");
-  const presence=await db.collection("room_presence")
-    .doc(roomId).collection("users").doc(uid).get();
-  const lastSeenAtMs=Number(presence.data()?.lastSeenAtMs||0);
-  if(!presence.exists||nowMs-lastSeenAtMs>90000) throw Error("not_in_room");
+  const realtimePresent=await realtimeUserPresentFromNamespace(
+    legacyEnv.ROOM_REALTIME,
+    roomId,
+    uid,
+  );
+  let presenceSource="room_realtime";
+  if(realtimePresent===false) throw Error("not_in_room");
+  if(realtimePresent===null){
+    const presence=await db.collection("room_presence")
+      .doc(roomId).collection("users").doc(uid).get();
+    if(!legacyPresenceFresh(presence,nowMs)) throw Error("not_in_room");
+    presenceSource="legacy_room_presence";
+  }
 
   const attempts=isTop3(explosion,uid)?2:1;
   const ref=explosionRef.collection("entries").doc(uid);
@@ -142,7 +155,7 @@ export async function registerRocketEntry(db,uid,explosionId,nowMs=Date.now()){
     roomId,
     explosionId,
     attempts,
-    source:isContributor(explosion,uid)?"contributor_and_room":"room_presence",
+    source:isContributor(explosion,uid)?"contributor_and_room":presenceSource,
     enteredAtMs:nowMs,
     createdAt:FieldValue.serverTimestamp(),
   },{merge:true});

@@ -191,3 +191,12 @@ Pulled forward during Step 6 closure after automatic main-branch E2E workflows c
 - Automatic CI does not create Production room Durable Objects.
 - Full App Asset write/delete E2E is manual/release-only because it mutates the GitHub `main` branch and otherwise creates additional CI/Pages churn.
 - Actual upstream Firestore quota/capacity remains an infrastructure dependency for Step 12; application backoff/circuit breaking reduces amplification but does not manufacture quota.
+
+## Step 10 migration note — Durable Object Presence authority
+
+- Room Gift sender/receiver, Rocket entry, Room Music source checks, and Room Invite sender checks are Durable Object-first.
+- Realtime `false` is authoritative absence and never falls back to Firestore.
+- Legacy `room_presence` is consulted only when the realtime lookup is unavailable, with the existing 90-second freshness bound.
+- Room Gift duplicate idempotency is evaluated before presence enforcement.
+- Automatic Production CI remains DO-free; full Room Gift and Room Invite Production DO coverage is manual opt-in.
+- Legacy fallback stays during Dual Mode and is eligible for removal only after Step 11/12 measurement and reconnect/stress validation.
