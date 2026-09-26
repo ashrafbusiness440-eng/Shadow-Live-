@@ -120,6 +120,32 @@ test("prime and invalidate update the visible cached value", async () => {
   assert.equal(loads, 1);
 });
 
+test("invalidating during an in-flight load prevents stale cache refill", async () => {
+  resetConfigCacheForTests();
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+
+  const oldLoad = readThroughConfigCache(
+    "gift_catalog",
+    async () => {
+      await gate;
+      return { revision: 1 };
+    },
+  );
+
+  invalidateConfigCache("gift_catalog");
+  release();
+  assert.deepEqual(await oldLoad, { revision: 1 });
+
+  let loads = 0;
+  const fresh = await readThroughConfigCache(
+    "gift_catalog",
+    async () => ({ revision: ++loads + 1 }),
+  );
+  assert.deepEqual(fresh, { revision: 2 });
+  assert.equal(loads, 1);
+});
+
 test("transient classifier covers Firestore quota and availability errors", () => {
   assert.equal(isTransientConfigReadError({ status: 429 }), true);
   assert.equal(isTransientConfigReadError(new Error("RESOURCE_EXHAUSTED")), true);
