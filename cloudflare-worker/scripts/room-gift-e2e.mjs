@@ -2,6 +2,13 @@ import fs from "node:fs";
 import { sign } from "node:crypto";
 import { normalizeRoomRocketConfig } from "../src/room-rocket.js";
 
+const allowProductionDurableObjectE2E =
+  process.env.ALLOW_PRODUCTION_DURABLE_OBJECT_E2E === "1";
+if (!allowProductionDurableObjectE2E) {
+  console.log("SKIP automatic Production DO Room Gift coverage");
+  process.exit(0);
+}
+
 const workerBase = "https://shadow-live.ashraf-business-440.workers.dev";
 let sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || "{}");
 if (typeof sa === "string") sa = JSON.parse(sa);
@@ -166,6 +173,92 @@ async function apiWhenReady(idToken,extra){
   }
   throw new Error("room-gift route did not become active");
 }
+async function realtimePost(path,idToken,body){
+  const res=await fetch(`${workerBase}${path}`,{
+    method:"POST",
+    headers:{
+      authorization:`Bearer ${idToken}`,
+      "content-type":"application/json",
+      origin:"https://ashrafbusiness440-eng.github.io",
+    },
+    body:JSON.stringify(body),
+  });
+  const data=await res.json().catch(()=>({}));
+  return {res,body:data};
+}
+function waitForSocketOpen(socket,timeoutMs=10000){
+  if(socket.readyState===WebSocket.OPEN)return Promise.resolve();
+  return new Promise((resolve,reject)=>{
+    const timer=setTimeout(()=>{
+      cleanup();
+      reject(new Error("room realtime websocket open timeout"));
+    },timeoutMs);
+    const onOpen=()=>{cleanup();resolve();};
+    const onError=()=>{cleanup();reject(new Error("room realtime websocket open failed"));};
+    const cleanup=()=>{
+      clearTimeout(timer);
+      socket.removeEventListener("open",onOpen);
+      socket.removeEventListener("error",onError);
+    };
+    socket.addEventListener("open",onOpen);
+    socket.addEventListener("error",onError);
+  });
+}
+function waitForRealtimeEvent(socket,predicate,timeoutMs=10000){
+  return new Promise((resolve,reject)=>{
+    const timer=setTimeout(()=>{
+      cleanup();
+      reject(new Error("room realtime event timeout"));
+    },timeoutMs);
+    const onMessage=(event)=>{
+      let data=null;
+      try{data=JSON.parse(String(event?.data||""));}catch{return;}
+      if(!predicate(data))return;
+      cleanup();
+      resolve(data);
+    };
+    const onClose=()=>{
+      cleanup();
+      reject(new Error("room realtime websocket closed before ready"));
+    };
+    const onError=()=>{
+      cleanup();
+      reject(new Error("room realtime websocket error before ready"));
+    };
+    const cleanup=()=>{
+      clearTimeout(timer);
+      socket.removeEventListener("message",onMessage);
+      socket.removeEventListener("close",onClose);
+      socket.removeEventListener("error",onError);
+    };
+    socket.addEventListener("message",onMessage);
+    socket.addEventListener("close",onClose);
+    socket.addEventListener("error",onError);
+  });
+}
+async function openRoomRealtime(roomId,idToken){
+  if(typeof WebSocket!=="function")throw new Error("node websocket unavailable");
+  const ticket=await realtimePost(
+    "/api/room-realtime",
+    idToken,
+    {action:"ticket",roomId},
+  );
+  if(!ticket.res.ok||ticket.body?.ok!==true||!ticket.body.socketPath){
+    throw new Error(
+      `room realtime ticket failed: ${ticket.res.status} ${JSON.stringify(ticket.body)}`,
+    );
+  }
+  const url=new URL(ticket.body.socketPath,workerBase);
+  url.protocol=url.protocol==="https:"?"wss:":"ws:";
+  const socket=new WebSocket(url.toString());
+  const ready=waitForRealtimeEvent(
+    socket,
+    (event)=>event?.type==="server.ready"&&event?.payload?.roomId===roomId,
+  );
+  await waitForSocketOpen(socket);
+  await ready;
+  return socket;
+}
 async function deleteAuthUser(idToken){
   await fetch(
     `https://identitytoolkit.googleapis.com/v1/accounts:delete?key=${encodeURIComponent(apiKey)}`,
@@ -179,14 +272,15 @@ async function deleteAuthUser(idToken){
 
 const periods=utcPeriodKeys();
 let senderToken=null;
+let receiverToken=null;
+let senderSocket=null;
+let receiverSocket=null;
 let messageId=null;
 let selectedGift=null;
 const cleanup=new Set([
   `users/${senderUid}`,
   `users/${receiverUid}`,
   `rooms/${roomId}`,
-  `room_presence/${roomId}/users/${senderUid}`,
-  `room_presence/${roomId}/users/${receiverUid}`,
   `room_rocket_state/${roomId}`,
   `gift_operations/${key}`,
   `gift_transactions/${key}`,
@@ -265,16 +359,6 @@ try{
     monthlySupport:0,
     createdAt:new Date(),
   });
-  await fsSet(`room_presence/${roomId}/users/${senderUid}`,{
-    uid:senderUid,
-    displayName:"Cloudflare Room Gift Sender",
-    lastSeenAtMs:nowMs,
-  });
-  await fsSet(`room_presence/${roomId}/users/${receiverUid}`,{
-    uid:receiverUid,
-    displayName:"Cloudflare Room Gift Receiver",
-    lastSeenAtMs:nowMs,
-  });
   await fsSet(`room_rocket_state/${roomId}`,{
     cycleNumber:1,
     levelIndex:maxIndex,
@@ -286,7 +370,15 @@ try{
     explosionSequence:0,
   });
 
-  senderToken=await firebaseIdToken(senderUid);
+  [senderToken,receiverToken]=await Promise.all([
+    firebaseIdToken(senderUid),
+    firebaseIdToken(receiverUid),
+  ]);
+  [senderSocket,receiverSocket]=await Promise.all([
+    openRoomRealtime(roomId,senderToken),
+    openRoomRealtime(roomId,receiverToken),
+  ]);
+  console.log("PASS sender + receiver realtime room presence");
 
   const sent=await apiWhenReady(senderToken,{
     roomId,
@@ -356,10 +448,15 @@ try{
   console.log("PASS room gift idempotency");
   console.log("ALL CLOUDFLARE ROOM GIFT E2E CHECKS PASSED");
 }finally{
+  for(const socket of [senderSocket,receiverSocket]){
+    if(!socket)continue;
+    try{socket.close(1000,"room_gift_e2e_done");}catch{}
+  }
   for(const path of [...cleanup].reverse()){
     try{await fsDelete(path);}catch(error){
       console.warn(`cleanup warning ${path}: ${error.message}`);
     }
   }
   if(senderToken)await deleteAuthUser(senderToken);
+  if(receiverToken)await deleteAuthUser(receiverToken);
 }
