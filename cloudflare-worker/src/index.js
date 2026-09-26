@@ -43,10 +43,13 @@ async function dispatchRequest(request, env) {
     return json(request, env, {
       ok: true,
       service: "shadow-live-cloudflare-worker",
-      version: 28,
+      version: 29,
       buildSha: env.BUILD_SHA || null,
       firebaseConfigured: Boolean(String(env.FIREBASE_SERVICE_ACCOUNT || "").trim()),
       pressureAnalyticsConfigured: Boolean(env.PRESSURE_ANALYTICS),
+      realtimeAdmissionConfigured: Boolean(
+        String(env.ZEGO_SERVER_SECRET || "").trim(),
+      ),
     });
   }
 
