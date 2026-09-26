@@ -4,29 +4,93 @@ export const FIRESTORE_TRANSIENT_MAX_ATTEMPTS = 3;
 export const FIRESTORE_RETRY_BASE_DELAY_MS = 350;
 export const FIRESTORE_RETRY_MAX_DELAY_MS = 2500;
 export const FIRESTORE_RETRY_JITTER_MS = 250;
+export const FIRESTORE_QUOTA_MAX_ATTEMPTS = 2;
+export const FIRESTORE_QUOTA_MIN_RETRY_DELAY_MS = 1000;
+export const FIRESTORE_QUOTA_BREAKER_THRESHOLD = 2;
+export const FIRESTORE_QUOTA_BREAKER_MS = 10_000;
+
+const firestoreQuotaCircuit = createFirestoreQuotaCircuitState();
+
+function normalizedFirestoreCode(...values) {
+  return values
+    .filter((value) => value !== undefined && value !== null)
+    .map((value) => String(value))
+    .join(" ")
+    .toUpperCase()
+    .replaceAll("-", "_");
+}
+
+export function isFirestoreQuotaStatus(status, body = {}) {
+  const value = Number(status || 0);
+  const code = normalizedFirestoreCode(
+    body?.error?.status,
+    body?.error?.message,
+  );
+  return value === 429 || code.includes("RESOURCE_EXHAUSTED");
+}
+
+export function createFirestoreQuotaCircuitState() {
+  return { failures: 0, openUntilMs: 0 };
+}
+
+export function registerFirestoreQuotaFailure(state, nowMs = Date.now()) {
+  const failures = Math.max(0, Number(state?.failures || 0)) + 1;
+  state.failures = failures;
+  if (failures >= FIRESTORE_QUOTA_BREAKER_THRESHOLD) {
+    state.openUntilMs = Number(nowMs) + FIRESTORE_QUOTA_BREAKER_MS;
+  }
+  return state;
+}
+
+export function resetFirestoreQuotaCircuit(state) {
+  state.failures = 0;
+  state.openUntilMs = 0;
+  return state;
+}
+
+export function isFirestoreQuotaCircuitOpen(state, nowMs = Date.now()) {
+  return Number(state?.openUntilMs || 0) > Number(nowMs);
+}
+
+function firestoreQuotaUnavailableError(nowMs = Date.now(), details = null) {
+  const remainingMs = Math.max(
+    1000,
+    Number(firestoreQuotaCircuit.openUntilMs || 0) - Number(nowMs),
+  );
+  const error = new Error("firestore_quota_exhausted");
+  error.code = "firestore_quota_exhausted";
+  error.status = 503;
+  error.upstreamStatus = 429;
+  error.retryAfterSeconds = Math.max(1, Math.ceil(remainingMs / 1000));
+  error.details = details;
+  return error;
+}
 
 export function isTransientFirestoreStatus(status, body = {}) {
   const value = Number(status || 0);
-  const code = String(body?.error?.status || body?.error?.message || "");
+  const code = normalizedFirestoreCode(
+    body?.error?.status,
+    body?.error?.message,
+  );
   return value === 408 ||
-    value === 429 ||
+    isFirestoreQuotaStatus(value, body) ||
     value >= 500 ||
-    code === "RESOURCE_EXHAUSTED" ||
-    code === "UNAVAILABLE" ||
-    code === "ABORTED";
+    code.includes("UNAVAILABLE") ||
+    code.includes("ABORTED");
 }
 
 export function isTransientFirestoreError(error) {
-  const code = String(error?.message || "");
+  const code = normalizedFirestoreCode(error?.code, error?.message);
   const status = Number(error?.status || 0);
   return status === 408 ||
     status === 409 ||
     status === 429 ||
     status >= 500 ||
-    code === "RESOURCE_EXHAUSTED" ||
-    code === "UNAVAILABLE" ||
-    code === "ABORTED" ||
-    code === "firestore_network_error";
+    code.includes("RESOURCE_EXHAUSTED") ||
+    code.includes("FIRESTORE_QUOTA_EXHAUSTED") ||
+    code.includes("UNAVAILABLE") ||
+    code.includes("ABORTED") ||
+    code.includes("FIRESTORE_NETWORK_ERROR");
 }
 
 export function firestoreRetryDelayMs(
@@ -134,6 +198,13 @@ export function firestoreClient(env) {
     options = {},
     { retryTransient = false } = {},
   ) {
+    if (
+      retryTransient &&
+      isFirestoreQuotaCircuitOpen(firestoreQuotaCircuit)
+    ) {
+      throw firestoreQuotaUnavailableError();
+    }
+
     const accessToken = await googleAccessToken(env);
     const headers = new Headers(options.headers || {});
     headers.set("Authorization", `Bearer ${accessToken}`);
@@ -158,19 +229,44 @@ export function firestoreClient(env) {
         lastError = error;
       }
 
-      if (response?.status === 404) return { response, body: null };
+      if (response?.status === 404) {
+        if (retryTransient) resetFirestoreQuotaCircuit(firestoreQuotaCircuit);
+        return { response, body: null };
+      }
       if (response) {
         body = await response.json().catch(() => ({}));
-        if (response.ok) return { response, body };
+        if (response.ok) {
+          if (retryTransient) resetFirestoreQuotaCircuit(firestoreQuotaCircuit);
+          return { response, body };
+        }
+      }
+
+      const quotaLimited = response
+        ? isFirestoreQuotaStatus(response.status, body)
+        : false;
+      if (retryTransient && quotaLimited) {
+        registerFirestoreQuotaFailure(firestoreQuotaCircuit);
       }
 
       const transient = response
         ? isTransientFirestoreStatus(response.status, body)
         : true;
+      const attemptLimit = quotaLimited
+        ? Math.min(maxAttempts, FIRESTORE_QUOTA_MAX_ATTEMPTS)
+        : maxAttempts;
+      const breakerOpen =
+        retryTransient &&
+        isFirestoreQuotaCircuitOpen(firestoreQuotaCircuit);
       const canRetry =
-        retryTransient && transient && attempt < maxAttempts - 1;
+        retryTransient &&
+        transient &&
+        !breakerOpen &&
+        attempt < attemptLimit - 1;
       if (!canRetry) {
         if (response) {
+          if (retryTransient && quotaLimited) {
+            throw firestoreQuotaUnavailableError(Date.now(), body);
+          }
           const code =
             body?.error?.status ||
             body?.error?.message ||
@@ -185,7 +281,10 @@ export function firestoreClient(env) {
         throw error;
       }
 
-      const delayMs = firestoreRetryDelayMs(response, attempt);
+      const normalDelayMs = firestoreRetryDelayMs(response, attempt);
+      const delayMs = quotaLimited
+        ? Math.max(FIRESTORE_QUOTA_MIN_RETRY_DELAY_MS, normalDelayMs)
+        : normalDelayMs;
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
 
