@@ -44,141 +44,53 @@ service cloud.firestore {
     }
 
     function protectedUserFieldsUnchanged() {
-      return (!('role' in resource.data) && !('role' in request.resource.data)
-          || ('role' in resource.data) && ('role' in request.resource.data)
-             && request.resource.data.role == resource.data.role)
-        && (!('adminEnabled' in resource.data) && !('adminEnabled' in request.resource.data)
-          || ('adminEnabled' in resource.data) && ('adminEnabled' in request.resource.data)
-             && request.resource.data.adminEnabled == resource.data.adminEnabled)
-        && (!('capabilities' in resource.data) && !('capabilities' in request.resource.data)
-          || ('capabilities' in resource.data) && ('capabilities' in request.resource.data)
-             && request.resource.data.capabilities == resource.data.capabilities)
-        && (!('accountStatus' in resource.data) && !('accountStatus' in request.resource.data)
-          || ('accountStatus' in resource.data) && ('accountStatus' in request.resource.data)
-             && request.resource.data.accountStatus == resource.data.accountStatus)
-        && (!('suspendedUntil' in resource.data) && !('suspendedUntil' in request.resource.data)
-          || ('suspendedUntil' in resource.data) && ('suspendedUntil' in request.resource.data)
-             && request.resource.data.suspendedUntil == resource.data.suspendedUntil)
-        && (!('suspensionMinutes' in resource.data) && !('suspensionMinutes' in request.resource.data)
-          || ('suspensionMinutes' in resource.data) && ('suspensionMinutes' in request.resource.data)
-             && request.resource.data.suspensionMinutes == resource.data.suspensionMinutes)
-        && (!('bannedAt' in resource.data) && !('bannedAt' in request.resource.data)
-          || ('bannedAt' in resource.data) && ('bannedAt' in request.resource.data)
-             && request.resource.data.bannedAt == resource.data.bannedAt)
-        && (!('disabledAt' in resource.data) && !('disabledAt' in request.resource.data)
-          || ('disabledAt' in resource.data) && ('disabledAt' in request.resource.data)
-             && request.resource.data.disabledAt == resource.data.disabledAt)
-        && (!('authDeleted' in resource.data) && !('authDeleted' in request.resource.data)
-          || ('authDeleted' in resource.data) && ('authDeleted' in request.resource.data)
-             && request.resource.data.authDeleted == resource.data.authDeleted)
-        && (!('deletedAt' in resource.data) && !('deletedAt' in request.resource.data)
-          || ('deletedAt' in resource.data) && ('deletedAt' in request.resource.data)
-             && request.resource.data.deletedAt == resource.data.deletedAt)
-        && (!('deletedBy' in resource.data) && !('deletedBy' in request.resource.data)
-          || ('deletedBy' in resource.data) && ('deletedBy' in request.resource.data)
-             && request.resource.data.deletedBy == resource.data.deletedBy)
-        && (!('deletionReason' in resource.data) && !('deletionReason' in request.resource.data)
-          || ('deletionReason' in resource.data) && ('deletionReason' in request.resource.data)
-             && request.resource.data.deletionReason == resource.data.deletionReason)
-        && (!('moderatedBy' in resource.data) && !('moderatedBy' in request.resource.data)
-          || ('moderatedBy' in resource.data) && ('moderatedBy' in request.resource.data)
-             && request.resource.data.moderatedBy == resource.data.moderatedBy)
-        && (!('moderatedAt' in resource.data) && !('moderatedAt' in request.resource.data)
-          || ('moderatedAt' in resource.data) && ('moderatedAt' in request.resource.data)
-             && request.resource.data.moderatedAt == resource.data.moderatedAt)
-        && (!('moderationReason' in resource.data) && !('moderationReason' in request.resource.data)
-          || ('moderationReason' in resource.data) && ('moderationReason' in request.resource.data)
-             && request.resource.data.moderationReason == resource.data.moderationReason)
-        && (!('sessionsRevokedAt' in resource.data) && !('sessionsRevokedAt' in request.resource.data)
-          || ('sessionsRevokedAt' in resource.data) && ('sessionsRevokedAt' in request.resource.data)
-             && request.resource.data.sessionsRevokedAt == resource.data.sessionsRevokedAt)
-        && (!('coins' in resource.data) && !('coins' in request.resource.data)
-          || ('coins' in resource.data) && ('coins' in request.resource.data)
-             && request.resource.data.coins == resource.data.coins)
-        && (!('diamonds' in resource.data) && !('diamonds' in request.resource.data)
-          || ('diamonds' in resource.data) && ('diamonds' in request.resource.data)
-             && request.resource.data.diamonds == resource.data.diamonds)
-        && (!('balance' in resource.data) && !('balance' in request.resource.data)
-          || ('balance' in resource.data) && ('balance' in request.resource.data)
-             && request.resource.data.balance == resource.data.balance)
-        && (!('level' in resource.data) && !('level' in request.resource.data)
-          || ('level' in resource.data) && ('level' in request.resource.data)
-             && request.resource.data.level == resource.data.level)
-        && (!('vipLevel' in resource.data) && !('vipLevel' in request.resource.data)
-          || ('vipLevel' in resource.data) && ('vipLevel' in request.resource.data)
-             && request.resource.data.vipLevel == resource.data.vipLevel)
-        && (!('publicBadges' in resource.data) && !('publicBadges' in request.resource.data)
-          || ('publicBadges' in resource.data) && ('publicBadges' in request.resource.data)
-             && request.resource.data.publicBadges == resource.data.publicBadges)
-        && (!('totalGiftsSent' in resource.data) && !('totalGiftsSent' in request.resource.data)
-          || ('totalGiftsSent' in resource.data) && ('totalGiftsSent' in request.resource.data)
-             && request.resource.data.totalGiftsSent == resource.data.totalGiftsSent)
-        && (!('totalGiftsReceived' in resource.data) && !('totalGiftsReceived' in request.resource.data)
-          || ('totalGiftsReceived' in resource.data) && ('totalGiftsReceived' in request.resource.data)
-             && request.resource.data.totalGiftsReceived == resource.data.totalGiftsReceived)
-        && (!('totalValueReceived' in resource.data) && !('totalValueReceived' in request.resource.data)
-          || ('totalValueReceived' in resource.data) && ('totalValueReceived' in request.resource.data)
-             && request.resource.data.totalValueReceived == resource.data.totalValueReceived)
-        && (!('publicIdHistory' in resource.data) && !('publicIdHistory' in request.resource.data)
-          || ('publicIdHistory' in resource.data) && ('publicIdHistory' in request.resource.data)
-             && request.resource.data.publicIdHistory == resource.data.publicIdHistory)
-        && (!('publicIdUpdatedAt' in resource.data) && !('publicIdUpdatedAt' in request.resource.data)
-          || ('publicIdUpdatedAt' in resource.data) && ('publicIdUpdatedAt' in request.resource.data)
-             && request.resource.data.publicIdUpdatedAt == resource.data.publicIdUpdatedAt)
-        && (!('publicIdUpdatedBy' in resource.data) && !('publicIdUpdatedBy' in request.resource.data)
-          || ('publicIdUpdatedBy' in resource.data) && ('publicIdUpdatedBy' in request.resource.data)
-             && request.resource.data.publicIdUpdatedBy == resource.data.publicIdUpdatedBy)
-        && (!('diamondPasswordSet' in resource.data) && !('diamondPasswordSet' in request.resource.data)
-          || ('diamondPasswordSet' in resource.data) && ('diamondPasswordSet' in request.resource.data)
-             && request.resource.data.diamondPasswordSet == resource.data.diamondPasswordSet)
-        && (!('diamondPasswordUpdatedAt' in resource.data) && !('diamondPasswordUpdatedAt' in request.resource.data)
-          || ('diamondPasswordUpdatedAt' in resource.data) && ('diamondPasswordUpdatedAt' in request.resource.data)
-             && request.resource.data.diamondPasswordUpdatedAt == resource.data.diamondPasswordUpdatedAt)
-        && (!('diamondPasswordHash' in resource.data) && !('diamondPasswordHash' in request.resource.data)
-          || ('diamondPasswordHash' in resource.data) && ('diamondPasswordHash' in request.resource.data)
-             && request.resource.data.diamondPasswordHash == resource.data.diamondPasswordHash)
-        && (!('diamondPasswordSalt' in resource.data) && !('diamondPasswordSalt' in request.resource.data)
-          || ('diamondPasswordSalt' in resource.data) && ('diamondPasswordSalt' in request.resource.data)
-             && request.resource.data.diamondPasswordSalt == resource.data.diamondPasswordSalt)
-        && (!('pendingGiftEarningCoins' in resource.data) && !('pendingGiftEarningCoins' in request.resource.data)
-          || ('pendingGiftEarningCoins' in resource.data) && ('pendingGiftEarningCoins' in request.resource.data)
-             && request.resource.data.pendingGiftEarningCoins == resource.data.pendingGiftEarningCoins)
-        && (!('giftEarningCoinsLifetime' in resource.data) && !('giftEarningCoinsLifetime' in request.resource.data)
-          || ('giftEarningCoinsLifetime' in resource.data) && ('giftEarningCoinsLifetime' in request.resource.data)
-             && request.resource.data.giftEarningCoinsLifetime == resource.data.giftEarningCoinsLifetime)
-        && (!('giftDiamondsLifetime' in resource.data) && !('giftDiamondsLifetime' in request.resource.data)
-          || ('giftDiamondsLifetime' in resource.data) && ('giftDiamondsLifetime' in request.resource.data)
-             && request.resource.data.giftDiamondsLifetime == resource.data.giftDiamondsLifetime)
-        && (!('giftSupportReceivedCoins' in resource.data) && !('giftSupportReceivedCoins' in request.resource.data)
-          || ('giftSupportReceivedCoins' in resource.data) && ('giftSupportReceivedCoins' in request.resource.data)
-             && request.resource.data.giftSupportReceivedCoins == resource.data.giftSupportReceivedCoins)
-        && (!('pendingAgencyGiftEarningCoins' in resource.data) && !('pendingAgencyGiftEarningCoins' in request.resource.data)
-          || ('pendingAgencyGiftEarningCoins' in resource.data) && ('pendingAgencyGiftEarningCoins' in request.resource.data)
-             && request.resource.data.pendingAgencyGiftEarningCoins == resource.data.pendingAgencyGiftEarningCoins)
-        && (!('giftRevenueMonth' in resource.data) && !('giftRevenueMonth' in request.resource.data)
-          || ('giftRevenueMonth' in resource.data) && ('giftRevenueMonth' in request.resource.data)
-             && request.resource.data.giftRevenueMonth == resource.data.giftRevenueMonth)
-        && (!('giftRevenueMonthCoins' in resource.data) && !('giftRevenueMonthCoins' in request.resource.data)
-          || ('giftRevenueMonthCoins' in resource.data) && ('giftRevenueMonthCoins' in request.resource.data)
-             && request.resource.data.giftRevenueMonthCoins == resource.data.giftRevenueMonthCoins)
-        && (!('currentGiftRevenueTier' in resource.data) && !('currentGiftRevenueTier' in request.resource.data)
-          || ('currentGiftRevenueTier' in resource.data) && ('currentGiftRevenueTier' in request.resource.data)
-             && request.resource.data.currentGiftRevenueTier == resource.data.currentGiftRevenueTier)
-        && (!('giftHostActivityMonth' in resource.data) && !('giftHostActivityMonth' in request.resource.data)
-          || ('giftHostActivityMonth' in resource.data) && ('giftHostActivityMonth' in request.resource.data)
-             && request.resource.data.giftHostActivityMonth == resource.data.giftHostActivityMonth)
-        && (!('giftHostMicSecondsMonth' in resource.data) && !('giftHostMicSecondsMonth' in request.resource.data)
-          || ('giftHostMicSecondsMonth' in resource.data) && ('giftHostMicSecondsMonth' in request.resource.data)
-             && request.resource.data.giftHostMicSecondsMonth == resource.data.giftHostMicSecondsMonth)
-        && (!('giftHostQualifiedDays' in resource.data) && !('giftHostQualifiedDays' in request.resource.data)
-          || ('giftHostQualifiedDays' in resource.data) && ('giftHostQualifiedDays' in request.resource.data)
-             && request.resource.data.giftHostQualifiedDays == resource.data.giftHostQualifiedDays)
-        && (!('giftHostActivityUpdatedAt' in resource.data) && !('giftHostActivityUpdatedAt' in request.resource.data)
-          || ('giftHostActivityUpdatedAt' in resource.data) && ('giftHostActivityUpdatedAt' in request.resource.data)
-             && request.resource.data.giftHostActivityUpdatedAt == resource.data.giftHostActivityUpdatedAt)
-        && (!('agencyId' in resource.data) && !('agencyId' in request.resource.data)
-          || ('agencyId' in resource.data) && ('agencyId' in request.resource.data)
-             && request.resource.data.agencyId == resource.data.agencyId);
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'role',
+        'adminEnabled',
+        'capabilities',
+        'accountStatus',
+        'suspendedUntil',
+        'suspensionMinutes',
+        'bannedAt',
+        'disabledAt',
+        'authDeleted',
+        'deletedAt',
+        'deletedBy',
+        'deletionReason',
+        'moderatedBy',
+        'moderatedAt',
+        'moderationReason',
+        'sessionsRevokedAt',
+        'coins',
+        'diamonds',
+        'balance',
+        'level',
+        'vipLevel',
+        'publicBadges',
+        'totalGiftsSent',
+        'totalGiftsReceived',
+        'totalValueReceived',
+        'publicIdHistory',
+        'publicIdUpdatedAt',
+        'publicIdUpdatedBy',
+        'diamondPasswordSet',
+        'diamondPasswordUpdatedAt',
+        'diamondPasswordHash',
+        'diamondPasswordSalt',
+        'pendingGiftEarningCoins',
+        'pendingAgencyGiftEarningCoins',
+        'giftEarningCoinsLifetime',
+        'giftDiamondsLifetime',
+        'giftSupportReceivedCoins',
+        'giftRevenueMonth',
+        'giftRevenueMonthCoins',
+        'currentGiftRevenueTier',
+        'giftHostActivityMonth',
+        'giftHostMicSecondsMonth',
+        'giftHostQualifiedDays',
+        'giftHostActivityUpdatedAt',
+        'agencyId'
+      ]);
     }
 
     function publicProfileAuthoritativeFieldsMatch(userId) {
