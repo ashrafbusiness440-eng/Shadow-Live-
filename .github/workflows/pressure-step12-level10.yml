@@ -1,0 +1,19 @@
+name: Pressure Step 12 Level 10
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run Step 12 level 10
+        run: node scripts/pressure_step12_level10.mjs
