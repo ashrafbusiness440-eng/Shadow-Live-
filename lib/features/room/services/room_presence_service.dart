@@ -191,6 +191,7 @@ class RoomPresenceService {
       final ticket = await _post('room-realtime', {
         'action': 'ticket',
         'roomId': roomId,
+        'reconnectAttempt': _reconnectAttempt,
       });
       if (_desiredRoomId != roomId || generation != _generation) return;
 
