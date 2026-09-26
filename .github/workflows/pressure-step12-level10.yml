@@ -87,7 +87,7 @@ jobs:
       VUS_PER_SHARD: 500
       ROOMS_PER_SHARD: 10
       RAMP_MS: 10000
-      HOLD_MS: 30000
+      HOLD_MS: 90000
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
