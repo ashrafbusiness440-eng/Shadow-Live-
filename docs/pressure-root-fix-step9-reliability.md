@@ -78,9 +78,14 @@ All standalone Production suites are manual-only via `workflow_dispatch`:
 Every manual suite and the Comprehensive gate use the same concurrency group:
 `shadow-live-production-firestore-e2e`
 
-`cancel-in-progress:false` is required so suites queue instead of overlapping or cancelling another Production test halfway through cleanup.
+`cancel-in-progress:false` prevents overlapping Production Firestore suites. Because GitHub keeps only a bounded pending concurrency state and Worker/Pages deploys intentionally keep the newest main build, the automatic Comprehensive workflow now has a freshness job: if its push SHA is no longer the current main SHA, it exits without creating Production load instead of waiting for an exact deployment that was superseded. Manual dispatch is never rejected by this freshness check.
+
+The stale Phase 6 test-user cleanup workflow is also manual-only and uses the same Production Firestore concurrency group.
 
 The Comprehensive gate watches Worker source/scripts/wrangler changes and the Production E2E workflow policy files.
+
+
+The full App Asset Manager write/delete E2E is intentionally excluded from the automatic Comprehensive gate. It writes a temporary asset to the GitHub `main` branch and deletes it during cleanup, which creates extra main commits and Pages/CI churn. The dedicated App Asset workflow remains manual/release-only and serialized through the same Production Firestore group.
 
 ## Production Durable Object policy
 
@@ -117,10 +122,12 @@ Before:
 
 After:
 - One automatic Production E2E gate.
-- One shared Production Firestore concurrency group.
+- One shared Production Firestore concurrency group, with superseded automatic runs skipped before Production load.
 - Quota-aware 2-attempt policy + 10s circuit breaker.
 - App Asset owner auth uses one authoritative user read.
 - Automatic CI skips Production Durable Object creation.
+- Phase 6 stale-user cleanup is manual/serialized.
+- Full App Asset mutation E2E is manual/release-only, so the automatic gate no longer creates GitHub main commits.
 - Critical cold quota failures surface as explicit retryable 503.
 
 ## Remaining Step 12 dependency
