@@ -6,6 +6,10 @@ workers_dev = true
 [observability]
 enabled = true
 
+[[analytics_engine_datasets]]
+binding = "PRESSURE_ANALYTICS"
+dataset = "shadow_live_pressure_v1"
+
 [triggers]
 # During development, settlement is also triggered by active game clients.
 # A 5-minute safety sweep avoids a permanent Firestore read loop under quota pressure.
