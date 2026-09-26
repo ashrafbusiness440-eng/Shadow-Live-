@@ -16,9 +16,17 @@ function positiveMs(value, fallback) {
 
 export function isTransientConfigReadError(error) {
   const status = Number(error?.status || 0);
-  const code = String(
-    error?.code || error?.message || error?.details?.error?.status || "",
-  ).toUpperCase();
+  const code = [
+    error?.code,
+    error?.message,
+    error?.details?.error?.status,
+    error?.details?.error?.message,
+  ]
+    .filter((value) => value !== undefined && value !== null)
+    .map((value) => String(value))
+    .join(" ")
+    .toUpperCase()
+    .replaceAll("-", "_");
 
   return status === 408 ||
     status === 409 ||
