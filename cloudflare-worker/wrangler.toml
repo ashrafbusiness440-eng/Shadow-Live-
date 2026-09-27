@@ -22,3 +22,7 @@ class_name = "RoomRealtimeObject"
 [[migrations]]
 tag = "room-realtime-v1"
 new_sqlite_classes = ["RoomRealtimeObject"]
+
+[[r2_buckets]]
+binding = "USER_STORAGE"
+bucket_name = "shadow-live-storage"
