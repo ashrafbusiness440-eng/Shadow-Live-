@@ -639,6 +639,174 @@ async function replacementObjectStillReferenced(
   return clean(snapshot.data?.[field]) === clean(objectId);
 }
 
+async function transferSharedRoomCoverOnAccountDeletion({
+  db,
+  deletedUid,
+  item,
+  objectId,
+  nowMs,
+}) {
+  if (clean(item?.data?.scope) !== "room_cover") return "";
+
+  const targetId = clean(item?.data?.targetId);
+  if (!targetId) return "";
+
+  const room = await db.get(`rooms/${targetId}`);
+  if (
+    !room.exists ||
+    clean(room.data?.coverImageObjectId) !== objectId
+  ) {
+    return "";
+  }
+
+  const roomOwnerUid = clean(
+    room.data?.ownerUid ||
+    room.data?.ownerId ||
+    room.data?.hostId,
+  );
+  if (!roomOwnerUid || roomOwnerUid === deletedUid) return "";
+
+  const now = new Date(nowMs);
+  const writes = [
+    db.writeUpdate(
+      `storage_objects/${objectId}`,
+      { ownerUid: roomOwnerUid, updatedAt: now },
+      ["ownerUid", "updatedAt"],
+    ),
+    db.writeCreate(`storage_audit_logs/${auditId()}`, {
+      actorUid: "system",
+      subjectUid: deletedUid,
+      action: "transferDeletedAccountRoomCoverOwnership",
+      objectId,
+      scope: "room_cover",
+      targetId,
+      transferredToUid: roomOwnerUid,
+      reason: "shared_room_cover_still_active",
+      createdAt: now,
+    }),
+  ];
+
+  const pointerPath = storageActivePointerPath("room_cover", targetId);
+  const pointer = await db.get(pointerPath);
+  if (
+    pointer.exists &&
+    clean(pointer.data?.objectId) === objectId
+  ) {
+    writes.push(
+      db.writeUpdate(
+        pointerPath,
+        { ownerUid: roomOwnerUid, updatedAt: now },
+        ["ownerUid", "updatedAt"],
+      ),
+    );
+  }
+
+  await db.commit(null, writes);
+  return roomOwnerUid;
+}
+
+async function accountDeletionReferenceWrites({
+  db,
+  ownerUid,
+  item,
+  objectId,
+}) {
+  const scope = clean(item?.data?.scope);
+  const targetId = clean(item?.data?.targetId);
+  const writes = [];
+
+  if (scope === "profile_image" || scope === "profile_cover") {
+    const userId = targetId || ownerUid;
+    const [user, publicProfile] = await Promise.all([
+      db.get(`users/${userId}`),
+      db.get(`public_profiles/${userId}`),
+    ]);
+
+    if (scope === "profile_image") {
+      if (
+        user.exists &&
+        clean(user.data?.profileImageObjectId) === objectId
+      ) {
+        writes.push(
+          db.writeUpdate(
+            `users/${userId}`,
+            {
+              profileImageUrl: "",
+              profileImageObjectId: "",
+              photoUrl: "",
+              avatarUrl: "",
+            },
+            [
+              "profileImageUrl",
+              "profileImageObjectId",
+              "photoUrl",
+              "avatarUrl",
+            ],
+          ),
+        );
+      }
+      if (
+        publicProfile.exists &&
+        clean(publicProfile.data?.profileImageObjectId) === objectId
+      ) {
+        writes.push(
+          db.writeUpdate(
+            `public_profiles/${userId}`,
+            {
+              profileImageUrl: "",
+              profileImageObjectId: "",
+            },
+            ["profileImageUrl", "profileImageObjectId"],
+          ),
+        );
+      }
+    } else {
+      if (
+        user.exists &&
+        clean(user.data?.coverImageObjectId) === objectId
+      ) {
+        writes.push(
+          db.writeUpdate(
+            `users/${userId}`,
+            { coverImageUrl: "", coverImageObjectId: "" },
+            ["coverImageUrl", "coverImageObjectId"],
+          ),
+        );
+      }
+      if (
+        publicProfile.exists &&
+        clean(publicProfile.data?.coverImageObjectId) === objectId
+      ) {
+        writes.push(
+          db.writeUpdate(
+            `public_profiles/${userId}`,
+            { coverImageUrl: "", coverImageObjectId: "" },
+            ["coverImageUrl", "coverImageObjectId"],
+          ),
+        );
+      }
+    }
+  }
+
+  if (scope === "room_cover" && targetId) {
+    const room = await db.get(`rooms/${targetId}`);
+    if (
+      room.exists &&
+      clean(room.data?.coverImageObjectId) === objectId
+    ) {
+      writes.push(
+        db.writeUpdate(
+          `rooms/${targetId}`,
+          { coverImageUrl: "", coverImageObjectId: "" },
+          ["coverImageUrl", "coverImageObjectId"],
+        ),
+      );
+    }
+  }
+
+  return writes;
+}
+
 async function deleteAccountOwnedStorageObject({
   db,
   bucket,
@@ -652,9 +820,28 @@ async function deleteAccountOwnedStorageObject({
     throw new Error("invalid_account_cleanup_object");
   }
 
+  const transferredToUid = await transferSharedRoomCoverOnAccountDeletion({
+    db,
+    deletedUid: ownerUid,
+    item,
+    objectId,
+    nowMs,
+  });
+  if (transferredToUid) {
+    return { objectId, deleted: false, transferredToUid };
+  }
+
+  const referenceWrites = await accountDeletionReferenceWrites({
+    db,
+    ownerUid,
+    item,
+    objectId,
+  });
+
   await bucket.delete(storageKey);
 
   const writes = [
+    ...referenceWrites,
     db.writeDelete(`storage_objects/${objectId}`),
     db.writeDelete(`storage_delete_queue/${objectId}`),
     db.writeCreate(`storage_audit_logs/${auditId()}`, {
@@ -685,7 +872,7 @@ async function deleteAccountOwnedStorageObject({
   }
 
   await db.commit(null, writes);
-  return objectId;
+  return { objectId, deleted: true, transferredToUid: "" };
 }
 
 export async function runDeletedAccountStorageCleanup(
@@ -727,17 +914,19 @@ export async function runDeletedAccountStorageCleanup(
   });
 
   let deleted = 0;
+  let transferred = 0;
   let failed = 0;
   for (const item of objects) {
     try {
-      await deleteAccountOwnedStorageObject({
+      const cleanup = await deleteAccountOwnedStorageObject({
         db,
         bucket,
         ownerUid,
         item,
         nowMs,
       });
-      deleted += 1;
+      if (cleanup.deleted) deleted += 1;
+      if (cleanup.transferredToUid) transferred += 1;
     } catch (error) {
       failed += 1;
       console.error(
@@ -768,6 +957,7 @@ export async function runDeletedAccountStorageCleanup(
     jobsChecked: 1,
     checked: objects.length,
     deleted,
+    transferred,
     failed,
   };
 }
@@ -927,6 +1117,7 @@ export async function runDueStorageCleanup(
     accountCleanupJobsChecked: accountCleanup.jobsChecked,
     accountCleanupChecked: accountCleanup.checked,
     accountCleanupDeleted: accountCleanup.deleted,
+    accountCleanupTransferred: accountCleanup.transferred,
     accountCleanupFailed: accountCleanup.failed,
     replacementChecked: due.length,
     replacementDeleted: deleted,
