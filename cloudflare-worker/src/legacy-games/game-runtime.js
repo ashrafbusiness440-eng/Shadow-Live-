@@ -802,14 +802,33 @@ export async function settleDueGameOperations(
   const boundedLimit=Math.max(1,Math.min(25,Number(limit||25)));
   // Query only due work, oldest first. This prevents future pending operations
   // from occupying the bounded cron window and starving an already-due payout.
-  const snapshot=await db.collection("game_operations")
-    .where("status","==","pending")
-    .where("closesAtMs","<=",nowMs)
-    .orderBy("closesAtMs","asc")
-    .limit(boundedLimit)
-    .get();
+  let snapshot=null;
+  try{
+    snapshot=await db.collection("game_operations")
+      .where("status","==","pending")
+      .where("closesAtMs","<=",nowMs)
+      .orderBy("closesAtMs","asc")
+      .limit(boundedLimit)
+      .get();
+  }catch(error){
+    const code=clean(error?.code||error?.message).toLowerCase();
+    const indexUnavailable=
+      code.includes("failed-precondition")||
+      code.includes("failed_precondition")||
+      code.includes("requires an index")||
+      code.includes("index is currently building");
+    if(!indexUnavailable)throw error;
+    // Deployment-safe fallback while the composite index is still building.
+    snapshot=await db.collection("game_operations")
+      .where("status","==","pending")
+      .limit(Math.min(10,boundedLimit))
+      .get();
+  }
+  const dueDocs=snapshot.docs
+    .filter(doc=>Number(doc.data()?.closesAtMs||0)<=nowMs)
+    .sort((a,b)=>Number(a.data()?.closesAtMs||0)-Number(b.data()?.closesAtMs||0));
   const results=[];
-  for(const doc of snapshot.docs){
+  for(const doc of dueDocs){
     try{
       results.push(await settleOperationRef(db,doc.ref,nowMs,{workerTag}));
     }catch(error){
