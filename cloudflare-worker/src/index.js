@@ -10,6 +10,7 @@ import { controlUserDetails } from "./control-user-details.js";
 import { walletActions } from "./wallet-actions.js";
 import { chatSafetyActions } from "./chat-safety-actions.js";
 import { storageHealth } from "./storage-health.js";
+import { runDueStorageCleanup, userStorage } from "./user-storage.js";
 import { roomGift } from "./room-gift.js";
 import { voiceSession } from "./voice-session.js";
 import { roomRealtime } from "./room-realtime.js";
@@ -147,6 +148,33 @@ export default {
       }
     } catch (error) {
       console.error("Expired suspension release failed", String(error?.message || error));
+    }
+
+    try {
+      const storageCleanup = await runDueStorageCleanup(env, {
+        nowMs: Date.now(),
+        limit: 25,
+      });
+      if (storageCleanup.checked > 0) {
+        console.log(
+          "Cloudflare R2 delayed cleanup",
+          JSON.stringify(storageCleanup),
+        );
+      }
+      writePressureDataPoint(env, {
+        kind: "cron",
+        primary: "r2_storage_cleanup",
+        action: "delete_due",
+        outcome: storageCleanup.failed > 0 ? "partial" : "ok",
+        durationMs: Date.now() - startedAtMs,
+        fanout: Number(storageCleanup.checked || 0),
+        error: Number(storageCleanup.failed || 0),
+      });
+    } catch (error) {
+      console.error(
+        "Cloudflare R2 delayed cleanup failed",
+        String(error?.message || error),
+      );
     }
 
     const db = getFirestore();

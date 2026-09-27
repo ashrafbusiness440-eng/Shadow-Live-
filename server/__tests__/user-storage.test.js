@@ -1,0 +1,170 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  buildStorageObjectKey,
+  consumeStorageRateLimit,
+  storageExtensionForMime,
+  storageMaxBytes,
+  validateStoragePayload,
+  isReplaceableStorageScope,
+  replacementDeleteAt,
+  REPLACEMENT_DELETE_DELAY_MS,
+  storageActivePointerId,
+} from "../../cloudflare-worker/src/user-storage.js";
+import {
+  presignR2Put,
+} from "../../cloudflare-worker/src/r2-presign.js";
+
+test("storage MIME allowlist only accepts supported image formats", () => {
+  assert.equal(storageExtensionForMime("image/jpeg"), "jpg");
+  assert.equal(storageExtensionForMime("image/png"), "png");
+  assert.equal(storageExtensionForMime("image/webp"), "webp");
+  assert.equal(storageExtensionForMime("image/gif"), "");
+  assert.equal(storageExtensionForMime("application/pdf"), "");
+});
+
+test("storage size limits stay scope-specific", () => {
+  assert.equal(storageMaxBytes("profile_image"), 2 * 1024 * 1024);
+  assert.equal(storageMaxBytes("profile_cover"), 4 * 1024 * 1024);
+  assert.equal(storageMaxBytes("room_cover"), 4 * 1024 * 1024);
+  assert.equal(storageMaxBytes("chat_image"), 8 * 1024 * 1024);
+});
+
+test("storage payload validation rejects unsupported types and oversized files", () => {
+  assert.deepEqual(
+    validateStoragePayload({
+      scope: "profile_image",
+      mimeType: "image/jpeg",
+      byteLength: 1024,
+    }),
+    {
+      scope: "profile_image",
+      mimeType: "image/jpeg",
+      extension: "jpg",
+      maxBytes: 2 * 1024 * 1024,
+    },
+  );
+
+  assert.throws(
+    () => validateStoragePayload({
+      scope: "profile_image",
+      mimeType: "image/gif",
+      byteLength: 1024,
+    }),
+    /invalid_file_type/,
+  );
+
+  assert.throws(
+    () => validateStoragePayload({
+      scope: "profile_image",
+      mimeType: "image/jpeg",
+      byteLength: 2 * 1024 * 1024 + 1,
+    }),
+    /invalid_file_size/,
+  );
+});
+
+test("storage object keys follow canonical private prefixes", () => {
+  assert.equal(
+    buildStorageObjectKey({
+      scope: "profile_image",
+      uid: "user_1",
+      targetId: "user_1",
+      objectId: "a".repeat(32),
+      extension: "jpg",
+    }),
+    `users/user_1/profile/${"a".repeat(32)}.jpg`,
+  );
+
+  assert.equal(
+    buildStorageObjectKey({
+      scope: "room_cover",
+      uid: "user_1",
+      targetId: "room_7",
+      objectId: "b".repeat(32),
+      extension: "webp",
+    }),
+    `rooms/room_7/covers/${"b".repeat(32)}.webp`,
+  );
+
+  assert.equal(
+    buildStorageObjectKey({
+      scope: "chat_image",
+      uid: "user_1",
+      targetId: "conversation_9",
+      objectId: "c".repeat(32),
+      extension: "png",
+    }),
+    `chat/conversation_9/user_1/${"c".repeat(32)}.png`,
+  );
+});
+
+test("replaced profile and room media wait 24 hours before cleanup", () => {
+  assert.equal(isReplaceableStorageScope("profile_image"), true);
+  assert.equal(isReplaceableStorageScope("profile_cover"), true);
+  assert.equal(isReplaceableStorageScope("room_cover"), true);
+  assert.equal(isReplaceableStorageScope("chat_image"), false);
+
+  const nowMs = 1_758_975_200_000;
+  assert.equal(REPLACEMENT_DELETE_DELAY_MS, 24 * 60 * 60 * 1000);
+  assert.equal(
+    replacementDeleteAt(nowMs).getTime(),
+    nowMs + 24 * 60 * 60 * 1000,
+  );
+});
+
+test("replaceable media uses deterministic active pointers", () => {
+  assert.equal(
+    storageActivePointerId("profile_image", "user_1"),
+    "profile_image__user_1",
+  );
+  assert.equal(
+    storageActivePointerId("room_cover", "room_7"),
+    "room_cover__room_7",
+  );
+  assert.throws(
+    () => storageActivePointerId("chat_image", "conversation_9"),
+    /active_pointer_not_supported/,
+  );
+});
+
+test("storage upload rate limiter caps presign bursts", () => {
+  const uid = "storage_test_rate_" + Date.now();
+  const nowMs = 1000;
+  for (let index = 0; index < 8; index++) {
+    assert.equal(
+      consumeStorageRateLimit(uid, "prepareUpload", nowMs).ok,
+      true,
+    );
+  }
+  const blocked = consumeStorageRateLimit(uid, "prepareUpload", nowMs);
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.retryAfterSeconds, 60);
+
+  const reset = consumeStorageRateLimit(uid, "prepareUpload", nowMs + 60_001);
+  assert.equal(reset.ok, true);
+});
+
+test("R2 PUT presign is short-lived and content-type bound", async () => {
+  const signed = await presignR2Put(
+    {
+      R2_ACCOUNT_ID: "0123456789abcdef0123456789abcdef",
+      R2_ACCESS_KEY_ID: "TESTACCESSKEY1234567890",
+      R2_SECRET_ACCESS_KEY: "test-secret-access-key-value",
+    },
+    {
+      key: "users/u/profile/" + "d".repeat(32) + ".png",
+      mimeType: "image/png",
+    },
+  );
+  const url = new URL(signed);
+  assert.equal(url.hostname, "0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com");
+  assert.equal(url.searchParams.get("X-Amz-Expires"), "300");
+  assert.ok(url.searchParams.get("X-Amz-Signature"));
+  assert.ok(
+    String(url.searchParams.get("X-Amz-SignedHeaders") || "")
+      .toLowerCase()
+      .includes("content-type"),
+  );
+});
