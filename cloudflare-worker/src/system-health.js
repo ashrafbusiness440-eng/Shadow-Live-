@@ -119,7 +119,7 @@ async function querySnapshot(env, minutes) {
 
   const current = await analyticsSql(env, `
     SELECT
-      SUM(_sample_interval * double1) AS requests,
+      SUMIf(_sample_interval * double1, blob1='request') AS requests,
       SUMIf(_sample_interval * double1, blob1='request' AND blob4='429') AS status429,
       SUMIf(_sample_interval * double1, blob1='request' AND startsWith(blob4,'5')) AS status5xx,
       SUMIf(_sample_interval * double3, blob1='firestore') AS firestoreReads,
@@ -152,6 +152,8 @@ async function querySnapshot(env, minutes) {
     requestsPerMinute: round(rpm, 3),
     firestoreReads: Math.round(num(row.firestoreReads)),
     firestoreWrites: Math.round(num(row.firestoreWrites)),
+    firestoreReadsPerMinute: round(num(row.firestoreReads) / Math.max(1, minutes), 3),
+    firestoreWritesPerMinute: round(num(row.firestoreWrites) / Math.max(1, minutes), 3),
     retries: Math.round(num(row.retries)),
     quotaEvents: Math.round(num(row.quotaEvents)),
     reconnects: Math.round(num(row.reconnects)),
