@@ -8,6 +8,7 @@ import {
   realtimeUserPresentFromNamespace,
 } from "./room-presence-authority.js";
 import { publishGlobalRocketEvents } from "./room-realtime.js";
+import { writePressureDataPoint } from "./pressure-telemetry.js";
 
 const clean = (value) => String(value ?? "").trim();
 const validKey = (value) => /^[A-Za-z0-9_-]{12,220}$/.test(clean(value));
@@ -126,7 +127,9 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     ),
   ]);
 
+  let transactionAttempts = 0;
   return runTransaction(db, async (transaction) => {
+    transactionAttempts += 1;
     const roomPath = `rooms/${roomId}`;
     const senderPath = `users/${senderUid}`;
     const receiverPath = `users/${receiverId}`;
@@ -744,6 +747,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       code: "ok",
       ...resultData,
       _rocketFeedEvents: rocketAdvance.explosions,
+      _transactionAttempts: transactionAttempts,
     };
   });
 }
@@ -783,7 +787,16 @@ export async function roomGift(request, env, ctx) {
         await publishTask;
       }
     }
-    const { _rocketFeedEvents, ...publicResult } = result;
+    writePressureDataPoint(env, {
+      kind: "hot_document",
+      primary: "room_rocket_state",
+      action: "room_gift_commit",
+      outcome: "ok",
+      reads: 1,
+      writes: 1,
+      retries: Math.max(0, Number(result?._transactionAttempts || 1) - 1),
+    });
+    const { _rocketFeedEvents, _transactionAttempts, ...publicResult } = result;
     return json(request, env, publicResult, 200);
   } catch (error) {
     if (error instanceof ApiError) {
