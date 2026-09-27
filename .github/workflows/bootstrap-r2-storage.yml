@@ -45,7 +45,23 @@ jobs:
 
           cat /tmp/r2-info.err || true
           echo "Bucket not found or not readable; attempting one-time creation."
-          npx wrangler r2 bucket create shadow-live-storage
+
+          set +e
+          npx wrangler r2 bucket create shadow-live-storage >/tmp/r2-create.out 2>/tmp/r2-create.err
+          CREATE_STATUS=$?
+          set -e
+
+          cat /tmp/r2-create.out || true
+          cat /tmp/r2-create.err || true
+
+          if [ "$CREATE_STATUS" -ne 0 ]; then
+            if grep -q "Authentication error.*10000" /tmp/r2-create.err /tmp/r2-create.out 2>/dev/null; then
+              echo "::warning::Cloudflare token lacks R2 bucket-management permission (error 10000). Foundation code can still be validated, but production R2 remains blocked."
+              echo "R2_BUCKET_READY=blocked_permissions" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            exit "$CREATE_STATUS"
+          fi
 
           npx wrangler r2 bucket info shadow-live-storage --json
           echo "R2_BUCKET_READY=created" >> "$GITHUB_ENV"
