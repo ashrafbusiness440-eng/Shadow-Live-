@@ -71,7 +71,7 @@ export async function settleGameOperationRef(
       balanceAfter:after,
       settledAt:now,
       updatedAt:now,
-      settlementWorker:"firebase_schedule",
+      settlementWorker:"firebase_helper",
     });
     tx.set(roundRef,{
       status:"settled",
