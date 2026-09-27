@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shadow_live/features/room/services/room_rocket_service.dart';
+import 'package:voice_chat_room/features/room/services/room_rocket_service.dart';
 
 void main() {
   test('RoomRocketEvent parses realtime payloads', () {
