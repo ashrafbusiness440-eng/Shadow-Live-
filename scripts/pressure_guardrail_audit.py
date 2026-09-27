@@ -684,6 +684,8 @@ def main() -> int:
         "recordRequestTelemetry",
         "recordFirestoreTelemetry",
         "recordRealtimeTelemetry",
+        "normalizePressureRoute",
+        "resource",
         "writeDataPoint",
         "firestore_reads_estimate",
         "firestore_writes_estimate",
@@ -720,6 +722,8 @@ def main() -> int:
         'operation: "commit"',
         'operation: "begin_transaction"',
         'operation: "rollback"',
+        "normalizeFirestoreResource",
+        "summarizeWriteResources",
     ):
         if required not in firestore:
             failures.append(f"Step 11 regression: Firestore observability missing {required}")
