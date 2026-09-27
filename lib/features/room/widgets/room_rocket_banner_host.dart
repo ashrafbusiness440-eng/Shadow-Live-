@@ -134,9 +134,10 @@ class _RoomRocketBannerHostState extends State<RoomRocketBannerHost> {
           ? const Duration(seconds: 8)
           : serverDelay;
     }
-    final multiplier = 1 << math.max(0, attempt - 1);
+    final exponent = attempt <= 1 ? 0 : attempt - 1;
+    final multiplier = 1 << exponent;
     return Duration(
-      milliseconds: math.min(8000, baseMilliseconds * multiplier),
+      milliseconds: math.min(8000, baseMilliseconds * multiplier).toInt(),
     );
   }
 
