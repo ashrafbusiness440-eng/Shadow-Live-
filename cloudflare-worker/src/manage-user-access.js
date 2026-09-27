@@ -19,6 +19,7 @@ const validKey = (value) => /^[A-Za-z0-9_-]{12,160}$/.test(clean(value));
 const ALLOWED_ROLES = new Set(["user", "moderator", "admin", "super_admin"]);
 const ALLOWED_CAPABILITIES = new Set([
   "viewDashboard",
+  "viewSystemHealth",
   "viewUsers",
   "manageUsers",
   "viewReports",
