@@ -12,6 +12,7 @@ import {
   replacementDeleteAt,
   REPLACEMENT_DELETE_DELAY_MS,
   storageActivePointerId,
+  runDeletedAccountStorageCleanup,
 } from "../../cloudflare-worker/src/user-storage.js";
 import {
   presignR2Put,
@@ -241,4 +242,461 @@ test("R2 PUT presign is short-lived and content-type bound", async () => {
       .toLowerCase()
       .includes("content-type"),
   );
+});
+
+
+test("account deletion storage cleanup is metadata-indexed and bounded", () => {
+  const accountSource = fs.readFileSync(
+    new URL("../../cloudflare-worker/src/manage-user-account.js", import.meta.url),
+    "utf8",
+  );
+  const storageSource = fs.readFileSync(
+    new URL("../../cloudflare-worker/src/user-storage.js", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(accountSource, /storage_account_cleanup_jobs/);
+  assert.match(storageSource, /runQuery\("storage_account_cleanup_jobs"/);
+  assert.match(storageSource, /runQuery\("storage_objects"/);
+  assert.match(storageSource, /field:\s*"ownerUid",\s*op:\s*"=="/);
+  assert.match(storageSource, /STORAGE_DELETE_BATCH_LIMIT/);
+  assert.doesNotMatch(storageSource, /bucket\.list\s*\(/);
+});
+
+
+test("public media redirects use bounded edge cache below signed URL TTL", () => {
+  const source = fs.readFileSync(
+    new URL("../../cloudflare-worker/src/public-media.js", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /PUBLIC_MEDIA_SIGNED_TTL_SECONDS = 900/);
+  assert.match(source, /PUBLIC_MEDIA_CACHE_SECONDS = 300/);
+  assert.match(source, /cache\.match\(cacheKey\)/);
+  assert.match(source, /cache\.put\(/);
+  assert.match(source, /stale-while-revalidate=60/);
+});
+
+
+test("deleted-account cleanup processes at most 25 storage objects per run", async () => {
+  const objects = Array.from({ length: 30 }, (_, index) => ({
+    id: (index + 1).toString(16).padStart(32, "0"),
+    data: {
+      objectId: (index + 1).toString(16).padStart(32, "0"),
+      storageKey: `chat/conversation/user/${index}.png`,
+      ownerUid: "user_deleted",
+      scope: "chat_image",
+      targetId: "conversation",
+      sizeBytes: 4,
+    },
+  }));
+  const commits = [];
+  const db = {
+    async runQuery(collection, options = {}) {
+      if (collection === "storage_account_cleanup_jobs") {
+        return [{
+          id: "delete_op_1",
+          data: {
+            ownerUid: "user_deleted",
+            reason: "account_deleted",
+            createdAt: new Date(0),
+          },
+        }];
+      }
+      if (collection === "storage_objects") {
+        assert.deepEqual(options.filters, [
+          { field: "ownerUid", op: "==", value: "user_deleted" },
+        ]);
+        assert.equal(options.limit, 25);
+        return objects.slice(0, options.limit);
+      }
+      throw new Error("unexpected_collection:" + collection);
+    },
+    async get() {
+      return { exists: false, data: null };
+    },
+    writeDelete(path) {
+      return { op: "delete", path };
+    },
+    writeCreate(path, data) {
+      return { op: "create", path, data };
+    },
+    async commit(_transaction, writes) {
+      commits.push(...writes);
+    },
+  };
+  const deletedKeys = [];
+  const bucket = {
+    async delete(key) {
+      deletedKeys.push(key);
+    },
+  };
+
+  const result = await runDeletedAccountStorageCleanup(
+    db,
+    bucket,
+    { nowMs: 1_000, limit: 25 },
+  );
+
+  assert.equal(result.jobsChecked, 1);
+  assert.equal(result.checked, 25);
+  assert.equal(result.deleted, 25);
+  assert.equal(result.failed, 0);
+  assert.equal(deletedKeys.length, 25);
+  assert.equal(
+    commits.some(
+      (write) =>
+        write.op === "delete" &&
+        write.path === "storage_account_cleanup_jobs/delete_op_1",
+    ),
+    false,
+  );
+  assert.equal(
+    commits.filter(
+      (write) =>
+        write.op === "delete" &&
+        write.path.startsWith("storage_objects/"),
+    ).length,
+    25,
+  );
+});
+
+test("deleted-account cleanup closes the job after the final partial batch", async () => {
+  const objects = [{
+    id: "a".repeat(32),
+    data: {
+      objectId: "a".repeat(32),
+      storageKey: "users/user_deleted/profile/a.jpg",
+      ownerUid: "user_deleted",
+      scope: "profile_image",
+      targetId: "user_deleted",
+      sizeBytes: 4,
+    },
+  }];
+  const commits = [];
+  const db = {
+    async runQuery(collection) {
+      if (collection === "storage_account_cleanup_jobs") {
+        return [{
+          id: "delete_op_final",
+          data: { ownerUid: "user_deleted", reason: "account_deleted" },
+        }];
+      }
+      if (collection === "storage_objects") return objects;
+      throw new Error("unexpected_collection:" + collection);
+    },
+    async get(path) {
+      if (path.startsWith("storage_active_objects/")) {
+        return { exists: true, data: { objectId: "a".repeat(32) } };
+      }
+      return { exists: false, data: null };
+    },
+    writeDelete(path) {
+      return { op: "delete", path };
+    },
+    writeCreate(path, data) {
+      return { op: "create", path, data };
+    },
+    async commit(_transaction, writes) {
+      commits.push(...writes);
+    },
+  };
+  const bucket = { async delete() {} };
+
+  const result = await runDeletedAccountStorageCleanup(
+    db,
+    bucket,
+    { nowMs: 2_000, limit: 25 },
+  );
+
+  assert.equal(result.checked, 1);
+  assert.equal(result.deleted, 1);
+  assert.equal(result.failed, 0);
+  assert.equal(
+    commits.some(
+      (write) =>
+        write.op === "delete" &&
+        write.path === "storage_account_cleanup_jobs/delete_op_final",
+    ),
+    true,
+  );
+  assert.equal(
+    commits.some(
+      (write) =>
+        write.op === "delete" &&
+        write.path.startsWith("storage_active_objects/"),
+    ),
+    true,
+  );
+});
+
+
+test("deleted-account cleanup transfers an active shared room cover instead of deleting it", async () => {
+  const objectId = "b".repeat(32);
+  const writes = [];
+  const db = {
+    async runQuery(collection) {
+      if (collection === "storage_account_cleanup_jobs") {
+        return [{
+          id: "delete_shared_room_uploader",
+          data: { ownerUid: "deleted_moderator", reason: "account_deleted" },
+        }];
+      }
+      if (collection === "storage_objects") {
+        return [{
+          id: objectId,
+          data: {
+            objectId,
+            storageKey: "rooms/room_shared/covers/b.webp",
+            ownerUid: "deleted_moderator",
+            scope: "room_cover",
+            targetId: "room_shared",
+            sizeBytes: 4,
+          },
+        }];
+      }
+      throw new Error("unexpected_collection:" + collection);
+    },
+    async get(path) {
+      if (path === "rooms/room_shared") {
+        return {
+          exists: true,
+          data: {
+            ownerUid: "room_owner",
+            coverImageObjectId: objectId,
+          },
+        };
+      }
+      if (path.startsWith("storage_active_objects/")) {
+        return { exists: true, data: { objectId, ownerUid: "deleted_moderator" } };
+      }
+      return { exists: false, data: null };
+    },
+    writeDelete(path) {
+      return { op: "delete", path };
+    },
+    writeUpdate(path, data, fields) {
+      return { op: "update", path, data, fields };
+    },
+    writeCreate(path, data) {
+      return { op: "create", path, data };
+    },
+    async commit(_transaction, batch) {
+      writes.push(...batch);
+    },
+  };
+  let bucketDeletes = 0;
+  const bucket = { async delete() { bucketDeletes += 1; } };
+
+  const result = await runDeletedAccountStorageCleanup(
+    db,
+    bucket,
+    { nowMs: 3_000, limit: 25 },
+  );
+
+  assert.equal(result.checked, 1);
+  assert.equal(result.deleted, 0);
+  assert.equal(result.transferred, 1);
+  assert.equal(result.failed, 0);
+  assert.equal(bucketDeletes, 0);
+  assert.equal(
+    writes.some(
+      (write) =>
+        write.op === "update" &&
+        write.path === `storage_objects/${objectId}` &&
+        write.data.ownerUid === "room_owner",
+    ),
+    true,
+  );
+  assert.equal(
+    writes.some(
+      (write) =>
+        write.op === "delete" &&
+        write.path === "storage_account_cleanup_jobs/delete_shared_room_uploader",
+    ),
+    true,
+  );
+});
+
+test("deleted-account profile cleanup clears active Firestore image references", async () => {
+  const objectId = "c".repeat(32);
+  const writes = [];
+  const db = {
+    async runQuery(collection) {
+      if (collection === "storage_account_cleanup_jobs") {
+        return [{
+          id: "delete_profile_media",
+          data: { ownerUid: "deleted_user", reason: "account_deleted" },
+        }];
+      }
+      if (collection === "storage_objects") {
+        return [{
+          id: objectId,
+          data: {
+            objectId,
+            storageKey: "users/deleted_user/profile/c.jpg",
+            ownerUid: "deleted_user",
+            scope: "profile_image",
+            targetId: "deleted_user",
+            sizeBytes: 4,
+          },
+        }];
+      }
+      throw new Error("unexpected_collection:" + collection);
+    },
+    async get(path) {
+      if (path === "users/deleted_user") {
+        return {
+          exists: true,
+          data: { profileImageObjectId: objectId },
+        };
+      }
+      if (path === "public_profiles/deleted_user") {
+        return {
+          exists: true,
+          data: { profileImageObjectId: objectId },
+        };
+      }
+      if (path.startsWith("storage_active_objects/")) {
+        return { exists: true, data: { objectId } };
+      }
+      return { exists: false, data: null };
+    },
+    writeDelete(path) {
+      return { op: "delete", path };
+    },
+    writeUpdate(path, data, fields) {
+      return { op: "update", path, data, fields };
+    },
+    writeCreate(path, data) {
+      return { op: "create", path, data };
+    },
+    async commit(_transaction, batch) {
+      writes.push(...batch);
+    },
+  };
+  const bucket = { async delete() {} };
+
+  const result = await runDeletedAccountStorageCleanup(
+    db,
+    bucket,
+    { nowMs: 4_000, limit: 25 },
+  );
+
+  assert.equal(result.deleted, 1);
+  assert.equal(result.failed, 0);
+  assert.equal(
+    writes.some(
+      (write) =>
+        write.op === "update" &&
+        write.path === "users/deleted_user" &&
+        write.data.profileImageObjectId === "" &&
+        write.data.profileImageUrl === "",
+    ),
+    true,
+  );
+  assert.equal(
+    writes.some(
+      (write) =>
+        write.op === "update" &&
+        write.path === "public_profiles/deleted_user" &&
+        write.data.profileImageObjectId === "",
+    ),
+    true,
+  );
+});
+
+
+test("deleted official-room host does not delete the active room cover", async () => {
+  const objectId = "d".repeat(32);
+  const writes = [];
+  const db = {
+    async runQuery(collection) {
+      if (collection === "storage_account_cleanup_jobs") {
+        return [{
+          id: "delete_official_host",
+          data: { ownerUid: "deleted_host", reason: "account_deleted" },
+        }];
+      }
+      if (collection === "storage_objects") {
+        return [{
+          id: objectId,
+          data: {
+            objectId,
+            storageKey: "rooms/official_room/covers/d.webp",
+            ownerUid: "deleted_host",
+            scope: "room_cover",
+            targetId: "official_room",
+            sizeBytes: 4,
+          },
+        }];
+      }
+      throw new Error("unexpected_collection:" + collection);
+    },
+    async get(path) {
+      if (path === "rooms/official_room") {
+        return {
+          exists: true,
+          data: {
+            systemOwned: true,
+            ownerUid: "",
+            hostId: "deleted_host",
+            coverImageObjectId: objectId,
+          },
+        };
+      }
+      if (path.startsWith("storage_active_objects/")) {
+        return { exists: true, data: { objectId, ownerUid: "deleted_host" } };
+      }
+      return { exists: false, data: null };
+    },
+    writeDelete(path) {
+      return { op: "delete", path };
+    },
+    writeUpdate(path, data, fields) {
+      return { op: "update", path, data, fields };
+    },
+    writeCreate(path, data) {
+      return { op: "create", path, data };
+    },
+    async commit(_transaction, batch) {
+      writes.push(...batch);
+    },
+  };
+  let bucketDeletes = 0;
+  const bucket = { async delete() { bucketDeletes += 1; } };
+
+  const result = await runDeletedAccountStorageCleanup(
+    db,
+    bucket,
+    { nowMs: 5_000, limit: 25 },
+  );
+
+  assert.equal(result.deleted, 0);
+  assert.equal(result.transferred, 1);
+  assert.equal(result.failed, 0);
+  assert.equal(bucketDeletes, 0);
+  assert.equal(
+    writes.some(
+      (write) =>
+        write.op === "update" &&
+        write.path === `storage_objects/${objectId}` &&
+        write.data.ownerUid === "room:official_room",
+    ),
+    true,
+  );
+});
+
+test("room settings validation is room-scoped rather than uploader-scoped", () => {
+  const source = fs.readFileSync(
+    new URL("../../cloudflare-worker/src/voice-session-legacy.js", import.meta.url),
+    "utf8",
+  );
+  const settingsStart = source.indexOf("async function updateRoomSettings");
+  const settingsEnd = source.indexOf("async function", settingsStart + 20);
+  const settingsSource = source.slice(
+    settingsStart,
+    settingsEnd > settingsStart ? settingsEnd : undefined,
+  );
+  assert.match(settingsSource, /permissions\.manageRooms/);
+  assert.doesNotMatch(settingsSource, /clean\(media\.ownerUid\)!==uid/);
 });

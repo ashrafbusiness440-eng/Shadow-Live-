@@ -153,6 +153,64 @@ jobs:
           }
           NODE
 
+      - name: Reject expired presigned R2 PUT URL
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { AwsClient } from "aws4fetch";
+          import { presignR2Put } from "./src/r2-presign.js";
+
+          const env = {
+            R2_ACCOUNT_ID: String(process.env.CLOUDFLARE_ACCOUNT_ID || "").trim(),
+            R2_ACCESS_KEY_ID: String(process.env.R2_ACCESS_KEY_ID || "").trim(),
+            R2_SECRET_ACCESS_KEY: String(process.env.R2_SECRET_ACCESS_KEY || "").trim(),
+          };
+          if (!env.R2_ACCOUNT_ID || !env.R2_ACCESS_KEY_ID || !env.R2_SECRET_ACCESS_KEY) {
+            throw new Error("missing_r2_expiry_credentials");
+          }
+
+          const key =
+            `_shadow_live_smoke/expired-${process.env.GITHUB_RUN_ID || "local"}.png`;
+          const mimeType = "image/png";
+          const expiredUrl = await presignR2Put(env, {
+            key,
+            mimeType,
+            expiresSeconds: 30,
+          });
+
+          await new Promise((resolve) => setTimeout(resolve, 31_500));
+          const expiredPut = await fetch(expiredUrl, {
+            method: "PUT",
+            headers: { "content-type": mimeType },
+            body: new Uint8Array([137, 80, 78, 71]),
+          });
+          if (expiredPut.ok) {
+            throw new Error("expired_presigned_put_was_accepted");
+          }
+          if (expiredPut.status !== 401 && expiredPut.status !== 403) {
+            throw new Error(
+              `expired_presigned_put_unexpected_status:${expiredPut.status}`,
+            );
+          }
+
+          const encodedKey = key.split("/").map(encodeURIComponent).join("/");
+          const objectUrl =
+            `https://${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com/shadow-live-storage/${encodedKey}`;
+          const directClient = new AwsClient({
+            accessKeyId: env.R2_ACCESS_KEY_ID,
+            secretAccessKey: env.R2_SECRET_ACCESS_KEY,
+            service: "s3",
+            region: "auto",
+          });
+          await directClient.fetch(objectUrl, { method: "DELETE" }).catch(() => {});
+
+          console.log("R2_EXPIRED_PRESIGNED_PUT=REJECTED");
+          NODE
+
       - name: Validate Worker bundle with R2 binding
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

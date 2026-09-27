@@ -1,12 +1,10 @@
-import 'dart:typed_data';
 import 'dart:math';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import '../../utils/search_index.dart';
 
 class FirebaseService {
- final FirebaseAuth _auth=FirebaseAuth.instance;final FirebaseFirestore _firestore=FirebaseFirestore.instance;final FirebaseStorage _storage=FirebaseStorage.instance;
+ final FirebaseAuth _auth=FirebaseAuth.instance;final FirebaseFirestore _firestore=FirebaseFirestore.instance;
  Future<UserCredential> signInWithEmail(String email,String password)async{try{return await _auth.signInWithEmailAndPassword(email:email.trim(),password:password);}catch(e){throw _handleAuthError(e);}}
  Future<UserCredential> signUpWithEmail(String email,String password)async{try{return await _auth.createUserWithEmailAndPassword(email:email.trim(),password:password);}catch(e){throw _handleAuthError(e);}}
  Future<void> verifyPhoneNumber({required String phoneNumber,required void Function(PhoneAuthCredential credential) verificationCompleted,required void Function(FirebaseAuthException error) verificationFailed,required void Function(String verificationId,int? resendToken) codeSent,required void Function(String verificationId) codeAutoRetrievalTimeout})async{await _auth.verifyPhoneNumber(phoneNumber:phoneNumber,verificationCompleted:verificationCompleted,verificationFailed:verificationFailed,codeSent:codeSent,codeAutoRetrievalTimeout:codeAutoRetrievalTimeout);}
@@ -83,8 +81,6 @@ class FirebaseService {
  }
  Future<String> createRoom(Map<String,dynamic> roomData)async{try{return(await _firestore.collection('rooms').add(_roomSearchData(roomData))).id;}catch(e){throw Exception('Failed to create room: $e');}}
  Stream<QuerySnapshot> getRooms()=>_firestore.collection('rooms').where('isActive',isEqualTo:true).orderBy('createdAt',descending:true).snapshots();Future<void> updateRoom(String roomId,Map<String,dynamic> data)async{try{final payload=(data.containsKey('name')||data.containsKey('title'))?_roomSearchData(data):data;await _firestore.collection('rooms').doc(roomId).update(payload);}catch(e){throw Exception('Failed to update room: $e');}}
- Future<String> uploadFile(String path,List<int> data)async{try{final ref=_storage.ref().child(path);final lower=path.toLowerCase();final contentType=lower.endsWith('.png')?'image/png':lower.endsWith('.webp')?'image/webp':lower.endsWith('.jpg')||lower.endsWith('.jpeg')?'image/jpeg':'application/octet-stream';await ref.putData(Uint8List.fromList(data),SettableMetadata(contentType:contentType)).timeout(const Duration(seconds:30));final url=await ref.getDownloadURL().timeout(const Duration(seconds:15));return '$url&v=${DateTime.now().millisecondsSinceEpoch}';}catch(e){throw Exception('Failed to upload file: $e');}}
- Future<void> deleteFile(String path)async{try{await _storage.ref().child(path).delete();}catch(e){throw Exception('Failed to delete file: $e');}}
  Exception _handleAuthError(dynamic e){if(e is FirebaseAuthException){switch(e.code){case'user-not-found':return Exception('لا يوجد حساب بهذا البريد');case'wrong-password':case'invalid-credential':return Exception('بيانات تسجيل الدخول غير صحيحة');case'email-already-in-use':return Exception('البريد مستخدم بالفعل');case'invalid-email':return Exception('البريد الإلكتروني غير صالح');case'weak-password':return Exception('كلمة المرور ضعيفة');case'too-many-requests':return Exception('محاولات كثيرة، حاول لاحقاً');case'network-request-failed':return Exception('تحقق من اتصال الإنترنت');default:return Exception(e.message??'فشل تسجيل الدخول');}}return Exception('فشل تسجيل الدخول: $e');}
  CollectionReference<Map<String,dynamic>> getCollection(String path)=>_firestore.collection(path);
 }

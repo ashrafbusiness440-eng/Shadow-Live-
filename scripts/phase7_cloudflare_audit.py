@@ -91,6 +91,24 @@ def main() -> int:
         if route not in worker_text:
             violations.append(f"missing Cloudflare Worker route: {route}")
 
+    # R2 cutover invariant: active Flutter code must not regain Firebase Storage.
+    for active_root in (ROOT / "lib", ROOT / "test"):
+        if not active_root.exists():
+            continue
+        for dart_file in active_root.rglob("*.dart"):
+            try:
+                dart_text = dart_file.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                continue
+            if "firebase_storage" in dart_text or "FirebaseStorage" in dart_text:
+                rel = dart_file.relative_to(ROOT)
+                violations.append(f"{rel}: legacy Firebase Storage usage remains")
+
+    pubspec = ROOT / "pubspec.yaml"
+    pubspec_text = pubspec.read_text(encoding="utf-8") if pubspec.exists() else ""
+    if re.search(r"(?m)^\s*firebase_storage\s*:", pubspec_text):
+        violations.append("pubspec.yaml: firebase_storage dependency remains")
+
     endpoints = ROOT / "lib" / "admin" / "control_api_endpoints.dart"
     endpoints_text = endpoints.read_text(encoding="utf-8") if endpoints.exists() else ""
     if "SHADOW_CLOUDFLARE_API_BASE_URL" not in endpoints_text:
@@ -105,7 +123,10 @@ def main() -> int:
         return 1
 
     print("Phase 7 Cloudflare cutover audit passed.")
-    print(f"Verified {len(REQUIRED_WORKER_ROUTES)} production Worker routes and no legacy Vercel dependency.")
+    print(
+        f"Verified {len(REQUIRED_WORKER_ROUTES)} production Worker routes, "
+        "no legacy Vercel dependency, and zero active Firebase Storage usage."
+    )
     return 0
 
 if __name__ == "__main__":

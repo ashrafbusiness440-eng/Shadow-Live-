@@ -209,6 +209,36 @@ async function authContext(request, env) {
   return { uid, decoded, db: firestoreClient(env) };
 }
 
+async function authorizeRoomCoverManagement(db, uid, targetId) {
+  const [room, actor] = await Promise.all([
+    db.get(`rooms/${targetId}`),
+    db.get(`users/${uid}`),
+  ]);
+  if (!room.exists) throw new StorageApiError("room_not_found", 404);
+
+  const ownerUid = clean(room.data?.ownerUid || room.data?.ownerId);
+  const hostUid = clean(room.data?.hostUid || room.data?.hostId);
+  const actorRole = clean(actor.data?.role);
+  const actorEnabled = actor.data?.adminEnabled === true;
+  const actorCapabilities = Array.isArray(actor.data?.capabilities)
+    ? actor.data.capabilities.map(clean)
+    : [];
+  const globalManageRooms =
+    actorRole === "owner" ||
+    (
+      actorEnabled &&
+      (
+        actorCapabilities.includes("manageRooms") ||
+        actorCapabilities.includes("manage_rooms")
+      )
+    );
+
+  if (uid !== ownerUid && uid !== hostUid && !globalManageRooms) {
+    throw new StorageApiError("forbidden", 403);
+  }
+  return { targetId, room: room.data || {} };
+}
+
 async function authorizeUpload(db, uid, scope, rawTargetId) {
   if (scope === "profile_image" || scope === "profile_cover") {
     return { targetId: uid };
@@ -220,13 +250,7 @@ async function authorizeUpload(db, uid, scope, rawTargetId) {
   }
 
   if (scope === "room_cover") {
-    const room = await db.get(`rooms/${targetId}`);
-    if (!room.exists) throw new StorageApiError("room_not_found", 404);
-    const ownerUid = clean(room.data?.ownerUid || room.data?.hostId);
-    const hostId = clean(room.data?.hostId);
-    if (uid !== ownerUid && uid !== hostId) {
-      throw new StorageApiError("forbidden", 403);
-    }
+    await authorizeRoomCoverManagement(db, uid, targetId);
     return { targetId };
   }
 
@@ -302,7 +326,11 @@ async function authorizeRead(db, uid, metadata) {
   throw new StorageApiError("forbidden", 403);
 }
 
-function authorizeDelete(uid, metadata) {
+async function authorizeDelete(db, uid, metadata) {
+  if (clean(metadata.scope) === "room_cover") {
+    await authorizeRoomCoverManagement(db, uid, clean(metadata.targetId));
+    return true;
+  }
   if (clean(metadata.ownerUid) !== uid) {
     throw new StorageApiError("forbidden", 403);
   }
@@ -359,7 +387,7 @@ async function prepareUpload(request, env, auth, body) {
     effectiveReplaceObjectId = activeObjectId || replaceObjectId;
     if (effectiveReplaceObjectId) {
       previous = await metadataForObject(auth.db, effectiveReplaceObjectId);
-      authorizeDelete(auth.uid, previous);
+      await authorizeDelete(auth.db, auth.uid, previous);
       if (
         clean(previous.scope) !== scope ||
         clean(previous.targetId) !== clean(authorization.targetId)
@@ -439,6 +467,13 @@ async function confirmUpload(request, env, auth, body) {
   if (clean(ticket.ownerUid) !== auth.uid) {
     throw new StorageApiError("forbidden", 403);
   }
+  if (clean(ticket.scope) === "room_cover") {
+    await authorizeRoomCoverManagement(
+      auth.db,
+      auth.uid,
+      clean(ticket.targetId),
+    );
+  }
 
   const bucket = bucketFromEnv(env);
   if (timestampMs(ticket.expiresAt) < Date.now()) {
@@ -499,7 +534,10 @@ async function confirmUpload(request, env, auth, body) {
       );
       if (
         !snap.exists ||
-        clean(snap.data?.ownerUid) !== auth.uid ||
+        (
+          clean(ticket.scope) !== "room_cover" &&
+          clean(snap.data?.ownerUid) !== auth.uid
+        ) ||
         clean(snap.data?.scope) !== clean(ticket.scope) ||
         clean(snap.data?.targetId) !== clean(ticket.targetId)
       ) {
@@ -639,6 +677,337 @@ async function replacementObjectStillReferenced(
   return clean(snapshot.data?.[field]) === clean(objectId);
 }
 
+async function transferSharedRoomCoverOnAccountDeletion({
+  db,
+  deletedUid,
+  item,
+  objectId,
+  nowMs,
+}) {
+  if (clean(item?.data?.scope) !== "room_cover") return "";
+
+  const targetId = clean(item?.data?.targetId);
+  if (!targetId) return "";
+
+  const room = await db.get(`rooms/${targetId}`);
+  if (
+    !room.exists ||
+    clean(room.data?.coverImageObjectId) !== objectId
+  ) {
+    return "";
+  }
+
+  const isOfficialRoom =
+    room.data?.systemOwned === true ||
+    room.data?.officialRoom === true;
+  const directOwnerUid = clean(
+    room.data?.ownerUid ||
+    room.data?.ownerId,
+  );
+  const roomOwnerUid =
+    directOwnerUid && directOwnerUid !== deletedUid
+      ? directOwnerUid
+      : isOfficialRoom
+        ? `room:${targetId}`
+        : "";
+  if (!roomOwnerUid) return "";
+
+  const now = new Date(nowMs);
+  const writes = [
+    db.writeUpdate(
+      `storage_objects/${objectId}`,
+      { ownerUid: roomOwnerUid, updatedAt: now },
+      ["ownerUid", "updatedAt"],
+    ),
+    db.writeCreate(`storage_audit_logs/${auditId()}`, {
+      actorUid: "system",
+      subjectUid: deletedUid,
+      action: "transferDeletedAccountRoomCoverOwnership",
+      objectId,
+      scope: "room_cover",
+      targetId,
+      transferredToUid: roomOwnerUid,
+      reason: "shared_room_cover_still_active",
+      createdAt: now,
+    }),
+  ];
+
+  const pointerPath = storageActivePointerPath("room_cover", targetId);
+  const pointer = await db.get(pointerPath);
+  if (
+    pointer.exists &&
+    clean(pointer.data?.objectId) === objectId
+  ) {
+    writes.push(
+      db.writeUpdate(
+        pointerPath,
+        { ownerUid: roomOwnerUid, updatedAt: now },
+        ["ownerUid", "updatedAt"],
+      ),
+    );
+  }
+
+  await db.commit(null, writes);
+  return roomOwnerUid;
+}
+
+async function accountDeletionReferenceWrites({
+  db,
+  ownerUid,
+  item,
+  objectId,
+}) {
+  const scope = clean(item?.data?.scope);
+  const targetId = clean(item?.data?.targetId);
+  const writes = [];
+
+  if (scope === "profile_image" || scope === "profile_cover") {
+    const userId = targetId || ownerUid;
+    const [user, publicProfile] = await Promise.all([
+      db.get(`users/${userId}`),
+      db.get(`public_profiles/${userId}`),
+    ]);
+
+    if (scope === "profile_image") {
+      if (
+        user.exists &&
+        clean(user.data?.profileImageObjectId) === objectId
+      ) {
+        writes.push(
+          db.writeUpdate(
+            `users/${userId}`,
+            {
+              profileImageUrl: "",
+              profileImageObjectId: "",
+              photoUrl: "",
+              avatarUrl: "",
+            },
+            [
+              "profileImageUrl",
+              "profileImageObjectId",
+              "photoUrl",
+              "avatarUrl",
+            ],
+          ),
+        );
+      }
+      if (
+        publicProfile.exists &&
+        clean(publicProfile.data?.profileImageObjectId) === objectId
+      ) {
+        writes.push(
+          db.writeUpdate(
+            `public_profiles/${userId}`,
+            {
+              profileImageUrl: "",
+              profileImageObjectId: "",
+            },
+            ["profileImageUrl", "profileImageObjectId"],
+          ),
+        );
+      }
+    } else {
+      if (
+        user.exists &&
+        clean(user.data?.coverImageObjectId) === objectId
+      ) {
+        writes.push(
+          db.writeUpdate(
+            `users/${userId}`,
+            { coverImageUrl: "", coverImageObjectId: "" },
+            ["coverImageUrl", "coverImageObjectId"],
+          ),
+        );
+      }
+      if (
+        publicProfile.exists &&
+        clean(publicProfile.data?.coverImageObjectId) === objectId
+      ) {
+        writes.push(
+          db.writeUpdate(
+            `public_profiles/${userId}`,
+            { coverImageUrl: "", coverImageObjectId: "" },
+            ["coverImageUrl", "coverImageObjectId"],
+          ),
+        );
+      }
+    }
+  }
+
+  if (scope === "room_cover" && targetId) {
+    const room = await db.get(`rooms/${targetId}`);
+    if (
+      room.exists &&
+      clean(room.data?.coverImageObjectId) === objectId
+    ) {
+      writes.push(
+        db.writeUpdate(
+          `rooms/${targetId}`,
+          { coverImageUrl: "", coverImageObjectId: "" },
+          ["coverImageUrl", "coverImageObjectId"],
+        ),
+      );
+    }
+  }
+
+  return writes;
+}
+
+async function deleteAccountOwnedStorageObject({
+  db,
+  bucket,
+  ownerUid,
+  item,
+  nowMs,
+}) {
+  const objectId = clean(item?.data?.objectId || item?.id);
+  const storageKey = clean(item?.data?.storageKey);
+  if (!objectId || !storageKey) {
+    throw new Error("invalid_account_cleanup_object");
+  }
+
+  const transferredToUid = await transferSharedRoomCoverOnAccountDeletion({
+    db,
+    deletedUid: ownerUid,
+    item,
+    objectId,
+    nowMs,
+  });
+  if (transferredToUid) {
+    return { objectId, deleted: false, transferredToUid };
+  }
+
+  const referenceWrites = await accountDeletionReferenceWrites({
+    db,
+    ownerUid,
+    item,
+    objectId,
+  });
+
+  await bucket.delete(storageKey);
+
+  const writes = [
+    ...referenceWrites,
+    db.writeDelete(`storage_objects/${objectId}`),
+    db.writeDelete(`storage_delete_queue/${objectId}`),
+    db.writeCreate(`storage_audit_logs/${auditId()}`, {
+      actorUid: "system",
+      subjectUid: ownerUid,
+      action: "cleanupDeletedAccountStorageObject",
+      objectId,
+      scope: clean(item?.data?.scope),
+      targetId: clean(item?.data?.targetId),
+      sizeBytes: Number(item?.data?.sizeBytes || 0),
+      reason: "account_deleted",
+      createdAt: new Date(nowMs),
+    }),
+  ];
+
+  if (isReplaceableStorageScope(item?.data?.scope)) {
+    const pointerPath = storageActivePointerPath(
+      item.data.scope,
+      item.data.targetId,
+    );
+    const pointer = await db.get(pointerPath);
+    if (
+      pointer.exists &&
+      clean(pointer.data?.objectId) === objectId
+    ) {
+      writes.push(db.writeDelete(pointerPath));
+    }
+  }
+
+  await db.commit(null, writes);
+  return { objectId, deleted: true, transferredToUid: "" };
+}
+
+export async function runDeletedAccountStorageCleanup(
+  db,
+  bucket,
+  {
+    nowMs = Date.now(),
+    limit = STORAGE_DELETE_BATCH_LIMIT,
+  } = {},
+) {
+  const budget = Math.max(
+    0,
+    Math.min(STORAGE_DELETE_BATCH_LIMIT, Number(limit || 0)),
+  );
+  if (budget <= 0) {
+    return { jobsChecked: 0, checked: 0, deleted: 0, failed: 0 };
+  }
+
+  const jobs = await db.runQuery("storage_account_cleanup_jobs", {
+    orderBy: [{ field: "createdAt", direction: "asc" }],
+    limit: 1,
+  });
+  if (!jobs.length) {
+    return { jobsChecked: 0, checked: 0, deleted: 0, failed: 0 };
+  }
+
+  const job = jobs[0];
+  const ownerUid = clean(job.data?.ownerUid);
+  if (!ownerUid) {
+    await db.commit(null, [
+      db.writeDelete(`storage_account_cleanup_jobs/${job.id}`),
+    ]);
+    return { jobsChecked: 1, checked: 0, deleted: 0, failed: 1 };
+  }
+
+  const objects = await db.runQuery("storage_objects", {
+    filters: [{ field: "ownerUid", op: "==", value: ownerUid }],
+    limit: budget,
+  });
+
+  let deleted = 0;
+  let transferred = 0;
+  let failed = 0;
+  for (const item of objects) {
+    try {
+      const cleanup = await deleteAccountOwnedStorageObject({
+        db,
+        bucket,
+        ownerUid,
+        item,
+        nowMs,
+      });
+      if (cleanup.deleted) deleted += 1;
+      if (cleanup.transferredToUid) transferred += 1;
+    } catch (error) {
+      failed += 1;
+      console.error(
+        "R2 deleted-account cleanup failed",
+        JSON.stringify({
+          ownerUid,
+          objectId: clean(item?.data?.objectId || item?.id),
+          code: clean(error?.code || error?.message || "cleanup_failed").slice(0, 120),
+        }),
+      );
+    }
+  }
+
+  if (objects.length < budget && failed === 0) {
+    await db.commit(null, [
+      db.writeDelete(`storage_account_cleanup_jobs/${job.id}`),
+      db.writeCreate(`storage_audit_logs/${auditId()}`, {
+        actorUid: "system",
+        subjectUid: ownerUid,
+        action: "completeDeletedAccountStorageCleanup",
+        reason: clean(job.data?.reason || "account_deleted"),
+        createdAt: new Date(nowMs),
+      }),
+    ]);
+  }
+
+  return {
+    jobsChecked: 1,
+    checked: objects.length,
+    deleted,
+    transferred,
+    failed,
+  };
+}
+
 export async function runDueStorageCleanup(
   env,
   {
@@ -648,13 +1017,31 @@ export async function runDueStorageCleanup(
 ) {
   const bucket = bucketFromEnv(env);
   const db = firestoreClient(env);
-  const due = await db.runQuery("storage_delete_queue", {
-    filters: [
-      { field: "deleteAfter", op: "<=", value: new Date(nowMs) },
-    ],
-    orderBy: [{ field: "deleteAfter", direction: "asc" }],
-    limit: Math.max(1, Math.min(STORAGE_DELETE_BATCH_LIMIT, Number(limit || STORAGE_DELETE_BATCH_LIMIT))),
-  });
+  const maxBatch = Math.max(
+    1,
+    Math.min(
+      STORAGE_DELETE_BATCH_LIMIT,
+      Number(limit || STORAGE_DELETE_BATCH_LIMIT),
+    ),
+  );
+  let remainingBudget = maxBatch;
+
+  const accountCleanup = await runDeletedAccountStorageCleanup(
+    db,
+    bucket,
+    { nowMs, limit: remainingBudget },
+  );
+  remainingBudget = Math.max(0, remainingBudget - accountCleanup.checked);
+
+  const due = remainingBudget > 0
+    ? await db.runQuery("storage_delete_queue", {
+        filters: [
+          { field: "deleteAfter", op: "<=", value: new Date(nowMs) },
+        ],
+        orderBy: [{ field: "deleteAfter", direction: "asc" }],
+        limit: remainingBudget,
+      })
+    : [];
 
   let deleted = 0;
   let failed = 0;
@@ -719,19 +1106,16 @@ export async function runDueStorageCleanup(
     }
   }
 
-  const expiredTickets = await db.runQuery("storage_upload_tickets", {
-    filters: [
-      { field: "expiresAt", op: "<=", value: new Date(nowMs) },
-    ],
-    orderBy: [{ field: "expiresAt", direction: "asc" }],
-    limit: Math.max(
-      1,
-      Math.min(
-        STORAGE_DELETE_BATCH_LIMIT,
-        Number(limit || STORAGE_DELETE_BATCH_LIMIT),
-      ),
-    ),
-  });
+  remainingBudget = Math.max(0, remainingBudget - due.length);
+  const expiredTickets = remainingBudget > 0
+    ? await db.runQuery("storage_upload_tickets", {
+        filters: [
+          { field: "expiresAt", op: "<=", value: new Date(nowMs) },
+        ],
+        orderBy: [{ field: "expiresAt", direction: "asc" }],
+        limit: remainingBudget,
+      })
+    : [];
 
   let expiredTicketsCleaned = 0;
   let expiredTicketFailures = 0;
@@ -772,7 +1156,15 @@ export async function runDueStorageCleanup(
   }
 
   return {
-    checked: due.length + expiredTickets.length,
+    checked:
+      accountCleanup.checked +
+      due.length +
+      expiredTickets.length,
+    accountCleanupJobsChecked: accountCleanup.jobsChecked,
+    accountCleanupChecked: accountCleanup.checked,
+    accountCleanupDeleted: accountCleanup.deleted,
+    accountCleanupTransferred: accountCleanup.transferred,
+    accountCleanupFailed: accountCleanup.failed,
     replacementChecked: due.length,
     replacementDeleted: deleted,
     replacementDeferred: deferred,
@@ -780,8 +1172,14 @@ export async function runDueStorageCleanup(
     expiredTicketsChecked: expiredTickets.length,
     expiredTicketsCleaned,
     expiredTicketFailures,
-    deleted: deleted + expiredTicketsCleaned,
-    failed: failed + expiredTicketFailures,
+    deleted:
+      accountCleanup.deleted +
+      deleted +
+      expiredTicketsCleaned,
+    failed:
+      accountCleanup.failed +
+      failed +
+      expiredTicketFailures,
   };
 }
 
@@ -809,7 +1207,7 @@ async function deleteObject(request, env, auth) {
     auth.db,
     url.searchParams.get("objectId"),
   );
-  authorizeDelete(auth.uid, metadata);
+  await authorizeDelete(auth.db, auth.uid, metadata);
 
   const now = new Date();
   const writes = [
