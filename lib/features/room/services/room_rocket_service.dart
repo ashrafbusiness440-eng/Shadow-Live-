@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
+
+import 'room_presence_socket.dart';
 
 class RoomRocketEvent {
   const RoomRocketEvent({
@@ -32,13 +35,10 @@ class RoomRocketEvent {
   bool activeAt(int nowMs) => nowMs >= startsAtMs && nowMs < endsAtMs;
   bool endedAt(int nowMs) => nowMs >= endsAtMs;
 
-  factory RoomRocketEvent.fromDoc(
-    QueryDocumentSnapshot<Map<String, dynamic>> doc,
-  ) {
-    final data = doc.data();
+  factory RoomRocketEvent.fromMap(Map<String, dynamic> data) {
     final top3 = data['top3'] is List ? data['top3'] as List : const [];
     return RoomRocketEvent(
-      id: doc.id,
+      id: (data['explosionId'] ?? data['id'] ?? '').toString(),
       roomId: (data['roomId'] ?? '').toString(),
       level: (data['level'] as num?)?.toInt() ?? 0,
       startsAtMs: (data['startsAtMs'] as num?)?.toInt() ?? 0,
@@ -61,6 +61,14 @@ class RoomRocketEvent {
           .toList(growable: false),
     );
   }
+
+  factory RoomRocketEvent.fromDoc(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) =>
+      RoomRocketEvent.fromMap({
+        ...doc.data(),
+        'id': doc.id,
+      });
 }
 
 class RoomRocketState {
@@ -116,26 +124,225 @@ class RoomRocketService {
         _baseUrl = baseUrl ??
             const String.fromEnvironment(
               'SHADOW_CLOUDFLARE_API_BASE_URL',
-              defaultValue: 'https://shadow-live.ashraf-business-440.workers.dev/api',
+              defaultValue:
+                  'https://shadow-live.ashraf-business-440.workers.dev/api',
             );
+
+  static const int _maxFeedEvents = 80;
+  static const int _feedRetentionMs = 120000;
 
   final FirebaseFirestore _firestore;
   final FirebaseAuth _auth;
   final http.Client _client;
   final String _baseUrl;
 
+  final StreamController<List<RoomRocketEvent>> _feedController =
+      StreamController<List<RoomRocketEvent>>.broadcast();
+  final Map<String, RoomRocketEvent> _feedEvents = <String, RoomRocketEvent>{};
+
+  StreamSubscription<User?>? _authSubscription;
+  RoomPresenceSocketConnection? _feedSocket;
+  StreamSubscription<Object?>? _feedSocketSubscription;
+  Timer? _feedReconnectTimer;
+  int _feedGeneration = 0;
+  int _feedReconnectAttempt = 0;
+  bool _feedStarted = false;
+
   Stream<List<RoomRocketEvent>> watchRecentEvents() {
-    return _firestore
-        .collection('room_rocket_explosions')
-        .orderBy('startsAtMs', descending: true)
-        .limit(80)
-        .snapshots()
-        .map(
-          (snapshot) => snapshot.docs
-              .map(RoomRocketEvent.fromDoc)
-              .where((event) => event.roomId.isNotEmpty)
-              .toList(growable: false),
+    if (!_feedStarted) {
+      _feedStarted = true;
+      _authSubscription = _auth.idTokenChanges().listen((user) {
+        _feedGeneration += 1;
+        final generation = _feedGeneration;
+        _feedReconnectAttempt = 0;
+        _feedReconnectTimer?.cancel();
+        _feedReconnectTimer = null;
+
+        if (user == null) {
+          _feedEvents.clear();
+          _emitFeedEvents();
+          unawaited(_closeFeedSocket());
+          return;
+        }
+
+        unawaited(
+          _connectRocketFeed(generation).catchError((_) {}),
         );
+      });
+    }
+    return _feedController.stream;
+  }
+
+  Uri _socketUri(String socketPath) {
+    final base = Uri.parse(_baseUrl);
+    final resolved = base.resolve(socketPath);
+    return resolved.replace(
+      scheme: resolved.scheme == 'http' ? 'ws' : 'wss',
+    );
+  }
+
+  Future<Map<String, dynamic>> _requestRocketFeedTicket() async {
+    final token = await _auth.currentUser?.getIdToken();
+    if (token == null || token.isEmpty) throw StateError('not_signed_in');
+    final response = await _client
+        .post(
+          Uri.parse('$_baseUrl/room-realtime'),
+          headers: {
+            'authorization': 'Bearer $token',
+            'content-type': 'application/json',
+          },
+          body: jsonEncode({
+            'action': 'rocketFeedTicket',
+            'reconnectAttempt': _feedReconnectAttempt,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+
+    final decoded = response.body.isEmpty
+        ? <String, dynamic>{}
+        : Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+    if (response.statusCode != 200 || decoded['ok'] != true) {
+      throw StateError(
+        (decoded['code'] ?? 'rocket_feed_ticket_failed').toString(),
+      );
+    }
+    return decoded;
+  }
+
+  void _scheduleFeedReconnect(int generation) {
+    if (generation != _feedGeneration || _auth.currentUser == null) return;
+    if (_feedReconnectTimer?.isActive == true) return;
+    if (_feedReconnectAttempt >= 3) return;
+
+    final delaySeconds = 1 << _feedReconnectAttempt;
+    _feedReconnectAttempt += 1;
+    _feedReconnectTimer = Timer(Duration(seconds: delaySeconds), () {
+      if (generation != _feedGeneration || _auth.currentUser == null) return;
+      unawaited(
+        _connectRocketFeed(generation).catchError((_) {}),
+      );
+    });
+  }
+
+  void _handleFeedEnded(
+    int generation,
+    RoomPresenceSocketConnection connection,
+  ) {
+    if (generation != _feedGeneration) return;
+    if (!identical(_feedSocket, connection)) return;
+    _feedSocket = null;
+    _feedSocketSubscription = null;
+    _scheduleFeedReconnect(generation);
+  }
+
+  Future<void> _connectRocketFeed(int generation) async {
+    if (generation != _feedGeneration || _auth.currentUser == null) return;
+
+    try {
+      final ticket = await _requestRocketFeedTicket();
+      if (generation != _feedGeneration || _auth.currentUser == null) return;
+
+      final socketPath = (ticket['socketPath'] ?? '').toString();
+      if (socketPath.isEmpty) throw StateError('rocket_feed_socket_missing');
+      final connection = await connectRoomPresenceSocket(
+        _socketUri(socketPath),
+      );
+      if (generation != _feedGeneration || _auth.currentUser == null) {
+        await connection.close();
+        return;
+      }
+
+      final oldSubscription = _feedSocketSubscription;
+      final oldSocket = _feedSocket;
+      _feedSocket = connection;
+      _feedReconnectAttempt = 0;
+      _feedReconnectTimer?.cancel();
+      _feedReconnectTimer = null;
+      await oldSubscription?.cancel();
+      if (oldSocket != null && !identical(oldSocket, connection)) {
+        await oldSocket.close();
+      }
+
+      _feedSocketSubscription = connection.messages.listen(
+        _handleFeedMessage,
+        onError: (_) => _handleFeedEnded(generation, connection),
+        onDone: () => _handleFeedEnded(generation, connection),
+        cancelOnError: false,
+      );
+    } catch (_) {
+      _scheduleFeedReconnect(generation);
+      rethrow;
+    }
+  }
+
+  void _handleFeedMessage(Object? raw) {
+    if (raw is! String || raw.isEmpty) return;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return;
+      final envelope = Map<String, dynamic>.from(decoded);
+      final type = (envelope['type'] ?? '').toString();
+      final rawPayload = envelope['payload'];
+      final payload = rawPayload is Map
+          ? Map<String, dynamic>.from(rawPayload)
+          : <String, dynamic>{};
+
+      if (type == 'server.ready') {
+        final rawEvents = payload['recentEvents'];
+        if (rawEvents is List) {
+          _feedEvents.clear();
+          for (final rawEvent in rawEvents.whereType<Map>()) {
+            _upsertFeedEvent(Map<String, dynamic>.from(rawEvent));
+          }
+          _emitFeedEvents();
+        }
+        return;
+      }
+
+      if (type == 'room.rocket_explosion') {
+        _upsertFeedEvent(payload);
+        _emitFeedEvents();
+      }
+    } catch (_) {
+      // A malformed/future realtime message must never affect room audio.
+    }
+  }
+
+  void _upsertFeedEvent(Map<String, dynamic> data) {
+    final event = RoomRocketEvent.fromMap(data);
+    if (event.id.isEmpty || event.roomId.isEmpty) return;
+    _feedEvents[event.id] = event;
+  }
+
+  void _emitFeedEvents() {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    _feedEvents.removeWhere(
+      (_, event) => event.endsAtMs + _feedRetentionMs <= nowMs,
+    );
+    final events = _feedEvents.values.toList(growable: false)
+      ..sort((a, b) => b.startsAtMs.compareTo(a.startsAtMs));
+    final bounded = events.take(_maxFeedEvents).toList(growable: false);
+    if (_feedEvents.length > bounded.length) {
+      final keep = bounded.map((event) => event.id).toSet();
+      _feedEvents.removeWhere((id, _) => !keep.contains(id));
+    }
+    if (!_feedController.isClosed) {
+      _feedController.add(bounded);
+    }
+  }
+
+  Future<void> _closeFeedSocket() async {
+    _feedReconnectTimer?.cancel();
+    _feedReconnectTimer = null;
+    await _feedSocketSubscription?.cancel();
+    _feedSocketSubscription = null;
+    final socket = _feedSocket;
+    _feedSocket = null;
+    if (socket != null) {
+      try {
+        await socket.close();
+      } catch (_) {}
+    }
   }
 
   Stream<RoomRocketState> watchRoomState(String roomId) {
@@ -203,5 +410,15 @@ class RoomRocketService {
     };
   }
 
-  void close() => _client.close();
+  void close() {
+    _feedGeneration += 1;
+    _feedStarted = false;
+    unawaited(_authSubscription?.cancel());
+    _authSubscription = null;
+    unawaited(_closeFeedSocket());
+    if (!_feedController.isClosed) {
+      unawaited(_feedController.close());
+    }
+    _client.close();
+  }
 }
