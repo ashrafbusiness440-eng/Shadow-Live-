@@ -18,7 +18,23 @@ export function computeSystemHealth({
   const p95Ms = Math.max(0, Number(current.p95Ms || 0));
   const p99Ms = Math.max(0, Number(current.p99Ms || 0));
   const rpm = Math.max(0, Number(current.requestsPerMinute || 0));
+  const readsPerMinute = Math.max(
+    0,
+    Number(current.firestoreReadsPerMinute || 0),
+  );
+  const writesPerMinute = Math.max(
+    0,
+    Number(current.firestoreWritesPerMinute || 0),
+  );
   const baselineRpm = Math.max(0, Number(baseline.requestsPerMinute || 0));
+  const baselineReadsPerMinute = Math.max(
+    0,
+    Number(baseline.firestoreReadsPerMinute || 0),
+  );
+  const baselineWritesPerMinute = Math.max(
+    0,
+    Number(baseline.firestoreWritesPerMinute || 0),
+  );
 
   let score = 100;
   const reasons = [];
@@ -89,6 +105,30 @@ export function computeSystemHealth({
     } else if (multiplier >= 2) {
       score -= 5;
       reasons.push(`traffic ${multiplier.toFixed(1)}x baseline`);
+    }
+  }
+
+  const ioSignals = [
+    {
+      label: "Firestore reads",
+      current: readsPerMinute,
+      baseline: baselineReadsPerMinute,
+    },
+    {
+      label: "Firestore writes",
+      current: writesPerMinute,
+      baseline: baselineWritesPerMinute,
+    },
+  ];
+  for (const signal of ioSignals) {
+    if (signal.baseline <= 0 || signal.current < 1) continue;
+    const multiplier = signal.current / signal.baseline;
+    if (multiplier >= 3) {
+      score -= 7;
+      reasons.push(`${signal.label} ${multiplier.toFixed(1)}x baseline`);
+    } else if (multiplier >= 2) {
+      score -= 3;
+      reasons.push(`${signal.label} ${multiplier.toFixed(1)}x baseline`);
     }
   }
 
