@@ -847,7 +847,7 @@ async function updateRoomSettings(db,uid,body){
       if(
         clean(media.scope)!=="room_cover"||
         clean(media.targetId)!==roomId||
-        clean(media.ownerUid)!==ownerUid||
+        clean(media.ownerUid)!==uid||
         clean(media.publicUrl)!==coverImageUrl||
         clean(media.state||"active")!=="active"
       ){
