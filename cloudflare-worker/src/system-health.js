@@ -178,6 +178,14 @@ function windowSummary(kindInput, statusInput, minutes) {
     p99Ms: round(request.p99_ms),
     firestoreReads: number(firestore.reads),
     firestoreWrites: number(firestore.writes),
+    firestoreReadsPerMinute: round(
+      number(firestore.reads) / Math.max(1, minutes),
+      3,
+    ),
+    firestoreWritesPerMinute: round(
+      number(firestore.writes) / Math.max(1, minutes),
+      3,
+    ),
     firestoreRetries: number(firestore.retries),
     firestoreErrors: number(firestore.errors),
     realtimeEvents: number(realtime.events),
