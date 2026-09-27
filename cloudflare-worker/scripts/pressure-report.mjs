@@ -56,6 +56,7 @@ const [
   minuteRows,
   firestoreRows,
   realtimeRows,
+  hotDocumentRows,
   kindRows,
 ] = await Promise.all([
   sql(`
@@ -67,6 +68,8 @@ const [
       SUM(_sample_interval * double8) AS reconnects,
       SUM(_sample_interval * double6) AS errors,
       SUM(_sample_interval * double7) AS quota_events,
+      SUM(_sample_interval * double10) AS total_fanout,
+      max(double10) AS max_fanout,
       quantileExactWeighted(0.5)(double2, _sample_interval) AS p50_ms,
       quantileExactWeighted(0.95)(double2, _sample_interval) AS p95_ms,
       quantileExactWeighted(0.99)(double2, _sample_interval) AS p99_ms
@@ -140,6 +143,21 @@ const [
   `),
   sql(`
     SELECT
+      blob2 AS primary_key,
+      blob3 AS action,
+      blob4 AS outcome,
+      SUM(_sample_interval * double1) AS events,
+      SUM(_sample_interval * double3) AS reads,
+      SUM(_sample_interval * double4) AS writes,
+      SUM(_sample_interval * double5) AS retries
+    FROM ${dataset}
+    WHERE ${timeWhere} AND blob1 = 'hot_document'
+    GROUP BY primary_key, action, outcome
+    ORDER BY events DESC
+    LIMIT 200
+  `),
+  sql(`
+    SELECT
       blob1 AS kind,
       blob2 AS primary_key,
       blob3 AS action,
@@ -206,6 +224,9 @@ const endpoints = endpointRows.map((row) => {
     reconnects: num(row.reconnects),
     errors: num(row.errors),
     quotaEvents: num(row.quota_events),
+    totalFanout: num(row.total_fanout),
+    averageFanout: requests > 0 ? round(num(row.total_fanout) / requests, 2) : 0,
+    maxFanout: num(row.max_fanout),
     p50Ms: round(row.p50_ms),
     p95Ms: round(row.p95_ms),
     p99Ms: round(row.p99_ms),
@@ -213,11 +234,81 @@ const endpoints = endpointRows.map((row) => {
   };
 });
 
+function subsystemFor(row) {
+  const route = String(row.route || "").toLowerCase();
+  const action = String(row.action || "").toLowerCase();
+  const haystack = route + " " + action;
+  if (action.includes("roombootstrap")) return "room_bootstrap";
+  if (action.includes("presencecounts") || haystack.includes("home")) return "home";
+  if (haystack.includes("room-realtime")) return "room_realtime";
+  if (haystack.includes("room-gift") || action.includes("sendroomgift")) return "gifts";
+  if (haystack.includes("game-runtime") || haystack.includes("game-control")) return "games";
+  if (haystack.includes("rocket")) return "rocket";
+  if (haystack.includes("wallet") || haystack.includes("recharge")) return "wallet";
+  if (haystack.includes("voice-session") || haystack.includes("room")) return "room";
+  return "other";
+}
+
+const subsystemMap = new Map();
+for (const row of endpoints) {
+  const key = subsystemFor(row);
+  const current = subsystemMap.get(key) || {
+    subsystem: key,
+    requests: 0,
+    retries: 0,
+    reconnects: 0,
+    status429: 0,
+    status5xx: 0,
+    totalFanout: 0,
+    maxFanout: 0,
+    weightedP50: 0,
+    weightedP95: 0,
+    weightedP99: 0,
+  };
+  const weight = Math.max(1, row.requests);
+  current.requests += row.requests;
+  current.retries += row.retries;
+  current.reconnects += row.reconnects;
+  current.status429 += row.status429;
+  current.status5xx += row.status5xx;
+  current.totalFanout += row.totalFanout;
+  current.maxFanout = Math.max(current.maxFanout, row.maxFanout);
+  current.weightedP50 += row.p50Ms * weight;
+  current.weightedP95 += row.p95Ms * weight;
+  current.weightedP99 += row.p99Ms * weight;
+  subsystemMap.set(key, current);
+}
+
+const subsystems = [...subsystemMap.values()].map((row) => ({
+  subsystem: row.subsystem,
+  requests: row.requests,
+  requestsPerMinute: round(row.requests / windowMinutes, 3),
+  status429: row.status429,
+  status5xx: row.status5xx,
+  retries: row.retries,
+  reconnects: row.reconnects,
+  averageFanout: row.requests > 0 ? round(row.totalFanout / row.requests, 2) : 0,
+  maxFanout: row.maxFanout,
+  p50Ms: row.requests > 0 ? round(row.weightedP50 / row.requests) : 0,
+  p95Ms: row.requests > 0 ? round(row.weightedP95 / row.requests) : 0,
+  p99Ms: row.requests > 0 ? round(row.weightedP99 / row.requests) : 0,
+})).sort((a, b) => b.requests - a.requests);
+
 const report = {
   generatedAt: new Date().toISOString(),
   dataset,
   windowMinutes,
   endpoints,
+  subsystems,
+  hotDocuments: hotDocumentRows.map((row) => ({
+    primary: String(row.primary_key || ""),
+    action: String(row.action || ""),
+    outcome: String(row.outcome || ""),
+    events: num(row.events),
+    reads: num(row.reads),
+    writes: num(row.writes),
+    retries: num(row.retries),
+  })),
   requestsByMinute: minuteRows.map((row) => ({
     minuteEpoch: num(row.minute_epoch),
     route: String(row.route || ""),
@@ -277,7 +368,7 @@ const md = [
   "## HTTP endpoints",
   "",
   table(
-    ["Route", "Action", "Requests", "Req/min", "429", "5xx", "Retries", "Reconnects", "p50 ms", "p95 ms", "p99 ms"],
+    ["Route", "Action", "Requests", "Req/min", "429", "5xx", "Retries", "Reconnects", "Avg fanout", "Max fanout", "p50 ms", "p95 ms", "p99 ms"],
     endpoints.slice(0, 60).map((row) => [
       row.route,
       row.action,
@@ -287,9 +378,46 @@ const md = [
       row.status5xx,
       row.retries,
       row.reconnects,
+      row.averageFanout,
+      row.maxFanout,
       row.p50Ms,
       row.p95Ms,
       row.p99Ms,
+    ]),
+  ),
+  "",
+  "## Subsystems",
+  "",
+  table(
+    ["Subsystem", "Requests", "Req/min", "429", "5xx", "Retries", "Reconnects", "Avg fanout", "Max fanout", "p50 ms", "p95 ms", "p99 ms"],
+    subsystems.map((row) => [
+      row.subsystem,
+      row.requests,
+      row.requestsPerMinute,
+      row.status429,
+      row.status5xx,
+      row.retries,
+      row.reconnects,
+      row.averageFanout,
+      row.maxFanout,
+      row.p50Ms,
+      row.p95Ms,
+      row.p99Ms,
+    ]),
+  ),
+  "",
+  "## Hot documents",
+  "",
+  table(
+    ["Primary", "Action", "Outcome", "Events", "Reads", "Writes", "Retries"],
+    report.hotDocuments.map((row) => [
+      row.primary,
+      row.action,
+      row.outcome,
+      row.events,
+      row.reads,
+      row.writes,
+      row.retries,
     ]),
   ),
   "",
@@ -350,6 +478,8 @@ console.log(
       firestoreWrites: report.firestore.reduce((sum, row) => sum + row.writes, 0),
       firestoreRetries: report.firestore.reduce((sum, row) => sum + row.retries, 0),
       realtimeReconnects: report.realtime.reduce((sum, row) => sum + row.reconnects, 0),
+      subsystemCount: report.subsystems.length,
+      hotDocumentGroupCount: report.hotDocuments.length,
     },
     null,
     2,
