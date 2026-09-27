@@ -74,6 +74,18 @@ export function replacementDeleteAt(nowMs = Date.now()) {
   return new Date(Number(nowMs) + REPLACEMENT_DELETE_DELAY_MS);
 }
 
+export function storageActivePointerId(scope, targetId) {
+  const normalizedScope = clean(scope);
+  if (!isReplaceableStorageScope(normalizedScope)) {
+    throw new StorageApiError("active_pointer_not_supported", 400);
+  }
+  return `${normalizedScope}__${encodedSegment(targetId)}`;
+}
+
+function storageActivePointerPath(scope, targetId) {
+  return `storage_active_objects/${storageActivePointerId(scope, targetId)}`;
+}
+
 export function buildStorageObjectKey({
   scope,
   uid,
@@ -326,18 +338,36 @@ async function prepareUpload(request, env, auth, body) {
   );
 
   let previous = null;
-  if (replaceObjectId) {
-    if (!isReplaceableStorageScope(scope)) {
-      throw new StorageApiError("replace_not_supported", 409);
-    }
-    previous = await metadataForObject(auth.db, replaceObjectId);
-    authorizeDelete(auth.uid, previous);
+  let effectiveReplaceObjectId = "";
+  if (isReplaceableStorageScope(scope)) {
+    const pointer = await auth.db.get(
+      storageActivePointerPath(scope, authorization.targetId),
+    );
+    const activeObjectId = pointer.exists
+      ? clean(pointer.data?.objectId)
+      : "";
+
     if (
-      clean(previous.scope) !== scope ||
-      clean(previous.targetId) !== clean(authorization.targetId)
+      replaceObjectId &&
+      activeObjectId &&
+      replaceObjectId !== activeObjectId
     ) {
-      throw new StorageApiError("replace_scope_mismatch", 409);
+      throw new StorageApiError("replace_conflict", 409);
     }
+
+    effectiveReplaceObjectId = activeObjectId || replaceObjectId;
+    if (effectiveReplaceObjectId) {
+      previous = await metadataForObject(auth.db, effectiveReplaceObjectId);
+      authorizeDelete(auth.uid, previous);
+      if (
+        clean(previous.scope) !== scope ||
+        clean(previous.targetId) !== clean(authorization.targetId)
+      ) {
+        throw new StorageApiError("replace_scope_mismatch", 409);
+      }
+    }
+  } else if (replaceObjectId) {
+    throw new StorageApiError("replace_not_supported", 409);
   }
 
   const objectId = crypto.randomUUID().replaceAll("-", "");
@@ -441,9 +471,40 @@ async function confirmUpload(request, env, auth, body) {
 
   let previous = null;
   const replaceObjectId = clean(ticket.replaceObjectId);
-  if (replaceObjectId) {
-    const snap = await auth.db.get(`storage_objects/${replaceObjectId}`);
-    if (snap.exists && clean(snap.data?.ownerUid) === auth.uid) {
+  const replaceable = isReplaceableStorageScope(ticket.scope);
+  let transaction = null;
+  let pointerPath = "";
+  if (replaceable) {
+    pointerPath = storageActivePointerPath(ticket.scope, ticket.targetId);
+    transaction = await auth.db.beginTransaction();
+    const pointer = await auth.db.get(pointerPath, transaction);
+    const currentActiveObjectId = pointer.exists
+      ? clean(pointer.data?.objectId)
+      : "";
+
+    if (currentActiveObjectId !== replaceObjectId) {
+      await auth.db.rollback(transaction);
+      await bucket.delete(clean(ticket.storageKey)).catch(() => {});
+      await auth.db.commit(null, [
+        auth.db.writeDelete(`storage_upload_tickets/${objectId}`),
+      ]).catch(() => {});
+      throw new StorageApiError("replace_conflict", 409);
+    }
+
+    if (replaceObjectId) {
+      const snap = await auth.db.get(
+        `storage_objects/${replaceObjectId}`,
+        transaction,
+      );
+      if (
+        !snap.exists ||
+        clean(snap.data?.ownerUid) !== auth.uid ||
+        clean(snap.data?.scope) !== clean(ticket.scope) ||
+        clean(snap.data?.targetId) !== clean(ticket.targetId)
+      ) {
+        await auth.db.rollback(transaction);
+        throw new StorageApiError("replace_conflict", 409);
+      }
       previous = { objectId: replaceObjectId, ...snap.data };
     }
   }
@@ -508,7 +569,19 @@ async function confirmUpload(request, env, auth, body) {
     );
   }
 
-  await auth.db.commit(null, writes);
+  if (replaceable) {
+    writes.push(
+      auth.db.writeUpdate(pointerPath, {
+        objectId,
+        ownerUid: auth.uid,
+        scope: metadata.scope,
+        targetId: metadata.targetId,
+        updatedAt: now,
+      }),
+    );
+  }
+
+  await auth.db.commit(transaction, writes);
 
   return json(request, env, {
     ok: true,
