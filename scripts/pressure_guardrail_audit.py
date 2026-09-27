@@ -709,7 +709,7 @@ def main() -> int:
     for required in (
         "recordRequestTelemetry",
         "pressureAnalyticsConfigured",
-        "version: 28",
+        "version: 29",
     ):
         if required not in worker_index:
             failures.append(f"Step 11 regression: Worker request observability missing {required}")
@@ -762,6 +762,27 @@ def main() -> int:
         failures.append("Step 11 regression: telemetry module must not use Firestore as a high-frequency sink")
     if "PRESSURE_ANALYTICS_SCHEMA" not in pressure_telemetry_test:
         failures.append("Step 11 regression: telemetry schema is not unit-tested")
+
+    system_health = read("cloudflare-worker/src/system-health.js")
+    system_health_card = read("lib/admin/system_health_card.dart")
+    for required in (
+        "CLOUDFLARE_ANALYTICS_READ_TOKEN",
+        "viewSystemHealth",
+        "computeSystemHealth",
+        "CACHE_TTL_MS = 15_000",
+    ):
+        if required not in system_health:
+            failures.append(f"Step 12 regression: System Health backend missing {required}")
+    for required in (
+        "ControlSystemHealthCard",
+        "Duration(seconds: 15)",
+        "Requests/min",
+        "p95",
+        "429",
+        "Reconnects",
+    ):
+        if required not in system_health_card:
+            failures.append(f"Step 12 regression: System Health UI missing {required}")
 
     check(lambda: require(
         r'crons\s*=\s*\["\*/5 \* \* \* \*"\]',
