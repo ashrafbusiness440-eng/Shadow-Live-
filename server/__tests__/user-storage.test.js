@@ -12,6 +12,7 @@ import {
   replacementDeleteAt,
   REPLACEMENT_DELETE_DELAY_MS,
   storageActivePointerId,
+  runDeletedAccountStorageCleanup,
 } from "../../cloudflare-worker/src/user-storage.js";
 import {
   presignR2Put,
@@ -273,4 +274,157 @@ test("public media redirects use bounded edge cache below signed URL TTL", () =>
   assert.match(source, /cache\.match\(cacheKey\)/);
   assert.match(source, /cache\.put\(/);
   assert.match(source, /stale-while-revalidate=60/);
+});
+
+
+test("deleted-account cleanup processes at most 25 storage objects per run", async () => {
+  const objects = Array.from({ length: 30 }, (_, index) => ({
+    id: (index + 1).toString(16).padStart(32, "0"),
+    data: {
+      objectId: (index + 1).toString(16).padStart(32, "0"),
+      storageKey: `chat/conversation/user/${index}.png`,
+      ownerUid: "user_deleted",
+      scope: "chat_image",
+      targetId: "conversation",
+      sizeBytes: 4,
+    },
+  }));
+  const commits = [];
+  const db = {
+    async runQuery(collection, options = {}) {
+      if (collection === "storage_account_cleanup_jobs") {
+        return [{
+          id: "delete_op_1",
+          data: {
+            ownerUid: "user_deleted",
+            reason: "account_deleted",
+            createdAt: new Date(0),
+          },
+        }];
+      }
+      if (collection === "storage_objects") {
+        assert.deepEqual(options.filters, [
+          { field: "ownerUid", op: "==", value: "user_deleted" },
+        ]);
+        assert.equal(options.limit, 25);
+        return objects.slice(0, options.limit);
+      }
+      throw new Error("unexpected_collection:" + collection);
+    },
+    async get() {
+      return { exists: false, data: null };
+    },
+    writeDelete(path) {
+      return { op: "delete", path };
+    },
+    writeCreate(path, data) {
+      return { op: "create", path, data };
+    },
+    async commit(_transaction, writes) {
+      commits.push(...writes);
+    },
+  };
+  const deletedKeys = [];
+  const bucket = {
+    async delete(key) {
+      deletedKeys.push(key);
+    },
+  };
+
+  const result = await runDeletedAccountStorageCleanup(
+    db,
+    bucket,
+    { nowMs: 1_000, limit: 25 },
+  );
+
+  assert.equal(result.jobsChecked, 1);
+  assert.equal(result.checked, 25);
+  assert.equal(result.deleted, 25);
+  assert.equal(result.failed, 0);
+  assert.equal(deletedKeys.length, 25);
+  assert.equal(
+    commits.some(
+      (write) =>
+        write.op === "delete" &&
+        write.path === "storage_account_cleanup_jobs/delete_op_1",
+    ),
+    false,
+  );
+  assert.equal(
+    commits.filter(
+      (write) =>
+        write.op === "delete" &&
+        write.path.startsWith("storage_objects/"),
+    ).length,
+    25,
+  );
+});
+
+test("deleted-account cleanup closes the job after the final partial batch", async () => {
+  const objects = [{
+    id: "a".repeat(32),
+    data: {
+      objectId: "a".repeat(32),
+      storageKey: "users/user_deleted/profile/a.jpg",
+      ownerUid: "user_deleted",
+      scope: "profile_image",
+      targetId: "user_deleted",
+      sizeBytes: 4,
+    },
+  }];
+  const commits = [];
+  const db = {
+    async runQuery(collection) {
+      if (collection === "storage_account_cleanup_jobs") {
+        return [{
+          id: "delete_op_final",
+          data: { ownerUid: "user_deleted", reason: "account_deleted" },
+        }];
+      }
+      if (collection === "storage_objects") return objects;
+      throw new Error("unexpected_collection:" + collection);
+    },
+    async get(path) {
+      if (path.startsWith("storage_active_pointers/")) {
+        return { exists: true, data: { objectId: "a".repeat(32) } };
+      }
+      return { exists: false, data: null };
+    },
+    writeDelete(path) {
+      return { op: "delete", path };
+    },
+    writeCreate(path, data) {
+      return { op: "create", path, data };
+    },
+    async commit(_transaction, writes) {
+      commits.push(...writes);
+    },
+  };
+  const bucket = { async delete() {} };
+
+  const result = await runDeletedAccountStorageCleanup(
+    db,
+    bucket,
+    { nowMs: 2_000, limit: 25 },
+  );
+
+  assert.equal(result.checked, 1);
+  assert.equal(result.deleted, 1);
+  assert.equal(result.failed, 0);
+  assert.equal(
+    commits.some(
+      (write) =>
+        write.op === "delete" &&
+        write.path === "storage_account_cleanup_jobs/delete_op_final",
+    ),
+    true,
+  );
+  assert.equal(
+    commits.some(
+      (write) =>
+        write.op === "delete" &&
+        write.path.startsWith("storage_active_pointers/"),
+    ),
+    true,
+  );
 });
