@@ -8,6 +8,9 @@ import {
   storageMaxBytes,
   validateStoragePayload,
 } from "../../cloudflare-worker/src/user-storage.js";
+import {
+  presignR2Put,
+} from "../../cloudflare-worker/src/r2-presign.js";
 
 test("storage MIME allowlist only accepts supported image formats", () => {
   assert.equal(storageExtensionForMime("image/jpeg"), "jpg");
@@ -93,19 +96,42 @@ test("storage object keys follow canonical private prefixes", () => {
   );
 });
 
-test("storage upload rate limiter caps burst requests", () => {
+test("storage upload rate limiter caps presign bursts", () => {
   const uid = "storage_test_rate_" + Date.now();
   const nowMs = 1000;
-  for (let index = 0; index < 12; index++) {
+  for (let index = 0; index < 8; index++) {
     assert.equal(
-      consumeStorageRateLimit(uid, "upload", nowMs).ok,
+      consumeStorageRateLimit(uid, "prepareUpload", nowMs).ok,
       true,
     );
   }
-  const blocked = consumeStorageRateLimit(uid, "upload", nowMs);
+  const blocked = consumeStorageRateLimit(uid, "prepareUpload", nowMs);
   assert.equal(blocked.ok, false);
   assert.equal(blocked.retryAfterSeconds, 60);
 
-  const reset = consumeStorageRateLimit(uid, "upload", nowMs + 60_001);
+  const reset = consumeStorageRateLimit(uid, "prepareUpload", nowMs + 60_001);
   assert.equal(reset.ok, true);
+});
+
+test("R2 PUT presign is short-lived and content-type bound", async () => {
+  const signed = await presignR2Put(
+    {
+      R2_ACCOUNT_ID: "0123456789abcdef0123456789abcdef",
+      R2_ACCESS_KEY_ID: "TESTACCESSKEY1234567890",
+      R2_SECRET_ACCESS_KEY: "test-secret-access-key-value",
+    },
+    {
+      key: "users/u/profile/" + "d".repeat(32) + ".png",
+      mimeType: "image/png",
+    },
+  );
+  const url = new URL(signed);
+  assert.equal(url.hostname, "0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com");
+  assert.equal(url.searchParams.get("X-Amz-Expires"), "300");
+  assert.ok(url.searchParams.get("X-Amz-Signature"));
+  assert.ok(
+    String(url.searchParams.get("X-Amz-SignedHeaders") || "")
+      .toLowerCase()
+      .includes("content-type"),
+  );
 });
