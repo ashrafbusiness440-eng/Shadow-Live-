@@ -154,7 +154,7 @@ export default {
     try {
       const result = await settleDueGameOperations(db, {
         nowMs: Date.now(),
-        limit: 100,
+        limit: 25,
         workerTag: "cloudflare_cron",
       });
       if (result.checked > 0) {
