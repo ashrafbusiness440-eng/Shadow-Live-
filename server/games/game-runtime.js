@@ -377,6 +377,7 @@ export async function placeGameBet(
     const participantRef=roundRef.collection("participants").doc(uid);
     const debitLedgerRef=db.collection("financial_ledger").doc("game_debit__"+operationId);
     const creditLedgerRef=db.collection("financial_ledger").doc("game_credit__"+operationId);
+    const settlementQueueRef=db.collection("game_settlement_queue").doc(operationId);
     const historyRef=db.collection("game_user_history")
       .doc(uid).collection("items").doc(operationId);
 
@@ -413,6 +414,14 @@ export async function placeGameBet(
       ...(settled?{settledAt:now}:{}),
     };
     tx.create(operationRef,operation);
+    if(!settled){
+      tx.create(settlementQueueRef,{
+        operationId,
+        dueAtMs:round.closesAtMs,
+        createdAt:now,
+        updatedAt:now,
+      });
+    }
     tx.create(debitLedgerRef,{
       ...ledgerBase({uid,operationId,gameId,roundId:round.roundId,now}),
       type:"game_bet_debit",
@@ -517,14 +526,16 @@ async function settleOperationRef(db,operationRef,nowMs){
     const operationSnap=await tx.get(operationRef);
     if(!operationSnap.exists)throw Error("operation_not_found");
     const operation=operationSnap.data()||{};
+    const operationId=clean(operation.operationId||operationRef.id);
+    const settlementQueueRef=db.collection("game_settlement_queue").doc(operationId);
     if(operation.status==="settled"){
+      tx.delete(settlementQueueRef);
       return {ok:true,code:"duplicate",...publicOperation(operation)};
     }
     if(operation.status!=="pending")throw Error("invalid_operation_state");
     if(nowMs<Number(operation.closesAtMs||0))throw Error("round_not_finished");
 
     const uid=clean(operation.userId);
-    const operationId=clean(operation.operationId||operationRef.id);
     const userRef=db.collection("users").doc(uid);
     const userSnap=await tx.get(userRef);
     if(!userSnap.exists)throw Error("user_not_found");
@@ -556,6 +567,7 @@ async function settleOperationRef(db,operationRef,nowMs){
       settledAt:now,
       updatedAt:now,
     });
+    tx.delete(settlementQueueRef);
     if(payout>0){
       tx.create(creditLedgerRef,{
         ...ledgerBase({
@@ -628,22 +640,27 @@ export async function settleDueGameOperations(
     limit=50,
   }={},
 ){
-  const snapshot=await db.collection("game_operations")
-    .where("status","==","pending")
-    .limit(Math.max(1,Math.min(100,Number(limit||50))))
+  const boundedLimit=Math.max(1,Math.min(25,Number(limit||25)));
+  const snapshot=await db.collection("game_settlement_queue")
+    .where("dueAtMs","<=",nowMs)
+    .orderBy("dueAtMs","asc")
+    .limit(boundedLimit)
     .get();
-  const due=snapshot.docs.filter(
-    doc=>Number(doc.data()?.closesAtMs||0)<=nowMs,
-  );
   const results=[];
-  for(const doc of due){
+  for(const doc of snapshot.docs){
+    const operationId=clean(doc.data()?.operationId||doc.id);
+    const operationRef=db.collection("game_operations").doc(operationId);
     try{
-      results.push(await settleOperationRef(db,doc.ref,nowMs));
+      results.push(await settleOperationRef(db,operationRef,nowMs));
     }catch(error){
+      const code=clean(error?.message)||"settlement_failed";
+      if(code==="operation_not_found"){
+        await doc.ref.delete().catch(()=>{});
+      }
       results.push({
         ok:false,
-        operationId:doc.id,
-        code:clean(error?.message)||"settlement_failed",
+        operationId,
+        code,
       });
     }
   }

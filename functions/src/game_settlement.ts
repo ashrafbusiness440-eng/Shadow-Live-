@@ -15,11 +15,16 @@ export async function settleGameOperationRef(
     const operationSnap=await tx.get(operationRef);
     if(!operationSnap.exists)return false;
     const operation=operationSnap.data()??{};
+    const operationId=clean(operation.operationId||operationRef.id);
+    const settlementQueueRef=db.collection("game_settlement_queue").doc(operationId);
+    if(clean(operation.status)==="settled"){
+      tx.delete(settlementQueueRef);
+      return false;
+    }
     if(clean(operation.status)!=="pending")return false;
     if(Number(operation.closesAtMs??0)>nowMs)return false;
 
     const uid=clean(operation.userId);
-    const operationId=clean(operation.operationId||operationRef.id);
     const roundId=clean(operation.roundId);
     const gameId=clean(operation.gameId);
     if(!uid||!operationId||!roundId||!gameId){
@@ -73,6 +78,7 @@ export async function settleGameOperationRef(
       updatedAt:now,
       settlementWorker:"firebase_helper",
     });
+    tx.delete(settlementQueueRef);
     tx.set(roundRef,{
       status:"settled",
       totalPayoutCoins:FieldValue.increment(payout),
@@ -103,21 +109,22 @@ export async function settleDueGameOperations(
   limit=100,
 ):Promise<{checked:number;settled:number;failed:number}>{
   const boundedLimit=Math.max(1,Math.min(25,limit));
-  const snapshot=await db.collection("game_operations")
-    .where("status","==","pending")
-    .where("closesAtMs","<=",nowMs)
-    .orderBy("closesAtMs","asc")
+  const snapshot=await db.collection("game_settlement_queue")
+    .where("dueAtMs","<=",nowMs)
+    .orderBy("dueAtMs","asc")
     .limit(boundedLimit)
     .get();
 
   let settled=0;
   let failed=0;
   for(const doc of snapshot.docs){
+    const operationId=clean(doc.data()?.operationId||doc.id);
+    const operationRef=db.collection("game_operations").doc(operationId);
     try{
-      if(await settleGameOperationRef(db,doc.ref,nowMs))settled++;
+      if(await settleGameOperationRef(db,operationRef,nowMs))settled++;
     }catch(error){
       failed++;
-      console.error("game settlement failed",doc.id,error);
+      console.error("game settlement failed",operationId,error);
     }
   }
   return {checked:snapshot.size,settled,failed};

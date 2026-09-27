@@ -16,14 +16,15 @@ test("room rocket hot-document telemetry stays attached to every successful gift
   assert.equal(roomGift.includes("_transactionAttempts"), true);
 });
 
-test("Cloudflare settlement sweep queries only due pending operations oldest-first", () => {
+test("Cloudflare settlement sweep uses a bounded single-field due queue", () => {
   const runtime = source("../../cloudflare-worker/src/legacy-games/game-runtime.js");
-  assert.equal(
-    runtime.includes('.where("status","==","pending")\n      .where("closesAtMs","<=",nowMs)'),
-    true,
-  );
-  assert.equal(runtime.includes('.orderBy("closesAtMs","asc")'), true);
+  assert.equal(runtime.includes('collection("game_settlement_queue")'), true);
+  assert.equal(runtime.includes('.where("dueAtMs","<=",nowMs)'), true);
+  assert.equal(runtime.includes('.orderBy("dueAtMs","asc")'), true);
   assert.equal(runtime.includes("Math.min(25,Number(limit||25))"), true);
+  assert.equal(runtime.includes("tx.create(settlementQueueRef"), true);
+  assert.equal(runtime.includes("tx.delete(settlementQueueRef)"), true);
+  assert.equal(runtime.includes('.where("status","==","pending")\n      .where("closesAtMs","<=",nowMs)'), false);
 });
 
 test("Firebase scheduled settlement worker is no longer deployable", () => {
@@ -34,16 +35,10 @@ test("Firebase scheduled settlement worker is no longer deployable", () => {
   assert.equal(settlement.includes("gameSettlementWorker"), false);
 });
 
-test("Firestore source of truth declares the due-settlement composite index", () => {
+test("settlement queue needs no custom composite Firestore index", () => {
   const config = JSON.parse(source("../../firestore.indexes.json"));
-  const found = config.indexes.find(
-    (index) =>
-      index.collectionGroup === "game_operations" &&
-      index.queryScope === "COLLECTION" &&
-      JSON.stringify(index.fields) === JSON.stringify([
-        { fieldPath: "status", order: "ASCENDING" },
-        { fieldPath: "closesAtMs", order: "ASCENDING" },
-      ]),
-  );
-  assert.ok(found);
+  const workflow = source("../../.github/workflows/deploy-firestore-rules.yml");
+  assert.deepEqual(config.indexes, []);
+  assert.equal(workflow.includes("/collectionGroups/"), false);
+  assert.equal(workflow.includes("index create failed"), false);
 });
