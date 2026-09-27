@@ -54,7 +54,7 @@ test("scheduled settlement credits a disconnected pending game exactly once",asy
 
   const operation=(await db.collection("game_operations").doc(operationId).get()).data();
   assert.equal(operation?.status,"settled");
-  assert.equal(operation?.settlementWorker,"firebase_schedule");
+  assert.equal(operation?.settlementWorker,"firebase_helper");
 
   const ledger=await db.collection("financial_ledger")
     .doc("game_credit__"+operationId).get();
@@ -104,3 +104,76 @@ test("scheduled settlement leaves future rounds pending",async()=>{
   assert.equal(operation?.status,"pending");
   assert.equal((await db.collection("users").doc(uid).get()).data()?.coins,5000);
 });
+
+test("due settlement is not starved by more than ten future pending operations",async()=>{
+  const suffix=Date.now().toString()+"_starvation";
+  const uid="settlement_due_user_"+suffix;
+  const dueOperationId="zzz_due_"+suffix;
+  const dueRoundId="greedy_cat:due:"+suffix;
+  // Keep this test in an isolated historical time window so a global due
+  // sweep cannot settle pending operations created concurrently by other suites.
+  const nowMs=Date.UTC(2001,0,2,12,0,0);
+
+  const futureWrites=[];
+  for(let index=0;index<12;index++){
+    futureWrites.push(
+      db.collection("game_operations")
+        .doc("aaa_future_"+String(index).padStart(2,"0")+"_"+suffix)
+        .set({
+          operationId:"future_"+index+"_"+suffix,
+          userId:"future_user_"+index+"_"+suffix,
+          roomId:"future_room",
+          gameId:"witch",
+          mode:"normal",
+          status:"pending",
+          roundId:"future_round_"+index+"_"+suffix,
+          closesAtMs:nowMs+60000+index,
+          payoutCoins:0,
+        }),
+    );
+  }
+
+  await Promise.all([
+    ...futureWrites,
+    db.collection("users").doc(uid).set({coins:1000}),
+    db.collection("game_rounds").doc(dueRoundId).set({
+      gameId:"greedy_cat",
+      status:"open",
+      totalPayoutCoins:0,
+      settledOperationCount:0,
+    }),
+    db.collection("game_operations").doc(dueOperationId).set({
+      operationId:dueOperationId,
+      idempotencyKey:"due_"+suffix,
+      userId:uid,
+      roomId:"room_due",
+      gameId:"greedy_cat",
+      mode:"",
+      status:"pending",
+      roundId:dueRoundId,
+      roundNumber:1,
+      dayKey:"2026-09-27",
+      closesAtMs:nowMs-1000,
+      totalStakeCoins:100,
+      payoutCoins:500,
+      outcomeId:"tomato5",
+      reels:[],
+    }),
+  ]);
+
+  const result=await settleDueGameOperations(db,nowMs,10);
+  assert.equal(result.failed,0);
+  assert.ok(result.checked>=1);
+  assert.ok(result.settled>=1);
+
+  const due=(await db.collection("game_operations").doc(dueOperationId).get()).data();
+  assert.equal(due?.status,"settled");
+  assert.equal((await db.collection("users").doc(uid).get()).data()?.coins,1500);
+
+  const future=await db.collection("game_operations")
+    .where("status","==","pending")
+    .where("closesAtMs",">",nowMs)
+    .get();
+  assert.ok(future.size>=12);
+});
+
