@@ -12,7 +12,7 @@ abstract final class ControlPermissionsMatrix {
     ControlCapabilities.globalRoomControl,ControlCapabilities.manageAgencies,ControlCapabilities.manageVip,
     ControlCapabilities.manageSpecialIds,ControlCapabilities.manageIds,ControlCapabilities.manageStore,ControlCapabilities.manageGames,
     ControlCapabilities.manageEconomy,ControlCapabilities.adjustBalances,ControlCapabilities.manageWithdrawals,ControlCapabilities.manageSettlements,
-    ControlCapabilities.manageCampaigns,ControlCapabilities.manageRoles,ControlCapabilities.viewAuditLog,
+    ControlCapabilities.manageCampaigns,ControlCapabilities.manageRoles,ControlCapabilities.viewAuditLog,ControlCapabilities.viewSystemHealth,
     ControlCapabilities.emergencyLock,
    };
   }
