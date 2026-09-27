@@ -6,7 +6,7 @@ abstract final class ControlPermissionsMatrix {
  static Set<String> effective({required String role,required Iterable<String> explicit}){
   if(role=='owner'){
    return {
-    ControlCapabilities.viewDashboard,ControlCapabilities.viewUsers,ControlCapabilities.manageUsers,
+    ControlCapabilities.viewDashboard,ControlCapabilities.viewSystemHealth,ControlCapabilities.viewUsers,ControlCapabilities.manageUsers,
     ControlCapabilities.viewReports,ControlCapabilities.reviewReports,ControlCapabilities.muteUsers,
     ControlCapabilities.suspendUsers,ControlCapabilities.permanentBan,ControlCapabilities.manageRooms,ControlCapabilities.canCreateHiddenRoom,
     ControlCapabilities.globalRoomControl,ControlCapabilities.manageAgencies,ControlCapabilities.manageVip,
