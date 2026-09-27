@@ -32,12 +32,13 @@ Firestore stores only storage metadata such as object key, MIME type, size, owne
 
 Profile images, profile covers, and room covers use replacement semantics:
 
-1. The newly uploaded object becomes active after server confirmation.
-2. The replaced object is marked `pending_delete` and remains private for 24 hours as a rollback buffer.
-3. A bounded delete-queue entry stores only that old object's key and `deleteAfter` timestamp.
-4. The existing Worker cron processes at most 25 due entries per run and deletes only due objects from R2.
-5. The cleanup path never scans the whole R2 bucket.
-6. Chat images are not auto-replaced by this policy because they belong to individual messages; their retention follows chat/message deletion policy.
+1. A deterministic server-side active pointer guarantees one active object per profile image, profile cover, or room cover; the client is not trusted to track the previous object correctly.
+2. The newly uploaded object becomes active only after server confirmation.
+3. The replaced object is marked `pending_delete` and remains private for 24 hours as a rollback buffer.
+4. A bounded delete-queue entry stores only that old object's key and `deleteAfter` timestamp.
+5. The existing Worker cron processes at most 25 due entries per run and deletes only due objects from R2.
+6. The cleanup path never scans the whole R2 bucket.
+7. Chat images are not auto-replaced by this policy because they belong to individual messages; their retention follows chat/message deletion policy.
 
 ## Rollout order
 
