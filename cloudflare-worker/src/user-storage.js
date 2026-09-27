@@ -639,6 +639,139 @@ async function replacementObjectStillReferenced(
   return clean(snapshot.data?.[field]) === clean(objectId);
 }
 
+async function deleteAccountOwnedStorageObject({
+  db,
+  bucket,
+  ownerUid,
+  item,
+  nowMs,
+}) {
+  const objectId = clean(item?.data?.objectId || item?.id);
+  const storageKey = clean(item?.data?.storageKey);
+  if (!objectId || !storageKey) {
+    throw new Error("invalid_account_cleanup_object");
+  }
+
+  await bucket.delete(storageKey);
+
+  const writes = [
+    db.writeDelete(`storage_objects/${objectId}`),
+    db.writeDelete(`storage_delete_queue/${objectId}`),
+    db.writeCreate(`storage_audit_logs/${auditId()}`, {
+      actorUid: "system",
+      subjectUid: ownerUid,
+      action: "cleanupDeletedAccountStorageObject",
+      objectId,
+      scope: clean(item?.data?.scope),
+      targetId: clean(item?.data?.targetId),
+      sizeBytes: Number(item?.data?.sizeBytes || 0),
+      reason: "account_deleted",
+      createdAt: new Date(nowMs),
+    }),
+  ];
+
+  if (isReplaceableStorageScope(item?.data?.scope)) {
+    const pointerPath = storageActivePointerPath(
+      item.data.scope,
+      item.data.targetId,
+    );
+    const pointer = await db.get(pointerPath);
+    if (
+      pointer.exists &&
+      clean(pointer.data?.objectId) === objectId
+    ) {
+      writes.push(db.writeDelete(pointerPath));
+    }
+  }
+
+  await db.commit(null, writes);
+  return objectId;
+}
+
+async function runDeletedAccountStorageCleanup(
+  db,
+  bucket,
+  {
+    nowMs = Date.now(),
+    limit = STORAGE_DELETE_BATCH_LIMIT,
+  } = {},
+) {
+  const budget = Math.max(
+    0,
+    Math.min(STORAGE_DELETE_BATCH_LIMIT, Number(limit || 0)),
+  );
+  if (budget <= 0) {
+    return { jobsChecked: 0, checked: 0, deleted: 0, failed: 0 };
+  }
+
+  const jobs = await db.runQuery("storage_account_cleanup_jobs", {
+    orderBy: [{ field: "createdAt", direction: "asc" }],
+    limit: 1,
+  });
+  if (!jobs.length) {
+    return { jobsChecked: 0, checked: 0, deleted: 0, failed: 0 };
+  }
+
+  const job = jobs[0];
+  const ownerUid = clean(job.data?.ownerUid);
+  if (!ownerUid) {
+    await db.commit(null, [
+      db.writeDelete(`storage_account_cleanup_jobs/${job.id}`),
+    ]);
+    return { jobsChecked: 1, checked: 0, deleted: 0, failed: 1 };
+  }
+
+  const objects = await db.runQuery("storage_objects", {
+    filters: [{ field: "ownerUid", op: "==", value: ownerUid }],
+    limit: budget,
+  });
+
+  let deleted = 0;
+  let failed = 0;
+  for (const item of objects) {
+    try {
+      await deleteAccountOwnedStorageObject({
+        db,
+        bucket,
+        ownerUid,
+        item,
+        nowMs,
+      });
+      deleted += 1;
+    } catch (error) {
+      failed += 1;
+      console.error(
+        "R2 deleted-account cleanup failed",
+        JSON.stringify({
+          ownerUid,
+          objectId: clean(item?.data?.objectId || item?.id),
+          code: clean(error?.code || error?.message || "cleanup_failed").slice(0, 120),
+        }),
+      );
+    }
+  }
+
+  if (objects.length < budget && failed === 0) {
+    await db.commit(null, [
+      db.writeDelete(`storage_account_cleanup_jobs/${job.id}`),
+      db.writeCreate(`storage_audit_logs/${auditId()}`, {
+        actorUid: "system",
+        subjectUid: ownerUid,
+        action: "completeDeletedAccountStorageCleanup",
+        reason: clean(job.data?.reason || "account_deleted"),
+        createdAt: new Date(nowMs),
+      }),
+    ]);
+  }
+
+  return {
+    jobsChecked: 1,
+    checked: objects.length,
+    deleted,
+    failed,
+  };
+}
+
 export async function runDueStorageCleanup(
   env,
   {
@@ -648,13 +781,31 @@ export async function runDueStorageCleanup(
 ) {
   const bucket = bucketFromEnv(env);
   const db = firestoreClient(env);
-  const due = await db.runQuery("storage_delete_queue", {
-    filters: [
-      { field: "deleteAfter", op: "<=", value: new Date(nowMs) },
-    ],
-    orderBy: [{ field: "deleteAfter", direction: "asc" }],
-    limit: Math.max(1, Math.min(STORAGE_DELETE_BATCH_LIMIT, Number(limit || STORAGE_DELETE_BATCH_LIMIT))),
-  });
+  const maxBatch = Math.max(
+    1,
+    Math.min(
+      STORAGE_DELETE_BATCH_LIMIT,
+      Number(limit || STORAGE_DELETE_BATCH_LIMIT),
+    ),
+  );
+  let remainingBudget = maxBatch;
+
+  const accountCleanup = await runDeletedAccountStorageCleanup(
+    db,
+    bucket,
+    { nowMs, limit: remainingBudget },
+  );
+  remainingBudget = Math.max(0, remainingBudget - accountCleanup.checked);
+
+  const due = remainingBudget > 0
+    ? await db.runQuery("storage_delete_queue", {
+        filters: [
+          { field: "deleteAfter", op: "<=", value: new Date(nowMs) },
+        ],
+        orderBy: [{ field: "deleteAfter", direction: "asc" }],
+        limit: remainingBudget,
+      })
+    : [];
 
   let deleted = 0;
   let failed = 0;
@@ -719,19 +870,16 @@ export async function runDueStorageCleanup(
     }
   }
 
-  const expiredTickets = await db.runQuery("storage_upload_tickets", {
-    filters: [
-      { field: "expiresAt", op: "<=", value: new Date(nowMs) },
-    ],
-    orderBy: [{ field: "expiresAt", direction: "asc" }],
-    limit: Math.max(
-      1,
-      Math.min(
-        STORAGE_DELETE_BATCH_LIMIT,
-        Number(limit || STORAGE_DELETE_BATCH_LIMIT),
-      ),
-    ),
-  });
+  remainingBudget = Math.max(0, remainingBudget - due.length);
+  const expiredTickets = remainingBudget > 0
+    ? await db.runQuery("storage_upload_tickets", {
+        filters: [
+          { field: "expiresAt", op: "<=", value: new Date(nowMs) },
+        ],
+        orderBy: [{ field: "expiresAt", direction: "asc" }],
+        limit: remainingBudget,
+      })
+    : [];
 
   let expiredTicketsCleaned = 0;
   let expiredTicketFailures = 0;
@@ -772,7 +920,14 @@ export async function runDueStorageCleanup(
   }
 
   return {
-    checked: due.length + expiredTickets.length,
+    checked:
+      accountCleanup.checked +
+      due.length +
+      expiredTickets.length,
+    accountCleanupJobsChecked: accountCleanup.jobsChecked,
+    accountCleanupChecked: accountCleanup.checked,
+    accountCleanupDeleted: accountCleanup.deleted,
+    accountCleanupFailed: accountCleanup.failed,
     replacementChecked: due.length,
     replacementDeleted: deleted,
     replacementDeferred: deferred,
@@ -780,8 +935,14 @@ export async function runDueStorageCleanup(
     expiredTicketsChecked: expiredTickets.length,
     expiredTicketsCleaned,
     expiredTicketFailures,
-    deleted: deleted + expiredTicketsCleaned,
-    failed: failed + expiredTicketFailures,
+    deleted:
+      accountCleanup.deleted +
+      deleted +
+      expiredTicketsCleaned,
+    failed:
+      accountCleanup.failed +
+      failed +
+      expiredTicketFailures,
   };
 }
 
