@@ -687,8 +687,9 @@ async function deleteObject(request, env, auth) {
   authorizeDelete(auth.uid, metadata);
 
   const now = new Date();
-  await auth.db.commit(null, [
+  const writes = [
     auth.db.writeDelete(`storage_objects/${metadata.objectId}`),
+    auth.db.writeDelete(`storage_delete_queue/${metadata.objectId}`),
     auth.db.writeCreate(`storage_audit_logs/${auditId()}`, {
       actorUid: auth.uid,
       action: "deleteStorageObject",
@@ -698,7 +699,23 @@ async function deleteObject(request, env, auth) {
       sizeBytes: Number(metadata.sizeBytes || 0),
       createdAt: now,
     }),
-  ]);
+  ];
+
+  if (isReplaceableStorageScope(metadata.scope)) {
+    const pointerPath = storageActivePointerPath(
+      metadata.scope,
+      metadata.targetId,
+    );
+    const pointer = await auth.db.get(pointerPath);
+    if (
+      pointer.exists &&
+      clean(pointer.data?.objectId) === metadata.objectId
+    ) {
+      writes.push(auth.db.writeDelete(pointerPath));
+    }
+  }
+
+  await auth.db.commit(null, writes);
 
   const bucket = bucketFromEnv(env);
   await bucket.delete(clean(metadata.storageKey));
