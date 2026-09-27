@@ -105,6 +105,19 @@ jobs:
           printf '%s' "$R2_ACCESS_KEY_ID" | npx wrangler secret put R2_ACCESS_KEY_ID
           printf '%s' "$R2_SECRET_ACCESS_KEY" | npx wrangler secret put R2_SECRET_ACCESS_KEY
 
+      - name: Sync Analytics Engine read token
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          ANALYTICS_READ_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -n "$ANALYTICS_READ_TOKEN" ]; then
+            printf '%s' "$ANALYTICS_READ_TOKEN" | npx wrangler secret put CLOUDFLARE_ANALYTICS_READ_TOKEN
+          else
+            echo "::error::Cloudflare Analytics read token is missing."
+            exit 1
+          fi
+
       - name: Sync game RNG secret
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
