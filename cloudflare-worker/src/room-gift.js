@@ -778,7 +778,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
   });
 }
 
-export async function roomGift(request, env) {
+export async function roomGift(request, env, ctx) {
   if (request.method !== "POST") {
     return json(request, env, { ok: false, code: "method_not_allowed" }, 405);
   }
@@ -799,12 +799,19 @@ export async function roomGift(request, env) {
       ? result._rocketFeedEvents
       : [];
     if (rocketFeedEvents.length > 0) {
-      publishGlobalRocketEvents(env, rocketFeedEvents).catch((error) => {
-        console.error(
-          "Rocket feed publish failed",
-          String(error?.message || error),
-        );
-      });
+      const publishTask = publishGlobalRocketEvents(env, rocketFeedEvents).catch(
+        (error) => {
+          console.error(
+            "Rocket feed publish failed",
+            String(error?.message || error),
+          );
+        },
+      );
+      if (typeof ctx?.waitUntil === "function") {
+        ctx.waitUntil(publishTask);
+      } else {
+        await publishTask;
+      }
     }
     const { _rocketFeedEvents, ...publicResult } = result;
     return json(request, env, publicResult, 200);
