@@ -209,6 +209,36 @@ async function authContext(request, env) {
   return { uid, decoded, db: firestoreClient(env) };
 }
 
+async function authorizeRoomCoverManagement(db, uid, targetId) {
+  const [room, actor] = await Promise.all([
+    db.get(`rooms/${targetId}`),
+    db.get(`users/${uid}`),
+  ]);
+  if (!room.exists) throw new StorageApiError("room_not_found", 404);
+
+  const ownerUid = clean(room.data?.ownerUid || room.data?.ownerId);
+  const hostUid = clean(room.data?.hostUid || room.data?.hostId);
+  const actorRole = clean(actor.data?.role);
+  const actorEnabled = actor.data?.adminEnabled === true;
+  const actorCapabilities = Array.isArray(actor.data?.capabilities)
+    ? actor.data.capabilities.map(clean)
+    : [];
+  const globalManageRooms =
+    actorRole === "owner" ||
+    (
+      actorEnabled &&
+      (
+        actorCapabilities.includes("manageRooms") ||
+        actorCapabilities.includes("manage_rooms")
+      )
+    );
+
+  if (uid !== ownerUid && uid !== hostUid && !globalManageRooms) {
+    throw new StorageApiError("forbidden", 403);
+  }
+  return { targetId, room: room.data || {} };
+}
+
 async function authorizeUpload(db, uid, scope, rawTargetId) {
   if (scope === "profile_image" || scope === "profile_cover") {
     return { targetId: uid };
@@ -220,13 +250,7 @@ async function authorizeUpload(db, uid, scope, rawTargetId) {
   }
 
   if (scope === "room_cover") {
-    const room = await db.get(`rooms/${targetId}`);
-    if (!room.exists) throw new StorageApiError("room_not_found", 404);
-    const ownerUid = clean(room.data?.ownerUid || room.data?.hostId);
-    const hostId = clean(room.data?.hostId);
-    if (uid !== ownerUid && uid !== hostId) {
-      throw new StorageApiError("forbidden", 403);
-    }
+    await authorizeRoomCoverManagement(db, uid, targetId);
     return { targetId };
   }
 
@@ -302,7 +326,11 @@ async function authorizeRead(db, uid, metadata) {
   throw new StorageApiError("forbidden", 403);
 }
 
-function authorizeDelete(uid, metadata) {
+async function authorizeDelete(db, uid, metadata) {
+  if (clean(metadata.scope) === "room_cover") {
+    await authorizeRoomCoverManagement(db, uid, clean(metadata.targetId));
+    return true;
+  }
   if (clean(metadata.ownerUid) !== uid) {
     throw new StorageApiError("forbidden", 403);
   }
@@ -359,7 +387,7 @@ async function prepareUpload(request, env, auth, body) {
     effectiveReplaceObjectId = activeObjectId || replaceObjectId;
     if (effectiveReplaceObjectId) {
       previous = await metadataForObject(auth.db, effectiveReplaceObjectId);
-      authorizeDelete(auth.uid, previous);
+      await authorizeDelete(auth.db, auth.uid, previous);
       if (
         clean(previous.scope) !== scope ||
         clean(previous.targetId) !== clean(authorization.targetId)
@@ -439,6 +467,13 @@ async function confirmUpload(request, env, auth, body) {
   if (clean(ticket.ownerUid) !== auth.uid) {
     throw new StorageApiError("forbidden", 403);
   }
+  if (clean(ticket.scope) === "room_cover") {
+    await authorizeRoomCoverManagement(
+      auth.db,
+      auth.uid,
+      clean(ticket.targetId),
+    );
+  }
 
   const bucket = bucketFromEnv(env);
   if (timestampMs(ticket.expiresAt) < Date.now()) {
@@ -499,7 +534,10 @@ async function confirmUpload(request, env, auth, body) {
       );
       if (
         !snap.exists ||
-        clean(snap.data?.ownerUid) !== auth.uid ||
+        (
+          clean(ticket.scope) !== "room_cover" &&
+          clean(snap.data?.ownerUid) !== auth.uid
+        ) ||
         clean(snap.data?.scope) !== clean(ticket.scope) ||
         clean(snap.data?.targetId) !== clean(ticket.targetId)
       ) {
@@ -659,12 +697,20 @@ async function transferSharedRoomCoverOnAccountDeletion({
     return "";
   }
 
-  const roomOwnerUid = clean(
+  const isOfficialRoom =
+    room.data?.systemOwned === true ||
+    room.data?.officialRoom === true;
+  const directOwnerUid = clean(
     room.data?.ownerUid ||
-    room.data?.ownerId ||
-    room.data?.hostId,
+    room.data?.ownerId,
   );
-  if (!roomOwnerUid || roomOwnerUid === deletedUid) return "";
+  const roomOwnerUid =
+    directOwnerUid && directOwnerUid !== deletedUid
+      ? directOwnerUid
+      : isOfficialRoom
+        ? `room:${targetId}`
+        : "";
+  if (!roomOwnerUid) return "";
 
   const now = new Date(nowMs);
   const writes = [
@@ -1161,7 +1207,7 @@ async function deleteObject(request, env, auth) {
     auth.db,
     url.searchParams.get("objectId"),
   );
-  authorizeDelete(auth.uid, metadata);
+  await authorizeDelete(auth.db, auth.uid, metadata);
 
   const now = new Date();
   const writes = [
