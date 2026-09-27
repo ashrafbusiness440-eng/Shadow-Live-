@@ -385,7 +385,7 @@ test("deleted-account cleanup closes the job after the final partial batch", asy
       throw new Error("unexpected_collection:" + collection);
     },
     async get(path) {
-      if (path.startsWith("storage_active_pointers/")) {
+      if (path.startsWith("storage_active_objects/")) {
         return { exists: true, data: { objectId: "a".repeat(32) } };
       }
       return { exists: false, data: null };
@@ -423,7 +423,7 @@ test("deleted-account cleanup closes the job after the final partial batch", asy
     commits.some(
       (write) =>
         write.op === "delete" &&
-        write.path.startsWith("storage_active_pointers/"),
+        write.path.startsWith("storage_active_objects/"),
     ),
     true,
   );
