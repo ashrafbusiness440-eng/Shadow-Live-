@@ -283,8 +283,8 @@ service cloud.firestore {
         && request.resource.data.badges.size() <= 20
         && publicProfileAuthoritativeFieldsMatch(userId)
         && request.resource.data.keys().hasOnly([
-          'uid','displayName','username','publicId','searchTokens','profileImageUrl','profileAvatarAsset',
-          'coverImageUrl','bio','location','interests','level','vipLevel','badges','isOnline','createdAt','updatedAt'
+          'uid','displayName','username','publicId','searchTokens','profileImageUrl','profileImageObjectId','profileAvatarAsset',
+          'coverImageUrl','coverImageObjectId','bio','location','interests','level','vipLevel','badges','isOnline','createdAt','updatedAt'
         ]);
       allow delete: if false;
     }
