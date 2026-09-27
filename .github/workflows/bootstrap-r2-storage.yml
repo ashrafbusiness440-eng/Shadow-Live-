@@ -57,4 +57,5 @@ jobs:
         run: npx wrangler deploy --dry-run --var BUILD_SHA:"$GITHUB_SHA"
 
       - name: R2 foundation result
-        run: echo "Shadow Live R2 bucket status: $R2_BUCKET_READY"
+        run: |
+          echo "Shadow Live R2 bucket status: $R2_BUCKET_READY"
