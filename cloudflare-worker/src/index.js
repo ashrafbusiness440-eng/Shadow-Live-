@@ -28,7 +28,7 @@ import {
 
 export { RoomRealtimeObject } from "./room-realtime-object.js";
 
-async function dispatchRequest(request, env) {
+async function dispatchRequest(request, env, ctx) {
   const url = new URL(request.url);
   annotatePressureRequest(request, { route: url.pathname });
 
@@ -96,7 +96,7 @@ async function dispatchRequest(request, env) {
   }
   if (url.pathname === "/api/room-gift") {
     annotatePressureRequest(request, { action: "sendRoomGift" });
-    return roomGift(request, env);
+    return roomGift(request, env, ctx);
   }
   if (url.pathname === "/api/voice-session") {
     return voiceSession(request, env);
@@ -135,10 +135,10 @@ async function dispatchRequest(request, env) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const startedAtMs = Date.now();
     try {
-      const response = await dispatchRequest(request, env);
+      const response = await dispatchRequest(request, env, ctx);
       recordRequestTelemetry(request, env, response, startedAtMs);
       return response;
     } catch (error) {
