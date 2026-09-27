@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'firestore.rules'
+      - 'firestore.indexes.json'
       - 'firebase.json'
       - '.firebaserc'
       - '.github/workflows/deploy-firestore-rules.yml'
@@ -55,7 +56,7 @@ jobs:
           const header = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
           const payload = b64url(JSON.stringify({
             iss: clientEmail,
-            scope: 'https://www.googleapis.com/auth/firebase',
+            scope: 'https://www.googleapis.com/auth/cloud-platform',
             aud: 'https://oauth2.googleapis.com/token',
             iat: now,
             exp: now + 3600,
@@ -159,4 +160,182 @@ jobs:
 
           console.log('Firestore rules released:', ruleset.name);
           console.log('Release:', release.name || releaseName);
+
+          const indexParent =
+            'projects/' + projectId +
+            '/databases/(default)/collectionGroups/game_operations';
+          const indexListResponse = await fetch(
+            'https://firestore.googleapis.com/v1/' + indexParent + '/indexes',
+            { headers: { authorization: 'Bearer ' + token } },
+          );
+          const indexList = await indexListResponse.json().catch(() => ({}));
+          if (!indexListResponse.ok) {
+            throw new Error(
+              'index list failed ' +
+                indexListResponse.status +
+                ' ' +
+                JSON.stringify(indexList),
+            );
+          }
+
+          const indexReadyOrBuilding = (indexList.indexes || []).some((index) => {
+            const fields = Array.isArray(index.fields) ? index.fields : [];
+            const status = fields.find((field) => field.fieldPath === 'status');
+            const closes = fields.find((field) => field.fieldPath === 'closesAtMs');
+            return index.queryScope === 'COLLECTION' &&
+              status?.order === 'ASCENDING' &&
+              closes?.order === 'ASCENDING' &&
+              index.state !== 'DELETING';
+          });
+
+          if (indexReadyOrBuilding) {
+            console.log('Firestore game_operations settlement index already exists.');
+          } else {
+            const createIndex = await fetch(
+              'https://firestore.googleapis.com/v1/' + indexParent + '/indexes',
+              {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                  queryScope: 'COLLECTION',
+                  fields: [
+                    { fieldPath: 'status', order: 'ASCENDING' },
+                    { fieldPath: 'closesAtMs', order: 'ASCENDING' },
+                  ],
+                }),
+              },
+            );
+            const createdIndex = await createIndex.json().catch(() => ({}));
+            if (!createIndex.ok) {
+              throw new Error(
+                'index create failed ' +
+                  createIndex.status +
+                  ' ' +
+                  JSON.stringify(createdIndex),
+              );
+            }
+            console.log(
+              'Firestore game_operations settlement index creation requested:',
+              createdIndex.name || 'operation_started',
+            );
+          }
+
+          const conversationIndexParent =
+            'projects/' + projectId +
+            '/databases/(default)/collectionGroups/conversations';
+          const conversationIndexListResponse = await fetch(
+            'https://firestore.googleapis.com/v1/' +
+              conversationIndexParent +
+              '/indexes',
+            { headers: { authorization: 'Bearer ' + token } },
+          );
+          const conversationIndexList =
+            await conversationIndexListResponse.json().catch(() => ({}));
+          if (!conversationIndexListResponse.ok) {
+            throw new Error(
+              'conversation index list failed ' +
+                conversationIndexListResponse.status +
+                ' ' +
+                JSON.stringify(conversationIndexList),
+            );
+          }
+
+          const conversationIndexExists =
+            (conversationIndexList.indexes || []).some((index) => {
+              const fields = Array.isArray(index.fields) ? index.fields : [];
+              const participants =
+                fields.find((field) => field.fieldPath === 'participants');
+              const updatedAt =
+                fields.find((field) => field.fieldPath === 'updatedAt');
+              return index.queryScope === 'COLLECTION' &&
+                participants?.arrayConfig === 'CONTAINS' &&
+                updatedAt?.order === 'DESCENDING' &&
+                index.state !== 'DELETING';
+            });
+
+          if (conversationIndexExists) {
+            console.log('Firestore conversations pressure index already exists.');
+          } else {
+            const createConversationIndex = await fetch(
+              'https://firestore.googleapis.com/v1/' +
+                conversationIndexParent +
+                '/indexes',
+              {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                  queryScope: 'COLLECTION',
+                  fields: [
+                    { fieldPath: 'participants', arrayConfig: 'CONTAINS' },
+                    { fieldPath: 'updatedAt', order: 'DESCENDING' },
+                  ],
+                }),
+              },
+            );
+            const createdConversationIndex =
+              await createConversationIndex.json().catch(() => ({}));
+            if (!createConversationIndex.ok) {
+              throw new Error(
+                'conversation index create failed ' +
+                  createConversationIndex.status +
+                  ' ' +
+                  JSON.stringify(createdConversationIndex),
+              );
+            }
+            console.log(
+              'Firestore conversations pressure index creation requested:',
+              createdConversationIndex.name || 'operation_started',
+            );
+          }
+
+          const schedulerLocation =
+            'projects/' + projectId + '/locations/us-central1';
+          const schedulerResponse = await fetch(
+            'https://cloudscheduler.googleapis.com/v1/' +
+              schedulerLocation +
+              '/jobs?pageSize=500',
+            { headers: { authorization: 'Bearer ' + token } },
+          );
+          const schedulerBody = await schedulerResponse.json().catch(() => ({}));
+          if (!schedulerResponse.ok) {
+            throw new Error(
+              'scheduler list failed ' +
+                schedulerResponse.status +
+                ' ' +
+                JSON.stringify(schedulerBody),
+            );
+          }
+
+          const legacySettlementJobs = (schedulerBody.jobs || []).filter((job) =>
+            String(job.name || '').toLowerCase().includes('gamesettlementworker'),
+          );
+          if (legacySettlementJobs.length === 0) {
+            console.log('No legacy Firebase game settlement scheduler found.');
+          }
+          for (const job of legacySettlementJobs) {
+            if (job.state === 'PAUSED') {
+              console.log('Legacy Firebase settlement scheduler already paused:', job.name);
+              continue;
+            }
+            const pauseResponse = await fetch(
+              'https://cloudscheduler.googleapis.com/v1/' +
+                job.name +
+                ':pause',
+              {
+                method: 'POST',
+                headers,
+                body: '{}',
+              },
+            );
+            const pauseBody = await pauseResponse.json().catch(() => ({}));
+            if (!pauseResponse.ok) {
+              throw new Error(
+                'scheduler pause failed ' +
+                  pauseResponse.status +
+                  ' ' +
+                  JSON.stringify(pauseBody),
+              );
+            }
+            console.log('Paused legacy Firebase settlement scheduler:', job.name);
+          }
           NODE

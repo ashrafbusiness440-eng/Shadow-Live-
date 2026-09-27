@@ -104,9 +104,13 @@ export async function settleDueGameOperations(
   nowMs=Date.now(),
   limit=100,
 ):Promise<{checked:number;settled:number;failed:number}>{
+  // Pressure Root Fix Step 12: this Firebase scheduler is only a backup for
+  // the Cloudflare settlement path. Let Firestore select due operations so
+  // future pending rounds are never pulled into every sweep.
   const snapshot=await db.collection("game_operations")
     .where("status","==","pending")
-    .limit(Math.max(1,Math.min(200,limit)))
+    .where("closesAtMs","<=",nowMs)
+    .limit(Math.max(1,Math.min(25,limit)))
     .get();
 
   let settled=0;
@@ -124,11 +128,13 @@ export async function settleDueGameOperations(
 }
 
 export const gameSettlementWorker=onSchedule({
-  schedule:"* * * * *",
+  schedule:"*/15 * * * *",
   timeZone:"UTC",
   region:"us-central1",
   timeoutSeconds:60,
 },async()=>{
-  const result=await settleDueGameOperations(getFirestore());
-  console.log("game settlement worker",result);
+  // Cloudflare handles the normal five-minute safety sweep. Keep this
+  // Firebase schedule sparse as a fallback so it cannot amplify reads.
+  const result=await settleDueGameOperations(getFirestore(),Date.now(),25);
+  console.log("game settlement backup worker",result);
 });

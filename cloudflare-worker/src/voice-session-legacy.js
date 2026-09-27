@@ -1937,20 +1937,34 @@ async function roomLibrary(db,uid){
     db.collection("room_visits").doc(uid).collection("items").orderBy("lastVisitedAt","desc").limit(60).get(),
   ]);
 
+  // Favorites and visit history commonly contain the same room. Cache the
+  // hydration promise per request so the room document and realtime count are
+  // fetched once even when the room appears in both 60-item lists.
+  const roomHydrationCache=new Map();
+  async function hydrateRoom(roomId){
+    if(roomHydrationCache.has(roomId))return roomHydrationCache.get(roomId);
+    const pending=(async()=>{
+      const roomSnap=await db.collection("rooms").doc(roomId).get();
+      if(!roomSnap.exists)return null;
+      const data=roomSnap.data()||{};
+      if(data.isActive===false||data.isHidden===true||clean(data.visibility)==="hidden")return null;
+      const liveOnlineCount=await realtimeRoomCount(roomId);
+      return {
+        ...roomResponse(roomId,data),
+        onlineCount:liveOnlineCount??Math.max(0,Number(data.onlineCount||data.participantsCount||0)),
+      };
+    })();
+    roomHydrationCache.set(roomId,pending);
+    return pending;
+  }
+
   async function hydrate(snapshot){
     const result=[];
     for(const entry of snapshot.docs){
       const roomId=clean(entry.data()?.roomId||entry.id);
       if(!roomId)continue;
-      const roomSnap=await db.collection("rooms").doc(roomId).get();
-      if(!roomSnap.exists)continue;
-      const data=roomSnap.data()||{};
-      if(data.isActive===false||data.isHidden===true||clean(data.visibility)==="hidden")continue;
-      const liveOnlineCount=await realtimeRoomCount(roomId);
-      result.push({
-        ...roomResponse(roomId,data),
-        onlineCount:liveOnlineCount??Math.max(0,Number(data.onlineCount||data.participantsCount||0)),
-      });
+      const hydrated=await hydrateRoom(roomId);
+      if(hydrated)result.push(hydrated);
     }
     return result;
   }

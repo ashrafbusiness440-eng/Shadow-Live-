@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'firebase_options.dart';
@@ -255,7 +256,9 @@ class _ControlShellState extends State<ControlShell> {
           ),
         ],
       ),
-      body: IndexedStack(index:index,children:pages),
+      // Pressure Root Fix Step 12: mount only the selected control page.
+      // IndexedStack kept inactive Firestore listeners alive in the background.
+      body:pages[index],
       bottomNavigationBar:NavigationBar(
         height:72,
         labelBehavior:NavigationDestinationLabelBehavior.onlyShowSelected,
@@ -274,27 +277,69 @@ class _ControlShellState extends State<ControlShell> {
   }
 }
 
+class _DashboardSnapshot {
+  const _DashboardSnapshot({
+    required this.users,
+    required this.admins,
+    required this.owners,
+  });
+
+  final int users;
+  final int admins;
+  final int owners;
+}
+
+Future<_DashboardSnapshot> _loadDashboardSnapshot() async {
+  final users = controlFirestore.collection('users');
+
+  // Aggregations avoid downloading the full users collection just to render
+  // dashboard totals. The admin query only downloads the small privileged set
+  // so the existing role/adminEnabled semantics (including missing status)
+  // remain unchanged.
+  final totalFuture = users.count().get();
+  final deletedFuture =
+      users.where('accountStatus', isEqualTo: 'deleted').count().get();
+  final adminFuture = users.where(
+    Filter.or(
+      Filter('adminEnabled', isEqualTo: true),
+      Filter('role', isEqualTo: 'owner'),
+      Filter('role', isEqualTo: 'super_admin'),
+      Filter('role', isEqualTo: 'admin'),
+      Filter('role', isEqualTo: 'moderator'),
+    ),
+  ).get();
+
+  final total = await totalFuture;
+  final deleted = await deletedFuture;
+  final adminSnapshot = await adminFuture;
+
+  final privileged = adminSnapshot.docs.where((doc) {
+    final data = doc.data();
+    return (data['accountStatus'] ?? 'active').toString() != 'deleted';
+  }).toList(growable: false);
+
+  return _DashboardSnapshot(
+    users: ((total.count ?? 0) - (deleted.count ?? 0)).clamp(0, 1 << 31).toInt(),
+    admins: privileged.length,
+    owners: privileged.where((doc) => doc.data()['role'] == 'owner').length,
+  );
+}
+
 class DashboardPage extends StatelessWidget {
   const DashboardPage({super.key,required this.onOpen});
   final ValueChanged<int> onOpen;
   @override Widget build(BuildContext context)=>ListView(padding:const EdgeInsets.all(16),children:[
     const Text('لوحة التحكم',style:TextStyle(fontSize:25,fontWeight:FontWeight.w900)),
     const SizedBox(height:4),const Text('حالة Shadow Live الإدارية — قراءة مباشرة وآمنة',style:TextStyle(color:Color(0xFFAAA3B8))),const SizedBox(height:16),
-    StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(
-      stream:controlFirestore.collection('users').snapshots(),
+    FutureBuilder<_DashboardSnapshot>(
+      future:_loadDashboardSnapshot(),
       builder:(context,snap){
-        final allDocs=snap.data?.docs??[];
-        final docs=allDocs.where((d)=>(d.data()['accountStatus']??'active').toString()!='deleted').toList();
-        final admins=docs.where((d){
-          final data=d.data();
-          final role=(data['role']??'user').toString();
-          return data['adminEnabled']==true || const {'owner','super_admin','admin','moderator'}.contains(role);
-        }).length;
-        final owners=docs.where((d)=>d.data()['role']=='owner').length;
+        final stats=snap.data;
+        final failed=snap.hasError;
         return Wrap(spacing:10,runSpacing:10,children:[
-          StatCard(icon:Icons.people_alt_outlined,label:'المستخدمون',value:snap.hasError?'—':(snap.hasData?docs.length.toString():'...')),
-          StatCard(icon:Icons.admin_panel_settings_outlined,label:'الإداريون',value:snap.hasError?'—':(snap.hasData?admins.toString():'...')),
-          StatCard(icon:Icons.workspace_premium_outlined,label:'Owner',value:snap.hasError?'—':(snap.hasData?owners.toString():'...')),
+          StatCard(icon:Icons.people_alt_outlined,label:'المستخدمون',value:failed?'—':(stats?.users.toString()??'...')),
+          StatCard(icon:Icons.admin_panel_settings_outlined,label:'الإداريون',value:failed?'—':(stats?.admins.toString()??'...')),
+          StatCard(icon:Icons.workspace_premium_outlined,label:'Owner',value:failed?'—':(stats?.owners.toString()??'...')),
           const StatCard(icon:Icons.shield_outlined,label:'الوضع',value:'Read-only'),
         ]);
       },
@@ -324,8 +369,65 @@ class UsersPage extends StatefulWidget {
 enum _UserBucket { regular, admins, disabled, banned, deleted }
 
 class _UsersPageState extends State<UsersPage> {
+  static const int _pageSize=100;
+
   String query='';
   _UserBucket selected=_UserBucket.regular;
+  final List<QueryDocumentSnapshot<Map<String,dynamic>>> _users=[];
+  DocumentSnapshot<Map<String,dynamic>>? _cursor;
+  bool _loadingUsers=true;
+  bool _loadingMore=false;
+  bool _hasMore=true;
+  Object? _loadError;
+
+  @override
+  void initState(){
+    super.initState();
+    unawaited(_reloadUsers());
+  }
+
+  Future<void> _reloadUsers() async {
+    if(!mounted)return;
+    setState((){
+      _users.clear();
+      _cursor=null;
+      _loadingUsers=true;
+      _loadingMore=false;
+      _hasMore=true;
+      _loadError=null;
+    });
+    await _loadMoreUsers();
+  }
+
+  Future<void> _loadMoreUsers() async {
+    if(_loadingMore||!_hasMore)return;
+    if(mounted)setState(()=>_loadingMore=true);
+    try{
+      Query<Map<String,dynamic>> request=controlFirestore
+          .collection('users')
+          .orderBy(FieldPath.documentId)
+          .limit(_pageSize);
+      final cursor=_cursor;
+      if(cursor!=null)request=request.startAfterDocument(cursor);
+      final snap=await request.get();
+      if(!mounted)return;
+      setState((){
+        _users.addAll(snap.docs);
+        if(snap.docs.isNotEmpty)_cursor=snap.docs.last;
+        _hasMore=snap.docs.length==_pageSize;
+        _loadingUsers=false;
+        _loadingMore=false;
+        _loadError=null;
+      });
+    }catch(error){
+      if(!mounted)return;
+      setState((){
+        _loadingUsers=false;
+        _loadingMore=false;
+        _loadError=error;
+      });
+    }
+  }
 
   String text(dynamic value)=>value==null?'':'$value';
   String displayName(Map<String,dynamic> d)=>text(d['displayName']).isNotEmpty
@@ -420,89 +522,110 @@ class _UsersPageState extends State<UsersPage> {
     ));
   }
 
-  @override Widget build(BuildContext context)=>ListView(
-    padding:const EdgeInsets.all(16),
-    children:[
-      const Row(children:[
-        Icon(Icons.people_alt_outlined,size:28,color:Color(0xFFD7B85A)),
-        SizedBox(width:10),
-        Text('المستخدمون',style:TextStyle(fontSize:25,fontWeight:FontWeight.w900)),
-      ]),
-      const SizedBox(height:12),
-      TextField(
-        onChanged:(v)=>setState(()=>query=v),
-        decoration:const InputDecoration(
-          prefixIcon:Icon(Icons.search),
-          hintText:'بحث بالاسم، البريد، ID، الدور أو الحالة',
-          border:OutlineInputBorder(),
+  @override Widget build(BuildContext context){
+    final all=_users;
+    int countFor(_UserBucket bucket)=>all.where((doc)=>bucketOf(doc.data())==bucket).length;
+    final visible=all.where((doc)=>
+      bucketOf(doc.data())==selected && matches(doc.id,doc.data())
+    ).toList(growable:false);
+    final countSuffix=_hasMore?'+':'';
+
+    return ListView(
+      padding:const EdgeInsets.all(16),
+      children:[
+        Row(children:[
+          const Icon(Icons.people_alt_outlined,size:28,color:Color(0xFFD7B85A)),
+          const SizedBox(width:10),
+          const Expanded(child:Text('المستخدمون',style:TextStyle(fontSize:25,fontWeight:FontWeight.w900))),
+          IconButton(
+            tooltip:'تحديث القائمة',
+            onPressed:_loadingMore?null:()=>unawaited(_reloadUsers()),
+            icon:const Icon(Icons.refresh_rounded),
+          ),
+        ]),
+        const SizedBox(height:12),
+        TextField(
+          onChanged:(v)=>setState(()=>query=v),
+          decoration:const InputDecoration(
+            prefixIcon:Icon(Icons.search),
+            hintText:'بحث بالاسم، البريد، ID، الدور أو الحالة',
+            border:OutlineInputBorder(),
+          ),
         ),
-      ),
-      const SizedBox(height:12),
-      StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(
-        stream:controlFirestore.collection('users').snapshots(),
-        builder:(context,snap){
-          if(snap.connectionState==ConnectionState.waiting){
-            return const Padding(
-              padding:EdgeInsets.all(32),
-              child:Center(child:CircularProgressIndicator()),
-            );
-          }
-          if(snap.hasError){
-            return Card(child:ListTile(
-              leading:const Icon(Icons.error_outline,color:Colors.orangeAccent),
-              title:const Text('تعذر قراءة المستخدمين'),
-              subtitle:Text('${snap.error}'),
-            ));
-          }
-
-          final all=snap.data?.docs??[];
-          int countFor(_UserBucket bucket)=>all.where((doc)=>bucketOf(doc.data())==bucket).length;
-
-          final visible=all.where((doc)=>
-            bucketOf(doc.data())==selected && matches(doc.id,doc.data())
-          ).toList();
-
-          return Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
-            Wrap(
-              spacing:8,
-              runSpacing:8,
-              children:_UserBucket.values.map((bucket){
-                final active=selected==bucket;
-                return ChoiceChip(
-                  selected:active,
-                  onSelected:(_)=>setState(()=>selected=bucket),
-                  avatar:Icon(bucketIcon(bucket),size:18),
-                  label:Text('${bucketLabel(bucket)} (${countFor(bucket)})'),
-                );
-              }).toList(),
+        const SizedBox(height:12),
+        if(_loadingUsers&&all.isEmpty)
+          const Padding(
+            padding:EdgeInsets.all(32),
+            child:Center(child:CircularProgressIndicator()),
+          )
+        else if(_loadError!=null&&all.isEmpty)
+          Card(child:ListTile(
+            leading:const Icon(Icons.error_outline,color:Colors.orangeAccent),
+            title:const Text('تعذر قراءة المستخدمين'),
+            subtitle:Text('$_loadError'),
+            trailing:IconButton(
+              onPressed:()=>unawaited(_reloadUsers()),
+              icon:const Icon(Icons.refresh_rounded),
             ),
-            const SizedBox(height:12),
-            Card(
-              child:ListTile(
-                leading:Icon(bucketIcon(selected),color:const Color(0xFFD7B85A)),
-                title:Text(bucketLabel(selected),style:const TextStyle(fontWeight:FontWeight.w900)),
-                subtitle:Text(
-                  selected==_UserBucket.deleted
-                    ? 'الحسابات المحذوفة محفوظة كسجل تدقيق ولا تدخل ضمن عدد المستخدمين.'
-                    : selected==_UserBucket.disabled
-                      ? 'يشمل الحسابات المعطّلة والمعلّقة مؤقتًا.'
-                      : 'عدد الحسابات في هذا القسم: ${countFor(selected)}'
-                ),
+          ))
+        else ...[
+          Wrap(
+            spacing:8,
+            runSpacing:8,
+            children:_UserBucket.values.map((bucket){
+              final active=selected==bucket;
+              return ChoiceChip(
+                selected:active,
+                onSelected:(_)=>setState(()=>selected=bucket),
+                avatar:Icon(bucketIcon(bucket),size:18),
+                label:Text('${bucketLabel(bucket)} (${countFor(bucket)}$countSuffix)'),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height:12),
+          Card(
+            child:ListTile(
+              leading:Icon(bucketIcon(selected),color:const Color(0xFFD7B85A)),
+              title:Text(bucketLabel(selected),style:const TextStyle(fontWeight:FontWeight.w900)),
+              subtitle:Text(
+                selected==_UserBucket.deleted
+                  ? 'الحسابات المحذوفة محفوظة كسجل تدقيق ولا تدخل ضمن عدد المستخدمين.'
+                  : selected==_UserBucket.disabled
+                    ? 'يشمل الحسابات المعطّلة والمعلّقة مؤقتًا.'
+                    : _hasMore
+                      ? 'المحمّل حاليًا من هذا القسم: ${countFor(selected)}. حمّل المزيد للوصول لبقية الحسابات.'
+                      : 'عدد الحسابات في هذا القسم ضمن القائمة المحمّلة: ${countFor(selected)}'
               ),
             ),
-            const SizedBox(height:8),
-            if(visible.isEmpty)
-              const Card(child:ListTile(
-                leading:Icon(Icons.person_search_outlined),
-                title:Text('لا توجد نتائج مطابقة في هذا القسم'),
-              ))
-            else
-              ...visible.map(userCard),
-          ]);
-        },
-      ),
-    ],
-  );
+          ),
+          if(_loadError!=null)
+            Card(child:ListTile(
+              leading:const Icon(Icons.warning_amber_rounded,color:Colors.orangeAccent),
+              title:const Text('تعذر تحميل الصفحة التالية'),
+              subtitle:Text('$_loadError'),
+            )),
+          const SizedBox(height:8),
+          if(visible.isEmpty)
+            const Card(child:ListTile(
+              leading:Icon(Icons.person_search_outlined),
+              title:Text('لا توجد نتائج مطابقة في الحسابات المحمّلة'),
+            ))
+          else
+            ...visible.map(userCard),
+          if(_hasMore) ...[
+            const SizedBox(height:12),
+            OutlinedButton.icon(
+              onPressed:_loadingMore?null:()=>unawaited(_loadMoreUsers()),
+              icon:_loadingMore
+                  ? const SizedBox(width:18,height:18,child:CircularProgressIndicator(strokeWidth:2))
+                  : const Icon(Icons.expand_more_rounded),
+              label:Text(_loadingMore?'جار تحميل المزيد...':'تحميل 100 حساب إضافي'),
+            ),
+          ],
+        ],
+      ],
+    );
+  }
 }
 
 class UserReadOnlyPage extends StatelessWidget {
