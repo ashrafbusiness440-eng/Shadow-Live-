@@ -41,6 +41,10 @@ test("scheduled settlement credits a disconnected pending game exactly once",asy
       outcomeId:"tomato5",
       reels:[],
     }),
+    db.collection("game_settlement_queue").doc(operationId).set({
+      operationId,
+      dueAtMs:nowMs-1000,
+    }),
   ]);
 
   const [a,b]=await Promise.all([
@@ -96,6 +100,10 @@ test("scheduled settlement leaves future rounds pending",async()=>{
       outcomeId:"book",
       reels:[],
     }),
+    db.collection("game_settlement_queue").doc(operationId).set({
+      operationId,
+      dueAtMs:nowMs+30000,
+    }),
   ]);
 
   const result=await settleDueGameOperations(db,nowMs,20);
@@ -116,11 +124,12 @@ test("due settlement is not starved by more than ten future pending operations",
 
   const futureWrites=[];
   for(let index=0;index<12;index++){
+    const futureOperationId="aaa_future_"+String(index).padStart(2,"0")+"_"+suffix;
     futureWrites.push(
       db.collection("game_operations")
-        .doc("aaa_future_"+String(index).padStart(2,"0")+"_"+suffix)
+        .doc(futureOperationId)
         .set({
-          operationId:"future_"+index+"_"+suffix,
+          operationId:futureOperationId,
           userId:"future_user_"+index+"_"+suffix,
           roomId:"future_room",
           gameId:"witch",
@@ -130,6 +139,10 @@ test("due settlement is not starved by more than ten future pending operations",
           closesAtMs:nowMs+60000+index,
           payoutCoins:0,
         }),
+      db.collection("game_settlement_queue").doc(futureOperationId).set({
+        operationId:futureOperationId,
+        dueAtMs:nowMs+60000+index,
+      }),
     );
   }
 
@@ -158,6 +171,10 @@ test("due settlement is not starved by more than ten future pending operations",
       payoutCoins:500,
       outcomeId:"tomato5",
       reels:[],
+    }),
+    db.collection("game_settlement_queue").doc(dueOperationId).set({
+      operationId:dueOperationId,
+      dueAtMs:nowMs-1000,
     }),
   ]);
 
