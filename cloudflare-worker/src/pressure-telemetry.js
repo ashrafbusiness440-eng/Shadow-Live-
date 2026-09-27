@@ -3,6 +3,13 @@ const REQUEST_CONTEXT = new WeakMap();
 const clean = (value, fallback = "") =>
   String(value ?? fallback).trim().slice(0, 160);
 
+export function composePressureAction(scope, action) {
+  const safeScope = clean(scope);
+  const safeAction = clean(action);
+  if (safeScope && safeAction) return `${safeScope}:${safeAction}`;
+  return safeScope || safeAction;
+}
+
 export function normalizePressureRoute(value) {
   const raw = String(value ?? "").trim().split("?")[0] || "/";
   const parts = raw.split("/").filter(Boolean);
