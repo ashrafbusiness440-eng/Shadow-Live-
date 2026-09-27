@@ -3,6 +3,17 @@ const REQUEST_CONTEXT = new WeakMap();
 const clean = (value, fallback = "") =>
   String(value ?? fallback).trim().slice(0, 160);
 
+export function normalizePressureRoute(value) {
+  const raw = String(value ?? "").trim().split("?")[0] || "/";
+  const parts = raw.split("/").filter(Boolean);
+  if (parts[0] === "api" && parts[1] === "public-media") {
+    const scope = clean(parts[2], "unknown")
+      .replace(/[^A-Za-z0-9_-]/g, "_") || "unknown";
+    return `/api/public-media/${scope}/:target/:object`;
+  }
+  return clean(raw, "/") || "/";
+}
+
 function finite(value, fallback = 0) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
@@ -40,6 +51,7 @@ export function writePressureDataPoint(env, {
   outcome = "",
   method = "",
   colo = "",
+  resource = "",
   durationMs = 0,
   reads = 0,
   writes = 0,
@@ -59,6 +71,7 @@ export function writePressureDataPoint(env, {
   const safeOutcome = clean(outcome);
   const safeMethod = clean(method);
   const safeColo = clean(colo);
+  const safeResource = clean(resource);
   const samplingKey = clean(
     [safeKind, safePrimary, safeAction].filter(Boolean).join(":"),
     safeKind,
@@ -73,6 +86,7 @@ export function writePressureDataPoint(env, {
         safeOutcome,
         safeMethod,
         safeColo,
+        safeResource,
       ],
       doubles: [
         1,
@@ -105,7 +119,7 @@ export function recordRequestTelemetry(
   const url = new URL(request.url);
   const context = pressureRequestContext(request);
   const status = Number(response?.status || error?.status || 0);
-  const route = clean(context.route || url.pathname, "unknown");
+  const route = normalizePressureRoute(context.route || url.pathname);
   const action = clean(context.action);
   const durationMs = Math.max(0, Date.now() - Number(startedAtMs || Date.now()));
   const quota =
@@ -153,6 +167,7 @@ export function recordFirestoreTelemetry(env, {
   quota = false,
   circuitOpen = false,
   error = false,
+  resource = "",
 } = {}) {
   const retries = Math.max(0, Number(attempts || 1) - 1);
   writePressureDataPoint(env, {
@@ -167,6 +182,7 @@ export function recordFirestoreTelemetry(env, {
     retries,
     error,
     quota,
+    resource: clean(resource),
   });
 }
 
@@ -200,6 +216,7 @@ export const PRESSURE_ANALYTICS_SCHEMA = Object.freeze({
     "outcome",
     "method",
     "colo",
+    "resource",
   ],
   doubles: [
     "count",

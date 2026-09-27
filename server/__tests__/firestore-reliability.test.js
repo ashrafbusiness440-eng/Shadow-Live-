@@ -16,11 +16,29 @@ import {
   isFirestoreQuotaStatus,
   isTransientFirestoreError,
   isTransientFirestoreStatus,
+  normalizeFirestoreResource,
   registerFirestoreQuotaFailure,
   resetFirestoreQuotaCircuit,
 } from "../../cloudflare-worker/src/firestore.js";
 import { firestoreQuotaResponse } from "../../cloudflare-worker/src/http.js";
 import { shouldRetryLegacyTransaction } from "../../cloudflare-worker/src/legacy-firebase-admin-shim.js";
+
+test("Firestore telemetry resource normalization strips all document identifiers", () => {
+  assert.equal(normalizeFirestoreResource("users/user-secret"), "users/:id");
+  assert.equal(
+    normalizeFirestoreResource("rooms/room-secret/support_daily/2026-09-27"),
+    "rooms/:id/support_daily/:id",
+  );
+  assert.equal(
+    normalizeFirestoreResource("conversations/convo-secret/messages"),
+    "conversations/:id/messages",
+  );
+  const normalized = normalizeFirestoreResource(
+    "room_rocket_state/private-room-id",
+  );
+  assert.equal(normalized, "room_rocket_state/:id");
+  assert.equal(normalized.includes("private-room-id"), false);
+});
 
 test("Firestore transient retry cap stays small", () => {
   assert.equal(FIRESTORE_TRANSIENT_MAX_ATTEMPTS, 3);

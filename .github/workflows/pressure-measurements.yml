@@ -1,0 +1,53 @@
+name: Pressure Measurements
+
+on:
+  push:
+    branches:
+      - main
+      - pressure/step12-measurements
+    paths:
+      - 'cloudflare-worker/src/pressure-telemetry.js'
+      - 'cloudflare-worker/src/firestore.js'
+      - 'cloudflare-worker/scripts/pressure-report.mjs'
+      - '.github/workflows/pressure-measurements.yml'
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: 'Measurement window in minutes'
+        required: false
+        default: '15'
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Query Cloudflare Pressure Analytics
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          WINDOW_MINUTES: ${{ inputs.minutes || '15' }}
+          PRESSURE_DATASET: shadow_live_pressure_v1
+        run: node cloudflare-worker/scripts/pressure-report.mjs
+
+      - name: Upload pressure report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pressure-report
+          path: |
+            pressure-report.json
+            pressure-report.md
+          if-no-files-found: ignore
+          retention-days: 14
