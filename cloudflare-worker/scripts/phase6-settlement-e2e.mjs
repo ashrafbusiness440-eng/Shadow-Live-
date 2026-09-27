@@ -233,6 +233,7 @@ let realtimeSocket=null,realtimeKeepalive=null;
 const cleanup=[
   "game_operations/"+manualOpId,
   "game_operations/"+cronOpId,
+  "game_settlement_queue/"+cronOpId,
   "game_rounds/"+manualRound,
   "game_rounds/"+cronRound,
   "financial_ledger/game_credit__"+manualOpId,
@@ -344,13 +345,20 @@ try{
   const playerAfterDuplicate=await fsGet("users/"+playerUid);
   if(Number(playerAfterDuplicate?.coins)!==15000)throw Error("duplicate settlement credited twice");
 
-  await fsSet("game_operations/"+cronOpId,{
-    operationId:cronOpId,idempotencyKey:cronKey,userId:playerUid,roomId:"phase6_room",
-    gameId:"witch",mode:"normal",roundId:cronRound,roundNumber:1,dayKey:"2026-09-24",
-    status:"pending",totalStakeCoins:100,payoutCoins:7000,outcomeId:"moon",
-    selections:[{choiceId:"moon",amountCoins:100}],betEvents:[{choiceId:"moon",amountCoins:100}],
-    reels:[],closesAtMs:Date.now()-1000,balanceAfter:15000,
-  });
+  const cronDueAtMs=Date.now()-1000;
+  await Promise.all([
+    fsSet("game_operations/"+cronOpId,{
+      operationId:cronOpId,idempotencyKey:cronKey,userId:playerUid,roomId:"phase6_room",
+      gameId:"witch",mode:"normal",roundId:cronRound,roundNumber:1,dayKey:"2026-09-24",
+      status:"pending",totalStakeCoins:100,payoutCoins:7000,outcomeId:"moon",
+      selections:[{choiceId:"moon",amountCoins:100}],betEvents:[{choiceId:"moon",amountCoins:100}],
+      reels:[],closesAtMs:cronDueAtMs,balanceAfter:15000,
+    }),
+    fsSet("game_settlement_queue/"+cronOpId,{
+      operationId:cronOpId,
+      dueAtMs:cronDueAtMs,
+    }),
+  ]);
   const cronSettled=await waitForCron();
   if(cronSettled.status!=="settled")throw Error("cron settlement status mismatch");
   if(cronSettled.settlementWorker!=="cloudflare_cron"){
