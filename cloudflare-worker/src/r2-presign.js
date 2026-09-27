@@ -59,7 +59,7 @@ export async function presignR2Put(
       method: "PUT",
       headers: { "Content-Type": clean(mimeType).toLowerCase() },
     }),
-    { aws: { signQuery: true } },
+    { aws: { signQuery: true, allHeaders: true } },
   );
   return signed.url.toString();
 }
