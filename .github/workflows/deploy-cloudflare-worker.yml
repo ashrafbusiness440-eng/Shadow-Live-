@@ -133,13 +133,13 @@ jobs:
             sleep 2
           done
 
-      - name: Check Firebase storage health
+      - name: Check R2 storage health
         run: |
           BODY=$(curl --silent --show-error \
             https://shadow-live.ashraf-business-440.workers.dev/api/storage-health || true)
           echo "$BODY"
           if echo "$BODY" | grep -q '"ok":true'; then
-            echo "Firebase Storage bucket detected."
+            echo "Cloudflare R2 storage is ready."
           else
-            echo "::warning::Firebase Storage bucket is not currently detected; deployment remains valid."
+            echo "::warning::Cloudflare R2 storage is not currently ready; deployment remains valid."
           fi
