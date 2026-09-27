@@ -748,6 +748,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       ...resultData,
       _rocketFeedEvents: rocketAdvance.explosions,
       _transactionAttempts: transactionAttempts,
+      _agencyStatsTouched: Boolean(agencyId),
     };
   });
 }
@@ -787,6 +788,10 @@ export async function roomGift(request, env, ctx) {
         await publishTask;
       }
     }
+    const giftRetries = Math.max(
+      0,
+      Number(result?._transactionAttempts || 1) - 1,
+    );
     writePressureDataPoint(env, {
       kind: "hot_document",
       primary: "room_rocket_state",
@@ -794,9 +799,49 @@ export async function roomGift(request, env, ctx) {
       outcome: "ok",
       reads: 1,
       writes: 1,
-      retries: Math.max(0, Number(result?._transactionAttempts || 1) - 1),
+      retries: giftRetries,
     });
-    const { _rocketFeedEvents, _transactionAttempts, ...publicResult } = result;
+    writePressureDataPoint(env, {
+      kind: "hot_document",
+      primary: "room_root",
+      action: "room_gift_commit",
+      outcome: "no_root_write",
+      writes: 0,
+      retries: giftRetries,
+    });
+    writePressureDataPoint(env, {
+      kind: "hot_document",
+      primary: "room_support_periods",
+      action: "room_gift_commit",
+      outcome: "daily_weekly_monthly",
+      writes: 3,
+      retries: giftRetries,
+    });
+    if (result?._agencyStatsTouched === true) {
+      writePressureDataPoint(env, {
+        kind: "hot_document",
+        primary: "agency_support_stats",
+        action: "room_gift_commit",
+        outcome: "daily_weekly_monthly",
+        reads: 1,
+        writes: 3,
+        retries: giftRetries,
+      });
+      writePressureDataPoint(env, {
+        kind: "hot_document",
+        primary: "agency_settlement_accrual",
+        action: "room_gift_commit",
+        outcome: "host_cycle",
+        writes: 1,
+        retries: giftRetries,
+      });
+    }
+    const {
+      _rocketFeedEvents,
+      _transactionAttempts,
+      _agencyStatsTouched,
+      ...publicResult
+    } = result;
     return json(request, env, publicResult, 200);
   } catch (error) {
     if (error instanceof ApiError) {
