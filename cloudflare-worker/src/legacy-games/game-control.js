@@ -243,7 +243,6 @@ export async function gameControlState(db){
       .limit(20)
       .get(),
     db.collection("game_rounds")
-      .orderBy("updatedAt","desc")
       .limit(100)
       .get(),
   ]);
