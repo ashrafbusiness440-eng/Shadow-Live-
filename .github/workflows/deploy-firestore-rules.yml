@@ -56,7 +56,7 @@ jobs:
           const header = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
           const payload = b64url(JSON.stringify({
             iss: clientEmail,
-            scope: 'https://www.googleapis.com/auth/firebase',
+            scope: 'https://www.googleapis.com/auth/cloud-platform',
             aud: 'https://oauth2.googleapis.com/token',
             iat: now,
             exp: now + 3600,
@@ -218,5 +218,56 @@ jobs:
               'Firestore game_operations settlement index creation requested:',
               createdIndex.name || 'operation_started',
             );
+          }
+
+          const schedulerLocation =
+            'projects/' + projectId + '/locations/us-central1';
+          const schedulerResponse = await fetch(
+            'https://cloudscheduler.googleapis.com/v1/' +
+              schedulerLocation +
+              '/jobs?pageSize=500',
+            { headers: { authorization: 'Bearer ' + token } },
+          );
+          const schedulerBody = await schedulerResponse.json().catch(() => ({}));
+          if (!schedulerResponse.ok) {
+            throw new Error(
+              'scheduler list failed ' +
+                schedulerResponse.status +
+                ' ' +
+                JSON.stringify(schedulerBody),
+            );
+          }
+
+          const legacySettlementJobs = (schedulerBody.jobs || []).filter((job) =>
+            String(job.name || '').toLowerCase().includes('gamesettlementworker'),
+          );
+          if (legacySettlementJobs.length === 0) {
+            console.log('No legacy Firebase game settlement scheduler found.');
+          }
+          for (const job of legacySettlementJobs) {
+            if (job.state === 'PAUSED') {
+              console.log('Legacy Firebase settlement scheduler already paused:', job.name);
+              continue;
+            }
+            const pauseResponse = await fetch(
+              'https://cloudscheduler.googleapis.com/v1/' +
+                job.name +
+                ':pause',
+              {
+                method: 'POST',
+                headers,
+                body: '{}',
+              },
+            );
+            const pauseBody = await pauseResponse.json().catch(() => ({}));
+            if (!pauseResponse.ok) {
+              throw new Error(
+                'scheduler pause failed ' +
+                  pauseResponse.status +
+                  ' ' +
+                  JSON.stringify(pauseBody),
+              );
+            }
+            console.log('Paused legacy Firebase settlement scheduler:', job.name);
           }
           NODE
