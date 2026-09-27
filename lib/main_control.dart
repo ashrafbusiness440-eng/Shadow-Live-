@@ -14,6 +14,7 @@ import 'admin/control_asset_manager_page.dart';
 import 'admin/economy_control_page.dart';
 import 'admin/games_control_page.dart';
 import 'admin/user_access_control_card.dart';
+import 'admin/system_health_card.dart';
 
 
 Future<void> main() async {
@@ -345,6 +346,8 @@ class DashboardPage extends StatelessWidget {
       },
     ),
     const SizedBox(height:18),
+    const SystemHealthCard(),
+    const SizedBox(height:12),
     Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
       const Row(children:[Icon(Icons.verified_user_outlined,color:Color(0xFFD7B85A)),SizedBox(width:8),Text('حالة الأمان',style:TextStyle(fontSize:18,fontWeight:FontWeight.w800))]),
       const SizedBox(height:8),
