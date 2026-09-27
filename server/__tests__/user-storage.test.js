@@ -7,6 +7,9 @@ import {
   storageExtensionForMime,
   storageMaxBytes,
   validateStoragePayload,
+  isReplaceableStorageScope,
+  replacementDeleteAt,
+  REPLACEMENT_DELETE_DELAY_MS,
 } from "../../cloudflare-worker/src/user-storage.js";
 import {
   presignR2Put,
@@ -93,6 +96,20 @@ test("storage object keys follow canonical private prefixes", () => {
       extension: "png",
     }),
     `chat/conversation_9/user_1/${"c".repeat(32)}.png`,
+  );
+});
+
+test("replaced profile and room media wait 24 hours before cleanup", () => {
+  assert.equal(isReplaceableStorageScope("profile_image"), true);
+  assert.equal(isReplaceableStorageScope("profile_cover"), true);
+  assert.equal(isReplaceableStorageScope("room_cover"), true);
+  assert.equal(isReplaceableStorageScope("chat_image"), false);
+
+  const nowMs = 1_758_975_200_000;
+  assert.equal(REPLACEMENT_DELETE_DELAY_MS, 24 * 60 * 60 * 1000);
+  assert.equal(
+    replacementDeleteAt(nowMs).getTime(),
+    nowMs + 24 * 60 * 60 * 1000,
   );
 });
 
