@@ -42,6 +42,7 @@ function cors(req,res){
 
 const out=(res,status,body)=>res.status(status).json(body);
 const clean=(v)=>String(v??"").trim();
+const ROOM_CHAT_ROOT_TOUCH_INTERVAL_MS=60_000;
 
 async function realtimePresenceState(roomId){
   const namespace=legacyEnv.ROOM_REALTIME;
@@ -1772,10 +1773,13 @@ async function sendRoomChat(db,uid,body){
       replySenderUid,
       createdAt:FieldValue.serverTimestamp(),
     });
-    tx.update(roomRef,{
-      lastChatAt:FieldValue.serverTimestamp(),
-      updatedAt:FieldValue.serverTimestamp(),
-    });
+    const lastChatAtMs=timestampMillis(roomData.lastChatAt);
+    if(lastChatAtMs<=0||nowMs-lastChatAtMs>=ROOM_CHAT_ROOT_TOUCH_INTERVAL_MS){
+      tx.update(roomRef,{
+        lastChatAt:FieldValue.serverTimestamp(),
+        updatedAt:FieldValue.serverTimestamp(),
+      });
+    }
     return {ok:true,messageId:messageRef.id};
   });
 }
@@ -2971,12 +2975,25 @@ async function roomInsights(db,uid,body={}){
   const favoriteRef=db.collection("room_favorites").doc(uid).collection("items").doc(roomId);
   const periods=utcSupportPeriods();
   const dailySupportRef=roomRef.collection("support_daily").doc(periods.day);
+  const weeklySupportRef=roomRef.collection("support_weekly").doc(periods.week);
+  const monthlySupportRef=roomRef.collection("support_monthly").doc(periods.month);
 
-  const [roomSnap,followSnap,favoriteSnap,dailySupportSnap,topSupportersSnap,liveRoomCount]=await Promise.all([
+  const [
+    roomSnap,
+    followSnap,
+    favoriteSnap,
+    dailySupportSnap,
+    weeklySupportSnap,
+    monthlySupportSnap,
+    topSupportersSnap,
+    liveRoomCount,
+  ]=await Promise.all([
     roomRef.get(),
     followRef.get(),
     favoriteRef.get(),
     dailySupportRef.get(),
+    weeklySupportRef.get(),
+    monthlySupportRef.get(),
     dailySupportRef.collection("users").limit(includeSupporters?50:3).get(),
     realtimeRoomCount(roomId),
   ]);
@@ -3032,27 +3049,45 @@ async function roomInsights(db,uid,body={}){
       });
     const rankIndex=ranked.findIndex(item=>item.id===roomId);
     dailyRank=rankIndex>=0?rankIndex+1:dailyRank;
-    ranking=ranked.slice(0,100).map((item,index)=>({
+    const rankedRooms=ranked.slice(0,100);
+    const dailySupportByRoom=new Map();
+    for(let index=0;index<rankedRooms.length;index+=10){
+      const batch=rankedRooms.slice(index,index+10);
+      const snapshots=await Promise.all(batch.map(item=>
+        db.collection("rooms").doc(item.id)
+          .collection("support_daily").doc(periods.day).get()
+      ));
+      for(let offset=0;offset<batch.length;offset+=1){
+        dailySupportByRoom.set(
+          batch[offset].id,
+          Math.max(0,Number(snapshots[offset].data()?.supportCoins||0)),
+        );
+      }
+    }
+    ranking=rankedRooms.map((item,index)=>({
       roomId:item.id,
       rank:index+1,
       name:String(item.name||item.title||"غرفة صوتية"),
       publicId:String(item.publicId||""),
       activityScore:Number(item.activityScore||0),
-      dailySupport:item.dailySupportDate===periods.day?Number(item.dailySupport||0):0,
+      dailySupport:dailySupportByRoom.get(item.id)||0,
       weeklySupport:item.weeklySupportKey===periods.week?Number(item.weeklySupport||0):0,
       monthlySupport:item.monthlySupportKey===periods.month?Number(item.monthlySupport||0):0,
     }));
   }
 
-  const dailySupport=room.dailySupportDate===periods.day
-    ?Math.max(0,Number(room.dailySupport||0))
-    :Math.max(0,Number(dailySupportSnap.data()?.supportCoins||0));
-  const weeklySupport=room.weeklySupportKey===periods.week
-    ?Math.max(0,Number(room.weeklySupport||0))
-    :0;
-  const monthlySupport=room.monthlySupportKey===periods.month
-    ?Math.max(0,Number(room.monthlySupport||0))
-    :0;
+  const dailySupport=Math.max(
+    0,
+    Number(dailySupportSnap.data()?.supportCoins||0),
+  );
+  const weeklySupport=Math.max(
+    0,
+    Number(weeklySupportSnap.data()?.supportCoins||0),
+  );
+  const monthlySupport=Math.max(
+    0,
+    Number(monthlySupportSnap.data()?.supportCoins||0),
+  );
 
   return {
     ok:true,
@@ -3090,6 +3125,8 @@ async function roomBootstrap(db,decoded,body){
   const followRef=db.collection("room_follows").doc(roomId).collection("users").doc(uid);
   const favoriteRef=db.collection("room_favorites").doc(uid).collection("items").doc(roomId);
   const dailySupportRef=roomRef.collection("support_daily").doc(periods.day);
+  const weeklySupportRef=roomRef.collection("support_weekly").doc(periods.week);
+  const monthlySupportRef=roomRef.collection("support_monthly").doc(periods.month);
   const rocketRef=db.collection("room_rocket_state").doc(roomId);
 
   const [
@@ -3098,6 +3135,8 @@ async function roomBootstrap(db,decoded,body){
     followSnap,
     favoriteSnap,
     dailySupportSnap,
+    weeklySupportSnap,
+    monthlySupportSnap,
     topSupportersSnap,
     rocketSnap,
     liveRoomCount,
@@ -3108,6 +3147,8 @@ async function roomBootstrap(db,decoded,body){
     followRef.get(),
     favoriteRef.get(),
     dailySupportRef.get(),
+    weeklySupportRef.get(),
+    monthlySupportRef.get(),
     dailySupportRef.collection("users").limit(3).get(),
     rocketRef.get(),
     realtimeRoomCount(roomId),
@@ -3162,15 +3203,18 @@ async function roomBootstrap(db,decoded,body){
     .slice(0,3)
     .map((item,index)=>({...item,rank:index+1,totalSupport:item.dailySupport}));
 
-  const dailySupport=room.dailySupportDate===periods.day
-    ?Math.max(0,Number(room.dailySupport||0))
-    :Math.max(0,Number(dailySupportSnap.data()?.supportCoins||0));
-  const weeklySupport=room.weeklySupportKey===periods.week
-    ?Math.max(0,Number(room.weeklySupport||0))
-    :0;
-  const monthlySupport=room.monthlySupportKey===periods.month
-    ?Math.max(0,Number(room.monthlySupport||0))
-    :0;
+  const dailySupport=Math.max(
+    0,
+    Number(dailySupportSnap.data()?.supportCoins||0),
+  );
+  const weeklySupport=Math.max(
+    0,
+    Number(weeklySupportSnap.data()?.supportCoins||0),
+  );
+  const monthlySupport=Math.max(
+    0,
+    Number(monthlySupportSnap.data()?.supportCoins||0),
+  );
 
   const profileUid=clean(ownerUid||hostUid);
   let ownerProfile={
