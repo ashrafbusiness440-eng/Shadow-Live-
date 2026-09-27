@@ -583,6 +583,7 @@ function roomResponse(roomId,data){
     isHidden:data.isHidden===true||clean(data.visibility)==="hidden",
     passwordProtected:clean(data.visibility)==="password",
     coverImageUrl:clean(data.coverImageUrl||data.imageUrl),
+    coverImageObjectId:clean(data.coverImageObjectId),
     onlineCount:Math.max(0,Number(data.onlineCount||data.participantsCount||0)),
     level:Math.max(1,Number(data.level||1)),
     isActive:data.isActive!==false,
@@ -799,6 +800,8 @@ async function updateRoomSettings(db,uid,body){
   const password=String(body.password??"");
   const chatEnabled=body.chatEnabled!==false;
   const coverImageUrl=clean(body.coverImageUrl);
+  const coverImageObjectIdProvided=Object.prototype.hasOwnProperty.call(body,"coverImageObjectId");
+  const coverImageObjectId=clean(body.coverImageObjectId);
   const tags=Array.isArray(body.tags)
     ? [...new Set(body.tags.map(clean).filter(Boolean))].slice(0,8)
     : [];
@@ -812,6 +815,9 @@ async function updateRoomSettings(db,uid,body){
   if(password.length>32)throw new ApiError("room_password_too_long",400);
   if(coverImageUrl&&(!/^https?:\/\//i.test(coverImageUrl)||coverImageUrl.length>1200)){
     throw new ApiError("invalid_room_cover",400);
+  }
+  if(coverImageObjectIdProvided&&coverImageObjectId&&!/^[a-f0-9]{32}$/.test(coverImageObjectId)){
+    throw new ApiError("invalid_room_cover_object",400);
   }
 
   const roomRef=db.collection("rooms").doc(roomId);
@@ -838,6 +844,9 @@ async function updateRoomSettings(db,uid,body){
       isHidden:visibility==="hidden",
       chatEnabled,
       coverImageUrl,
+      ...(coverImageObjectIdProvided
+        ? {coverImageObjectId:coverImageObjectId||FieldValue.delete()}
+        : {}),
       searchTokens:searchTokens(
         name+" "+tags.join(" ")+" "+category+" "+clean(room.ownerName)+" "+clean(room.ownerLocation),
         clean(room.publicId),
@@ -870,6 +879,7 @@ async function updateRoomSettings(db,uid,body){
         visibility:clean(room.visibility||"public"),
         chatEnabled:room.chatEnabled!==false,
         coverImageUrl:clean(room.coverImageUrl||room.imageUrl),
+        coverImageObjectId:clean(room.coverImageObjectId),
         passwordProtected:Boolean(room.passwordSalt&&room.passwordHash),
       },
       after:{
@@ -880,6 +890,9 @@ async function updateRoomSettings(db,uid,body){
         visibility,
         chatEnabled,
         coverImageUrl,
+        coverImageObjectId:coverImageObjectIdProvided
+          ? coverImageObjectId
+          : clean(room.coverImageObjectId),
         passwordProtected:visibility==="password",
       },
       createdAt:FieldValue.serverTimestamp(),
