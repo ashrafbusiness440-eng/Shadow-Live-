@@ -326,6 +326,17 @@ async function mutateAccount(db, env, actorPayload, body) {
         result: resultData,
         createdAt: now,
       }),
+      ...(action === "deleteAccount"
+        ? [
+            db.writeCreate(`storage_account_cleanup_jobs/${key}`, {
+              jobId: key,
+              ownerUid: targetUid,
+              requestedBy: actorUid,
+              reason: "account_deleted",
+              createdAt: now,
+            }),
+          ]
+        : []),
     ]);
 
       return { ok: true, code: "ok", operationId: key, ...resultData };
