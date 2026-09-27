@@ -118,7 +118,9 @@ const keys = Array.from({ length: giftCount }, (_, i) => `step12_hot_${stamp}_${
 const latencies = [];
 const statuses = new Map();
 let token = "";
+let receiverToken = "";
 let roomSocket = null;
+let receiverRoomSocket = null;
 
 try {
   await Promise.all([
@@ -156,8 +158,14 @@ try {
       explosionSequence: 0,
     }),
   ]);
-  token = await idToken(senderUid);
-  roomSocket = await openRoomSocket(token);
+  [token, receiverToken] = await Promise.all([
+    idToken(senderUid),
+    idToken(receiverUid),
+  ]);
+  [roomSocket, receiverRoomSocket] = await Promise.all([
+    openRoomSocket(token),
+    openRoomSocket(receiverToken),
+  ]);
 
   const results = await Promise.all(keys.map(async (key) => {
     const started = performance.now();
@@ -229,6 +237,9 @@ try {
 } finally {
   if (roomSocket) {
     try { roomSocket.close(1000, "step12_hotdocs_done"); } catch {}
+  }
+  if (receiverRoomSocket) {
+    try { receiverRoomSocket.close(1000, "step12_hotdocs_done"); } catch {}
   }
   await Promise.all(keys.flatMap((key) => [
     db.collection("gift_operations").doc(key).delete().catch(()=>{}),
