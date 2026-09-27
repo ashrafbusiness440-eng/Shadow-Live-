@@ -11,6 +11,7 @@ import {collection, doc, getDoc, getDocs, limit, query, setDoc, updateDoc} from 
 let env;
 const projectId="shadow-live-economy-test";
 const uid="rules_regular_user";
+const otherUid="rules_other_user";
 
 function unverifiedUserDb() {
   return env.authenticatedContext(uid,{
@@ -62,6 +63,39 @@ before(async()=>{
       giftHostActivityMonth:"2026-09",
       giftHostMicSecondsMonth:0,
       giftHostQualifiedDays:0,
+    });
+    await setDoc(doc(context.firestore(),"users",otherUid),{
+      role:"user",
+      displayName:"Other",
+      coins:0,
+      diamonds:0,
+      pendingGiftEarningCoins:0,
+      pendingAgencyGiftEarningCoins:0,
+      giftEarningCoinsLifetime:0,
+      giftDiamondsLifetime:0,
+      giftSupportReceivedCoins:0,
+      giftRevenueMonth:"2026-09",
+      giftRevenueMonthCoins:0,
+      currentGiftRevenueTier:"starter",
+      giftHostActivityMonth:"2026-09",
+      giftHostMicSecondsMonth:0,
+      giftHostQualifiedDays:0,
+    });
+    await setDoc(doc(context.firestore(),"conversations","rules_chat"),{
+      participants:[uid,otherUid],
+      createdAt:new Date(),
+      updatedAt:new Date(),
+      unreadCounts:{[uid]:0,[otherUid]:0},
+    });
+    await setDoc(doc(context.firestore(),"follows",`${uid}__${otherUid}`),{
+      fromUid:uid,
+      toUid:otherUid,
+      createdAt:new Date(),
+    });
+    await setDoc(doc(context.firestore(),"follows",`${otherUid}__${uid}`),{
+      fromUid:otherUid,
+      toUid:uid,
+      createdAt:new Date(),
     });
     await setDoc(doc(context.firestore(),"rooms","rules_room"),{
       name:"Rules Room",
@@ -136,6 +170,22 @@ test("public profile accepts R2 media object ids",async()=>{
     createdAt:new Date(),
     updatedAt:new Date(),
   }));
+});
+
+test("chat image message accepts private R2 object metadata",async()=>{
+  const userDb=phoneUserDb();
+  await assertSucceeds(setDoc(
+    doc(userDb,"conversations","rules_chat","messages","r2_image"),
+    {
+      senderId:uid,
+      receiverId:otherUid,
+      type:"image",
+      storageObjectId:"c".repeat(32),
+      mimeType:"image/webp",
+      sizeBytes:4096,
+      createdAt:new Date(),
+    },
+  ));
 });
 
 test("regular user cannot change protected balances earnings agency or mic activity",async()=>{
