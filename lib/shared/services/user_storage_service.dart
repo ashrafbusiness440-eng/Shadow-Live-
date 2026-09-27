@@ -11,7 +11,6 @@ class UserStorageUploadResult {
     required this.targetId,
     required this.mimeType,
     required this.sizeBytes,
-    required this.readPath,
     this.replacedObjectId,
   });
 
@@ -20,20 +19,17 @@ class UserStorageUploadResult {
   final String targetId;
   final String mimeType;
   final int sizeBytes;
-  final String readPath;
   final String? replacedObjectId;
 
   factory UserStorageUploadResult.fromJson(Map<String, dynamic> json) {
+    final replaced = (json['replacedObjectId'] ?? '').toString().trim();
     return UserStorageUploadResult(
       objectId: (json['objectId'] ?? '').toString(),
       scope: (json['scope'] ?? '').toString(),
       targetId: (json['targetId'] ?? '').toString(),
       mimeType: (json['mimeType'] ?? '').toString(),
       sizeBytes: (json['sizeBytes'] as num?)?.toInt() ?? 0,
-      readPath: (json['readPath'] ?? '').toString(),
-      replacedObjectId: (json['replacedObjectId'] ?? '').toString().trim().isEmpty
-          ? null
-          : (json['replacedObjectId'] ?? '').toString(),
+      replacedObjectId: replaced.isEmpty ? null : replaced,
     );
   }
 }
@@ -72,10 +68,26 @@ class UserStorageService {
     return token;
   }
 
-  Uri _storageUri(Map<String, String> query) {
-    return Uri.parse('$_baseUrl/user-storage').replace(
-      queryParameters: query,
-    );
+  Uri get _storageUri => Uri.parse('$_baseUrl/user-storage');
+
+  Future<Map<String, dynamic>> _postAction(
+    String token,
+    Map<String, dynamic> payload,
+  ) async {
+    final response = await _client.post(
+      _storageUri,
+      headers: {
+        'authorization': 'Bearer $token',
+        'content-type': 'application/json',
+      },
+      body: jsonEncode(payload),
+    ).timeout(const Duration(seconds: 20));
+
+    final body = _decodeJson(response.bodyBytes);
+    if (response.statusCode != 200 || body['ok'] != true) {
+      throw StateError((body['code'] ?? 'storage_request_failed').toString());
+    }
+    return body;
   }
 
   Future<UserStorageUploadResult> upload({
@@ -88,28 +100,46 @@ class UserStorageService {
     if (bytes.isEmpty) throw StateError('empty_file');
 
     final token = await _token();
-    final query = <String, String>{'scope': scope};
-    if (targetId != null && targetId.trim().isNotEmpty) {
-      query['targetId'] = targetId.trim();
-    }
-    if (replaceObjectId != null && replaceObjectId.trim().isNotEmpty) {
-      query['replaceObjectId'] = replaceObjectId.trim();
+    final prepare = await _postAction(token, {
+      'action': 'prepareUpload',
+      'scope': scope,
+      'mimeType': mimeType,
+      'byteLength': bytes.length,
+      if (targetId != null && targetId.trim().isNotEmpty)
+        'targetId': targetId.trim(),
+      if (replaceObjectId != null && replaceObjectId.trim().isNotEmpty)
+        'replaceObjectId': replaceObjectId.trim(),
+    });
+
+    final objectId = (prepare['objectId'] ?? '').toString().trim();
+    final uploadUrl = (prepare['uploadUrl'] ?? '').toString().trim();
+    if (objectId.isEmpty || uploadUrl.isEmpty) {
+      throw StateError('storage_prepare_invalid');
     }
 
-    final response = await _client.put(
-      _storageUri(query),
-      headers: {
-        'authorization': 'Bearer $token',
-        'content-type': mimeType,
-      },
+    final requiredHeaders = <String, String>{};
+    final rawHeaders = prepare['requiredHeaders'];
+    if (rawHeaders is Map) {
+      for (final entry in rawHeaders.entries) {
+        requiredHeaders[entry.key.toString()] = entry.value.toString();
+      }
+    }
+    requiredHeaders.putIfAbsent('content-type', () => mimeType);
+
+    final uploadResponse = await _client.put(
+      Uri.parse(uploadUrl),
+      headers: requiredHeaders,
       body: bytes,
-    ).timeout(const Duration(seconds: 30));
-
-    final body = _decodeJson(response.bodyBytes);
-    if (response.statusCode != 200 || body['ok'] != true) {
-      throw StateError((body['code'] ?? 'storage_upload_failed').toString());
+    ).timeout(const Duration(seconds: 45));
+    if (uploadResponse.statusCode < 200 || uploadResponse.statusCode >= 300) {
+      throw StateError('storage_direct_upload_failed');
     }
-    return UserStorageUploadResult.fromJson(body);
+
+    final confirm = await _postAction(token, {
+      'action': 'confirmUpload',
+      'objectId': objectId,
+    });
+    return UserStorageUploadResult.fromJson(confirm);
   }
 
   Future<UserStorageObject> read(String objectId) async {
@@ -117,19 +147,24 @@ class UserStorageService {
     if (cleanId.isEmpty) throw StateError('invalid_object_id');
 
     final token = await _token();
-    final response = await _client.get(
-      _storageUri({'objectId': cleanId}),
-      headers: {'authorization': 'Bearer $token'},
-    ).timeout(const Duration(seconds: 25));
+    final prepared = await _postAction(token, {
+      'action': 'prepareRead',
+      'objectId': cleanId,
+    });
+    final readUrl = (prepared['readUrl'] ?? '').toString().trim();
+    if (readUrl.isEmpty) throw StateError('storage_read_url_missing');
 
+    final response = await _client
+        .get(Uri.parse(readUrl))
+        .timeout(const Duration(seconds: 30));
     if (response.statusCode != 200) {
-      final body = _decodeJson(response.bodyBytes);
-      throw StateError((body['code'] ?? 'storage_read_failed').toString());
+      throw StateError('storage_direct_read_failed');
     }
 
     return UserStorageObject(
       bytes: Uint8List.fromList(response.bodyBytes),
-      mimeType: (response.headers['content-type'] ?? 'application/octet-stream')
+      mimeType: (response.headers['content-type'] ??
+              (prepared['mimeType'] ?? 'application/octet-stream').toString())
           .split(';')
           .first
           .trim(),
@@ -143,7 +178,7 @@ class UserStorageService {
     final token = await _token();
     final request = http.Request(
       'DELETE',
-      _storageUri({'objectId': cleanId}),
+      _storageUri.replace(queryParameters: {'objectId': cleanId}),
     );
     request.headers['authorization'] = 'Bearer $token';
     final streamed = await _client
