@@ -161,6 +161,86 @@ jobs:
           console.log('Firestore rules released:', ruleset.name);
           console.log('Release:', release.name || releaseName);
 
+          const indexConfig = JSON.parse(
+            fs.readFileSync('firestore.indexes.json', 'utf8'),
+          );
+          for (const index of indexConfig.indexes || []) {
+            const collectionGroup = String(index.collectionGroup || '').trim();
+            if (!collectionGroup) continue;
+            const parent =
+              'projects/' + projectId +
+              '/databases/(default)/collectionGroups/' +
+              collectionGroup;
+            const endpoint =
+              'https://firestore.googleapis.com/v1/' + parent + '/indexes';
+            const listed = await fetch(endpoint, {
+              headers: { authorization: 'Bearer ' + token },
+            });
+            const listedBody = await listed.json().catch(() => ({}));
+            if (!listed.ok) {
+              throw new Error(
+                'index list failed ' +
+                  listed.status +
+                  ' ' +
+                  JSON.stringify(listedBody),
+              );
+            }
+
+            const wantedFields = (index.fields || []).map((field) => ({
+              fieldPath: String(field.fieldPath || ''),
+              order: String(field.order || ''),
+            }));
+            const matches = (candidate) => {
+              const fields = (candidate.fields || [])
+                .filter((field) => field.fieldPath !== '__name__')
+                .map((field) => ({
+                  fieldPath: String(field.fieldPath || ''),
+                  order: String(field.order || ''),
+                }));
+              return String(candidate.queryScope || '') ===
+                  String(index.queryScope || '') &&
+                JSON.stringify(fields) === JSON.stringify(wantedFields);
+            };
+
+            let existing = (listedBody.indexes || []).find(matches) || null;
+            if (!existing) {
+              const created = await fetch(endpoint, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                  queryScope: index.queryScope || 'COLLECTION',
+                  fields: index.fields || [],
+                }),
+              });
+              const createdBody = await created.json().catch(() => ({}));
+              if (!created.ok) {
+                const alreadyExists =
+                  created.status === 409 ||
+                  String(createdBody?.error?.status || '') === 'ALREADY_EXISTS';
+                if (!alreadyExists) {
+                  throw new Error(
+                    'index create failed ' +
+                      created.status +
+                      ' ' +
+                      JSON.stringify(createdBody),
+                  );
+                }
+              } else {
+                console.log(
+                  'Firestore index create started:',
+                  collectionGroup,
+                  JSON.stringify(wantedFields),
+                );
+              }
+            } else {
+              console.log(
+                'Firestore index present:',
+                existing.name,
+                existing.state || 'UNKNOWN',
+              );
+            }
+          }
+
           const schedulerLocation =
             'projects/' + projectId + '/locations/us-central1';
           const schedulerResponse = await fetch(
