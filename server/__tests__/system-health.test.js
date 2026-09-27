@@ -63,6 +63,38 @@ test("429 or Firestore quota forces red state", () => {
   }
 });
 
+test("System Health includes Firestore read/write rate deviation", () => {
+  const health = computeSystemHealth({
+    current: {
+      requests: 40,
+      requestsPerMinute: 8,
+      firestoreReadsPerMinute: 35,
+      firestoreWritesPerMinute: 18,
+      status429: 0,
+      status5xx: 0,
+      quotaEvents: 0,
+      retries: 0,
+      reconnects: 0,
+      p95Ms: 100,
+      p99Ms: 200,
+    },
+    baseline: {
+      requestsPerMinute: 8,
+      firestoreReadsPerMinute: 10,
+      firestoreWritesPerMinute: 5,
+    },
+  });
+  assert.ok(health.score < 100);
+  assert.equal(
+    health.reasons.some((reason) => reason.includes("Firestore reads")),
+    true,
+  );
+  assert.equal(
+    health.reasons.some((reason) => reason.includes("Firestore writes")),
+    true,
+  );
+});
+
 test("System Health backend remains protected and server-side", () => {
   const source = readFileSync(
     new URL("../../cloudflare-worker/src/system-health.js", import.meta.url),
