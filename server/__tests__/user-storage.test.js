@@ -242,3 +242,22 @@ test("R2 PUT presign is short-lived and content-type bound", async () => {
       .includes("content-type"),
   );
 });
+
+
+test("account deletion storage cleanup is metadata-indexed and bounded", () => {
+  const accountSource = fs.readFileSync(
+    new URL("../../cloudflare-worker/src/manage-user-account.js", import.meta.url),
+    "utf8",
+  );
+  const storageSource = fs.readFileSync(
+    new URL("../../cloudflare-worker/src/user-storage.js", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(accountSource, /storage_account_cleanup_jobs/);
+  assert.match(storageSource, /runQuery\("storage_account_cleanup_jobs"/);
+  assert.match(storageSource, /runQuery\("storage_objects"/);
+  assert.match(storageSource, /field:\s*"ownerUid",\s*op:\s*"=="/);
+  assert.match(storageSource, /STORAGE_DELETE_BATCH_LIMIT/);
+  assert.doesNotMatch(storageSource, /bucket\.list\s*\(/);
+});
