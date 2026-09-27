@@ -2,12 +2,12 @@ import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/assets/shadow_asset_registry.dart';
+import '../../../shared/services/user_storage_service.dart';
 import '../../gift/services/gift_catalog_service.dart';
 import '../../../services/navigation_service.dart';
 import '../../main/screens/main_shell_screen.dart';
@@ -35,6 +35,8 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   final _controller = TextEditingController();
   final _follow = FollowService();
   final _picker = ImagePicker();
+  final _storage = UserStorageService();
+  final Map<String, Future<UserStorageObject>> _chatImageLoads = {};
   final _safety = ChatSafetyService();
   bool _sending = false;
   bool _changingBlock = false;
@@ -286,17 +288,66 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     detailsController.dispose();
   }
 
-  Future<bool> _storageReady() async {
+  Future<bool> _storageReady() => _storage.isReady();
+
+  Future<UserStorageObject> _loadChatImage(String objectId) {
+    return _chatImageLoads.putIfAbsent(
+      objectId,
+      () => _storage.read(objectId),
+    );
+  }
+
+  Future<void> _deleteUploadedObjectQuietly(String objectId) async {
     try {
-      final response = await http.get(
-        Uri.parse('$_apiBase/storage-health'),
-      );
-      if (response.statusCode != 200) return false;
-      final body = jsonDecode(response.body);
-      return body is Map<String, dynamic> && body['ok'] == true;
-    } catch (_) {
-      return false;
-    }
+      await _storage.delete(objectId);
+    } catch (_) {}
+  }
+
+  Widget _r2ChatImage(String objectId) {
+    return FutureBuilder<UserStorageObject>(
+      future: _loadChatImage(objectId),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const SizedBox(
+            width: 180,
+            height: 120,
+            child: Center(
+              child: Icon(
+                Icons.broken_image_outlined,
+                color: Colors.white54,
+              ),
+            ),
+          );
+        }
+        final object = snapshot.data;
+        if (object == null) {
+          return const SizedBox(
+            width: 180,
+            height: 120,
+            child: Center(
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          );
+        }
+        return GestureDetector(
+          onTap: () => showDialog<void>(
+            context: context,
+            barrierColor: Colors.black87,
+            builder: (_) => Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: const EdgeInsets.all(12),
+              child: InteractiveViewer(
+                child: Image.memory(object.bytes, fit: BoxFit.contain),
+              ),
+            ),
+          ),
+          child: Image.memory(
+            object.bytes,
+            fit: BoxFit.cover,
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _sendImage() async {
@@ -307,7 +358,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       return;
     }
     if (!await _storageReady()) {
-      _snack('إرسال الصور جاهز، لكن Firebase Storage غير مفعّل على المشروع حالياً.');
+      _snack('إرسال الصور غير متاح حالياً. تحقق من اتصال التخزين وحاول مجدداً.');
       return;
     }
     final picked = await _picker.pickImage(
@@ -315,6 +366,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       imageQuality: 82,
       maxWidth: 1920,
       maxHeight: 1920,
+      requestFullMetadata: false,
     );
     if (picked == null) return;
     final bytes = await picked.readAsBytes();
@@ -322,32 +374,27 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       _snack('حجم الصورة يجب أن يكون أقل من 8MB.');
       return;
     }
-    setState(() => _sendingImage = true);
-    Reference? uploaded;
+
+    String mime;
     try {
-      final messageRef = _conversation.collection('messages').doc();
-      final mime = picked.mimeType ?? 'image/jpeg';
-      final ext = mime.contains('png') ? 'png' : mime.contains('webp') ? 'webp' : 'jpg';
-      final path = [
-        'chat_images',
-        widget.conversationId,
-        _uid,
-        widget.otherUid,
-        messageRef.id + '.' + ext,
-      ].join('/');
-      uploaded = FirebaseStorage.instance.ref(path);
-      await uploaded.putData(
-        bytes,
-        SettableMetadata(
-          contentType: mime,
-          customMetadata: {
-            'conversationId': widget.conversationId,
-            'senderUid': _uid,
-            'receiverUid': widget.otherUid,
-          },
-        ),
+      mime = detectSupportedImageMime(bytes);
+    } catch (_) {
+      _snack('صيغة الصورة غير مدعومة. استخدم JPG أو PNG أو WebP.');
+      return;
+    }
+
+    setState(() => _sendingImage = true);
+    String? uploadedObjectId;
+    try {
+      final upload = await _storage.upload(
+        scope: 'chat_image',
+        bytes: bytes,
+        mimeType: mime,
+        targetId: widget.conversationId,
       );
-      final imageUrl = await uploaded.getDownloadURL();
+      uploadedObjectId = upload.objectId;
+
+      final messageRef = _conversation.collection('messages').doc();
       final batch = FirebaseFirestore.instance.batch();
       batch.update(_conversation, {
         'lastMessage': '📷 صورة',
@@ -360,23 +407,34 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
         'senderId': _uid,
         'receiverId': widget.otherUid,
         'type': 'image',
-        'imageUrl': imageUrl,
-        'storagePath': uploaded.fullPath,
+        'storageObjectId': upload.objectId,
+        'mimeType': mime,
+        'sizeBytes': bytes.length,
         'createdAt': FieldValue.serverTimestamp(),
       });
       await batch.commit();
+      uploadedObjectId = null;
     } on FirebaseException catch (error) {
-      if (uploaded != null) {
-        try { await uploaded.delete(); } catch (_) {}
+      if (uploadedObjectId != null) {
+        await _deleteUploadedObjectQuietly(uploadedObjectId);
       }
       if (error.code == 'unauthorized' || error.code == 'permission-denied') {
-        _snack('إرسال الصور يحتاج متابعة متبادلة وصلاحية التخزين.');
+        _snack('إرسال الصور يحتاج متابعة متبادلة وصلاحية المحادثة.');
+      } else {
+        _snack('تعذر حفظ الصورة في المحادثة حالياً.');
+      }
+    } on StateError catch (error) {
+      if (uploadedObjectId != null) {
+        await _deleteUploadedObjectQuietly(uploadedObjectId);
+      }
+      if (error.message == 'follow_required') {
+        _snack('إرسال الصور يحتاج متابعة متبادلة.');
       } else {
         _snack('تعذر رفع الصورة حالياً.');
       }
     } catch (_) {
-      if (uploaded != null) {
-        try { await uploaded.delete(); } catch (_) {}
+      if (uploadedObjectId != null) {
+        await _deleteUploadedObjectQuietly(uploadedObjectId);
       }
       _snack('تعذر إرسال الصورة.');
     } finally {
@@ -660,32 +718,56 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     Widget content;
     EdgeInsets padding = const EdgeInsets.symmetric(horizontal: 14, vertical: 9);
     if (type == 'image') {
-      final url = (data['imageUrl'] ?? '').toString();
+      final objectId = (data['storageObjectId'] ?? '').toString().trim();
+      final legacyUrl = (data['imageUrl'] ?? '').toString().trim();
       padding = const EdgeInsets.all(4);
-      content = GestureDetector(
-        onTap: url.isEmpty ? null : () => showDialog<void>(
-          context: context,
-          barrierColor: Colors.black87,
-          builder: (_) => Dialog(
-            backgroundColor: Colors.transparent,
-            insetPadding: const EdgeInsets.all(12),
-            child: InteractiveViewer(child: Image.network(url, fit: BoxFit.contain)),
-          ),
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(15),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 240, maxHeight: 300),
-            child: Image.network(
-              url,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => const SizedBox(
-                width: 180,
-                height: 120,
-                child: Center(child: Icon(Icons.broken_image_outlined, color: Colors.white54)),
-              ),
-            ),
-          ),
+      content = ClipRRect(
+        borderRadius: BorderRadius.circular(15),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 240, maxHeight: 300),
+          child: objectId.isNotEmpty
+              ? _r2ChatImage(objectId)
+              : legacyUrl.isNotEmpty
+                  ? GestureDetector(
+                      onTap: () => showDialog<void>(
+                        context: context,
+                        barrierColor: Colors.black87,
+                        builder: (_) => Dialog(
+                          backgroundColor: Colors.transparent,
+                          insetPadding: const EdgeInsets.all(12),
+                          child: InteractiveViewer(
+                            child: Image.network(
+                              legacyUrl,
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                        ),
+                      ),
+                      child: Image.network(
+                        legacyUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const SizedBox(
+                          width: 180,
+                          height: 120,
+                          child: Center(
+                            child: Icon(
+                              Icons.broken_image_outlined,
+                              color: Colors.white54,
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                  : const SizedBox(
+                      width: 180,
+                      height: 120,
+                      child: Center(
+                        child: Icon(
+                          Icons.broken_image_outlined,
+                          color: Colors.white54,
+                        ),
+                      ),
+                    ),
         ),
       );
     } else if (type == 'room_invite') {
@@ -828,7 +910,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     );
   }
 
-  @override void dispose(){_controller.dispose();super.dispose();}
+  @override void dispose(){_storage.close();_chatImageLoads.clear();_controller.dispose();super.dispose();}
   String _time(dynamic value){if(value is! Timestamp)return '';final d=value.toDate();final hour=d.hour%12==0?12:d.hour%12;final minute=d.minute.toString().padLeft(2,'0');return '$hour:$minute ${d.hour>=12?'م':'ص'}';}
   void _openProfile()=>showQuickProfileSheet(context,userId:widget.otherUid);
 

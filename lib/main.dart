@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'dart:math';
 import 'widgets/bottom_nav_bar.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
 import 'firebase_options.dart';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -14,6 +16,7 @@ import 'features/auth/bloc/auth_bloc.dart';
 import 'features/user/bloc/user_bloc.dart';
 import 'shared/services/firebase_service.dart' as shared_fb;
 import 'shared/services/storage_service.dart';
+import 'shared/services/user_storage_service.dart';
 
 import 'package:google_fonts/google_fonts.dart';
 import 'widgets/host_section.dart';
@@ -165,6 +168,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   final VoiceRoomSessionController _voiceSession =
       VoiceRoomSessionController.instance;
   final RoomActionService _roomActions = RoomActionService();
+  final UserStorageService _userStorage = UserStorageService();
+  final ImagePicker _roomCoverPicker = ImagePicker();
   final RoomInviteService _roomInvites = RoomInviteService();
   final RoomInsightsService _roomInsightsService = RoomInsightsService();
   final RoomBootstrapService _roomBootstrapService = RoomBootstrapService();
@@ -2960,12 +2965,15 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     final descriptionController = TextEditingController(
       text: (_roomArguments['description'] ?? '').toString(),
     );
-    final coverController = TextEditingController(
-      text: (_roomArguments['coverImageUrl'] ??
-              _roomArguments['imageUrl'] ??
-              '')
-          .toString(),
-    );
+    final initialCoverImageUrl = (_roomArguments['coverImageUrl'] ??
+            _roomArguments['imageUrl'] ??
+            '')
+        .toString()
+        .trim();
+    final initialCoverObjectId =
+        (_roomArguments['coverImageObjectId'] ?? '').toString().trim();
+    Uint8List? pendingCoverBytes;
+    var removeCover = false;
     final categoryController = TextEditingController(
       text: (_roomArguments['category'] ?? 'دردشة').toString(),
     );
@@ -3053,20 +3061,120 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         labelStyle: TextStyle(color: Colors.white60),
                       ),
                     ),
-                    TextField(
-                      controller: coverController,
-                      keyboardType: TextInputType.url,
-                      maxLength: 1200,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: const InputDecoration(
-                        labelText: 'غلاف الغرفة — رابط صورة',
-                        labelStyle: TextStyle(color: Colors.white60),
-                        prefixIcon: Icon(
-                          Icons.image_rounded,
-                          color: Color(0xFFFFD54A),
+                    const Align(
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        'غلاف الغرفة',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
                     ),
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        height: 140,
+                        width: double.infinity,
+                        color: const Color(0xFF151A27),
+                        child: pendingCoverBytes != null
+                            ? Image.memory(
+                                pendingCoverBytes!,
+                                fit: BoxFit.cover,
+                              )
+                            : !removeCover && initialCoverImageUrl.isNotEmpty
+                                ? Image.network(
+                                    initialCoverImageUrl,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) =>
+                                        const Center(
+                                      child: Icon(
+                                        Icons.broken_image_outlined,
+                                        color: Colors.white38,
+                                        size: 38,
+                                      ),
+                                    ),
+                                  )
+                                : const Center(
+                                    child: Icon(
+                                      Icons.image_outlined,
+                                      color: Colors.white38,
+                                      size: 42,
+                                    ),
+                                  ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: saving
+                                ? null
+                                : () async {
+                                    final picked =
+                                        await _roomCoverPicker.pickImage(
+                                      source: ImageSource.gallery,
+                                      imageQuality: 82,
+                                      maxWidth: 1800,
+                                      maxHeight: 1200,
+                                      requestFullMetadata: false,
+                                    );
+                                    if (picked == null) return;
+                                    final bytes = await picked.readAsBytes();
+                                    try {
+                                      detectSupportedImageMime(bytes);
+                                    } catch (_) {
+                                      if (sheetContext.mounted) {
+                                        ScaffoldMessenger.of(sheetContext)
+                                            .showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                              'صيغة الصورة غير مدعومة. استخدم JPG أو PNG أو WebP.',
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                      return;
+                                    }
+                                    if (!sheetContext.mounted) return;
+                                    setSheetState(() {
+                                      pendingCoverBytes = bytes;
+                                      removeCover = false;
+                                    });
+                                  },
+                            icon: const Icon(Icons.photo_library_rounded),
+                            label: Text(
+                              pendingCoverBytes == null
+                                  ? 'اختيار غلاف'
+                                  : 'تغيير الغلاف',
+                            ),
+                          ),
+                        ),
+                        if (pendingCoverBytes != null ||
+                            (!removeCover &&
+                                initialCoverImageUrl.isNotEmpty)) ...[
+                          const SizedBox(width: 8),
+                          IconButton(
+                            onPressed: saving
+                                ? null
+                                : () {
+                                    setSheetState(() {
+                                      pendingCoverBytes = null;
+                                      removeCover = true;
+                                    });
+                                  },
+                            tooltip: 'حذف الغلاف',
+                            icon: const Icon(
+                              Icons.delete_outline_rounded,
+                              color: Colors.redAccent,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 10),
                     TextField(
                       controller: categoryController,
                       maxLength: 30,
@@ -3189,8 +3297,6 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                     descriptionController.text.trim();
                                 final category =
                                     categoryController.text.trim();
-                                final coverImageUrl =
-                                    coverController.text.trim();
                                 final tags = tagsController.text
                                     .split(RegExp(r'[,،]'))
                                     .map((value) => value.trim())
@@ -3226,7 +3332,34 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                 }
 
                                 setSheetState(() => saving = true);
+                                String? uploadedCoverObjectId;
                                 try {
+                                  var nextCoverImageUrl =
+                                      removeCover ? '' : initialCoverImageUrl;
+                                  String? nextCoverObjectId = removeCover
+                                      ? ''
+                                      : initialCoverObjectId;
+                                  if (pendingCoverBytes != null) {
+                                    final bytes = pendingCoverBytes!;
+                                    final upload = await _userStorage.upload(
+                                      scope: 'room_cover',
+                                      bytes: bytes,
+                                      mimeType:
+                                          detectSupportedImageMime(bytes),
+                                      targetId: roomId,
+                                    );
+                                    final publicUrl =
+                                        upload.publicUrl?.trim() ?? '';
+                                    if (publicUrl.isEmpty) {
+                                      throw StateError(
+                                        'room_cover_public_url_missing',
+                                      );
+                                    }
+                                    uploadedCoverObjectId = upload.objectId;
+                                    nextCoverImageUrl = publicUrl;
+                                    nextCoverObjectId = upload.objectId;
+                                  }
+
                                   final updated =
                                       await _roomActions.updateRoomSettings(
                                     roomId: roomId,
@@ -3238,12 +3371,20 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                     tags: tags,
                                     visibility: visibility,
                                     chatEnabled: chatEnabled,
-                                    coverImageUrl: coverImageUrl,
+                                    coverImageUrl: nextCoverImageUrl,
+                                    coverImageObjectId: nextCoverObjectId,
                                     password:
                                         passwordController.text.isEmpty
                                             ? null
                                             : passwordController.text,
                                   );
+                                  if (removeCover &&
+                                      initialCoverObjectId.isNotEmpty) {
+                                    try {
+                                      await _userStorage
+                                          .delete(initialCoverObjectId);
+                                    } catch (_) {}
+                                  }
                                   if (!mounted) return;
                                   setState(() {
                                     _roomArguments = {
@@ -3263,6 +3404,12 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                     );
                                   }
                                 } on StateError catch (error) {
+                                  if (uploadedCoverObjectId != null) {
+                                    try {
+                                      await _userStorage
+                                          .delete(uploadedCoverObjectId);
+                                    } catch (_) {}
+                                  }
                                   if (!sheetContext.mounted) return;
                                   String message =
                                       'تعذر حفظ إعدادات الغرفة حالياً.';
@@ -3280,6 +3427,12 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                     SnackBar(content: Text(message)),
                                   );
                                 } catch (_) {
+                                  if (uploadedCoverObjectId != null) {
+                                    try {
+                                      await _userStorage
+                                          .delete(uploadedCoverObjectId);
+                                    } catch (_) {}
+                                  }
                                   if (sheetContext.mounted) {
                                     ScaffoldMessenger.of(sheetContext)
                                         .showSnackBar(
@@ -3326,7 +3479,6 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
 
     nameController.dispose();
     descriptionController.dispose();
-    coverController.dispose();
     categoryController.dispose();
     tagsController.dispose();
     passwordController.dispose();
@@ -3858,6 +4010,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     unawaited(_roomLiveSubscription?.cancel());
     _voiceSession.removeListener(_syncVoiceSession);
     _roomActions.close();
+    _userStorage.close();
     _roomInvites.close();
     _roomBootstrapService.close();
     _roomInsightsService.close();

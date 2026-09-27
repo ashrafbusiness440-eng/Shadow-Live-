@@ -583,6 +583,7 @@ function roomResponse(roomId,data){
     isHidden:data.isHidden===true||clean(data.visibility)==="hidden",
     passwordProtected:clean(data.visibility)==="password",
     coverImageUrl:clean(data.coverImageUrl||data.imageUrl),
+    coverImageObjectId:clean(data.coverImageObjectId),
     onlineCount:Math.max(0,Number(data.onlineCount||data.participantsCount||0)),
     level:Math.max(1,Number(data.level||1)),
     isActive:data.isActive!==false,
@@ -799,6 +800,8 @@ async function updateRoomSettings(db,uid,body){
   const password=String(body.password??"");
   const chatEnabled=body.chatEnabled!==false;
   const coverImageUrl=clean(body.coverImageUrl);
+  const coverImageObjectIdProvided=Object.prototype.hasOwnProperty.call(body,"coverImageObjectId");
+  const coverImageObjectId=clean(body.coverImageObjectId);
   const tags=Array.isArray(body.tags)
     ? [...new Set(body.tags.map(clean).filter(Boolean))].slice(0,8)
     : [];
@@ -813,13 +816,21 @@ async function updateRoomSettings(db,uid,body){
   if(coverImageUrl&&(!/^https?:\/\//i.test(coverImageUrl)||coverImageUrl.length>1200)){
     throw new ApiError("invalid_room_cover",400);
   }
+  if(coverImageObjectIdProvided&&coverImageObjectId&&!/^[a-f0-9]{32}$/.test(coverImageObjectId)){
+    throw new ApiError("invalid_room_cover_object",400);
+  }
 
   const roomRef=db.collection("rooms").doc(roomId);
   const userRef=db.collection("users").doc(uid);
   const auditRef=db.collection("room_audit_logs").doc(roomId).collection("items").doc();
+  const coverObjectRef=coverImageObjectId
+    ? db.collection("storage_objects").doc(coverImageObjectId)
+    : null;
 
   return db.runTransaction(async tx=>{
-    const [roomSnap,userSnap]=await Promise.all([tx.get(roomRef),tx.get(userRef)]);
+    const reads=[tx.get(roomRef),tx.get(userRef)];
+    if(coverObjectRef)reads.push(tx.get(coverObjectRef));
+    const [roomSnap,userSnap,coverObjectSnap]=await Promise.all(reads);
     if(!roomSnap.exists)throw new ApiError("room_not_found",404);
     const room=roomSnap.data()||{};
     const user=userSnap.data()||{};
@@ -827,6 +838,22 @@ async function updateRoomSettings(db,uid,body){
     const ownerUid=clean(room.ownerUid||room.ownerId||room.hostId);
     if(ownerUid!==uid&&!permissions.manageRooms)throw new ApiError("forbidden",403);
     if(visibility==="hidden"&&!permissions.hidden)throw new ApiError("hidden_room_forbidden",403);
+
+    if(coverImageObjectId){
+      if(!coverObjectSnap||!coverObjectSnap.exists){
+        throw new ApiError("room_cover_object_not_found",409);
+      }
+      const media=coverObjectSnap.data()||{};
+      if(
+        clean(media.scope)!=="room_cover"||
+        clean(media.targetId)!==roomId||
+        clean(media.ownerUid)!==uid||
+        clean(media.publicUrl)!==coverImageUrl||
+        clean(media.state||"active")!=="active"
+      ){
+        throw new ApiError("room_cover_object_mismatch",409);
+      }
+    }
 
     const update={
       name,
@@ -838,6 +865,9 @@ async function updateRoomSettings(db,uid,body){
       isHidden:visibility==="hidden",
       chatEnabled,
       coverImageUrl,
+      ...(coverImageObjectIdProvided
+        ? {coverImageObjectId:coverImageObjectId||FieldValue.delete()}
+        : {}),
       searchTokens:searchTokens(
         name+" "+tags.join(" ")+" "+category+" "+clean(room.ownerName)+" "+clean(room.ownerLocation),
         clean(room.publicId),
@@ -870,6 +900,7 @@ async function updateRoomSettings(db,uid,body){
         visibility:clean(room.visibility||"public"),
         chatEnabled:room.chatEnabled!==false,
         coverImageUrl:clean(room.coverImageUrl||room.imageUrl),
+        coverImageObjectId:clean(room.coverImageObjectId),
         passwordProtected:Boolean(room.passwordSalt&&room.passwordHash),
       },
       after:{
@@ -880,6 +911,9 @@ async function updateRoomSettings(db,uid,body){
         visibility,
         chatEnabled,
         coverImageUrl,
+        coverImageObjectId:coverImageObjectIdProvided
+          ? coverImageObjectId
+          : clean(room.coverImageObjectId),
         passwordProtected:visibility==="password",
       },
       createdAt:FieldValue.serverTimestamp(),

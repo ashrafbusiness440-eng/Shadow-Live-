@@ -307,3 +307,366 @@ jobs:
             await admin.auth().deleteUser(uid).catch(() => {});
           }
           NODE
+
+
+      - name: Verify production R2 room cover and two-account chat permissions
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          import admin from "firebase-admin";
+
+          let serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || "{}");
+          if (typeof serviceAccount === "string") serviceAccount = JSON.parse(serviceAccount);
+          if (!serviceAccount.project_id || !serviceAccount.client_email || !serviceAccount.private_key) {
+            throw new Error("invalid_firebase_service_account");
+          }
+
+          admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+          const db = admin.firestore();
+          const stamp = Date.now();
+          const uidA = "ci-r2-owner-" + stamp;
+          const uidB = "ci-r2-peer-" + stamp;
+          const conversationId = "ci_r2_chat_" + stamp;
+          const workerBase = "https://shadow-live.ashraf-business-440.workers.dev/api";
+          const payload = new Uint8Array([
+            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+          ]);
+          let tokenA = "";
+          let tokenB = "";
+          let roomId = "";
+          let roomPublicId = "";
+          let roomObjectId = "";
+          let chatObjectId = "";
+          let chatMessageId = "";
+
+          const options = fs.readFileSync("../lib/firebase_options.dart", "utf8");
+          const apiKeyMatch = options.match(/apiKey:\s*'([^']+)'/);
+          if (!apiKeyMatch) throw new Error("firebase_web_api_key_not_found");
+          const apiKey = apiKeyMatch[1];
+
+          const signIn = async (uid) => {
+            const customToken = await admin.auth().createCustomToken(uid);
+            const response = await fetch(
+              "https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=" +
+                encodeURIComponent(apiKey),
+              {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ token: customToken, returnSecureToken: true }),
+              },
+            );
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok || !body.idToken) {
+              throw new Error(
+                "custom_token_exchange_failed:" +
+                  response.status +
+                  ":" +
+                  JSON.stringify(body),
+              );
+            }
+            return body.idToken;
+          };
+
+          const storageCall = async (token, payloadBody) => {
+            const response = await fetch(workerBase + "/user-storage", {
+              method: "POST",
+              headers: {
+                authorization: "Bearer " + token,
+                "content-type": "application/json",
+              },
+              body: JSON.stringify(payloadBody),
+            });
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok || body.ok !== true) {
+              throw new Error(
+                "storage_api_failed:" + response.status + ":" + JSON.stringify(body),
+              );
+            }
+            return body;
+          };
+
+          const voiceCall = async (token, payloadBody) => {
+            const response = await fetch(workerBase + "/voice-session", {
+              method: "POST",
+              headers: {
+                authorization: "Bearer " + token,
+                "content-type": "application/json",
+              },
+              body: JSON.stringify(payloadBody),
+            });
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok || body.ok !== true) {
+              throw new Error(
+                "voice_api_failed:" + response.status + ":" + JSON.stringify(body),
+              );
+            }
+            return body;
+          };
+
+          const directUpload = async (token, scope, targetId) => {
+            const prepared = await storageCall(token, {
+              action: "prepareUpload",
+              scope,
+              mimeType: "image/png",
+              byteLength: payload.length,
+              ...(targetId ? { targetId } : {}),
+            });
+            const objectId = String(prepared.objectId || "");
+            if (!objectId || !prepared.uploadUrl) throw new Error("storage_prepare_invalid");
+
+            const put = await fetch(prepared.uploadUrl, {
+              method: "PUT",
+              headers: { "content-type": "image/png" },
+              body: payload,
+            });
+            if (!put.ok) throw new Error("r2_direct_put_failed:" + put.status);
+
+            const confirmed = await storageCall(token, {
+              action: "confirmUpload",
+              objectId,
+            });
+            return { objectId, confirmed };
+          };
+
+          const deleteObject = async (token, objectId) => {
+            const response = await fetch(
+              workerBase + "/user-storage?objectId=" + encodeURIComponent(objectId),
+              {
+                method: "DELETE",
+                headers: { authorization: "Bearer " + token },
+              },
+            );
+            const body = await response.json().catch(() => ({}));
+            return { response, body };
+          };
+
+          try {
+            await Promise.all([
+              db.collection("users").doc(uidA).set({
+                displayName: "R2 Owner",
+                role: "user",
+                accountStatus: "active",
+                location: "UAE",
+              }),
+              db.collection("users").doc(uidB).set({
+                displayName: "R2 Peer",
+                role: "user",
+                accountStatus: "active",
+                location: "UAE",
+              }),
+            ]);
+            [tokenA, tokenB] = await Promise.all([signIn(uidA), signIn(uidB)]);
+
+            const personal = await voiceCall(tokenA, { action: "personalRoom" });
+            const room = personal.room || {};
+            roomId = String(room.roomId || "");
+            roomPublicId = String(room.publicId || "");
+            if (!roomId) throw new Error("personal_room_missing");
+
+            const roomUpload = await directUpload(tokenA, "room_cover", roomId);
+            roomObjectId = roomUpload.objectId;
+            const roomCoverUrl = String(roomUpload.confirmed.publicUrl || "");
+            if (!roomCoverUrl.includes("/api/public-media/room_cover/")) {
+              throw new Error("room_cover_public_url_missing");
+            }
+
+            const updatedRoom = await voiceCall(tokenA, {
+              action: "updateRoomSettings",
+              roomId,
+              name: String(room.name || "R2 Room"),
+              description: String(room.description || ""),
+              category: String(room.category || "دردشة"),
+              tags: Array.isArray(room.tags) ? room.tags : [],
+              visibility: "public",
+              chatEnabled: true,
+              coverImageUrl: roomCoverUrl,
+              coverImageObjectId: roomObjectId,
+            });
+            if (String(updatedRoom?.room?.coverImageObjectId || "") !== roomObjectId) {
+              throw new Error("room_cover_object_not_persisted");
+            }
+
+            const publicRead = await fetch(roomCoverUrl);
+            if (!publicRead.ok) throw new Error("room_cover_read_failed:" + publicRead.status);
+            const roomBytes = new Uint8Array(await publicRead.arrayBuffer());
+            if (
+              roomBytes.length !== payload.length ||
+              roomBytes.some((value, index) => value !== payload[index])
+            ) {
+              throw new Error("room_cover_roundtrip_mismatch");
+            }
+
+            await Promise.all([
+              db.collection("conversations").doc(conversationId).set({
+                participants: [uidA, uidB],
+                createdAt: new Date(),
+                updatedAt: new Date(),
+                unreadCounts: { [uidA]: 0, [uidB]: 0 },
+              }),
+              db.collection("follows").doc(uidA + "__" + uidB).set({
+                fromUid: uidA,
+                toUid: uidB,
+                createdAt: new Date(),
+              }),
+              db.collection("follows").doc(uidB + "__" + uidA).set({
+                fromUid: uidB,
+                toUid: uidA,
+                createdAt: new Date(),
+              }),
+            ]);
+
+            const chatUpload = await directUpload(tokenA, "chat_image", conversationId);
+            chatObjectId = chatUpload.objectId;
+            if (chatUpload.confirmed.publicUrl) {
+              throw new Error("private_chat_object_exposed_publicly");
+            }
+
+            chatMessageId = "r2_" + stamp;
+            const messageResponse = await fetch(
+              "https://firestore.googleapis.com/v1/projects/" +
+                encodeURIComponent(serviceAccount.project_id) +
+                "/databases/(default)/documents/conversations/" +
+                encodeURIComponent(conversationId) +
+                "/messages/" +
+                encodeURIComponent(chatMessageId),
+              {
+                method: "PATCH",
+                headers: {
+                  authorization: "Bearer " + tokenA,
+                  "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                  fields: {
+                    senderId: { stringValue: uidA },
+                    receiverId: { stringValue: uidB },
+                    type: { stringValue: "image" },
+                    storageObjectId: { stringValue: chatObjectId },
+                    mimeType: { stringValue: "image/png" },
+                    sizeBytes: { integerValue: String(payload.length) },
+                    createdAt: { timestampValue: new Date().toISOString() },
+                  },
+                }),
+              },
+            );
+            const messageBody = await messageResponse.text();
+            if (!messageResponse.ok) {
+              throw new Error(
+                "production_chat_rules_rejected:" +
+                  messageResponse.status +
+                  ":" +
+                  messageBody.slice(0, 300),
+              );
+            }
+
+            const peerRead = await storageCall(tokenB, {
+              action: "prepareRead",
+              objectId: chatObjectId,
+            });
+            const peerFetch = await fetch(String(peerRead.readUrl || ""));
+            if (!peerFetch.ok) throw new Error("peer_chat_read_failed:" + peerFetch.status);
+            const peerBytes = new Uint8Array(await peerFetch.arrayBuffer());
+            if (
+              peerBytes.length !== payload.length ||
+              peerBytes.some((value, index) => value !== payload[index])
+            ) {
+              throw new Error("peer_chat_roundtrip_mismatch");
+            }
+
+            const deniedDelete = await deleteObject(tokenB, chatObjectId);
+            if (
+              deniedDelete.response.status !== 403 ||
+              deniedDelete.body.code !== "forbidden"
+            ) {
+              throw new Error(
+                "peer_delete_should_be_forbidden:" +
+                  deniedDelete.response.status +
+                  ":" +
+                  JSON.stringify(deniedDelete.body),
+              );
+            }
+
+            const chatDelete = await deleteObject(tokenA, chatObjectId);
+            if (!chatDelete.response.ok || chatDelete.body.deleted !== true) {
+              throw new Error("owner_chat_delete_failed");
+            }
+            chatObjectId = "";
+
+            await voiceCall(tokenA, {
+              action: "updateRoomSettings",
+              roomId,
+              name: String(room.name || "R2 Room"),
+              description: String(room.description || ""),
+              category: String(room.category || "دردشة"),
+              tags: Array.isArray(room.tags) ? room.tags : [],
+              visibility: "public",
+              chatEnabled: true,
+              coverImageUrl: "",
+              coverImageObjectId: "",
+            });
+            const roomDelete = await deleteObject(tokenA, roomObjectId);
+            if (!roomDelete.response.ok || roomDelete.body.deleted !== true) {
+              throw new Error("owner_room_cover_delete_failed");
+            }
+            roomObjectId = "";
+
+            console.log("R2_ROOM_CHAT_TWO_ACCOUNT_E2E_OK");
+          } finally {
+            if (chatObjectId && tokenA) {
+              await deleteObject(tokenA, chatObjectId).catch(() => {});
+            }
+            if (roomObjectId && tokenA) {
+              if (roomId) {
+                await voiceCall(tokenA, {
+                  action: "updateRoomSettings",
+                  roomId,
+                  name: "R2 Room",
+                  description: "",
+                  category: "دردشة",
+                  tags: [],
+                  visibility: "public",
+                  chatEnabled: true,
+                  coverImageUrl: "",
+                  coverImageObjectId: "",
+                }).catch(() => {});
+              }
+              await deleteObject(tokenA, roomObjectId).catch(() => {});
+            }
+
+            if (chatMessageId) {
+              await db.collection("conversations").doc(conversationId)
+                .collection("messages").doc(chatMessageId).delete().catch(() => {});
+            }
+            await Promise.all([
+              db.collection("conversations").doc(conversationId).delete().catch(() => {}),
+              db.collection("follows").doc(uidA + "__" + uidB).delete().catch(() => {}),
+              db.collection("follows").doc(uidB + "__" + uidA).delete().catch(() => {}),
+            ]);
+
+            if (roomId) {
+              await db.collection("rooms").doc(roomId).delete().catch(() => {});
+            }
+            if (roomPublicId) {
+              await db.collection("room_ids").doc(roomPublicId).delete().catch(() => {});
+            }
+            await Promise.all([
+              db.collection("users").doc(uidA).delete().catch(() => {}),
+              db.collection("users").doc(uidB).delete().catch(() => {}),
+              admin.auth().deleteUser(uidA).catch(() => {}),
+              admin.auth().deleteUser(uidB).catch(() => {}),
+            ]);
+
+            for (const uid of [uidA, uidB]) {
+              const audits = await db.collection("storage_audit_logs")
+                .where("actorUid", "==", uid)
+                .get()
+                .catch(() => null);
+              if (audits && !audits.empty) {
+                const batch = db.batch();
+                for (const doc of audits.docs) batch.delete(doc.ref);
+                await batch.commit().catch(() => {});
+              }
+            }
+          }
+          NODE
