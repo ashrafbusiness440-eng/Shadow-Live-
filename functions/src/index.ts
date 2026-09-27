@@ -1,4 +1,3 @@
-export {gameSettlementWorker} from "./game_settlement.js";
 import {onRequest} from "firebase-functions/v2/https";
 import {initializeApp} from "firebase-admin/app";
 import {getAuth} from "firebase-admin/auth";
