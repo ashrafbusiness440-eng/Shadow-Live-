@@ -688,7 +688,7 @@ async function deleteAccountOwnedStorageObject({
   return objectId;
 }
 
-async function runDeletedAccountStorageCleanup(
+export async function runDeletedAccountStorageCleanup(
   db,
   bucket,
   {
