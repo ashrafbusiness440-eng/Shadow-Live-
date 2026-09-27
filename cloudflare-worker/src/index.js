@@ -10,6 +10,7 @@ import { controlUserDetails } from "./control-user-details.js";
 import { walletActions } from "./wallet-actions.js";
 import { chatSafetyActions } from "./chat-safety-actions.js";
 import { storageHealth } from "./storage-health.js";
+import { publicMediaRedirect } from "./public-media.js";
 import { runDueStorageCleanup, userStorage } from "./user-storage.js";
 import { roomGift } from "./room-gift.js";
 import { voiceSession } from "./voice-session.js";
@@ -84,6 +85,14 @@ async function dispatchRequest(request, env) {
   if (url.pathname === "/api/storage-health") {
     annotatePressureRequest(request, { action: "storageHealth" });
     return storageHealth(request, env);
+  }
+  if (url.pathname === "/api/user-storage") {
+    annotatePressureRequest(request, { action: "userStorage" });
+    return userStorage(request, env);
+  }
+  if (url.pathname.startsWith("/api/public-media/")) {
+    annotatePressureRequest(request, { action: "publicMediaRedirect" });
+    return publicMediaRedirect(request, env);
   }
   if (url.pathname === "/api/room-gift") {
     annotatePressureRequest(request, { action: "sendRoomGift" });

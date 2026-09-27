@@ -157,3 +157,153 @@ jobs:
           else
             echo "::warning::Cloudflare R2 storage is not currently ready; deployment remains valid."
           fi
+
+
+      - name: Install production storage smoke dependency
+        run: npm install --no-save --ignore-scripts firebase-admin@^13
+
+      - name: Verify production R2 profile upload route
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          import admin from "firebase-admin";
+
+          let serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || "{}");
+          if (typeof serviceAccount === "string") serviceAccount = JSON.parse(serviceAccount);
+          if (!serviceAccount.project_id || !serviceAccount.client_email || !serviceAccount.private_key) {
+            throw new Error("invalid_firebase_service_account");
+          }
+
+          admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+
+          const uid = "ci-r2-profile-" + Date.now();
+          const workerBase = "https://shadow-live.ashraf-business-440.workers.dev/api";
+          let idToken = "";
+          let objectId = "";
+
+          const callStorage = async (payload) => {
+            const response = await fetch(workerBase + "/user-storage", {
+              method: "POST",
+              headers: {
+                authorization: "Bearer " + idToken,
+                "content-type": "application/json",
+              },
+              body: JSON.stringify(payload),
+            });
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok || body.ok !== true) {
+              throw new Error(
+                "storage_api_failed:" + response.status + ":" + JSON.stringify(body),
+              );
+            }
+            return body;
+          };
+
+          try {
+            const customToken = await admin.auth().createCustomToken(uid);
+            const options = fs.readFileSync("../lib/firebase_options.dart", "utf8");
+            const apiKeyMatch = options.match(/apiKey:\s*'([^']+)'/);
+            if (!apiKeyMatch) throw new Error("firebase_web_api_key_not_found");
+
+            const signIn = await fetch(
+              "https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=" +
+                encodeURIComponent(apiKeyMatch[1]),
+              {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ token: customToken, returnSecureToken: true }),
+              },
+            );
+            const signInBody = await signIn.json().catch(() => ({}));
+            if (!signIn.ok || !signInBody.idToken) {
+              throw new Error(
+                "custom_token_exchange_failed:" +
+                  signIn.status +
+                  ":" +
+                  JSON.stringify(signInBody),
+              );
+            }
+            idToken = signInBody.idToken;
+
+            const payload = new Uint8Array([
+              0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+            ]);
+            const prepared = await callStorage({
+              action: "prepareUpload",
+              scope: "profile_image",
+              mimeType: "image/png",
+              byteLength: payload.length,
+            });
+            objectId = String(prepared.objectId || "");
+            if (!objectId || !prepared.uploadUrl) {
+              throw new Error("storage_prepare_invalid");
+            }
+
+            const upload = await fetch(prepared.uploadUrl, {
+              method: "PUT",
+              headers: { "content-type": "image/png" },
+              body: payload,
+            });
+            if (!upload.ok) {
+              throw new Error("r2_direct_put_failed:" + upload.status);
+            }
+
+            const confirmed = await callStorage({
+              action: "confirmUpload",
+              objectId,
+            });
+            const publicUrl = String(confirmed.publicUrl || "");
+            if (!publicUrl.includes("/api/public-media/profile_image/")) {
+              throw new Error("public_media_url_missing");
+            }
+
+            const redirect = await fetch(publicUrl, { redirect: "manual" });
+            if (redirect.status !== 302 || !redirect.headers.get("location")) {
+              throw new Error("public_media_redirect_failed:" + redirect.status);
+            }
+
+            const publicRead = await fetch(publicUrl);
+            if (!publicRead.ok) {
+              throw new Error("public_media_read_failed:" + publicRead.status);
+            }
+            const received = new Uint8Array(await publicRead.arrayBuffer());
+            if (
+              received.length !== payload.length ||
+              received.some((value, index) => value !== payload[index])
+            ) {
+              throw new Error("public_media_roundtrip_mismatch");
+            }
+
+            const deletion = await fetch(
+              workerBase + "/user-storage?objectId=" + encodeURIComponent(objectId),
+              {
+                method: "DELETE",
+                headers: { authorization: "Bearer " + idToken },
+              },
+            );
+            const deletionBody = await deletion.json().catch(() => ({}));
+            if (!deletion.ok || deletionBody.deleted !== true) {
+              throw new Error(
+                "storage_delete_failed:" +
+                  deletion.status +
+                  ":" +
+                  JSON.stringify(deletionBody),
+              );
+            }
+            objectId = "";
+            console.log("R2_PROFILE_PRODUCTION_E2E_OK");
+          } finally {
+            if (objectId && idToken) {
+              await fetch(
+                workerBase + "/user-storage?objectId=" + encodeURIComponent(objectId),
+                {
+                  method: "DELETE",
+                  headers: { authorization: "Bearer " + idToken },
+                },
+              ).catch(() => {});
+            }
+            await admin.auth().deleteUser(uid).catch(() => {});
+          }
+          NODE

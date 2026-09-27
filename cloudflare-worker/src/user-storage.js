@@ -5,6 +5,7 @@ import {
 } from "./http.js";
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
+import { publicMediaUrl } from "./public-media.js";
 import {
   R2_BUCKET_NAME,
   R2_PRESIGN_TTL_SECONDS,
@@ -525,6 +526,14 @@ async function confirmUpload(request, env, auth, body) {
     updatedAt: now,
   };
 
+  const stablePublicUrl = publicMediaUrl(request, {
+    scope: metadata.scope,
+    targetId: metadata.targetId,
+    objectId,
+    extension: storageExtensionForMime(metadata.mimeType),
+  });
+  if (stablePublicUrl) metadata.publicUrl = stablePublicUrl;
+
   const writes = [
     auth.db.writeCreate(`storage_objects/${objectId}`, metadata),
     auth.db.writeDelete(`storage_upload_tickets/${objectId}`),
@@ -593,7 +602,41 @@ async function confirmUpload(request, env, auth, body) {
     sizeBytes: metadata.sizeBytes,
     replacedObjectId: previous?.objectId || null,
     previousDeleteAtMs: previousDeleteAt?.getTime() || null,
+    publicUrl: stablePublicUrl,
   });
+}
+
+async function replacementObjectStillReferenced(
+  db,
+  queueItem,
+  objectId,
+) {
+  const scope = clean(queueItem?.scope);
+  const targetId = clean(queueItem?.targetId);
+  if (!targetId) return false;
+
+  let documentPath = "";
+  let field = "";
+  switch (scope) {
+    case "profile_image":
+      documentPath = `users/${targetId}`;
+      field = "profileImageObjectId";
+      break;
+    case "profile_cover":
+      documentPath = `users/${targetId}`;
+      field = "coverImageObjectId";
+      break;
+    case "room_cover":
+      documentPath = `rooms/${targetId}`;
+      field = "coverImageObjectId";
+      break;
+    default:
+      return false;
+  }
+
+  const snapshot = await db.get(documentPath);
+  if (!snapshot.exists) return false;
+  return clean(snapshot.data?.[field]) === clean(objectId);
 }
 
 export async function runDueStorageCleanup(
@@ -615,6 +658,7 @@ export async function runDueStorageCleanup(
 
   let deleted = 0;
   let failed = 0;
+  let deferred = 0;
   for (const item of due) {
     const objectId = clean(item.data?.objectId || item.id);
     const storageKey = clean(item.data?.storageKey);
@@ -624,6 +668,28 @@ export async function runDueStorageCleanup(
     }
 
     try {
+      const stillReferenced = await replacementObjectStillReferenced(
+        db,
+        item.data,
+        objectId,
+      );
+      if (stillReferenced) {
+        const nextDeleteAt = replacementDeleteAt(nowMs);
+        await db.commit(null, [
+          db.writeUpdate(
+            `storage_delete_queue/${item.id}`,
+            {
+              deleteAfter: nextDeleteAt,
+              lastDeferredAt: new Date(nowMs),
+              deferReason: "still_referenced",
+            },
+            ["deleteAfter", "lastDeferredAt", "deferReason"],
+          ),
+        ]);
+        deferred += 1;
+        continue;
+      }
+
       await bucket.delete(storageKey);
       const now = new Date();
       await db.commit(null, [
@@ -653,10 +719,69 @@ export async function runDueStorageCleanup(
     }
   }
 
+  const expiredTickets = await db.runQuery("storage_upload_tickets", {
+    filters: [
+      { field: "expiresAt", op: "<=", value: new Date(nowMs) },
+    ],
+    orderBy: [{ field: "expiresAt", direction: "asc" }],
+    limit: Math.max(
+      1,
+      Math.min(
+        STORAGE_DELETE_BATCH_LIMIT,
+        Number(limit || STORAGE_DELETE_BATCH_LIMIT),
+      ),
+    ),
+  });
+
+  let expiredTicketsCleaned = 0;
+  let expiredTicketFailures = 0;
+  for (const ticket of expiredTickets) {
+    const objectId = clean(ticket.data?.objectId || ticket.id);
+    const storageKey = clean(ticket.data?.storageKey);
+    if (!objectId || !storageKey) {
+      expiredTicketFailures += 1;
+      continue;
+    }
+
+    try {
+      await bucket.delete(storageKey);
+      await db.commit(null, [
+        db.writeDelete(`storage_upload_tickets/${ticket.id}`),
+        db.writeCreate(`storage_audit_logs/${auditId()}`, {
+          actorUid: "system",
+          action: "cleanupExpiredStorageUpload",
+          objectId,
+          scope: clean(ticket.data?.scope),
+          targetId: clean(ticket.data?.targetId),
+          sizeBytes: Number(ticket.data?.expectedSizeBytes || 0),
+          reason: "upload_ticket_expired",
+          createdAt: new Date(),
+        }),
+      ]);
+      expiredTicketsCleaned += 1;
+    } catch (error) {
+      expiredTicketFailures += 1;
+      console.error(
+        "R2 expired upload cleanup failed",
+        JSON.stringify({
+          objectId,
+          code: clean(error?.code || error?.message || "cleanup_failed").slice(0, 120),
+        }),
+      );
+    }
+  }
+
   return {
-    checked: due.length,
-    deleted,
-    failed,
+    checked: due.length + expiredTickets.length,
+    replacementChecked: due.length,
+    replacementDeleted: deleted,
+    replacementDeferred: deferred,
+    replacementFailed: failed,
+    expiredTicketsChecked: expiredTickets.length,
+    expiredTicketsCleaned,
+    expiredTicketFailures,
+    deleted: deleted + expiredTicketsCleaned,
+    failed: failed + expiredTicketFailures,
   };
 }
 
