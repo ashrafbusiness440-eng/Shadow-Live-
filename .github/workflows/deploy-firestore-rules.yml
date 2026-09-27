@@ -160,4 +160,63 @@ jobs:
 
           console.log('Firestore rules released:', ruleset.name);
           console.log('Release:', release.name || releaseName);
+
+          const indexParent =
+            'projects/' + projectId +
+            '/databases/(default)/collectionGroups/game_operations';
+          const indexListResponse = await fetch(
+            'https://firestore.googleapis.com/v1/' + indexParent + '/indexes',
+            { headers: { authorization: 'Bearer ' + token } },
+          );
+          const indexList = await indexListResponse.json().catch(() => ({}));
+          if (!indexListResponse.ok) {
+            throw new Error(
+              'index list failed ' +
+                indexListResponse.status +
+                ' ' +
+                JSON.stringify(indexList),
+            );
+          }
+
+          const indexReadyOrBuilding = (indexList.indexes || []).some((index) => {
+            const fields = Array.isArray(index.fields) ? index.fields : [];
+            const status = fields.find((field) => field.fieldPath === 'status');
+            const closes = fields.find((field) => field.fieldPath === 'closesAtMs');
+            return index.queryScope === 'COLLECTION' &&
+              status?.order === 'ASCENDING' &&
+              closes?.order === 'ASCENDING' &&
+              index.state !== 'DELETING';
+          });
+
+          if (indexReadyOrBuilding) {
+            console.log('Firestore game_operations settlement index already exists.');
+          } else {
+            const createIndex = await fetch(
+              'https://firestore.googleapis.com/v1/' + indexParent + '/indexes',
+              {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                  queryScope: 'COLLECTION',
+                  fields: [
+                    { fieldPath: 'status', order: 'ASCENDING' },
+                    { fieldPath: 'closesAtMs', order: 'ASCENDING' },
+                  ],
+                }),
+              },
+            );
+            const createdIndex = await createIndex.json().catch(() => ({}));
+            if (!createIndex.ok) {
+              throw new Error(
+                'index create failed ' +
+                  createIndex.status +
+                  ' ' +
+                  JSON.stringify(createdIndex),
+              );
+            }
+            console.log(
+              'Firestore game_operations settlement index creation requested:',
+              createdIndex.name || 'operation_started',
+            );
+          }
           NODE
