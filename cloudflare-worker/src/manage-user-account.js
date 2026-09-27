@@ -393,15 +393,21 @@ export async function manageUserAccount(request, env) {
 
 export async function releaseExpiredSuspensions(env) {
   const db = firestoreClient(env);
-  const rows = await db.runQuery("users", {
-    filters: [{ field: "accountStatus", op: "==", value: "suspended" }],
-    limit: 100,
-  });
   const nowMs = Date.now();
-  const due = rows.filter((row) => {
-    const until = Date.parse(String(row.data?.suspendedUntil || ""));
-    return Number.isFinite(until) && until <= nowMs;
+  // Pressure Root Fix Step 12: suspendedUntil is cleared when a suspension
+  // ends, so a single-field due-time query avoids re-reading up to 100 future
+  // suspensions on every five-minute cron sweep.
+  const rows = await db.runQuery("users", {
+    filters: [{
+      field: "suspendedUntil",
+      op: "<=",
+      value: new Date(nowMs),
+    }],
+    limit: 25,
   });
+  const due = rows.filter((row) =>
+    String(row.data?.accountStatus || "") === "suspended"
+  );
 
   let released = 0;
   for (const row of due) {
