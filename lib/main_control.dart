@@ -319,7 +319,7 @@ Future<_DashboardSnapshot> _loadDashboardSnapshot() async {
   }).toList(growable: false);
 
   return _DashboardSnapshot(
-    users: ((total.count ?? 0) - (deleted.count ?? 0)).clamp(0, 1 << 31),
+    users: ((total.count ?? 0) - (deleted.count ?? 0)).clamp(0, 1 << 31).toInt(),
     admins: privileged.length,
     owners: privileged.where((doc) => doc.data()['role'] == 'owner').length,
   );
