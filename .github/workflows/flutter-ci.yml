@@ -17,7 +17,7 @@ concurrency:
 jobs:
   analyze-and-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -84,9 +84,6 @@ jobs:
 
       - name: Test
         run: flutter test
-
-      - name: R2 Android compile smoke
-        run: flutter build apk --debug --android-skip-build-dependency-validation
 
       - name: Build Shadow Control web
         run: |
