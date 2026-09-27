@@ -10,6 +10,7 @@ import { controlUserDetails } from "./control-user-details.js";
 import { walletActions } from "./wallet-actions.js";
 import { chatSafetyActions } from "./chat-safety-actions.js";
 import { storageHealth } from "./storage-health.js";
+import { userStorage } from "./user-storage.js";
 import { roomGift } from "./room-gift.js";
 import { voiceSession } from "./voice-session.js";
 import { roomRealtime } from "./room-realtime.js";
