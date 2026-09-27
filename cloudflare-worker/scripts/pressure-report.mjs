@@ -105,6 +105,7 @@ const [
       blob2 AS operation,
       blob3 AS action,
       blob4 AS outcome,
+      blob7 AS resource,
       SUM(_sample_interval * double1) AS calls,
       SUM(_sample_interval * double3) AS reads,
       SUM(_sample_interval * double4) AS writes,
@@ -116,7 +117,7 @@ const [
       quantileExactWeighted(0.99)(double2, _sample_interval) AS p99_ms
     FROM ${dataset}
     WHERE ${timeWhere} AND blob1 = 'firestore'
-    GROUP BY operation, action, outcome
+    GROUP BY operation, action, outcome, resource
     ORDER BY calls DESC
     LIMIT 1000
   `),
@@ -227,6 +228,7 @@ const report = {
     operation: String(row.operation || ""),
     action: String(row.action || ""),
     outcome: String(row.outcome || ""),
+    resource: String(row.resource || ""),
     calls: num(row.calls),
     reads: num(row.reads),
     writes: num(row.writes),
@@ -294,9 +296,10 @@ const md = [
   "## Firestore operations",
   "",
   table(
-    ["Operation", "Action", "Outcome", "Calls", "Reads", "Writes", "Retries", "Quota", "p50 ms", "p95 ms", "p99 ms"],
+    ["Operation", "Resource", "Action", "Outcome", "Calls", "Reads", "Writes", "Retries", "Quota", "p50 ms", "p95 ms", "p99 ms"],
     report.firestore.slice(0, 60).map((row) => [
       row.operation,
+      row.resource,
       row.action,
       row.outcome,
       row.calls,
