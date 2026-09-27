@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import test from "node:test";
 
 import {
@@ -15,6 +16,11 @@ import {
 import {
   presignR2Put,
 } from "../../cloudflare-worker/src/r2-presign.js";
+import {
+  isPublicMediaScope,
+  publicMediaStorageKey,
+  publicMediaUrl,
+} from "../../cloudflare-worker/src/public-media.js";
 
 test("storage MIME allowlist only accepts supported image formats", () => {
   assert.equal(storageExtensionForMime("image/jpeg"), "jpg");
@@ -127,6 +133,74 @@ test("replaceable media uses deterministic active pointers", () => {
     () => storageActivePointerId("chat_image", "conversation_9"),
     /active_pointer_not_supported/,
   );
+});
+
+
+test("public media redirects only expose public R2 scopes", () => {
+  assert.equal(isPublicMediaScope("profile_image"), true);
+  assert.equal(isPublicMediaScope("profile_cover"), true);
+  assert.equal(isPublicMediaScope("room_cover"), true);
+  assert.equal(isPublicMediaScope("chat_image"), false);
+
+  assert.equal(
+    publicMediaStorageKey({
+      scope: "profile_image",
+      targetId: "user_1",
+      filename: `${"e".repeat(32)}.jpg`,
+    }),
+    `users/user_1/profile/${"e".repeat(32)}.jpg`,
+  );
+  assert.equal(
+    publicMediaStorageKey({
+      scope: "profile_cover",
+      targetId: "user_1",
+      filename: `${"f".repeat(32)}.webp`,
+    }),
+    `users/user_1/covers/${"f".repeat(32)}.webp`,
+  );
+  assert.throws(
+    () =>
+      publicMediaStorageKey({
+        scope: "chat_image",
+        targetId: "conversation_1",
+        filename: `${"a".repeat(32)}.png`,
+      }),
+    /invalid_public_media_scope/,
+  );
+});
+
+test("public media URL stays stable while R2 bytes remain direct", () => {
+  const request = new Request(
+    "https://shadow-live.example/api/user-storage",
+  );
+  const url = publicMediaUrl(request, {
+    scope: "profile_image",
+    targetId: "user_1",
+    objectId: "a".repeat(32),
+    extension: "jpg",
+  });
+  assert.equal(
+    url,
+    `https://shadow-live.example/api/public-media/profile_image/user_1/${"a".repeat(32)}.jpg`,
+  );
+  assert.equal(
+    publicMediaUrl(request, {
+      scope: "chat_image",
+      targetId: "conversation_1",
+      objectId: "a".repeat(32),
+      extension: "jpg",
+    }),
+    null,
+  );
+});
+
+test("worker exposes the user-storage route", () => {
+  const source = fs.readFileSync(
+    new URL("../../cloudflare-worker/src/index.js", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /url\.pathname === "\/api\/user-storage"/);
+  assert.match(source, /url\.pathname\.startsWith\("\/api\/public-media\/"\)/);
 });
 
 test("storage upload rate limiter caps presign bursts", () => {
