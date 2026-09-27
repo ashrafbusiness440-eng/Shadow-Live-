@@ -14,6 +14,7 @@ import 'admin/control_asset_manager_page.dart';
 import 'admin/economy_control_page.dart';
 import 'admin/games_control_page.dart';
 import 'admin/user_access_control_card.dart';
+import 'admin/system_health_card.dart';
 
 
 Future<void> main() async {
@@ -331,6 +332,8 @@ class DashboardPage extends StatelessWidget {
   @override Widget build(BuildContext context)=>ListView(padding:const EdgeInsets.all(16),children:[
     const Text('لوحة التحكم',style:TextStyle(fontSize:25,fontWeight:FontWeight.w900)),
     const SizedBox(height:4),const Text('حالة Shadow Live الإدارية — قراءة مباشرة وآمنة',style:TextStyle(color:Color(0xFFAAA3B8))),const SizedBox(height:16),
+    const ControlSystemHealthCard(),
+    const SizedBox(height:12),
     FutureBuilder<_DashboardSnapshot>(
       future:_loadDashboardSnapshot(),
       builder:(context,snap){
