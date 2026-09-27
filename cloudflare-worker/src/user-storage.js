@@ -1,16 +1,22 @@
 import {
-  corsHeaders,
   firestoreQuotaResponse,
   json,
+  readJson,
 } from "./http.js";
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
+import {
+  R2_BUCKET_NAME,
+  R2_PRESIGN_TTL_SECONDS,
+  presignR2Get,
+  presignR2Put,
+} from "./r2-presign.js";
 
-const STORAGE_BUCKET_NAME = "shadow-live-storage";
 const MAX_PROFILE_BYTES = 2 * 1024 * 1024;
 const MAX_COVER_BYTES = 4 * 1024 * 1024;
 const MAX_CHAT_BYTES = 8 * 1024 * 1024;
 const RATE_WINDOW_MS = 60_000;
+const UPLOAD_TICKET_TTL_MS = R2_PRESIGN_TTL_SECONDS * 1000;
 
 export const STORAGE_SCOPE_CONFIG = Object.freeze({
   profile_image: Object.freeze({ maxBytes: MAX_PROFILE_BYTES }),
@@ -111,8 +117,7 @@ function bucketFromEnv(env) {
   const bucket = env?.USER_STORAGE;
   if (
     !bucket ||
-    typeof bucket.put !== "function" ||
-    typeof bucket.get !== "function" ||
+    typeof bucket.head !== "function" ||
     typeof bucket.delete !== "function"
   ) {
     throw new StorageApiError("r2_not_configured", 503);
@@ -122,12 +127,14 @@ function bucketFromEnv(env) {
 
 function rateLimitForAction(action) {
   switch (action) {
-    case "upload":
+    case "prepareUpload":
+      return 8;
+    case "confirmUpload":
       return 12;
+    case "prepareRead":
+      return 180;
     case "delete":
       return 20;
-    case "read":
-      return 180;
     default:
       return 30;
   }
@@ -232,6 +239,16 @@ async function metadataForObject(db, objectId) {
   return { objectId: id, ...metadata.data };
 }
 
+async function ticketForObject(db, objectId) {
+  const id = clean(objectId);
+  if (!/^[a-f0-9]{32}$/.test(id)) {
+    throw new StorageApiError("invalid_object_id", 400);
+  }
+  const ticket = await db.get(`storage_upload_tickets/${id}`);
+  if (!ticket.exists) return null;
+  return { objectId: id, ...ticket.data };
+}
+
 async function authorizeRead(db, uid, metadata) {
   const scope = clean(metadata.scope);
   if (
@@ -268,38 +285,24 @@ function auditId() {
   return crypto.randomUUID().replaceAll("-", "");
 }
 
-function responseHeadersForObject(request, env, object) {
-  const headers = new Headers(corsHeaders(request, env));
-  headers.set(
-    "Content-Type",
-    clean(object?.httpMetadata?.contentType) || "application/octet-stream",
-  );
-  headers.set("Cache-Control", "private, max-age=300");
-  if (object?.httpEtag) headers.set("ETag", object.httpEtag);
-  return headers;
+function timestampMs(value) {
+  if (value instanceof Date) return value.getTime();
+  const ms = Date.parse(clean(value));
+  return Number.isFinite(ms) ? ms : 0;
 }
 
-async function uploadObject(request, env, auth) {
-  const url = new URL(request.url);
-  const scope = clean(url.searchParams.get("scope"));
-  const rawTargetId = clean(url.searchParams.get("targetId"));
-  const replaceObjectId = clean(url.searchParams.get("replaceObjectId"));
-  const mimeType = clean(
-    request.headers.get("content-type") || "application/octet-stream",
-  ).split(";")[0].trim().toLowerCase();
+async function prepareUpload(request, env, auth, body) {
+  const scope = clean(body.scope);
+  const mimeType = clean(body.mimeType).toLowerCase();
+  const byteLength = Number(body.byteLength || 0);
+  const rawTargetId = clean(body.targetId);
+  const replaceObjectId = clean(body.replaceObjectId);
 
-  const config = STORAGE_SCOPE_CONFIG[scope];
-  if (!config) throw new StorageApiError("invalid_scope", 400);
-
-  const declaredLength = Number(request.headers.get("content-length") || 0);
-  if (
-    Number.isFinite(declaredLength) &&
-    declaredLength > 0 &&
-    declaredLength > config.maxBytes
-  ) {
-    throw new StorageApiError("invalid_file_size", 400);
-  }
-
+  const validated = validateStoragePayload({
+    scope,
+    mimeType,
+    byteLength,
+  });
   const authorization = await authorizeUpload(
     auth.db,
     auth.uid,
@@ -319,13 +322,6 @@ async function uploadObject(request, env, auth) {
     }
   }
 
-  const bytes = new Uint8Array(await request.arrayBuffer());
-  const validated = validateStoragePayload({
-    scope,
-    mimeType,
-    byteLength: bytes.byteLength,
-  });
-
   const objectId = crypto.randomUUID().replaceAll("-", "");
   const storageKey = buildStorageObjectKey({
     scope,
@@ -334,46 +330,131 @@ async function uploadObject(request, env, auth) {
     objectId,
     extension: validated.extension,
   });
-  const bucket = bucketFromEnv(env);
+  const expiresAtMs = Date.now() + UPLOAD_TICKET_TTL_MS;
 
-  const uploaded = await bucket.put(storageKey, bytes, {
-    httpMetadata: {
-      contentType: validated.mimeType,
-      cacheControl: "private, max-age=0, no-store",
-    },
-    customMetadata: {
+  const uploadUrl = await presignR2Put(env, {
+    key: storageKey,
+    mimeType: validated.mimeType,
+    expiresSeconds: R2_PRESIGN_TTL_SECONDS,
+  });
+
+  await auth.db.commit(null, [
+    auth.db.writeCreate(`storage_upload_tickets/${objectId}`, {
       objectId,
+      storageKey,
+      bucket: R2_BUCKET_NAME,
       scope,
       ownerUid: auth.uid,
       targetId: authorization.targetId,
+      mimeType: validated.mimeType,
+      expectedSizeBytes: byteLength,
+      replaceObjectId: previous?.objectId || null,
+      expiresAt: new Date(expiresAtMs),
+      createdAt: new Date(),
+    }),
+  ]);
+
+  return json(request, env, {
+    ok: true,
+    action: "prepareUpload",
+    objectId,
+    uploadUrl,
+    expiresAtMs,
+    requiredHeaders: {
+      "content-type": validated.mimeType,
     },
+    confirmAction: "confirmUpload",
   });
-  if (!uploaded) throw new StorageApiError("r2_upload_failed", 503);
+}
+
+async function confirmUpload(request, env, auth, body) {
+  const objectId = clean(body.objectId);
+  let ticket = await ticketForObject(auth.db, objectId);
+
+  if (!ticket) {
+    const existing = await auth.db.get(`storage_objects/${objectId}`);
+    if (
+      existing.exists &&
+      clean(existing.data?.ownerUid) === auth.uid
+    ) {
+      return json(request, env, {
+        ok: true,
+        action: "confirmUpload",
+        objectId,
+        code: "already_confirmed",
+      });
+    }
+    throw new StorageApiError("upload_ticket_not_found", 404);
+  }
+
+  if (clean(ticket.ownerUid) !== auth.uid) {
+    throw new StorageApiError("forbidden", 403);
+  }
+
+  const bucket = bucketFromEnv(env);
+  if (timestampMs(ticket.expiresAt) < Date.now()) {
+    await bucket.delete(clean(ticket.storageKey)).catch(() => {});
+    await auth.db.commit(null, [
+      auth.db.writeDelete(`storage_upload_tickets/${objectId}`),
+    ]).catch(() => {});
+    throw new StorageApiError("upload_ticket_expired", 410);
+  }
+
+  const object = await bucket.head(clean(ticket.storageKey));
+  if (!object) {
+    throw new StorageApiError("uploaded_object_not_found", 409);
+  }
+
+  const actualSize = Number(object.size || 0);
+  const expectedSize = Number(ticket.expectedSizeBytes || 0);
+  const actualMime = clean(object.httpMetadata?.contentType).toLowerCase();
+  const expectedMime = clean(ticket.mimeType).toLowerCase();
+
+  if (
+    actualSize !== expectedSize ||
+    (actualMime && actualMime !== expectedMime)
+  ) {
+    await bucket.delete(clean(ticket.storageKey)).catch(() => {});
+    await auth.db.commit(null, [
+      auth.db.writeDelete(`storage_upload_tickets/${objectId}`),
+    ]).catch(() => {});
+    throw new StorageApiError("uploaded_object_mismatch", 409);
+  }
+
+  let previous = null;
+  const replaceObjectId = clean(ticket.replaceObjectId);
+  if (replaceObjectId) {
+    const snap = await auth.db.get(`storage_objects/${replaceObjectId}`);
+    if (snap.exists && clean(snap.data?.ownerUid) === auth.uid) {
+      previous = { objectId: replaceObjectId, ...snap.data };
+    }
+  }
 
   const now = new Date();
   const metadata = {
     objectId,
-    storageKey,
-    bucket: STORAGE_BUCKET_NAME,
-    scope,
+    storageKey: clean(ticket.storageKey),
+    bucket: R2_BUCKET_NAME,
+    scope: clean(ticket.scope),
     ownerUid: auth.uid,
-    targetId: authorization.targetId,
-    mimeType: validated.mimeType,
-    sizeBytes: bytes.byteLength,
-    etag: clean(uploaded.etag),
+    targetId: clean(ticket.targetId),
+    mimeType: expectedMime,
+    sizeBytes: actualSize,
+    etag: clean(object.etag),
     createdAt: now,
     updatedAt: now,
   };
 
   const writes = [
     auth.db.writeCreate(`storage_objects/${objectId}`, metadata),
+    auth.db.writeDelete(`storage_upload_tickets/${objectId}`),
     auth.db.writeCreate(`storage_audit_logs/${auditId()}`, {
       actorUid: auth.uid,
       action: previous ? "replaceStorageObject" : "uploadStorageObject",
       objectId,
-      scope,
-      targetId: authorization.targetId,
-      sizeBytes: bytes.byteLength,
+      scope: metadata.scope,
+      targetId: metadata.targetId,
+      sizeBytes: actualSize,
       replacedObjectId: previous?.objectId || null,
       createdAt: now,
     }),
@@ -382,12 +463,7 @@ async function uploadObject(request, env, auth) {
     writes.push(auth.db.writeDelete(`storage_objects/${previous.objectId}`));
   }
 
-  try {
-    await auth.db.commit(null, writes);
-  } catch (error) {
-    await bucket.delete(storageKey).catch(() => {});
-    throw error;
-  }
+  await auth.db.commit(null, writes);
 
   if (previous?.storageKey) {
     await bucket.delete(clean(previous.storageKey)).catch(() => {});
@@ -395,33 +471,31 @@ async function uploadObject(request, env, auth) {
 
   return json(request, env, {
     ok: true,
+    action: "confirmUpload",
     objectId,
-    scope,
-    targetId: authorization.targetId,
-    mimeType: validated.mimeType,
-    sizeBytes: bytes.byteLength,
-    readPath: `/api/user-storage?objectId=${encodeURIComponent(objectId)}`,
+    scope: metadata.scope,
+    targetId: metadata.targetId,
+    mimeType: metadata.mimeType,
+    sizeBytes: metadata.sizeBytes,
     replacedObjectId: previous?.objectId || null,
   });
 }
 
-async function readObject(request, env, auth) {
-  const url = new URL(request.url);
-  const metadata = await metadataForObject(
-    auth.db,
-    url.searchParams.get("objectId"),
-  );
+async function prepareRead(request, env, auth, body) {
+  const metadata = await metadataForObject(auth.db, body.objectId);
   await authorizeRead(auth.db, auth.uid, metadata);
-
-  const bucket = bucketFromEnv(env);
-  const object = await bucket.get(clean(metadata.storageKey));
-  if (!object || !("body" in object)) {
-    throw new StorageApiError("storage_object_missing", 404);
-  }
-
-  return new Response(object.body, {
-    status: 200,
-    headers: responseHeadersForObject(request, env, object),
+  const readUrl = await presignR2Get(env, {
+    key: clean(metadata.storageKey),
+    expiresSeconds: R2_PRESIGN_TTL_SECONDS,
+  });
+  return json(request, env, {
+    ok: true,
+    action: "prepareRead",
+    objectId: metadata.objectId,
+    readUrl,
+    expiresAtMs: Date.now() + UPLOAD_TICKET_TTL_MS,
+    mimeType: clean(metadata.mimeType),
+    sizeBytes: Number(metadata.sizeBytes || 0),
   });
 }
 
@@ -458,18 +532,43 @@ async function deleteObject(request, env, auth) {
 }
 
 export async function userStorage(request, env) {
-  if (!["GET", "PUT", "DELETE"].includes(request.method)) {
-    return json(request, env, { ok: false, code: "method_not_allowed" }, 405);
+  if (!["POST", "DELETE"].includes(request.method)) {
+    return json(
+      request,
+      env,
+      {
+        ok: false,
+        code: request.method === "PUT"
+          ? "direct_upload_required"
+          : "method_not_allowed",
+      },
+      request.method === "PUT" ? 409 : 405,
+    );
   }
 
   try {
     const auth = await authContext(request, env);
-    const action =
-      request.method === "PUT"
-        ? "upload"
-        : request.method === "DELETE"
-          ? "delete"
-          : "read";
+
+    if (request.method === "DELETE") {
+      const rate = consumeStorageRateLimit(auth.uid, "delete");
+      if (!rate.ok) {
+        return json(
+          request,
+          env,
+          { ok: false, code: "rate_limited" },
+          429,
+          { "Retry-After": String(rate.retryAfterSeconds) },
+        );
+      }
+      return await deleteObject(request, env, auth);
+    }
+
+    const body = await readJson(request);
+    const action = clean(body.action);
+    if (!["prepareUpload", "confirmUpload", "prepareRead"].includes(action)) {
+      throw new StorageApiError("invalid_action", 400);
+    }
+
     const rate = consumeStorageRateLimit(auth.uid, action);
     if (!rate.ok) {
       return json(
@@ -481,9 +580,13 @@ export async function userStorage(request, env) {
       );
     }
 
-    if (request.method === "PUT") return await uploadObject(request, env, auth);
-    if (request.method === "DELETE") return await deleteObject(request, env, auth);
-    return await readObject(request, env, auth);
+    if (action === "prepareUpload") {
+      return await prepareUpload(request, env, auth, body);
+    }
+    if (action === "confirmUpload") {
+      return await confirmUpload(request, env, auth, body);
+    }
+    return await prepareRead(request, env, auth, body);
   } catch (error) {
     const quotaResponse = firestoreQuotaResponse(request, env, error);
     if (quotaResponse) return quotaResponse;
@@ -492,11 +595,14 @@ export async function userStorage(request, env) {
       return json(request, env, { ok: false, code: error.code }, error.status);
     }
 
-    const code = clean(error?.message);
+    const code = clean(error?.code || error?.message);
     if (code === "unauthorized") {
       return json(request, env, { ok: false, code: "unauthorized" }, 401);
     }
     if (code === "auth_state_lookup_failed") {
+      return json(request, env, { ok: false, code }, 503);
+    }
+    if (code === "r2_presign_not_configured") {
       return json(request, env, { ok: false, code }, 503);
     }
     return json(request, env, { ok: false, code: "storage_server_failed" }, 500);
