@@ -1,0 +1,232 @@
+name: Step 12 Production Smoke Once
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/step12-production-smoke-once.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Firebase Admin
+        run: npm install --no-save --ignore-scripts firebase-admin@^13
+
+      - name: Run minimal production smoke
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          EXPECTED_WORKER_SHA: 9a9c8b7c74e0d614b8c44041095f66522d77c5b0
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const admin = require('firebase-admin');
+
+          const workerBase = 'https://shadow-live.ashraf-business-440.workers.dev';
+          const controlUrl = 'https://ashrafbusiness440-eng.github.io/Shadow-Live-/control/';
+          const expectedWorkerSha = process.env.EXPECTED_WORKER_SHA || '';
+
+          let serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
+          if (typeof serviceAccount === 'string') serviceAccount = JSON.parse(serviceAccount);
+          admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+          const db = admin.firestore();
+
+          const options = fs.readFileSync('lib/firebase_options.dart', 'utf8');
+          const match = options.match(/apiKey:\s*'([^']+)'/);
+          if (!match) throw new Error('firebase_web_api_key_not_found');
+          const apiKey = match[1];
+
+          const runId = String(process.env.GITHUB_RUN_ID || Date.now());
+          const uid = '__step12_smoke_' + runId;
+          let idToken = '';
+          let roomId = '';
+          let roomPublicId = '';
+          let quotaBlocked = false;
+
+          function isQuota(status, body) {
+            const code = String(body?.code || '');
+            return status === 429 ||
+              code === 'firestore_quota_exhausted' ||
+              code.includes('quota_exhausted');
+          }
+
+          async function jsonFetch(url, options = {}) {
+            const res = await fetch(url, options);
+            const text = await res.text();
+            let body = {};
+            try { body = text ? JSON.parse(text) : {}; } catch { body = { raw: text }; }
+            return { res, body };
+          }
+
+          async function workerPost(path, payload) {
+            const result = await jsonFetch(workerBase + path, {
+              method: 'POST',
+              headers: {
+                authorization: 'Bearer ' + idToken,
+                'content-type': 'application/json',
+                origin: 'https://ashrafbusiness440-eng.github.io',
+              },
+              body: JSON.stringify(payload),
+            });
+            if (isQuota(result.res.status, result.body)) {
+              quotaBlocked = true;
+              const error = new Error('SMOKE_BLOCKED_FIRESTORE_QUOTA');
+              error.quota = true;
+              throw error;
+            }
+            return result;
+          }
+
+          async function exchangeCustomToken(customToken) {
+            const result = await jsonFetch(
+              'https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=' +
+                encodeURIComponent(apiKey),
+              {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ token: customToken, returnSecureToken: true }),
+              },
+            );
+            if (!result.res.ok || !result.body.idToken) {
+              throw new Error('custom_token_exchange_failed:' + result.res.status);
+            }
+            return result.body.idToken;
+          }
+
+          async function safeDelete(ref) {
+            try { await ref.delete(); } catch (_) {}
+          }
+
+          try {
+            const health = await jsonFetch(workerBase + '/health');
+            if (!health.res.ok || health.body.ok !== true) {
+              throw new Error('worker_health_failed:' + health.res.status);
+            }
+            if (expectedWorkerSha && health.body.buildSha !== expectedWorkerSha) {
+              throw new Error(
+                'worker_sha_mismatch:' + String(health.body.buildSha || '') +
+                ':expected:' + expectedWorkerSha,
+              );
+            }
+            console.log('PASS health buildSha=' + health.body.buildSha);
+
+            await db.collection('users').doc(uid).set({
+              displayName: 'Step 12 Smoke',
+              username: 'step12_smoke',
+              role: 'admin',
+              adminEnabled: true,
+              capabilities: ['manageGames'],
+              accountStatus: 'active',
+              coins: 0,
+              diamonds: 0,
+              balance: 0,
+              level: 0,
+              vipLevel: 0,
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            await db.collection('public_profiles').doc(uid).set({
+              displayName: 'Step 12 Smoke',
+              username: 'step12_smoke',
+              profileImageUrl: '',
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+
+            const customToken = await admin.auth().createCustomToken(uid);
+            idToken = await exchangeCustomToken(customToken);
+
+            const personal = await workerPost('/api/voice-session', {
+              action: 'personalRoom',
+            });
+            if (!personal.res.ok || personal.body.ok !== true || !personal.body.room?.roomId) {
+              throw new Error(
+                'personal_room_failed:' + personal.res.status + ':' +
+                JSON.stringify(personal.body),
+              );
+            }
+            roomId = String(personal.body.room.roomId);
+            roomPublicId = String(personal.body.room.publicId || '');
+            console.log('PASS personalRoom roomId=' + roomId);
+
+            const bootstrap = await workerPost('/api/voice-session', {
+              action: 'roomBootstrap',
+              roomId,
+            });
+            if (!bootstrap.res.ok || bootstrap.body.ok !== true) {
+              throw new Error(
+                'room_bootstrap_failed:' + bootstrap.res.status + ':' +
+                JSON.stringify(bootstrap.body),
+              );
+            }
+            console.log('PASS roomBootstrap');
+
+            const realtime = await workerPost('/api/room-realtime', {
+              action: 'ticket',
+              roomId,
+              reconnectAttempt: 0,
+            });
+            if (!realtime.res.ok || realtime.body.ok !== true || !realtime.body.socketPath) {
+              throw new Error(
+                'realtime_ticket_failed:' + realtime.res.status + ':' +
+                JSON.stringify(realtime.body),
+              );
+            }
+            console.log('PASS realtimeTicket');
+
+            const gameState = await workerPost('/api/game-runtime', {
+              action: 'state',
+              gameId: 'greedy_cat',
+              roomId,
+            });
+            if (!gameState.res.ok || gameState.body.ok !== true) {
+              throw new Error(
+                'game_state_failed:' + gameState.res.status + ':' +
+                JSON.stringify(gameState.body),
+              );
+            }
+            console.log('PASS gameState');
+
+            const gameControl = await workerPost('/api/game-control', {
+              action: 'state',
+            });
+            if (!gameControl.res.ok || gameControl.body.ok !== true) {
+              throw new Error(
+                'game_control_failed:' + gameControl.res.status + ':' +
+                JSON.stringify(gameControl.body),
+              );
+            }
+            console.log('PASS gameControl');
+
+            const control = await fetch(controlUrl, { redirect: 'follow' });
+            if (!control.ok) {
+              throw new Error('shadow_control_page_failed:' + control.status);
+            }
+            console.log('PASS shadowControlPage');
+
+            console.log('STEP12_PRODUCTION_SMOKE_PASS');
+          } catch (error) {
+            if (error?.quota || quotaBlocked) {
+              console.error('STEP12_PRODUCTION_SMOKE_BLOCKED_FIRESTORE_QUOTA');
+            } else {
+              console.error('STEP12_PRODUCTION_SMOKE_FAIL', error);
+            }
+            process.exitCode = 1;
+          } finally {
+            if (roomId) await safeDelete(db.collection('rooms').doc(roomId));
+            if (roomPublicId) await safeDelete(db.collection('room_ids').doc(roomPublicId));
+            await safeDelete(db.collection('public_profiles').doc(uid));
+            await safeDelete(db.collection('users').doc(uid));
+            try { await admin.auth().deleteUser(uid); } catch (_) {}
+            await admin.app().delete().catch(() => {});
+          }
+          NODE
