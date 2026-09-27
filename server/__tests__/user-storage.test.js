@@ -604,3 +604,99 @@ test("deleted-account profile cleanup clears active Firestore image references",
     true,
   );
 });
+
+
+test("deleted official-room host does not delete the active room cover", async () => {
+  const objectId = "d".repeat(32);
+  const writes = [];
+  const db = {
+    async runQuery(collection) {
+      if (collection === "storage_account_cleanup_jobs") {
+        return [{
+          id: "delete_official_host",
+          data: { ownerUid: "deleted_host", reason: "account_deleted" },
+        }];
+      }
+      if (collection === "storage_objects") {
+        return [{
+          id: objectId,
+          data: {
+            objectId,
+            storageKey: "rooms/official_room/covers/d.webp",
+            ownerUid: "deleted_host",
+            scope: "room_cover",
+            targetId: "official_room",
+            sizeBytes: 4,
+          },
+        }];
+      }
+      throw new Error("unexpected_collection:" + collection);
+    },
+    async get(path) {
+      if (path === "rooms/official_room") {
+        return {
+          exists: true,
+          data: {
+            systemOwned: true,
+            ownerUid: "",
+            hostId: "deleted_host",
+            coverImageObjectId: objectId,
+          },
+        };
+      }
+      if (path.startsWith("storage_active_objects/")) {
+        return { exists: true, data: { objectId, ownerUid: "deleted_host" } };
+      }
+      return { exists: false, data: null };
+    },
+    writeDelete(path) {
+      return { op: "delete", path };
+    },
+    writeUpdate(path, data, fields) {
+      return { op: "update", path, data, fields };
+    },
+    writeCreate(path, data) {
+      return { op: "create", path, data };
+    },
+    async commit(_transaction, batch) {
+      writes.push(...batch);
+    },
+  };
+  let bucketDeletes = 0;
+  const bucket = { async delete() { bucketDeletes += 1; } };
+
+  const result = await runDeletedAccountStorageCleanup(
+    db,
+    bucket,
+    { nowMs: 5_000, limit: 25 },
+  );
+
+  assert.equal(result.deleted, 0);
+  assert.equal(result.transferred, 1);
+  assert.equal(result.failed, 0);
+  assert.equal(bucketDeletes, 0);
+  assert.equal(
+    writes.some(
+      (write) =>
+        write.op === "update" &&
+        write.path === `storage_objects/${objectId}` &&
+        write.data.ownerUid === "room:official_room",
+    ),
+    true,
+  );
+});
+
+test("room settings validation is room-scoped rather than uploader-scoped", () => {
+  const source = fs.readFileSync(
+    new URL("../../cloudflare-worker/src/voice-session-legacy.js", import.meta.url),
+    "utf8",
+  );
+  const settingsStart = source.indexOf("async function updateRoomSettings");
+  const settingsEnd = source.indexOf("async function", settingsStart + 20);
+  const settingsSource = source.slice(
+    settingsStart,
+    settingsEnd > settingsStart ? settingsEnd : undefined,
+  );
+  assert.match(settingsSource, /permissions\.manageRooms/);
+  assert.doesNotMatch(settingsSource, /clean\(media\.ownerUid\)!==uid/);
+});
