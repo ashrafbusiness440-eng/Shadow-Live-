@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   PRESSURE_ANALYTICS_SCHEMA,
   annotatePressureRequest,
+  normalizePressureRoute,
   pressureRequestContext,
   recordFirestoreTelemetry,
   recordRequestTelemetry,
@@ -32,6 +33,7 @@ test("pressure telemetry schema stays stable and privacy-safe", () => {
     "outcome",
     "method",
     "colo",
+    "resource",
   ]);
   assert.deepEqual(PRESSURE_ANALYTICS_SCHEMA.doubles, [
     "count",
@@ -57,6 +59,17 @@ test("pressure telemetry schema stays stable and privacy-safe", () => {
   ]) {
     assert.equal(serialized.includes(forbidden), false);
   }
+});
+
+test("dynamic public media route telemetry strips target and object identifiers", () => {
+  const raw = "/api/public-media/profile_image/user-123/object-secret.webp";
+  const normalized = normalizePressureRoute(raw);
+  assert.equal(
+    normalized,
+    "/api/public-media/profile_image/:target/:object",
+  );
+  assert.equal(normalized.includes("user-123"), false);
+  assert.equal(normalized.includes("object-secret"), false);
 });
 
 test("request telemetry context merges action fanout and reconnect attempt", () => {
@@ -123,6 +136,7 @@ test("Firestore telemetry maps logical read write retry and quota metrics", () =
     quota: true,
     circuitOpen: true,
     error: true,
+    resource: "rooms/:id/support_daily",
   });
 
   assert.equal(points.length, 1);
@@ -130,6 +144,7 @@ test("Firestore telemetry maps logical read write retry and quota metrics", () =
   assert.equal(points[0].blobs[1], "run_query");
   assert.equal(points[0].blobs[2], "circuit_open");
   assert.equal(points[0].blobs[3], "429");
+  assert.equal(points[0].blobs[6], "rooms/:id/support_daily");
   assert.equal(points[0].doubles[2], 7);
   assert.equal(points[0].doubles[3], 0);
   assert.equal(points[0].doubles[4], 1);
