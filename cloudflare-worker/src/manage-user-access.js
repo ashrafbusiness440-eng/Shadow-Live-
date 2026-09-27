@@ -42,6 +42,7 @@ const ALLOWED_CAPABILITIES = new Set([
   "manageCampaigns",
   "manageRoles",
   "viewAuditLog",
+  "viewSystemHealth",
   "emergencyLock",
 ]);
 
