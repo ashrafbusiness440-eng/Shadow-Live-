@@ -54,7 +54,7 @@ test("scheduled settlement credits a disconnected pending game exactly once",asy
 
   const operation=(await db.collection("game_operations").doc(operationId).get()).data();
   assert.equal(operation?.status,"settled");
-  assert.equal(operation?.settlementWorker,"firebase_schedule");
+  assert.equal(operation?.settlementWorker,"firebase_helper");
 
   const ledger=await db.collection("financial_ledger")
     .doc("game_credit__"+operationId).get();
