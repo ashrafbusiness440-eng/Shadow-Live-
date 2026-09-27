@@ -7,6 +7,27 @@ import 'package:http/http.dart' as http;
 
 import 'room_presence_socket.dart';
 
+class RoomRocketRequestException implements Exception {
+  const RoomRocketRequestException({
+    required this.code,
+    required this.statusCode,
+    required this.retryAfter,
+  });
+
+  final String code;
+  final int statusCode;
+  final Duration? retryAfter;
+
+  bool get retryable =>
+      statusCode == 429 ||
+      statusCode >= 500 ||
+      code == 'not_in_room' ||
+      code == 'reward_not_ready';
+
+  @override
+  String toString() => 'RoomRocketRequestException($code, $statusCode)';
+}
+
 class RoomRocketEvent {
   const RoomRocketEvent({
     required this.id,
@@ -386,7 +407,15 @@ class RoomRocketService {
     if (response.statusCode < 200 ||
         response.statusCode >= 300 ||
         decoded['ok'] != true) {
-      throw StateError((decoded['code'] ?? 'room_rocket_failed').toString());
+      final rawRetryAfter = response.headers['retry-after']?.trim() ?? '';
+      final retryAfterSeconds = int.tryParse(rawRetryAfter);
+      throw RoomRocketRequestException(
+        code: (decoded['code'] ?? 'room_rocket_failed').toString(),
+        statusCode: response.statusCode,
+        retryAfter: retryAfterSeconds == null || retryAfterSeconds < 0
+            ? null
+            : Duration(seconds: retryAfterSeconds),
+      );
     }
     return decoded;
   }
