@@ -31,6 +31,7 @@ class OwnerUserAccessCard extends StatelessWidget {
 
   static const capabilityLabels = <String, String>{
     'viewDashboard': 'عرض لوحة المعلومات',
+    'viewSystemHealth': 'عرض حالة النظام والضغط',
     'viewUsers': 'عرض المستخدمين',
     'manageUsers': 'إدارة المستخدمين',
     'viewReports': 'عرض البلاغات',
@@ -59,7 +60,7 @@ class OwnerUserAccessCard extends StatelessWidget {
 
   static const capabilityGroups = <String, List<String>>{
     'المستخدمون ولوحة التحكم': [
-      'viewDashboard', 'viewUsers', 'manageUsers',
+      'viewDashboard', 'viewSystemHealth', 'viewUsers', 'manageUsers',
     ],
     'البلاغات والإشراف': [
       'viewReports', 'reviewReports', 'muteUsers', 'suspendUsers', 'permanentBan',
