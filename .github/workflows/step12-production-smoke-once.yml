@@ -33,6 +33,7 @@ jobs:
           const fs = require('fs');
           const admin = require('firebase-admin');
 
+          (async () => {
           const workerBase = 'https://shadow-live.ashraf-business-440.workers.dev';
           const controlUrl = 'https://ashrafbusiness440-eng.github.io/Shadow-Live-/control/';
           const expectedWorkerSha = process.env.EXPECTED_WORKER_SHA || '';
@@ -229,4 +230,8 @@ jobs:
             try { await admin.auth().deleteUser(uid); } catch (_) {}
             await admin.app().delete().catch(() => {});
           }
+          })().catch((error) => {
+            console.error('SMOKE_SCRIPT_FATAL', error);
+            process.exit(1);
+          });
           NODE
