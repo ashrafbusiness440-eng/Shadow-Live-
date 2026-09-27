@@ -1,5 +1,7 @@
 import { corsHeaders } from "./http.js";
-import { presignR2Get, R2_PRESIGN_TTL_SECONDS } from "./r2-presign.js";
+import { presignR2Get } from "./r2-presign.js";
+
+const PUBLIC_MEDIA_SIGNED_TTL_SECONDS = 900;
 
 const PUBLIC_SCOPES = new Set([
   "profile_image",
@@ -111,7 +113,7 @@ export async function publicMediaRedirect(request, env) {
     });
     const readUrl = await presignR2Get(env, {
       key: storageKey,
-      expiresSeconds: R2_PRESIGN_TTL_SECONDS,
+      expiresSeconds: PUBLIC_MEDIA_SIGNED_TTL_SECONDS,
     });
 
     const headers = new Headers(corsHeaders(request, env));
