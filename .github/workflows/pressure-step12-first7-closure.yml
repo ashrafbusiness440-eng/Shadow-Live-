@@ -1,0 +1,59 @@
+name: Pressure Step 12 First Seven Closure
+
+on:
+  push:
+    branches:
+      - pressure/step12-first7
+    paths:
+      - 'cloudflare-worker/src/**'
+      - 'cloudflare-worker/scripts/pressure-report.mjs'
+      - 'lib/admin/**'
+      - 'lib/main_control.dart'
+      - 'scripts/pressure_listener_budget_audit.mjs'
+      - 'scripts/pressure_step12_first7_audit.mjs'
+      - 'docs/pressure-step12-first7-closure.md'
+      - '.github/workflows/pressure-step12-first7-closure.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  close-first-seven:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Query 24h Pressure Analytics
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          WINDOW_MINUTES: '1440'
+          PRESSURE_DATASET: shadow_live_pressure_v1
+        run: node cloudflare-worker/scripts/pressure-report.mjs
+
+      - name: Audit Flutter listener budget
+        run: node scripts/pressure_listener_budget_audit.mjs
+
+      - name: Close first seven measurement items
+        run: node scripts/pressure_step12_first7_audit.mjs pressure-report.json listener-budget.json
+
+      - name: Upload Step 12 closure evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: step12-first7-closure
+          path: |
+            pressure-report.json
+            pressure-report.md
+            listener-budget.json
+            listener-budget.md
+            step12-first7-closure.json
+            step12-first7-closure.md
+          retention-days: 30
