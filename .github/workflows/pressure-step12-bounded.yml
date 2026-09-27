@@ -1,0 +1,70 @@
+name: Pressure Step 12 Bounded Measurements
+
+on:
+  push:
+    branches:
+      - pressure/step12-measurements
+    paths:
+      - 'scripts/pressure_step12_bounded_home.mjs'
+      - 'scripts/pressure_step12_bounded_hotdocs.mjs'
+      - 'scripts/pressure_listener_budget.py'
+      - '.github/workflows/pressure-step12-bounded.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pressure-step12-bounded
+  cancel-in-progress: true
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      PRESSURE_DATASET: shadow_live_pressure_v1
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install bounded measurement dependencies
+        run: npm install --no-save --ignore-scripts firebase-admin@^13
+
+      - name: Measure listener budget
+        run: python3 scripts/pressure_listener_budget.py
+
+      - name: Measure Home presenceCounts 60-DO fan-out
+        env:
+          VUS: 20
+          DURATION_MS: 10000
+          INTERVAL_MS: 1500
+        run: node scripts/pressure_step12_bounded_home.mjs
+
+      - name: Measure room hot documents with bounded concurrent gifts
+        run: node scripts/pressure_step12_bounded_hotdocs.mjs
+
+      - name: Capture post-load Pressure Analytics
+        env:
+          WINDOW_MINUTES: 15
+        run: node cloudflare-worker/scripts/pressure-report.mjs
+
+      - name: Upload Step 12 bounded evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: step12-bounded-measurements
+          path: |
+            step12-listener-budget.json
+            step12-home-fanout.json
+            step12-hotdocs.json
+            pressure-report.json
+            pressure-report.md
+          if-no-files-found: warn
+          retention-days: 14
