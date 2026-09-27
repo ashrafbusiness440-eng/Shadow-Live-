@@ -1,19 +1,18 @@
-name: Bootstrap Shadow Live R2 Storage
+name: Verify Shadow Live R2 Storage
 
 on:
   pull_request:
     branches: [main]
     paths:
       - '.github/workflows/bootstrap-r2-storage.yml'
-      - 'cloudflare-worker/wrangler.toml'
-      - 'cloudflare-worker/src/storage-health.js'
+      - 'cloudflare-worker/**'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  bootstrap:
+  verify:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     defaults:
@@ -31,47 +30,49 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Ensure private R2 bucket exists
+      - name: Verify private R2 bucket with scoped S3 credentials
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
-          set -euo pipefail
-          if npx wrangler r2 bucket info shadow-live-storage --json >/tmp/r2-info.json 2>/tmp/r2-info.err; then
-            cat /tmp/r2-info.json
-            echo "R2_BUCKET_READY=existing" >> "$GITHUB_ENV"
-            exit 0
-          fi
+          node --input-type=module <<'NODE'
+          import { AwsClient } from "aws4fetch";
 
-          cat /tmp/r2-info.err || true
-          echo "Bucket not found or not readable; attempting one-time creation."
+          const accountId = String(process.env.CLOUDFLARE_ACCOUNT_ID || "").trim();
+          const accessKeyId = String(process.env.R2_ACCESS_KEY_ID || "").trim();
+          const secretAccessKey = String(process.env.R2_SECRET_ACCESS_KEY || "").trim();
+          if (!accountId || !accessKeyId || !secretAccessKey) {
+            throw new Error("missing_r2_verification_credentials");
+          }
 
-          set +e
-          npx wrangler r2 bucket create shadow-live-storage >/tmp/r2-create.out 2>/tmp/r2-create.err
-          CREATE_STATUS=$?
-          set -e
-
-          cat /tmp/r2-create.out || true
-          cat /tmp/r2-create.err || true
-
-          if [ "$CREATE_STATUS" -ne 0 ]; then
-            if grep -q "Authentication error.*10000" /tmp/r2-create.err /tmp/r2-create.out 2>/dev/null; then
-              echo "::warning::Cloudflare token lacks R2 bucket-management permission (error 10000). Foundation code can still be validated, but production R2 remains blocked."
-              echo "R2_BUCKET_READY=blocked_permissions" >> "$GITHUB_ENV"
-              exit 0
-            fi
-            exit "$CREATE_STATUS"
-          fi
-
-          npx wrangler r2 bucket info shadow-live-storage --json
-          echo "R2_BUCKET_READY=created" >> "$GITHUB_ENV"
+          const client = new AwsClient({
+            accessKeyId,
+            secretAccessKey,
+            service: "s3",
+            region: "auto",
+          });
+          const url =
+            `https://${accountId}.r2.cloudflarestorage.com/shadow-live-storage?list-type=2&max-keys=1`;
+          const response = await client.fetch(url);
+          if (!response.ok) {
+            const text = await response.text();
+            throw new Error(
+              `r2_bucket_verification_failed:${response.status}:${text.slice(0, 200)}`,
+            );
+          }
+          console.log("R2_BUCKET_READY=verified");
+          NODE
 
       - name: Validate Worker bundle with R2 binding
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx wrangler deploy --dry-run --var BUILD_SHA:"$GITHUB_SHA"
+        run: |
+          npx wrangler deploy --dry-run \
+            --var BUILD_SHA:"$GITHUB_SHA" \
+            --var R2_ACCOUNT_ID:"$CLOUDFLARE_ACCOUNT_ID"
 
       - name: R2 foundation result
         run: |
-          echo "Shadow Live R2 bucket status: $R2_BUCKET_READY"
+          echo "Shadow Live R2 bucket status: verified"
