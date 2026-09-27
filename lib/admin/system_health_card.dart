@@ -16,6 +16,8 @@ class _SystemHealthSnapshot {
     required this.requestsPerMinute,
     required this.firestoreReads,
     required this.firestoreWrites,
+    required this.firestoreReadsPerMinute,
+    required this.firestoreWritesPerMinute,
     required this.p95Ms,
     required this.p99Ms,
     required this.status429,
@@ -33,6 +35,8 @@ class _SystemHealthSnapshot {
   final double requestsPerMinute;
   final int firestoreReads;
   final int firestoreWrites;
+  final double firestoreReadsPerMinute;
+  final double firestoreWritesPerMinute;
   final double p95Ms;
   final double p99Ms;
   final int status429;
@@ -55,6 +59,8 @@ class _SystemHealthSnapshot {
       requestsPerMinute: d(json['requestsPerMinute']),
       firestoreReads: i(json['firestoreReads']),
       firestoreWrites: i(json['firestoreWrites']),
+      firestoreReadsPerMinute: d(json['firestoreReadsPerMinute']),
+      firestoreWritesPerMinute: d(json['firestoreWritesPerMinute']),
       p95Ms: d(json['p95Ms']),
       p99Ms: d(json['p99Ms']),
       status429: i(json['status429']),
@@ -266,8 +272,8 @@ class _ControlSystemHealthCardState extends State<ControlSystemHealthCard> {
               runSpacing: 8,
               children: [
                 _metric('Requests/min', s.requestsPerMinute.toStringAsFixed(2)),
-                _metric('Reads', '${s.firestoreReads}'),
-                _metric('Writes', '${s.firestoreWrites}'),
+                _metric('Reads/min', s.firestoreReadsPerMinute.toStringAsFixed(2)),
+                _metric('Writes/min', s.firestoreWritesPerMinute.toStringAsFixed(2)),
                 _metric('p95', '${s.p95Ms.toStringAsFixed(0)} ms'),
                 _metric('p99', '${s.p99Ms.toStringAsFixed(0)} ms'),
                 _metric('429', '${s.status429}'),
@@ -355,8 +361,8 @@ class _ControlSystemHealthCardState extends State<ControlSystemHealthCard> {
                 runSpacing: 8,
                 children: [
                   _metric('Requests/min', snapshot.requestsPerMinute.toStringAsFixed(2)),
-                  _metric('Reads', '${snapshot.firestoreReads}'),
-                  _metric('Writes', '${snapshot.firestoreWrites}'),
+                  _metric('Reads/min', snapshot.firestoreReadsPerMinute.toStringAsFixed(2)),
+                  _metric('Writes/min', snapshot.firestoreWritesPerMinute.toStringAsFixed(2)),
                   _metric('p95', '${snapshot.p95Ms.toStringAsFixed(0)} ms'),
                   _metric('429', '${snapshot.status429}'),
                   _metric('5xx', '${snapshot.status5xx}'),
