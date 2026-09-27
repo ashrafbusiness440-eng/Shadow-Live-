@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'dart:math';
 import 'widgets/bottom_nav_bar.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
 import 'firebase_options.dart';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -14,6 +16,7 @@ import 'features/auth/bloc/auth_bloc.dart';
 import 'features/user/bloc/user_bloc.dart';
 import 'shared/services/firebase_service.dart' as shared_fb;
 import 'shared/services/storage_service.dart';
+import 'shared/services/user_storage_service.dart';
 
 import 'package:google_fonts/google_fonts.dart';
 import 'widgets/host_section.dart';
@@ -165,6 +168,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   final VoiceRoomSessionController _voiceSession =
       VoiceRoomSessionController.instance;
   final RoomActionService _roomActions = RoomActionService();
+  final UserStorageService _userStorage = UserStorageService();
+  final ImagePicker _roomCoverPicker = ImagePicker();
   final RoomInviteService _roomInvites = RoomInviteService();
   final RoomInsightsService _roomInsightsService = RoomInsightsService();
   final RoomBootstrapService _roomBootstrapService = RoomBootstrapService();
@@ -3858,6 +3863,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     unawaited(_roomLiveSubscription?.cancel());
     _voiceSession.removeListener(_syncVoiceSession);
     _roomActions.close();
+    _userStorage.close();
     _roomInvites.close();
     _roomBootstrapService.close();
     _roomInsightsService.close();
