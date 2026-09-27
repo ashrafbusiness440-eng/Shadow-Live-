@@ -428,3 +428,179 @@ test("deleted-account cleanup closes the job after the final partial batch", asy
     true,
   );
 });
+
+
+test("deleted-account cleanup transfers an active shared room cover instead of deleting it", async () => {
+  const objectId = "b".repeat(32);
+  const writes = [];
+  const db = {
+    async runQuery(collection) {
+      if (collection === "storage_account_cleanup_jobs") {
+        return [{
+          id: "delete_shared_room_uploader",
+          data: { ownerUid: "deleted_moderator", reason: "account_deleted" },
+        }];
+      }
+      if (collection === "storage_objects") {
+        return [{
+          id: objectId,
+          data: {
+            objectId,
+            storageKey: "rooms/room_shared/covers/b.webp",
+            ownerUid: "deleted_moderator",
+            scope: "room_cover",
+            targetId: "room_shared",
+            sizeBytes: 4,
+          },
+        }];
+      }
+      throw new Error("unexpected_collection:" + collection);
+    },
+    async get(path) {
+      if (path === "rooms/room_shared") {
+        return {
+          exists: true,
+          data: {
+            ownerUid: "room_owner",
+            coverImageObjectId: objectId,
+          },
+        };
+      }
+      if (path.startsWith("storage_active_objects/")) {
+        return { exists: true, data: { objectId, ownerUid: "deleted_moderator" } };
+      }
+      return { exists: false, data: null };
+    },
+    writeDelete(path) {
+      return { op: "delete", path };
+    },
+    writeUpdate(path, data, fields) {
+      return { op: "update", path, data, fields };
+    },
+    writeCreate(path, data) {
+      return { op: "create", path, data };
+    },
+    async commit(_transaction, batch) {
+      writes.push(...batch);
+    },
+  };
+  let bucketDeletes = 0;
+  const bucket = { async delete() { bucketDeletes += 1; } };
+
+  const result = await runDeletedAccountStorageCleanup(
+    db,
+    bucket,
+    { nowMs: 3_000, limit: 25 },
+  );
+
+  assert.equal(result.checked, 1);
+  assert.equal(result.deleted, 0);
+  assert.equal(result.transferred, 1);
+  assert.equal(result.failed, 0);
+  assert.equal(bucketDeletes, 0);
+  assert.equal(
+    writes.some(
+      (write) =>
+        write.op === "update" &&
+        write.path === `storage_objects/${objectId}` &&
+        write.data.ownerUid === "room_owner",
+    ),
+    true,
+  );
+  assert.equal(
+    writes.some(
+      (write) =>
+        write.op === "delete" &&
+        write.path === "storage_account_cleanup_jobs/delete_shared_room_uploader",
+    ),
+    true,
+  );
+});
+
+test("deleted-account profile cleanup clears active Firestore image references", async () => {
+  const objectId = "c".repeat(32);
+  const writes = [];
+  const db = {
+    async runQuery(collection) {
+      if (collection === "storage_account_cleanup_jobs") {
+        return [{
+          id: "delete_profile_media",
+          data: { ownerUid: "deleted_user", reason: "account_deleted" },
+        }];
+      }
+      if (collection === "storage_objects") {
+        return [{
+          id: objectId,
+          data: {
+            objectId,
+            storageKey: "users/deleted_user/profile/c.jpg",
+            ownerUid: "deleted_user",
+            scope: "profile_image",
+            targetId: "deleted_user",
+            sizeBytes: 4,
+          },
+        }];
+      }
+      throw new Error("unexpected_collection:" + collection);
+    },
+    async get(path) {
+      if (path === "users/deleted_user") {
+        return {
+          exists: true,
+          data: { profileImageObjectId: objectId },
+        };
+      }
+      if (path === "public_profiles/deleted_user") {
+        return {
+          exists: true,
+          data: { profileImageObjectId: objectId },
+        };
+      }
+      if (path.startsWith("storage_active_objects/")) {
+        return { exists: true, data: { objectId } };
+      }
+      return { exists: false, data: null };
+    },
+    writeDelete(path) {
+      return { op: "delete", path };
+    },
+    writeUpdate(path, data, fields) {
+      return { op: "update", path, data, fields };
+    },
+    writeCreate(path, data) {
+      return { op: "create", path, data };
+    },
+    async commit(_transaction, batch) {
+      writes.push(...batch);
+    },
+  };
+  const bucket = { async delete() {} };
+
+  const result = await runDeletedAccountStorageCleanup(
+    db,
+    bucket,
+    { nowMs: 4_000, limit: 25 },
+  );
+
+  assert.equal(result.deleted, 1);
+  assert.equal(result.failed, 0);
+  assert.equal(
+    writes.some(
+      (write) =>
+        write.op === "update" &&
+        write.path === "users/deleted_user" &&
+        write.data.profileImageObjectId === "" &&
+        write.data.profileImageUrl === "",
+    ),
+    true,
+  );
+  assert.equal(
+    writes.some(
+      (write) =>
+        write.op === "update" &&
+        write.path === "public_profiles/deleted_user" &&
+        write.data.profileImageObjectId === "",
+    ),
+    true,
+  );
+});
