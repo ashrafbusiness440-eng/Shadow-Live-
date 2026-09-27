@@ -239,10 +239,10 @@ function subsystemFor(row) {
   const action = String(row.action || "").toLowerCase();
   const haystack = route + " " + action;
   if (action.includes("roombootstrap")) return "room_bootstrap";
-  if (haystack.includes("room-realtime") || action.includes("presencecounts")) return "room_realtime";
+  if (action.includes("presencecounts") || haystack.includes("home")) return "home";
+  if (haystack.includes("room-realtime")) return "room_realtime";
   if (haystack.includes("room-gift") || action.includes("sendroomgift")) return "gifts";
   if (haystack.includes("game-runtime") || haystack.includes("game-control")) return "games";
-  if (action.includes("presencecounts") || haystack.includes("home")) return "home";
   if (haystack.includes("rocket")) return "rocket";
   if (haystack.includes("wallet") || haystack.includes("recharge")) return "wallet";
   if (haystack.includes("voice-session") || haystack.includes("room")) return "room";
