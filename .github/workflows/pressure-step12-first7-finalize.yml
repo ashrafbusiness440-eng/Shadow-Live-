@@ -40,12 +40,6 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install bounded measurement dependency
-        run: npm install --no-save --ignore-scripts firebase-admin@^13
-
-      - name: Measure agency and room hot documents with bounded gifts
-        run: node scripts/pressure_step12_bounded_hotdocs.mjs
-
       - name: Exercise authenticated Rocket paths
         run: node cloudflare-worker/scripts/economy-router-e2e.mjs
 
@@ -53,7 +47,7 @@ jobs:
         env:
           WINDOW_MINUTES: '15'
         run: |
-          sleep 10
+          sleep 60
           node cloudflare-worker/scripts/pressure-report.mjs
 
       - name: Upload final first-seven evidence
@@ -62,7 +56,6 @@ jobs:
         with:
           name: step12-first7-finalize
           path: |
-            step12-hotdocs.json
             pressure-report.json
             pressure-report.md
           if-no-files-found: warn
