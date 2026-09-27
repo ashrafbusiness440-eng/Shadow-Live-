@@ -732,3 +732,31 @@ jobs:
             }
           }
           NODE
+
+      - name: Measure Step 12 first seven after deploy
+        working-directory: .
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          WINDOW_MINUTES: '1440'
+          PRESSURE_DATASET: shadow_live_pressure_v1
+        run: |
+          sleep 15
+          node cloudflare-worker/scripts/pressure-report.mjs
+          node scripts/pressure_listener_budget_audit.mjs
+          node scripts/pressure_step12_first7_audit.mjs pressure-report.json listener-budget.json
+
+      - name: Upload post-deploy Step 12 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: step12-first7-production
+          path: |
+            pressure-report.json
+            pressure-report.md
+            listener-budget.json
+            listener-budget.md
+            step12-first7-closure.json
+            step12-first7-closure.md
+          if-no-files-found: warn
+          retention-days: 30
