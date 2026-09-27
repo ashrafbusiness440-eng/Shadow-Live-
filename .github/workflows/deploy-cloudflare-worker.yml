@@ -734,6 +734,7 @@ jobs:
           NODE
 
       - name: Verify production System Health thresholds
+        working-directory: .
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: node scripts/pressure_system_health_e2e.mjs
