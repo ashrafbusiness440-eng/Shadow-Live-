@@ -220,6 +220,74 @@ jobs:
             );
           }
 
+          const conversationIndexParent =
+            'projects/' + projectId +
+            '/databases/(default)/collectionGroups/conversations';
+          const conversationIndexListResponse = await fetch(
+            'https://firestore.googleapis.com/v1/' +
+              conversationIndexParent +
+              '/indexes',
+            { headers: { authorization: 'Bearer ' + token } },
+          );
+          const conversationIndexList =
+            await conversationIndexListResponse.json().catch(() => ({}));
+          if (!conversationIndexListResponse.ok) {
+            throw new Error(
+              'conversation index list failed ' +
+                conversationIndexListResponse.status +
+                ' ' +
+                JSON.stringify(conversationIndexList),
+            );
+          }
+
+          const conversationIndexExists =
+            (conversationIndexList.indexes || []).some((index) => {
+              const fields = Array.isArray(index.fields) ? index.fields : [];
+              const participants =
+                fields.find((field) => field.fieldPath === 'participants');
+              const updatedAt =
+                fields.find((field) => field.fieldPath === 'updatedAt');
+              return index.queryScope === 'COLLECTION' &&
+                participants?.arrayConfig === 'CONTAINS' &&
+                updatedAt?.order === 'DESCENDING' &&
+                index.state !== 'DELETING';
+            });
+
+          if (conversationIndexExists) {
+            console.log('Firestore conversations pressure index already exists.');
+          } else {
+            const createConversationIndex = await fetch(
+              'https://firestore.googleapis.com/v1/' +
+                conversationIndexParent +
+                '/indexes',
+              {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                  queryScope: 'COLLECTION',
+                  fields: [
+                    { fieldPath: 'participants', arrayConfig: 'CONTAINS' },
+                    { fieldPath: 'updatedAt', order: 'DESCENDING' },
+                  ],
+                }),
+              },
+            );
+            const createdConversationIndex =
+              await createConversationIndex.json().catch(() => ({}));
+            if (!createConversationIndex.ok) {
+              throw new Error(
+                'conversation index create failed ' +
+                  createConversationIndex.status +
+                  ' ' +
+                  JSON.stringify(createdConversationIndex),
+              );
+            }
+            console.log(
+              'Firestore conversations pressure index creation requested:',
+              createdConversationIndex.name || 'operation_started',
+            );
+          }
+
           const schedulerLocation =
             'projects/' + projectId + '/locations/us-central1';
           const schedulerResponse = await fetch(
