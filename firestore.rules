@@ -491,17 +491,10 @@ service cloud.firestore {
             ||
             (
               request.resource.data.storageObjectId is string
-              && request.resource.data.storageObjectId.matches('^[a-f0-9]{32}        allow update, delete: if false;
-      }
-    }
-  }
-})
+              && request.resource.data.storageObjectId.size() == 32
+              && request.resource.data.storageObjectId.matches('^[a-f0-9]+$')
               && request.resource.data.mimeType is string
-              && request.resource.data.mimeType.matches('^image/(jpeg|png|webp)        allow update, delete: if false;
-      }
-    }
-  }
-})
+              && request.resource.data.mimeType.matches('^image/(jpeg|png|webp)$')
               && request.resource.data.sizeBytes is int
               && request.resource.data.sizeBytes > 0
               && request.resource.data.sizeBytes <= 8388608
