@@ -410,40 +410,10 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       ),
     );
 
-    const roomDailySupport =
-      room.dailySupportDate === periods.day
-        ? Math.max(0, Number(room.dailySupport || 0)) + totalCost
-        : totalCost;
-    const roomWeeklySupport =
-      room.weeklySupportKey === periods.week
-        ? Math.max(0, Number(room.weeklySupport || 0)) + totalCost
-        : totalCost;
-    const roomMonthlySupport =
-      room.monthlySupportKey === periods.month
-        ? Math.max(0, Number(room.monthlySupport || 0)) + totalCost
-        : totalCost;
-    writes.push(
-      db.writeUpdate(
-        roomPath,
-        {
-          dailySupport: roomDailySupport,
-          dailySupportDate: periods.day,
-          weeklySupport: roomWeeklySupport,
-          weeklySupportKey: periods.week,
-          monthlySupport: roomMonthlySupport,
-          monthlySupportKey: periods.month,
-        },
-        [
-          "dailySupport",
-          "dailySupportDate",
-          "weeklySupport",
-          "weeklySupportKey",
-          "monthlySupport",
-          "monthlySupportKey",
-        ],
-        [db.increment("totalSupport", totalCost)],
-      ),
-    );
+    // High-frequency room support lives in the period support documents below.
+    // Do not mutate rooms/{roomId} for every gift: room-root listeners fan this
+    // write out to every connected participant. Room insights/bootstrap read
+    // the exact period documents instead.
 
     writes.push(
       db.writeUpdate(
