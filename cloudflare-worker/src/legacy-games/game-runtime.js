@@ -866,12 +866,13 @@ export async function gameState(db,uid,body={},options={}){
   const roomId=clean(body.roomId);
   const nowMs=Number(options.nowMs||Date.now());
 
+  let userOperationsSnapshot=null;
   try{
-    const userDueSnapshot=await db.collection("game_operations")
+    userOperationsSnapshot=await db.collection("game_operations")
       .where("userId","==",uid)
       .limit(50)
       .get();
-    for(const doc of userDueSnapshot.docs){
+    for(const doc of userOperationsSnapshot.docs){
       const operation=doc.data()||{};
       if(operation.status!=="pending")continue;
       if(Number(operation.closesAtMs||0)>nowMs)continue;
@@ -1002,11 +1003,9 @@ export async function gameState(db,uid,body={},options={}){
 
   let pendingRaw=[];
   try{
-    const pendingSnapshot=await db.collection("game_operations")
-      .where("userId","==",uid)
-      .limit(50)
-      .get();
-    pendingRaw=pendingSnapshot.docs
+    // Pressure Root Fix Step 12: reuse the bounded operations snapshot loaded
+    // above instead of issuing the same <=50-document query twice per refresh.
+    pendingRaw=(userOperationsSnapshot?.docs||[])
       .map(doc=>doc.data()||{})
       .filter(item=>item.status==="pending");
   }catch(error){

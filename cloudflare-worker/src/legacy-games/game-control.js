@@ -211,14 +211,11 @@ function publicAudit(doc){
   };
 }
 
-async function statsForVariant(db,item){
-  const snap=await db.collection("game_rounds")
-    .where("gameId","==",item.gameId)
-    .limit(500)
-    .get();
+function statsFromRounds(roundDocs,item){
   let wager=0,payout=0,rounds=0,operations=0;
-  for(const doc of snap.docs){
+  for(const doc of roundDocs){
     const data=doc.data()||{};
+    if(clean(data.gameId)!==item.gameId)continue;
     if(item.gameId==="witch"&&clean(data.mode)!==item.mode)continue;
     rounds++;
     wager+=Math.max(0,Number(data.totalWagerCoins||0));
@@ -237,16 +234,21 @@ async function statsForVariant(db,item){
 
 export async function gameControlState(db){
   const configRef=db.collection("system_config").doc("game_runtime");
-  const [configSnap,auditSnap]=await Promise.all([
+  // Pressure Root Fix Step 12: one bounded shared round snapshot replaces
+  // four independent gameId queries (previous worst case: 4 x 500 reads).
+  const [configSnap,auditSnap,roundsSnap]=await Promise.all([
     configRef.get(),
     db.collection("admin_audit_logs")
       .where("targetType","==","game_runtime")
-      .limit(30)
+      .limit(20)
+      .get(),
+    db.collection("game_rounds")
+      .limit(100)
       .get(),
   ]);
   const config=configSnap.exists?(configSnap.data()||{}):{};
   const variants=CATALOG.map(item=>readVariant(config,item));
-  const stats=await Promise.all(CATALOG.map(item=>statsForVariant(db,item)));
+  const stats=CATALOG.map(item=>statsFromRounds(roundsSnap.docs,item));
   return {
     config:{
       engineEnabled:config.enabled===true,
