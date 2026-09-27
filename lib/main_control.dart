@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'firebase_options.dart';
@@ -255,7 +256,9 @@ class _ControlShellState extends State<ControlShell> {
           ),
         ],
       ),
-      body: IndexedStack(index:index,children:pages),
+      // Pressure Root Fix Step 12: mount only the selected control page.
+      // IndexedStack kept inactive Firestore listeners alive in the background.
+      body:pages[index],
       bottomNavigationBar:NavigationBar(
         height:72,
         labelBehavior:NavigationDestinationLabelBehavior.onlyShowSelected,
@@ -274,27 +277,69 @@ class _ControlShellState extends State<ControlShell> {
   }
 }
 
+class _DashboardSnapshot {
+  const _DashboardSnapshot({
+    required this.users,
+    required this.admins,
+    required this.owners,
+  });
+
+  final int users;
+  final int admins;
+  final int owners;
+}
+
+Future<_DashboardSnapshot> _loadDashboardSnapshot() async {
+  final users = controlFirestore.collection('users');
+
+  // Aggregations avoid downloading the full users collection just to render
+  // dashboard totals. The admin query only downloads the small privileged set
+  // so the existing role/adminEnabled semantics (including missing status)
+  // remain unchanged.
+  final totalFuture = users.count().get();
+  final deletedFuture =
+      users.where('accountStatus', isEqualTo: 'deleted').count().get();
+  final adminFuture = users.where(
+    Filter.or(
+      Filter('adminEnabled', isEqualTo: true),
+      Filter('role', isEqualTo: 'owner'),
+      Filter('role', isEqualTo: 'super_admin'),
+      Filter('role', isEqualTo: 'admin'),
+      Filter('role', isEqualTo: 'moderator'),
+    ),
+  ).get();
+
+  final total = await totalFuture;
+  final deleted = await deletedFuture;
+  final adminSnapshot = await adminFuture;
+
+  final privileged = adminSnapshot.docs.where((doc) {
+    final data = doc.data();
+    return (data['accountStatus'] ?? 'active').toString() != 'deleted';
+  }).toList(growable: false);
+
+  return _DashboardSnapshot(
+    users: ((total.count ?? 0) - (deleted.count ?? 0)).clamp(0, 1 << 31),
+    admins: privileged.length,
+    owners: privileged.where((doc) => doc.data()['role'] == 'owner').length,
+  );
+}
+
 class DashboardPage extends StatelessWidget {
   const DashboardPage({super.key,required this.onOpen});
   final ValueChanged<int> onOpen;
   @override Widget build(BuildContext context)=>ListView(padding:const EdgeInsets.all(16),children:[
     const Text('لوحة التحكم',style:TextStyle(fontSize:25,fontWeight:FontWeight.w900)),
     const SizedBox(height:4),const Text('حالة Shadow Live الإدارية — قراءة مباشرة وآمنة',style:TextStyle(color:Color(0xFFAAA3B8))),const SizedBox(height:16),
-    StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(
-      stream:controlFirestore.collection('users').snapshots(),
+    FutureBuilder<_DashboardSnapshot>(
+      future:_loadDashboardSnapshot(),
       builder:(context,snap){
-        final allDocs=snap.data?.docs??[];
-        final docs=allDocs.where((d)=>(d.data()['accountStatus']??'active').toString()!='deleted').toList();
-        final admins=docs.where((d){
-          final data=d.data();
-          final role=(data['role']??'user').toString();
-          return data['adminEnabled']==true || const {'owner','super_admin','admin','moderator'}.contains(role);
-        }).length;
-        final owners=docs.where((d)=>d.data()['role']=='owner').length;
+        final stats=snap.data;
+        final failed=snap.hasError;
         return Wrap(spacing:10,runSpacing:10,children:[
-          StatCard(icon:Icons.people_alt_outlined,label:'المستخدمون',value:snap.hasError?'—':(snap.hasData?docs.length.toString():'...')),
-          StatCard(icon:Icons.admin_panel_settings_outlined,label:'الإداريون',value:snap.hasError?'—':(snap.hasData?admins.toString():'...')),
-          StatCard(icon:Icons.workspace_premium_outlined,label:'Owner',value:snap.hasError?'—':(snap.hasData?owners.toString():'...')),
+          StatCard(icon:Icons.people_alt_outlined,label:'المستخدمون',value:failed?'—':(stats?.users.toString()??'...')),
+          StatCard(icon:Icons.admin_panel_settings_outlined,label:'الإداريون',value:failed?'—':(stats?.admins.toString()??'...')),
+          StatCard(icon:Icons.workspace_premium_outlined,label:'Owner',value:failed?'—':(stats?.owners.toString()??'...')),
           const StatCard(icon:Icons.shield_outlined,label:'الوضع',value:'Read-only'),
         ]);
       },
