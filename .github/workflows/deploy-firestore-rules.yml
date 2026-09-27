@@ -169,7 +169,11 @@ jobs:
             { headers: { authorization: 'Bearer ' + token } },
           );
           const schedulerBody = await schedulerResponse.json().catch(() => ({}));
-          if (!schedulerResponse.ok) {
+          const schedulerDisabled =
+            schedulerResponse.status === 403 &&
+            JSON.stringify(schedulerBody).includes('SERVICE_DISABLED');
+
+          if (!schedulerResponse.ok && !schedulerDisabled) {
             throw new Error(
               'scheduler list failed ' +
                 schedulerResponse.status +
@@ -178,9 +182,17 @@ jobs:
             );
           }
 
-          const legacySettlementJobs = (schedulerBody.jobs || []).filter((job) =>
-            String(job.name || '').toLowerCase().includes('gamesettlementworker'),
-          );
+          if (schedulerDisabled) {
+            console.log(
+              'Cloud Scheduler API is disabled; no scheduler action is required.',
+            );
+          }
+
+          const legacySettlementJobs = schedulerDisabled
+            ? []
+            : (schedulerBody.jobs || []).filter((job) =>
+                String(job.name || '').toLowerCase().includes('gamesettlementworker'),
+              );
           if (legacySettlementJobs.length === 0) {
             console.log('No legacy Firebase game settlement scheduler found.');
           }
