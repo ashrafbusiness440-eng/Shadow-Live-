@@ -54,6 +54,7 @@ class OwnerUserAccessCard extends StatelessWidget {
     'manageCampaigns': 'إدارة الحملات',
     'manageRoles': 'إدارة الأدوار',
     'viewAuditLog': 'عرض Audit Log',
+    'viewSystemHealth': 'عرض مقياس ضغط السيرفر',
     'emergencyLock': 'قفل الطوارئ',
   };
 
@@ -71,7 +72,7 @@ class OwnerUserAccessCard extends StatelessWidget {
       'manageEconomy', 'adjustBalances', 'manageGames', 'manageWithdrawals', 'manageSettlements',
     ],
     'الإدارة العامة': [
-      'manageAgencies', 'manageVip', 'manageStore', 'manageCampaigns', 'manageRoles', 'viewAuditLog', 'emergencyLock',
+      'manageAgencies', 'manageVip', 'manageStore', 'manageCampaigns', 'manageRoles', 'viewAuditLog', 'viewSystemHealth', 'emergencyLock',
     ],
   };
 
