@@ -21,7 +21,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -237,6 +237,41 @@ jobs:
                 'Firestore index present:',
                 existing.name,
                 existing.state || 'UNKNOWN',
+              );
+            }
+
+            let ready = false;
+            for (let attempt = 0; attempt < 90; attempt += 1) {
+              const checked = await fetch(endpoint, {
+                headers: { authorization: 'Bearer ' + token },
+              });
+              const checkedBody = await checked.json().catch(() => ({}));
+              if (!checked.ok) {
+                throw new Error(
+                  'index readiness check failed ' +
+                    checked.status +
+                    ' ' +
+                    JSON.stringify(checkedBody),
+                );
+              }
+              const current = (checkedBody.indexes || []).find(matches) || null;
+              if (current?.state === 'READY') {
+                console.log('Firestore index READY:', current.name);
+                ready = true;
+                break;
+              }
+              if (current?.state === 'ERROR') {
+                throw new Error(
+                  'Firestore index entered ERROR state: ' +
+                    JSON.stringify(current),
+                );
+              }
+              await new Promise((resolve) => setTimeout(resolve, 10000));
+            }
+            if (!ready) {
+              throw new Error(
+                'Firestore index did not become READY within deployment window: ' +
+                  collectionGroup,
               );
             }
           }
