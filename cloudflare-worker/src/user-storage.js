@@ -17,6 +17,13 @@ const MAX_COVER_BYTES = 4 * 1024 * 1024;
 const MAX_CHAT_BYTES = 8 * 1024 * 1024;
 const RATE_WINDOW_MS = 60_000;
 const UPLOAD_TICKET_TTL_MS = R2_PRESIGN_TTL_SECONDS * 1000;
+export const REPLACEMENT_DELETE_DELAY_MS = 24 * 60 * 60 * 1000;
+export const STORAGE_DELETE_BATCH_LIMIT = 25;
+const REPLACEABLE_SCOPES = new Set([
+  "profile_image",
+  "profile_cover",
+  "room_cover",
+]);
 
 export const STORAGE_SCOPE_CONFIG = Object.freeze({
   profile_image: Object.freeze({ maxBytes: MAX_PROFILE_BYTES }),
@@ -57,6 +64,14 @@ export function storageExtensionForMime(mimeType) {
 
 export function storageMaxBytes(scope) {
   return Number(STORAGE_SCOPE_CONFIG[clean(scope)]?.maxBytes || 0);
+}
+
+export function isReplaceableStorageScope(scope) {
+  return REPLACEABLE_SCOPES.has(clean(scope));
+}
+
+export function replacementDeleteAt(nowMs = Date.now()) {
+  return new Date(Number(nowMs) + REPLACEMENT_DELETE_DELAY_MS);
 }
 
 export function buildStorageObjectKey({
@@ -312,6 +327,9 @@ async function prepareUpload(request, env, auth, body) {
 
   let previous = null;
   if (replaceObjectId) {
+    if (!isReplaceableStorageScope(scope)) {
+      throw new StorageApiError("replace_not_supported", 409);
+    }
     previous = await metadataForObject(auth.db, replaceObjectId);
     authorizeDelete(auth.uid, previous);
     if (
@@ -441,6 +459,7 @@ async function confirmUpload(request, env, auth, body) {
     mimeType: expectedMime,
     sizeBytes: actualSize,
     etag: clean(object.etag),
+    state: "active",
     createdAt: now,
     updatedAt: now,
   };
@@ -459,15 +478,37 @@ async function confirmUpload(request, env, auth, body) {
       createdAt: now,
     }),
   ];
+  let previousDeleteAt = null;
   if (previous) {
-    writes.push(auth.db.writeDelete(`storage_objects/${previous.objectId}`));
+    previousDeleteAt = replacementDeleteAt(now.getTime());
+    writes.push(
+      auth.db.writeUpdate(
+        `storage_objects/${previous.objectId}`,
+        {
+          state: "pending_delete",
+          pendingDeleteAt: previousDeleteAt,
+          replacedByObjectId: objectId,
+          updatedAt: now,
+        },
+        ["state", "pendingDeleteAt", "replacedByObjectId", "updatedAt"],
+      ),
+    );
+    writes.push(
+      auth.db.writeCreate(`storage_delete_queue/${previous.objectId}`, {
+        objectId: previous.objectId,
+        storageKey: clean(previous.storageKey),
+        ownerUid: clean(previous.ownerUid),
+        scope: clean(previous.scope),
+        targetId: clean(previous.targetId),
+        sizeBytes: Number(previous.sizeBytes || 0),
+        deleteAfter: previousDeleteAt,
+        reason: "replaced",
+        createdAt: now,
+      }),
+    );
   }
 
   await auth.db.commit(null, writes);
-
-  if (previous?.storageKey) {
-    await bucket.delete(clean(previous.storageKey)).catch(() => {});
-  }
 
   return json(request, env, {
     ok: true,
@@ -478,7 +519,72 @@ async function confirmUpload(request, env, auth, body) {
     mimeType: metadata.mimeType,
     sizeBytes: metadata.sizeBytes,
     replacedObjectId: previous?.objectId || null,
+    previousDeleteAtMs: previousDeleteAt?.getTime() || null,
   });
+}
+
+export async function runDueStorageCleanup(
+  env,
+  {
+    nowMs = Date.now(),
+    limit = STORAGE_DELETE_BATCH_LIMIT,
+  } = {},
+) {
+  const bucket = bucketFromEnv(env);
+  const db = firestoreClient(env);
+  const due = await db.runQuery("storage_delete_queue", {
+    filters: [
+      { field: "deleteAfter", op: "<=", value: new Date(nowMs) },
+    ],
+    orderBy: [{ field: "deleteAfter", direction: "asc" }],
+    limit: Math.max(1, Math.min(STORAGE_DELETE_BATCH_LIMIT, Number(limit || STORAGE_DELETE_BATCH_LIMIT))),
+  });
+
+  let deleted = 0;
+  let failed = 0;
+  for (const item of due) {
+    const objectId = clean(item.data?.objectId || item.id);
+    const storageKey = clean(item.data?.storageKey);
+    if (!objectId || !storageKey) {
+      failed += 1;
+      continue;
+    }
+
+    try {
+      await bucket.delete(storageKey);
+      const now = new Date();
+      await db.commit(null, [
+        db.writeDelete(`storage_objects/${objectId}`),
+        db.writeDelete(`storage_delete_queue/${item.id}`),
+        db.writeCreate(`storage_audit_logs/${auditId()}`, {
+          actorUid: "system",
+          action: "cleanupReplacedStorageObject",
+          objectId,
+          scope: clean(item.data?.scope),
+          targetId: clean(item.data?.targetId),
+          sizeBytes: Number(item.data?.sizeBytes || 0),
+          reason: clean(item.data?.reason || "replaced"),
+          createdAt: now,
+        }),
+      ]);
+      deleted += 1;
+    } catch (error) {
+      failed += 1;
+      console.error(
+        "R2 delayed storage cleanup failed",
+        JSON.stringify({
+          objectId,
+          code: clean(error?.code || error?.message || "cleanup_failed").slice(0, 120),
+        }),
+      );
+    }
+  }
+
+  return {
+    checked: due.length,
+    deleted,
+    failed,
+  };
 }
 
 async function prepareRead(request, env, auth, body) {
