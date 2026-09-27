@@ -10,6 +10,7 @@ import {
   isReplaceableStorageScope,
   replacementDeleteAt,
   REPLACEMENT_DELETE_DELAY_MS,
+  storageActivePointerId,
 } from "../../cloudflare-worker/src/user-storage.js";
 import {
   presignR2Put,
@@ -110,6 +111,21 @@ test("replaced profile and room media wait 24 hours before cleanup", () => {
   assert.equal(
     replacementDeleteAt(nowMs).getTime(),
     nowMs + 24 * 60 * 60 * 1000,
+  );
+});
+
+test("replaceable media uses deterministic active pointers", () => {
+  assert.equal(
+    storageActivePointerId("profile_image", "user_1"),
+    "profile_image__user_1",
+  );
+  assert.equal(
+    storageActivePointerId("room_cover", "room_7"),
+    "room_cover__room_7",
+  );
+  assert.throws(
+    () => storageActivePointerId("chat_image", "conversation_9"),
+    /active_pointer_not_supported/,
   );
 });
 
