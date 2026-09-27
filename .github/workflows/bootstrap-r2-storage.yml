@@ -64,6 +64,71 @@ jobs:
           console.log("R2_BUCKET_READY=verified");
           NODE
 
+      - name: Live smoke presigned R2 PUT GET DELETE
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { AwsClient } from "aws4fetch";
+          import { presignR2Get, presignR2Put } from "./src/r2-presign.js";
+
+          const env = {
+            R2_ACCOUNT_ID: String(process.env.CLOUDFLARE_ACCOUNT_ID || "").trim(),
+            R2_ACCESS_KEY_ID: String(process.env.R2_ACCESS_KEY_ID || "").trim(),
+            R2_SECRET_ACCESS_KEY: String(process.env.R2_SECRET_ACCESS_KEY || "").trim(),
+          };
+          if (!env.R2_ACCOUNT_ID || !env.R2_ACCESS_KEY_ID || !env.R2_SECRET_ACCESS_KEY) {
+            throw new Error("missing_r2_smoke_credentials");
+          }
+
+          const key = `_shadow_live_smoke/github-${process.env.GITHUB_RUN_ID || "local"}.png`;
+          const payload = new Uint8Array([137, 80, 78, 71]);
+          const mimeType = "image/png";
+          const encodedKey = key.split("/").map(encodeURIComponent).join("/");
+          const objectUrl =
+            `https://${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com/shadow-live-storage/${encodedKey}`;
+          const directClient = new AwsClient({
+            accessKeyId: env.R2_ACCESS_KEY_ID,
+            secretAccessKey: env.R2_SECRET_ACCESS_KEY,
+            service: "s3",
+            region: "auto",
+          });
+
+          try {
+            const putUrl = await presignR2Put(env, { key, mimeType, expiresSeconds: 120 });
+            const put = await fetch(putUrl, {
+              method: "PUT",
+              headers: { "content-type": mimeType },
+              body: payload,
+            });
+            if (!put.ok) {
+              throw new Error(`presigned_put_failed:${put.status}:${(await put.text()).slice(0, 200)}`);
+            }
+
+            const getUrl = await presignR2Get(env, { key, expiresSeconds: 120 });
+            const get = await fetch(getUrl);
+            if (!get.ok) {
+              throw new Error(`presigned_get_failed:${get.status}:${(await get.text()).slice(0, 200)}`);
+            }
+            const received = new Uint8Array(await get.arrayBuffer());
+            if (
+              received.length !== payload.length ||
+              received.some((value, index) => value !== payload[index])
+            ) {
+              throw new Error("presigned_roundtrip_mismatch");
+            }
+            console.log("R2_PRESIGNED_ROUNDTRIP=verified");
+          } finally {
+            const deletion = await directClient.fetch(objectUrl, { method: "DELETE" });
+            if (!deletion.ok && deletion.status !== 404) {
+              throw new Error(`r2_smoke_cleanup_failed:${deletion.status}`);
+            }
+          }
+          NODE
+
       - name: Validate Worker bundle with R2 binding
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
