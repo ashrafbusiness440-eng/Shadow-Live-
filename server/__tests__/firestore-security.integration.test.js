@@ -113,6 +113,31 @@ test("unverified email/password user cannot access Firestore",async()=>{
   await assertFails(getDoc(doc(userDb,"rooms","rules_room")));
 });
 
+test("public profile accepts R2 media object ids",async()=>{
+  const userDb=phoneUserDb();
+  await assertSucceeds(setDoc(doc(userDb,"public_profiles",uid),{
+    uid,
+    displayName:"R2 Profile",
+    username:"",
+    publicId:"",
+    searchTokens:["r2","profile"],
+    profileImageUrl:"https://shadow-live.example/api/public-media/profile_image/rules_regular_user/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg",
+    profileImageObjectId:"a".repeat(32),
+    profileAvatarAsset:"",
+    coverImageUrl:"https://shadow-live.example/api/public-media/profile_cover/rules_regular_user/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.jpg",
+    coverImageObjectId:"b".repeat(32),
+    bio:"",
+    location:"",
+    interests:[],
+    level:0,
+    vipLevel:0,
+    badges:[],
+    isOnline:true,
+    createdAt:new Date(),
+    updatedAt:new Date(),
+  }));
+});
+
 test("regular user cannot change protected balances earnings agency or mic activity",async()=>{
   const userDb=phoneUserDb();
   const ref=doc(userDb,"users",uid);
