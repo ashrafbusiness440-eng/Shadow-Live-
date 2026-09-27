@@ -7,6 +7,7 @@ import {
   legacyPresenceFresh,
   realtimeUserPresentFromNamespace,
 } from "./room-presence-authority.js";
+import { publishGlobalRocketEvents } from "./room-realtime.js";
 
 const clean = (value) => String(value ?? "").trim();
 const validKey = (value) => /^[A-Za-z0-9_-]{12,220}$/.test(clean(value));
@@ -409,40 +410,10 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       ),
     );
 
-    const roomDailySupport =
-      room.dailySupportDate === periods.day
-        ? Math.max(0, Number(room.dailySupport || 0)) + totalCost
-        : totalCost;
-    const roomWeeklySupport =
-      room.weeklySupportKey === periods.week
-        ? Math.max(0, Number(room.weeklySupport || 0)) + totalCost
-        : totalCost;
-    const roomMonthlySupport =
-      room.monthlySupportKey === periods.month
-        ? Math.max(0, Number(room.monthlySupport || 0)) + totalCost
-        : totalCost;
-    writes.push(
-      db.writeUpdate(
-        roomPath,
-        {
-          dailySupport: roomDailySupport,
-          dailySupportDate: periods.day,
-          weeklySupport: roomWeeklySupport,
-          weeklySupportKey: periods.week,
-          monthlySupport: roomMonthlySupport,
-          monthlySupportKey: periods.month,
-        },
-        [
-          "dailySupport",
-          "dailySupportDate",
-          "weeklySupport",
-          "weeklySupportKey",
-          "monthlySupport",
-          "monthlySupportKey",
-        ],
-        [db.increment("totalSupport", totalCost)],
-      ),
-    );
+    // High-frequency room support lives in the period support documents below.
+    // Do not mutate rooms/{roomId} for every gift: room-root listeners fan this
+    // write out to every connected participant. Room insights/bootstrap read
+    // the exact period documents instead.
 
     writes.push(
       db.writeUpdate(
@@ -768,11 +739,16 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     );
 
     await db.commit(transaction, writes);
-    return { ok: true, code: "ok", ...resultData };
+    return {
+      ok: true,
+      code: "ok",
+      ...resultData,
+      _rocketFeedEvents: rocketAdvance.explosions,
+    };
   });
 }
 
-export async function roomGift(request, env) {
+export async function roomGift(request, env, ctx) {
   if (request.method !== "POST") {
     return json(request, env, { ok: false, code: "method_not_allowed" }, 405);
   }
@@ -789,7 +765,26 @@ export async function roomGift(request, env) {
       body,
       { realtimeNamespace: env.ROOM_REALTIME },
     );
-    return json(request, env, result, 200);
+    const rocketFeedEvents = Array.isArray(result?._rocketFeedEvents)
+      ? result._rocketFeedEvents
+      : [];
+    if (rocketFeedEvents.length > 0) {
+      const publishTask = publishGlobalRocketEvents(env, rocketFeedEvents).catch(
+        (error) => {
+          console.error(
+            "Rocket feed publish failed",
+            String(error?.message || error),
+          );
+        },
+      );
+      if (typeof ctx?.waitUntil === "function") {
+        ctx.waitUntil(publishTask);
+      } else {
+        await publishTask;
+      }
+    }
+    const { _rocketFeedEvents, ...publicResult } = result;
+    return json(request, env, publicResult, 200);
   } catch (error) {
     if (error instanceof ApiError) {
       return json(request, env, { ok: false, code: error.code }, error.status);

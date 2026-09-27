@@ -17,6 +17,13 @@ import {
   normalizeGameSchedule,
   processGameSchedule,
 } from "./room-realtime-game.js";
+import {
+  ROCKET_FEED_MAX_EVENTS,
+  ROCKET_FEED_STORAGE_PREFIX,
+  normalizeRocketFeedEvent,
+  rocketFeedRetainUntilMs,
+  rocketFeedStorageKey,
+} from "./room-rocket-feed.js";
 
 const TICKET_PREFIX = "ticket:";
 
@@ -64,6 +71,7 @@ export class RoomRealtimeObject extends DurableObject {
         }
       })
       .filter((value) => value && typeof value === "object")
+      .filter((value) => String(value.mode || "room") !== "rocket_feed")
       .filter(
         (value) =>
           !excluded || String(value.connectionId || "") !== excluded,
@@ -100,6 +108,112 @@ export class RoomRealtimeObject extends DurableObject {
       participantsCount: onlineCount,
     });
     return onlineCount;
+  }
+
+  async #rocketFeedRecentEvents(nowMs = Date.now()) {
+    const records = await this.ctx.storage.list({
+      prefix: ROCKET_FEED_STORAGE_PREFIX,
+      limit: ROCKET_FEED_MAX_EVENTS,
+    });
+    return Array.from(records.values())
+      .map((record) => record?.event)
+      .map((event) => normalizeRocketFeedEvent(event, nowMs))
+      .filter(Boolean)
+      .filter((event) => Number(event.startsAtMs || 0) <= nowMs)
+      .sort((a, b) => Number(a.startsAtMs || 0) - Number(b.startsAtMs || 0))
+      .slice(-ROCKET_FEED_MAX_EVENTS);
+  }
+
+  async #processRocketFeed(nowMs = Date.now()) {
+    const records = await this.ctx.storage.list({
+      prefix: ROCKET_FEED_STORAGE_PREFIX,
+      limit: ROCKET_FEED_MAX_EVENTS,
+    });
+    const deletes = [];
+    let nextAtMs = null;
+    let delivered = 0;
+
+    for (const [key, record] of records) {
+      const event = normalizeRocketFeedEvent(record?.event, nowMs);
+      const retainUntilMs = Number(
+        record?.retainUntilMs || rocketFeedRetainUntilMs(record?.event),
+      );
+      if (!event || retainUntilMs <= nowMs) {
+        deletes.push(key);
+        continue;
+      }
+
+      const broadcastedAtMs = Number(record?.broadcastedAtMs || 0);
+      if (broadcastedAtMs <= 0 && event.startsAtMs <= nowMs) {
+        delivered += this.#broadcastEvent("room.rocket_explosion", event);
+        await this.ctx.storage.put(key, {
+          ...record,
+          event,
+          retainUntilMs,
+          broadcastedAtMs: nowMs,
+        });
+      } else if (broadcastedAtMs <= 0) {
+        nextAtMs =
+          nextAtMs === null
+            ? event.startsAtMs
+            : Math.min(nextAtMs, event.startsAtMs);
+      }
+
+      nextAtMs =
+        nextAtMs === null
+          ? retainUntilMs
+          : Math.min(nextAtMs, retainUntilMs);
+    }
+
+    if (deletes.length) await this.ctx.storage.delete(deletes);
+    return { nextAtMs, delivered, checked: records.size };
+  }
+
+  async #publishRocketEvents(request) {
+    const body = await request.json().catch(() => ({}));
+    const nowMs = Date.now();
+    const events = Array.isArray(body.events)
+      ? body.events
+          .map((event) => normalizeRocketFeedEvent(event, nowMs))
+          .filter(Boolean)
+          .slice(0, ROCKET_FEED_MAX_EVENTS)
+      : [];
+    if (events.length === 0) {
+      return Response.json({ ok: true, stored: 0, delivered: 0 });
+    }
+
+    let stored = 0;
+    for (const event of events) {
+      const key = rocketFeedStorageKey(event.explosionId);
+      if (!key) continue;
+      const existing = await this.ctx.storage.get(key);
+      await this.ctx.storage.put(key, {
+        event,
+        retainUntilMs: rocketFeedRetainUntilMs(event),
+        broadcastedAtMs: Number(existing?.broadcastedAtMs || 0),
+      });
+      stored += 1;
+    }
+
+    const processed = await this.#processRocketFeed(nowMs);
+    if (processed.nextAtMs !== null) {
+      const currentAlarm = await this.ctx.storage.getAlarm();
+      if (currentAlarm === null || processed.nextAtMs < currentAlarm) {
+        await this.ctx.storage.setAlarm(
+          Math.max(Date.now() + 20, processed.nextAtMs),
+        );
+      }
+    }
+    recordRealtimeTelemetry(this.env, {
+      event: "rocket_feed_publish",
+      fanout: processed.delivered,
+      onlineCount: this.ctx.getWebSockets().length,
+    });
+    return Response.json({
+      ok: true,
+      stored,
+      delivered: processed.delivered,
+    });
   }
 
   async fetch(request) {
@@ -144,6 +258,9 @@ export class RoomRealtimeObject extends DurableObject {
         present,
       });
     }
+    if (url.pathname === "/rocket/publish" && request.method === "POST") {
+      return this.#publishRocketEvents(request);
+    }
     if (url.pathname === "/game/register" && request.method === "POST") {
       return this.#registerGameSchedules(request);
     }
@@ -161,6 +278,9 @@ export class RoomRealtimeObject extends DurableObject {
     const expiresAtMs = Number(body.expiresAtMs || 0);
     const displayName = String(body.displayName || "").trim();
     const profileImageUrl = String(body.profileImageUrl || "").trim();
+    const mode = String(body.mode || "room") === "rocket_feed"
+      ? "rocket_feed"
+      : "room";
     const reconnectAttempt = Math.max(
       0,
       Math.min(3, Number(body.reconnectAttempt || 0)),
@@ -170,7 +290,8 @@ export class RoomRealtimeObject extends DurableObject {
       return Response.json({ ok: false, code: "invalid_ticket" }, { status: 400 });
     }
 
-    const alreadyPresent = hasPresenceUid(this.#presenceAttachments(), uid);
+    const alreadyPresent =
+      mode === "room" && hasPresenceUid(this.#presenceAttachments(), uid);
     const key = await ticketStorageKey(ticket);
     await this.ctx.storage.put(key, {
       roomId,
@@ -179,6 +300,7 @@ export class RoomRealtimeObject extends DurableObject {
       expiresAtMs,
       displayName,
       profileImageUrl,
+      mode,
       reconnectAttempt,
     });
 
@@ -219,6 +341,41 @@ export class RoomRealtimeObject extends DurableObject {
     const uid = String(record.uid || "");
     const connectionId = crypto.randomUUID();
     const connectedAtMs = Date.now();
+    const reconnectAttempt = Math.max(
+      0,
+      Math.min(3, Number(record.reconnectAttempt || 0)),
+    );
+    const mode = String(record.mode || "room");
+
+    if (mode === "rocket_feed") {
+      server.serializeAttachment({
+        mode,
+        roomId,
+        uid,
+        connectionId,
+        connectedAtMs,
+        reconnectAttempt,
+      });
+      this.ctx.acceptWebSocket(server, [`uid:${uid}`, "feed:rocket"]);
+      const recentEvents = await this.#rocketFeedRecentEvents(connectedAtMs);
+      safeSend(
+        server,
+        realtimeEnvelope("server.ready", {
+          protocolVersion: ROOM_REALTIME_PROTOCOL_VERSION,
+          feed: "rocket",
+          connectionId,
+          recentEvents,
+        }),
+      );
+      recordRealtimeTelemetry(this.env, {
+        event: "rocket_feed_connect",
+        reconnect: reconnectAttempt > 0,
+        fanout: recentEvents.length,
+        onlineCount: this.ctx.getWebSockets().length,
+      });
+      return new Response(null, { status: 101, webSocket: client });
+    }
+
     const existingAttachments = this.#presenceAttachments();
     const alreadyPresent = hasPresenceUid(existingAttachments, uid);
     const existing = presenceSnapshotFromAttachments(
@@ -230,12 +387,8 @@ export class RoomRealtimeObject extends DurableObject {
       : connectedAtMs;
     const displayName = String(record.displayName || "").trim();
     const profileImageUrl = String(record.profileImageUrl || "").trim();
-    const reconnectAttempt = Math.max(
-      0,
-      Math.min(3, Number(record.reconnectAttempt || 0)),
-    );
-
     server.serializeAttachment({
+      mode: "room",
       roomId,
       uid,
       connectionId,
@@ -380,6 +533,16 @@ export class RoomRealtimeObject extends DurableObject {
       });
     } catch {}
 
+    if (String(attachment.mode || "room") === "rocket_feed") {
+      recordRealtimeTelemetry(this.env, {
+        event: "rocket_feed_departure",
+        outcome: String(reason || "close"),
+        onlineCount: this.ctx.getWebSockets().length,
+        error: reason === "error",
+      });
+      return;
+    }
+
     const roomId = normalizeRoomId(attachment.roomId);
     const uid = String(attachment.uid || "").trim();
     const connectionId = String(attachment.connectionId || "").trim();
@@ -423,8 +586,9 @@ export class RoomRealtimeObject extends DurableObject {
     const schedules = await this.ctx.storage.list({
       prefix: GAME_SCHEDULE_PREFIX,
     });
+    const rocketFeed = await this.#processRocketFeed(nowMs);
     const deletes = [];
-    let nextAlarmAtMs = null;
+    let nextAlarmAtMs = rocketFeed.nextAtMs;
 
     for (const [key, value] of tickets) {
       const expiresAtMs = Number(value?.expiresAtMs || 0);
@@ -465,7 +629,7 @@ export class RoomRealtimeObject extends DurableObject {
     recordRealtimeTelemetry(this.env, {
       event: "alarm",
       durationMs: Date.now() - alarmStartedAtMs,
-      fanout: schedules.size,
+      fanout: schedules.size + Number(rocketFeed.delivered || 0),
       onlineCount: this.#presenceSnapshot().length,
     });
   }

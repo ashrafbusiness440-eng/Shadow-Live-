@@ -30,9 +30,17 @@ class _RoomRocketBannerHostState extends State<RoomRocketBannerHost> {
   List<RoomRocketEvent> _events = const [];
   RoomRocketEvent? _active;
   final Set<String> _registered = <String>{};
+  static const int _maxNetworkAttempts = 4;
+
   final Set<String> _entering = <String>{};
   final Set<String> _claiming = <String>{};
   final Set<String> _claimed = <String>{};
+  final Set<String> _enterStopped = <String>{};
+  final Set<String> _claimStopped = <String>{};
+  final Map<String, int> _enterAttempts = <String, int>{};
+  final Map<String, int> _claimAttempts = <String, int>{};
+  final Map<String, int> _enterRetryAtMs = <String, int>{};
+  final Map<String, int> _claimRetryAtMs = <String, int>{};
   bool _openingRoom = false;
 
   @override
@@ -66,6 +74,16 @@ class _RoomRocketBannerHostState extends State<RoomRocketBannerHost> {
   void _refresh() {
     if (!mounted) return;
     final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final knownIds = _events.map((event) => event.id).toSet();
+    _registered.removeWhere((id) => !knownIds.contains(id));
+    _claimed.removeWhere((id) => !knownIds.contains(id));
+    _enterStopped.removeWhere((id) => !knownIds.contains(id));
+    _claimStopped.removeWhere((id) => !knownIds.contains(id));
+    _enterAttempts.removeWhere((id, _) => !knownIds.contains(id));
+    _claimAttempts.removeWhere((id, _) => !knownIds.contains(id));
+    _enterRetryAtMs.removeWhere((id, _) => !knownIds.contains(id));
+    _claimRetryAtMs.removeWhere((id, _) => !knownIds.contains(id));
+
     final activeEvents = _events
         .where((event) => event.activeAt(nowMs))
         .toList()
@@ -81,14 +99,23 @@ class _RoomRocketBannerHostState extends State<RoomRocketBannerHost> {
     final active = nextActive;
     if (active != null &&
         _voice.active &&
-        _voice.roomId == active.roomId) {
+        _voice.roomId == active.roomId &&
+        !_enterStopped.contains(active.id) &&
+        (_enterAttempts[active.id] ?? 0) < _maxNetworkAttempts &&
+        nowMs >= (_enterRetryAtMs[active.id] ?? 0)) {
       unawaited(_register(active));
     }
 
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     if (uid.isEmpty) return;
     for (final event in _events) {
-      if (!event.endedAt(nowMs) || _claimed.contains(event.id)) continue;
+      if (!event.endedAt(nowMs) ||
+          _claimed.contains(event.id) ||
+          _claimStopped.contains(event.id) ||
+          (_claimAttempts[event.id] ?? 0) >= _maxNetworkAttempts ||
+          nowMs < (_claimRetryAtMs[event.id] ?? 0)) {
+        continue;
+      }
       final contributor = event.contributorIds.contains(uid);
       if (contributor || _registered.contains(event.id)) {
         unawaited(_claim(event));
@@ -96,26 +123,90 @@ class _RoomRocketBannerHostState extends State<RoomRocketBannerHost> {
     }
   }
 
+  Duration _retryDelay(
+    RoomRocketRequestException error,
+    int attempt, {
+    required int baseMilliseconds,
+  }) {
+    final serverDelay = error.retryAfter;
+    if (serverDelay != null) {
+      return serverDelay > const Duration(seconds: 8)
+          ? const Duration(seconds: 8)
+          : serverDelay;
+    }
+    final exponent = attempt <= 1 ? 0 : attempt - 1;
+    final multiplier = 1 << exponent;
+    return Duration(
+      milliseconds: math.min(8000, baseMilliseconds * multiplier).toInt(),
+    );
+  }
+
   Future<void> _register(RoomRocketEvent event) async {
-    if (_registered.contains(event.id) || _entering.contains(event.id)) return;
+    if (_registered.contains(event.id) ||
+        _entering.contains(event.id) ||
+        _enterStopped.contains(event.id)) {
+      return;
+    }
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    if (!event.activeAt(nowMs) ||
+        nowMs < (_enterRetryAtMs[event.id] ?? 0)) {
+      return;
+    }
+
+    final attempt = (_enterAttempts[event.id] ?? 0) + 1;
+    if (attempt > _maxNetworkAttempts) {
+      _enterStopped.add(event.id);
+      return;
+    }
+    _enterAttempts[event.id] = attempt;
     _entering.add(event.id);
     try {
       await _service.enter(event.id);
       _registered.add(event.id);
+      _enterAttempts.remove(event.id);
+      _enterRetryAtMs.remove(event.id);
+    } on RoomRocketRequestException catch (error) {
+      if (!error.retryable ||
+          attempt >= _maxNetworkAttempts ||
+          !event.activeAt(DateTime.now().millisecondsSinceEpoch)) {
+        _enterStopped.add(event.id);
+      } else {
+        _enterRetryAtMs[event.id] =
+            DateTime.now().millisecondsSinceEpoch +
+                _retryDelay(
+                  error,
+                  attempt,
+                  baseMilliseconds: 500,
+                ).inMilliseconds;
+      }
     } catch (_) {
-      // Presence join can land a fraction later than the banner.
-      // Keep it retryable until the 10-second window closes.
+      _enterStopped.add(event.id);
     } finally {
       _entering.remove(event.id);
     }
   }
 
   Future<void> _claim(RoomRocketEvent event) async {
-    if (_claiming.contains(event.id) || _claimed.contains(event.id)) return;
+    if (_claiming.contains(event.id) ||
+        _claimed.contains(event.id) ||
+        _claimStopped.contains(event.id)) {
+      return;
+    }
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    if (nowMs < (_claimRetryAtMs[event.id] ?? 0)) return;
+
+    final attempt = (_claimAttempts[event.id] ?? 0) + 1;
+    if (attempt > _maxNetworkAttempts) {
+      _claimStopped.add(event.id);
+      return;
+    }
+    _claimAttempts[event.id] = attempt;
     _claiming.add(event.id);
     try {
       final body = await _service.claim(event.id);
       _claimed.add(event.id);
+      _claimAttempts.remove(event.id);
+      _claimRetryAtMs.remove(event.id);
       final raw = body['result'];
       if (raw is Map &&
           _voice.active &&
@@ -124,8 +215,20 @@ class _RoomRocketBannerHostState extends State<RoomRocketBannerHost> {
           Map<String, dynamic>.from(raw),
         );
       }
+    } on RoomRocketRequestException catch (error) {
+      if (!error.retryable || attempt >= _maxNetworkAttempts) {
+        _claimStopped.add(event.id);
+      } else {
+        _claimRetryAtMs[event.id] =
+            DateTime.now().millisecondsSinceEpoch +
+                _retryDelay(
+                  error,
+                  attempt,
+                  baseMilliseconds: 1000,
+                ).inMilliseconds;
+      }
     } catch (_) {
-      // If the backend says not ready/eligible yet, leave it retryable.
+      _claimStopped.add(event.id);
     } finally {
       _claiming.remove(event.id);
     }
