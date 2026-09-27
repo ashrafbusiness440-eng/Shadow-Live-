@@ -12,6 +12,40 @@ export const FIRESTORE_QUOTA_BREAKER_MS = 10_000;
 
 const firestoreQuotaCircuit = createFirestoreQuotaCircuitState();
 
+export function normalizeFirestoreResource(path) {
+  const parts = String(path ?? "")
+    .split("/")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length === 0) return "unknown";
+  return parts
+    .map((part, index) => {
+      if (index % 2 === 1) return ":id";
+      return part.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80) || "collection";
+    })
+    .join("/")
+    .slice(0, 160);
+}
+
+function writeResourcePath(write) {
+  const name = String(write?.update?.name || write?.delete || "").trim();
+  const marker = "/documents/";
+  const index = name.indexOf(marker);
+  if (index < 0) return "";
+  return normalizeFirestoreResource(name.slice(index + marker.length));
+}
+
+function summarizeWriteResources(writes) {
+  const resources = new Set(
+    (Array.isArray(writes) ? writes : [])
+      .map(writeResourcePath)
+      .filter(Boolean),
+  );
+  if (resources.size === 0) return "unknown";
+  if (resources.size === 1) return Array.from(resources)[0];
+  return "multi_write";
+}
+
 function normalizedFirestoreCode(...values) {
   return values
     .filter((value) => value !== undefined && value !== null)
@@ -202,6 +236,7 @@ export function firestoreClient(env) {
       operation = "unknown",
       readMode = "none",
       writeCount = 0,
+      resource = "",
     } = {},
   ) {
     const startedAtMs = Date.now();
@@ -240,6 +275,7 @@ export function firestoreClient(env) {
         quota: quota || sawQuota,
         circuitOpen,
         error,
+        resource: normalizeFirestoreResource(resource),
       });
     };
 
@@ -403,6 +439,7 @@ export function firestoreClient(env) {
           retryTransient: true,
           operation: "get",
           readMode: "single",
+          resource: path,
         },
       );
       if (!body) return { exists: false, data: null, updateTime: null };
@@ -425,6 +462,7 @@ export function firestoreClient(env) {
         {
           operation: "commit",
           writeCount: Array.isArray(writes) ? writes.length : 0,
+          resource: summarizeWriteResources(writes),
         },
       );
       return body;
@@ -439,6 +477,7 @@ export function firestoreClient(env) {
           retryTransient: true,
           operation: "list",
           readMode: "list",
+          resource: collectionPath,
         },
       );
       return (body?.documents || []).map((doc) => ({
@@ -514,6 +553,7 @@ export function firestoreClient(env) {
           retryTransient: true,
           operation: "run_query",
           readMode: "query",
+          resource: collectionPath,
         },
       );
 
