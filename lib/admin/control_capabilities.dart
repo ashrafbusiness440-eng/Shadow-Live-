@@ -7,6 +7,6 @@ abstract final class ControlCapabilities {
   static const manageGames='manageGames', manageEconomy='manageEconomy', adjustBalances='adjustBalances';
   static const manageWithdrawals='manageWithdrawals', manageSettlements='manageSettlements';
   static const manageCampaigns='manageCampaigns', manageRoles='manageRoles';
-  static const viewAuditLog='viewAuditLog', emergencyLock='emergencyLock';
+  static const viewAuditLog='viewAuditLog', viewSystemHealth='viewSystemHealth', emergencyLock='emergencyLock';
   static const ownerOnly={manageEconomy,manageRoles,emergencyLock};
 }
