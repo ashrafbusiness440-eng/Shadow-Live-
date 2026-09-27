@@ -369,8 +369,65 @@ class UsersPage extends StatefulWidget {
 enum _UserBucket { regular, admins, disabled, banned, deleted }
 
 class _UsersPageState extends State<UsersPage> {
+  static const int _pageSize=100;
+
   String query='';
   _UserBucket selected=_UserBucket.regular;
+  final List<QueryDocumentSnapshot<Map<String,dynamic>>> _users=[];
+  DocumentSnapshot<Map<String,dynamic>>? _cursor;
+  bool _loadingUsers=true;
+  bool _loadingMore=false;
+  bool _hasMore=true;
+  Object? _loadError;
+
+  @override
+  void initState(){
+    super.initState();
+    unawaited(_reloadUsers());
+  }
+
+  Future<void> _reloadUsers() async {
+    if(!mounted)return;
+    setState((){
+      _users.clear();
+      _cursor=null;
+      _loadingUsers=true;
+      _loadingMore=false;
+      _hasMore=true;
+      _loadError=null;
+    });
+    await _loadMoreUsers();
+  }
+
+  Future<void> _loadMoreUsers() async {
+    if(_loadingMore||!_hasMore)return;
+    if(mounted)setState(()=>_loadingMore=true);
+    try{
+      Query<Map<String,dynamic>> request=controlFirestore
+          .collection('users')
+          .orderBy(FieldPath.documentId)
+          .limit(_pageSize);
+      final cursor=_cursor;
+      if(cursor!=null)request=request.startAfterDocument(cursor);
+      final snap=await request.get();
+      if(!mounted)return;
+      setState((){
+        _users.addAll(snap.docs);
+        if(snap.docs.isNotEmpty)_cursor=snap.docs.last;
+        _hasMore=snap.docs.length==_pageSize;
+        _loadingUsers=false;
+        _loadingMore=false;
+        _loadError=null;
+      });
+    }catch(error){
+      if(!mounted)return;
+      setState((){
+        _loadingUsers=false;
+        _loadingMore=false;
+        _loadError=error;
+      });
+    }
+  }
 
   String text(dynamic value)=>value==null?'':'$value';
   String displayName(Map<String,dynamic> d)=>text(d['displayName']).isNotEmpty
@@ -465,89 +522,110 @@ class _UsersPageState extends State<UsersPage> {
     ));
   }
 
-  @override Widget build(BuildContext context)=>ListView(
-    padding:const EdgeInsets.all(16),
-    children:[
-      const Row(children:[
-        Icon(Icons.people_alt_outlined,size:28,color:Color(0xFFD7B85A)),
-        SizedBox(width:10),
-        Text('المستخدمون',style:TextStyle(fontSize:25,fontWeight:FontWeight.w900)),
-      ]),
-      const SizedBox(height:12),
-      TextField(
-        onChanged:(v)=>setState(()=>query=v),
-        decoration:const InputDecoration(
-          prefixIcon:Icon(Icons.search),
-          hintText:'بحث بالاسم، البريد، ID، الدور أو الحالة',
-          border:OutlineInputBorder(),
+  @override Widget build(BuildContext context){
+    final all=_users;
+    int countFor(_UserBucket bucket)=>all.where((doc)=>bucketOf(doc.data())==bucket).length;
+    final visible=all.where((doc)=>
+      bucketOf(doc.data())==selected && matches(doc.id,doc.data())
+    ).toList(growable:false);
+    final countSuffix=_hasMore?'+':'';
+
+    return ListView(
+      padding:const EdgeInsets.all(16),
+      children:[
+        Row(children:[
+          const Icon(Icons.people_alt_outlined,size:28,color:Color(0xFFD7B85A)),
+          const SizedBox(width:10),
+          const Expanded(child:Text('المستخدمون',style:TextStyle(fontSize:25,fontWeight:FontWeight.w900))),
+          IconButton(
+            tooltip:'تحديث القائمة',
+            onPressed:_loadingMore?null:()=>unawaited(_reloadUsers()),
+            icon:const Icon(Icons.refresh_rounded),
+          ),
+        ]),
+        const SizedBox(height:12),
+        TextField(
+          onChanged:(v)=>setState(()=>query=v),
+          decoration:const InputDecoration(
+            prefixIcon:Icon(Icons.search),
+            hintText:'بحث بالاسم، البريد، ID، الدور أو الحالة',
+            border:OutlineInputBorder(),
+          ),
         ),
-      ),
-      const SizedBox(height:12),
-      StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(
-        stream:controlFirestore.collection('users').snapshots(),
-        builder:(context,snap){
-          if(snap.connectionState==ConnectionState.waiting){
-            return const Padding(
-              padding:EdgeInsets.all(32),
-              child:Center(child:CircularProgressIndicator()),
-            );
-          }
-          if(snap.hasError){
-            return Card(child:ListTile(
-              leading:const Icon(Icons.error_outline,color:Colors.orangeAccent),
-              title:const Text('تعذر قراءة المستخدمين'),
-              subtitle:Text('${snap.error}'),
-            ));
-          }
-
-          final all=snap.data?.docs??[];
-          int countFor(_UserBucket bucket)=>all.where((doc)=>bucketOf(doc.data())==bucket).length;
-
-          final visible=all.where((doc)=>
-            bucketOf(doc.data())==selected && matches(doc.id,doc.data())
-          ).toList();
-
-          return Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
-            Wrap(
-              spacing:8,
-              runSpacing:8,
-              children:_UserBucket.values.map((bucket){
-                final active=selected==bucket;
-                return ChoiceChip(
-                  selected:active,
-                  onSelected:(_)=>setState(()=>selected=bucket),
-                  avatar:Icon(bucketIcon(bucket),size:18),
-                  label:Text('${bucketLabel(bucket)} (${countFor(bucket)})'),
-                );
-              }).toList(),
+        const SizedBox(height:12),
+        if(_loadingUsers&&all.isEmpty)
+          const Padding(
+            padding:EdgeInsets.all(32),
+            child:Center(child:CircularProgressIndicator()),
+          )
+        else if(_loadError!=null&&all.isEmpty)
+          Card(child:ListTile(
+            leading:const Icon(Icons.error_outline,color:Colors.orangeAccent),
+            title:const Text('تعذر قراءة المستخدمين'),
+            subtitle:Text('$_loadError'),
+            trailing:IconButton(
+              onPressed:()=>unawaited(_reloadUsers()),
+              icon:const Icon(Icons.refresh_rounded),
             ),
-            const SizedBox(height:12),
-            Card(
-              child:ListTile(
-                leading:Icon(bucketIcon(selected),color:const Color(0xFFD7B85A)),
-                title:Text(bucketLabel(selected),style:const TextStyle(fontWeight:FontWeight.w900)),
-                subtitle:Text(
-                  selected==_UserBucket.deleted
-                    ? 'الحسابات المحذوفة محفوظة كسجل تدقيق ولا تدخل ضمن عدد المستخدمين.'
-                    : selected==_UserBucket.disabled
-                      ? 'يشمل الحسابات المعطّلة والمعلّقة مؤقتًا.'
-                      : 'عدد الحسابات في هذا القسم: ${countFor(selected)}'
-                ),
+          ))
+        else ...[
+          Wrap(
+            spacing:8,
+            runSpacing:8,
+            children:_UserBucket.values.map((bucket){
+              final active=selected==bucket;
+              return ChoiceChip(
+                selected:active,
+                onSelected:(_)=>setState(()=>selected=bucket),
+                avatar:Icon(bucketIcon(bucket),size:18),
+                label:Text('${bucketLabel(bucket)} (${countFor(bucket)}$countSuffix)'),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height:12),
+          Card(
+            child:ListTile(
+              leading:Icon(bucketIcon(selected),color:const Color(0xFFD7B85A)),
+              title:Text(bucketLabel(selected),style:const TextStyle(fontWeight:FontWeight.w900)),
+              subtitle:Text(
+                selected==_UserBucket.deleted
+                  ? 'الحسابات المحذوفة محفوظة كسجل تدقيق ولا تدخل ضمن عدد المستخدمين.'
+                  : selected==_UserBucket.disabled
+                    ? 'يشمل الحسابات المعطّلة والمعلّقة مؤقتًا.'
+                    : _hasMore
+                      ? 'المحمّل حاليًا من هذا القسم: ${countFor(selected)}. حمّل المزيد للوصول لبقية الحسابات.'
+                      : 'عدد الحسابات في هذا القسم ضمن القائمة المحمّلة: ${countFor(selected)}'
               ),
             ),
-            const SizedBox(height:8),
-            if(visible.isEmpty)
-              const Card(child:ListTile(
-                leading:Icon(Icons.person_search_outlined),
-                title:Text('لا توجد نتائج مطابقة في هذا القسم'),
-              ))
-            else
-              ...visible.map(userCard),
-          ]);
-        },
-      ),
-    ],
-  );
+          ),
+          if(_loadError!=null)
+            Card(child:ListTile(
+              leading:const Icon(Icons.warning_amber_rounded,color:Colors.orangeAccent),
+              title:const Text('تعذر تحميل الصفحة التالية'),
+              subtitle:Text('$_loadError'),
+            )),
+          const SizedBox(height:8),
+          if(visible.isEmpty)
+            const Card(child:ListTile(
+              leading:Icon(Icons.person_search_outlined),
+              title:Text('لا توجد نتائج مطابقة في الحسابات المحمّلة'),
+            ))
+          else
+            ...visible.map(userCard),
+          if(_hasMore) ...[
+            const SizedBox(height:12),
+            OutlinedButton.icon(
+              onPressed:_loadingMore?null:()=>unawaited(_loadMoreUsers()),
+              icon:_loadingMore
+                  ? const SizedBox(width:18,height:18,child:CircularProgressIndicator(strokeWidth:2))
+                  : const Icon(Icons.expand_more_rounded),
+              label:Text(_loadingMore?'جار تحميل المزيد...':'تحميل 100 حساب إضافي'),
+            ),
+          ],
+        ],
+      ],
+    );
+  }
 }
 
 class UserReadOnlyPage extends StatelessWidget {
