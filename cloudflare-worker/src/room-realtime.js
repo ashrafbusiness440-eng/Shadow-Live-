@@ -14,6 +14,11 @@ import {
   ROOM_REALTIME_TICKET_TTL_MS,
   normalizeRoomId,
 } from "./room-realtime-protocol.js";
+import {
+  normalizeRocketFeedEvent,
+  rocketFeedRoomIdForUid,
+  rocketFeedRoomIds,
+} from "./room-rocket-feed.js";
 
 const REALTIME_TICKET_FIRESTORE_CONCURRENCY = 32;
 const REALTIME_ROOM_CACHE_TTL_MS = 30000;
@@ -27,6 +32,41 @@ function roomObject(env, roomId) {
   if (!env?.ROOM_REALTIME) throw new Error("room_realtime_not_configured");
   const id = env.ROOM_REALTIME.idFromName(roomId);
   return env.ROOM_REALTIME.get(id);
+}
+
+export async function publishGlobalRocketEvents(env, rawEvents = []) {
+  const events = Array.isArray(rawEvents)
+    ? rawEvents
+        .map((event) => normalizeRocketFeedEvent(event))
+        .filter(Boolean)
+        .slice(0, 80)
+    : [];
+  if (events.length === 0) return { ok: true, shards: 0, events: 0 };
+
+  const roomIds = rocketFeedRoomIds();
+  const results = await Promise.allSettled(
+    roomIds.map((roomId) =>
+      roomObject(env, roomId).fetch(
+        "https://room-realtime.internal/rocket/publish",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ events }),
+        },
+      ),
+    ),
+  );
+  const successful = results.filter(
+    (result) =>
+      result.status === "fulfilled" &&
+      result.value &&
+      result.value.ok,
+  ).length;
+  return {
+    ok: successful > 0,
+    shards: successful,
+    events: events.length,
+  };
 }
 
 function isAnonymous(payload) {
@@ -63,6 +103,57 @@ export async function roomRealtime(request, env) {
         action,
         reconnectAttempt: Math.max(0, Math.min(3, Number(body.reconnectAttempt || 0))),
       });
+
+      if (action === "rocketFeedTicket") {
+        const payload = await verifyFirebaseIdToken(request, env, {
+          checkUserState: false,
+        });
+        if (isAnonymous(payload)) {
+          return json(request, env, { ok: false, code: "account_required" }, 403);
+        }
+        const uid = String(payload.sub || "").trim();
+        if (!uid) {
+          return json(request, env, { ok: false, code: "unauthorized" }, 401);
+        }
+        const roomId = rocketFeedRoomIdForUid(uid);
+        const stub = roomObject(env, roomId);
+        const ticket = crypto.randomUUID();
+        const expiresAtMs = Date.now() + ROOM_REALTIME_TICKET_TTL_MS;
+        const stored = await stub.fetch("https://room-realtime.internal/ticket", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            roomId,
+            uid,
+            ticket,
+            expiresAtMs,
+            mode: "rocket_feed",
+            reconnectAttempt: Math.max(
+              0,
+              Math.min(3, Number(body.reconnectAttempt || 0)),
+            ),
+          }),
+        });
+        if (!stored.ok) {
+          return json(
+            request,
+            env,
+            { ok: false, code: "realtime_ticket_failed" },
+            503,
+          );
+        }
+        const socketPath =
+          `/api/room-realtime?roomId=${encodeURIComponent(roomId)}&ticket=${encodeURIComponent(ticket)}`;
+        return json(request, env, {
+          ok: true,
+          protocolVersion: ROOM_REALTIME_PROTOCOL_VERSION,
+          feed: "rocket",
+          roomId,
+          ticket,
+          expiresAtMs,
+          socketPath,
+        });
+      }
 
       if (action === "presenceCounts") {
         await verifyFirebaseIdToken(request, env, { checkUserState: false });
