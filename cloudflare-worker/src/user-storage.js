@@ -606,6 +606,39 @@ async function confirmUpload(request, env, auth, body) {
   });
 }
 
+async function replacementObjectStillReferenced(
+  db,
+  queueItem,
+  objectId,
+) {
+  const scope = clean(queueItem?.scope);
+  const targetId = clean(queueItem?.targetId);
+  if (!targetId) return false;
+
+  let documentPath = "";
+  let field = "";
+  switch (scope) {
+    case "profile_image":
+      documentPath = `users/${targetId}`;
+      field = "profileImageObjectId";
+      break;
+    case "profile_cover":
+      documentPath = `users/${targetId}`;
+      field = "coverImageObjectId";
+      break;
+    case "room_cover":
+      documentPath = `rooms/${targetId}`;
+      field = "coverImageObjectId";
+      break;
+    default:
+      return false;
+  }
+
+  const snapshot = await db.get(documentPath);
+  if (!snapshot.exists) return false;
+  return clean(snapshot.data?.[field]) === clean(objectId);
+}
+
 export async function runDueStorageCleanup(
   env,
   {
@@ -625,6 +658,7 @@ export async function runDueStorageCleanup(
 
   let deleted = 0;
   let failed = 0;
+  let deferred = 0;
   for (const item of due) {
     const objectId = clean(item.data?.objectId || item.id);
     const storageKey = clean(item.data?.storageKey);
@@ -634,6 +668,28 @@ export async function runDueStorageCleanup(
     }
 
     try {
+      const stillReferenced = await replacementObjectStillReferenced(
+        db,
+        item.data,
+        objectId,
+      );
+      if (stillReferenced) {
+        const nextDeleteAt = replacementDeleteAt(nowMs);
+        await db.commit(null, [
+          db.writeUpdate(
+            `storage_delete_queue/${item.id}`,
+            {
+              deleteAfter: nextDeleteAt,
+              lastDeferredAt: new Date(nowMs),
+              deferReason: "still_referenced",
+            },
+            ["deleteAfter", "lastDeferredAt", "deferReason"],
+          ),
+        ]);
+        deferred += 1;
+        continue;
+      }
+
       await bucket.delete(storageKey);
       const now = new Date();
       await db.commit(null, [
@@ -719,6 +775,7 @@ export async function runDueStorageCleanup(
     checked: due.length + expiredTickets.length,
     replacementChecked: due.length,
     replacementDeleted: deleted,
+    replacementDeferred: deferred,
     replacementFailed: failed,
     expiredTicketsChecked: expiredTickets.length,
     expiredTicketsCleaned,
