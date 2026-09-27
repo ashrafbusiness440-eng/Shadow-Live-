@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   PRESSURE_ANALYTICS_SCHEMA,
   annotatePressureRequest,
+  composePressureAction,
   normalizePressureRoute,
   pressureRequestContext,
   recordFirestoreTelemetry,
@@ -59,6 +60,18 @@ test("pressure telemetry schema stays stable and privacy-safe", () => {
   ]) {
     assert.equal(serialized.includes(forbidden), false);
   }
+});
+
+test("pressure action composition preserves economy subsystem identity", () => {
+  assert.equal(
+    composePressureAction("room-rocket", "enter"),
+    "room-rocket:enter",
+  );
+  assert.equal(
+    composePressureAction("room-rocket-config", "state"),
+    "room-rocket-config:state",
+  );
+  assert.equal(composePressureAction("", "state"), "state");
 });
 
 test("dynamic public media route telemetry strips target and object identifiers", () => {
