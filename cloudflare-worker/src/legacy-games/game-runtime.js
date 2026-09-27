@@ -799,16 +799,17 @@ export async function settleDueGameOperations(
     workerTag="",
   }={},
 ){
-  // Pressure Root Fix Step 12: keep the safety sweep bounded without
-  // requiring a composite Firestore index. User-facing game state settles
-  // due operations event-by-event; this cron is only a small fallback sweep.
+  const boundedLimit=Math.max(1,Math.min(25,Number(limit||25)));
+  // Query only due work, oldest first. This prevents future pending operations
+  // from occupying the bounded cron window and starving an already-due payout.
   const snapshot=await db.collection("game_operations")
     .where("status","==","pending")
-    .limit(Math.max(1,Math.min(10,Number(limit||10))))
+    .where("closesAtMs","<=",nowMs)
+    .orderBy("closesAtMs","asc")
+    .limit(boundedLimit)
     .get();
-  const due=snapshot.docs.filter(doc=>Number(doc.data()?.closesAtMs||0)<=nowMs);
   const results=[];
-  for(const doc of due){
+  for(const doc of snapshot.docs){
     try{
       results.push(await settleOperationRef(db,doc.ref,nowMs,{workerTag}));
     }catch(error){
