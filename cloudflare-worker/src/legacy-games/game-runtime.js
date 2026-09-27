@@ -870,8 +870,12 @@ export async function gameState(db,uid,body={},options={}){
 
   let userOperationsSnapshot=null;
   try{
+    // Pressure Root Fix Step 12: game state only consumes pending operations.
+    // Filter settled history in Firestore instead of reading up to 50 historical
+    // operations and discarding them in memory on every state refresh.
     userOperationsSnapshot=await db.collection("game_operations")
       .where("userId","==",uid)
+      .where("status","==","pending")
       .limit(50)
       .get();
     for(const doc of userOperationsSnapshot.docs){
