@@ -823,9 +823,14 @@ async function updateRoomSettings(db,uid,body){
   const roomRef=db.collection("rooms").doc(roomId);
   const userRef=db.collection("users").doc(uid);
   const auditRef=db.collection("room_audit_logs").doc(roomId).collection("items").doc();
+  const coverObjectRef=coverImageObjectId
+    ? db.collection("storage_objects").doc(coverImageObjectId)
+    : null;
 
   return db.runTransaction(async tx=>{
-    const [roomSnap,userSnap]=await Promise.all([tx.get(roomRef),tx.get(userRef)]);
+    const reads=[tx.get(roomRef),tx.get(userRef)];
+    if(coverObjectRef)reads.push(tx.get(coverObjectRef));
+    const [roomSnap,userSnap,coverObjectSnap]=await Promise.all(reads);
     if(!roomSnap.exists)throw new ApiError("room_not_found",404);
     const room=roomSnap.data()||{};
     const user=userSnap.data()||{};
@@ -833,6 +838,22 @@ async function updateRoomSettings(db,uid,body){
     const ownerUid=clean(room.ownerUid||room.ownerId||room.hostId);
     if(ownerUid!==uid&&!permissions.manageRooms)throw new ApiError("forbidden",403);
     if(visibility==="hidden"&&!permissions.hidden)throw new ApiError("hidden_room_forbidden",403);
+
+    if(coverImageObjectId){
+      if(!coverObjectSnap||!coverObjectSnap.exists){
+        throw new ApiError("room_cover_object_not_found",409);
+      }
+      const media=coverObjectSnap.data()||{};
+      if(
+        clean(media.scope)!=="room_cover"||
+        clean(media.targetId)!==roomId||
+        clean(media.ownerUid)!==ownerUid||
+        clean(media.publicUrl)!==coverImageUrl||
+        clean(media.state||"active")!=="active"
+      ){
+        throw new ApiError("room_cover_object_mismatch",409);
+      }
+    }
 
     const update={
       name,
