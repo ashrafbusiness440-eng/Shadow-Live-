@@ -12,6 +12,7 @@ class UserStorageUploadResult {
     required this.mimeType,
     required this.sizeBytes,
     this.replacedObjectId,
+    this.publicUrl,
   });
 
   final String objectId;
@@ -20,9 +21,11 @@ class UserStorageUploadResult {
   final String mimeType;
   final int sizeBytes;
   final String? replacedObjectId;
+  final String? publicUrl;
 
   factory UserStorageUploadResult.fromJson(Map<String, dynamic> json) {
     final replaced = (json['replacedObjectId'] ?? '').toString().trim();
+    final publicUrl = (json['publicUrl'] ?? '').toString().trim();
     return UserStorageUploadResult(
       objectId: (json['objectId'] ?? '').toString(),
       scope: (json['scope'] ?? '').toString(),
@@ -30,6 +33,7 @@ class UserStorageUploadResult {
       mimeType: (json['mimeType'] ?? '').toString(),
       sizeBytes: (json['sizeBytes'] as num?)?.toInt() ?? 0,
       replacedObjectId: replaced.isEmpty ? null : replaced,
+      publicUrl: publicUrl.isEmpty ? null : publicUrl,
     );
   }
 }
