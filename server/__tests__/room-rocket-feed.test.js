@@ -70,6 +70,18 @@ test("expired rocket feed payloads are rejected", () => {
   assert.equal(event, null);
 });
 
+test("room gift publishes rocket feed only after financial commit and keeps it alive", () => {
+  const source = readFileSync(
+    new URL("../../cloudflare-worker/src/room-gift.js", import.meta.url),
+    "utf8",
+  );
+  const commitIndex = source.indexOf("await db.commit(transaction, writes)");
+  const publishIndex = source.indexOf("publishGlobalRocketEvents(env, rocketFeedEvents)");
+  assert.ok(commitIndex >= 0);
+  assert.ok(publishIndex > commitIndex);
+  assert.equal(source.includes("ctx.waitUntil(publishTask)"), true);
+});
+
 test("active Flutter code has no global rocket explosions Firestore listener", () => {
   const service = readFileSync(
     new URL("../../lib/features/room/services/room_rocket_service.dart", import.meta.url),
