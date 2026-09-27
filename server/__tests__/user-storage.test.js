@@ -261,3 +261,16 @@ test("account deletion storage cleanup is metadata-indexed and bounded", () => {
   assert.match(storageSource, /STORAGE_DELETE_BATCH_LIMIT/);
   assert.doesNotMatch(storageSource, /bucket\.list\s*\(/);
 });
+
+
+test("public media redirects use bounded edge cache below signed URL TTL", () => {
+  const source = fs.readFileSync(
+    new URL("../../cloudflare-worker/src/public-media.js", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /PUBLIC_MEDIA_SIGNED_TTL_SECONDS = 900/);
+  assert.match(source, /PUBLIC_MEDIA_CACHE_SECONDS = 300/);
+  assert.match(source, /cache\.match\(cacheKey\)/);
+  assert.match(source, /cache\.put\(/);
+  assert.match(source, /stale-while-revalidate=60/);
+});
