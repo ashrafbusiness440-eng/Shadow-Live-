@@ -718,32 +718,56 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     Widget content;
     EdgeInsets padding = const EdgeInsets.symmetric(horizontal: 14, vertical: 9);
     if (type == 'image') {
-      final url = (data['imageUrl'] ?? '').toString();
+      final objectId = (data['storageObjectId'] ?? '').toString().trim();
+      final legacyUrl = (data['imageUrl'] ?? '').toString().trim();
       padding = const EdgeInsets.all(4);
-      content = GestureDetector(
-        onTap: url.isEmpty ? null : () => showDialog<void>(
-          context: context,
-          barrierColor: Colors.black87,
-          builder: (_) => Dialog(
-            backgroundColor: Colors.transparent,
-            insetPadding: const EdgeInsets.all(12),
-            child: InteractiveViewer(child: Image.network(url, fit: BoxFit.contain)),
-          ),
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(15),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 240, maxHeight: 300),
-            child: Image.network(
-              url,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => const SizedBox(
-                width: 180,
-                height: 120,
-                child: Center(child: Icon(Icons.broken_image_outlined, color: Colors.white54)),
-              ),
-            ),
-          ),
+      content = ClipRRect(
+        borderRadius: BorderRadius.circular(15),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 240, maxHeight: 300),
+          child: objectId.isNotEmpty
+              ? _r2ChatImage(objectId)
+              : legacyUrl.isNotEmpty
+                  ? GestureDetector(
+                      onTap: () => showDialog<void>(
+                        context: context,
+                        barrierColor: Colors.black87,
+                        builder: (_) => Dialog(
+                          backgroundColor: Colors.transparent,
+                          insetPadding: const EdgeInsets.all(12),
+                          child: InteractiveViewer(
+                            child: Image.network(
+                              legacyUrl,
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                        ),
+                      ),
+                      child: Image.network(
+                        legacyUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const SizedBox(
+                          width: 180,
+                          height: 120,
+                          child: Center(
+                            child: Icon(
+                              Icons.broken_image_outlined,
+                              color: Colors.white54,
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                  : const SizedBox(
+                      width: 180,
+                      height: 120,
+                      child: Center(
+                        child: Icon(
+                          Icons.broken_image_outlined,
+                          color: Colors.white54,
+                        ),
+                      ),
+                    ),
         ),
       );
     } else if (type == 'room_invite') {
