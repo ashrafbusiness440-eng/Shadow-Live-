@@ -546,6 +546,7 @@ export async function placeGameBet(
     const participantRef=roundRef.collection("participants").doc(uid);
     const debitLedgerRef=db.collection("financial_ledger").doc("game_debit__"+operationId);
     const creditLedgerRef=db.collection("financial_ledger").doc("game_credit__"+operationId);
+    const settlementQueueRef=db.collection("game_settlement_queue").doc(operationId);
     const historyRef=db.collection("game_user_history")
       .doc(uid).collection("items").doc(operationId);
 
@@ -582,6 +583,14 @@ export async function placeGameBet(
       ...(settled?{settledAt:now}:{}),
     };
     tx.create(operationRef,operation);
+    if(!settled){
+      tx.create(settlementQueueRef,{
+        operationId,
+        dueAtMs:round.closesAtMs,
+        createdAt:now,
+        updatedAt:now,
+      });
+    }
     tx.create(debitLedgerRef,{
       ...ledgerBase({uid,operationId,gameId,roundId:round.roundId,now}),
       type:"game_bet_debit",
@@ -686,14 +695,16 @@ async function settleOperationRef(db,operationRef,nowMs,{workerTag=""}={}){
     const operationSnap=await tx.get(operationRef);
     if(!operationSnap.exists)throw Error("operation_not_found");
     const operation=operationSnap.data()||{};
+    const operationId=clean(operation.operationId||operationRef.id);
+    const settlementQueueRef=db.collection("game_settlement_queue").doc(operationId);
     if(operation.status==="settled"){
+      tx.delete(settlementQueueRef);
       return {ok:true,code:"duplicate",...publicOperation(operation)};
     }
     if(operation.status!=="pending")throw Error("invalid_operation_state");
     if(nowMs<Number(operation.closesAtMs||0))throw Error("round_not_finished");
 
     const uid=clean(operation.userId);
-    const operationId=clean(operation.operationId||operationRef.id);
     const userRef=db.collection("users").doc(uid);
     const userSnap=await tx.get(userRef);
     if(!userSnap.exists)throw Error("user_not_found");
@@ -726,6 +737,7 @@ async function settleOperationRef(db,operationRef,nowMs,{workerTag=""}={}){
       updatedAt:now,
       ...(workerTag?{settlementWorker:workerTag}:{}),
     });
+    tx.delete(settlementQueueRef);
     if(payout>0){
       tx.create(creditLedgerRef,{
         ...ledgerBase({
@@ -800,42 +812,28 @@ export async function settleDueGameOperations(
   }={},
 ){
   const boundedLimit=Math.max(1,Math.min(25,Number(limit||25)));
-  // Query only due work, oldest first. This prevents future pending operations
-  // from occupying the bounded cron window and starving an already-due payout.
-  let snapshot=null;
-  try{
-    snapshot=await db.collection("game_operations")
-      .where("status","==","pending")
-      .where("closesAtMs","<=",nowMs)
-      .orderBy("closesAtMs","asc")
-      .limit(boundedLimit)
-      .get();
-  }catch(error){
-    const code=clean(error?.code||error?.message).toLowerCase();
-    const indexUnavailable=
-      code.includes("failed-precondition")||
-      code.includes("failed_precondition")||
-      code.includes("requires an index")||
-      code.includes("index is currently building");
-    if(!indexUnavailable)throw error;
-    // Deployment-safe fallback while the composite index is still building.
-    snapshot=await db.collection("game_operations")
-      .where("status","==","pending")
-      .limit(Math.min(10,boundedLimit))
-      .get();
-  }
-  const dueDocs=snapshot.docs
-    .filter(doc=>Number(doc.data()?.closesAtMs||0)<=nowMs)
-    .sort((a,b)=>Number(a.data()?.closesAtMs||0)-Number(b.data()?.closesAtMs||0));
+  // Dedicated queue avoids scanning future/settled game_operations and relies
+  // only on Firestore's automatic single-field index for dueAtMs.
+  const snapshot=await db.collection("game_settlement_queue")
+    .where("dueAtMs","<=",nowMs)
+    .orderBy("dueAtMs","asc")
+    .limit(boundedLimit)
+    .get();
   const results=[];
-  for(const doc of dueDocs){
+  for(const doc of snapshot.docs){
+    const operationId=clean(doc.data()?.operationId||doc.id);
+    const operationRef=db.collection("game_operations").doc(operationId);
     try{
-      results.push(await settleOperationRef(db,doc.ref,nowMs,{workerTag}));
+      results.push(await settleOperationRef(db,operationRef,nowMs,{workerTag}));
     }catch(error){
+      const code=clean(error?.message)||"settlement_failed";
+      if(code==="operation_not_found"){
+        await doc.ref.delete().catch(()=>{});
+      }
       results.push({
         ok:false,
-        operationId:doc.id,
-        code:clean(error?.message)||"settlement_failed",
+        operationId,
+        code,
       });
     }
   }
