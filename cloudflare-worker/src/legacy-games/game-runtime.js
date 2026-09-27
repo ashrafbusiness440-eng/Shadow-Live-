@@ -799,13 +799,15 @@ export async function settleDueGameOperations(
     workerTag="",
   }={},
 ){
+  // Pressure Root Fix Step 12: let Firestore select only operations that
+  // are actually due. The previous sweep read up to 100 pending documents
+  // every five minutes and discarded future operations after the read.
   const snapshot=await db.collection("game_operations")
     .where("status","==","pending")
-    .limit(Math.max(1,Math.min(100,Number(limit||50))))
+    .where("closesAtMs","<=",nowMs)
+    .limit(Math.max(1,Math.min(25,Number(limit||25))))
     .get();
-  const due=snapshot.docs.filter(
-    doc=>Number(doc.data()?.closesAtMs||0)<=nowMs,
-  );
+  const due=snapshot.docs;
   const results=[];
   for(const doc of due){
     try{
