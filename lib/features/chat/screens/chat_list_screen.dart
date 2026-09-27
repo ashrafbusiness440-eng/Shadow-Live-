@@ -231,12 +231,18 @@ class _ChatListScreenState extends State<ChatListScreen> {
               ),
               Expanded(
                 child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                  stream: FirebaseFirestore.instance.collection('conversations').where('participants', arrayContains: me).snapshots(),
+                  stream: FirebaseFirestore.instance
+                      .collection('conversations')
+                      .where('participants', arrayContains: me)
+                      .orderBy('updatedAt', descending: true)
+                      .limit(100)
+                      .snapshots(),
                   builder: (context, snapshot) {
                     if (snapshot.hasError) return _state(Icons.error_outline, 'تعذر تحميل المحادثات');
                     if (!snapshot.hasData) return const Center(child: CircularProgressIndicator(color: Color(0xFF8A3DFF)));
-                    final allDocs = [...snapshot.data!.docs]
-                      ..sort((a, b) => ((b.data()['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0).compareTo((a.data()['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0));
+                    // Pressure Root Fix Step 12: Firestore already returns the
+                    // newest bounded conversation window in display order.
+                    final allDocs = snapshot.data!.docs;
                     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                       stream: FirebaseFirestore.instance
                           .collection('conversation_hides')
