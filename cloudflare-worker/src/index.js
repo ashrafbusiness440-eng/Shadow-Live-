@@ -18,6 +18,7 @@ import { roomRealtime } from "./room-realtime.js";
 import { googlePlayPurchase } from "./google-play-purchase.js";
 import { manageAppAsset } from "./manage-app-asset.js";
 import { economyRouter } from "./economy-router.js";
+import { systemHealth } from "./system-health.js";
 import { configureLegacyEnv, getFirestore } from "./legacy-firebase-admin-shim.js";
 import { settleDueGameOperations } from "./legacy-games/game-runtime.js";
 import {
@@ -45,7 +46,7 @@ async function dispatchRequest(request, env, ctx) {
     return json(request, env, {
       ok: true,
       service: "shadow-live-cloudflare-worker",
-      version: 28,
+      version: 29,
       buildSha: env.BUILD_SHA || null,
       firebaseConfigured: Boolean(String(env.FIREBASE_SERVICE_ACCOUNT || "").trim()),
       pressureAnalyticsConfigured: Boolean(env.PRESSURE_ANALYTICS),
@@ -81,6 +82,10 @@ async function dispatchRequest(request, env, ctx) {
   }
   if (url.pathname === "/api/chat-actions") {
     return chatSafetyActions(request, env);
+  }
+  if (url.pathname === "/api/system-health") {
+    annotatePressureRequest(request, { action: "systemHealth" });
+    return systemHealth(request, env);
   }
   if (url.pathname === "/api/storage-health") {
     annotatePressureRequest(request, { action: "storageHealth" });
