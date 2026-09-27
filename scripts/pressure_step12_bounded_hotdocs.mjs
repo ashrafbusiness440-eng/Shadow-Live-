@@ -38,6 +38,55 @@ function pct(values, p) {
   const sorted = [...values].sort((a,b)=>a-b);
   return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * p) - 1))] || 0;
 }
+async function openRoomSocket(token) {
+  if (typeof WebSocket !== "function") throw new Error("node_websocket_unavailable");
+  const ticketResponse = await fetch(base + "/api/room-realtime", {
+    method: "POST",
+    headers: {
+      authorization: "Bearer " + token,
+      "content-type": "application/json",
+      origin: "https://ashrafbusiness440-eng.github.io",
+    },
+    body: JSON.stringify({ action: "ticket", roomId }),
+  });
+  const ticket = await ticketResponse.json().catch(() => ({}));
+  if (!ticketResponse.ok || ticket?.ok !== true || !ticket?.socketPath) {
+    throw new Error("room_ticket_failed:" + ticketResponse.status);
+  }
+  const url = new URL(ticket.socketPath, base);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  const socket = new WebSocket(url.toString());
+  const ready = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("room_socket_ready_timeout")), 10000);
+    socket.addEventListener("message", (event) => {
+      let body = null;
+      try { body = JSON.parse(String(event?.data || "")); } catch {}
+      if (body?.type === "server.ready" && body?.payload?.roomId === roomId) {
+        clearTimeout(timer);
+        resolve();
+      }
+    });
+    socket.addEventListener("error", () => {
+      clearTimeout(timer);
+      reject(new Error("room_socket_error"));
+    }, { once: true });
+  });
+  await new Promise((resolve, reject) => {
+    if (socket.readyState === WebSocket.OPEN) return resolve();
+    const timer = setTimeout(() => reject(new Error("room_socket_open_timeout")), 10000);
+    socket.addEventListener("open", () => {
+      clearTimeout(timer);
+      resolve();
+    }, { once: true });
+    socket.addEventListener("error", () => {
+      clearTimeout(timer);
+      reject(new Error("room_socket_open_error"));
+    }, { once: true });
+  });
+  await ready;
+  return socket;
+}
+
 function periods(date = new Date()) {
   const day = date.toISOString().slice(0,10);
   const month = day.slice(0,7);
@@ -69,6 +118,7 @@ const keys = Array.from({ length: giftCount }, (_, i) => `step12_hot_${stamp}_${
 const latencies = [];
 const statuses = new Map();
 let token = "";
+let roomSocket = null;
 
 try {
   await Promise.all([
@@ -107,6 +157,7 @@ try {
     }),
   ]);
   token = await idToken(senderUid);
+  roomSocket = await openRoomSocket(token);
 
   const results = await Promise.all(keys.map(async (key) => {
     const started = performance.now();
@@ -176,6 +227,9 @@ try {
   fs.writeFileSync("step12-hotdocs.json", JSON.stringify(result, null, 2));
   console.log("STEP12_HOTDOCS " + JSON.stringify(result));
 } finally {
+  if (roomSocket) {
+    try { roomSocket.close(1000, "step12_hotdocs_done"); } catch {}
+  }
   await Promise.all(keys.flatMap((key) => [
     db.collection("gift_operations").doc(key).delete().catch(()=>{}),
     db.collection("gift_transactions").doc(key).delete().catch(()=>{}),
