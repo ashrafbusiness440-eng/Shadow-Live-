@@ -7,6 +7,7 @@ import {
   legacyPresenceFresh,
   realtimeUserPresentFromNamespace,
 } from "./room-presence-authority.js";
+import { publishGlobalRocketEvents } from "./room-realtime.js";
 
 const clean = (value) => String(value ?? "").trim();
 const validKey = (value) => /^[A-Za-z0-9_-]{12,220}$/.test(clean(value));
@@ -768,7 +769,12 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     );
 
     await db.commit(transaction, writes);
-    return { ok: true, code: "ok", ...resultData };
+    return {
+      ok: true,
+      code: "ok",
+      ...resultData,
+      _rocketFeedEvents: rocketAdvance.explosions,
+    };
   });
 }
 
@@ -789,7 +795,19 @@ export async function roomGift(request, env) {
       body,
       { realtimeNamespace: env.ROOM_REALTIME },
     );
-    return json(request, env, result, 200);
+    const rocketFeedEvents = Array.isArray(result?._rocketFeedEvents)
+      ? result._rocketFeedEvents
+      : [];
+    if (rocketFeedEvents.length > 0) {
+      publishGlobalRocketEvents(env, rocketFeedEvents).catch((error) => {
+        console.error(
+          "Rocket feed publish failed",
+          String(error?.message || error),
+        );
+      });
+    }
+    const { _rocketFeedEvents, ...publicResult } = result;
+    return json(request, env, publicResult, 200);
   } catch (error) {
     if (error instanceof ApiError) {
       return json(request, env, { ok: false, code: error.code }, error.status);
