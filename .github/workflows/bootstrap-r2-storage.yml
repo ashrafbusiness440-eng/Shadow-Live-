@@ -99,6 +99,30 @@ jobs:
 
           try {
             const putUrl = await presignR2Put(env, { key, mimeType, expiresSeconds: 120 });
+
+            const preflight = await fetch(putUrl, {
+              method: "OPTIONS",
+              headers: {
+                Origin: "https://ashrafbusiness440-eng.github.io",
+                "Access-Control-Request-Method": "PUT",
+                "Access-Control-Request-Headers": "content-type",
+              },
+            });
+            const allowOrigin = preflight.headers.get("access-control-allow-origin") || "";
+            const allowMethods = (preflight.headers.get("access-control-allow-methods") || "").toUpperCase();
+            const allowHeaders = (preflight.headers.get("access-control-allow-headers") || "").toLowerCase();
+            if (
+              !preflight.ok ||
+              allowOrigin !== "https://ashrafbusiness440-eng.github.io" ||
+              !allowMethods.includes("PUT") ||
+              !allowHeaders.includes("content-type")
+            ) {
+              throw new Error(
+                `r2_cors_preflight_failed:${preflight.status}:${allowOrigin}:${allowMethods}:${allowHeaders}`,
+              );
+            }
+            console.log("R2_PWA_CORS=verified");
+
             const put = await fetch(putUrl, {
               method: "PUT",
               headers: { "content-type": mimeType },
