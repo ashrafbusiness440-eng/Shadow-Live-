@@ -387,6 +387,19 @@ jobs:
             return body;
           };
 
+          const storageRawCall = async (token, payloadBody) => {
+            const response = await fetch(workerBase + "/user-storage", {
+              method: "POST",
+              headers: {
+                authorization: "Bearer " + token,
+                "content-type": "application/json",
+              },
+              body: JSON.stringify(payloadBody),
+            });
+            const body = await response.json().catch(() => ({}));
+            return { response, body };
+          };
+
           const voiceCall = async (token, payloadBody) => {
             const response = await fetch(workerBase + "/voice-session", {
               method: "POST",
@@ -458,6 +471,43 @@ jobs:
               }),
             ]);
             [tokenA, tokenB] = await Promise.all([signIn(uidA), signIn(uidB)]);
+
+            const invalidMime = await storageRawCall(tokenA, {
+              action: "prepareUpload",
+              scope: "profile_image",
+              mimeType: "image/gif",
+              byteLength: payload.length,
+            });
+            if (
+              invalidMime.response.status !== 400 ||
+              invalidMime.body.code !== "invalid_file_type"
+            ) {
+              throw new Error(
+                "invalid_mime_should_be_rejected:" +
+                  invalidMime.response.status +
+                  ":" +
+                  JSON.stringify(invalidMime.body),
+              );
+            }
+
+            const oversized = await storageRawCall(tokenA, {
+              action: "prepareUpload",
+              scope: "profile_image",
+              mimeType: "image/png",
+              byteLength: 2 * 1024 * 1024 + 1,
+            });
+            if (
+              oversized.response.status !== 400 ||
+              oversized.body.code !== "invalid_file_size"
+            ) {
+              throw new Error(
+                "oversized_upload_should_be_rejected:" +
+                  oversized.response.status +
+                  ":" +
+                  JSON.stringify(oversized.body),
+              );
+            }
+            console.log("R2_INVALID_MIME_AND_OVERSIZE=REJECTED");
 
             const personal = await voiceCall(tokenA, { action: "personalRoom" });
             const room = personal.room || {};
