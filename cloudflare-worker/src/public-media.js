@@ -2,6 +2,7 @@ import { corsHeaders } from "./http.js";
 import { presignR2Get } from "./r2-presign.js";
 
 const PUBLIC_MEDIA_SIGNED_TTL_SECONDS = 900;
+const PUBLIC_MEDIA_CACHE_SECONDS = 300;
 
 const PUBLIC_SCOPES = new Set([
   "profile_image",
@@ -12,6 +13,27 @@ const PUBLIC_SCOPES = new Set([
 const FILE_PATTERN = /^([a-f0-9]{32})\.(jpg|png|webp)$/;
 
 const clean = (value) => String(value ?? "").trim();
+
+
+function publicMediaCache() {
+  try {
+    return typeof caches !== "undefined" ? caches.default : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function redirectResponse(request, env, location) {
+  const headers = new Headers(corsHeaders(request, env));
+  headers.delete("Content-Type");
+  headers.set("Location", location);
+  headers.set(
+    "Cache-Control",
+    `public, max-age=${PUBLIC_MEDIA_CACHE_SECONDS}, stale-while-revalidate=60`,
+  );
+  headers.set("Cross-Origin-Resource-Policy", "cross-origin");
+  return new Response(null, { status: 302, headers });
+}
 
 export function isPublicMediaScope(scope) {
   return PUBLIC_SCOPES.has(clean(scope));
@@ -111,18 +133,41 @@ export async function publicMediaRedirect(request, env) {
       targetId,
       filename,
     });
+
+    const cache = publicMediaCache();
+    const cacheKey = new Request(url.toString(), { method: "GET" });
+    if (cache) {
+      try {
+        const cached = await cache.match(cacheKey);
+        const cachedLocation = cached?.headers?.get("Location") || "";
+        if (cachedLocation) {
+          return redirectResponse(request, env, cachedLocation);
+        }
+      } catch (_) {}
+    }
+
     const readUrl = await presignR2Get(env, {
       key: storageKey,
       expiresSeconds: PUBLIC_MEDIA_SIGNED_TTL_SECONDS,
     });
+    const response = redirectResponse(request, env, readUrl);
 
-    const headers = new Headers(corsHeaders(request, env));
-    headers.delete("Content-Type");
-    headers.set("Location", readUrl);
-    headers.set("Cache-Control", "public, max-age=300, stale-while-revalidate=60");
-    headers.set("Cross-Origin-Resource-Policy", "cross-origin");
+    if (cache) {
+      try {
+        const cacheHeaders = new Headers();
+        cacheHeaders.set("Location", readUrl);
+        cacheHeaders.set(
+          "Cache-Control",
+          `public, max-age=${PUBLIC_MEDIA_CACHE_SECONDS}`,
+        );
+        await cache.put(
+          cacheKey,
+          new Response(null, { status: 302, headers: cacheHeaders }),
+        );
+      } catch (_) {}
+    }
 
-    return new Response(null, { status: 302, headers });
+    return response;
   } catch (error) {
     const headers = new Headers(corsHeaders(request, env));
     headers.set("Content-Type", "application/json; charset=utf-8");
