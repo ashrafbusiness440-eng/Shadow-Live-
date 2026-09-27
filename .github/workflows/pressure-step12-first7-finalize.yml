@@ -1,0 +1,62 @@
+name: Pressure Step 12 First Seven Finalize
+
+on:
+  push:
+    branches:
+      - pressure/step12-first7-finalize
+    paths:
+      - 'scripts/pressure_step12_bounded_hotdocs.mjs'
+      - 'cloudflare-worker/src/system-health.js'
+      - 'cloudflare-worker/src/system-health-score.js'
+      - 'lib/admin/system_health_card.dart'
+      - 'server/__tests__/system-health.test.js'
+      - 'scripts/pressure_system_health_e2e.mjs'
+      - '.github/workflows/deploy-cloudflare-worker.yml'
+      - '.github/workflows/pressure-step12-first7-finalize.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pressure-step12-first7-finalize
+  cancel-in-progress: true
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      PRESSURE_DATASET: shadow_live_pressure_v1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Exercise authenticated Rocket paths
+        run: node cloudflare-worker/scripts/economy-router-e2e.mjs
+
+      - name: Capture post-load Pressure Analytics
+        env:
+          WINDOW_MINUTES: '15'
+        run: |
+          sleep 60
+          node cloudflare-worker/scripts/pressure-report.mjs
+
+      - name: Upload final first-seven evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: step12-first7-finalize
+          path: |
+            pressure-report.json
+            pressure-report.md
+          if-no-files-found: warn
+          retention-days: 30

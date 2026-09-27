@@ -1,7 +1,10 @@
 import { corsHeaders } from "./http.js";
 import { configureLegacyEnv } from "./legacy-firebase-admin-shim.js";
 import legacyEconomyRouter from "./economy-router-legacy.js";
-import { annotatePressureRequest } from "./pressure-telemetry.js";
+import {
+  annotatePressureRequest,
+  composePressureAction,
+} from "./pressure-telemetry.js";
 
 function requestHeaders(request) {
   const headers = {};
@@ -42,10 +45,12 @@ export async function economyRouter(request, env, routeOverride = null) {
   if (!["GET", "HEAD"].includes(request.method)) {
     try { body = await request.json(); } catch { body = {}; }
   }
+  const pressureRoute = String(
+    routeOverride || body.route || query.route || "",
+  ).trim();
+  const pressureAction = String(body.action || request.method || "").trim();
   annotatePressureRequest(request, {
-    action: String(
-      routeOverride || body.action || body.route || query.route || request.method || "",
-    ).trim(),
+    action: composePressureAction(pressureRoute, pressureAction),
   });
 
   const req = {
