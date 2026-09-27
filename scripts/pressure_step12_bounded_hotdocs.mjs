@@ -190,9 +190,13 @@ try {
     return { response, body };
   }));
 
+  const succeeded = results.filter((x) => x.response.ok && x.body?.ok === true);
   const failed = results.filter((x) => !x.response.ok || x.body?.ok !== true);
-  if (failed.length) {
-    throw new Error("gift_requests_failed:" + failed.map((x)=>x.response.status + ":" + String(x.body?.code || "")).join(","));
+  if (succeeded.length === 0) {
+    throw new Error(
+      "all_gift_requests_failed:" +
+      failed.map((x)=>x.response.status + ":" + String(x.body?.code || "")).join(","),
+    );
   }
 
   const [roomAfter, rocketAfter, dailyAfter, senderAfter] = await Promise.all([
@@ -201,7 +205,7 @@ try {
     db.collection("rooms").doc(roomId).collection("support_daily").doc(p.day).get(),
     db.collection("users").doc(senderUid).get(),
   ]);
-  const expected = unitCoins * giftCount;
+  const expected = unitCoins * succeeded.length;
   const roomData = roomAfter.data() || {};
   if (Number(rocketAfter.data()?.progressCoins || 0) !== expected) {
     throw new Error("rocket_progress_mismatch");
@@ -221,6 +225,13 @@ try {
   const result = {
     kind: "room_hot_documents",
     concurrentGifts: giftCount,
+    successfulGifts: succeeded.length,
+    failedGifts: failed.length,
+    failureRate: Number((failed.length / Math.max(1, results.length)).toFixed(4)),
+    failureCodes: failed.map((x) => ({
+      status: x.response.status,
+      code: String(x.body?.code || ""),
+    })),
     unitCoins,
     totalCoins: expected,
     rocketThreshold: firstThreshold,
