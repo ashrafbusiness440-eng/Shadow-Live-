@@ -147,6 +147,10 @@ test("collective game debits once and settles after disconnect",async()=>{
   const operation=(await operationRef.get()).data();
   assert.equal(operation.status,"pending");
   assert.equal(operation.totalStakeCoins,800);
+  const queueRef=db.collection("game_settlement_queue").doc(uid+"__"+key);
+  const queued=await queueRef.get();
+  assert.equal(queued.exists,true);
+  assert.equal(Number(queued.data().dueAtMs),Number(operation.closesAtMs));
 
   await db.collection("room_presence").doc(roomId).collection("users").doc(uid).delete();
 
@@ -155,6 +159,7 @@ test("collective game debits once and settles after disconnect",async()=>{
   });
   assert.equal(settled.code,"ok");
   assert.equal(settled.status,"settled");
+  assert.equal((await queueRef.get()).exists,false);
 
   const finalUser=(await db.collection("users").doc(uid).get()).data();
   assert.equal(finalUser.coins,19200+Number(operation.payoutCoins));
