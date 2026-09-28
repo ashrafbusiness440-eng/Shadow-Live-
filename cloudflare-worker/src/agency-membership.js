@@ -472,10 +472,12 @@ export async function respondAgencyMembershipRequest(
         db.get(acceptanceLockPath(uid), tx),
         db.get(`agencies/${agencyId}`, tx),
       ]);
-      ensureAgencyActive(agencySnap);
-      ensureUserCanNegotiate(userSnap, membershipSnap, appLockSnap);
-      if (agencyMembershipSnap.exists) {
-        throw new ApiError("user_already_in_agency", 409);
+      if (decision === "accept") {
+        ensureAgencyActive(agencySnap);
+        ensureUserCanNegotiate(userSnap, membershipSnap, appLockSnap);
+        if (agencyMembershipSnap.exists) {
+          throw new ApiError("user_already_in_agency", 409);
+        }
       }
       if (!pairSnap.exists || clean(pairSnap.data?.requestId) !== requestId) {
         throw new ApiError("membership_request_key_conflict", 409);
