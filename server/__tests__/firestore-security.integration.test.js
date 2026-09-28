@@ -354,6 +354,16 @@ test("agency owner can read own agency finance and policy but cannot write serve
   await assertSucceeds(getDoc(doc(ownerDb,"agency_policy_overrides",agencyId)));
   await assertFails(updateDoc(doc(ownerDb,"agency_wallets",agencyId),{diamonds:9999}));
   await assertFails(updateDoc(doc(ownerDb,"agency_policy_overrides",agencyId),{agencyShareBps:9000}));
+  await assertFails(setDoc(doc(ownerDb,"agency_transfers","forged_transfer"),{
+    agencyId,
+    diamonds:9999,
+    status:"completed",
+  }));
+  await assertFails(setDoc(doc(ownerDb,"financial_ledger","forged_agency_ledger"),{
+    agencyId,
+    asset:"diamonds",
+    delta:9999,
+  }));
 });
 
 test("agency outsider cannot read private agency data",async()=>{
