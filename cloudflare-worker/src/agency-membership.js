@@ -11,7 +11,10 @@ import {
   createAgencyMembershipDocument,
   createAgencyMembershipRequestDocument,
 } from "./agency-data-model.js";
-import { canPerformAgencyAction } from "./agency-permissions.js";
+import {
+  agencyMemberPermissions,
+  canPerformAgencyAction,
+} from "./agency-permissions.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 
 const clean = (value) => String(value ?? "").trim();
@@ -1987,6 +1990,158 @@ export async function cancelAgencyMembershipRequest(
   throw new ApiError("transaction_failed", 500);
 }
 
+function managementRolePermissions(role, agencyStatus = "active") {
+  const permissions = agencyMemberPermissions({
+    membership: { role, status: "active" },
+    agencyStatus,
+  });
+  return {
+    role,
+    canViewHosts: permissions.canViewHosts,
+    canReviewMembershipRequests: permissions.canReviewMembershipRequests,
+    canManageInvites: permissions.canManageInvites,
+    canManageRooms: permissions.canManageRooms,
+    canManageManagers: permissions.canManageManagers,
+    canViewAgencyFinance: permissions.canViewAgencyFinance,
+    canViewOwnProgress: permissions.canViewOwnProgress,
+  };
+}
+
+function activeMemberSummary(row, userSnap) {
+  const membership = row?.data || {};
+  const user = userSnap?.exists ? userSnap.data || {} : {};
+  return {
+    uid: clean(membership.uid || row?.id?.split("__").pop()),
+    role: clean(membership.role),
+    status: clean(membership.status),
+    joinedAt: membership.joinedAt || null,
+    publicId: clean(user.publicId) || null,
+    displayName:
+      clean(user.displayName || user.name || user.username) || null,
+    profileImageUrl:
+      clean(user.profileImageUrl || user.photoUrl || user.avatarUrl) || null,
+  };
+}
+
+export async function listAgencyMembers(
+  db,
+  actorUid,
+  body = {},
+) {
+  const agencyId = clean(body.agencyId);
+  if (!/^\d{6}$/.test(agencyId)) {
+    throw new ApiError("invalid_agency_id", 400);
+  }
+  const limit = Math.min(50, boundedAgencyPageSize(body.limit, 25));
+  const [agencySnap, slotsSnap, actorUserSnap, actorMembershipSnap] =
+    await Promise.all([
+      db.get("agencies/" + agencyId),
+      db.get("agency_manager_slots/" + agencyId),
+      db.get("users/" + actorUid),
+      db.get("agency_user_memberships/" + actorUid),
+    ]);
+
+  if (!agencySnap.exists) throw new ApiError("agency_not_found", 404);
+  if (!slotsSnap.exists) {
+    throw new ApiError("agency_manager_slots_missing", 409);
+  }
+
+  const agency = agencySnap.data || {};
+  const actorUser = actorUserSnap.exists ? actorUserSnap.data || {} : {};
+  const actorMembership =
+    actorMembershipSnap.exists &&
+    clean(actorMembershipSnap.data?.agencyId) === agencyId
+      ? actorMembershipSnap.data || {}
+      : {};
+  const agencyStatus = clean(agency.status);
+  const canManageManagers = canPerformAgencyAction({
+    action: "manageManager",
+    user: actorUser,
+    membership: actorMembership,
+    agencyStatus,
+  });
+  const canView =
+    canManageManagers ||
+    canPerformAgencyAction({
+      action: "manageMembership",
+      user: actorUser,
+      membership: actorMembership,
+      agencyStatus,
+    }) ||
+    canPerformAgencyAction({
+      action: "viewHosts",
+      user: actorUser,
+      membership: actorMembership,
+      agencyStatus,
+    });
+  if (!canView) throw new ApiError("forbidden", 403);
+
+  const rows = await db.runQuery("agency_memberships", {
+    filters: [
+      { field: "agencyId", op: "==", value: agencyId },
+      { field: "status", op: "==", value: "active" },
+    ],
+    limit,
+  });
+  const userSnaps = await Promise.all(
+    rows.map((row) => {
+      const uid = clean(row?.data?.uid || row?.id?.split("__").pop());
+      return uid ? db.get("users/" + uid) : Promise.resolve({ exists: false });
+    }),
+  );
+  const roleRank = {
+    owner: 0,
+    senior_manager: 1,
+    manager: 2,
+    host: 3,
+  };
+  const members = rows
+    .map((row, index) => activeMemberSummary(row, userSnaps[index]))
+    .sort((a, b) => {
+      const roleDiff =
+        (roleRank[a.role] ?? 99) - (roleRank[b.role] ?? 99);
+      if (roleDiff !== 0) return roleDiff;
+      return String(a.publicId || a.uid).localeCompare(
+        String(b.publicId || b.uid),
+      );
+    });
+
+  const slots = normalizedManagerSlots(slotsSnap.data || {});
+  const totalActive = Number(agency.memberCount || 0);
+  return {
+    ok: true,
+    agency: {
+      agencyId,
+      name: clean(agency.name),
+      status: agencyStatus,
+      ownerUid: clean(agency.ownerUid),
+      memberCount: totalActive,
+      hostCount: Number(agency.hostCount || 0),
+      managerCount: Number(agency.managerCount || 0),
+      seniorManagerCount: Number(agency.seniorManagerCount || 0),
+    },
+    managerSlots: {
+      seniorManagerUid: slots.seniorManagerUid,
+      managerUids: slots.managerUids,
+      managerLimit: AGENCY_LIMITS.agencyManagers,
+      seniorManagerLimit: AGENCY_LIMITS.seniorManagers,
+    },
+    members,
+    limit,
+    truncated: totalActive > members.length,
+    permissions: {
+      canViewMembers: true,
+      canManageManagers,
+    },
+    roleMatrix: [
+      managementRolePermissions("owner", agencyStatus),
+      managementRolePermissions("senior_manager", agencyStatus),
+      managementRolePermissions("manager", agencyStatus),
+      managementRolePermissions("host", agencyStatus),
+    ],
+  };
+}
+
 export async function listAgencyMembershipPending(
   db,
   actorUid,
@@ -2068,6 +2223,8 @@ export async function agencyMembership(request, env) {
       result = await overrideAgencyRejoinCooldown(db, decoded.sub, body);
     } else if (action === "setManagerRole") {
       result = await setAgencyManagerRole(db, decoded.sub, body);
+    } else if (action === "listAgencyMembers") {
+      result = await listAgencyMembers(db, decoded.sub, body);
     } else if (action === "listAgencyPending") {
       result = await listAgencyMembershipPending(db, decoded.sub, body);
     } else if (action === "listMy") {
