@@ -130,11 +130,17 @@ function requestSummary(data = {}) {
   };
 }
 
-async function loadAgencyActor(db, actorUid, agencyId, action) {
+async function loadAgencyActor(
+  db,
+  actorUid,
+  agencyId,
+  action,
+  transaction = null,
+) {
   const [actorUserSnap, actorMembershipSnap, agencySnap] = await Promise.all([
-    db.get(`users/${actorUid}`),
-    db.get(`agency_user_memberships/${actorUid}`),
-    db.get(`agencies/${agencyId}`),
+    db.get(`users/${actorUid}`, transaction),
+    db.get(`agency_user_memberships/${actorUid}`, transaction),
+    db.get(`agencies/${agencyId}`, transaction),
   ]);
   ensureAgencyActive(agencySnap);
   const actorUser = actorUserSnap.exists ? actorUserSnap.data || {} : {};
@@ -438,7 +444,13 @@ export async function respondAgencyMembershipRequest(
         if (actorUid !== uid) throw new ApiError("forbidden", 403);
         notificationUserId = clean(request.actorUid);
       } else {
-        const actor = await loadAgencyActor(db, actorUid, agencyId, "review");
+        const actor = await loadAgencyActor(
+          db,
+          actorUid,
+          agencyId,
+          "review",
+          tx,
+        );
         notificationUserId = uid;
         if (!actor.agency) throw new ApiError("forbidden", 403);
       }
@@ -543,7 +555,7 @@ export async function respondAgencyMembershipRequest(
           createdAt: now,
         }),
         db.writeCreate(`notifications/agency_membership_response_${requestId}`, {
-          userId: notificationUserId,
+          userId: decision === "accept" ? uid : notificationUserId,
           type:
             decision === "accept"
               ? "agency_membership_request_accepted"
@@ -551,7 +563,7 @@ export async function respondAgencyMembershipRequest(
           category: "system",
           title:
             decision === "accept"
-              ? "تمت الموافقة على طلب الوكالة"
+              ? "تم تفعيل عضويتك في الوكالة"
               : "تم رفض طلب الوكالة",
           body:
             decision === "accept"
@@ -719,7 +731,13 @@ export async function commitAcceptedAgencyMembership(
       }
 
       if (actorUid !== uid) {
-        await loadAgencyActor(db, actorUid, agencyId, "review");
+        await loadAgencyActor(
+          db,
+          actorUid,
+          agencyId,
+          "review",
+          tx,
+        );
       }
 
       const [
