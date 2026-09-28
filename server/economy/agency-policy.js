@@ -68,8 +68,15 @@ export function calculateAgencyTargetProgress({
   targets,
 } = {}) {
   const month = normalizeAgencyMonthKey(monthKey);
+  const storedMonthText = clean(storedMonth);
+  const normalizedStoredMonth = storedMonthText
+    ? normalizeAgencyMonthKey(storedMonthText)
+    : "";
+  if (normalizedStoredMonth && normalizedStoredMonth > month) {
+    throw new Error("stale_agency_target_month");
+  }
 
-  const sameMonth = clean(storedMonth) === month;
+  const sameMonth = normalizedStoredMonth === month;
   const previousProgressCoins = sameMonth
     ? targetFinancialInteger(storedProgressCoins, "stored_progress_coins")
     : 0;
