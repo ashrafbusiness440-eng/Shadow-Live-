@@ -205,6 +205,19 @@ test("worker exposes the user-storage route", () => {
   assert.match(source, /url\.pathname\.startsWith\("\/api\/public-media\/"\)/);
 });
 
+test("chat image upload gate checks mutual follow and both block directions", () => {
+  const source = fs.readFileSync(
+    new URL("../../cloudflare-worker/src/user-storage.js", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /follows\/\$\{uid\}__\$\{otherUid\}/);
+  assert.match(source, /follows\/\$\{otherUid\}__\$\{uid\}/);
+  assert.match(source, /user_blocks\/\$\{uid\}\/items\/\$\{otherUid\}/);
+  assert.match(source, /user_blocks\/\$\{otherUid\}\/items\/\$\{uid\}/);
+  assert.match(source, /StorageApiError\("blocked", 403\)/);
+  assert.match(source, /StorageApiError\("follow_required", 403\)/);
+});
+
 test("storage upload rate limiter caps presign bursts", () => {
   const uid = "storage_test_rate_" + Date.now();
   const nowMs = 1000;

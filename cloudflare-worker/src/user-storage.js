@@ -268,10 +268,16 @@ async function authorizeUpload(db, uid, scope, rawTargetId) {
     const otherUid = participants.find((value) => value !== uid) || "";
     if (!otherUid) throw new StorageApiError("invalid_conversation", 400);
 
-    const [forward, reverse] = await Promise.all([
-      db.get(`follows/${uid}__${otherUid}`),
-      db.get(`follows/${otherUid}__${uid}`),
-    ]);
+    const [forward, reverse, outgoingBlock, incomingBlock] =
+      await Promise.all([
+        db.get(`follows/${uid}__${otherUid}`),
+        db.get(`follows/${otherUid}__${uid}`),
+        db.get(`user_blocks/${uid}/items/${otherUid}`),
+        db.get(`user_blocks/${otherUid}/items/${uid}`),
+      ]);
+    if (outgoingBlock.exists || incomingBlock.exists) {
+      throw new StorageApiError("blocked", 403);
+    }
     if (!forward.exists || !reverse.exists) {
       throw new StorageApiError("follow_required", 403);
     }
