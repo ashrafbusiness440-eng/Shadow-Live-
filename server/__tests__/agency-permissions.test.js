@@ -12,9 +12,9 @@ test("platform owner has all agency permissions and permanent close",()=>{
   assert.equal(p.canReviewApplications,true);
   assert.equal(p.canManageMemberships,true);
   assert.equal(p.canManageManagers,true);
-  assert.equal(p.canViewAgencyFinance,false);
-  assert.equal(p.canManagePolicies,false);
-  assert.equal(p.canManageAgencySettlements,false);
+  assert.equal(p.canViewAgencyFinance,true);
+  assert.equal(p.canManagePolicies,true);
+  assert.equal(p.canManageAgencySettlements,true);
   assert.equal(p.canSuspendAgencies,true);
   assert.equal(p.canCloseAgencies,true);
 });
@@ -46,9 +46,9 @@ test("manageAgencies is operational only and never delegates finance policy sett
   });
   assert.equal(p.canManageMemberships,true);
   assert.equal(p.canManageManagers,true);
-  assert.equal(p.canViewAgencyFinance,true);
-  assert.equal(p.canManagePolicies,true);
-  assert.equal(p.canManageAgencySettlements,true);
+  assert.equal(p.canViewAgencyFinance,false);
+  assert.equal(p.canManagePolicies,false);
+  assert.equal(p.canManageAgencySettlements,false);
   assert.equal(p.canSuspendAgencies,true);
   assert.equal(p.canCloseAgencies,false);
 });
