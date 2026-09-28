@@ -1,7 +1,5 @@
 import { corsHeaders } from "./http.js";
-import { presignR2Get } from "./r2-presign.js";
 
-const PUBLIC_MEDIA_SIGNED_TTL_SECONDS = 900;
 const PUBLIC_MEDIA_CACHE_SECONDS = 300;
 
 const PUBLIC_SCOPES = new Set([
@@ -11,9 +9,13 @@ const PUBLIC_SCOPES = new Set([
 ]);
 
 const FILE_PATTERN = /^([a-f0-9]{32})\.(jpg|png|webp)$/;
+const MIME_BY_EXT = Object.freeze({
+  jpg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+});
 
 const clean = (value) => String(value ?? "").trim();
-
 
 function publicMediaCache() {
   try {
@@ -23,16 +25,34 @@ function publicMediaCache() {
   }
 }
 
-function redirectResponse(request, env, location) {
+function mediaHeaders(request, env, object, extension) {
   const headers = new Headers(corsHeaders(request, env));
-  headers.delete("Content-Type");
-  headers.set("Location", location);
+  headers.set(
+    "Content-Type",
+    clean(object?.httpMetadata?.contentType) ||
+      MIME_BY_EXT[clean(extension).toLowerCase()] ||
+      "application/octet-stream",
+  );
   headers.set(
     "Cache-Control",
     `public, max-age=${PUBLIC_MEDIA_CACHE_SECONDS}, stale-while-revalidate=60`,
   );
   headers.set("Cross-Origin-Resource-Policy", "cross-origin");
-  return new Response(null, { status: 302, headers });
+  const etag = clean(object?.httpEtag || object?.etag);
+  if (etag) headers.set("ETag", etag);
+  const size = Number(object?.size || 0);
+  if (Number.isFinite(size) && size > 0) {
+    headers.set("Content-Length", String(size));
+  }
+  return headers;
+}
+
+function publicMediaBucket(env) {
+  const bucket = env?.USER_STORAGE;
+  if (!bucket || typeof bucket.get !== "function") {
+    throw new Error("r2_not_configured");
+  }
+  return bucket;
 }
 
 export function isPublicMediaScope(scope) {
@@ -128,55 +148,59 @@ export async function publicMediaRedirect(request, env) {
     }
 
     const [scope, targetId, filename] = parts;
+    const match = FILE_PATTERN.exec(clean(filename).toLowerCase());
+    if (!match) throw new Error("invalid_public_media_file");
+    const extension = match[2];
     const storageKey = publicMediaStorageKey({
       scope,
       targetId,
       filename,
     });
 
+    const requestOrigin = request.headers.get("Origin") || "";
+    const cacheUrl = new URL(url.toString());
+    if (requestOrigin) {
+      cacheUrl.searchParams.set("__shadow_origin", requestOrigin);
+    }
     const cache = publicMediaCache();
-    const cacheKey = new Request(url.toString(), { method: "GET" });
+    const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
     if (cache) {
       try {
         const cached = await cache.match(cacheKey);
-        const cachedLocation = cached?.headers?.get("Location") || "";
-        if (cachedLocation) {
-          return redirectResponse(request, env, cachedLocation);
-        }
+        if (cached) return cached;
       } catch (_) {}
     }
 
-    const readUrl = await presignR2Get(env, {
-      key: storageKey,
-      expiresSeconds: PUBLIC_MEDIA_SIGNED_TTL_SECONDS,
+    const object = await publicMediaBucket(env).get(storageKey);
+    if (!object) {
+      const headers = new Headers(corsHeaders(request, env));
+      headers.set("Content-Type", "application/json; charset=utf-8");
+      return new Response(
+        JSON.stringify({ ok: false, code: "public_media_not_found" }),
+        { status: 404, headers },
+      );
+    }
+
+    const response = new Response(object.body, {
+      status: 200,
+      headers: mediaHeaders(request, env, object, extension),
     });
-    const response = redirectResponse(request, env, readUrl);
 
     if (cache) {
       try {
-        const cacheHeaders = new Headers();
-        cacheHeaders.set("Location", readUrl);
-        cacheHeaders.set(
-          "Cache-Control",
-          `public, max-age=${PUBLIC_MEDIA_CACHE_SECONDS}`,
-        );
-        await cache.put(
-          cacheKey,
-          new Response(null, { status: 302, headers: cacheHeaders }),
-        );
+        await cache.put(cacheKey, response.clone());
       } catch (_) {}
     }
 
     return response;
   } catch (error) {
+    const code = clean(error?.message || "public_media_failed").slice(0, 120);
+    const status = code === "r2_not_configured" ? 503 : 400;
     const headers = new Headers(corsHeaders(request, env));
     headers.set("Content-Type", "application/json; charset=utf-8");
     return new Response(
-      JSON.stringify({
-        ok: false,
-        code: clean(error?.message || "public_media_failed").slice(0, 120),
-      }),
-      { status: 400, headers },
+      JSON.stringify({ ok: false, code }),
+      { status, headers },
     );
   }
 }
