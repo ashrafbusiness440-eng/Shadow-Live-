@@ -50,7 +50,7 @@ export function defaultPolicy(){
     coinsPerUsd:10000,
     coinsPerDiamond:10000,
     tierPeriod:"monthly",
-    settlementMode:"cycle_settlement",
+    settlementMode:"target_immediate_monthly_statement",
     agencySupportTracking:true,
     periodTimeZone:"UTC",
     hostPerformanceBonusBps:200,
@@ -58,13 +58,13 @@ export function defaultPolicy(){
     hostBonusQualifiedDays:9,
     hostBonusMinutesPerQualifiedDay:120,
     agencyBonusActiveHosts:10,
-    activityRuleMode:"cycle_multiplier",
+    activityRuleMode:"monthly_multiplier",
     activityPayoutBpsByQualifiedDays:{
       "0":0,"1":0,"2":0,"3":2500,"4":4000,
       "5":5500,"6":7000,"7":8000,"8":9000,"9":10000
     },
     tiers:[
-      {id:"starter",nameAr:"Starter",minGiftCoins:0,hostShareBps:5500,agencyShareBps:500},
+      {id:"starter",nameAr:"Starter",minGiftCoins:0,hostShareBps:5000,agencyShareBps:500},
       {id:"bronze",nameAr:"Bronze",minGiftCoins:1000000,hostShareBps:5700,agencyShareBps:600},
       {id:"silver",nameAr:"Silver",minGiftCoins:5000000,hostShareBps:6000,agencyShareBps:800},
       {id:"gold",nameAr:"Gold",minGiftCoins:20000000,hostShareBps:6200,agencyShareBps:900},
@@ -146,7 +146,7 @@ export function normalizePolicy(raw={}){
     coinsPerUsd:10000,
     coinsPerDiamond:10000,
     tierPeriod:"monthly",
-    settlementMode:"cycle_settlement",
+    settlementMode:"target_immediate_monthly_statement",
     agencySupportTracking:true,
     periodTimeZone:"UTC",
     recipientShareBps:legacyRecipientShareBps,
@@ -155,7 +155,7 @@ export function normalizePolicy(raw={}){
     hostBonusQualifiedDays,
     hostBonusMinutesPerQualifiedDay,
     agencyBonusActiveHosts,
-    activityRuleMode:"cycle_multiplier",
+    activityRuleMode:"monthly_multiplier",
     activityPayoutBpsByQualifiedDays,
     tiers
   };
