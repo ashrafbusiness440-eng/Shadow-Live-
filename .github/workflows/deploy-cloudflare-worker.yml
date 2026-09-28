@@ -577,13 +577,34 @@ jobs:
               throw new Error("room_cover_roundtrip_mismatch");
             }
 
+            await db.collection("conversations").doc(conversationId).set({
+              participants: [uidA, uidB],
+              createdAt: new Date(),
+              updatedAt: new Date(),
+              unreadCounts: { [uidA]: 0, [uidB]: 0 },
+            });
+
+            const nonMutualUpload = await storageRawCall(tokenA, {
+              action: "prepareUpload",
+              scope: "chat_image",
+              mimeType: "image/png",
+              byteLength: payload.length,
+              targetId: conversationId,
+            });
+            if (
+              nonMutualUpload.response.status !== 403 ||
+              nonMutualUpload.body.code !== "follow_required"
+            ) {
+              throw new Error(
+                "non_mutual_chat_upload_should_be_rejected:" +
+                  nonMutualUpload.response.status +
+                  ":" +
+                  JSON.stringify(nonMutualUpload.body),
+              );
+            }
+            console.log("R2_CHAT_NON_MUTUAL_UPLOAD=REJECTED");
+
             await Promise.all([
-              db.collection("conversations").doc(conversationId).set({
-                participants: [uidA, uidB],
-                createdAt: new Date(),
-                updatedAt: new Date(),
-                unreadCounts: { [uidA]: 0, [uidB]: 0 },
-              }),
               db.collection("follows").doc(uidA + "__" + uidB).set({
                 fromUid: uidA,
                 toUid: uidB,
@@ -595,6 +616,33 @@ jobs:
                 createdAt: new Date(),
               }),
             ]);
+
+            await db.collection("user_blocks").doc(uidA)
+              .collection("items").doc(uidB).set({
+                blockedUid: uidB,
+                createdAt: new Date(),
+              });
+            const blockedUpload = await storageRawCall(tokenA, {
+              action: "prepareUpload",
+              scope: "chat_image",
+              mimeType: "image/png",
+              byteLength: payload.length,
+              targetId: conversationId,
+            });
+            if (
+              blockedUpload.response.status !== 403 ||
+              blockedUpload.body.code !== "blocked"
+            ) {
+              throw new Error(
+                "blocked_chat_upload_should_be_rejected:" +
+                  blockedUpload.response.status +
+                  ":" +
+                  JSON.stringify(blockedUpload.body),
+              );
+            }
+            await db.collection("user_blocks").doc(uidA)
+              .collection("items").doc(uidB).delete();
+            console.log("R2_CHAT_BLOCKED_UPLOAD=REJECTED");
 
             const chatUpload = await directUpload(tokenA, "chat_image", conversationId);
             chatObjectId = chatUpload.objectId;
@@ -721,6 +769,10 @@ jobs:
               db.collection("conversations").doc(conversationId).delete().catch(() => {}),
               db.collection("follows").doc(uidA + "__" + uidB).delete().catch(() => {}),
               db.collection("follows").doc(uidB + "__" + uidA).delete().catch(() => {}),
+              db.collection("user_blocks").doc(uidA)
+                .collection("items").doc(uidB).delete().catch(() => {}),
+              db.collection("user_blocks").doc(uidB)
+                .collection("items").doc(uidA).delete().catch(() => {}),
             ]);
 
             if (roomId) {
