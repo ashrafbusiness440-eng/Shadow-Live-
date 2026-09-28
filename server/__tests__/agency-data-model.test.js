@@ -4,6 +4,8 @@ import {test} from "node:test";
 import {
   AGENCY_COLLECTIONS,
   AGENCY_LIMITS,
+  agencyApplicationLockPath,
+  agencyApplicationOperationPath,
   agencyApplicationPath,
   agencyCarryoverPath,
   agencyHostMonthlyPath,
@@ -45,6 +47,11 @@ test("canonical agency paths are deterministic and direct lookup friendly",()=>{
   assert.equal(agencyUserMembershipPath("user_1"),"agency_user_memberships/user_1");
   assert.equal(agencyManagerSlotsPath("123456"),"agency_manager_slots/123456");
   assert.equal(agencyApplicationPath("application_1"),"agency_applications/application_1");
+  assert.equal(agencyApplicationLockPath("user_1"),"agency_application_locks/user_1");
+  assert.equal(
+    agencyApplicationOperationPath("user_1","operation_123456"),
+    "agency_application_operations/user_1__operation_123456",
+  );
   assert.equal(
     agencyHostMonthlyPath("123456","2026-09","user_1"),
     "agency_host_monthly/123456__2026-09__user_1",
@@ -102,24 +109,31 @@ test("agency creation requires a six digit public id",()=>{
 });
 
 test("application data model requires exactly five unique host ids",()=>{
+  const hostIds=["100001","100002","100003","100004","100005"];
   const hostUids=["h1","h2","h3","h4","h5"];
-  assert.deepEqual(normalizeApplicationHostIds(hostUids),hostUids);
+  assert.deepEqual(normalizeApplicationHostIds(hostIds),hostIds);
   const doc=createAgencyApplicationDocument({
     applicationId:"app_1",
     applicantUid:"owner_1",
     name:"Agency",
     requestedPublicId:"654321",
+    hostIds,
     hostUids,
-    reapplyMode:"24h",
+    reapplyMode:"30d",
     now:"now",
   });
+  assert.equal(doc.hostIds.length,5);
   assert.equal(doc.hostUids.length,5);
   assert.equal(doc.status,"pending");
-  assert.equal(doc.reapplyMode,"24h");
-  assert.throws(()=>normalizeApplicationHostIds(["h1"]),/invalid_agency_application_hosts/);
+  assert.equal(doc.reapplyMode,"30d");
+  assert.throws(()=>normalizeApplicationHostIds(["100001"]),/invalid_agency_application_hosts/);
   assert.throws(
-    ()=>normalizeApplicationHostIds(["h1","h2","h3","h4","h4"]),
+    ()=>normalizeApplicationHostIds(["100001","100002","100003","100004","100004"]),
     /duplicate_agency_application_host/,
+  );
+  assert.throws(
+    ()=>normalizeApplicationHostIds(["bad001","100002","100003","100004","100005"]),
+    /invalid_agency_application_host_id/,
   );
 });
 
