@@ -78,6 +78,10 @@ export const AGENCY_COLLECTIONS = Object.freeze({
   applicationLocks: "agency_application_locks",
   applicationOperations: "agency_application_operations",
   membershipRequests: "agency_membership_requests",
+  membershipRequestKeys: "agency_membership_request_keys",
+  membershipRequestOperations: "agency_membership_request_operations",
+  membershipPending: "agency_membership_pending",
+  membershipAcceptanceLocks: "agency_membership_acceptance_locks",
   policyOverrides: "agency_policy_overrides",
   targetSnapshots: "agency_target_snapshots",
   supportStats: "agency_support_stats",
@@ -178,6 +182,22 @@ export function agencyApplicationOperationPath(uid, operationId) {
 
 export function agencyMembershipRequestPath(requestId) {
   return `${AGENCY_COLLECTIONS.membershipRequests}/${safePart(requestId, "request_id", 220)}`;
+}
+
+export function agencyMembershipRequestKeyPath(agencyId, uid) {
+  return `${AGENCY_COLLECTIONS.membershipRequestKeys}/${safePart(agencyId, "agency_id")}__${safePart(uid, "user_id")}`;
+}
+
+export function agencyMembershipRequestOperationPath(actorUid, operationId) {
+  return `${AGENCY_COLLECTIONS.membershipRequestOperations}/${safePart(actorUid, "actor_uid")}__${safePart(operationId, "agency_membership_operation_id", 120)}`;
+}
+
+export function agencyMembershipPendingPath(agencyId, uid) {
+  return `${AGENCY_COLLECTIONS.membershipPending}/${safePart(agencyId, "agency_id")}__${safePart(uid, "user_id")}`;
+}
+
+export function agencyMembershipAcceptanceLockPath(uid) {
+  return `${AGENCY_COLLECTIONS.membershipAcceptanceLocks}/${safePart(uid, "user_id")}`;
 }
 
 export function agencyPolicyOverridePath(agencyId) {
@@ -420,14 +440,27 @@ export function createAgencyMembershipRequestDocument({
   if (!AGENCY_REQUEST_TYPE.includes(normalizedType)) {
     throw new Error("invalid_agency_request_type");
   }
+  const normalizedActorUid = safePart(actorUid, "actor_uid");
+  const userConsent = normalizedType === "join";
+  const agencyConsent = normalizedType === "invite";
   return {
     schemaVersion: AGENCY_DATA_MODEL_VERSION,
     requestId: safePart(requestId, "request_id", 220),
     agencyId: safePart(agencyId, "agency_id"),
     uid: safePart(uid, "user_id"),
     type: normalizedType,
+    targetRole: "host",
     status: "pending",
-    actorUid: safePart(actorUid, "actor_uid"),
+    actorUid: normalizedActorUid,
+    initiatorSide:
+      normalizedType === "join"
+        ? "user"
+        : normalizedType === "invite"
+          ? "agency"
+          : "system",
+    userConsent,
+    agencyConsent,
+    acceptedAt: null,
     createdAt: now,
     updatedAt: now,
     resolvedAt: null,
