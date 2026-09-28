@@ -303,6 +303,10 @@ service cloud.firestore {
       allow read, create, update, delete: if false;
     }
 
+    match /agency_review_operations/{operationId} {
+      allow read, create, update, delete: if false;
+    }
+
     match /agency_memberships/{membershipId} {
       allow read: if canPlatformManageAgencyMemberships()
         || (signedIn() && resource.data.uid == request.auth.uid)
