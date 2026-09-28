@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - pressure/step12-first7-finalize
+      - pressure/step12-first7-prod-fix
     paths:
       - 'scripts/pressure_step12_bounded_hotdocs.mjs'
       - 'cloudflare-worker/src/system-health.js'
@@ -11,6 +12,7 @@ on:
       - 'lib/admin/system_health_card.dart'
       - 'server/__tests__/system-health.test.js'
       - 'scripts/pressure_system_health_e2e.mjs'
+      - 'cloudflare-worker/scripts/pressure-rocket-e2e.mjs'
       - '.github/workflows/deploy-cloudflare-worker.yml'
       - '.github/workflows/pressure-step12-first7-finalize.yml'
   workflow_dispatch:
@@ -43,6 +45,14 @@ jobs:
       - name: Exercise authenticated Rocket paths
         run: node cloudflare-worker/scripts/economy-router-e2e.mjs
 
+      - name: Install bounded Rocket probe dependency
+        working-directory: cloudflare-worker
+        run: npm install --no-save --ignore-scripts firebase-admin@^13
+
+      - name: Measure authenticated Rocket enter latency
+        working-directory: cloudflare-worker
+        run: node scripts/pressure-rocket-e2e.mjs
+
       - name: Capture post-load Pressure Analytics
         env:
           WINDOW_MINUTES: '15'
@@ -58,5 +68,6 @@ jobs:
           path: |
             pressure-report.json
             pressure-report.md
+            cloudflare-worker/step12-rocket-probe.json
           if-no-files-found: warn
           retention-days: 30

@@ -1,5 +1,8 @@
 import fs from "node:fs";
-import admin from "firebase-admin";
+import { createRequire } from "node:module";
+
+const requireFromWorker = createRequire(new URL("../cloudflare-worker/package.json", import.meta.url));
+const admin = requireFromWorker("firebase-admin");
 
 const workerBase =
   process.env.SHADOW_WORKER_URL ||
@@ -24,7 +27,7 @@ admin.initializeApp({
 const db = admin.firestore();
 const auth = admin.auth();
 
-const firebaseOptions = fs.readFileSync("lib/firebase_options.dart", "utf8");
+const firebaseOptions = fs.readFileSync(new URL("../lib/firebase_options.dart", import.meta.url), "utf8");
 const apiKey = firebaseOptions.match(/apiKey:\s*'([^']+)'/)?.[1] || "";
 if (!apiKey) throw new Error("firebase_web_api_key_not_found");
 
