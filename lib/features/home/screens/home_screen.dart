@@ -57,7 +57,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool forceRefresh = false}) async {
     final requestUid = FirebaseAuth.instance.currentUser?.uid;
     if (mounted) {
       setState(() {
@@ -67,7 +67,8 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     try {
-      final data = await _discoveryService.loadHome();
+      final data =
+          await _discoveryService.loadHome(forceRefresh: forceRefresh);
       if (!mounted) return;
       if (FirebaseAuth.instance.currentUser?.uid != requestUid) return;
       _loadedForUid = requestUid;
@@ -172,7 +173,7 @@ class _HomeScreenState extends State<HomeScreen> {
           child: SafeArea(
             bottom: false,
             child: RefreshIndicator(
-              onRefresh: _load,
+              onRefresh: () => _load(forceRefresh: true),
               child: ListView(
                 controller: _scrollController,
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
