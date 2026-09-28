@@ -8,6 +8,8 @@ import {
   submitAgencyApplication,
 } from "../../cloudflare-worker/src/agency-application.js";
 import {
+  allowAgencyReapply,
+  listAgencyManualReapplyBlocks,
   reapplyAllowedAtForMode,
   rejectAgencyApplication,
 } from "../../cloudflare-worker/src/agency-control.js";
@@ -228,7 +230,7 @@ test("rejection is idempotent and conflicting reuse of key is blocked", async ()
   );
 });
 
-test("manual rejection blocks reapply until a future control action clears it", async () => {
+test("manual rejection blocks until Control explicitly allows reapply", async () => {
   const seeded = await seedApplication(
     "stage03c_manual",
     "333901",
@@ -248,6 +250,11 @@ test("manual rejection blocks reapply until a future control action clears it", 
   assert.equal(status.reapplyMode, "manual");
   assert.equal(status.reapplyAllowedAt, null);
 
+  const blocks = await listAgencyManualReapplyBlocks(db, 25);
+  assert.ok(
+    blocks.some((block) => block.applicationId === seeded.applicationId),
+  );
+
   await assert.rejects(
     submitAgencyApplication(db, seeded.ownerUid, {
       name: "Manual Block Retry",
@@ -256,6 +263,49 @@ test("manual rejection blocks reapply until a future control action clears it", 
     }, { now: new Date("2027-09-28T18:00:00.000Z") }),
     /agency_reapply_blocked/,
   );
+
+  const unblocked = await allowAgencyReapply(
+    db,
+    "reviewer_stage03c",
+    {
+      applicationId: seeded.applicationId,
+      idempotencyKey: "stage03c_manual_unblock_0001",
+    },
+    { now: new Date("2027-09-28T18:10:00.000Z") },
+  );
+  assert.equal(unblocked.code, "ok");
+  assert.equal(unblocked.reapplyMode, "immediate");
+
+  const [manualBlock, notification, audit] = await Promise.all([
+    adminDb.collection("agency_manual_reapply_blocks")
+      .doc(seeded.applicationId).get(),
+    adminDb.collection("notifications")
+      .doc("agency_reapply_unblocked_" + seeded.applicationId).get(),
+    adminDb.collection("admin_audit_logs")
+      .doc("agency_reapply_unblock_" + seeded.applicationId).get(),
+  ]);
+  assert.equal(manualBlock.exists, false);
+  assert.equal(notification.data().userId, seeded.ownerUid);
+  assert.equal(notification.data().type, "agency_reapply_unblocked");
+  assert.equal(audit.data().action, "allowAgencyReapply");
+
+  const statusAfter = await getAgencyApplicationStatus(db, seeded.ownerUid, {
+    now: new Date("2027-09-28T18:10:00.000Z"),
+  });
+  assert.equal(statusAfter.canReapply, true);
+  assert.equal(statusAfter.reapplyMode, "immediate");
+
+  const retry = await submitAgencyApplication(
+    db,
+    seeded.ownerUid,
+    {
+      name: "Manual Block Cleared Retry",
+      hostIds: seeded.hostIds,
+      idempotencyKey: "stage03c_manual_retry_0002",
+    },
+    { now: new Date("2027-09-28T18:10:01.000Z") },
+  );
+  assert.equal(retry.status, "pending");
 });
 
 test("immediate rejection allows a new application right away", async () => {
