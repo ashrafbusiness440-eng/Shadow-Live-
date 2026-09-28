@@ -174,43 +174,59 @@ async function recentIssues(db){
 
 
 
-export async function settleAgencyMonth(db,actorUid,accrualId){
-  const accrualRef=db.collection("agency_monthly_accruals").doc(accrualId);
-  const initial=await accrualRef.get();
-  if(!initial.exists)throw Error("settlement_not_found");
-  const raw=initial.data()||{};
-  const agencyId=clean(raw.agencyId), month=clean(raw.month);
-  if(!agencyId||!/^\d{4}-\d{2}$/.test(month))throw Error("invalid_settlement");
+const AGENCY_MONTHLY_ACCRUAL_SHARDS=32;
 
-  const settlementRef=db.collection("agency_monthly_statements").doc(accrualId);
-  if(clean(raw.status)==="settled"){
-    const existing=await settlementRef.get();
-    return {alreadySettled:true,settlement:existing.exists?existing.data():raw};
+function agencyMonthlyShardRefs(db,agencyId,month){
+  return Array.from({length:AGENCY_MONTHLY_ACCRUAL_SHARDS},(_,index)=>
+    db.collection("agency_monthly_accrual_shards")
+      .doc(agencyId+"__"+month+"__"+String(index).padStart(2,"0"))
+  );
+}
+
+export async function settleAgencyMonth(db,actorUid,agencyIdInput,monthInput){
+  const agencyId=clean(agencyIdInput), month=clean(monthInput);
+  if(!/^[A-Za-z0-9_-]{3,180}$/.test(agencyId)||!/^\d{4}-\d{2}$/.test(month)){
+    throw Error("invalid_settlement");
   }
 
+  const statementId=agencyId+"__"+month;
+  const settlementRef=db.collection("agency_monthly_statements").doc(statementId);
   const economySnap=await db.collection("system_config").doc("gift_economy").get();
   const economy=economySnap.exists?(economySnap.data()||{}):{};
   const coinsPerDiamond=Math.max(1,Number(economy.coinsPerDiamond||10000));
   const walletRef=db.collection("agency_wallets").doc(agencyId);
   const auditRef=db.collection("admin_audit_logs").doc();
-  const ledgerRef=db.collection("financial_ledger").doc("agency_monthly_share_"+accrualId);
+  const ledgerRef=db.collection("financial_ledger").doc("agency_monthly_share_"+statementId);
+  const shardRefs=agencyMonthlyShardRefs(db,agencyId,month);
 
   const result=await db.runTransaction(async tx=>{
-    const current=await tx.get(accrualRef);
-    if(!current.exists)throw Error("settlement_not_found");
-    if(clean(current.data()?.status)==="settled"){
-      const existing=await tx.get(settlementRef);
-      return {alreadySettled:true,settlement:existing.exists?existing.data():current.data()};
+    const existing=await tx.get(settlementRef);
+    if(existing.exists&&clean(existing.data()?.status)==="settled"){
+      return {alreadySettled:true,settlement:existing.data()};
     }
 
-    const walletSnap=await tx.get(walletRef);
+    const [walletSnap,...shardSnaps]=await Promise.all([
+      tx.get(walletRef),
+      ...shardRefs.map(ref=>tx.get(ref)),
+    ]);
+    const totals=shardSnaps.reduce((sum,snap)=>{
+      if(!snap.exists)return sum;
+      const data=snap.data()||{};
+      sum.supportCoins+=Math.max(0,Number(data.supportCoins||0));
+      sum.hostShareCoins+=Math.max(0,Number(data.hostShareCoins||0));
+      sum.agencyShareCoins+=Math.max(0,Number(data.agencyShareCoins||0));
+      sum.platformShareCoins+=Math.max(0,Number(data.platformShareCoins||0));
+      sum.giftCount+=Math.max(0,Number(data.giftCount||0));
+      return sum;
+    },{supportCoins:0,hostShareCoins:0,agencyShareCoins:0,platformShareCoins:0,giftCount:0});
+    if(totals.giftCount<=0&&totals.supportCoins<=0)throw Error("settlement_not_found");
+
     const wallet=walletSnap.exists?(walletSnap.data()||{}):{};
     const currentDiamonds=Math.max(0,Number(wallet.diamonds||0));
     const previousRemainderCoins=Math.max(0,Number(wallet.remainderCoins||0));
-    const agencyShareCoins=Math.max(0,Number(current.data()?.agencyShareCoins||0));
     const conversion=convertPayableCoinsToDiamonds(
       previousRemainderCoins,
-      agencyShareCoins,
+      totals.agencyShareCoins,
       coinsPerDiamond,
     );
     const diamondsEarned=conversion.diamondsEarned;
@@ -219,11 +235,8 @@ export async function settleAgencyMonth(db,actorUid,accrualId){
     const statement={
       agencyId,
       month,
-      supportCoins:Math.max(0,Number(current.data()?.supportCoins||0)),
-      hostShareCoins:Math.max(0,Number(current.data()?.hostShareCoins||0)),
-      agencyShareCoins,
-      platformShareCoins:Math.max(0,Number(current.data()?.platformShareCoins||0)),
-      giftCount:Math.max(0,Number(current.data()?.giftCount||0)),
+      ...totals,
+      shardCount:AGENCY_MONTHLY_ACCRUAL_SHARDS,
       agencyDiamonds:diamondsEarned,
       agencyRemainderCoins:conversion.remainderCoins,
       hostSalaryMode:"target_immediate",
@@ -243,12 +256,6 @@ export async function settleAgencyMonth(db,actorUid,accrualId){
       ...statement,
       settledAt:FieldValue.serverTimestamp(),
     },{merge:false});
-    tx.set(accrualRef,{
-      status:"settled",
-      settledAt:FieldValue.serverTimestamp(),
-      settledBy:actorUid,
-      statementId:accrualId,
-    },{merge:true});
     if(diamondsEarned>0){
       tx.create(ledgerRef,{
         agencyId,
@@ -256,13 +263,13 @@ export async function settleAgencyMonth(db,actorUid,accrualId){
         delta:diamondsEarned,
         openingBalance:currentDiamonds,
         closingBalance:closingDiamonds,
-        payableCoins:agencyShareCoins,
+        payableCoins:totals.agencyShareCoins,
         remainderCoins:conversion.remainderCoins,
         reason:"agency_monthly_share",
         sourceType:"agency_monthly_statement",
-        sourceId:accrualId,
+        sourceId:statementId,
         settlementMonth:month,
-        idempotencyKey:"agency_monthly_share_"+accrualId,
+        idempotencyKey:"agency_monthly_share_"+statementId,
         createdAt:FieldValue.serverTimestamp(),
       });
     }
@@ -270,7 +277,7 @@ export async function settleAgencyMonth(db,actorUid,accrualId){
       actorUid,
       action:"settleAgencyMonth",
       targetType:"agency_monthly_statement",
-      targetId:accrualId,
+      targetId:statementId,
       after:statement,
       createdAt:FieldValue.serverTimestamp(),
     });
@@ -354,9 +361,12 @@ export async function handler(req,res){
 
     if(action==="settleAgencyMonth"){
       if(!canManageSettlements)throw Error("settlement_forbidden");
-      const accrualId=clean(req.body?.accrualId);
-      if(!/^[A-Za-z0-9_-]{3,500}$/.test(accrualId))throw Error("invalid_settlement");
-      const result=await settleAgencyMonth(db,uid,accrualId);
+      const result=await settleAgencyMonth(
+        db,
+        uid,
+        req.body?.agencyId,
+        req.body?.month,
+      );
       return out(res,200,{ok:true,...result});
     }
 
