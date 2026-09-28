@@ -28,6 +28,18 @@ export const AGENCY_REJOIN_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 
 function timestampMs(value) {
   if (value instanceof Date) return value.getTime();
+  if (value && typeof value.toMillis === "function") {
+    const millis = Number(value.toMillis());
+    return Number.isFinite(millis) ? millis : 0;
+  }
+  if (value && typeof value.toDate === "function") {
+    const date = value.toDate();
+    return date instanceof Date ? date.getTime() : 0;
+  }
+  if (value && Number.isFinite(Number(value.seconds))) {
+    return Number(value.seconds) * 1000 +
+      Math.floor(Number(value.nanoseconds || 0) / 1_000_000);
+  }
   const parsed = Date.parse(String(value ?? ""));
   return Number.isFinite(parsed) ? parsed : 0;
 }
