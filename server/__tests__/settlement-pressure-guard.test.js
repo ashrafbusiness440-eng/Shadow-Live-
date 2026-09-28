@@ -131,3 +131,21 @@ test("agency membership departure core is direct and query free", () => {
   assert.equal(departureSource.includes("agency_membership_acceptance_locks/"), false);
   assert.equal(departureSource.includes("acceptanceLockPath(targetUid)"), true);
 });
+
+
+test("agency rejoin cooldown uses only direct membership documents", () => {
+  const sourceText = source("../../cloudflare-worker/src/agency-membership.js");
+  assert.equal(sourceText.includes("AGENCY_REJOIN_COOLDOWN_MS"), true);
+  assert.equal(sourceText.includes("ensureRejoinCooldownExpired"), true);
+  assert.equal(sourceText.includes('action === "leave"'), true);
+  assert.equal(sourceText.includes('action === "remove"'), true);
+  const respondStart = sourceText.indexOf("export async function respondAgencyMembershipRequest");
+  const commitStart = sourceText.indexOf("export async function commitAcceptedAgencyMembership");
+  const departureStart = sourceText.indexOf("async function changeAgencyMembershipStatus");
+  const respondSource = sourceText.slice(respondStart, commitStart);
+  const commitSource = sourceText.slice(commitStart, departureStart);
+  assert.equal(respondSource.includes(".runQuery("), false);
+  assert.equal(commitSource.includes(".runQuery("), false);
+  assert.equal(respondSource.includes(".list("), false);
+  assert.equal(commitSource.includes(".list("), false);
+});
