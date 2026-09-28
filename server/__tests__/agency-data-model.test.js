@@ -13,7 +13,11 @@ import {
   agencyCarryoverPath,
   agencyHostMonthlyPath,
   agencyManagerSlotsPath,
+  agencyMembershipAcceptanceLockPath,
   agencyMembershipPath,
+  agencyMembershipPendingPath,
+  agencyMembershipRequestKeyPath,
+  agencyMembershipRequestOperationPath,
   agencyMonthlyAccrualShardPath,
   agencyMonthlyStatementPath,
   agencyStatusEventPath,
@@ -48,6 +52,22 @@ test("agency model keeps bounded pressure constants",()=>{
 test("canonical agency paths are deterministic and direct lookup friendly",()=>{
   assert.equal(agencyMembershipPath("123456","user_1"),"agency_memberships/123456__user_1");
   assert.equal(agencyUserMembershipPath("user_1"),"agency_user_memberships/user_1");
+  assert.equal(
+    agencyMembershipRequestKeyPath("123456","user_1"),
+    "agency_membership_request_keys/123456__user_1",
+  );
+  assert.equal(
+    agencyMembershipRequestOperationPath("user_1","membership_op_123"),
+    "agency_membership_request_operations/user_1__membership_op_123",
+  );
+  assert.equal(
+    agencyMembershipPendingPath("123456","user_1"),
+    "agency_membership_pending/123456__user_1",
+  );
+  assert.equal(
+    agencyMembershipAcceptanceLockPath("user_1"),
+    "agency_membership_acceptance_locks/user_1",
+  );
   assert.equal(agencyManagerSlotsPath("123456"),"agency_manager_slots/123456");
   assert.equal(agencyApplicationPath("application_1"),"agency_applications/application_1");
   assert.equal(agencyApplicationLockPath("user_1"),"agency_application_locks/user_1");
@@ -195,6 +215,10 @@ test("membership and requests preserve direct agency and user keys",()=>{
   });
   assert.equal(request.status,"pending");
   assert.equal(request.type,"join");
+  assert.equal(request.targetRole,"host");
+  assert.equal(request.userConsent,true);
+  assert.equal(request.agencyConsent,false);
+  assert.equal(request.initiatorSide,"user");
 });
 
 test("target snapshots and status events are monthly and audit friendly",()=>{
