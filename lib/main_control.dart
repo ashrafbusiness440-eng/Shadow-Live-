@@ -2580,13 +2580,22 @@ class ControlItem {
 class ControlList extends StatelessWidget {
   const ControlList({super.key,required this.title,required this.icon,required this.items});
   final String title; final IconData icon; final List<ControlItem> items;
+
+  Widget targetPage(ControlItem item) {
+    if (item.title == 'الوكالات') return const AgencyControlPage();
+    if (item.title == 'سجل الإدارة') return const AuditLogPage();
+    if (item.title == 'إعدادات النظام') return const SystemConfigPage();
+    if (item.title == 'إدارة أصول التطبيق') return const ControlAssetManagerPage();
+    return DetailPage(item:item);
+  }
+
   @override Widget build(BuildContext context)=>ListView(padding:const EdgeInsets.all(16),children:[
     Row(children:[Icon(icon,size:28,color:const Color(0xFFD7B85A)),const SizedBox(width:10),Text(title,style:const TextStyle(fontSize:25,fontWeight:FontWeight.w900))]),
     const SizedBox(height:16),
     ...items.map((item)=>Card(child:ListTile(
       leading:Icon(item.icon,color:const Color(0xFFD7B85A)),trailing:const Icon(Icons.chevron_left),
       title:Text(item.title,style:const TextStyle(fontWeight:FontWeight.w700)),subtitle:Text(item.subtitle),
-      onTap:()=>Navigator.of(context).push(MaterialPageRoute(builder:(_)=>item.title=='الوكالات'?const AgencyControlPage():(item.title=='سجل الإدارة'?const AuditLogPage():(item.title=='إعدادات النظام'?const SystemConfigPage():(item.title=='إدارة أصول التطبيق'?const ControlAssetManagerPage():DetailPage(item:item))))),
+      onTap:()=>Navigator.of(context).push(MaterialPageRoute(builder:(_)=>targetPage(item))),
     ))),
   ]);
 }
