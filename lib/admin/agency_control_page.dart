@@ -17,13 +17,29 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
   bool loading = true;
   bool busy = false;
   bool canDirectCreate = false;
+  bool canReviewApplications = false;
+  bool canOpenManagement = false;
+  bool membersLoading = false;
+  bool canManageSelectedManagers = false;
+  bool membersTruncated = false;
   List<Map<String, dynamic>> applications = [];
   List<Map<String, dynamic>> manualBlocks = [];
+  List<Map<String, dynamic>> agencyMembers = [];
+  List<Map<String, dynamic>> roleMatrix = [];
+  Map<String, dynamic> selectedAgency = {};
+  Map<String, dynamic> managerSlots = {};
+  final TextEditingController agencyLookup = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     load();
+  }
+
+  @override
+  void dispose() {
+    agencyLookup.dispose();
+    super.dispose();
   }
 
   String operationKey(String prefix) {
@@ -58,38 +74,254 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
     return body;
   }
 
+  Future<Map<String, dynamic>> postMembership(
+    Map<String, dynamic> payload,
+  ) async {
+    final user = controlAuth.currentUser;
+    if (user == null) throw StateError('not_signed_in');
+    final token = await user.getIdToken();
+    if (token == null || token.isEmpty) throw StateError('empty_token');
+    final response = await http
+        .post(
+          shadowApiEndpoint('agency-membership'),
+          headers: {
+            'content-type': 'application/json',
+            'authorization': 'Bearer $token',
+          },
+          body: jsonEncode(payload),
+        )
+        .timeout(const Duration(seconds: 25));
+    final body = response.body.isEmpty
+        ? <String, dynamic>{}
+        : Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        body['ok'] != true) {
+      throw StateError((body['code'] ?? 'request_failed').toString());
+    }
+    return body;
+  }
+
+  Future<Map<String, bool>> loadActorAccess() async {
+    final user = controlAuth.currentUser;
+    if (user == null) throw StateError('not_signed_in');
+    final snap = await controlFirestore.collection('users').doc(user.uid).get();
+    final data = snap.data() ?? <String, dynamic>{};
+    final isOwner = (data['role'] ?? '').toString() == 'owner';
+    final adminEnabled = data['adminEnabled'] == true;
+    final capabilities = data['capabilities'] is List
+        ? (data['capabilities'] as List).map((e) => e.toString()).toSet()
+        : <String>{};
+    final broad = capabilities.contains('manageAgencies');
+    return {
+      'review': isOwner ||
+          (adminEnabled &&
+              (broad || capabilities.contains('reviewAgencyApplications'))),
+      'directCreate': isOwner || (adminEnabled && broad),
+      'management': isOwner ||
+          (adminEnabled &&
+              (broad ||
+                  capabilities.contains('manageAgencyManagers') ||
+                  capabilities.contains('manageAgencyMemberships'))),
+    };
+  }
+
   Future<void> load() async {
     setState(() => loading = true);
     try {
-      final body = await post({'action': 'listReviewQueue', 'limit': 50});
-      final rows = body['applications'] is List
-          ? (body['applications'] as List)
-              .whereType<Map>()
-              .map((e) => Map<String, dynamic>.from(e))
-              .toList()
-          : <Map<String, dynamic>>[];
-      final blocks = body['manualBlocks'] is List
-          ? (body['manualBlocks'] as List)
-              .whereType<Map>()
-              .map((e) => Map<String, dynamic>.from(e))
-              .toList()
-          : <Map<String, dynamic>>[];
-      final permissions = body['permissions'] is Map
-          ? Map<String, dynamic>.from(body['permissions'] as Map)
-          : <String, dynamic>{};
+      final access = await loadActorAccess();
+      var rows = <Map<String, dynamic>>[];
+      var blocks = <Map<String, dynamic>>[];
+      if (access['review'] == true) {
+        final body = await post({'action': 'listReviewQueue', 'limit': 50});
+        rows = body['applications'] is List
+            ? (body['applications'] as List)
+                .whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList()
+            : <Map<String, dynamic>>[];
+        blocks = body['manualBlocks'] is List
+            ? (body['manualBlocks'] as List)
+                .whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList()
+            : <Map<String, dynamic>>[];
+      }
       if (!mounted) return;
       setState(() {
         applications = rows;
         manualBlocks = blocks;
-        canDirectCreate = permissions['canDirectCreate'] == true;
+        canReviewApplications = access['review'] == true;
+        canDirectCreate = access['directCreate'] == true;
+        canOpenManagement = access['management'] == true;
         loading = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() => loading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('تعذر تحميل طلبات الوكالات: $e')),
+        SnackBar(content: Text('تعذر تحميل الوكالات: ' + e.toString())),
       );
+    }
+  }
+
+  Future<void> loadAgencyMembers() async {
+    final agencyId = agencyLookup.text.trim();
+    if (!RegExp(r'^\d{6}$').hasMatch(agencyId)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Agency ID يجب أن يكون 6 أرقام.')),
+      );
+      return;
+    }
+    if (membersLoading || busy) return;
+    setState(() => membersLoading = true);
+    try {
+      final body = await postMembership({
+        'action': 'listAgencyMembers',
+        'agencyId': agencyId,
+        'limit': 50,
+      });
+      final members = body['members'] is List
+          ? (body['members'] as List)
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList()
+          : <Map<String, dynamic>>[];
+      final matrix = body['roleMatrix'] is List
+          ? (body['roleMatrix'] as List)
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList()
+          : <Map<String, dynamic>>[];
+      if (!mounted) return;
+      setState(() {
+        agencyMembers = members;
+        roleMatrix = matrix;
+        selectedAgency = body['agency'] is Map
+            ? Map<String, dynamic>.from(body['agency'] as Map)
+            : <String, dynamic>{};
+        managerSlots = body['managerSlots'] is Map
+            ? Map<String, dynamic>.from(body['managerSlots'] as Map)
+            : <String, dynamic>{};
+        final permissions = body['permissions'] is Map
+            ? Map<String, dynamic>.from(body['permissions'] as Map)
+            : <String, dynamic>{};
+        canManageSelectedManagers =
+            permissions['canManageManagers'] == true;
+        membersTruncated = body['truncated'] == true;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        agencyMembers = [];
+        roleMatrix = [];
+        selectedAgency = {};
+        managerSlots = {};
+        canManageSelectedManagers = false;
+        membersTruncated = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذر تحميل أعضاء الوكالة: ' + e.toString())),
+      );
+    } finally {
+      if (mounted) setState(() => membersLoading = false);
+    }
+  }
+
+  String roleLabel(String role) {
+    switch (role) {
+      case 'owner':
+        return 'صاحب الوكالة';
+      case 'senior_manager':
+        return 'مدير أول';
+      case 'manager':
+        return 'مدير';
+      default:
+        return 'مضيف';
+    }
+  }
+
+  String permissionSummary(Map<String, dynamic> row) {
+    final values = <String>[];
+    if (row['canReviewMembershipRequests'] == true) {
+      values.add('مراجعة طلبات الانضمام');
+    }
+    if (row['canManageInvites'] == true) values.add('الدعوات');
+    if (row['canManageRooms'] == true) values.add('إدارة الغرف');
+    if (row['canManageManagers'] == true) values.add('إدارة المديرين');
+    if (row['canViewAgencyFinance'] == true) values.add('مالية الوكالة');
+    if (row['canViewOwnProgress'] == true) values.add('التقدم الشخصي');
+    return values.isEmpty
+        ? 'بدون صلاحيات تشغيلية إضافية'
+        : values.join(' • ');
+  }
+
+  Future<void> changeMemberRole(
+    Map<String, dynamic> member,
+    String targetRole,
+  ) async {
+    final agencyId = (selectedAgency['agencyId'] ?? '').toString();
+    final uid = (member['uid'] ?? '').toString();
+    final currentRole = (member['role'] ?? '').toString();
+    if (agencyId.isEmpty ||
+        uid.isEmpty ||
+        currentRole == 'owner' ||
+        currentRole == targetRole ||
+        busy) {
+      return;
+    }
+    final memberName =
+        (member['displayName'] ?? member['publicId'] ?? uid).toString();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('تغيير دور عضو الوكالة'),
+        content: Text(
+          'تغيير ' +
+              memberName +
+              ' من ' +
+              roleLabel(currentRole) +
+              ' إلى ' +
+              roleLabel(targetRole) +
+              '؟',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('تأكيد'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || busy) return;
+    setState(() => busy = true);
+    try {
+      await postMembership({
+        'action': 'setManagerRole',
+        'agencyId': agencyId,
+        'targetUid': uid,
+        'targetRole': targetRole,
+        'idempotencyKey': operationKey('agency_manager_role'),
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('تم تحديث الدور إلى ' + roleLabel(targetRole) + '.'),
+        ),
+      );
+      await loadAgencyMembers();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر تحديث دور العضو: ' + e.toString())),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => busy = false);
     }
   }
 
@@ -451,6 +683,311 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
     }
   }
 
+  List<Widget> managementWidgets() {
+    if (!canOpenManagement) return const <Widget>[];
+    final selectedId = (selectedAgency['agencyId'] ?? '').toString();
+    final managers = managerSlots['managerUids'] is List
+        ? (managerSlots['managerUids'] as List).length
+        : 0;
+    final senior =
+        (managerSlots['seniorManagerUid'] ?? '').toString().isEmpty ? 0 : 1;
+    return <Widget>[
+      const Card(
+        child: ListTile(
+          leading: Icon(Icons.groups_2_outlined),
+          title: Text('إدارة أعضاء ومديري الوكالة'),
+          subtitle: Text(
+            'عرض bounded للأعضاء النشطين. الصلاحيات مرتبطة بالدور المعتمد؛ لا توجد صلاحيات مخصصة لكل مدير في هذه المرحلة.',
+          ),
+        ),
+      ),
+      const SizedBox(height: 12),
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            children: [
+              TextField(
+                controller: agencyLookup,
+                keyboardType: TextInputType.number,
+                maxLength: 6,
+                decoration: const InputDecoration(
+                  labelText: 'Agency ID',
+                  hintText: '6 أرقام',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.apartment_outlined),
+                ),
+                onSubmitted: (_) => loadAgencyMembers(),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed:
+                      membersLoading || busy ? null : loadAgencyMembers,
+                  icon: membersLoading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.search),
+                  label: Text(
+                    membersLoading ? 'جار التحميل...' : 'تحميل أعضاء الوكالة',
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      if (selectedAgency.isNotEmpty) ...[
+        const SizedBox(height: 12),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.apartment),
+            title: Text(
+              (selectedAgency['name'] ?? 'وكالة').toString() +
+                  ' — ' +
+                  selectedId,
+            ),
+            subtitle: Text(
+              'الأعضاء: ' +
+                  (selectedAgency['memberCount'] ?? 0).toString() +
+                  ' • Hosts: ' +
+                  (selectedAgency['hostCount'] ?? 0).toString() +
+                  ' • Managers: ' +
+                  (selectedAgency['managerCount'] ?? 0).toString() +
+                  ' • Senior: ' +
+                  (selectedAgency['seniorManagerCount'] ?? 0).toString() +
+                  '\nSlots: ' +
+                  managers.toString() +
+                  '/2 مدير • ' +
+                  senior.toString() +
+                  '/1 مدير أول',
+            ),
+            isThreeLine: true,
+          ),
+        ),
+        const SizedBox(height: 12),
+        const Text(
+          'Permission Matrix',
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 6),
+        ...roleMatrix.map(
+          (row) => Card(
+            child: ListTile(
+              dense: true,
+              leading: const Icon(Icons.shield_outlined),
+              title: Text(roleLabel((row['role'] ?? '').toString())),
+              subtitle: Text(permissionSummary(row)),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'الأعضاء النشطون',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+              ),
+            ),
+            if (canManageSelectedManagers)
+              const Chip(label: Text('يمكن إدارة الأدوار')),
+          ],
+        ),
+        if (membersTruncated)
+          const Card(
+            child: ListTile(
+              leading: Icon(Icons.speed_outlined),
+              title: Text('القائمة محدودة لأول 50 عضوًا'),
+              subtitle: Text(
+                'هذا الحد مقصود لحماية الضغط. لا توجد قراءة غير محدودة.',
+              ),
+            ),
+          ),
+        if (agencyMembers.isEmpty)
+          const Card(
+            child: ListTile(
+              leading: Icon(Icons.people_outline),
+              title: Text('لا يوجد أعضاء نشطون ضمن النتيجة'),
+            ),
+          ),
+        ...agencyMembers.map((member) {
+          final role = (member['role'] ?? '').toString();
+          final display =
+              (member['displayName'] ?? member['publicId'] ?? member['uid'] ?? '')
+                  .toString();
+          final publicId = (member['publicId'] ?? '').toString();
+          return Card(
+            child: ListTile(
+              leading: CircleAvatar(
+                child: Text(display.isEmpty ? '?' : display.substring(0, 1)),
+              ),
+              title: Text(display),
+              subtitle: Text(
+                roleLabel(role) +
+                    (publicId.isEmpty ? '' : ' • ID ' + publicId),
+              ),
+              trailing: canManageSelectedManagers && role != 'owner'
+                  ? PopupMenuButton<String>(
+                      enabled: !busy,
+                      tooltip: 'تغيير الدور',
+                      onSelected: (value) =>
+                          changeMemberRole(member, value),
+                      itemBuilder: (context) => [
+                        PopupMenuItem<String>(
+                          value: 'host',
+                          enabled: role != 'host',
+                          child: const Text('تحويل إلى مضيف'),
+                        ),
+                        PopupMenuItem<String>(
+                          value: 'manager',
+                          enabled: role != 'manager',
+                          child: const Text('تعيين مدير'),
+                        ),
+                        PopupMenuItem<String>(
+                          value: 'senior_manager',
+                          enabled: role != 'senior_manager',
+                          child: const Text('تعيين مدير أول'),
+                        ),
+                      ],
+                    )
+                  : null,
+            ),
+          );
+        }),
+      ],
+    ];
+  }
+
+  List<Widget> reviewWidgets() {
+    if (!canReviewApplications) return const <Widget>[];
+    return <Widget>[
+      const Card(
+        child: ListTile(
+          leading: Icon(Icons.security),
+          title: Text('طلبات إنشاء الوكالات'),
+          subtitle: Text(
+            'القائمة محدودة Server-side. الموافقة تنشئ Agency ID فريد وعضوية Owner فقط؛ الـ5 Hosts لا يُضافون تلقائيًا.',
+          ),
+        ),
+      ),
+      const SizedBox(height: 12),
+      if (applications.isEmpty)
+        const Card(
+          child: ListTile(
+            leading: Icon(Icons.inbox_outlined),
+            title: Text('لا توجد طلبات بانتظار المراجعة'),
+          ),
+        ),
+      ...applications.map((application) {
+        final hostIds = application['hostIds'] is List
+            ? (application['hostIds'] as List)
+                .map((e) => e.toString())
+                .join('، ')
+            : '';
+        final status = (application['status'] ?? '').toString();
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  (application['name'] ?? '').toString(),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text('الحالة: ' + status),
+                Text(
+                  'مقدم الطلب: ' +
+                      (application['applicantPublicId'] ??
+                              application['applicantUid'] ??
+                              '')
+                          .toString(),
+                ),
+                if ((application['country'] ?? '').toString().isNotEmpty)
+                  Text(
+                    'الدولة: ' +
+                        (application['country'] ?? '').toString(),
+                  ),
+                Text('Host IDs: ' + hostIds),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (status == 'pending')
+                      OutlinedButton.icon(
+                        onPressed:
+                            busy ? null : () => startReview(application),
+                        icon: const Icon(Icons.fact_check_outlined),
+                        label: const Text('بدء المراجعة'),
+                      ),
+                    FilledButton.icon(
+                      onPressed:
+                          busy ? null : () => approve(application),
+                      icon: const Icon(Icons.check_circle_outline),
+                      label: const Text('موافقة وإنشاء'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: busy
+                          ? null
+                          : () => rejectApplication(application),
+                      icon: const Icon(Icons.cancel_outlined),
+                      label: const Text('رفض'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      }),
+      const SizedBox(height: 20),
+      const Text(
+        'منع إعادة التقديم اليدوي',
+        style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+      ),
+      const SizedBox(height: 8),
+      if (manualBlocks.isEmpty)
+        const Card(
+          child: ListTile(
+            leading: Icon(Icons.lock_open_outlined),
+            title: Text('لا توجد طلبات محظورة يدويًا'),
+          ),
+        ),
+      ...manualBlocks.map(
+        (block) => Card(
+          child: ListTile(
+            leading: const Icon(Icons.lock_outline),
+            title: Text((block['name'] ?? '').toString()),
+            subtitle: Text(
+              'المستخدم: ' +
+                  (block['applicantPublicId'] ??
+                          block['applicantUid'] ??
+                          '')
+                      .toString() +
+                  '\nالسبب: ' +
+                  (block['rejectionReason'] ?? '').toString(),
+            ),
+            isThreeLine: true,
+            trailing: FilledButton(
+              onPressed: busy ? null : () => allowReapply(block),
+              child: const Text('رفع الحظر'),
+            ),
+          ),
+        ),
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -478,123 +1015,10 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
-                  const Card(
-                    child: ListTile(
-                      leading: Icon(Icons.security),
-                      title: Text('طلبات إنشاء الوكالات'),
-                      subtitle: Text(
-                        'القائمة محدودة Server-side. الموافقة تنشئ Agency ID فريد وعضوية Owner فقط؛ الـ5 Hosts لا يُضافون تلقائيًا.',
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  if (applications.isEmpty)
-                    const Card(
-                      child: ListTile(
-                        leading: Icon(Icons.inbox_outlined),
-                        title: Text('لا توجد طلبات بانتظار المراجعة'),
-                      ),
-                    ),
-                  ...applications.map((application) {
-                    final hostIds = application['hostIds'] is List
-                        ? (application['hostIds'] as List)
-                            .map((e) => e.toString())
-                            .join('، ')
-                        : '';
-                    final status = (application['status'] ?? '').toString();
-                    return Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Text(
-                              (application['name'] ?? '').toString(),
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text('الحالة: $status'),
-                            Text(
-                              'مقدم الطلب: ${(application['applicantPublicId'] ?? application['applicantUid'] ?? '').toString()}',
-                            ),
-                            if ((application['country'] ?? '').toString().isNotEmpty)
-                              Text('الدولة: ${(application['country'] ?? '').toString()}'),
-                            Text('Host IDs: $hostIds'),
-                            const SizedBox(height: 12),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                if (status == 'pending')
-                                  OutlinedButton.icon(
-                                    onPressed: busy
-                                        ? null
-                                        : () => startReview(application),
-                                    icon: const Icon(Icons.fact_check_outlined),
-                                    label: const Text('بدء المراجعة'),
-                                  ),
-                                FilledButton.icon(
-                                  onPressed: busy
-                                      ? null
-                                      : () => approve(application),
-                                  icon: const Icon(Icons.check_circle_outline),
-                                  label: const Text('موافقة وإنشاء'),
-                                ),
-                                OutlinedButton.icon(
-                                  onPressed: busy
-                                      ? null
-                                      : () => rejectApplication(application),
-                                  icon: const Icon(Icons.cancel_outlined),
-                                  label: const Text('رفض'),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  }),
-                  const SizedBox(height: 20),
-                  const Text(
-                    'منع إعادة التقديم اليدوي',
-                    style: TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  if (manualBlocks.isEmpty)
-                    const Card(
-                      child: ListTile(
-                        leading: Icon(Icons.lock_open_outlined),
-                        title: Text('لا توجد طلبات محظورة يدويًا'),
-                      ),
-                    ),
-                  ...manualBlocks.map(
-                    (block) => Card(
-                      child: ListTile(
-                        leading: const Icon(Icons.lock_outline),
-                        title: Text((block['name'] ?? '').toString()),
-                        subtitle: Text(
-                          'المستخدم: ' +
-                              (block['applicantPublicId'] ??
-                                      block['applicantUid'] ??
-                                      '')
-                                  .toString() +
-                              '\nالسبب: ' +
-                              (block['rejectionReason'] ?? '').toString(),
-                        ),
-                        isThreeLine: true,
-                        trailing: FilledButton(
-                          onPressed: busy ? null : () => allowReapply(block),
-                          child: const Text('رفع الحظر'),
-                        ),
-                      ),
-                    ),
-                  ),
+                  ...managementWidgets(),
+                  if (canOpenManagement && canReviewApplications)
+                    const SizedBox(height: 24),
+                  ...reviewWidgets(),
                   const SizedBox(height: 90),
                 ],
               ),
