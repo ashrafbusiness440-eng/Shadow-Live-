@@ -180,3 +180,19 @@ test("agency manager role core is direct, bounded, and query free", () => {
   assert.equal(managerRoleSource.includes("db.increment(targetCounter, 1)"), true);
   assert.equal(managerRoleSource.includes("AGENCY_LIMITS.agencyManagers"), true);
 });
+
+
+test("Stage 05-B agency member surface stays bounded", () => {
+  const sourceText = source("../../cloudflare-worker/src/agency-membership.js");
+  const start = sourceText.indexOf("export async function listAgencyMembers");
+  const end = sourceText.indexOf("export async function listAgencyMembershipPending", start);
+  const listSource = sourceText.slice(start, end);
+  assert.equal(start >= 0, true);
+  assert.equal(listSource.includes(".list("), false);
+  assert.equal(listSource.includes('Math.min(50, boundedAgencyPageSize(body.limit, 25))'), true);
+  assert.equal(listSource.includes('limit,'), true);
+  assert.equal(listSource.includes('db.runQuery("agency_memberships"'), true);
+  assert.equal(listSource.includes('field: "agencyId"'), true);
+  assert.equal(listSource.includes('field: "status"'), true);
+  assert.equal(listSource.includes('rows.map((row) =>'), true);
+});
