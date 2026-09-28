@@ -69,6 +69,8 @@ export const AGENCY_COLLECTIONS = Object.freeze({
   agencies: "agencies",
   agencyIds: "agency_ids",
   creationOperations: "agency_creation_operations",
+  reviewOperations: "agency_review_operations",
+  manualReapplyBlocks: "agency_manual_reapply_blocks",
   memberships: "agency_memberships",
   userMemberships: "agency_user_memberships",
   managerSlots: "agency_manager_slots",
@@ -144,6 +146,10 @@ export function agencyIdRegistryPath(agencyId) {
 
 export function agencyCreationOperationPath(actorUid, operationId) {
   return `${AGENCY_COLLECTIONS.creationOperations}/${safePart(actorUid, "actor_uid")}__${safePart(operationId, "agency_creation_operation_id", 120)}`;
+}
+
+export function agencyReviewOperationPath(actorUid, operationId) {
+  return `${AGENCY_COLLECTIONS.reviewOperations}/${safePart(actorUid, "actor_uid")}__${safePart(operationId, "agency_review_operation_id", 120)}`;
 }
 
 export function agencyMembershipPath(agencyId, uid) {

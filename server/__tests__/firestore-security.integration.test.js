@@ -435,6 +435,49 @@ test("client cannot forge agency application locks idempotency or creation regis
     action:"directCreateAgency",
     status:"completed",
   }));
+  await assertFails(setDoc(doc(applicantDb,"agency_review_operations","forged_review"),{
+    actorUid:uid,
+    action:"rejectAgencyApplication",
+    status:"completed",
+  }));
+  await assertFails(setDoc(doc(applicantDb,"agency_manual_reapply_blocks","rules_application"),{
+    applicationId:"rules_application",
+    applicantUid:uid,
+  }));
+});
+
+test("agency rejection notification is private to its applicant",async()=>{
+  await env.withSecurityRulesDisabled(async context=>{
+    await setDoc(doc(context.firestore(),"notifications","rules_agency_rejected"),{
+      userId:uid,
+      type:"agency_application_rejected",
+      title:"تم رفض طلب إنشاء الوكالة",
+      body:"سبب تجريبي",
+      read:false,
+      applicationId:"rules_application",
+      createdAt:new Date(),
+    });
+  });
+  const applicantDb=phoneUserDb();
+  const otherDb=phoneDbFor(otherUid);
+  await assertSucceeds(
+    getDoc(doc(applicantDb,"notifications","rules_agency_rejected")),
+  );
+  await assertFails(
+    getDoc(doc(otherDb,"notifications","rules_agency_rejected")),
+  );
+  await assertSucceeds(
+    updateDoc(
+      doc(applicantDb,"notifications","rules_agency_rejected"),
+      {read:true},
+    ),
+  );
+  await assertFails(
+    updateDoc(
+      doc(applicantDb,"notifications","rules_agency_rejected"),
+      {body:"forged"},
+    ),
+  );
 });
 
 test("security assertions actually executed",()=>{

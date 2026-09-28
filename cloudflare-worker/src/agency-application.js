@@ -390,6 +390,74 @@ export async function submitAgencyApplication(
   throw new ApiError("transaction_failed", 500);
 }
 
+export async function getAgencyApplicationStatus(
+  db,
+  applicantUidInput,
+  { now = new Date() } = {},
+) {
+  const applicantUid = clean(applicantUidInput);
+  if (!applicantUid) throw new ApiError("invalid_applicant", 400);
+  const lockSnap = await db.get(`agency_application_locks/${applicantUid}`);
+  if (!lockSnap.exists) {
+    return {
+      ok: true,
+      status: "none",
+      applicationId: null,
+      canReapply: true,
+      reapplyMode: null,
+      reapplyAllowedAt: null,
+      remainingSeconds: 0,
+      rejectionReason: null,
+    };
+  }
+  const lock = lockSnap.data || {};
+  const applicationId = clean(lock.applicationId) || null;
+  const applicationSnap = applicationId
+    ? await db.get(`agency_applications/${applicationId}`)
+    : { exists: false, data: null };
+  const application = applicationSnap.exists
+    ? applicationSnap.data || {}
+    : {};
+  const status = clean(application.status || lock.status || "none");
+  const reapplyMode = clean(
+    application.reapplyMode || lock.reapplyMode,
+  ) || null;
+  const reapplyAllowedAt =
+    application.reapplyAllowedAt || lock.reapplyAllowedAt || null;
+  const nowDate = now instanceof Date ? now : new Date(now);
+  const nowMs = nowDate.getTime();
+  if (!Number.isFinite(nowMs)) throw new ApiError("invalid_request", 400);
+
+  let canReapply = false;
+  let remainingSeconds = 0;
+  if (status === "rejected") {
+    if (reapplyMode === "immediate") {
+      canReapply = true;
+    } else if (reapplyMode === "manual") {
+      canReapply = false;
+    } else {
+      const allowedAtMs = timestampMs(reapplyAllowedAt);
+      canReapply = allowedAtMs > 0 && allowedAtMs <= nowMs;
+      remainingSeconds = allowedAtMs > nowMs
+        ? Math.ceil((allowedAtMs - nowMs) / 1000)
+        : 0;
+    }
+  }
+
+  return {
+    ok: true,
+    status,
+    applicationId,
+    canReapply,
+    reapplyMode,
+    reapplyAllowedAt,
+    remainingSeconds,
+    rejectionReason:
+      clean(application.rejectionReason || lock.rejectionReason) || null,
+    rejectedAt: application.rejectedAt || lock.rejectedAt || null,
+  };
+}
+
 export async function agencyApplication(request, env) {
   if (request.method !== "POST") {
     return json(
@@ -410,6 +478,13 @@ export async function agencyApplication(request, env) {
     annotatePressureRequest(request, {
       action: `agencyApplication:${action}`,
     });
+    if (action === "status") {
+      const result = await getAgencyApplicationStatus(
+        firestoreClient(env),
+        decoded.sub,
+      );
+      return json(request, env, result);
+    }
     if (action !== "submit") {
       throw new ApiError("invalid_action", 400);
     }
