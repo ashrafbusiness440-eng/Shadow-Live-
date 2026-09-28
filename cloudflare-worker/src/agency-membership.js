@@ -24,6 +24,54 @@ class ApiError extends Error {
   }
 }
 
+export const AGENCY_REJOIN_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
+
+function timestampMs(value) {
+  if (value instanceof Date) return value.getTime();
+  const parsed = Date.parse(String(value ?? ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function cooldownUntilFor(now) {
+  const baseMs = now instanceof Date ? now.getTime() : timestampMs(now);
+  if (!Number.isFinite(baseMs) || baseMs <= 0) {
+    throw new ApiError("invalid_membership_time", 500);
+  }
+  return new Date(baseMs + AGENCY_REJOIN_COOLDOWN_MS);
+}
+
+function historicalMembership(snapshot) {
+  if (!snapshot?.exists) return false;
+  return ["left", "removed"].includes(clean(snapshot.data?.status));
+}
+
+function ensureRejoinCooldownExpired(snapshot, now) {
+  if (!historicalMembership(snapshot)) return;
+  const cooldownUntil = snapshot.data?.cooldownUntil;
+  const untilMs = timestampMs(cooldownUntil);
+  const nowMs = now instanceof Date ? now.getTime() : timestampMs(now);
+  if (untilMs > nowMs) {
+    throw new ApiError("agency_rejoin_cooldown", 409, {
+      cooldownUntil: new Date(untilMs).toISOString(),
+      remainingSeconds: Math.max(1, Math.ceil((untilMs - nowMs) / 1000)),
+    });
+  }
+}
+
+const MEMBERSHIP_WRITE_FIELDS = Object.freeze([
+  "schemaVersion",
+  "agencyId",
+  "uid",
+  "role",
+  "status",
+  "joinedAt",
+  "updatedAt",
+  "leftAt",
+  "removedAt",
+  "cooldownUntil",
+]);
+
+
 function validIdempotencyKey(value) {
   return /^[A-Za-z0-9_-]{12,120}$/.test(clean(value));
 }
@@ -475,7 +523,11 @@ export async function respondAgencyMembershipRequest(
       if (decision === "accept") {
         ensureAgencyActive(agencySnap);
         ensureUserCanNegotiate(userSnap, membershipSnap, appLockSnap);
-        if (agencyMembershipSnap.exists) {
+        ensureRejoinCooldownExpired(membershipSnap, now);
+        if (
+          agencyMembershipSnap.exists &&
+          !historicalMembership(agencyMembershipSnap)
+        ) {
           throw new ApiError("user_already_in_agency", 409);
         }
       }
@@ -580,15 +632,29 @@ export async function respondAgencyMembershipRequest(
 
       if (accepted) {
         const agencyOwnerUid = clean(agencySnap.data?.ownerUid);
+        const agencyMembershipWrite = agencyMembershipSnap.exists
+          ? db.writeUpdate(
+              `agency_memberships/${agencyId}__${uid}`,
+              membership,
+              MEMBERSHIP_WRITE_FIELDS,
+            )
+          : db.writeCreate(
+              `agency_memberships/${agencyId}__${uid}`,
+              membership,
+            );
+        const userMembershipWrite = membershipSnap.exists
+          ? db.writeUpdate(
+              `agency_user_memberships/${uid}`,
+              membership,
+              MEMBERSHIP_WRITE_FIELDS,
+            )
+          : db.writeCreate(
+              `agency_user_memberships/${uid}`,
+              membership,
+            );
         writes.push(
-          db.writeCreate(
-            `agency_memberships/${agencyId}__${uid}`,
-            membership,
-          ),
-          db.writeCreate(
-            `agency_user_memberships/${uid}`,
-            membership,
-          ),
+          agencyMembershipWrite,
+          userMembershipWrite,
           db.writeUpdate(
             `users/${uid}`,
             {
@@ -757,15 +823,11 @@ export async function commitAcceptedAgencyMembership(
       ]);
       ensureAgencyActive(agencySnap);
 
-      if (userMembershipSnap.exists || agencyMembershipSnap.exists) {
-        const existing =
-          userMembershipSnap.exists
-            ? userMembershipSnap.data || {}
-            : agencyMembershipSnap.data || {};
-        if (
-          clean(existing.agencyId) === agencyId &&
-          clean(existing.status) === "active"
-        ) {
+      if (
+        userMembershipSnap.exists &&
+        clean(userMembershipSnap.data?.status) === "active"
+      ) {
+        if (clean(userMembershipSnap.data?.agencyId) === agencyId) {
           await db.rollback(tx);
           return {
             ok: true,
@@ -774,11 +836,18 @@ export async function commitAcceptedAgencyMembership(
             agencyId,
             uid,
             membershipCommitted: true,
-            membershipRole: clean(existing.role || "host"),
+            membershipRole: clean(userMembershipSnap.data?.role || "host"),
           };
         }
         throw new ApiError("user_already_in_agency", 409);
       }
+      if (
+        agencyMembershipSnap.exists &&
+        !historicalMembership(agencyMembershipSnap)
+      ) {
+        throw new ApiError("user_already_in_agency", 409);
+      }
+      ensureRejoinCooldownExpired(userMembershipSnap, now);
       if (!isAvailableUser(userSnap) || clean(userSnap.data?.agencyId)) {
         throw new ApiError("user_already_in_agency", 409);
       }
@@ -808,15 +877,29 @@ export async function commitAcceptedAgencyMembership(
         membershipRole: "host",
       };
       const agencyOwnerUid = clean(agencySnap.data?.ownerUid);
+      const agencyMembershipWrite = agencyMembershipSnap.exists
+        ? db.writeUpdate(
+            `agency_memberships/${agencyId}__${uid}`,
+            membership,
+            MEMBERSHIP_WRITE_FIELDS,
+          )
+        : db.writeCreate(
+            `agency_memberships/${agencyId}__${uid}`,
+            membership,
+          );
+      const userMembershipWrite = userMembershipSnap.exists
+        ? db.writeUpdate(
+            `agency_user_memberships/${uid}`,
+            membership,
+            MEMBERSHIP_WRITE_FIELDS,
+          )
+        : db.writeCreate(
+            `agency_user_memberships/${uid}`,
+            membership,
+          );
       const writes = [
-        db.writeCreate(
-          `agency_memberships/${agencyId}__${uid}`,
-          membership,
-        ),
-        db.writeCreate(
-          `agency_user_memberships/${uid}`,
-          membership,
-        ),
+        agencyMembershipWrite,
+        userMembershipWrite,
         db.writeUpdate(
           `users/${uid}`,
           {
@@ -1105,12 +1188,13 @@ async function changeAgencyMembershipStatus(
 
       const status = action === "leave" ? "left" : "removed";
       const reason = clean(body.reason).slice(0, 500) || null;
+      const cooldownUntil = cooldownUntilFor(now);
       const membershipPatch = {
         status,
         updatedAt: now,
         leftAt: action === "leave" ? now : userMembership.leftAt || null,
         removedAt: action === "remove" ? now : userMembership.removedAt || null,
-        cooldownUntil: null,
+        cooldownUntil,
       };
       const result = {
         agencyId,
@@ -1118,7 +1202,7 @@ async function changeAgencyMembershipStatus(
         role,
         status,
         departedAt: now,
-        cooldownUntil: null,
+        cooldownUntil,
       };
       const increments = [db.increment("memberCount", -1)];
       if (roleCounterField) {
@@ -1182,7 +1266,7 @@ async function changeAgencyMembershipStatus(
               uid: targetUid,
               role,
               status,
-              cooldownUntil: null,
+              cooldownUntil,
               reason,
             },
             idempotencyKey: key,
@@ -1201,8 +1285,10 @@ async function changeAgencyMembershipStatus(
               ? "تمت مغادرة الوكالة"
               : "تمت إزالتك من الوكالة",
             body: action === "leave"
-              ? "تم إنهاء عضويتك في الوكالة."
-              : reason || "تم إنهاء عضويتك في الوكالة بواسطة الإدارة.",
+              ? "تم إنهاء عضويتك في الوكالة. يمكنك الانضمام إلى وكالة بعد 7 أيام."
+              : reason
+                ? reason + " — يمكنك الانضمام إلى وكالة بعد 7 أيام."
+                : "تم إنهاء عضويتك في الوكالة بواسطة الإدارة. يمكنك الانضمام إلى وكالة بعد 7 أيام.",
             read: false,
             agencyId,
             memberUid: targetUid,
@@ -1457,6 +1543,10 @@ export async function agencyMembership(request, env) {
         decoded.sub,
         body,
       );
+    } else if (action === "leave") {
+      result = await leaveAgencyMembership(db, decoded.sub, body);
+    } else if (action === "remove") {
+      result = await removeAgencyMember(db, decoded.sub, body);
     } else if (action === "listAgencyPending") {
       result = await listAgencyMembershipPending(db, decoded.sub, body);
     } else if (action === "listMy") {
