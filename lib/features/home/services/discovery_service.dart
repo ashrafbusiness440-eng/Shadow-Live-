@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../room/services/room_realtime_query_service.dart';
+import 'home_async_cache.dart';
 
 class DiscoveryRoom {
   const DiscoveryRoom({
@@ -147,6 +148,15 @@ class DiscoveryService {
   static DateTime? _roomsCacheUntil;
   static Future<List<DiscoveryRoom>>? _roomsInFlight;
 
+  static final AsyncTtlCache<List<DiscoveryPerson>> _peopleCache =
+      AsyncTtlCache<List<DiscoveryPerson>>(
+        ttl: const Duration(seconds: 30),
+      );
+  static final AsyncTtlCache<Map<String, dynamic>> _configCache =
+      AsyncTtlCache<Map<String, dynamic>>(
+        ttl: const Duration(seconds: 60),
+      );
+
   Future<List<DiscoveryRoom>> hydrateRealtimeCounts(
     Iterable<DiscoveryRoom> source,
   ) async {
@@ -191,7 +201,7 @@ class DiscoveryService {
     }
 
     final running = _roomsInFlight;
-    if (!forceRefresh && running != null) return running;
+    if (running != null) return running;
 
     final future = () async {
       final roomSnapshot = await _firestore.collection('rooms').limit(60).get();
@@ -211,48 +221,83 @@ class DiscoveryService {
     });
   }
 
-  Future<HomeDiscoveryData> loadHome() async {
+  Future<Map<String, dynamic>?> _loadCurrentUserData(User? currentUser) async {
+    if (currentUser == null || currentUser.isAnonymous) return null;
+    final userSnapshot =
+        await _firestore.collection('users').doc(currentUser.uid).get();
+    return userSnapshot.data();
+  }
+
+  Future<List<DiscoveryPerson>> _loadPeople({
+    required bool forceRefresh,
+  }) {
+    return _peopleCache.get(
+      () async {
+        final peopleSnapshot =
+            await _firestore.collection('public_profiles').limit(24).get();
+        return List<DiscoveryPerson>.unmodifiable(
+          peopleSnapshot.docs.map(
+            (doc) => DiscoveryPerson(id: doc.id, data: doc.data()),
+          ),
+        );
+      },
+      forceRefresh: forceRefresh,
+    );
+  }
+
+  Future<Map<String, dynamic>> _loadConfig({
+    required bool forceRefresh,
+  }) {
+    return _configCache.get(
+      () async {
+        final configSnapshot = await _firestore
+            .collection('system_config')
+            .doc('home_discovery')
+            .get();
+        return Map<String, dynamic>.unmodifiable(
+          configSnapshot.data() ?? const <String, dynamic>{},
+        );
+      },
+      forceRefresh: forceRefresh,
+    );
+  }
+
+  Future<HomeDiscoveryData> loadHome({bool forceRefresh = false}) async {
     final currentUser = _auth.currentUser;
 
-    Map<String, dynamic>? userData;
-    if (currentUser != null && !currentUser.isAnonymous) {
-      final userSnapshot =
-          await _firestore.collection('users').doc(currentUser.uid).get();
-      userData = userSnapshot.data();
-    }
-
-    var rooms = <DiscoveryRoom>[];
-    try {
-      rooms = await loadRooms();
-    } catch (_) {
-      // Live Firebase may still be on the previous ruleset while Phase 4
-      // rules are awaiting deployment. Keep the rest of Home usable.
-    }
-
-    final people = <DiscoveryPerson>[];
-    try {
-      final peopleSnapshot =
-          await _firestore.collection('public_profiles').limit(24).get();
-      for (final doc in peopleSnapshot.docs) {
-        if (doc.id == currentUser?.uid) continue;
-        people.add(DiscoveryPerson(id: doc.id, data: doc.data()));
+    final userFuture = _loadCurrentUserData(currentUser);
+    final roomsFuture = () async {
+      try {
+        return await loadRooms(forceRefresh: forceRefresh);
+      } catch (_) {
+        // Keep Home usable if room discovery is temporarily unavailable.
+        return <DiscoveryRoom>[];
       }
-    } catch (_) {
-      // People discovery is optional. Room discovery and the rest of Home
-      // should still render when public profiles are unavailable.
-    }
+    }();
+    final peopleFuture = () async {
+      try {
+        return await _loadPeople(forceRefresh: forceRefresh);
+      } catch (_) {
+        // People discovery is optional.
+        return <DiscoveryPerson>[];
+      }
+    }();
+    final configFuture = () async {
+      try {
+        return await _loadConfig(forceRefresh: forceRefresh);
+      } catch (_) {
+        // Remote Home content is optional.
+        return <String, dynamic>{};
+      }
+    }();
 
-    Map<String, dynamic> config = const {};
-    try {
-      final configSnapshot = await _firestore
-          .collection('system_config')
-          .doc('home_discovery')
-          .get();
-      config = configSnapshot.data() ?? const {};
-    } catch (_) {
-      // Home must keep its lightweight local fallback when remote content
-      // is not configured yet.
-    }
+    final userData = await userFuture;
+    final rooms = await roomsFuture;
+    final cachedPeople = await peopleFuture;
+    final config = await configFuture;
+    final people = cachedPeople
+        .where((person) => person.id != currentUser?.uid)
+        .toList(growable: false);
 
     return HomeDiscoveryData(
       userData: userData,
