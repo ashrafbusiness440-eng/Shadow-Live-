@@ -16,6 +16,7 @@ class AgencyControlPage extends StatefulWidget {
 class _AgencyControlPageState extends State<AgencyControlPage> {
   bool loading = true;
   bool busy = false;
+  bool canDirectCreate = false;
   List<Map<String, dynamic>> applications = [];
 
   @override
@@ -66,9 +67,13 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
               .map((e) => Map<String, dynamic>.from(e))
               .toList()
           : <Map<String, dynamic>>[];
+      final permissions = body['permissions'] is Map
+          ? Map<String, dynamic>.from(body['permissions'] as Map)
+          : <String, dynamic>{};
       if (!mounted) return;
       setState(() {
         applications = rows;
+        canDirectCreate = permissions['canDirectCreate'] == true;
         loading = false;
       });
     } catch (e) {
@@ -289,11 +294,13 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: busy ? null : directCreate,
-        icon: const Icon(Icons.add_business),
-        label: const Text('إنشاء مباشر'),
-      ),
+      floatingActionButton: canDirectCreate
+          ? FloatingActionButton.extended(
+              onPressed: busy ? null : directCreate,
+              icon: const Icon(Icons.add_business),
+              label: const Text('إنشاء مباشر'),
+            )
+          : null,
       body: loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
