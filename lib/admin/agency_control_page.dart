@@ -18,6 +18,7 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
   bool busy = false;
   bool canDirectCreate = false;
   List<Map<String, dynamic>> applications = [];
+  List<Map<String, dynamic>> manualBlocks = [];
 
   @override
   void initState() {
@@ -67,12 +68,19 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
               .map((e) => Map<String, dynamic>.from(e))
               .toList()
           : <Map<String, dynamic>>[];
+      final blocks = body['manualBlocks'] is List
+          ? (body['manualBlocks'] as List)
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList()
+          : <Map<String, dynamic>>[];
       final permissions = body['permissions'] is Map
           ? Map<String, dynamic>.from(body['permissions'] as Map)
           : <String, dynamic>{};
       if (!mounted) return;
       setState(() {
         applications = rows;
+        manualBlocks = blocks;
         canDirectCreate = permissions['canDirectCreate'] == true;
         loading = false;
       });
@@ -278,6 +286,53 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('تعذر رفض الطلب: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> allowReapply(Map<String, dynamic> block) async {
+    if (busy) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('السماح بإعادة التقديم'),
+        content: Text(
+          'رفع المنع اليدوي عن طلب ' +
+              (block['name'] ?? '').toString() +
+              '؟',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('رفع الحظر'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || busy) return;
+    setState(() => busy = true);
+    try {
+      await post({
+        'action': 'allowReapply',
+        'applicationId': (block['applicationId'] ?? '').toString(),
+        'idempotencyKey': operationKey('agency_allow_reapply'),
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم السماح بإعادة التقديم فورًا.')),
+      );
+      await load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر رفع منع إعادة التقديم: ' + e.toString())),
         );
       }
     } finally {
@@ -502,6 +557,44 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
                       ),
                     );
                   }),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'منع إعادة التقديم اليدوي',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  if (manualBlocks.isEmpty)
+                    const Card(
+                      child: ListTile(
+                        leading: Icon(Icons.lock_open_outlined),
+                        title: Text('لا توجد طلبات محظورة يدويًا'),
+                      ),
+                    ),
+                  ...manualBlocks.map(
+                    (block) => Card(
+                      child: ListTile(
+                        leading: const Icon(Icons.lock_outline),
+                        title: Text((block['name'] ?? '').toString()),
+                        subtitle: Text(
+                          'المستخدم: ' +
+                              (block['applicantPublicId'] ??
+                                      block['applicantUid'] ??
+                                      '')
+                                  .toString() +
+                              '\nالسبب: ' +
+                              (block['rejectionReason'] ?? '').toString(),
+                        ),
+                        isThreeLine: true,
+                        trailing: FilledButton(
+                          onPressed: busy ? null : () => allowReapply(block),
+                          child: const Text('رفع الحظر'),
+                        ),
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 90),
                 ],
               ),
