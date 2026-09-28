@@ -68,6 +68,17 @@ function randomDocId(prefix) {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, "")}`;
 }
 
+function operationNow(options = {}) {
+  const raw = typeof options?.now === "function"
+    ? options.now()
+    : (options?.now ?? new Date());
+  const date = raw instanceof Date ? new Date(raw.getTime()) : new Date(raw);
+  if (!Number.isFinite(date.getTime())) {
+    throw new Error("invalid_operation_clock");
+  }
+  return date;
+}
+
 function utcPeriodKeys(date = new Date()) {
   const day = date.toISOString().slice(0, 10);
   const month = day.slice(0, 7);
@@ -133,7 +144,6 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     throw new ApiError("invalid_request", 400);
   }
 
-  const periods = utcPeriodKeys();
   const realtimeNamespace = options?.realtimeNamespace || null;
   const [senderRealtimePresence, receiverRealtimePresence] = await Promise.all([
     realtimeUserPresentFromNamespace(
@@ -151,6 +161,9 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
   let transactionAttempts = 0;
   return runTransaction(db, async (transaction) => {
     transactionAttempts += 1;
+    const now = operationNow(options);
+    const periods = utcPeriodKeys(now);
+    const nowMs = now.getTime();
     const roomPath = `rooms/${roomId}`;
     const senderPath = `users/${senderUid}`;
     const receiverPath = `users/${receiverId}`;
@@ -360,8 +373,6 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     const assetKey = clean(gift.assetKey || "gifts.placeholder.default");
     const imageUrl = clean(gift.imageUrl);
 
-    const nowMs = Date.now();
-
     const rocketAdvance = advanceRoomRocket({
       state: {
         ...(rocketStateSnap.data || {}),
@@ -382,7 +393,6 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       operationId: key,
     });
 
-    const now = new Date();
     const messageId = randomDocId("msg");
     const messagePath = `${roomPath}/messages/${messageId}`;
     const transactionPath = `gift_transactions/${key}`;
