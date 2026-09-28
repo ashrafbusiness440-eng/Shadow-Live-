@@ -9,7 +9,6 @@ import 'firebase_options.dart';
 import 'utils/compact_number.dart';
 import 'admin/control_admin_id_override.dart';
 import 'admin/agency_control_page.dart';
-import 'admin/agency_management_page.dart';
 import 'admin/control_api_endpoints.dart';
 import 'admin/control_firebase.dart';
 import 'admin/control_asset_manager_page.dart';
@@ -2555,21 +2554,15 @@ class MorePage extends StatelessWidget {
             ? (data['capabilities'] as List).map((e)=>e.toString()).toSet()
             : <String>{};
         final adminEnabled=data['adminEnabled']==true;
-        final adminEnabled=data['adminEnabled']==true;
         final canOpenAgencies=isOwner||
             (adminEnabled&&(
               capabilities.contains('manageAgencies')||
-              capabilities.contains('reviewAgencyApplications')));
-        final canManageAgencyMembers=isOwner||
-            (adminEnabled&&(
-              capabilities.contains('manageAgencies')||
+              capabilities.contains('reviewAgencyApplications')||
               capabilities.contains('manageAgencyMemberships')||
               capabilities.contains('manageAgencyManagers')));
         final items=<ControlItem>[
           if(canOpenAgencies)
-            const ControlItem('الوكالات','طلبات الإنشاء والمراجعة والإنشاء المباشر',Icons.apartment_outlined),
-          if(canManageAgencyMembers)
-            const ControlItem('إدارة أعضاء الوكالات','عرض الأعضاء والمديرين وتغيير الأدوار حسب Permission Matrix',Icons.groups_2_outlined),
+            const ControlItem('الوكالات','طلبات الإنشاء + إدارة الأعضاء والمديرين حسب الصلاحيات',Icons.apartment_outlined),
           const ControlItem('التقارير','واجهة جاهزة؛ القراءة الحقيقية تنتظر Rules محددة لـ reports بدل فتح Firestore بشكل واسع',Icons.flag_outlined),
           const ControlItem('VIP و IDs الخاصة','إدارة VIP والمعرّفات الخاصة',Icons.workspace_premium_outlined),
           if(isOwner)
@@ -2593,7 +2586,6 @@ class ControlList extends StatelessWidget {
 
   Widget targetPage(ControlItem item) {
     if (item.title == 'الوكالات') return const AgencyControlPage();
-    if (item.title == 'إدارة أعضاء الوكالات') return const AgencyManagementPage();
     if (item.title == 'سجل الإدارة') return const AuditLogPage();
     if (item.title == 'إعدادات النظام') return const SystemConfigPage();
     if (item.title == 'إدارة أصول التطبيق') return const ControlAssetManagerPage();
