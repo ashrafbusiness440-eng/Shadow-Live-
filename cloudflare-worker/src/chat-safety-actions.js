@@ -149,15 +149,6 @@ async function sendMessage(db, uid, body) {
     ]);
 
     if (op.exists) {
-      if (chatGiftOperationConflicts(op.data, {
-        senderId: uid,
-        receiverId,
-        conversationId,
-        giftId,
-        quantity,
-      })) {
-        throw new ApiError("idempotency_conflict", 409);
-      }
       await db.rollback(transaction);
       return { ok: true, code: "duplicate", ...(op.data?.result || {}) };
     }
@@ -355,6 +346,15 @@ export async function sendGift(db, uid, body) {
     ]);
 
     if (op.exists) {
+      if (chatGiftOperationConflicts(op.data, {
+        senderId: uid,
+        receiverId,
+        conversationId,
+        giftId,
+        quantity,
+      })) {
+        throw new ApiError("idempotency_conflict", 409);
+      }
       await db.rollback(transaction);
       return { ok: true, code: "duplicate", ...(op.data?.result || {}) };
     }
