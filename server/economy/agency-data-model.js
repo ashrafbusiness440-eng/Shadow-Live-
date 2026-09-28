@@ -41,6 +41,15 @@ export const AGENCY_APPLICATION_STATUS = Object.freeze([
   "cancelled",
 ]);
 
+export const AGENCY_REAPPLY_MODE = Object.freeze([
+  "immediate",
+  "24h",
+  "3d",
+  "7d",
+  "30d",
+  "manual",
+]);
+
 export const AGENCY_REQUEST_TYPE = Object.freeze([
   "join",
   "invite",
@@ -63,6 +72,7 @@ export const AGENCY_COLLECTIONS = Object.freeze({
   managerSlots: "agency_manager_slots",
   applications: "agency_applications",
   applicationLocks: "agency_application_locks",
+  applicationOperations: "agency_application_operations",
   membershipRequests: "agency_membership_requests",
   policyOverrides: "agency_policy_overrides",
   targetSnapshots: "agency_target_snapshots",
@@ -144,6 +154,10 @@ export function agencyApplicationLockPath(uid) {
   return `${AGENCY_COLLECTIONS.applicationLocks}/${safePart(uid, "user_id")}`;
 }
 
+export function agencyApplicationOperationPath(uid, operationId) {
+  return `${AGENCY_COLLECTIONS.applicationOperations}/${safePart(uid, "user_id")}__${safePart(operationId, "application_operation_id", 120)}`;
+}
+
 export function agencyMembershipRequestPath(requestId) {
   return `${AGENCY_COLLECTIONS.membershipRequests}/${safePart(requestId, "request_id", 220)}`;
 }
@@ -217,7 +231,10 @@ export function normalizeApplicationHostIds(rawIds) {
   if (!Array.isArray(rawIds) || rawIds.length !== AGENCY_LIMITS.applicationHostIds) {
     throw new Error("invalid_agency_application_hosts");
   }
-  const ids = rawIds.map((uid) => safePart(uid, "host_uid"));
+  const ids = rawIds.map((value) => clean(value));
+  if (ids.some((value) => !/^\d{6}$/.test(value))) {
+    throw new Error("invalid_agency_application_host_id");
+  }
   if (new Set(ids).size !== ids.length) {
     throw new Error("duplicate_agency_application_host");
   }
@@ -313,23 +330,41 @@ export function createAgencyApplicationDocument({
   applicantUid,
   name,
   requestedPublicId,
+  hostIds,
   hostUids,
+  country = null,
   reapplyMode = null,
   now,
 } = {}) {
   const mode = reapplyMode == null ? null : clean(reapplyMode);
-  if (mode != null && !["immediate", "24h"].includes(mode)) throw new Error("invalid_agency_reapply_mode");
+  if (mode != null && !AGENCY_REAPPLY_MODE.includes(mode)) throw new Error("invalid_agency_reapply_mode");
   const applicationName = clean(name);
   if (!applicationName || applicationName.length > 80) throw new Error("invalid_agency_name");
   const publicId = clean(requestedPublicId);
   if (publicId && !/^\d{6}$/.test(publicId)) throw new Error("invalid_agency_public_id");
+  const normalizedHostIds = normalizeApplicationHostIds(hostIds);
+  const normalizedHostUids = Array.isArray(hostUids)
+    ? hostUids.map((uid) => safePart(uid, "host_uid"))
+    : [];
+  if (
+    normalizedHostUids.length !== AGENCY_LIMITS.applicationHostIds ||
+    new Set(normalizedHostUids).size !== normalizedHostUids.length
+  ) {
+    throw new Error("invalid_agency_application_host_uids");
+  }
+  const normalizedCountry = country == null ? null : clean(country);
+  if (normalizedCountry != null && (normalizedCountry.length < 2 || normalizedCountry.length > 64)) {
+    throw new Error("invalid_agency_country");
+  }
   return {
     schemaVersion: AGENCY_DATA_MODEL_VERSION,
     applicationId: safePart(applicationId, "application_id", 220),
     applicantUid: safePart(applicantUid, "applicant_uid"),
     name: applicationName,
     requestedPublicId: publicId || null,
-    hostUids: normalizeApplicationHostIds(hostUids),
+    country: normalizedCountry,
+    hostIds: normalizedHostIds,
+    hostUids: normalizedHostUids,
     status: "pending",
     reapplyMode: mode,
     reapplyAllowedAt: null,
