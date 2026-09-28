@@ -54,6 +54,17 @@ function randomDocId(prefix) {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, "")}`;
 }
 
+function operationNow(options = {}) {
+  const raw = typeof options?.now === "function"
+    ? options.now()
+    : (options?.now ?? new Date());
+  const date = raw instanceof Date ? new Date(raw.getTime()) : new Date(raw);
+  if (!Number.isFinite(date.getTime())) {
+    throw new Error("invalid_operation_clock");
+  }
+  return date;
+}
+
 function utcPeriodKeys(date = new Date()) {
   const day = date.toISOString().slice(0, 10);
   const month = day.slice(0, 7);
@@ -109,6 +120,8 @@ async function sendMessage(db, uid, body) {
   const nowMs = Date.now();
 
   return runTransaction(db, async (transaction) => {
+    const now = operationNow(options);
+    const periods = utcPeriodKeys(now);
     const opPath = `message_operations/${key}`;
     const senderPath = `users/${uid}`;
     const receiverPath = `users/${receiverId}`;
@@ -277,7 +290,7 @@ async function sendMessage(db, uid, body) {
   });
 }
 
-export async function sendGift(db, uid, body) {
+export async function sendGift(db, uid, body, options = {}) {
   const receiverId = clean(body.receiverId);
   const giftId = clean(body.giftId);
   const conversationId = clean(body.conversationId);
@@ -321,7 +334,6 @@ export async function sendGift(db, uid, body) {
     const conversationPath = `conversations/${conversationId}`;
     const outgoingBlockPath = `user_blocks/${uid}/items/${receiverId}`;
     const incomingBlockPath = `user_blocks/${receiverId}/items/${uid}`;
-    const periods = utcPeriodKeys();
 
     const [
       op,
@@ -482,7 +494,6 @@ export async function sendGift(db, uid, body) {
     const closingDiamonds = openingDiamonds + diamondsEarned;
     const after = before - totalCost;
 
-    const now = new Date();
     const giftName = clean(giftData.nameAr || "هدية");
     const imageUrl = clean(giftData.imageUrl);
     const assetKey = clean(giftData.assetKey || "gifts.placeholder.default");
