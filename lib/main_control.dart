@@ -2556,10 +2556,12 @@ class MorePage extends StatelessWidget {
         final canOpenAgencies=isOwner||
             (data['adminEnabled']==true&&(
               capabilities.contains('manageAgencies')||
-              capabilities.contains('reviewAgencyApplications')));
+              capabilities.contains('reviewAgencyApplications')||
+              capabilities.contains('manageAgencyManagers')||
+              capabilities.contains('manageAgencyMemberships')));
         final items=<ControlItem>[
           if(canOpenAgencies)
-            const ControlItem('الوكالات','طلبات الإنشاء والمراجعة والإنشاء المباشر',Icons.apartment_outlined),
+            const ControlItem('الوكالات','طلبات الإنشاء + إدارة الأعضاء والمديرين حسب الصلاحيات',Icons.apartment_outlined),
           const ControlItem('التقارير','واجهة جاهزة؛ القراءة الحقيقية تنتظر Rules محددة لـ reports بدل فتح Firestore بشكل واسع',Icons.flag_outlined),
           const ControlItem('VIP و IDs الخاصة','إدارة VIP والمعرّفات الخاصة',Icons.workspace_premium_outlined),
           if(isOwner)
