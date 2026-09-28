@@ -62,6 +62,7 @@ export const AGENCY_COLLECTIONS = Object.freeze({
   userMemberships: "agency_user_memberships",
   managerSlots: "agency_manager_slots",
   applications: "agency_applications",
+  applicationLocks: "agency_application_locks",
   membershipRequests: "agency_membership_requests",
   policyOverrides: "agency_policy_overrides",
   targetSnapshots: "agency_target_snapshots",
@@ -137,6 +138,10 @@ export function agencyManagerSlotsPath(agencyId) {
 
 export function agencyApplicationPath(applicationId) {
   return `${AGENCY_COLLECTIONS.applications}/${safePart(applicationId, "application_id", 220)}`;
+}
+
+export function agencyApplicationLockPath(uid) {
+  return `${AGENCY_COLLECTIONS.applicationLocks}/${safePart(uid, "user_id")}`;
 }
 
 export function agencyMembershipRequestPath(requestId) {
@@ -309,11 +314,11 @@ export function createAgencyApplicationDocument({
   name,
   requestedPublicId,
   hostUids,
-  reapplyMode = "immediate",
+  reapplyMode = null,
   now,
 } = {}) {
-  const mode = clean(reapplyMode);
-  if (!["immediate", "24h"].includes(mode)) throw new Error("invalid_agency_reapply_mode");
+  const mode = reapplyMode == null ? null : clean(reapplyMode);
+  if (mode != null && !["immediate", "24h"].includes(mode)) throw new Error("invalid_agency_reapply_mode");
   const applicationName = clean(name);
   if (!applicationName || applicationName.length > 80) throw new Error("invalid_agency_name");
   const publicId = clean(requestedPublicId);
@@ -327,6 +332,7 @@ export function createAgencyApplicationDocument({
     hostUids: normalizeApplicationHostIds(hostUids),
     status: "pending",
     reapplyMode: mode,
+    reapplyAllowedAt: null,
     rejectionReason: null,
     createdAt: now,
     updatedAt: now,
