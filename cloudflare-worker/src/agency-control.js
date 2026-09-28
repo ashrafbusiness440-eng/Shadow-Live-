@@ -722,6 +722,200 @@ export async function rejectAgencyApplication(
           createdAt: now,
         }),
       ];
+      if (reapplyMode === "manual") {
+        writes.push(
+          db.writeCreate(`agency_manual_reapply_blocks/${applicationId}`, {
+            applicationId,
+            applicantUid,
+            applicantPublicId: clean(application.applicantPublicId) || null,
+            name: clean(application.name),
+            rejectionReason: reason,
+            rejectedAt: now,
+            rejectedBy: actorUid,
+            createdAt: now,
+          }),
+        );
+      }
+
+      await db.commit(tx, writes);
+      return { ok: true, code: "ok", ...result };
+    } catch (error) {
+      await db.rollback(tx);
+      if (error instanceof ApiError) throw error;
+      if (isTransientFirestoreError(error) && attempt < 2) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, firestoreErrorRetryDelayMs(attempt))
+        );
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new ApiError("transaction_failed", 500);
+}
+
+export async function listAgencyManualReapplyBlocks(
+  db,
+  limitInput = 25,
+) {
+  const limit = Math.min(25, boundedAgencyPageSize(limitInput, 25));
+  const rows = await db.runQuery("agency_manual_reapply_blocks", { limit });
+  return rows
+    .map((row) => {
+      const data = row?.data || {};
+      return {
+        applicationId: clean(data.applicationId || row?.id),
+        applicantUid: clean(data.applicantUid),
+        applicantPublicId: clean(data.applicantPublicId) || null,
+        name: clean(data.name),
+        rejectionReason: clean(data.rejectionReason),
+        rejectedAt: data.rejectedAt || null,
+        rejectedBy: clean(data.rejectedBy) || null,
+      };
+    })
+    .sort((a, b) => timestampMs(b.rejectedAt) - timestampMs(a.rejectedAt));
+}
+
+function unblockFingerprint(applicationId) {
+  return JSON.stringify({
+    action: "allowReapply",
+    applicationId: clean(applicationId),
+  });
+}
+
+export async function allowAgencyReapply(
+  db,
+  actorUid,
+  body = {},
+  { now = new Date() } = {},
+) {
+  const applicationId = clean(body.applicationId);
+  const key = clean(body.idempotencyKey);
+  if (!applicationId || applicationId.includes("/")) {
+    throw new ApiError("invalid_application_id", 400);
+  }
+  if (!validIdempotencyKey(key)) {
+    throw new ApiError("invalid_idempotency_key", 400);
+  }
+  const operationPath = `agency_review_operations/${actorUid}__${key}`;
+  const blockPath = `agency_manual_reapply_blocks/${applicationId}`;
+  const applicationPath = `agency_applications/${applicationId}`;
+  const fingerprint = unblockFingerprint(applicationId);
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const tx = await db.beginTransaction();
+    try {
+      const [operationSnap, blockSnap, applicationSnap] = await Promise.all([
+        db.get(operationPath, tx),
+        db.get(blockPath, tx),
+        db.get(applicationPath, tx),
+      ]);
+      if (operationSnap.exists) {
+        const existing = operationSnap.data || {};
+        if (clean(existing.requestFingerprint) !== fingerprint) {
+          throw new ApiError("idempotency_conflict", 409);
+        }
+        await db.rollback(tx);
+        return { ok: true, code: "duplicate", ...(existing.result || {}) };
+      }
+      if (!blockSnap.exists) {
+        throw new ApiError("manual_reapply_block_not_found", 404);
+      }
+      if (!applicationSnap.exists) {
+        throw new ApiError("application_not_found", 404);
+      }
+      const application = applicationSnap.data || {};
+      const applicantUid = clean(application.applicantUid);
+      if (
+        clean(application.status) !== "rejected" ||
+        clean(application.reapplyMode) !== "manual" ||
+        !applicantUid
+      ) {
+        throw new ApiError("manual_reapply_block_conflict", 409);
+      }
+      const lockPath = `agency_application_locks/${applicantUid}`;
+      const lockSnap = await db.get(lockPath, tx);
+      if (
+        !lockSnap.exists ||
+        clean(lockSnap.data?.applicationId) !== applicationId ||
+        clean(lockSnap.data?.status) !== "rejected"
+      ) {
+        throw new ApiError("application_lock_conflict", 409);
+      }
+
+      const result = {
+        applicationId,
+        status: "rejected",
+        reapplyMode: "immediate",
+        reapplyAllowedAt: now,
+        manualUnblockedAt: now,
+        manualUnblockedBy: actorUid,
+      };
+      const writes = [
+        db.writeUpdate(applicationPath, {
+          reapplyMode: "immediate",
+          reapplyAllowedAt: now,
+          manualUnblockedAt: now,
+          manualUnblockedBy: actorUid,
+          updatedAt: now,
+        }, [
+          "reapplyMode",
+          "reapplyAllowedAt",
+          "manualUnblockedAt",
+          "manualUnblockedBy",
+          "updatedAt",
+        ]),
+        db.writeUpdate(lockPath, {
+          reapplyMode: "immediate",
+          reapplyAllowedAt: now,
+          manualUnblockedAt: now,
+          manualUnblockedBy: actorUid,
+          updatedAt: now,
+        }, [
+          "reapplyMode",
+          "reapplyAllowedAt",
+          "manualUnblockedAt",
+          "manualUnblockedBy",
+          "updatedAt",
+        ]),
+        db.writeDelete(blockPath),
+        db.writeCreate(operationPath, {
+          actorUid,
+          action: "allowAgencyReapply",
+          applicationId,
+          requestFingerprint: fingerprint,
+          status: "completed",
+          result,
+          createdAt: now,
+        }),
+        db.writeCreate(
+          `admin_audit_logs/agency_reapply_unblock_${applicationId}`,
+          {
+            actorUid,
+            action: "allowAgencyReapply",
+            targetType: "agency_application",
+            targetId: applicationId,
+            after: result,
+            idempotencyKey: key,
+            createdAt: now,
+          },
+        ),
+        db.writeCreate(
+          `notifications/agency_reapply_unblocked_${applicationId}`,
+          {
+            userId: applicantUid,
+            type: "agency_reapply_unblocked",
+            category: "system",
+            title: "يمكنك إعادة تقديم طلب الوكالة",
+            body: "تم رفع منع إعادة التقديم اليدوي.",
+            read: false,
+            applicationId,
+            reapplyMode: "immediate",
+            reapplyAllowedAt: now,
+            createdAt: now,
+          },
+        ),
+      ];
 
       await db.commit(tx, writes);
       return { ok: true, code: "ok", ...result };
@@ -787,10 +981,14 @@ export async function agencyControl(request, env) {
 
     if (action === "listReviewQueue") {
       if (!actor.permissions.canReviewApplications) throw new ApiError("forbidden", 403);
-      const applications = await listAgencyReviewQueue(db, body.limit);
+      const [applications, manualBlocks] = await Promise.all([
+        listAgencyReviewQueue(db, body.limit),
+        listAgencyManualReapplyBlocks(db, 25),
+      ]);
       return json(request, env, {
         ok: true,
         applications,
+        manualBlocks,
         limit: Math.min(50, boundedAgencyPageSize(body.limit, 50)),
         permissions: {
           canReviewApplications: actor.permissions.canReviewApplications,
@@ -809,6 +1007,10 @@ export async function agencyControl(request, env) {
     if (action === "reject") {
       if (!actor.permissions.canReviewApplications) throw new ApiError("forbidden", 403);
       return json(request, env, await rejectAgencyApplication(db, decoded.sub, body));
+    }
+    if (action === "allowReapply") {
+      if (!actor.permissions.canReviewApplications) throw new ApiError("forbidden", 403);
+      return json(request, env, await allowAgencyReapply(db, decoded.sub, body));
     }
     if (action === "directCreate") {
       if (!actor.permissions.canManageAgencies) throw new ApiError("forbidden", 403);
