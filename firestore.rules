@@ -320,6 +320,14 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    match /agency_application_locks/{userId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /agency_application_operations/{operationId} {
+      allow read, create, update, delete: if false;
+    }
+
     match /agency_membership_requests/{requestId} {
       allow read: if canPlatformManageAgencyMemberships()
         || (signedIn() && resource.data.uid == request.auth.uid)
