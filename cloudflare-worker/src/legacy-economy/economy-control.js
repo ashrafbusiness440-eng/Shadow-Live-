@@ -47,6 +47,7 @@ async function actor(req){
     isOwner:permissions.isOwner,
     canAdjustBalances:permissions.canAdjustBalances,
     canManageSettlements:permissions.canManageSettlements,
+    canSettleAgency:permissions.canSettleAgency,
   };
 }
 
@@ -291,7 +292,7 @@ export async function handler(req,res){
   if(req.method!=="POST")return out(res,405,{ok:false,code:"method_not_allowed"});
   try{
     initFirebase();
-    const {uid,db,isOwner,canAdjustBalances,canManageSettlements}=await actor(req);
+    const {uid,db,isOwner,canAdjustBalances,canManageSettlements,canSettleAgency}=await actor(req);
     const action=clean(req.body?.action);
 
     if(action==="state"){
@@ -360,7 +361,7 @@ export async function handler(req,res){
     }
 
     if(action==="settleAgencyMonth"){
-      if(!canManageSettlements)throw Error("settlement_forbidden");
+      if(!canSettleAgency)throw Error("settlement_forbidden");
       const result=await settleAgencyMonth(
         db,
         uid,

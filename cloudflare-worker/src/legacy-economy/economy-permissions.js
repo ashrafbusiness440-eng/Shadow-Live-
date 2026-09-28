@@ -5,11 +5,14 @@ export function economyPermissions(user = {}) {
   const canEconomy=isOwner||(adminEnabled&&capabilities.includes("manageEconomy"));
   const canAdjustBalances=isOwner||(adminEnabled&&capabilities.includes("adjustBalances"));
   const canManageSettlements=isOwner||(adminEnabled&&capabilities.includes("manageSettlements"));
+  const canManageAgencySettlements=isOwner||(adminEnabled&&capabilities.includes("manageAgencySettlements"));
   return {
     isOwner,
     canEconomy,
     canAdjustBalances,
     canManageSettlements,
+    canManageAgencySettlements,
     canSettle:canEconomy&&canManageSettlements,
+    canSettleAgency:canEconomy&&canManageSettlements&&canManageAgencySettlements,
   };
 }

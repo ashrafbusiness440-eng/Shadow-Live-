@@ -25,6 +25,66 @@ service cloud.firestore {
         && (isOwner() || (userDoc().data.capabilities is list && capability in userDoc().data.capabilities));
     }
 
+    function agencyMembershipId(agencyId, uid) {
+      return agencyId + '__' + uid;
+    }
+
+    function agencyMembershipExists(agencyId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/agency_memberships/$(agencyMembershipId(agencyId, request.auth.uid)));
+    }
+
+    function agencyMembershipData(agencyId) {
+      return get(/databases/$(database)/documents/agency_memberships/$(agencyMembershipId(agencyId, request.auth.uid))).data;
+    }
+
+    function isActiveAgencyMember(agencyId) {
+      return agencyMembershipExists(agencyId)
+        && agencyMembershipData(agencyId).status == 'active';
+    }
+
+    function isAgencyManagementMember(agencyId) {
+      return isActiveAgencyMember(agencyId)
+        && agencyMembershipData(agencyId).role in ['owner', 'senior_manager', 'manager'];
+    }
+
+    function isAgencyOwnerMember(agencyId) {
+      return isActiveAgencyMember(agencyId)
+        && agencyMembershipData(agencyId).role == 'owner';
+    }
+
+    function canPlatformManageAgencies() {
+      return isOwner() || hasCapability('manageAgencies');
+    }
+
+    function canPlatformReviewAgencyApplications() {
+      return canPlatformManageAgencies() || hasCapability('reviewAgencyApplications');
+    }
+
+    function canPlatformManageAgencyMemberships() {
+      return canPlatformManageAgencies() || hasCapability('manageAgencyMemberships');
+    }
+
+    function canPlatformManageAgencyManagers() {
+      return canPlatformManageAgencies() || hasCapability('manageAgencyManagers');
+    }
+
+    function canPlatformViewAgencyFinance() {
+      return isOwner()
+        || hasCapability('viewAgencyFinance')
+        || hasCapability('manageAgencySettlements')
+        || hasCapability('manageEconomy')
+        || hasCapability('manageSettlements');
+    }
+
+    function canPlatformManageAgencyPolicies() {
+      return isOwner() || hasCapability('manageAgencyPolicies');
+    }
+
+    function canPlatformSuspendAgencies() {
+      return canPlatformManageAgencies() || hasCapability('suspendAgencies');
+    }
+
     function publicIdTransitionAllowed(userId) {
       return (
           !('publicId' in resource.data)
@@ -230,10 +290,109 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    match /agencies/{agencyId} {
+      allow read: if canPlatformManageAgencies() || isActiveAgencyMember(agencyId);
+      allow create, update, delete: if false;
+    }
+
+    match /agency_memberships/{membershipId} {
+      allow read: if canPlatformManageAgencyMemberships()
+        || (signedIn() && resource.data.uid == request.auth.uid)
+        || isAgencyManagementMember(resource.data.agencyId);
+      allow create, update, delete: if false;
+    }
+
+    match /agency_user_memberships/{userId} {
+      allow read: if canPlatformManageAgencyMemberships()
+        || (signedIn() && request.auth.uid == userId);
+      allow create, update, delete: if false;
+    }
+
+    match /agency_manager_slots/{agencyId} {
+      allow read: if canPlatformManageAgencyManagers()
+        || isAgencyManagementMember(agencyId);
+      allow create, update, delete: if false;
+    }
+
+    match /agency_applications/{applicationId} {
+      allow read: if canPlatformReviewAgencyApplications()
+        || (signedIn() && resource.data.applicantUid == request.auth.uid);
+      allow create, update, delete: if false;
+    }
+
+    match /agency_membership_requests/{requestId} {
+      allow read: if canPlatformManageAgencyMemberships()
+        || (signedIn() && resource.data.uid == request.auth.uid)
+        || isAgencyManagementMember(resource.data.agencyId);
+      allow create, update, delete: if false;
+    }
+
+    match /agency_policy_overrides/{agencyId} {
+      allow read: if canPlatformManageAgencyPolicies()
+        || isAgencyOwnerMember(agencyId);
+      allow create, update, delete: if false;
+    }
+
+    match /agency_target_snapshots/{snapshotId} {
+      allow read: if canPlatformManageAgencyPolicies()
+        || canPlatformViewAgencyFinance()
+        || isAgencyOwnerMember(resource.data.agencyId);
+      allow create, update, delete: if false;
+    }
+
     match /agency_support_stats/{agencyId}/{document=**} {
-      allow read: if isOwner()
-        || hasCapability('manageEconomy')
-        || hasCapability('manageAgencies');
+      allow read: if canPlatformManageAgencies()
+        || canPlatformViewAgencyFinance()
+        || isAgencyManagementMember(agencyId);
+      allow create, update, delete: if false;
+    }
+
+    match /agency_ranking_entries/{entryId} {
+      allow read: if canPlatformManageAgencies();
+      allow create, update, delete: if false;
+    }
+
+    match /agency_host_monthly/{entryId} {
+      allow read: if canPlatformManageAgencies()
+        || canPlatformViewAgencyFinance()
+        || (signedIn() && resource.data.hostUid == request.auth.uid)
+        || isAgencyManagementMember(resource.data.agencyId);
+      allow create, update, delete: if false;
+    }
+
+    match /agency_monthly_accrual_shards/{shardId} {
+      allow read: if canPlatformViewAgencyFinance()
+        || isAgencyOwnerMember(resource.data.agencyId);
+      allow create, update, delete: if false;
+    }
+
+    match /agency_monthly_statements/{statementId} {
+      allow read: if canPlatformViewAgencyFinance()
+        || isAgencyOwnerMember(resource.data.agencyId);
+      allow create, update, delete: if false;
+    }
+
+    match /agency_wallets/{agencyId} {
+      allow read: if canPlatformViewAgencyFinance()
+        || isAgencyOwnerMember(agencyId);
+      allow create, update, delete: if false;
+    }
+
+    match /agency_bonus_accruals/{bonusId} {
+      allow read: if canPlatformViewAgencyFinance()
+        || isAgencyOwnerMember(resource.data.agencyId);
+      allow create, update, delete: if false;
+    }
+
+    match /agency_transfers/{transferId} {
+      allow read: if canPlatformViewAgencyFinance()
+        || isAgencyOwnerMember(resource.data.agencyId);
+      allow create, update, delete: if false;
+    }
+
+    match /agency_status_events/{eventId} {
+      allow read: if canPlatformSuspendAgencies()
+        || isAgencyManagementMember(resource.data.agencyId);
       allow create, update, delete: if false;
     }
 
@@ -246,17 +405,13 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // Legacy C1/C2 agency settlement collections are quarantined.
     match /agency_settlements/{settlementId} {
-      allow read: if isOwner() || hasCapability('manageSettlements') || hasCapability('manageAgencies');
-      allow create, update, delete: if false;
+      allow read, create, update, delete: if false;
     }
 
     match /agency_settlement_accruals/{accrualId} {
-      allow read: if isOwner()
-        || hasCapability('manageEconomy')
-        || hasCapability('manageSettlements')
-        || hasCapability('manageAgencies');
-      allow create, update, delete: if false;
+      allow read, create, update, delete: if false;
     }
 
     match /host_mic_activity/{userId}/{document=**} {
