@@ -22,6 +22,14 @@ function integer(value, fallback = 0) {
   return Number.isSafeInteger(parsed) ? parsed : fallback;
 }
 
+function targetFinancialInteger(value, field) {
+  const parsed = Number(value ?? 0);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) {
+    throw new Error("invalid_agency_target_" + field);
+  }
+  return parsed;
+}
+
 export function normalizeAgencyTargets(rawTargets) {
   const source = Array.isArray(rawTargets) && rawTargets.length
     ? rawTargets
@@ -59,20 +67,23 @@ export function calculateAgencyTargetProgress({
   storedPaidDiamonds = 0,
   targets,
 } = {}) {
-  const month = clean(monthKey);
-  if (!/^\d{4}-\d{2}$/.test(month)) {
-    throw new Error("invalid_agency_month");
-  }
+  const month = normalizeAgencyMonthKey(monthKey);
 
   const sameMonth = clean(storedMonth) === month;
   const previousProgressCoins = sameMonth
-    ? Math.max(0, integer(storedProgressCoins))
+    ? targetFinancialInteger(storedProgressCoins, "stored_progress_coins")
     : 0;
   const previousPaidDiamonds = sameMonth
-    ? Math.max(0, integer(storedPaidDiamonds))
+    ? targetFinancialInteger(storedPaidDiamonds, "stored_paid_diamonds")
     : 0;
-  const addedCoins = Math.max(0, integer(addedHostShareCoins));
+  const addedCoins = targetFinancialInteger(
+    addedHostShareCoins,
+    "added_host_share_coins",
+  );
   const progressCoins = previousProgressCoins + addedCoins;
+  if (!Number.isSafeInteger(progressCoins)) {
+    throw new Error("invalid_agency_target_progress_coins");
+  }
   const normalizedTargets = normalizeAgencyTargets(targets);
 
   let reachedTarget = null;
