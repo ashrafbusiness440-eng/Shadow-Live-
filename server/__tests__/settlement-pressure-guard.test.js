@@ -54,7 +54,7 @@ test("agency monthly settlement reads a fixed 32-shard set with direct document 
   const end = sourceText.indexOf("export async function handler", start);
   const settlement = sourceText.slice(start, end);
   assert.equal(settlement.includes(".where("), false);
-  assert.equal(settlement.includes("agency_monthly_accrual_shards"), true);
+  assert.equal(sourceText.includes('collection("agency_monthly_accrual_shards")'), true);
   assert.equal(settlement.includes("tx.get(settlementRef)"), true);
   assert.equal(settlement.includes("tx.get(ledgerRef)"), true);
 });
