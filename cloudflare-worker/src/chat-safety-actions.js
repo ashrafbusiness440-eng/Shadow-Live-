@@ -3,6 +3,7 @@ import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 import { resolveRevenuePolicy } from "./economy-policy.js";
+import { calculateAgencyTargetProgress } from "./agency-policy.js";
 import {
   legacyPresenceFresh,
   realtimeUserPresentFromNamespace,
@@ -10,6 +11,17 @@ import {
 
 const clean = (value) => String(value ?? "").trim();
 const validKey = (value) => /^[A-Za-z0-9_-]{12,220}$/.test(clean(value));
+const AGENCY_MONTHLY_ACCRUAL_SHARDS = 32;
+
+function agencyAccrualShard(value) {
+  const text = clean(value);
+  let hash = 2166136261;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) % AGENCY_MONTHLY_ACCRUAL_SHARDS;
+}
 const bounded = (value, fallback, min, max) => {
   const n = Number(value);
   return Number.isFinite(n) ? Math.max(min, Math.min(max, Math.floor(n))) : fallback;
@@ -48,7 +60,6 @@ function utcPeriodKeys(date = new Date()) {
     day,
     week: d.getUTCFullYear().toString() + "-W" + week.toString().padStart(2, "0"),
     month,
-    cycle: month + "-" + (date.getUTCDate() <= 15 ? "C1" : "C2"),
   };
 }
 
@@ -421,25 +432,33 @@ export async function sendGift(db, uid, body) {
       ? Math.max(0, totalCost - recipientShareCoins - agencyShareCoins)
       : totalCost;
 
-    const agencySettlementPending = Boolean(agencyId);
     const previousPending = Math.max(
       0,
       Number(receiverData.pendingGiftEarningCoins || 0),
     );
     const accumulated = previousPending + recipientShareCoins;
-    const diamondsEarned = earningsEnabled && !agencySettlementPending
-      ? Math.floor(accumulated / 10000)
-      : 0;
-    const pendingGiftEarningCoins = earningsEnabled && !agencySettlementPending
-      ? accumulated % 10000
-      : previousPending;
-    const pendingAgencyBefore = Math.max(
-      0,
-      Number(receiverData.pendingAgencyGiftEarningCoins || 0),
-    );
-    const pendingAgencyAfter = agencySettlementPending && earningsEnabled
-      ? pendingAgencyBefore + recipientShareCoins
-      : pendingAgencyBefore;
+    const agencyTarget = agencyId && earningsEnabled
+      ? calculateAgencyTargetProgress({
+          monthKey: periods.month,
+          storedMonth: receiverData.agencyTargetMonth,
+          storedProgressCoins: receiverData.agencyTargetProgressCoins,
+          addedHostShareCoins: recipientShareCoins,
+          storedPaidDiamonds: receiverData.agencySalaryPaidDiamonds,
+          targets:
+            receiverData.agencyPolicySnapshot?.targets ||
+            economyData.agencyTargets,
+        })
+      : null;
+    const diamondsEarned = agencyTarget
+      ? agencyTarget.salaryDeltaDiamonds
+      : earningsEnabled
+        ? Math.floor(accumulated / 10000)
+        : 0;
+    const pendingGiftEarningCoins = agencyTarget
+      ? previousPending
+      : earningsEnabled
+        ? accumulated % 10000
+        : previousPending;
     const openingDiamonds = Math.max(0, Number(receiverData.diamonds || 0));
     const closingDiamonds = openingDiamonds + diamondsEarned;
     const after = before - totalCost;
@@ -490,15 +509,28 @@ export async function sendGift(db, uid, body) {
       receiverTransforms.push(
         db.increment("giftEarningCoinsLifetime", recipientShareCoins),
       );
-      if (agencySettlementPending) {
-        receiverFields.pendingAgencyGiftEarningCoins = pendingAgencyAfter;
-        receiverMask.push("pendingAgencyGiftEarningCoins");
-      } else {
-        receiverFields.diamonds = closingDiamonds;
-        receiverFields.pendingGiftEarningCoins = pendingGiftEarningCoins;
-        receiverMask.push("diamonds", "pendingGiftEarningCoins");
-        receiverTransforms.push(
-          db.increment("giftDiamondsLifetime", diamondsEarned),
+      receiverFields.diamonds = closingDiamonds;
+      receiverFields.pendingGiftEarningCoins = pendingGiftEarningCoins;
+      receiverMask.push("diamonds", "pendingGiftEarningCoins");
+      receiverTransforms.push(
+        db.increment("giftDiamondsLifetime", diamondsEarned),
+      );
+      if (agencyTarget) {
+        receiverFields.agencyTargetMonth = periods.month;
+        receiverFields.agencyTargetProgressCoins = agencyTarget.progressCoins;
+        receiverFields.agencySalaryPaidDiamonds = agencyTarget.paidDiamonds;
+        receiverFields.agencyCurrentTargetId =
+          agencyTarget.reachedTarget?.id || "";
+        receiverFields.agencyNextTargetCoins =
+          agencyTarget.remainingToNextTargetCoins;
+        receiverFields.agencyTargetUpdatedAt = now;
+        receiverMask.push(
+          "agencyTargetMonth",
+          "agencyTargetProgressCoins",
+          "agencySalaryPaidDiamonds",
+          "agencyCurrentTargetId",
+          "agencyNextTargetCoins",
+          "agencyTargetUpdatedAt",
         );
       }
     }
@@ -551,50 +583,80 @@ export async function sendGift(db, uid, body) {
         );
       }
 
-      const accrualPath =
-        `agency_settlement_accruals/${agencyId}__${periods.cycle}__${receiverId}`;
+      const agencyShard = agencyAccrualShard(key);
       writes.push(
         db.writeUpdate(
-          accrualPath,
+          `agency_monthly_accrual_shards/${agencyId}__${periods.month}__${String(agencyShard).padStart(2, "0")}`,
+          {
+            agencyId,
+            month: periods.month,
+            shard: agencyShard,
+            updatedAt: now,
+          },
+          ["agencyId", "month", "shard", "updatedAt"],
+          [
+            db.increment("supportCoins", totalCost),
+            db.increment("hostShareCoins", recipientShareCoins),
+            db.increment("agencyShareCoins", agencyShareCoins),
+            db.increment("platformShareCoins", platformShareCoins),
+            db.increment("giftCount", quantity),
+          ],
+        ),
+      );
+      writes.push(
+        db.writeUpdate(
+          `agency_host_monthly/${agencyId}__${periods.month}__${receiverId}`,
           {
             agencyId,
             hostUid: receiverId,
-            cycleKey: periods.cycle,
             month: periods.month,
-            status: "open",
+            targetId: agencyTarget?.reachedTarget?.id || "",
+            nextTargetCoins: agencyTarget?.remainingToNextTargetCoins || 0,
+            salaryPaidDiamonds: agencyTarget?.paidDiamonds || 0,
             updatedAt: now,
           },
-          ["agencyId", "hostUid", "cycleKey", "month", "status", "updatedAt"],
+          [
+            "agencyId",
+            "hostUid",
+            "month",
+            "targetId",
+            "nextTargetCoins",
+            "salaryPaidDiamonds",
+            "updatedAt",
+          ],
           [
             db.increment("supportCoins", totalCost),
-            db.increment("hostGrossEarningCoins", recipientShareCoins),
-            db.increment("agencyGrossEarningCoins", agencyShareCoins),
-            db.increment("platformShareCoins", platformShareCoins),
+            db.increment("hostShareCoins", recipientShareCoins),
+            db.increment("agencyShareCoins", agencyShareCoins),
             db.increment("giftCount", quantity),
           ],
         ),
       );
     }
 
-    if (earningsEnabled && agencySettlementPending && recipientShareCoins > 0) {
+    if (earningsEnabled && agencyTarget && diamondsEarned > 0) {
       writes.push(
         db.writeCreate(earningsLedgerPath, {
           userId: receiverId,
-          asset: "pendingAgencyGiftEarningCoins",
-          delta: recipientShareCoins,
-          openingBalance: pendingAgencyBefore,
-          closingBalance: pendingAgencyAfter,
-          reason: "agency_gift_earning_accrual",
+          agencyId,
+          asset: "diamonds",
+          delta: diamondsEarned,
+          openingBalance: openingDiamonds,
+          closingBalance: closingDiamonds,
+          reason: "agency_target_salary",
           sourceType: "gift",
           sourceId: key,
           actorUid: uid,
           counterpartyUid: uid,
-          settlementCycleKey: periods.cycle,
-          idempotencyKey: key + "_earnings",
+          month: periods.month,
+          targetId: agencyTarget.reachedTarget?.id || "",
+          targetProgressCoins: agencyTarget.progressCoins,
+          salaryPaidDiamonds: agencyTarget.paidDiamonds,
+          idempotencyKey: key + "_agency_target_salary",
           createdAt: now,
         }),
       );
-    } else if (earningsEnabled && diamondsEarned > 0) {
+    } else if (earningsEnabled && !agencyTarget && diamondsEarned > 0) {
       writes.push(
         db.writeCreate(earningsLedgerPath, {
           userId: receiverId,
@@ -669,13 +731,18 @@ export async function sendGift(db, uid, body) {
         requiredQualifiedDays: revenue.requiredDays,
         diamondsEarned,
         pendingGiftEarningCoins,
-        pendingAgencyGiftEarningCoins: pendingAgencyAfter,
-        settlementMode: agencySettlementPending ? "agency_cycle" : "immediate",
-        settlementCycleKey: agencySettlementPending ? periods.cycle : null,
+        settlementMode: agencyTarget ? "target_immediate" : "immediate",
+        settlementCycleKey: null,
+        agencyTargetMonth: agencyTarget?.month || null,
+        agencyTargetProgressCoins: agencyTarget?.progressCoins || 0,
+        agencyTargetId: agencyTarget?.reachedTarget?.id || null,
+        agencyNextTargetCoins: agencyTarget?.remainingToNextTargetCoins || 0,
+        agencySalaryPaidDiamonds: agencyTarget?.paidDiamonds || 0,
+        salaryDeltaDiamonds: agencyTarget?.salaryDeltaDiamonds || 0,
         earningsStatus: !earningsEnabled
           ? "disabled"
-          : agencySettlementPending
-            ? "accrued_for_cycle"
+          : agencyTarget
+            ? (agencyTarget.salaryDeltaDiamonds > 0 ? "target_paid" : "target_progress")
             : "applied",
         periods,
         agencyId: agencyId || null,
@@ -723,10 +790,15 @@ export async function sendGift(db, uid, body) {
       earningsApplied: earningsEnabled,
       earningsStatus: !earningsEnabled
         ? "disabled"
-        : agencySettlementPending
-          ? "accrued_for_cycle"
+        : agencyTarget
+          ? (agencyTarget.salaryDeltaDiamonds > 0 ? "target_paid" : "target_progress")
           : "applied",
-      settlementCycleKey: agencySettlementPending ? periods.cycle : null,
+      settlementCycleKey: null,
+      agencyTargetMonth: agencyTarget?.month || null,
+      agencyTargetProgressCoins: agencyTarget?.progressCoins || 0,
+      agencyTargetId: agencyTarget?.reachedTarget?.id || null,
+      agencyNextTargetCoins: agencyTarget?.remainingToNextTargetCoins || 0,
+      agencySalaryPaidDiamonds: agencyTarget?.paidDiamonds || 0,
     };
 
     writes.push(
