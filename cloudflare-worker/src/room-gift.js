@@ -13,6 +13,17 @@ import { writePressureDataPoint } from "./pressure-telemetry.js";
 
 const clean = (value) => String(value ?? "").trim();
 const validKey = (value) => /^[A-Za-z0-9_-]{12,220}$/.test(clean(value));
+const AGENCY_MONTHLY_ACCRUAL_SHARDS = 32;
+
+function agencyAccrualShard(value) {
+  const text = clean(value);
+  let hash = 2166136261;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) % AGENCY_MONTHLY_ACCRUAL_SHARDS;
+}
 
 class ApiError extends Error {
   constructor(code, status = 400) {
@@ -561,16 +572,17 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
         );
       }
 
+      const agencyShard = agencyAccrualShard(key);
       writes.push(
         db.writeUpdate(
-          `agency_monthly_accruals/${agencyId}__${periods.month}`,
+          `agency_monthly_accrual_shards/${agencyId}__${periods.month}__${String(agencyShard).padStart(2, "0")}`,
           {
             agencyId,
             month: periods.month,
-            status: "open",
+            shard: agencyShard,
             updatedAt: now,
           },
-          ["agencyId", "month", "status", "updatedAt"],
+          ["agencyId", "month", "shard", "updatedAt"],
           [
             db.increment("supportCoins", totalCost),
             db.increment("hostShareCoins", recipientShareCoins),
@@ -891,9 +903,9 @@ export async function roomGift(request, env, ctx) {
       });
       writePressureDataPoint(env, {
         kind: "hot_document",
-        primary: "agency_monthly_accrual",
+        primary: "agency_monthly_accrual_shard",
         action: "room_gift_commit",
-        outcome: "monthly",
+        outcome: "monthly_sharded_32",
         writes: 1,
         retries: giftRetries,
       });
