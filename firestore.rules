@@ -149,7 +149,9 @@ service cloud.firestore {
         'giftHostMicSecondsMonth',
         'giftHostQualifiedDays',
         'giftHostActivityUpdatedAt',
-        'agencyId'
+        'agencyId',
+        'agencyRole',
+        'agencyJoinedAt'
       ]);
     }
 
@@ -206,6 +208,8 @@ service cloud.firestore {
         && !('giftHostQualifiedDays' in request.resource.data)
         && !('giftHostActivityUpdatedAt' in request.resource.data)
         && !('agencyId' in request.resource.data)
+        && !('agencyRole' in request.resource.data)
+        && !('agencyJoinedAt' in request.resource.data)
         && !('diamondPasswordSet' in request.resource.data)
         && !('diamondPasswordUpdatedAt' in request.resource.data)
         && !('diamondPasswordHash' in request.resource.data)
