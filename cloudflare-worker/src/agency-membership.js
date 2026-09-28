@@ -1371,6 +1371,173 @@ export async function removeAgencyMember(
   return changeAgencyMembershipStatus(db, actorUid, body, "remove", options);
 }
 
+
+export async function overrideAgencyRejoinCooldown(
+  db,
+  actorUid,
+  body = {},
+  { now = new Date() } = {},
+) {
+  const targetUid = clean(body.targetUid);
+  const key = clean(body.idempotencyKey);
+  const reason = clean(body.reason).slice(0, 500);
+  if (!targetUid || targetUid.includes("/")) {
+    throw new ApiError("invalid_target_user", 400);
+  }
+  if (!validIdempotencyKey(key)) {
+    throw new ApiError("invalid_idempotency_key", 400);
+  }
+  if (!reason) {
+    throw new ApiError("cooldown_override_reason_required", 400);
+  }
+
+  const opPath = operationPath(actorUid, key);
+  const fp = fingerprint({
+    action: "overrideRejoinCooldown",
+    targetUid,
+    reason,
+  });
+  const eventId = requestIdFor(actorUid, key);
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const tx = await db.beginTransaction();
+    try {
+      const [operationSnap, actorUserSnap, membershipSnap] = await Promise.all([
+        db.get(opPath, tx),
+        db.get("users/" + actorUid, tx),
+        db.get("agency_user_memberships/" + targetUid, tx),
+      ]);
+
+      if (operationSnap.exists) {
+        const existing = operationSnap.data || {};
+        if (clean(existing.requestFingerprint) !== fp) {
+          throw new ApiError("idempotency_conflict", 409);
+        }
+        await db.rollback(tx);
+        return { ok: true, code: "duplicate", ...(existing.result || {}) };
+      }
+
+      const actorUser = actorUserSnap.exists ? actorUserSnap.data || {} : {};
+      if (!canPerformAgencyAction({
+        action: "manageMembership",
+        user: actorUser,
+      })) {
+        throw new ApiError("forbidden", 403);
+      }
+      if (!historicalMembership(membershipSnap)) {
+        throw new ApiError(
+          membershipSnap.exists
+            ? "agency_membership_not_in_cooldown"
+            : "agency_membership_not_found",
+          membershipSnap.exists ? 409 : 404,
+        );
+      }
+
+      const membership = membershipSnap.data || {};
+      const agencyId = clean(membership.agencyId);
+      if (!agencyId) {
+        throw new ApiError("agency_membership_conflict", 409);
+      }
+      const previousCooldownUntilMs = timestampMs(membership.cooldownUntil);
+      const nowMs = now instanceof Date ? now.getTime() : timestampMs(now);
+      if (!previousCooldownUntilMs || previousCooldownUntilMs <= nowMs) {
+        throw new ApiError("agency_rejoin_cooldown_not_active", 409);
+      }
+
+      const agencyMembershipPath =
+        "agency_memberships/" + agencyId + "__" + targetUid;
+      const agencyMembershipSnap = await db.get(agencyMembershipPath, tx);
+      if (
+        !historicalMembership(agencyMembershipSnap) ||
+        clean(agencyMembershipSnap.data?.agencyId) !== agencyId ||
+        clean(agencyMembershipSnap.data?.uid) !== targetUid
+      ) {
+        throw new ApiError("agency_membership_index_conflict", 409);
+      }
+
+      const previousCooldownUntil =
+        new Date(previousCooldownUntilMs).toISOString();
+      const result = {
+        uid: targetUid,
+        agencyId,
+        previousCooldownUntil,
+        cooldownUntil: now,
+        overrideApplied: true,
+      };
+      const patch = {
+        cooldownUntil: now,
+        updatedAt: now,
+      };
+
+      await db.commit(tx, [
+        db.writeUpdate(
+          "agency_user_memberships/" + targetUid,
+          patch,
+          ["cooldownUntil", "updatedAt"],
+        ),
+        db.writeUpdate(
+          agencyMembershipPath,
+          patch,
+          ["cooldownUntil", "updatedAt"],
+        ),
+        db.writeCreate(opPath, {
+          actorUid,
+          action: "overrideAgencyRejoinCooldown",
+          requestFingerprint: fp,
+          status: "completed",
+          result,
+          createdAt: now,
+        }),
+        db.writeCreate(
+          "admin_audit_logs/agency_cooldown_override_" + eventId,
+          {
+            actorUid,
+            action: "overrideAgencyRejoinCooldown",
+            targetType: "agency_membership",
+            targetId: agencyId + "__" + targetUid,
+            before: {
+              cooldownUntil: previousCooldownUntil,
+            },
+            after: {
+              cooldownUntil: now,
+              overrideApplied: true,
+              reason,
+            },
+            idempotencyKey: key,
+            createdAt: now,
+          },
+        ),
+        db.writeCreate(
+          "notifications/agency_cooldown_override_" + eventId,
+          {
+            userId: targetUid,
+            type: "agency_rejoin_cooldown_overridden",
+            category: "system",
+            title: "تم رفع انتظار الانضمام للوكالة",
+            body: "تم السماح لك بالانضمام إلى وكالة دون انتظار المدة المتبقية.",
+            read: false,
+            agencyId,
+            createdAt: now,
+          },
+        ),
+      ]);
+
+      return { ok: true, code: "ok", ...result };
+    } catch (error) {
+      await db.rollback(tx);
+      if (error instanceof ApiError) throw error;
+      if (isTransientFirestoreError(error) && attempt < 2) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, firestoreErrorRetryDelayMs(attempt))
+        );
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new ApiError("transaction_failed", 500);
+}
+
 export async function cancelAgencyMembershipRequest(
   db,
   actorUid,
@@ -1559,6 +1726,8 @@ export async function agencyMembership(request, env) {
       result = await leaveAgencyMembership(db, decoded.sub, body);
     } else if (action === "remove") {
       result = await removeAgencyMember(db, decoded.sub, body);
+    } else if (action === "overrideCooldown") {
+      result = await overrideAgencyRejoinCooldown(db, decoded.sub, body);
     } else if (action === "listAgencyPending") {
       result = await listAgencyMembershipPending(db, decoded.sub, body);
     } else if (action === "listMy") {

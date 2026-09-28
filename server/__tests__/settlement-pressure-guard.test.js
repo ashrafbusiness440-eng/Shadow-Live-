@@ -149,3 +149,17 @@ test("agency rejoin cooldown uses only direct membership documents", () => {
   assert.equal(respondSource.includes(".list("), false);
   assert.equal(commitSource.includes(".list("), false);
 });
+
+
+test("Shadow Control agency cooldown override is direct and query free", () => {
+  const sourceText = source("../../cloudflare-worker/src/agency-membership.js");
+  const start = sourceText.indexOf("export async function overrideAgencyRejoinCooldown");
+  const end = sourceText.indexOf("export async function cancelAgencyMembershipRequest", start);
+  const overrideSource = sourceText.slice(start, end);
+  assert.equal(start >= 0, true);
+  assert.equal(overrideSource.includes(".runQuery("), false);
+  assert.equal(overrideSource.includes(".list("), false);
+  assert.equal(overrideSource.includes("agency_user_memberships/"), true);
+  assert.equal(overrideSource.includes("agency_memberships/"), true);
+  assert.equal(overrideSource.includes("admin_audit_logs/agency_cooldown_override_"), true);
+});
