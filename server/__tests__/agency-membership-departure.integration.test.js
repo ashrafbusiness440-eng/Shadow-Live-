@@ -152,7 +152,11 @@ test("host leave is atomic idempotent and decrements counters once", async () =>
 
   assert.equal(agencyMembership.data().status, "left");
   assert.ok(agencyMembership.data().leftAt);
-  assert.equal(agencyMembership.data().cooldownUntil, null);
+  assert.ok(agencyMembership.data().cooldownUntil);
+  assert.equal(
+    agencyMembership.data().cooldownUntil.toDate().toISOString(),
+    "2026-10-05T21:00:00.000Z",
+  );
   assert.equal(userMembership.data().status, "left");
   assert.equal(user.data().agencyId, "");
   assert.equal(user.data().agencyRole, "");
@@ -209,6 +213,10 @@ test("agency owner can remove active host exactly once", async () => {
   ]);
   assert.equal(membership.data().status, "removed");
   assert.ok(membership.data().removedAt);
+  assert.equal(
+    membership.data().cooldownUntil.toDate().toISOString(),
+    "2026-10-05T21:05:00.000Z",
+  );
   assert.equal(userMembership.data().status, "removed");
   assert.equal(user.data().agencyId, "");
   assert.equal(user.data().agencyRole, "");
