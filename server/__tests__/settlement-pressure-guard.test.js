@@ -101,3 +101,16 @@ test("agency membership request lifecycle stays direct and bounded", () => {
   assert.equal(sourceText.includes("agency_membership_acceptance_locks/"), true);
   assert.equal(sourceText.includes("agency_membership_request_keys/"), true);
 });
+
+test("agency membership commit is query free and counter updates stay atomic", () => {
+  const sourceText = source("../../cloudflare-worker/src/agency-membership.js");
+  const start = sourceText.indexOf("export async function commitAcceptedAgencyMembership");
+  const end = sourceText.indexOf("export async function cancelAgencyMembershipRequest", start);
+  const commitSource = sourceText.slice(start, end);
+  assert.equal(commitSource.includes(".runQuery("), false);
+  assert.equal(commitSource.includes(".list("), false);
+  assert.equal(commitSource.includes('db.increment("memberCount", 1)'), true);
+  assert.equal(commitSource.includes('db.increment("hostCount", 1)'), true);
+  assert.equal(commitSource.includes("agency_user_memberships/"), true);
+  assert.equal(commitSource.includes("agency_memberships/"), true);
+});
