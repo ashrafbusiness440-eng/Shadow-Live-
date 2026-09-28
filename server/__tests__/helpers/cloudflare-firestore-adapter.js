@@ -55,14 +55,23 @@ function mergePayload(fields = {}, transforms = []) {
 
 export function cloudflareFirestoreAdapter(adminDb) {
   const ref = (path) => adminDb.doc(String(path || "").replace(/^\/+|\/+$/g, ""));
+  let transactionTail = Promise.resolve();
 
   return {
     async beginTransaction() {
-      return { active: true };
+      const previous = transactionTail;
+      let release;
+      transactionTail = new Promise((resolve) => {
+        release = resolve;
+      });
+      await previous;
+      return { active: true, release };
     },
 
     async rollback(transaction) {
-      if (transaction) transaction.active = false;
+      if (!transaction?.active) return;
+      transaction.active = false;
+      transaction.release?.();
     },
 
     async get(path) {
@@ -102,27 +111,33 @@ export function cloudflareFirestoreAdapter(adminDb) {
     },
 
     async commit(transaction, writes = []) {
-      const batch = adminDb.batch();
-      for (const write of writes) {
-        if (write.kind === "delete") {
-          batch.delete(ref(write.path));
-          continue;
-        }
-        if (write.kind === "create") {
-          batch.create(
+      try {
+        const batch = adminDb.batch();
+        for (const write of writes) {
+          if (write.kind === "delete") {
+            batch.delete(ref(write.path));
+            continue;
+          }
+          if (write.kind === "create") {
+            batch.create(
+              ref(write.path),
+              mergePayload(write.fields, write.transforms),
+            );
+            continue;
+          }
+          batch.set(
             ref(write.path),
             mergePayload(write.fields, write.transforms),
+            { merge: true },
           );
-          continue;
         }
-        batch.set(
-          ref(write.path),
-          mergePayload(write.fields, write.transforms),
-          { merge: true },
-        );
+        await batch.commit();
+      } finally {
+        if (transaction?.active) {
+          transaction.active = false;
+          transaction.release?.();
+        }
       }
-      await batch.commit();
-      if (transaction) transaction.active = false;
     },
 
     writeUpdate(path, fields, _fieldPaths = null, transforms = null) {

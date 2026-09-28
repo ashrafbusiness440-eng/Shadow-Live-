@@ -2107,6 +2107,7 @@ export async function listAgencyMembers(
     });
 
   const slots = normalizedManagerSlots(slotsSnap.data || {});
+  ensureManagerCountersConsistent(agency, slots);
   const totalActive = Number(agency.memberCount || 0);
   return {
     ok: true,

@@ -196,3 +196,24 @@ test("Stage 05-B agency member surface stays bounded", () => {
   assert.equal(listSource.includes('field: "status"'), true);
   assert.equal(listSource.includes('rows.map((row) =>'), true);
 });
+
+
+test("Stage 05 closure keeps mutations query free and management reads bounded fail closed", () => {
+  const sourceText = source("../../cloudflare-worker/src/agency-membership.js");
+
+  const roleStart = sourceText.indexOf("export async function setAgencyManagerRole");
+  const roleEnd = sourceText.indexOf("function departureFingerprint", roleStart);
+  const roleSource = sourceText.slice(roleStart, roleEnd);
+  assert.equal(roleStart >= 0, true);
+  assert.equal(roleSource.includes(".runQuery("), false);
+  assert.equal(roleSource.includes(".list("), false);
+  assert.equal(roleSource.includes("ensureManagerCountersConsistent"), true);
+
+  const listStart = sourceText.indexOf("export async function listAgencyMembers");
+  const listEnd = sourceText.indexOf("export async function listAgencyMembershipPending", listStart);
+  const listSource = sourceText.slice(listStart, listEnd);
+  assert.equal(listStart >= 0, true);
+  assert.equal(listSource.includes("Math.min(50, boundedAgencyPageSize(body.limit, 25))"), true);
+  assert.equal(listSource.includes('db.runQuery("agency_memberships"'), true);
+  assert.equal(listSource.includes("ensureManagerCountersConsistent(agency, slots)"), true);
+});
