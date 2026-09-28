@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'firebase_options.dart';
 import 'utils/compact_number.dart';
 import 'admin/control_admin_id_override.dart';
+import 'admin/agency_control_page.dart';
 import 'admin/control_api_endpoints.dart';
 import 'admin/control_firebase.dart';
 import 'admin/control_asset_manager_page.dart';
@@ -2547,9 +2548,18 @@ class MorePage extends StatelessWidget {
       future:controlFirestore.collection('users').doc(uid).get(),
       builder:(context,snap){
         if(!snap.hasData)return const Center(child:CircularProgressIndicator());
-        final isOwner=snap.data?.data()?['role']=='owner';
+        final data=snap.data?.data()??<String,dynamic>{};
+        final isOwner=data['role']=='owner';
+        final capabilities=(data['capabilities'] is List)
+            ? (data['capabilities'] as List).map((e)=>e.toString()).toSet()
+            : <String>{};
+        final canOpenAgencies=isOwner||
+            (data['adminEnabled']==true&&(
+              capabilities.contains('manageAgencies')||
+              capabilities.contains('reviewAgencyApplications')));
         final items=<ControlItem>[
-          const ControlItem('الوكالات','إدارة الوكالات والمضيفين والتسويات',Icons.apartment_outlined),
+          if(canOpenAgencies)
+            const ControlItem('الوكالات','طلبات الإنشاء والمراجعة والإنشاء المباشر',Icons.apartment_outlined),
           const ControlItem('التقارير','واجهة جاهزة؛ القراءة الحقيقية تنتظر Rules محددة لـ reports بدل فتح Firestore بشكل واسع',Icons.flag_outlined),
           const ControlItem('VIP و IDs الخاصة','إدارة VIP والمعرّفات الخاصة',Icons.workspace_premium_outlined),
           if(isOwner)
@@ -2576,7 +2586,7 @@ class ControlList extends StatelessWidget {
     ...items.map((item)=>Card(child:ListTile(
       leading:Icon(item.icon,color:const Color(0xFFD7B85A)),trailing:const Icon(Icons.chevron_left),
       title:Text(item.title,style:const TextStyle(fontWeight:FontWeight.w700)),subtitle:Text(item.subtitle),
-      onTap:()=>Navigator.of(context).push(MaterialPageRoute(builder:(_)=>item.title=='سجل الإدارة'?const AuditLogPage():(item.title=='إعدادات النظام'?const SystemConfigPage():(item.title=='إدارة أصول التطبيق'?const ControlAssetManagerPage():DetailPage(item:item))))),
+      onTap:()=>Navigator.of(context).push(MaterialPageRoute(builder:(_)=>item.title=='الوكالات'?const AgencyControlPage():(item.title=='سجل الإدارة'?const AuditLogPage():(item.title=='إعدادات النظام'?const SystemConfigPage():(item.title=='إدارة أصول التطبيق'?const ControlAssetManagerPage():DetailPage(item:item))))),
     ))),
   ]);
 }
