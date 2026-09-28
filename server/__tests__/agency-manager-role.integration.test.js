@@ -494,3 +494,41 @@ test("platform manageAgencyManagers can list and manage while ordinary host is d
     /forbidden/,
   );
 });
+
+
+test("manageAgencyMemberships can view members but cannot change manager roles", async () => {
+  const agencyId = "710001";
+  const ownerUid = "stage05b_owner_4";
+  const hostUid = "stage05b_host_4";
+  const membershipAdminUid = "stage05b_membership_admin";
+  await seedAgency(agencyId, ownerUid, "710901");
+  await addMember(agencyId, hostUid, "710101", "host");
+  await adminDb.collection("agencies").doc(agencyId).set({
+    memberCount: 2,
+    hostCount: 1,
+    managerCount: 0,
+    seniorManagerCount: 0,
+  }, { merge: true });
+  await seedUser(membershipAdminUid, "710801", {
+    role: "admin",
+    adminEnabled: true,
+    capabilities: ["manageAgencyMemberships"],
+  });
+
+  const result = await listAgencyMembers(db, membershipAdminUid, {
+    agencyId,
+    limit: 25,
+  });
+  assert.equal(result.members.length, 2);
+  assert.equal(result.permissions.canManageManagers, false);
+
+  await assert.rejects(
+    setAgencyManagerRole(db, membershipAdminUid, {
+      agencyId,
+      targetUid: hostUid,
+      targetRole: "manager",
+      idempotencyKey: "stage05b_membership_admin_no_role",
+    }),
+    /forbidden/,
+  );
+});
