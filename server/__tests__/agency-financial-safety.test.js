@@ -125,6 +125,19 @@ test("target salary pays only the incremental difference in the same month",()=>
   assert.equal(second.paidDiamonds,20);
 });
 
+test("06-C target progress rejects rollback into an older month",()=>{
+  assert.throws(
+    ()=>calculateAgencyTargetProgress({
+      monthKey:"2026-09",
+      storedMonth:"2026-10",
+      storedProgressCoins:50000,
+      addedHostShareCoins:50000,
+      storedPaidDiamonds:5,
+    }),
+    /stale_agency_target_month/,
+  );
+});
+
 test("target month rollover resets progress and paid salary without replaying prior month",()=>{
   const nextMonth=calculateAgencyTargetProgress({
     monthKey:"2026-10",

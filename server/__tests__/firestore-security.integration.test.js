@@ -297,6 +297,13 @@ test("regular user cannot change protected balances earnings agency or mic activ
     {coins:999999},
     {diamonds:999},
     {agencyId:"agency_hacked"},
+    {agencyPolicySnapshot:{targets:[{id:"hacked",thresholdCoins:1,salaryDiamonds:999999}]}},
+    {agencyTargetMonth:"2026-09"},
+    {agencyTargetProgressCoins:50000000},
+    {agencySalaryPaidDiamonds:0},
+    {agencyCurrentTargetId:"diamond"},
+    {agencyNextTargetCoins:0},
+    {agencyTargetUpdatedAt:new Date()},
     {pendingGiftEarningCoins:5000},
     {pendingAgencyGiftEarningCoins:5000},
     {giftEarningCoinsLifetime:5000},
@@ -308,6 +315,28 @@ test("regular user cannot change protected balances earnings agency or mic activ
     {giftHostQualifiedDays:9},
   ]){
     await assertFails(updateDoc(ref,patch));
+  }
+});
+
+test("new client user cannot pre-seed agency target or policy state",async()=>{
+  const forbiddenFields=[
+    {agencyPolicySnapshot:{targets:[{id:"hacked",thresholdCoins:1,salaryDiamonds:999999}]}},
+    {agencyTargetMonth:"2026-09"},
+    {agencyTargetProgressCoins:50000000},
+    {agencySalaryPaidDiamonds:0},
+    {agencyCurrentTargetId:"diamond"},
+    {agencyNextTargetCoins:0},
+    {agencyTargetUpdatedAt:new Date()},
+  ];
+  for(let index=0;index<forbiddenFields.length;index+=1){
+    const userId="rules_target_forge_"+String(index);
+    const userDb=phoneDbFor(userId);
+    await assertFails(setDoc(doc(userDb,"users",userId),{
+      role:"user",
+      coins:0,
+      diamonds:0,
+      ...forbiddenFields[index],
+    }));
   }
 });
 
