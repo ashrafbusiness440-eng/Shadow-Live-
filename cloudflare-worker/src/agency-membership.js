@@ -6,6 +6,7 @@ import {
   isTransientFirestoreError,
 } from "./firestore.js";
 import {
+  AGENCY_LIMITS,
   boundedAgencyPageSize,
   createAgencyMembershipDocument,
   createAgencyMembershipRequestDocument,
@@ -1036,6 +1037,343 @@ export async function commitAcceptedAgencyMembership(
 }
 
 
+
+function managerRoleFingerprint({ agencyId, targetUid, targetRole }) {
+  return fingerprint({
+    action: "setManagerRole",
+    agencyId: clean(agencyId),
+    targetUid: clean(targetUid),
+    targetRole: clean(targetRole),
+  });
+}
+
+function normalizedManagerSlots(data = {}) {
+  const seniorManagerUid = clean(data.seniorManagerUid) || null;
+  const managerUids = Array.isArray(data.managerUids)
+    ? data.managerUids.map(clean).filter(Boolean)
+    : [];
+  if (
+    managerUids.length > AGENCY_LIMITS.agencyManagers ||
+    new Set(managerUids).size !== managerUids.length ||
+    (seniorManagerUid && managerUids.includes(seniorManagerUid))
+  ) {
+    throw new ApiError("agency_manager_slots_conflict", 409);
+  }
+  return { seniorManagerUid, managerUids };
+}
+
+function ensureRoleSlotConsistency(role, targetUid, slots) {
+  const isSenior = slots.seniorManagerUid === targetUid;
+  const isManager = slots.managerUids.includes(targetUid);
+  if (role === "host" && (isSenior || isManager)) {
+    throw new ApiError("agency_manager_slots_conflict", 409);
+  }
+  if (role === "manager" && (!isManager || isSenior)) {
+    throw new ApiError("agency_manager_slots_conflict", 409);
+  }
+  if (role === "senior_manager" && (!isSenior || isManager)) {
+    throw new ApiError("agency_manager_slots_conflict", 409);
+  }
+}
+
+function ensureManagerCountersConsistent(agency, slots) {
+  const memberCount = Number(agency.memberCount);
+  const hostCount = Number(agency.hostCount);
+  const managerCount = Number(agency.managerCount);
+  const seniorManagerCount = Number(agency.seniorManagerCount);
+  const expectedSeniorCount = slots.seniorManagerUid ? 1 : 0;
+  if (
+    !Number.isInteger(memberCount) ||
+    !Number.isInteger(hostCount) ||
+    !Number.isInteger(managerCount) ||
+    !Number.isInteger(seniorManagerCount) ||
+    memberCount < 1 ||
+    hostCount < 0 ||
+    managerCount < 0 ||
+    seniorManagerCount < 0 ||
+    managerCount !== slots.managerUids.length ||
+    seniorManagerCount !== expectedSeniorCount ||
+    hostCount + managerCount + seniorManagerCount + 1 !== memberCount
+  ) {
+    throw new ApiError("agency_counter_conflict", 409);
+  }
+}
+
+export async function setAgencyManagerRole(
+  db,
+  actorUid,
+  body = {},
+  { now = new Date() } = {},
+) {
+  const agencyId = clean(body.agencyId);
+  const targetUid = clean(body.targetUid);
+  const targetRole = clean(body.targetRole);
+  const key = clean(body.idempotencyKey);
+
+  if (!/^\d{6}$/.test(agencyId)) {
+    throw new ApiError("invalid_agency_id", 400);
+  }
+  if (!targetUid || targetUid.includes("/")) {
+    throw new ApiError("invalid_target_user", 400);
+  }
+  if (!["host", "manager", "senior_manager"].includes(targetRole)) {
+    throw new ApiError("invalid_agency_manager_role", 400);
+  }
+  if (!validIdempotencyKey(key)) {
+    throw new ApiError("invalid_idempotency_key", 400);
+  }
+
+  const opPath = operationPath(actorUid, key);
+  const eventId = requestIdFor(actorUid, key);
+  const fp = managerRoleFingerprint({ agencyId, targetUid, targetRole });
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const tx = await db.beginTransaction();
+    try {
+      const [
+        operationSnap,
+        agencySnap,
+        slotsSnap,
+        targetMembershipSnap,
+        targetAgencyMembershipSnap,
+        targetUserSnap,
+        actorUserSnap,
+        actorMembershipSnap,
+      ] = await Promise.all([
+        db.get(opPath, tx),
+        db.get("agencies/" + agencyId, tx),
+        db.get("agency_manager_slots/" + agencyId, tx),
+        db.get("agency_user_memberships/" + targetUid, tx),
+        db.get("agency_memberships/" + agencyId + "__" + targetUid, tx),
+        db.get("users/" + targetUid, tx),
+        db.get("users/" + actorUid, tx),
+        db.get("agency_user_memberships/" + actorUid, tx),
+      ]);
+
+      if (operationSnap.exists) {
+        const existing = operationSnap.data || {};
+        if (clean(existing.requestFingerprint) !== fp) {
+          throw new ApiError("idempotency_conflict", 409);
+        }
+        await db.rollback(tx);
+        return { ok: true, code: "duplicate", ...(existing.result || {}) };
+      }
+
+      if (!agencySnap.exists) throw new ApiError("agency_not_found", 404);
+      const agency = agencySnap.data || {};
+      if (clean(agency.status) !== "active") {
+        throw new ApiError("agency_not_active", 409);
+      }
+      if (!slotsSnap.exists) {
+        throw new ApiError("agency_manager_slots_missing", 409);
+      }
+
+      const actorUser = actorUserSnap.exists ? actorUserSnap.data || {} : {};
+      const actorMembership =
+        actorMembershipSnap.exists &&
+        clean(actorMembershipSnap.data?.agencyId) === agencyId
+          ? actorMembershipSnap.data || {}
+          : {};
+      if (!canPerformAgencyAction({
+        action: "manageManager",
+        user: actorUser,
+        membership: actorMembership,
+        agencyStatus: clean(agency.status),
+      })) {
+        throw new ApiError("forbidden", 403);
+      }
+
+      if (
+        !targetMembershipSnap.exists ||
+        !targetAgencyMembershipSnap.exists ||
+        !targetUserSnap.exists
+      ) {
+        throw new ApiError("agency_membership_not_found", 404);
+      }
+
+      const targetMembership = targetMembershipSnap.data || {};
+      const targetAgencyMembership = targetAgencyMembershipSnap.data || {};
+      const currentRole = clean(targetMembership.role);
+      if (
+        clean(targetMembership.status) !== "active" ||
+        clean(targetMembership.agencyId) !== agencyId ||
+        clean(targetAgencyMembership.status) !== "active" ||
+        clean(targetAgencyMembership.agencyId) !== agencyId ||
+        clean(targetAgencyMembership.uid) !== targetUid ||
+        clean(targetAgencyMembership.role) !== currentRole ||
+        clean(targetUserSnap.data?.agencyId) !== agencyId ||
+        clean(targetUserSnap.data?.agencyRole) !== currentRole
+      ) {
+        throw new ApiError("agency_membership_index_conflict", 409);
+      }
+      if (currentRole === "owner") {
+        throw new ApiError("agency_owner_role_locked", 409);
+      }
+      if (!["host", "manager", "senior_manager"].includes(currentRole)) {
+        throw new ApiError("agency_membership_role_conflict", 409);
+      }
+
+      const slots = normalizedManagerSlots(slotsSnap.data || {});
+      ensureManagerCountersConsistent(agency, slots);
+      ensureRoleSlotConsistency(currentRole, targetUid, slots);
+
+      if (currentRole === targetRole) {
+        await db.rollback(tx);
+        return {
+          ok: true,
+          code: "already_role",
+          agencyId,
+          uid: targetUid,
+          previousRole: currentRole,
+          role: targetRole,
+        };
+      }
+
+      let seniorManagerUid = slots.seniorManagerUid;
+      let managerUids = slots.managerUids.filter((uid) => uid !== targetUid);
+      if (seniorManagerUid === targetUid) seniorManagerUid = null;
+
+      if (targetRole === "manager") {
+        if (managerUids.length >= AGENCY_LIMITS.agencyManagers) {
+          throw new ApiError("agency_manager_slots_full", 409);
+        }
+        managerUids.push(targetUid);
+      } else if (targetRole === "senior_manager") {
+        if (seniorManagerUid && seniorManagerUid !== targetUid) {
+          throw new ApiError("agency_senior_manager_slot_full", 409);
+        }
+        seniorManagerUid = targetUid;
+      }
+
+      const currentCounter = counterFieldForRole(currentRole);
+      const targetCounter = counterFieldForRole(targetRole);
+      if (!currentCounter || !targetCounter) {
+        throw new ApiError("agency_membership_role_conflict", 409);
+      }
+      const currentCount = Number(agency[currentCounter]);
+      const targetCount = Number(agency[targetCounter]);
+      if (
+        !Number.isInteger(currentCount) ||
+        currentCount <= 0 ||
+        !Number.isInteger(targetCount) ||
+        targetCount < 0
+      ) {
+        throw new ApiError("agency_counter_conflict", 409);
+      }
+
+      const result = {
+        agencyId,
+        uid: targetUid,
+        previousRole: currentRole,
+        role: targetRole,
+        managerSlots: {
+          seniorManagerUid,
+          managerUids,
+        },
+      };
+
+      await db.commit(tx, [
+        db.writeUpdate(
+          "agency_user_memberships/" + targetUid,
+          { role: targetRole, updatedAt: now },
+          ["role", "updatedAt"],
+        ),
+        db.writeUpdate(
+          "agency_memberships/" + agencyId + "__" + targetUid,
+          { role: targetRole, updatedAt: now },
+          ["role", "updatedAt"],
+        ),
+        db.writeUpdate(
+          "users/" + targetUid,
+          { agencyRole: targetRole },
+          ["agencyRole"],
+        ),
+        db.writeUpdate(
+          "agency_manager_slots/" + agencyId,
+          {
+            seniorManagerUid,
+            managerUids,
+            updatedAt: now,
+          },
+          ["seniorManagerUid", "managerUids", "updatedAt"],
+        ),
+        db.writeUpdate(
+          "agencies/" + agencyId,
+          { updatedAt: now },
+          ["updatedAt"],
+          [
+            db.increment(currentCounter, -1),
+            db.increment(targetCounter, 1),
+          ],
+        ),
+        db.writeCreate(opPath, {
+          actorUid,
+          action: "setAgencyManagerRole",
+          requestFingerprint: fp,
+          status: "completed",
+          result,
+          createdAt: now,
+        }),
+        db.writeCreate(
+          "admin_audit_logs/agency_manager_role_" + eventId,
+          {
+            actorUid,
+            action: "setAgencyManagerRole",
+            targetType: "agency_membership",
+            targetId: agencyId + "__" + targetUid,
+            before: {
+              role: currentRole,
+              managerSlots: slots,
+            },
+            after: {
+              role: targetRole,
+              managerSlots: {
+                seniorManagerUid,
+                managerUids,
+              },
+            },
+            idempotencyKey: key,
+            createdAt: now,
+          },
+        ),
+        db.writeCreate(
+          "notifications/agency_manager_role_" + eventId,
+          {
+            userId: targetUid,
+            type: "agency_membership_role_changed",
+            category: "system",
+            title: "تم تحديث دورك في الوكالة",
+            body:
+              targetRole === "senior_manager"
+                ? "تم تعيينك مديرًا أول للوكالة."
+                : targetRole === "manager"
+                  ? "تم تعيينك مديرًا للوكالة."
+                  : "تم تحويل دورك في الوكالة إلى مضيف.",
+            read: false,
+            agencyId,
+            previousRole: currentRole,
+            role: targetRole,
+            createdAt: now,
+          },
+        ),
+      ]);
+
+      return { ok: true, code: "ok", ...result };
+    } catch (error) {
+      await db.rollback(tx);
+      if (error instanceof ApiError) throw error;
+      if (isTransientFirestoreError(error) && attempt < 2) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, firestoreErrorRetryDelayMs(attempt))
+        );
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new ApiError("transaction_failed", 500);
+}
+
 function departureFingerprint({ action, agencyId, targetUid }) {
   return fingerprint({
     action: clean(action),
@@ -1728,6 +2066,8 @@ export async function agencyMembership(request, env) {
       result = await removeAgencyMember(db, decoded.sub, body);
     } else if (action === "overrideCooldown") {
       result = await overrideAgencyRejoinCooldown(db, decoded.sub, body);
+    } else if (action === "setManagerRole") {
+      result = await setAgencyManagerRole(db, decoded.sub, body);
     } else if (action === "listAgencyPending") {
       result = await listAgencyMembershipPending(db, decoded.sub, body);
     } else if (action === "listMy") {

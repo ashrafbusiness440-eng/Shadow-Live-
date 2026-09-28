@@ -480,6 +480,27 @@ test("client cannot leave or remove agency membership by direct Firestore writes
   }));
 });
 
+test("clients cannot directly forge agency manager roles or slots",async()=>{
+  const ownerDb=phoneDbFor(agencyOwnerUid);
+  const managerDb=phoneDbFor(agencyManagerUid);
+  await assertFails(updateDoc(
+    doc(ownerDb,"agency_memberships",agencyId+"__"+agencyHostUid),
+    {role:"manager"},
+  ));
+  await assertFails(updateDoc(
+    doc(ownerDb,"agency_user_memberships",agencyHostUid),
+    {role:"manager"},
+  ));
+  await assertFails(updateDoc(
+    doc(ownerDb,"agency_manager_slots",agencyId),
+    {managerUids:[agencyHostUid]},
+  ));
+  await assertFails(updateDoc(
+    doc(managerDb,"users",agencyManagerUid),
+    {agencyRole:"senior_manager"},
+  ));
+});
+
 test("client cannot forge agency application locks idempotency or creation registry",async()=>{
   const applicantDb=phoneUserDb();
   await assertFails(setDoc(doc(applicantDb,"agency_applications","forged_application"),{
