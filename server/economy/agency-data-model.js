@@ -70,6 +70,7 @@ export const AGENCY_COLLECTIONS = Object.freeze({
   agencyIds: "agency_ids",
   creationOperations: "agency_creation_operations",
   reviewOperations: "agency_review_operations",
+  manualReapplyBlocks: "agency_manual_reapply_blocks",
   memberships: "agency_memberships",
   userMemberships: "agency_user_memberships",
   managerSlots: "agency_manager_slots",
