@@ -4,6 +4,7 @@ import { deleteApp, getApps, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 
 import {
+  listAgencyMembers,
   setAgencyManagerRole,
 } from "../../cloudflare-worker/src/agency-membership.js";
 import { cloudflareFirestoreAdapter } from "./helpers/cloudflare-firestore-adapter.js";
@@ -369,5 +370,127 @@ test("owner role is immutable through manager-role core", async () => {
       idempotencyKey: "stage05a_owner_locked_01",
     }),
     /agency_owner_role_locked/,
+  );
+});
+
+
+test("management surface lists active members with bounded profile data and role matrix", async () => {
+  const agencyId = "707001";
+  const ownerUid = "stage05b_owner_1";
+  const managerUid = "stage05b_manager_1";
+  const hostUid = "stage05b_host_1";
+  await seedAgency(agencyId, ownerUid, "707901");
+  await addMember(agencyId, managerUid, "707101", "manager");
+  await addMember(agencyId, hostUid, "707102", "host");
+  await adminDb.collection("users").doc(managerUid).set({
+    displayName: "مدير الاختبار",
+  }, { merge: true });
+  await adminDb.collection("users").doc(hostUid).set({
+    displayName: "مضيف الاختبار",
+  }, { merge: true });
+  await adminDb.collection("agencies").doc(agencyId).set({
+    memberCount: 3,
+    hostCount: 1,
+    managerCount: 1,
+    seniorManagerCount: 0,
+  }, { merge: true });
+  await adminDb.collection("agency_manager_slots").doc(agencyId).set({
+    managerUids: [managerUid],
+    seniorManagerUid: null,
+  }, { merge: true });
+
+  const result = await listAgencyMembers(db, ownerUid, {
+    agencyId,
+    limit: 999,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.limit, 50);
+  assert.equal(result.members.length, 3);
+  assert.equal(result.members[0].role, "owner");
+  assert.equal(result.members[1].role, "manager");
+  assert.equal(result.members[2].role, "host");
+  assert.equal(result.members[1].publicId, "707101");
+  assert.equal(result.members[1].displayName, "مدير الاختبار");
+  assert.equal(result.managerSlots.managerLimit, 2);
+  assert.equal(result.managerSlots.seniorManagerLimit, 1);
+  assert.equal(result.permissions.canManageManagers, true);
+
+  const ownerMatrix = result.roleMatrix.find((row) => row.role === "owner");
+  const managerMatrix = result.roleMatrix.find((row) => row.role === "manager");
+  const hostMatrix = result.roleMatrix.find((row) => row.role === "host");
+  assert.equal(ownerMatrix.canManageManagers, true);
+  assert.equal(managerMatrix.canManageManagers, false);
+  assert.equal(managerMatrix.canManageRooms, true);
+  assert.equal(hostMatrix.canViewOwnProgress, true);
+  assert.equal(hostMatrix.canManageRooms, false);
+});
+
+test("manager can view management surface but cannot change manager roles", async () => {
+  const agencyId = "708001";
+  const ownerUid = "stage05b_owner_2";
+  const managerUid = "stage05b_manager_2";
+  const hostUid = "stage05b_host_2";
+  await seedAgency(agencyId, ownerUid, "708901");
+  await addMember(agencyId, managerUid, "708101", "manager");
+  await addMember(agencyId, hostUid, "708102", "host");
+  await adminDb.collection("agencies").doc(agencyId).set({
+    memberCount: 3,
+    hostCount: 1,
+    managerCount: 1,
+    seniorManagerCount: 0,
+  }, { merge: true });
+  await adminDb.collection("agency_manager_slots").doc(agencyId).set({
+    managerUids: [managerUid],
+    seniorManagerUid: null,
+  }, { merge: true });
+
+  const result = await listAgencyMembers(db, managerUid, {
+    agencyId,
+    limit: 25,
+  });
+  assert.equal(result.members.length, 3);
+  assert.equal(result.permissions.canManageManagers, false);
+
+  await assert.rejects(
+    setAgencyManagerRole(db, managerUid, {
+      agencyId,
+      targetUid: hostUid,
+      targetRole: "manager",
+      idempotencyKey: "stage05b_manager_cannot_promote",
+    }),
+    /forbidden/,
+  );
+});
+
+test("platform manageAgencyManagers can list and manage while ordinary host is denied", async () => {
+  const agencyId = "709001";
+  const ownerUid = "stage05b_owner_3";
+  const hostUid = "stage05b_host_3";
+  const adminUid = "stage05b_platform_admin";
+  await seedAgency(agencyId, ownerUid, "709901");
+  await addMember(agencyId, hostUid, "709101", "host");
+  await adminDb.collection("agencies").doc(agencyId).set({
+    memberCount: 2,
+    hostCount: 1,
+    managerCount: 0,
+    seniorManagerCount: 0,
+  }, { merge: true });
+  await seedUser(adminUid, "709801", {
+    role: "admin",
+    adminEnabled: true,
+    capabilities: ["manageAgencyManagers"],
+  });
+
+  const result = await listAgencyMembers(db, adminUid, {
+    agencyId,
+    limit: 25,
+  });
+  assert.equal(result.permissions.canManageManagers, true);
+  assert.equal(result.members.length, 2);
+
+  await assert.rejects(
+    listAgencyMembers(db, hostUid, { agencyId, limit: 25 }),
+    /forbidden/,
   );
 });
