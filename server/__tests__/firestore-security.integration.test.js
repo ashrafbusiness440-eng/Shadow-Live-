@@ -12,6 +12,19 @@ let env;
 const projectId="shadow-live-economy-test";
 const uid="rules_regular_user";
 const otherUid="rules_other_user";
+const agencyId="654321";
+const agencyOwnerUid="rules_agency_owner";
+const agencyManagerUid="rules_agency_manager";
+const agencyHostUid="rules_agency_host";
+const agencyOutsiderUid="rules_agency_outsider";
+const platformAgencyAdminUid="rules_platform_agency_admin";
+
+function phoneDbFor(userId) {
+  return env.authenticatedContext(userId,{
+    phone_number:"+971500000001",
+    firebase:{sign_in_provider:"phone"},
+  }).firestore();
+}
 
 function unverifiedUserDb() {
   return env.authenticatedContext(uid,{
@@ -101,6 +114,87 @@ before(async()=>{
       name:"Rules Room",
       isActive:true,
       createdAt:new Date(),
+    });
+    for (const [userId,data] of [
+      [agencyOwnerUid,{role:"user",adminEnabled:false,capabilities:[],agencyId}],
+      [agencyManagerUid,{role:"user",adminEnabled:false,capabilities:[],agencyId}],
+      [agencyHostUid,{role:"user",adminEnabled:false,capabilities:[],agencyId}],
+      [agencyOutsiderUid,{role:"user",adminEnabled:false,capabilities:[]}],
+      [platformAgencyAdminUid,{
+        role:"admin",
+        adminEnabled:true,
+        capabilities:["manageAgencyMemberships","viewAgencyFinance"],
+      }],
+    ]) {
+      await setDoc(doc(context.firestore(),"users",userId),{
+        displayName:userId,
+        coins:0,
+        diamonds:0,
+        ...data,
+      });
+    }
+    await setDoc(doc(context.firestore(),"agencies",agencyId),{
+      agencyId,
+      publicId:agencyId,
+      name:"Rules Agency",
+      ownerUid:agencyOwnerUid,
+      status:"active",
+    });
+    for (const [userId,role] of [
+      [agencyOwnerUid,"owner"],
+      [agencyManagerUid,"manager"],
+      [agencyHostUid,"host"],
+    ]) {
+      await setDoc(doc(context.firestore(),"agency_memberships",agencyId+"__"+userId),{
+        agencyId,
+        uid:userId,
+        role,
+        status:"active",
+      });
+      await setDoc(doc(context.firestore(),"agency_user_memberships",userId),{
+        agencyId,
+        uid:userId,
+        role,
+        status:"active",
+      });
+    }
+    await setDoc(doc(context.firestore(),"agency_manager_slots",agencyId),{
+      agencyId,
+      seniorManagerUid:null,
+      managerUids:[agencyManagerUid],
+    });
+    await setDoc(doc(context.firestore(),"agency_policy_overrides",agencyId),{
+      agencyId,
+      hostShareBps:5000,
+      agencyShareBps:500,
+    });
+    await setDoc(doc(context.firestore(),"agency_target_snapshots",agencyId+"__2026-09"),{
+      agencyId,
+      month:"2026-09",
+      targets:[{id:"starter_g",thresholdCoins:50000}],
+    });
+    await setDoc(doc(context.firestore(),"agency_host_monthly",agencyId+"__2026-09__"+agencyHostUid),{
+      agencyId,
+      hostUid:agencyHostUid,
+      month:"2026-09",
+      supportCoins:50000,
+      salaryPaidDiamonds:5,
+    });
+    await setDoc(doc(context.firestore(),"agency_wallets",agencyId),{
+      agencyId,
+      diamonds:12,
+      remainderCoins:2500,
+    });
+    await setDoc(doc(context.firestore(),"agency_monthly_statements",agencyId+"__2026-09"),{
+      agencyId,
+      month:"2026-09",
+      agencyDiamonds:5,
+      status:"settled",
+    });
+    await setDoc(doc(context.firestore(),"agency_status_events","rules_agency_event"),{
+      agencyId,
+      type:"suspend",
+      reason:"rules-test",
     });
     for (let i = 0; i < 59; i += 1) {
       await setDoc(doc(context.firestore(),"rooms",`rules_room_${i}`),{
@@ -229,6 +323,65 @@ test("client cannot forge gift operations ledgers accrual activity or settlement
     doc(userDb,"host_mic_activity",uid,"days","2026-09-22"),
     {day:"2026-09-22",micSeconds:7200,qualified:true},
   ));
+});
+
+
+test("agency host reads own progress but not agency finance or policy",async()=>{
+  const hostDb=phoneDbFor(agencyHostUid);
+  await assertSucceeds(getDoc(doc(hostDb,"agencies",agencyId)));
+  await assertSucceeds(getDoc(doc(
+    hostDb,"agency_host_monthly",agencyId+"__2026-09__"+agencyHostUid,
+  )));
+  await assertFails(getDoc(doc(hostDb,"agency_wallets",agencyId)));
+  await assertFails(getDoc(doc(hostDb,"agency_policy_overrides",agencyId)));
+});
+
+test("agency manager reads host state and manager slots but not finance or policy",async()=>{
+  const managerDb=phoneDbFor(agencyManagerUid);
+  await assertSucceeds(getDoc(doc(managerDb,"agency_manager_slots",agencyId)));
+  await assertSucceeds(getDoc(doc(
+    managerDb,"agency_host_monthly",agencyId+"__2026-09__"+agencyHostUid,
+  )));
+  await assertSucceeds(getDoc(doc(managerDb,"agency_status_events","rules_agency_event")));
+  await assertFails(getDoc(doc(managerDb,"agency_wallets",agencyId)));
+  await assertFails(getDoc(doc(managerDb,"agency_policy_overrides",agencyId)));
+});
+
+test("agency owner can read own agency finance and policy but cannot write server owned data",async()=>{
+  const ownerDb=phoneDbFor(agencyOwnerUid);
+  await assertSucceeds(getDoc(doc(ownerDb,"agency_wallets",agencyId)));
+  await assertSucceeds(getDoc(doc(ownerDb,"agency_monthly_statements",agencyId+"__2026-09")));
+  await assertSucceeds(getDoc(doc(ownerDb,"agency_policy_overrides",agencyId)));
+  await assertFails(updateDoc(doc(ownerDb,"agency_wallets",agencyId),{diamonds:9999}));
+  await assertFails(updateDoc(doc(ownerDb,"agency_policy_overrides",agencyId),{agencyShareBps:9000}));
+});
+
+test("agency outsider cannot read private agency data",async()=>{
+  const outsiderDb=phoneDbFor(agencyOutsiderUid);
+  await assertFails(getDoc(doc(outsiderDb,"agencies",agencyId)));
+  await assertFails(getDoc(doc(
+    outsiderDb,"agency_host_monthly",agencyId+"__2026-09__"+agencyHostUid,
+  )));
+  await assertFails(getDoc(doc(outsiderDb,"agency_wallets",agencyId)));
+});
+
+test("platform granular capabilities allow only their intended agency reads",async()=>{
+  const adminDb=phoneDbFor(platformAgencyAdminUid);
+  await assertSucceeds(getDoc(doc(adminDb,"agency_wallets",agencyId)));
+  await assertSucceeds(getDoc(doc(
+    adminDb,"agency_memberships",agencyId+"__"+agencyHostUid,
+  )));
+  await assertFails(getDoc(doc(adminDb,"agency_policy_overrides",agencyId)));
+});
+
+test("legacy C1 C2 agency settlement collections stay quarantined",async()=>{
+  await env.withSecurityRulesDisabled(async context=>{
+    await setDoc(doc(context.firestore(),"agency_settlements","legacy_rules"),{agencyId});
+    await setDoc(doc(context.firestore(),"agency_settlement_accruals","legacy_rules"),{agencyId});
+  });
+  const ownerDb=phoneDbFor(agencyOwnerUid);
+  await assertFails(getDoc(doc(ownerDb,"agency_settlements","legacy_rules")));
+  await assertFails(getDoc(doc(ownerDb,"agency_settlement_accruals","legacy_rules")));
 });
 
 test("security assertions actually executed",()=>{
