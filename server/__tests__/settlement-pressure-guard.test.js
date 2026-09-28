@@ -114,3 +114,20 @@ test("agency membership commit is query free and counter updates stay atomic", (
   assert.equal(commitSource.includes("agency_user_memberships/"), true);
   assert.equal(commitSource.includes("agency_memberships/"), true);
 });
+
+
+test("agency membership departure core is direct and query free", () => {
+  const sourceText = source("../../cloudflare-worker/src/agency-membership.js");
+  const start = sourceText.indexOf("async function changeAgencyMembershipStatus");
+  const end = sourceText.indexOf("export async function leaveAgencyMembership", start);
+  const departureSource = sourceText.slice(start, end);
+  assert.equal(start >= 0, true);
+  assert.equal(departureSource.includes(".runQuery("), false);
+  assert.equal(departureSource.includes(".list("), false);
+  assert.equal(departureSource.includes('db.increment("memberCount", -1)'), true);
+  assert.equal(departureSource.includes("counterFieldForRole"), true);
+  assert.equal(departureSource.includes("agency_user_memberships/"), true);
+  assert.equal(departureSource.includes("agency_memberships/"), true);
+  assert.equal(departureSource.includes("agency_membership_acceptance_locks/"), false);
+  assert.equal(departureSource.includes("acceptanceLockPath(targetUid)"), true);
+});
