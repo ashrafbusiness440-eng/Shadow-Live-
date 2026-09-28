@@ -70,7 +70,7 @@ service cloud.firestore {
     }
 
     function canPlatformViewAgencyFinance() {
-      return canPlatformManageAgencies()
+      return isOwner()
         || hasCapability('viewAgencyFinance')
         || hasCapability('manageAgencySettlements')
         || hasCapability('manageEconomy')
@@ -78,7 +78,7 @@ service cloud.firestore {
     }
 
     function canPlatformManageAgencyPolicies() {
-      return canPlatformManageAgencies() || hasCapability('manageAgencyPolicies');
+      return isOwner() || hasCapability('manageAgencyPolicies');
     }
 
     function canPlatformSuspendAgencies() {
