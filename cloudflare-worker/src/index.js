@@ -20,6 +20,7 @@ import { googlePlayPurchase } from "./google-play-purchase.js";
 import { manageAppAsset } from "./manage-app-asset.js";
 import { economyRouter } from "./economy-router.js";
 import { agencyApplication } from "./agency-application.js";
+import { agencyControl } from "./agency-control.js";
 import { configureLegacyEnv, getFirestore } from "./legacy-firebase-admin-shim.js";
 import { settleDueGameOperations } from "./legacy-games/game-runtime.js";
 import {
@@ -120,6 +121,10 @@ async function dispatchRequest(request, env, ctx) {
   if (url.pathname === "/api/agency-application") {
     annotatePressureRequest(request, { action: "agencyApplication" });
     return agencyApplication(request, env);
+  }
+  if (url.pathname === "/api/agency-control") {
+    annotatePressureRequest(request, { action: "agencyControl" });
+    return agencyControl(request, env);
   }
   if (url.pathname === "/api/economy-router") {
     return economyRouter(request, env);
