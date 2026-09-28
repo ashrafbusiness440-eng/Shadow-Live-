@@ -2555,6 +2555,7 @@ class MorePage extends StatelessWidget {
             ? (data['capabilities'] as List).map((e)=>e.toString()).toSet()
             : <String>{};
         final adminEnabled=data['adminEnabled']==true;
+        final adminEnabled=data['adminEnabled']==true;
         final canOpenAgencies=isOwner||
             (adminEnabled&&(
               capabilities.contains('manageAgencies')||
