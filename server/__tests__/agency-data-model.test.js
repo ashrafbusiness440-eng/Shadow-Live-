@@ -8,6 +8,7 @@ import {
   agencyApplicationOperationPath,
   agencyCreationOperationPath,
   agencyIdRegistryPath,
+  agencyReviewOperationPath,
   agencyApplicationPath,
   agencyCarryoverPath,
   agencyHostMonthlyPath,
@@ -60,6 +61,10 @@ test("canonical agency paths are deterministic and direct lookup friendly",()=>{
     "agency_creation_operations/owner_1__operation_123456",
   );
   assert.throws(()=>agencyIdRegistryPath("12345"),/invalid_agency_public_id/);
+  assert.equal(
+    agencyReviewOperationPath("owner_1","review_operation_123"),
+    "agency_review_operations/owner_1__review_operation_123",
+  );
   assert.equal(
     agencyHostMonthlyPath("123456","2026-09","user_1"),
     "agency_host_monthly/123456__2026-09__user_1",
