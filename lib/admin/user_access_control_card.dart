@@ -42,7 +42,14 @@ class OwnerUserAccessCard extends StatelessWidget {
     'manageRooms': 'إدارة الغرف',
     'globalRoomControl': 'تحكم شامل بالغرف الرسمية',
     'canCreateHiddenRoom': 'إنشاء الغرف المخفية',
-    'manageAgencies': 'إدارة الوكالات',
+    'manageAgencies': 'إدارة الوكالات — صلاحية شاملة',
+    'reviewAgencyApplications': 'مراجعة طلبات إنشاء الوكالات',
+    'manageAgencyMemberships': 'إدارة أعضاء وطلبات الوكالات',
+    'manageAgencyManagers': 'إدارة مديري الوكالات',
+    'viewAgencyFinance': 'عرض مالية الوكالات',
+    'manageAgencyPolicies': 'إدارة سياسات ونسب الوكالات',
+    'manageAgencySettlements': 'إدارة تسويات الوكالات',
+    'suspendAgencies': 'تعليق وإعادة تفعيل الوكالات',
     'manageVip': 'إدارة VIP',
     'manageSpecialIds': 'إدارة IDs المميزة',
     'manageIds': 'إدارة IDs المستخدمين والغرف',
@@ -71,8 +78,13 @@ class OwnerUserAccessCard extends StatelessWidget {
     'الاقتصاد والألعاب': [
       'manageEconomy', 'adjustBalances', 'manageGames', 'manageWithdrawals', 'manageSettlements',
     ],
+    'الوكالات': [
+      'manageAgencies', 'reviewAgencyApplications', 'manageAgencyMemberships',
+      'manageAgencyManagers', 'viewAgencyFinance', 'manageAgencyPolicies',
+      'manageAgencySettlements', 'suspendAgencies',
+    ],
     'الإدارة العامة': [
-      'manageAgencies', 'manageVip', 'manageStore', 'manageCampaigns', 'manageRoles', 'viewAuditLog', 'emergencyLock',
+      'manageVip', 'manageStore', 'manageCampaigns', 'manageRoles', 'viewAuditLog', 'emergencyLock',
     ],
   };
 
@@ -82,8 +94,10 @@ class OwnerUserAccessCard extends StatelessWidget {
     'super_admin' => {
       'viewDashboard', 'viewUsers', 'manageUsers', 'viewReports', 'reviewReports',
       'muteUsers', 'suspendUsers', 'manageRooms', 'globalRoomControl',
-      'manageAgencies', 'manageVip', 'manageIds', 'manageStore',
-      'manageGames', 'viewAuditLog',
+      'manageAgencies', 'reviewAgencyApplications', 'manageAgencyMemberships',
+      'manageAgencyManagers', 'viewAgencyFinance', 'manageAgencyPolicies',
+      'manageAgencySettlements', 'suspendAgencies',
+      'manageVip', 'manageIds', 'manageStore', 'manageGames', 'viewAuditLog',
     },
     _ => <String>{},
   };
