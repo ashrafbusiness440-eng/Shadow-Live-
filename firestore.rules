@@ -151,7 +151,14 @@ service cloud.firestore {
         'giftHostActivityUpdatedAt',
         'agencyId',
         'agencyRole',
-        'agencyJoinedAt'
+        'agencyJoinedAt',
+        'agencyPolicySnapshot',
+        'agencyTargetMonth',
+        'agencyTargetProgressCoins',
+        'agencySalaryPaidDiamonds',
+        'agencyCurrentTargetId',
+        'agencyNextTargetCoins',
+        'agencyTargetUpdatedAt'
       ]);
     }
 
@@ -210,6 +217,13 @@ service cloud.firestore {
         && !('agencyId' in request.resource.data)
         && !('agencyRole' in request.resource.data)
         && !('agencyJoinedAt' in request.resource.data)
+        && !('agencyPolicySnapshot' in request.resource.data)
+        && !('agencyTargetMonth' in request.resource.data)
+        && !('agencyTargetProgressCoins' in request.resource.data)
+        && !('agencySalaryPaidDiamonds' in request.resource.data)
+        && !('agencyCurrentTargetId' in request.resource.data)
+        && !('agencyNextTargetCoins' in request.resource.data)
+        && !('agencyTargetUpdatedAt' in request.resource.data)
         && !('diamondPasswordSet' in request.resource.data)
         && !('diamondPasswordUpdatedAt' in request.resource.data)
         && !('diamondPasswordHash' in request.resource.data)
