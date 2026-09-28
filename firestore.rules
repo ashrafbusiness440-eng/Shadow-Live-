@@ -351,6 +351,22 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    match /agency_membership_request_keys/{requestKey} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /agency_membership_request_operations/{operationId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /agency_membership_pending/{pendingId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /agency_membership_acceptance_locks/{userId} {
+      allow read, create, update, delete: if false;
+    }
+
     match /agency_policy_overrides/{agencyId} {
       allow read: if canPlatformManageAgencyPolicies()
         || isAgencyOwnerMember(agencyId);

@@ -91,3 +91,13 @@ test("agency rejection and manual unblock remain direct and bounded", () => {
   assert.equal(manualListSource.includes('db.runQuery("agency_manual_reapply_blocks"'), true);
   assert.equal(manualListSource.includes("Math.min(25"), true);
 });
+
+test("agency membership request lifecycle stays direct and bounded", () => {
+  const sourceText = source("../../cloudflare-worker/src/agency-membership.js");
+  assert.equal(sourceText.includes(".list("), false);
+  assert.equal(sourceText.includes("Math.min(50"), true);
+  assert.equal(sourceText.includes('db.runQuery("agency_membership_pending"'), true);
+  assert.equal(sourceText.includes('db.runQuery("agency_membership_requests"'), true);
+  assert.equal(sourceText.includes("agency_membership_acceptance_locks/"), true);
+  assert.equal(sourceText.includes("agency_membership_request_keys/"), true);
+});

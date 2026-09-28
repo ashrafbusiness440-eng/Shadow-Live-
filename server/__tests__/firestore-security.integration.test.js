@@ -409,6 +409,35 @@ test("agency applicant can read own application but another regular user cannot"
   await assertFails(getDoc(doc(otherDb,"agency_applications","rules_application")));
 });
 
+test("agency membership request is readable only by target user or agency management",async()=>{
+  await env.withSecurityRulesDisabled(async context=>{
+    await setDoc(doc(context.firestore(),"agency_membership_requests","rules_membership_request"),{
+      requestId:"rules_membership_request",
+      agencyId,
+      uid,
+      type:"invite",
+      status:"pending",
+      userConsent:false,
+      agencyConsent:true,
+      actorUid:agencyManagerUid,
+      createdAt:new Date(),
+      updatedAt:new Date(),
+    });
+  });
+  const targetDb=phoneUserDb();
+  const managerDb=phoneDbFor(agencyManagerUid);
+  const outsiderDb=phoneDbFor(agencyOutsiderUid);
+  await assertSucceeds(
+    getDoc(doc(targetDb,"agency_membership_requests","rules_membership_request")),
+  );
+  await assertSucceeds(
+    getDoc(doc(managerDb,"agency_membership_requests","rules_membership_request")),
+  );
+  await assertFails(
+    getDoc(doc(outsiderDb,"agency_membership_requests","rules_membership_request")),
+  );
+});
+
 test("client cannot forge agency application locks idempotency or creation registry",async()=>{
   const applicantDb=phoneUserDb();
   await assertFails(setDoc(doc(applicantDb,"agency_applications","forged_application"),{
@@ -443,6 +472,33 @@ test("client cannot forge agency application locks idempotency or creation regis
   await assertFails(setDoc(doc(applicantDb,"agency_manual_reapply_blocks","rules_application"),{
     applicationId:"rules_application",
     applicantUid:uid,
+  }));
+  await assertFails(setDoc(doc(applicantDb,"agency_membership_requests","forged_membership_request"),{
+    agencyId,
+    uid,
+    type:"join",
+    status:"pending",
+  }));
+  await assertFails(setDoc(doc(applicantDb,"agency_membership_request_keys","forged_key"),{
+    requestId:"forged_membership_request",
+    agencyId,
+    uid,
+  }));
+  await assertFails(setDoc(doc(applicantDb,"agency_membership_request_operations","forged_membership_op"),{
+    actorUid:uid,
+    action:"requestJoin",
+    status:"completed",
+  }));
+  await assertFails(setDoc(doc(applicantDb,"agency_membership_pending","forged_pending"),{
+    requestId:"forged_membership_request",
+    agencyId,
+    uid,
+  }));
+  await assertFails(setDoc(doc(applicantDb,"agency_membership_acceptance_locks",uid),{
+    requestId:"forged_membership_request",
+    agencyId,
+    uid,
+    status:"accepted",
   }));
 });
 
