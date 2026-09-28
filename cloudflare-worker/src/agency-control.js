@@ -546,7 +546,15 @@ export async function agencyControl(request, env) {
     if (action === "listReviewQueue") {
       if (!actor.permissions.canReviewApplications) throw new ApiError("forbidden", 403);
       const applications = await listAgencyReviewQueue(db, body.limit);
-      return json(request, env, { ok: true, applications, limit: Math.min(50, boundedAgencyPageSize(body.limit, 50)) });
+      return json(request, env, {
+        ok: true,
+        applications,
+        limit: Math.min(50, boundedAgencyPageSize(body.limit, 50)),
+        permissions: {
+          canReviewApplications: actor.permissions.canReviewApplications,
+          canDirectCreate: actor.permissions.canManageAgencies,
+        },
+      });
     }
     if (action === "startReview") {
       if (!actor.permissions.canReviewApplications) throw new ApiError("forbidden", 403);
