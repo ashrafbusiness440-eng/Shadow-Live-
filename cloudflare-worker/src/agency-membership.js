@@ -7,6 +7,7 @@ import {
 } from "./firestore.js";
 import {
   boundedAgencyPageSize,
+  createAgencyMembershipDocument,
   createAgencyMembershipRequestDocument,
 } from "./agency-data-model.js";
 import { canPerformAgencyAction } from "./agency-permissions.js";
@@ -445,17 +446,25 @@ export async function respondAgencyMembershipRequest(
       const [
         userSnap,
         membershipSnap,
+        agencyMembershipSnap,
         appLockSnap,
         pairSnap,
         acceptanceSnap,
+        agencySnap,
       ] = await Promise.all([
         db.get(`users/${uid}`, tx),
         db.get(`agency_user_memberships/${uid}`, tx),
+        db.get(`agency_memberships/${agencyId}__${uid}`, tx),
         db.get(`agency_application_locks/${uid}`, tx),
         db.get(pairPath, tx),
         db.get(acceptanceLockPath(uid), tx),
+        db.get(`agencies/${agencyId}`, tx),
       ]);
+      ensureAgencyActive(agencySnap);
       ensureUserCanNegotiate(userSnap, membershipSnap, appLockSnap);
+      if (agencyMembershipSnap.exists) {
+        throw new ApiError("user_already_in_agency", 409);
+      }
       if (!pairSnap.exists || clean(pairSnap.data?.requestId) !== requestId) {
         throw new ApiError("membership_request_key_conflict", 409);
       }
@@ -472,6 +481,14 @@ export async function respondAgencyMembershipRequest(
       }
 
       const status = decision === "reject" ? "rejected" : accepted ? "accepted" : "pending";
+      const membership = accepted
+        ? createAgencyMembershipDocument({
+            agencyId,
+            uid,
+            role: "host",
+            joinedAt: now,
+          })
+        : null;
       const result = {
         requestId,
         agencyId,
@@ -480,6 +497,8 @@ export async function respondAgencyMembershipRequest(
         status,
         userConsent,
         agencyConsent,
+        membershipCommitted: accepted,
+        membershipRole: accepted ? "host" : null,
       };
       const writes = [
         db.writeUpdate(requestPath, {
@@ -487,6 +506,8 @@ export async function respondAgencyMembershipRequest(
           userConsent,
           agencyConsent,
           acceptedAt: accepted ? now : null,
+          membershipCommittedAt: accepted ? now : null,
+          membershipRole: accepted ? "host" : null,
           updatedAt: now,
           resolvedAt: status === "pending" ? null : now,
           resolvedBy: status === "pending" ? null : actorUid,
@@ -496,6 +517,8 @@ export async function respondAgencyMembershipRequest(
           "userConsent",
           "agencyConsent",
           "acceptedAt",
+          "membershipCommittedAt",
+          "membershipRole",
           "updatedAt",
           "resolvedAt",
           "resolvedBy",
@@ -532,7 +555,7 @@ export async function respondAgencyMembershipRequest(
               : "تم رفض طلب الوكالة",
           body:
             decision === "accept"
-              ? "اكتملت موافقة الطرفين، والطلب جاهز لإنشاء العضوية."
+              ? "اكتملت الموافقة وتم تفعيل عضوية الوكالة."
               : clean(body.reason).slice(0, 500) || "تم رفض الطلب.",
           read: false,
           requestId,
@@ -542,21 +565,84 @@ export async function respondAgencyMembershipRequest(
       ];
 
       if (accepted) {
+        const agencyOwnerUid = clean(agencySnap.data?.ownerUid);
         writes.push(
-          db.writeUpdate(pairPath, {
-            status: "accepted",
-            updatedAt: now,
-          }, ["status", "updatedAt"]),
+          db.writeCreate(
+            `agency_memberships/${agencyId}__${uid}`,
+            membership,
+          ),
+          db.writeCreate(
+            `agency_user_memberships/${uid}`,
+            membership,
+          ),
+          db.writeUpdate(
+            `users/${uid}`,
+            {
+              agencyId,
+              agencyRole: "host",
+              agencyJoinedAt: now,
+            },
+            ["agencyId", "agencyRole", "agencyJoinedAt"],
+          ),
+          db.writeUpdate(
+            `agencies/${agencyId}`,
+            { updatedAt: now },
+            ["updatedAt"],
+            [
+              db.increment("memberCount", 1),
+              db.increment("hostCount", 1),
+            ],
+          ),
+          db.writeDelete(pairPath),
           db.writeDelete(queuePath),
           db.writeCreate(acceptanceLockPath(uid), {
             requestId,
             agencyId,
             uid,
-            status: "accepted",
+            status: "committed",
+            membershipRole: "host",
+            membershipCommittedAt: now,
             createdAt: now,
             updatedAt: now,
           }),
+          db.writeCreate(
+            `admin_audit_logs/agency_membership_commit_${requestId}`,
+            {
+              actorUid,
+              action: "commitAgencyMembership",
+              targetType: "agency_membership",
+              targetId: `${agencyId}__${uid}`,
+              after: {
+                agencyId,
+                uid,
+                role: "host",
+                requestId,
+                requestType: type,
+              },
+              idempotencyKey: key,
+              createdAt: now,
+            },
+          ),
         );
+        if (agencyOwnerUid && agencyOwnerUid !== notificationUserId) {
+          writes.push(
+            db.writeCreate(
+              `notifications/agency_membership_committed_${requestId}`,
+              {
+                userId: agencyOwnerUid,
+                type: "agency_membership_committed",
+                category: "system",
+                title: "تمت إضافة مضيف إلى الوكالة",
+                body: "اكتملت الموافقة وتم تفعيل عضوية المضيف.",
+                read: false,
+                requestId,
+                agencyId,
+                memberUid: uid,
+                createdAt: now,
+              },
+            ),
+          );
+        }
       } else if (decision === "reject") {
         writes.push(db.writeDelete(pairPath), db.writeDelete(queuePath));
       }
