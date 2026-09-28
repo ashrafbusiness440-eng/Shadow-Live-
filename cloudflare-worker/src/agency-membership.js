@@ -6,6 +6,7 @@ import {
   isTransientFirestoreError,
 } from "./firestore.js";
 import {
+  AGENCY_LIMITS,
   boundedAgencyPageSize,
   createAgencyMembershipDocument,
   createAgencyMembershipRequestDocument,
@@ -1052,7 +1053,7 @@ function normalizedManagerSlots(data = {}) {
     ? data.managerUids.map(clean).filter(Boolean)
     : [];
   if (
-    managerUids.length > 2 ||
+    managerUids.length > AGENCY_LIMITS.agencyManagers ||
     new Set(managerUids).size !== managerUids.length ||
     (seniorManagerUid && managerUids.includes(seniorManagerUid))
   ) {
@@ -1072,6 +1073,29 @@ function ensureRoleSlotConsistency(role, targetUid, slots) {
   }
   if (role === "senior_manager" && (!isSenior || isManager)) {
     throw new ApiError("agency_manager_slots_conflict", 409);
+  }
+}
+
+function ensureManagerCountersConsistent(agency, slots) {
+  const memberCount = Number(agency.memberCount);
+  const hostCount = Number(agency.hostCount);
+  const managerCount = Number(agency.managerCount);
+  const seniorManagerCount = Number(agency.seniorManagerCount);
+  const expectedSeniorCount = slots.seniorManagerUid ? 1 : 0;
+  if (
+    !Number.isInteger(memberCount) ||
+    !Number.isInteger(hostCount) ||
+    !Number.isInteger(managerCount) ||
+    !Number.isInteger(seniorManagerCount) ||
+    memberCount < 1 ||
+    hostCount < 0 ||
+    managerCount < 0 ||
+    seniorManagerCount < 0 ||
+    managerCount !== slots.managerUids.length ||
+    seniorManagerCount !== expectedSeniorCount ||
+    hostCount + managerCount + seniorManagerCount + 1 !== memberCount
+  ) {
+    throw new ApiError("agency_counter_conflict", 409);
   }
 }
 
@@ -1190,6 +1214,7 @@ export async function setAgencyManagerRole(
       }
 
       const slots = normalizedManagerSlots(slotsSnap.data || {});
+      ensureManagerCountersConsistent(agency, slots);
       ensureRoleSlotConsistency(currentRole, targetUid, slots);
 
       if (currentRole === targetRole) {
@@ -1209,7 +1234,7 @@ export async function setAgencyManagerRole(
       if (seniorManagerUid === targetUid) seniorManagerUid = null;
 
       if (targetRole === "manager") {
-        if (managerUids.length >= 2) {
+        if (managerUids.length >= AGENCY_LIMITS.agencyManagers) {
           throw new ApiError("agency_manager_slots_full", 409);
         }
         managerUids.push(targetUid);
