@@ -271,14 +271,31 @@ jobs:
               throw new Error("public_media_url_missing");
             }
 
-            const redirect = await fetch(publicUrl, { redirect: "manual" });
-            if (redirect.status !== 302 || !redirect.headers.get("location")) {
-              throw new Error("public_media_redirect_failed:" + redirect.status);
-            }
-
-            const publicRead = await fetch(publicUrl);
+            const publicRead = await fetch(publicUrl, {
+              headers: {
+                Origin: "https://ashrafbusiness440-eng.github.io",
+              },
+            });
             if (!publicRead.ok) {
               throw new Error("public_media_read_failed:" + publicRead.status);
+            }
+            if (publicRead.status !== 200 || publicRead.headers.get("location")) {
+              throw new Error(
+                "public_media_should_stream_directly:" + publicRead.status,
+              );
+            }
+            if (
+              publicRead.headers.get("access-control-allow-origin") !==
+              "https://ashrafbusiness440-eng.github.io"
+            ) {
+              throw new Error("public_media_pwa_cors_missing");
+            }
+            if (
+              !(publicRead.headers.get("content-type") || "")
+                .toLowerCase()
+                .startsWith("image/png")
+            ) {
+              throw new Error("public_media_content_type_invalid");
             }
             const received = new Uint8Array(await publicRead.arrayBuffer());
             if (
