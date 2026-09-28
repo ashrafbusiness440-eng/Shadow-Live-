@@ -250,6 +250,24 @@ test("acceptance lock prevents accepting two different agencies", async () => {
     }),
     /user_already_in_agency|membership_acceptance_conflict/,
   );
+
+  const rejected = await respondAgencyMembershipRequest(db, userUid, {
+    requestId: second.requestId,
+    decision: "reject",
+    reason: "انضممت لوكالة أخرى",
+    idempotencyKey: "stage04a_double_reject_b_0001",
+  });
+  assert.equal(rejected.status, "rejected");
+  assert.equal(
+    (await adminDb.collection("agency_membership_request_keys")
+      .doc("645002__" + userUid).get()).exists,
+    false,
+  );
+  assert.equal(
+    (await adminDb.collection("agency_membership_pending")
+      .doc("645002__" + userUid).get()).exists,
+    false,
+  );
 });
 
 test("reject and cancel release pair and pending request keys", async () => {
