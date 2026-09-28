@@ -122,3 +122,58 @@ export function agencySurplusCoins({
   const paidValueCoins = Math.max(0, integer(paidDiamonds)) * rate;
   return Math.max(0, Math.max(0, integer(progressCoins)) - paidValueCoins);
 }
+
+export function normalizeAgencyMonthKey(value) {
+  const month = clean(value);
+  if (!/^\d{4}-\d{2}$/.test(month)) {
+    throw new Error("invalid_agency_month");
+  }
+  const monthNumber = Number(month.slice(5, 7));
+  if (monthNumber < 1 || monthNumber > 12) {
+    throw new Error("invalid_agency_month");
+  }
+  return month;
+}
+
+export function currentAgencyMonthKey(now = new Date()) {
+  const date = now instanceof Date ? now : new Date(now);
+  if (!Number.isFinite(date.getTime())) {
+    throw new Error("invalid_agency_now");
+  }
+  return date.toISOString().slice(0, 7);
+}
+
+export function assertAgencySettlementMonthClosed(monthInput, now = new Date()) {
+  const month = normalizeAgencyMonthKey(monthInput);
+  const currentMonth = currentAgencyMonthKey(now);
+  if (month >= currentMonth) {
+    throw new Error("agency_month_not_closed");
+  }
+  return month;
+}
+
+export function agencyFinancialInteger(value, field = "amount") {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) {
+    throw new Error("invalid_agency_financial_" + field);
+  }
+  return parsed;
+}
+
+export function validateAgencySettlementTotals(totals = {}) {
+  const normalized = {
+    supportCoins: agencyFinancialInteger(totals.supportCoins || 0, "support_coins"),
+    hostShareCoins: agencyFinancialInteger(totals.hostShareCoins || 0, "host_share_coins"),
+    agencyShareCoins: agencyFinancialInteger(totals.agencyShareCoins || 0, "agency_share_coins"),
+    platformShareCoins: agencyFinancialInteger(totals.platformShareCoins || 0, "platform_share_coins"),
+    giftCount: agencyFinancialInteger(totals.giftCount || 0, "gift_count"),
+  };
+  const distributed =
+    normalized.hostShareCoins +
+    normalized.agencyShareCoins +
+    normalized.platformShareCoins;
+  if (!Number.isSafeInteger(distributed) || distributed !== normalized.supportCoins) {
+    throw new Error("agency_settlement_invariant_failed");
+  }
+  return normalized;
+}
