@@ -15,6 +15,16 @@ const clean = (value) => String(value ?? "").trim();
 const validKey = (value) => /^[A-Za-z0-9_-]{12,220}$/.test(clean(value));
 const AGENCY_MONTHLY_ACCRUAL_SHARDS = 32;
 
+function roomGiftOperationConflicts(data = {}, expected = {}) {
+  if (clean(data.action) && clean(data.action) !== "sendRoomGift") return true;
+  if (clean(data.senderId) && clean(data.senderId) !== clean(expected.senderId)) return true;
+  if (clean(data.receiverId) && clean(data.receiverId) !== clean(expected.receiverId)) return true;
+  if (clean(data.roomId) && clean(data.roomId) !== clean(expected.roomId)) return true;
+  if (clean(data.giftId) && clean(data.giftId) !== clean(expected.giftId)) return true;
+  if (data.quantity != null && Number(data.quantity) !== Number(expected.quantity)) return true;
+  return false;
+}
+
 function agencyAccrualShard(value) {
   const text = clean(value);
   let hash = 2166136261;
@@ -183,6 +193,15 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     ]);
 
     if (opSnap.exists) {
+      if (roomGiftOperationConflicts(opSnap.data, {
+        senderId: senderUid,
+        receiverId,
+        roomId,
+        giftId,
+        quantity,
+      })) {
+        throw new ApiError("idempotency_conflict", 409);
+      }
       await db.rollback(transaction);
       return { ok: true, code: "duplicate", ...(opSnap.data?.result || {}) };
     }
@@ -369,6 +388,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     const transactionPath = `gift_transactions/${key}`;
     const ledgerPath = `financial_ledger/gift_${key}`;
     const earningsLedgerPath = `financial_ledger/gift_earnings_${key}`;
+    const targetSalaryAuditPath = `admin_audit_logs/agency_target_salary_${key}`;
     const roomDailyPath = `${roomPath}/support_daily/${periods.day}`;
     const roomWeeklyPath = `${roomPath}/support_weekly/${periods.week}`;
     const roomMonthlyPath = `${roomPath}/support_monthly/${periods.month}`;
@@ -645,6 +665,26 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
           idempotencyKey: key + "_agency_target_salary",
           createdAt: now,
         }),
+        db.writeCreate(targetSalaryAuditPath, {
+          actorUid: "system",
+          action: "agencyTargetSalaryPaid",
+          targetType: "user",
+          targetId: receiverId,
+          triggerUid: senderUid,
+          agencyId,
+          contextType: "room",
+          roomId,
+          sourceType: "gift",
+          sourceId: key,
+          month: periods.month,
+          targetIdReached: agencyTarget.reachedTarget?.id || "",
+          targetProgressCoins: agencyTarget.progressCoins,
+          salaryDeltaDiamonds: diamondsEarned,
+          salaryPaidDiamonds: agencyTarget.paidDiamonds,
+          openingBalance: openingDiamonds,
+          closingBalance: closingDiamonds,
+          createdAt: now,
+        }),
       );
     } else if (earningsEnabled && !agencyTarget && diamondsEarned > 0) {
       writes.push(
@@ -796,6 +836,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       agencyTargetId: agencyTarget?.reachedTarget?.id || null,
       agencyNextTargetCoins: agencyTarget?.remainingToNextTargetCoins || 0,
       agencySalaryPaidDiamonds: agencyTarget?.paidDiamonds || 0,
+      salaryDeltaDiamonds: agencyTarget?.salaryDeltaDiamonds || 0,
       messageId,
       rocketCurrentLevel: rocketAdvance.nextState.currentLevel,
       rocketProgressCoins: rocketAdvance.nextState.progressCoins,
@@ -808,6 +849,8 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
         senderId: senderUid,
         receiverId,
         roomId,
+        giftId,
+        quantity,
         action: "sendRoomGift",
         status: "completed",
         result: resultData,
