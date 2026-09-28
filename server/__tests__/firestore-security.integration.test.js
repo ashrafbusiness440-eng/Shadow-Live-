@@ -409,7 +409,7 @@ test("agency applicant can read own application but another regular user cannot"
   await assertFails(getDoc(doc(otherDb,"agency_applications","rules_application")));
 });
 
-test("client cannot forge agency application locks or idempotency operations",async()=>{
+test("client cannot forge agency application locks idempotency or creation registry",async()=>{
   const applicantDb=phoneUserDb();
   await assertFails(setDoc(doc(applicantDb,"agency_applications","forged_application"),{
     applicantUid:uid,
@@ -424,6 +424,15 @@ test("client cannot forge agency application locks or idempotency operations",as
   await assertFails(setDoc(doc(applicantDb,"agency_application_operations","forged_operation"),{
     uid,
     action:"submitAgencyApplication",
+    status:"completed",
+  }));
+  await assertFails(setDoc(doc(applicantDb,"agency_ids","699999"),{
+    agencyId:"699999",
+    ownerUid:uid,
+  }));
+  await assertFails(setDoc(doc(applicantDb,"agency_creation_operations","forged_creation"),{
+    actorUid:uid,
+    action:"directCreateAgency",
     status:"completed",
   }));
 });

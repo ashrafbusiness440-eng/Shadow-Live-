@@ -68,3 +68,11 @@ test("agency application submission stays bounded and query free", () => {
   assert.equal(sourceText.includes("agency_application_locks/"), true);
   assert.equal(sourceText.includes("agency_application_operations/"), true);
 });
+
+test("agency review queue is bounded and agency creation uses direct id registry lookups", () => {
+  const sourceText = source("../../cloudflare-worker/src/agency-control.js");
+  assert.equal(sourceText.includes('db.runQuery("agency_applications"'), true);
+  assert.equal(sourceText.includes('Math.min(50'), true);
+  assert.equal(sourceText.includes('db.get(`agency_ids/${candidate}`'), true);
+  assert.equal(sourceText.includes(".list("), false);
+});

@@ -67,6 +67,8 @@ export const AGENCY_REQUEST_STATUS = Object.freeze([
 
 export const AGENCY_COLLECTIONS = Object.freeze({
   agencies: "agencies",
+  agencyIds: "agency_ids",
+  creationOperations: "agency_creation_operations",
   memberships: "agency_memberships",
   userMemberships: "agency_user_memberships",
   managerSlots: "agency_manager_slots",
@@ -132,6 +134,16 @@ export function boundedAgencyPageSize(value, fallback = AGENCY_LIMITS.defaultPag
 
 export function agencyPath(agencyId) {
   return `${AGENCY_COLLECTIONS.agencies}/${safePart(agencyId, "agency_id")}`;
+}
+
+export function agencyIdRegistryPath(agencyId) {
+  const id = clean(agencyId);
+  if (!/^\d{6}$/.test(id)) throw new Error("invalid_agency_public_id");
+  return `${AGENCY_COLLECTIONS.agencyIds}/${id}`;
+}
+
+export function agencyCreationOperationPath(actorUid, operationId) {
+  return `${AGENCY_COLLECTIONS.creationOperations}/${safePart(actorUid, "actor_uid")}__${safePart(operationId, "agency_creation_operation_id", 120)}`;
 }
 
 export function agencyMembershipPath(agencyId, uid) {
@@ -246,6 +258,9 @@ export function createAgencyDocument({
   ownerUid,
   name,
   publicId,
+  country = null,
+  createdFrom = "application",
+  sourceApplicationId = null,
   now,
 } = {}) {
   const id = safePart(agencyId, "agency_id");
@@ -254,12 +269,23 @@ export function createAgencyDocument({
   const normalizedPublicId = clean(publicId || id);
   if (!displayName || displayName.length > 80) throw new Error("invalid_agency_name");
   if (!/^\d{6}$/.test(normalizedPublicId)) throw new Error("invalid_agency_public_id");
+  const normalizedCountry = country == null ? null : clean(country);
+  if (normalizedCountry != null && (normalizedCountry.length < 2 || normalizedCountry.length > 64)) {
+    throw new Error("invalid_agency_country");
+  }
+  const normalizedCreatedFrom = clean(createdFrom);
+  if (!["application", "control_direct"].includes(normalizedCreatedFrom)) {
+    throw new Error("invalid_agency_creation_source");
+  }
   return {
     schemaVersion: AGENCY_DATA_MODEL_VERSION,
     agencyId: id,
     publicId: normalizedPublicId,
     name: displayName,
+    country: normalizedCountry,
     ownerUid: owner,
+    createdFrom: normalizedCreatedFrom,
+    sourceApplicationId: sourceApplicationId == null ? null : safePart(sourceApplicationId, "application_id", 220),
     status: "active",
     memberCount: 1,
     hostCount: 0,

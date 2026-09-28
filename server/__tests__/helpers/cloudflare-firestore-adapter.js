@@ -74,6 +74,33 @@ export function cloudflareFirestoreAdapter(adminDb) {
       };
     },
 
+    async runQuery(collectionPath, {
+      filters = [],
+      orderBy = [],
+      limit = 100,
+    } = {}) {
+      let query = adminDb.collection(collectionPath);
+      for (const filter of filters) {
+        query = query.where(filter.field, filter.op, filter.value);
+      }
+      for (const order of orderBy) {
+        query = query.orderBy(
+          order.field,
+          String(order.direction || "asc").toLowerCase() === "desc"
+            ? "desc"
+            : "asc",
+        );
+      }
+      query = query.limit(Math.max(1, Math.min(1000, Number(limit || 100))));
+      const snapshot = await query.get();
+      return snapshot.docs.map((doc) => ({
+        id: doc.id,
+        path: doc.ref.path,
+        data: doc.data(),
+        updateTime: doc.updateTime || null,
+      }));
+    },
+
     async commit(transaction, writes = []) {
       const batch = adminDb.batch();
       for (const write of writes) {
