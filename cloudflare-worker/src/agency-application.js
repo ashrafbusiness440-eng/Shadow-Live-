@@ -120,7 +120,12 @@ export async function submitAgencyApplication(
   const name = clean(body.name);
   const country = clean(body.country) || null;
   const key = clean(body.idempotencyKey);
-  const hostIds = normalizeApplicationHostIds(body.hostIds);
+  let hostIds;
+  try {
+    hostIds = normalizeApplicationHostIds(body.hostIds);
+  } catch (error) {
+    throw new ApiError(clean(error?.message) || "invalid_agency_application_hosts", 400);
+  }
   if (!applicantUid || !validIdempotencyKey(key)) {
     throw new ApiError("invalid_request", 400);
   }
@@ -274,6 +279,9 @@ export async function submitAgencyApplication(
               status: "pending",
               reapplyMode: null,
               reapplyAllowedAt: null,
+              rejectedAt: null,
+              rejectedBy: null,
+              rejectionReason: null,
               updatedAt: nowDate,
             }, [
               "applicationId",
@@ -282,6 +290,9 @@ export async function submitAgencyApplication(
               "status",
               "reapplyMode",
               "reapplyAllowedAt",
+              "rejectedAt",
+              "rejectedBy",
+              "rejectionReason",
               "updatedAt",
             ])
           : db.writeCreate(applicantLockPath, {
@@ -291,6 +302,9 @@ export async function submitAgencyApplication(
               status: "pending",
               reapplyMode: null,
               reapplyAllowedAt: null,
+              rejectedAt: null,
+              rejectedBy: null,
+              rejectionReason: null,
               createdAt: nowDate,
               updatedAt: nowDate,
             }),
@@ -305,6 +319,9 @@ export async function submitAgencyApplication(
             status: "pending",
             reapplyMode: null,
             reapplyAllowedAt: null,
+            rejectedAt: null,
+            rejectedBy: null,
+            rejectionReason: null,
             updatedAt: nowDate,
           };
           return lockSnap.exists
