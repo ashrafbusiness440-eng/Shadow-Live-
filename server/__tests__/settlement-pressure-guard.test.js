@@ -163,3 +163,20 @@ test("Shadow Control agency cooldown override is direct and query free", () => {
   assert.equal(overrideSource.includes("agency_memberships/"), true);
   assert.equal(overrideSource.includes("admin_audit_logs/agency_cooldown_override_"), true);
 });
+
+
+test("agency manager role core is direct, bounded, and query free", () => {
+  const sourceText = source("../../cloudflare-worker/src/agency-membership.js");
+  const start = sourceText.indexOf("export async function setAgencyManagerRole");
+  const end = sourceText.indexOf("function departureFingerprint", start);
+  const managerRoleSource = sourceText.slice(start, end);
+  assert.equal(start >= 0, true);
+  assert.equal(managerRoleSource.includes(".runQuery("), false);
+  assert.equal(managerRoleSource.includes(".list("), false);
+  assert.equal(managerRoleSource.includes("agency_manager_slots/"), true);
+  assert.equal(managerRoleSource.includes("agency_user_memberships/"), true);
+  assert.equal(managerRoleSource.includes("agency_memberships/"), true);
+  assert.equal(managerRoleSource.includes("db.increment(currentCounter, -1)"), true);
+  assert.equal(managerRoleSource.includes("db.increment(targetCounter, 1)"), true);
+  assert.equal(managerRoleSource.includes("AGENCY_LIMITS.agencyManagers"), true);
+});
