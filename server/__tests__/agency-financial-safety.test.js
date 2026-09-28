@@ -2,11 +2,105 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  DEFAULT_AGENCY_TARGETS,
   agencyFinancialInteger,
   assertAgencySettlementMonthClosed,
   calculateAgencyTargetProgress,
   validateAgencySettlementTotals,
 } from "../economy/agency-policy.js";
+
+test("06-A canonical target ladder stays on the approved Starter to Diamond values",()=>{
+  assert.deepEqual(
+    DEFAULT_AGENCY_TARGETS.map((target)=>[
+      target.id,
+      target.thresholdCoins,
+      target.salaryDiamonds,
+    ]),
+    [
+      ["starter_g",50000,5],
+      ["starter_f",100000,10],
+      ["starter_e",200000,20],
+      ["starter_d",300000,30],
+      ["starter_c",450000,45],
+      ["starter_b",650000,65],
+      ["starter_a",850000,85],
+      ["bronze_f",1000000,100],
+      ["bronze_a",4500000,450],
+      ["silver_f",5000000,500],
+      ["silver_a",18000000,1800],
+      ["gold_f",20000000,2000],
+      ["gold_a",48000000,4800],
+      ["diamond",50000000,5000],
+    ],
+  );
+  assert.equal(DEFAULT_AGENCY_TARGETS.at(-1).openEnded,true);
+});
+
+test("06-A target boundaries expose current next and remaining coins exactly",()=>{
+  const below=calculateAgencyTargetProgress({
+    monthKey:"2026-09",
+    storedMonth:"2026-09",
+    storedProgressCoins:0,
+    addedHostShareCoins:49999,
+    storedPaidDiamonds:0,
+  });
+  assert.equal(below.reachedTarget,null);
+  assert.equal(below.nextTarget?.id,"starter_g");
+  assert.equal(below.remainingToNextTargetCoins,1);
+
+  const exact=calculateAgencyTargetProgress({
+    monthKey:"2026-09",
+    storedMonth:"2026-09",
+    storedProgressCoins:49999,
+    addedHostShareCoins:1,
+    storedPaidDiamonds:0,
+  });
+  assert.equal(exact.reachedTarget?.id,"starter_g");
+  assert.equal(exact.nextTarget?.id,"starter_f");
+  assert.equal(exact.remainingToNextTargetCoins,50000);
+
+  const diamond=calculateAgencyTargetProgress({
+    monthKey:"2026-09",
+    storedMonth:"2026-09",
+    storedProgressCoins:48000000,
+    addedHostShareCoins:2000000,
+    storedPaidDiamonds:4800,
+  });
+  assert.equal(diamond.reachedTarget?.id,"diamond");
+  assert.equal(diamond.nextTarget,null);
+  assert.equal(diamond.remainingToNextTargetCoins,0);
+});
+
+test("06-A target progress fails closed on invalid month and corrupted financial values",()=>{
+  assert.throws(
+    ()=>calculateAgencyTargetProgress({monthKey:"2026-13"}),
+    /invalid_agency_month/,
+  );
+  assert.throws(
+    ()=>calculateAgencyTargetProgress({
+      monthKey:"2026-09",
+      storedMonth:"2026-09",
+      storedProgressCoins:-1,
+    }),
+    /invalid_agency_target_stored_progress_coins/,
+  );
+  assert.throws(
+    ()=>calculateAgencyTargetProgress({
+      monthKey:"2026-09",
+      addedHostShareCoins:1.5,
+    }),
+    /invalid_agency_target_added_host_share_coins/,
+  );
+  assert.throws(
+    ()=>calculateAgencyTargetProgress({
+      monthKey:"2026-09",
+      storedMonth:"2026-09",
+      storedProgressCoins:Number.MAX_SAFE_INTEGER,
+      addedHostShareCoins:1,
+    }),
+    /invalid_agency_target_progress_coins/,
+  );
+});
 
 test("target salary pays only the incremental difference in the same month",()=>{
   const first=calculateAgencyTargetProgress({
