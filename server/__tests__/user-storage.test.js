@@ -19,6 +19,7 @@ import {
 } from "../../cloudflare-worker/src/r2-presign.js";
 import {
   isPublicMediaScope,
+  publicMediaRedirect,
   publicMediaStorageKey,
   publicMediaUrl,
 } from "../../cloudflare-worker/src/public-media.js";
@@ -264,16 +265,56 @@ test("account deletion storage cleanup is metadata-indexed and bounded", () => {
 });
 
 
-test("public media redirects use bounded edge cache below signed URL TTL", () => {
-  const source = fs.readFileSync(
-    new URL("../../cloudflare-worker/src/public-media.js", import.meta.url),
-    "utf8",
+test("public media streams R2 bytes through Worker with PWA CORS", async () => {
+  const objectId = "a".repeat(32);
+  let requestedKey = "";
+  const response = await publicMediaRedirect(
+    new Request(
+      `https://shadow-live.example/api/public-media/profile_image/user_1/${objectId}.png`,
+      {
+        headers: {
+          Origin: "https://ashrafbusiness440-eng.github.io",
+        },
+      },
+    ),
+    {
+      USER_STORAGE: {
+        async get(key) {
+          requestedKey = key;
+          return {
+            body: new Uint8Array([1, 2, 3, 4]),
+            size: 4,
+            etag: "profile-etag",
+            httpMetadata: { contentType: "image/png" },
+          };
+        },
+      },
+    },
   );
-  assert.match(source, /PUBLIC_MEDIA_SIGNED_TTL_SECONDS = 900/);
-  assert.match(source, /PUBLIC_MEDIA_CACHE_SECONDS = 300/);
-  assert.match(source, /cache\.match\(cacheKey\)/);
-  assert.match(source, /cache\.put\(/);
-  assert.match(source, /stale-while-revalidate=60/);
+
+  assert.equal(
+    requestedKey,
+    `users/user_1/profile/${objectId}.png`,
+  );
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("Location"), null);
+  assert.equal(response.headers.get("Content-Type"), "image/png");
+  assert.equal(
+    response.headers.get("Access-Control-Allow-Origin"),
+    "https://ashrafbusiness440-eng.github.io",
+  );
+  assert.match(
+    response.headers.get("Cache-Control") || "",
+    /max-age=300/,
+  );
+  assert.equal(
+    response.headers.get("Cross-Origin-Resource-Policy"),
+    "cross-origin",
+  );
+  assert.deepEqual(
+    Array.from(new Uint8Array(await response.arrayBuffer())),
+    [1, 2, 3, 4],
+  );
 });
 
 
