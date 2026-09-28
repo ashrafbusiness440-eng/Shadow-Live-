@@ -80,6 +80,9 @@ function assertApplicantLockAllowsSubmit(lockSnap, applicantUid, nowMs) {
   if (mode === "manual") {
     throw new ApiError("agency_reapply_blocked", 409);
   }
+  if (!["24h", "3d", "7d", "30d"].includes(mode)) {
+    throw new ApiError("agency_reapply_blocked", 409);
+  }
 
   const allowedAtMs = timestampMs(lock.reapplyAllowedAt);
   if (!allowedAtMs || allowedAtMs > nowMs) {
