@@ -196,6 +196,14 @@ before(async()=>{
       type:"suspend",
       reason:"rules-test",
     });
+    await setDoc(doc(context.firestore(),"agency_applications","rules_application"),{
+      applicationId:"rules_application",
+      applicantUid:uid,
+      name:"Rules Application",
+      hostIds:["410001","410002","410003","410004","410005"],
+      hostUids:["h1","h2","h3","h4","h5"],
+      status:"pending",
+    });
     for (let i = 0; i < 59; i += 1) {
       await setDoc(doc(context.firestore(),"rooms",`rules_room_${i}`),{
         name:`Rules Room ${i}`,
@@ -392,6 +400,32 @@ test("legacy C1 C2 agency settlement collections stay quarantined",async()=>{
   const ownerDb=phoneDbFor(agencyOwnerUid);
   await assertFails(getDoc(doc(ownerDb,"agency_settlements","legacy_rules")));
   await assertFails(getDoc(doc(ownerDb,"agency_settlement_accruals","legacy_rules")));
+});
+
+test("agency applicant can read own application but another regular user cannot",async()=>{
+  const applicantDb=phoneUserDb();
+  const otherDb=phoneDbFor(otherUid);
+  await assertSucceeds(getDoc(doc(applicantDb,"agency_applications","rules_application")));
+  await assertFails(getDoc(doc(otherDb,"agency_applications","rules_application")));
+});
+
+test("client cannot forge agency application locks or idempotency operations",async()=>{
+  const applicantDb=phoneUserDb();
+  await assertFails(setDoc(doc(applicantDb,"agency_applications","forged_application"),{
+    applicantUid:uid,
+    name:"Forged",
+    status:"pending",
+  }));
+  await assertFails(setDoc(doc(applicantDb,"agency_application_locks",uid),{
+    applicationId:"forged_application",
+    applicantUid:uid,
+    status:"pending",
+  }));
+  await assertFails(setDoc(doc(applicantDb,"agency_application_operations","forged_operation"),{
+    uid,
+    action:"submitAgencyApplication",
+    status:"completed",
+  }));
 });
 
 test("security assertions actually executed",()=>{

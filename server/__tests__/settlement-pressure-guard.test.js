@@ -58,3 +58,13 @@ test("agency monthly settlement reads a fixed 32-shard set with direct document 
   assert.equal(settlement.includes("tx.get(settlementRef)"), true);
   assert.equal(settlement.includes("tx.get(ledgerRef)"), true);
 });
+
+test("agency application submission stays bounded and query free", () => {
+  const sourceText = source("../../cloudflare-worker/src/agency-application.js");
+  assert.equal(sourceText.includes(".runQuery("), false);
+  assert.equal(sourceText.includes(".list("), false);
+  assert.equal(sourceText.includes("normalizeApplicationHostIds"), true);
+  assert.equal(sourceText.includes("public_ids/"), true);
+  assert.equal(sourceText.includes("agency_application_locks/"), true);
+  assert.equal(sourceText.includes("agency_application_operations/"), true);
+});
