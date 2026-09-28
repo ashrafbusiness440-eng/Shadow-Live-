@@ -42,3 +42,25 @@ test("owner retains settlement authority",()=>{
   assert.equal(p.canManageSettlements,true);
   assert.equal(p.canSettle,true);
 });
+
+test("agency settlement needs economy settlement and agency settlement capabilities",()=>{
+  const missingAgency=economyPermissions({
+    role:"admin",
+    adminEnabled:true,
+    capabilities:["manageEconomy","manageSettlements"],
+  });
+  assert.equal(missingAgency.canSettle,true);
+  assert.equal(missingAgency.canSettleAgency,false);
+
+  const allowed=economyPermissions({
+    role:"admin",
+    adminEnabled:true,
+    capabilities:["manageEconomy","manageSettlements","manageAgencySettlements"],
+  });
+  assert.equal(allowed.canSettleAgency,true);
+});
+
+test("owner retains agency settlement authority",()=>{
+  const p=economyPermissions({role:"owner"});
+  assert.equal(p.canSettleAgency,true);
+});
