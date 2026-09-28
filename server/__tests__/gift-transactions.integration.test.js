@@ -23,6 +23,14 @@ function periodKeys(date=new Date()){
   return {day,month};
 }
 
+function previousMonthKey(date=new Date()){
+  return new Date(Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth()-1,
+    1,
+  )).toISOString().slice(0,7);
+}
+
 function agencyAccrualShard(value){
   const text=String(value??"").trim();
   let hash=2166136261;
@@ -455,13 +463,13 @@ test("Shadow Control policy save persists custom values and runtime calculations
   assert.equal(audit.empty,false);
 });
 
-test("monthly agency settlement aggregates bounded shards and stays idempotent",async()=>{
+test("closed-month agency settlement aggregates bounded shards and stays idempotent",async()=>{
   await seedSharedConfig();
-  const periods=periodKeys();
+  const month=previousMonthKey();
   const suffix=Date.now().toString()+"_settlement";
   const agencyId="agency_"+suffix;
   const actorUid="owner_"+suffix;
-  const statementId=agencyId+"__"+periods.month;
+  const statementId=agencyId+"__"+month;
 
   await Promise.all([
     db.collection("agency_wallets").doc(agencyId).set({
@@ -471,8 +479,8 @@ test("monthly agency settlement aggregates bounded shards and stays idempotent",
       lifetimeDiamonds:7,
     }),
     db.collection("agency_monthly_accrual_shards")
-      .doc(agencyId+"__"+periods.month+"__00").set({
-        agencyId,month:periods.month,shard:0,
+      .doc(agencyId+"__"+month+"__00").set({
+        agencyId,month,shard:0,
         supportCoins:600000,
         hostShareCoins:300000,
         agencyShareCoins:30000,
@@ -480,8 +488,8 @@ test("monthly agency settlement aggregates bounded shards and stays idempotent",
         giftCount:6,
       }),
     db.collection("agency_monthly_accrual_shards")
-      .doc(agencyId+"__"+periods.month+"__17").set({
-        agencyId,month:periods.month,shard:17,
+      .doc(agencyId+"__"+month+"__17").set({
+        agencyId,month,shard:17,
         supportCoins:400000,
         hostShareCoins:200000,
         agencyShareCoins:20000,
@@ -490,7 +498,7 @@ test("monthly agency settlement aggregates bounded shards and stays idempotent",
       }),
   ]);
 
-  const first=await settleAgencyMonth(db,actorUid,agencyId,periods.month);
+  const first=await settleAgencyMonth(db,actorUid,agencyId,month);
   assert.equal(first.alreadySettled,false);
   const settlement=first.settlement;
   assert.equal(settlement.supportCoins,1000000);
@@ -516,10 +524,106 @@ test("monthly agency settlement aggregates bounded shards and stays idempotent",
   assert.equal(ledger.data().delta,5);
   assert.equal(ledger.data().payableCoins,50000);
 
-  const second=await settleAgencyMonth(db,actorUid,agencyId,periods.month);
+  const second=await settleAgencyMonth(db,actorUid,agencyId,month);
   assert.equal(second.alreadySettled,true);
   const walletAfter=await db.collection("agency_wallets").doc(agencyId).get();
   assert.equal(walletAfter.data().diamonds,12);
   assert.equal(walletAfter.data().remainderCoins,2500);
 });
 
+
+test("agency settlement rejects the current month before any payout",async()=>{
+  await seedSharedConfig();
+  const month=periodKeys().month;
+  const suffix=Date.now().toString()+"_open_month";
+  const agencyId="agency_"+suffix;
+  const actorUid="owner_"+suffix;
+  await db.collection("agency_monthly_accrual_shards")
+    .doc(agencyId+"__"+month+"__00").set({
+      agencyId,month,shard:0,
+      supportCoins:100000,
+      hostShareCoins:50000,
+      agencyShareCoins:5000,
+      platformShareCoins:45000,
+      giftCount:1,
+    });
+
+  await assert.rejects(
+    settleAgencyMonth(db,actorUid,agencyId,month),
+    /agency_month_not_closed/,
+  );
+  const [wallet,statement,ledger]=await Promise.all([
+    db.collection("agency_wallets").doc(agencyId).get(),
+    db.collection("agency_monthly_statements").doc(agencyId+"__"+month).get(),
+    db.collection("financial_ledger").doc(
+      "agency_monthly_share_"+agencyId+"__"+month,
+    ).get(),
+  ]);
+  assert.equal(wallet.exists,false);
+  assert.equal(statement.exists,false);
+  assert.equal(ledger.exists,false);
+});
+
+test("agency settlement records carryover in ledger even when payout is zero diamonds",async()=>{
+  await seedSharedConfig();
+  const month=previousMonthKey();
+  const suffix=Date.now().toString()+"_carryover";
+  const agencyId="agency_"+suffix;
+  const actorUid="owner_"+suffix;
+  const statementId=agencyId+"__"+month;
+
+  await Promise.all([
+    db.collection("agency_wallets").doc(agencyId).set({
+      agencyId,diamonds:3,remainderCoins:1000,lifetimeDiamonds:3,
+    }),
+    db.collection("agency_monthly_accrual_shards")
+      .doc(agencyId+"__"+month+"__00").set({
+        agencyId,month,shard:0,
+        supportCoins:100000,
+        hostShareCoins:91000,
+        agencyShareCoins:4000,
+        platformShareCoins:5000,
+        giftCount:1,
+      }),
+  ]);
+
+  const result=await settleAgencyMonth(db,actorUid,agencyId,month);
+  assert.equal(result.settlement.agencyDiamonds,0);
+  assert.equal(result.settlement.openingRemainderCoins,1000);
+  assert.equal(result.settlement.agencyRemainderCoins,5000);
+
+  const [wallet,ledger]=await Promise.all([
+    db.collection("agency_wallets").doc(agencyId).get(),
+    db.collection("financial_ledger").doc("agency_monthly_share_"+statementId).get(),
+  ]);
+  assert.equal(wallet.data().diamonds,3);
+  assert.equal(wallet.data().remainderCoins,5000);
+  assert.equal(ledger.exists,true);
+  assert.equal(ledger.data().delta,0);
+  assert.equal(ledger.data().openingRemainderCoins,1000);
+  assert.equal(ledger.data().remainderCoins,5000);
+});
+
+test("agency settlement rejects corrupted financial shard totals",async()=>{
+  await seedSharedConfig();
+  const month=previousMonthKey();
+  const suffix=Date.now().toString()+"_corrupt";
+  const agencyId="agency_"+suffix;
+  const actorUid="owner_"+suffix;
+  await db.collection("agency_monthly_accrual_shards")
+    .doc(agencyId+"__"+month+"__00").set({
+      agencyId,month,shard:0,
+      supportCoins:100000,
+      hostShareCoins:50000,
+      agencyShareCoins:5000,
+      platformShareCoins:44000,
+      giftCount:1,
+    });
+  await assert.rejects(
+    settleAgencyMonth(db,actorUid,agencyId,month),
+    /agency_settlement_invariant_failed/,
+  );
+  const statement=await db.collection("agency_monthly_statements")
+    .doc(agencyId+"__"+month).get();
+  assert.equal(statement.exists,false);
+});
