@@ -13,6 +13,16 @@ const clean = (value) => String(value ?? "").trim();
 const validKey = (value) => /^[A-Za-z0-9_-]{12,220}$/.test(clean(value));
 const AGENCY_MONTHLY_ACCRUAL_SHARDS = 32;
 
+function chatGiftOperationConflicts(data = {}, expected = {}) {
+  if (clean(data.action) && clean(data.action) !== "sendGift") return true;
+  if (clean(data.senderId) && clean(data.senderId) !== clean(expected.senderId)) return true;
+  if (clean(data.receiverId) && clean(data.receiverId) !== clean(expected.receiverId)) return true;
+  if (clean(data.conversationId) && clean(data.conversationId) !== clean(expected.conversationId)) return true;
+  if (clean(data.giftId) && clean(data.giftId) !== clean(expected.giftId)) return true;
+  if (data.quantity != null && Number(data.quantity) !== Number(expected.quantity)) return true;
+  return false;
+}
+
 function agencyAccrualShard(value) {
   const text = clean(value);
   let hash = 2166136261;
@@ -139,6 +149,15 @@ async function sendMessage(db, uid, body) {
     ]);
 
     if (op.exists) {
+      if (chatGiftOperationConflicts(op.data, {
+        senderId: uid,
+        receiverId,
+        conversationId,
+        giftId,
+        quantity,
+      })) {
+        throw new ApiError("idempotency_conflict", 409);
+      }
       await db.rollback(transaction);
       return { ok: true, code: "duplicate", ...(op.data?.result || {}) };
     }
@@ -472,6 +491,7 @@ export async function sendGift(db, uid, body) {
     const transactionPath = `gift_transactions/${key}`;
     const ledgerPath = `financial_ledger/gift_${key}`;
     const earningsLedgerPath = `financial_ledger/gift_earnings_${key}`;
+    const targetSalaryAuditPath = `admin_audit_logs/agency_target_salary_${key}`;
     const userDailyPath = `gift_user_stats/${receiverId}/daily/${periods.day}`;
     const userWeeklyPath = `gift_user_stats/${receiverId}/weekly/${periods.week}`;
     const userMonthlyPath = `gift_user_stats/${receiverId}/monthly/${periods.month}`;
@@ -655,6 +675,26 @@ export async function sendGift(db, uid, body) {
           idempotencyKey: key + "_agency_target_salary",
           createdAt: now,
         }),
+        db.writeCreate(targetSalaryAuditPath, {
+          actorUid: "system",
+          action: "agencyTargetSalaryPaid",
+          targetType: "user",
+          targetId: receiverId,
+          triggerUid: uid,
+          agencyId,
+          contextType: "chat",
+          conversationId,
+          sourceType: "gift",
+          sourceId: key,
+          month: periods.month,
+          targetIdReached: agencyTarget.reachedTarget?.id || "",
+          targetProgressCoins: agencyTarget.progressCoins,
+          salaryDeltaDiamonds: diamondsEarned,
+          salaryPaidDiamonds: agencyTarget.paidDiamonds,
+          openingBalance: openingDiamonds,
+          closingBalance: closingDiamonds,
+          createdAt: now,
+        }),
       );
     } else if (earningsEnabled && !agencyTarget && diamondsEarned > 0) {
       writes.push(
@@ -799,12 +839,16 @@ export async function sendGift(db, uid, body) {
       agencyTargetId: agencyTarget?.reachedTarget?.id || null,
       agencyNextTargetCoins: agencyTarget?.remainingToNextTargetCoins || 0,
       agencySalaryPaidDiamonds: agencyTarget?.paidDiamonds || 0,
+      salaryDeltaDiamonds: agencyTarget?.salaryDeltaDiamonds || 0,
     };
 
     writes.push(
       db.writeCreate(opPath, {
         senderId: uid,
         receiverId,
+        conversationId,
+        giftId,
+        quantity,
         action: "sendGift",
         status: "completed",
         result: resultData,
