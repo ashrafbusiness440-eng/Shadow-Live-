@@ -19,7 +19,7 @@ const policy={
     "5":5500,"6":7000,"7":8000,"8":9000,"9":10000,
   },
   tiers:[
-    {id:"starter",minGiftCoins:0,hostShareBps:5500,agencyShareBps:500},
+    {id:"starter",minGiftCoins:0,hostShareBps:5000,agencyShareBps:500},
     {id:"bronze",minGiftCoins:1000000,hostShareBps:5700,agencyShareBps:600},
     {id:"silver",minGiftCoins:5000000,hostShareBps:6000,agencyShareBps:800},
     {id:"gold",minGiftCoins:20000000,hostShareBps:6200,agencyShareBps:900},
@@ -89,7 +89,7 @@ test("host and agency bonuses apply without exceeding 100 percent",()=>{
   );
 });
 
-test("cycle settlement uses final monthly tier for the whole cycle",()=>{
+test("monthly settlement helper uses final monthly tier for the period",()=>{
   const noBonus={...policy,hostPerformanceBonusBps:0,agencyPerformanceBonusBps:0};
   const result=calculateAgencyCycleSettlement(noBonus,{
     monthlyGrossCoins:1000000,
@@ -106,8 +106,8 @@ test("cycle settlement uses final monthly tier for the whole cycle",()=>{
   assert.equal(result.agencyPayableCoins,60000);
   assert.equal(result.platformCoins,370000);
 
-  const oldProvisionalStarterAccrual=550000;
-  assert.ok(result.hostPayableCoins>oldProvisionalStarterAccrual);
+  const approvedStarterAccrual=500000;
+  assert.ok(result.hostPayableCoins>approvedStarterAccrual);
 });
 
 test("activity multiplier applies to host and agency payable and remainder stays with platform",()=>{

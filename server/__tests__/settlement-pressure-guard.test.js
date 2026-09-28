@@ -42,3 +42,19 @@ test("settlement queue needs no custom composite Firestore index", () => {
   assert.equal(workflow.includes("/collectionGroups/"), false);
   assert.equal(workflow.includes("index create failed"), false);
 });
+
+test("agency monthly settlement reads a fixed 32-shard set with direct document lookups", () => {
+  const sourceText = source("../economy/economy-control.js");
+  assert.equal(sourceText.includes("const AGENCY_MONTHLY_ACCRUAL_SHARDS=32"), true);
+  assert.equal(
+    sourceText.includes("Array.from({length:AGENCY_MONTHLY_ACCRUAL_SHARDS}"),
+    true,
+  );
+  const start = sourceText.indexOf("export async function settleAgencyMonth");
+  const end = sourceText.indexOf("export async function handler", start);
+  const settlement = sourceText.slice(start, end);
+  assert.equal(settlement.includes(".where("), false);
+  assert.equal(sourceText.includes('collection("agency_monthly_accrual_shards")'), true);
+  assert.equal(settlement.includes("tx.get(settlementRef)"), true);
+  assert.equal(settlement.includes("tx.get(ledgerRef)"), true);
+});
