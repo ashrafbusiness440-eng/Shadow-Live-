@@ -173,7 +173,7 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
       );
       return;
     }
-    if (membersLoading || busy) return;
+    if (membersLoading) return;
     setState(() => membersLoading = true);
     try {
       final body = await postMembership({
@@ -691,6 +691,9 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
         : 0;
     final senior =
         (managerSlots['seniorManagerUid'] ?? '').toString().isEmpty ? 0 : 1;
+    final managerLimit = (managerSlots['managerLimit'] ?? 2).toString();
+    final seniorLimit =
+        (managerSlots['seniorManagerLimit'] ?? 1).toString();
     return <Widget>[
       const Card(
         child: ListTile(
@@ -762,9 +765,13 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
                   (selectedAgency['seniorManagerCount'] ?? 0).toString() +
                   '\nSlots: ' +
                   managers.toString() +
-                  '/2 مدير • ' +
+                  '/' +
+                  managerLimit +
+                  ' مدير • ' +
                   senior.toString() +
-                  '/1 مدير أول',
+                  '/' +
+                  seniorLimit +
+                  ' مدير أول',
             ),
             isThreeLine: true,
           ),
