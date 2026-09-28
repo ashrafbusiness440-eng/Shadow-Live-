@@ -6,7 +6,7 @@ import {
   assertSucceeds,
   initializeTestEnvironment,
 } from "@firebase/rules-unit-testing";
-import {collection, doc, getDoc, getDocs, limit, query, setDoc, updateDoc} from "firebase/firestore";
+import {collection, deleteDoc, doc, getDoc, getDocs, limit, query, setDoc, updateDoc} from "firebase/firestore";
 
 let env;
 const projectId="shadow-live-economy-test";
@@ -455,6 +455,28 @@ test("client cannot forge active agency membership or agency counters",async()=>
   await assertFails(updateDoc(doc(applicantDb,"agencies",agencyId),{
     memberCount:999,
     hostCount:999,
+  }));
+});
+
+test("client cannot leave or remove agency membership by direct Firestore writes",async()=>{
+  const hostDb=phoneDbFor(agencyHostUid);
+  await assertFails(updateDoc(
+    doc(hostDb,"agency_memberships",agencyId+"__"+agencyHostUid),
+    {status:"left",leftAt:new Date()},
+  ));
+  await assertFails(deleteDoc(
+    doc(hostDb,"agency_memberships",agencyId+"__"+agencyHostUid),
+  ));
+  await assertFails(updateDoc(
+    doc(hostDb,"agency_user_memberships",agencyHostUid),
+    {status:"left",leftAt:new Date()},
+  ));
+  await assertFails(deleteDoc(
+    doc(hostDb,"agency_user_memberships",agencyHostUid),
+  ));
+  await assertFails(updateDoc(doc(hostDb,"users",agencyHostUid),{
+    agencyId:"",
+    agencyRole:"",
   }));
 });
 
