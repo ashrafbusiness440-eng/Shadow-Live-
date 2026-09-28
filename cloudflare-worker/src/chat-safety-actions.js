@@ -120,8 +120,6 @@ async function sendMessage(db, uid, body) {
   const nowMs = Date.now();
 
   return runTransaction(db, async (transaction) => {
-    const now = operationNow(options);
-    const periods = utcPeriodKeys(now);
     const opPath = `message_operations/${key}`;
     const senderPath = `users/${uid}`;
     const receiverPath = `users/${receiverId}`;
@@ -325,6 +323,8 @@ export async function sendGift(db, uid, body, options = {}) {
   ];
 
   return runTransaction(db, async (transaction) => {
+    const now = operationNow(options);
+    const periods = utcPeriodKeys(now);
     const opPath = `gift_operations/${key}`;
     const senderPath = `users/${uid}`;
     const receiverPath = `users/${receiverId}`;
