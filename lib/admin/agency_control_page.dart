@@ -27,7 +27,7 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
   String operationKey(String prefix) {
     final uid = controlAuth.currentUser?.uid ?? 'control';
     final safeUid = uid.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
-    return '\${prefix}_\${safeUid}_\${DateTime.now().microsecondsSinceEpoch}';
+    return '${prefix}_${safeUid}_${DateTime.now().microsecondsSinceEpoch}';
   }
 
   Future<Map<String, dynamic>> post(Map<String, dynamic> payload) async {
@@ -150,7 +150,7 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('تم إنشاء الوكالة — ID \${(body['agencyId'] ?? '').toString()}'),
+          content: Text('تم إنشاء الوكالة — ID ${(body['agencyId'] ?? '').toString()}'),
         ),
       );
       await load();
@@ -261,7 +261,7 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('تم إنشاء الوكالة مباشرة — ID \${(body['agencyId'] ?? '').toString()}'),
+          content: Text('تم إنشاء الوكالة مباشرة — ID ${(body['agencyId'] ?? '').toString()}'),
         ),
       );
       await load();
@@ -341,10 +341,10 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
                             const SizedBox(height: 6),
                             Text('الحالة: $status'),
                             Text(
-                              'مقدم الطلب: \${(application['applicantPublicId'] ?? application['applicantUid'] ?? '').toString()}',
+                              'مقدم الطلب: ${(application['applicantPublicId'] ?? application['applicantUid'] ?? '').toString()}',
                             ),
                             if ((application['country'] ?? '').toString().isNotEmpty)
-                              Text('الدولة: \${(application['country'] ?? '').toString()}'),
+                              Text('الدولة: ${(application['country'] ?? '').toString()}'),
                             Text('Host IDs: $hostIds'),
                             const SizedBox(height: 12),
                             Wrap(
