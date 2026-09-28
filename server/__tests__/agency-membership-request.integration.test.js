@@ -136,7 +136,7 @@ test("agency invite records agency consent and target user can see it", async ()
   assert.ok(mine.requests.some((item) => item.requestId === invite.requestId));
 });
 
-test("agency accepts join request and creates acceptance lock without membership yet", async () => {
+test("agency accepts join request and commits membership atomically", async () => {
   const agencyId = "643001";
   const ownerUid = "stage04a_accept_join_owner";
   const userUid = "stage04a_accept_join_user";
@@ -158,20 +158,34 @@ test("agency accepts join request and creates acceptance lock without membership
   assert.equal(accepted.userConsent, true);
   assert.equal(accepted.agencyConsent, true);
 
-  const [request, acceptanceLock, pending, membership] = await Promise.all([
-    adminDb.collection("agency_membership_requests").doc(join.requestId).get(),
-    adminDb.collection("agency_membership_acceptance_locks").doc(userUid).get(),
-    adminDb.collection("agency_membership_pending")
-      .doc(agencyId + "__" + userUid).get(),
-    adminDb.collection("agency_user_memberships").doc(userUid).get(),
-  ]);
+  const [request, acceptanceLock, pending, membership, agencyMembership, user, agency] =
+    await Promise.all([
+      adminDb.collection("agency_membership_requests").doc(join.requestId).get(),
+      adminDb.collection("agency_membership_acceptance_locks").doc(userUid).get(),
+      adminDb.collection("agency_membership_pending")
+        .doc(agencyId + "__" + userUid).get(),
+      adminDb.collection("agency_user_memberships").doc(userUid).get(),
+      adminDb.collection("agency_memberships")
+        .doc(agencyId + "__" + userUid).get(),
+      adminDb.collection("users").doc(userUid).get(),
+      adminDb.collection("agencies").doc(agencyId).get(),
+    ]);
   assert.equal(request.data().status, "accepted");
+  assert.equal(request.data().membershipRole, "host");
+  assert.ok(request.data().membershipCommittedAt);
   assert.equal(acceptanceLock.data().requestId, join.requestId);
+  assert.equal(acceptanceLock.data().status, "committed");
   assert.equal(pending.exists, false);
-  assert.equal(membership.exists, false);
+  assert.equal(membership.data().role, "host");
+  assert.equal(membership.data().status, "active");
+  assert.equal(agencyMembership.data().role, "host");
+  assert.equal(user.data().agencyId, agencyId);
+  assert.equal(user.data().agencyRole, "host");
+  assert.equal(agency.data().memberCount, 2);
+  assert.equal(agency.data().hostCount, 1);
 });
 
-test("user accepts agency invite and creates acceptance lock", async () => {
+test("user accepts agency invite and commits membership", async () => {
   const agencyId = "644001";
   const ownerUid = "stage04a_accept_invite_owner";
   const userUid = "stage04a_accept_invite_user";
@@ -193,9 +207,16 @@ test("user accepts agency invite and creates acceptance lock", async () => {
   assert.equal(accepted.status, "accepted");
   assert.equal(accepted.userConsent, true);
   assert.equal(accepted.agencyConsent, true);
-  const lock = await adminDb.collection("agency_membership_acceptance_locks")
-    .doc(userUid).get();
+  const [lock, membership, agency] = await Promise.all([
+    adminDb.collection("agency_membership_acceptance_locks").doc(userUid).get(),
+    adminDb.collection("agency_user_memberships").doc(userUid).get(),
+    adminDb.collection("agencies").doc(agencyId).get(),
+  ]);
   assert.equal(lock.data().agencyId, agencyId);
+  assert.equal(lock.data().status, "committed");
+  assert.equal(membership.data().role, "host");
+  assert.equal(agency.data().memberCount, 2);
+  assert.equal(agency.data().hostCount, 1);
 });
 
 test("acceptance lock prevents accepting two different agencies", async () => {
@@ -227,7 +248,7 @@ test("acceptance lock prevents accepting two different agencies", async () => {
       decision: "accept",
       idempotencyKey: "stage04a_double_accept_b_0001",
     }),
-    /membership_acceptance_conflict/,
+    /user_already_in_agency|membership_acceptance_conflict/,
   );
 });
 
