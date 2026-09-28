@@ -45,9 +45,9 @@ export function platformAgencyPermissions(user = {}) {
     canReviewApplications: broad || has("reviewAgencyApplications"),
     canManageMemberships: broad || has("manageAgencyMemberships"),
     canManageManagers: broad || has("manageAgencyManagers"),
-    canViewAgencyFinance: broad || has("viewAgencyFinance"),
-    canManagePolicies: broad || has("manageAgencyPolicies"),
-    canManageAgencySettlements: broad || has("manageAgencySettlements"),
+    canViewAgencyFinance: isOwner || has("viewAgencyFinance"),
+    canManagePolicies: isOwner || has("manageAgencyPolicies"),
+    canManageAgencySettlements: isOwner || has("manageAgencySettlements"),
     canSuspendAgencies: broad || has("suspendAgencies"),
     // Permanent agency closure is intentionally non-delegable.
     canCloseAgencies: isOwner,
