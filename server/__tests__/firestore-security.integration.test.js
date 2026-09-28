@@ -438,6 +438,26 @@ test("agency membership request is readable only by target user or agency manage
   );
 });
 
+test("client cannot forge active agency membership or agency counters",async()=>{
+  const applicantDb=phoneUserDb();
+  await assertFails(setDoc(doc(applicantDb,"agency_memberships",agencyId+"__"+uid),{
+    agencyId,
+    uid,
+    role:"host",
+    status:"active",
+  }));
+  await assertFails(setDoc(doc(applicantDb,"agency_user_memberships",uid),{
+    agencyId,
+    uid,
+    role:"host",
+    status:"active",
+  }));
+  await assertFails(updateDoc(doc(applicantDb,"agencies",agencyId),{
+    memberCount:999,
+    hostCount:999,
+  }));
+});
+
 test("client cannot forge agency application locks idempotency or creation registry",async()=>{
   const applicantDb=phoneUserDb();
   await assertFails(setDoc(doc(applicantDb,"agency_applications","forged_application"),{
