@@ -295,6 +295,14 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    match /agency_ids/{agencyId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /agency_creation_operations/{operationId} {
+      allow read, create, update, delete: if false;
+    }
+
     match /agency_memberships/{membershipId} {
       allow read: if canPlatformManageAgencyMemberships()
         || (signedIn() && resource.data.uid == request.auth.uid)
