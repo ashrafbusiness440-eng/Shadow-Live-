@@ -6,6 +6,7 @@ import {
   isTransientFirestoreError,
 } from "./firestore.js";
 import {
+  AGENCY_REAPPLY_MODE,
   boundedAgencyPageSize,
   createAgencyDocument,
   createAgencyManagerSlotsDocument,
@@ -498,6 +499,247 @@ export async function approveAgencyApplication(
   });
 }
 
+export function reapplyAllowedAtForMode(modeInput, nowInput = new Date()) {
+  const mode = clean(modeInput);
+  if (!AGENCY_REAPPLY_MODE.includes(mode)) {
+    throw new ApiError("invalid_agency_reapply_mode", 400);
+  }
+  const now = nowInput instanceof Date ? nowInput : new Date(nowInput);
+  const nowMs = now.getTime();
+  if (!Number.isFinite(nowMs)) throw new ApiError("invalid_request", 400);
+  if (mode === "manual") return null;
+  const durationMs = {
+    immediate: 0,
+    "24h": 24 * 60 * 60 * 1000,
+    "3d": 3 * 24 * 60 * 60 * 1000,
+    "7d": 7 * 24 * 60 * 60 * 1000,
+    "30d": 30 * 24 * 60 * 60 * 1000,
+  }[mode];
+  return new Date(nowMs + durationMs);
+}
+
+function rejectionFingerprint({
+  applicationId,
+  reason,
+  reapplyMode,
+}) {
+  return JSON.stringify({
+    action: "reject",
+    applicationId: clean(applicationId),
+    reason: clean(reason),
+    reapplyMode: clean(reapplyMode),
+  });
+}
+
+export async function rejectAgencyApplication(
+  db,
+  actorUid,
+  body = {},
+  { now = new Date() } = {},
+) {
+  const applicationId = clean(body.applicationId);
+  const key = clean(body.idempotencyKey);
+  const reason = clean(body.rejectionReason);
+  const reapplyMode = clean(body.reapplyMode);
+  if (!applicationId || applicationId.includes("/")) {
+    throw new ApiError("invalid_application_id", 400);
+  }
+  if (!validIdempotencyKey(key)) {
+    throw new ApiError("invalid_idempotency_key", 400);
+  }
+  if (reason.length < 3 || reason.length > 500) {
+    throw new ApiError("invalid_rejection_reason", 400);
+  }
+  const reapplyAllowedAt = reapplyAllowedAtForMode(reapplyMode, now);
+  const operationPath = `agency_review_operations/${actorUid}__${key}`;
+  const applicationPath = `agency_applications/${applicationId}`;
+  const fingerprint = rejectionFingerprint({
+    applicationId,
+    reason,
+    reapplyMode,
+  });
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const tx = await db.beginTransaction();
+    try {
+      const [operationSnap, applicationSnap] = await Promise.all([
+        db.get(operationPath, tx),
+        db.get(applicationPath, tx),
+      ]);
+      if (operationSnap.exists) {
+        const existing = operationSnap.data || {};
+        if (clean(existing.requestFingerprint) !== fingerprint) {
+          throw new ApiError("idempotency_conflict", 409);
+        }
+        await db.rollback(tx);
+        return { ok: true, code: "duplicate", ...(existing.result || {}) };
+      }
+      if (!applicationSnap.exists) {
+        throw new ApiError("application_not_found", 404);
+      }
+      const application = applicationSnap.data || {};
+      const status = clean(application.status);
+      if (status === "rejected") {
+        if (
+          clean(application.rejectionReason) === reason &&
+          clean(application.reapplyMode) === reapplyMode
+        ) {
+          await db.rollback(tx);
+          return {
+            ok: true,
+            code: "already_rejected",
+            applicationId,
+            status: "rejected",
+            rejectionReason: reason,
+            reapplyMode,
+            reapplyAllowedAt: application.reapplyAllowedAt || null,
+          };
+        }
+        throw new ApiError("application_already_rejected", 409);
+      }
+      if (!["pending", "under_review"].includes(status)) {
+        throw new ApiError("application_not_rejectable", 409);
+      }
+
+      const applicantUid = clean(application.applicantUid);
+      const hostUids = Array.isArray(application.hostUids)
+        ? application.hostUids.map(clean).filter(Boolean)
+        : [];
+      if (!applicantUid || hostUids.length !== 5) {
+        throw new ApiError("application_participants_invalid", 409);
+      }
+      const participantUids = [applicantUid, ...hostUids];
+      const lockSnaps = await Promise.all(
+        participantUids.map((uid) =>
+          db.get(`agency_application_locks/${uid}`, tx)
+        ),
+      );
+      for (let index = 0; index < participantUids.length; index += 1) {
+        const lock = lockSnaps[index];
+        if (
+          !lock.exists ||
+          clean(lock.data?.applicationId) !== applicationId
+        ) {
+          throw new ApiError("application_lock_conflict", 409);
+        }
+      }
+
+      const result = {
+        applicationId,
+        status: "rejected",
+        rejectionReason: reason,
+        reapplyMode,
+        reapplyAllowedAt,
+      };
+      const notificationId =
+        `agency_application_rejected_${applicationId}`;
+
+      const writes = [
+        db.writeUpdate(applicationPath, {
+          status: "rejected",
+          rejectedAt: now,
+          rejectedBy: actorUid,
+          rejectionReason: reason,
+          reapplyMode,
+          reapplyAllowedAt,
+          reviewedBy: actorUid,
+          updatedAt: now,
+        }, [
+          "status",
+          "rejectedAt",
+          "rejectedBy",
+          "rejectionReason",
+          "reapplyMode",
+          "reapplyAllowedAt",
+          "reviewedBy",
+          "updatedAt",
+        ]),
+        db.writeUpdate(`agency_application_locks/${applicantUid}`, {
+          status: "rejected",
+          rejectedAt: now,
+          rejectedBy: actorUid,
+          rejectionReason: reason,
+          reapplyMode,
+          reapplyAllowedAt,
+          updatedAt: now,
+        }, [
+          "status",
+          "rejectedAt",
+          "rejectedBy",
+          "rejectionReason",
+          "reapplyMode",
+          "reapplyAllowedAt",
+          "updatedAt",
+        ]),
+        ...hostUids.map((uid) =>
+          db.writeUpdate(`agency_application_locks/${uid}`, {
+            status: "released",
+            releasedAt: now,
+            reapplyMode: null,
+            reapplyAllowedAt: null,
+            rejectionReason: null,
+            updatedAt: now,
+          }, [
+            "status",
+            "releasedAt",
+            "reapplyMode",
+            "reapplyAllowedAt",
+            "rejectionReason",
+            "updatedAt",
+          ])
+        ),
+        db.writeCreate(operationPath, {
+          actorUid,
+          action: "rejectAgencyApplication",
+          applicationId,
+          requestFingerprint: fingerprint,
+          status: "completed",
+          result,
+          createdAt: now,
+        }),
+        db.writeCreate(
+          `admin_audit_logs/agency_application_reject_${applicationId}`,
+          {
+            actorUid,
+            action: "rejectAgencyApplication",
+            targetType: "agency_application",
+            targetId: applicationId,
+            after: result,
+            idempotencyKey: key,
+            createdAt: now,
+          },
+        ),
+        db.writeCreate(`notifications/${notificationId}`, {
+          userId: applicantUid,
+          type: "agency_application_rejected",
+          category: "system",
+          title: "تم رفض طلب إنشاء الوكالة",
+          body: reason,
+          read: false,
+          applicationId,
+          reapplyMode,
+          reapplyAllowedAt,
+          createdAt: now,
+        }),
+      ];
+
+      await db.commit(tx, writes);
+      return { ok: true, code: "ok", ...result };
+    } catch (error) {
+      await db.rollback(tx);
+      if (error instanceof ApiError) throw error;
+      if (isTransientFirestoreError(error) && attempt < 2) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, firestoreErrorRetryDelayMs(attempt))
+        );
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new ApiError("transaction_failed", 500);
+}
+
 export async function directCreateAgency(
   db,
   actorUid,
@@ -563,6 +805,10 @@ export async function agencyControl(request, env) {
     if (action === "approve") {
       if (!actor.permissions.canReviewApplications) throw new ApiError("forbidden", 403);
       return json(request, env, await approveAgencyApplication(db, decoded.sub, body));
+    }
+    if (action === "reject") {
+      if (!actor.permissions.canReviewApplications) throw new ApiError("forbidden", 403);
+      return json(request, env, await rejectAgencyApplication(db, decoded.sub, body));
     }
     if (action === "directCreate") {
       if (!actor.permissions.canManageAgencies) throw new ApiError("forbidden", 403);
