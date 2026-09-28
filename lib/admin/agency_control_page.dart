@@ -170,6 +170,121 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
     }
   }
 
+  Future<void> rejectApplication(Map<String, dynamic> application) async {
+    final reason = TextEditingController();
+    var selectedMode = 'immediate';
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('رفض طلب إنشاء الوكالة'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: reason,
+                  minLines: 2,
+                  maxLines: 4,
+                  maxLength: 500,
+                  decoration: const InputDecoration(
+                    labelText: 'سبب الرفض *',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: selectedMode,
+                  decoration: const InputDecoration(
+                    labelText: 'إعادة التقديم',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'immediate',
+                      child: Text('فوري'),
+                    ),
+                    DropdownMenuItem(
+                      value: '24h',
+                      child: Text('بعد 24 ساعة'),
+                    ),
+                    DropdownMenuItem(
+                      value: '3d',
+                      child: Text('بعد 3 أيام'),
+                    ),
+                    DropdownMenuItem(
+                      value: '7d',
+                      child: Text('بعد 7 أيام'),
+                    ),
+                    DropdownMenuItem(
+                      value: '30d',
+                      child: Text('بعد 30 يوم'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'manual',
+                      child: Text('منع حتى رفع الحظر يدويًا'),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) {
+                      setDialogState(() => selectedMode = value);
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final text = reason.text.trim();
+                if (text.length < 3) return;
+                Navigator.pop(dialogContext, {
+                  'rejectionReason': text,
+                  'reapplyMode': selectedMode,
+                });
+              },
+              child: const Text('تأكيد الرفض'),
+            ),
+          ],
+        ),
+      ),
+    );
+    reason.dispose();
+    if (result == null || busy) return;
+
+    setState(() => busy = true);
+    try {
+      final response = await post({
+        'action': 'reject',
+        'applicationId': (application['applicationId'] ?? '').toString(),
+        'rejectionReason': result['rejectionReason'],
+        'reapplyMode': result['reapplyMode'],
+        'idempotencyKey': operationKey('agency_reject'),
+      });
+      if (!mounted) return;
+      final mode = (response['reapplyMode'] ?? '').toString();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('تم رفض الطلب — إعادة التقديم: $mode'),
+        ),
+      );
+      await load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر رفض الطلب: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
   Future<void> directCreate() async {
     final name = TextEditingController();
     final country = TextEditingController();
@@ -373,9 +488,12 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
                                   icon: const Icon(Icons.check_circle_outline),
                                   label: const Text('موافقة وإنشاء'),
                                 ),
-                                const Tooltip(
-                                  message: 'الرفض وخيارات إعادة التقديم في 03-C',
-                                  child: Chip(label: Text('الرفض — 03-C')),
+                                OutlinedButton.icon(
+                                  onPressed: busy
+                                      ? null
+                                      : () => rejectApplication(application),
+                                  icon: const Icon(Icons.cancel_outlined),
+                                  label: const Text('رفض'),
                                 ),
                               ],
                             ),
