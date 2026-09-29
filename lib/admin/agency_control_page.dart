@@ -17,6 +17,10 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
   bool loading = true;
   bool busy = false;
   bool canDirectCreate = false;
+  bool canManageExisting = false;
+  bool canTransferOwnership = false;
+  final TextEditingController agencyLookup = TextEditingController();
+  Map<String, dynamic>? managedAgency;
   List<Map<String, dynamic>> applications = [];
   List<Map<String, dynamic>> manualBlocks = [];
 
@@ -24,6 +28,12 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
   void initState() {
     super.initState();
     load();
+  }
+
+  @override
+  void dispose() {
+    agencyLookup.dispose();
+    super.dispose();
   }
 
   String operationKey(String prefix) {
@@ -82,6 +92,8 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
         applications = rows;
         manualBlocks = blocks;
         canDirectCreate = permissions['canDirectCreate'] == true;
+        canManageExisting = permissions['canManageExisting'] == true;
+        canTransferOwnership = permissions['canTransferOwnership'] == true;
         loading = false;
       });
     } catch (e) {
@@ -340,6 +352,176 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
     }
   }
 
+  Future<void> loadManagedAgency() async {
+    if (busy || !canManageExisting) return;
+    final agencyId = agencyLookup.text.trim();
+    if (!RegExp(r'^\d{6}$').hasMatch(agencyId)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Agency ID يجب أن يكون 6 أرقام.')),
+      );
+      return;
+    }
+    setState(() => busy = true);
+    try {
+      final body = await post({'action': 'getAgency', 'agencyId': agencyId});
+      final agency = body['agency'] is Map
+          ? Map<String, dynamic>.from(body['agency'] as Map)
+          : <String, dynamic>{};
+      final permissions = body['permissions'] is Map
+          ? Map<String, dynamic>.from(body['permissions'] as Map)
+          : <String, dynamic>{};
+      if (!mounted) return;
+      setState(() {
+        managedAgency = agency;
+        canTransferOwnership = permissions['canTransferOwnership'] == true;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => managedAgency = null);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذر تحميل الوكالة: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> editManagedAgencyIdentity() async {
+    final agency = managedAgency;
+    if (agency == null || busy) return;
+    final name = TextEditingController(text: (agency['name'] ?? '').toString());
+    final country =
+        TextEditingController(text: (agency['country'] ?? '').toString());
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('تعديل اسم ودولة الوكالة'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: name,
+              maxLength: 80,
+              decoration: const InputDecoration(labelText: 'اسم الوكالة *'),
+            ),
+            TextField(
+              controller: country,
+              maxLength: 64,
+              decoration: const InputDecoration(labelText: 'الدولة'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('حفظ'),
+          ),
+        ],
+      ),
+    );
+    final nextName = name.text.trim();
+    final nextCountry = country.text.trim();
+    name.dispose();
+    country.dispose();
+    if (accepted != true || nextName.isEmpty || busy) return;
+    setState(() => busy = true);
+    try {
+      await post({
+        'action': 'updateIdentity',
+        'agencyId': (agency['agencyId'] ?? '').toString(),
+        'name': nextName,
+        'country': nextCountry,
+        'idempotencyKey': operationKey('agency_identity'),
+      });
+      await loadManagedAgency();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم تحديث اسم/دولة الوكالة.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر تحديث بيانات الوكالة: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> transferManagedAgencyOwnership() async {
+    final agency = managedAgency;
+    if (agency == null || busy || !canTransferOwnership) return;
+    final publicId = TextEditingController();
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('نقل ملكية الوكالة'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'المالك الجديد يجب أن يكون عضوًا نشطًا في نفس الوكالة. '
+              'المالك السابق يأخذ دور العضو الجديد السابق للمحافظة على العدادات.',
+            ),
+            TextField(
+              controller: publicId,
+              keyboardType: TextInputType.number,
+              maxLength: 6,
+              decoration:
+                  const InputDecoration(labelText: 'Public ID للمالك الجديد'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('نقل الملكية'),
+          ),
+        ],
+      ),
+    );
+    final nextOwner = publicId.text.trim();
+    publicId.dispose();
+    if (accepted != true ||
+        !RegExp(r'^\d{6}$').hasMatch(nextOwner) ||
+        busy) {
+      return;
+    }
+    setState(() => busy = true);
+    try {
+      await post({
+        'action': 'transferOwnership',
+        'agencyId': (agency['agencyId'] ?? '').toString(),
+        'newOwnerPublicId': nextOwner,
+        'idempotencyKey': operationKey('agency_owner_transfer'),
+      });
+      await loadManagedAgency();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم نقل ملكية الوكالة.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر نقل الملكية: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
   Future<void> directCreate() async {
     final name = TextEditingController();
     final country = TextEditingController();
@@ -487,7 +669,102 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  if (canManageExisting) ...[
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const Text(
+                              'إدارة وكالة موجودة',
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: agencyLookup,
+                                    keyboardType: TextInputType.number,
+                                    maxLength: 6,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Agency ID',
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                FilledButton(
+                                  onPressed: busy ? null : loadManagedAgency,
+                                  child: const Text('تحميل'),
+                                ),
+                              ],
+                            ),
+                            if (managedAgency case final agency?) ...[
+                              const Divider(height: 24),
+                              Text(
+                                (agency['name'] ?? '').toString(),
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              Text('ID: ' +
+                                  (agency['agencyId'] ?? '').toString()),
+                              Text('الدولة: ' +
+                                  (agency['country'] ?? '—').toString()),
+                              Text('الحالة: ' +
+                                  (agency['status'] ?? '').toString()),
+                              Text('Owner: ' +
+                                  (agency['ownerPublicId'] ??
+                                          agency['ownerUid'] ??
+                                          '')
+                                      .toString()),
+                              Text(
+                                'الأعضاء: ' +
+                                    (agency['memberCount'] ?? 0).toString() +
+                                    ' • Hosts: ' +
+                                    (agency['hostCount'] ?? 0).toString() +
+                                    ' • Managers: ' +
+                                    (agency['managerCount'] ?? 0).toString() +
+                                    ' • Senior: ' +
+                                    (agency['seniorManagerCount'] ?? 0)
+                                        .toString(),
+                              ),
+                              const SizedBox(height: 10),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  OutlinedButton.icon(
+                                    onPressed: busy
+                                        ? null
+                                        : editManagedAgencyIdentity,
+                                    icon: const Icon(Icons.edit_outlined),
+                                    label: const Text('تعديل الاسم/الدولة'),
+                                  ),
+                                  if (canTransferOwnership)
+                                    FilledButton.icon(
+                                      onPressed: busy
+                                          ? null
+                                          : transferManagedAgencyOwnership,
+                                      icon: const Icon(
+                                        Icons.manage_accounts_outlined,
+                                      ),
+                                      label: const Text('نقل الملكية'),
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   if (applications.isEmpty)
                     const Card(
                       child: ListTile(
