@@ -1,4 +1,4 @@
-import { FieldValue } from "firebase-admin/firestore";
+import { FieldPath, FieldValue } from "firebase-admin/firestore";
 
 function assignPath(target, path, value) {
   const parts = String(path || "").split(".").filter(Boolean);
@@ -90,11 +90,17 @@ export function cloudflareFirestoreAdapter(adminDb) {
     } = {}) {
       let query = adminDb.collection(collectionPath);
       for (const filter of filters) {
-        query = query.where(filter.field, filter.op, filter.value);
+        const field = filter.field === "__name__"
+          ? FieldPath.documentId()
+          : filter.field;
+        const value = filter.referencePath
+          ? adminDb.doc(filter.referencePath)
+          : filter.value;
+        query = query.where(field, filter.op, value);
       }
       for (const order of orderBy) {
         query = query.orderBy(
-          order.field,
+          order.field === "__name__" ? FieldPath.documentId() : order.field,
           String(order.direction || "asc").toLowerCase() === "desc"
             ? "desc"
             : "asc",
