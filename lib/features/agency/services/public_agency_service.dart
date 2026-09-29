@@ -38,14 +38,12 @@ class PublicAgencyPerson {
     required this.publicId,
     required this.displayName,
     required this.profileImageUrl,
-    this.joinedAt,
   });
 
   final String uid;
   final String? publicId;
   final String displayName;
   final String? profileImageUrl;
-  final String? joinedAt;
 
   factory PublicAgencyPerson.fromJson(Map<String, dynamic> json) {
     return PublicAgencyPerson(
@@ -53,7 +51,6 @@ class PublicAgencyPerson {
       publicId: _nullableString(json['publicId']),
       displayName: (json['displayName'] ?? 'Shadow Live').toString().trim(),
       profileImageUrl: _nullableString(json['profileImageUrl']),
-      joinedAt: _nullableString(json['joinedAt']),
     );
   }
 }
