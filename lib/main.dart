@@ -61,6 +61,8 @@ import 'features/room/services/room_seat_service.dart';
 import 'features/games/services/game_runtime_service.dart';
 import 'features/games/widgets/room_game_overlay.dart';
 import 'features/profile/screens/my_items_screen.dart';
+import 'features/agency/screens/public_agency_page.dart';
+import 'features/agency/services/agency_room_link.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -259,6 +261,9 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           'name': 'غرفة Shadow التجريبية',
           'title': 'غرفة Shadow التجريبية',
           'ownerUid': 'owner_e2e',
+          'roomType': 'agency',
+          'type': 'agency',
+          'agencyId': '123456',
           'onlineCount': 18,
           'chatEnabled': true,
           'level': 5,
@@ -4019,6 +4024,18 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     super.dispose();
   }
 
+  String get _roomAgencyId => agencyIdForRoom(_roomArguments);
+
+  void _openAgencyPage() {
+    final agencyId = _roomAgencyId;
+    if (agencyId.isEmpty) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PublicAgencyPage(agencyId: agencyId),
+      ),
+    );
+  }
+
   Future<void> _copyRoomPublicId(String publicId) async {
     final value = publicId.trim();
     if (value.isEmpty || value == '—') return;
@@ -5029,6 +5046,17 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                       size: 20,
                                     ),
                                   ),
+                                  if (_roomAgencyId.isNotEmpty)
+                                    IconButton(
+                                      key: const Key('agency-room-house-button'),
+                                      visualDensity: VisualDensity.compact,
+                                      tooltip: 'صفحة الوكالة',
+                                      onPressed: _openAgencyPage,
+                                      icon: const Icon(
+                                        Icons.home_rounded,
+                                        size: 21,
+                                      ),
+                                    ),
                                   InkWell(
                                     onTap: _showRoomParticipantsSheet,
                                     borderRadius: BorderRadius.circular(999),
