@@ -14,6 +14,22 @@ function assignPath(target, path, value) {
   cursor[parts[parts.length - 1]] = value;
 }
 
+function readPath(target, path) {
+  const parts = String(path || "").split(".").filter(Boolean);
+  let cursor = target;
+  for (const part of parts) {
+    if (
+      cursor == null ||
+      typeof cursor !== "object" ||
+      !Object.prototype.hasOwnProperty.call(cursor, part)
+    ) {
+      return { exists: false, value: undefined };
+    }
+    cursor = cursor[part];
+  }
+  return { exists: true, value: cursor };
+}
+
 function transformValue(transform) {
   if (transform?.setToServerValue === "REQUEST_TIME") {
     return FieldValue.serverTimestamp();
@@ -87,6 +103,7 @@ export function cloudflareFirestoreAdapter(adminDb) {
       filters = [],
       orderBy = [],
       limit = 100,
+      startAfter = [],
     } = {}) {
       let query = adminDb.collection(collectionPath);
       for (const filter of filters) {
@@ -104,6 +121,23 @@ export function cloudflareFirestoreAdapter(adminDb) {
           String(order.direction || "asc").toLowerCase() === "desc"
             ? "desc"
             : "asc",
+        );
+      }
+      if (Array.isArray(startAfter) && startAfter.length) {
+        query = query.startAfter(
+          ...startAfter.map((item) => {
+            if (item && typeof item === "object" && item.referencePath) {
+              return adminDb.doc(item.referencePath);
+            }
+            if (
+              item &&
+              typeof item === "object" &&
+              Object.prototype.hasOwnProperty.call(item, "value")
+            ) {
+              return item.value;
+            }
+            return item;
+          }),
         );
       }
       query = query.limit(Math.max(1, Math.min(1000, Number(limit || 100))));
@@ -131,11 +165,21 @@ export function cloudflareFirestoreAdapter(adminDb) {
             );
             continue;
           }
-          batch.set(
-            ref(write.path),
-            mergePayload(write.fields, write.transforms),
-            { merge: true },
-          );
+          const payload = mergePayload(write.fields, write.transforms);
+          if (write.kind === "masked_update") {
+            const masked = {};
+            for (const fieldPath of write.fieldPaths || []) {
+              const current = readPath(payload, fieldPath);
+              assignPath(
+                masked,
+                fieldPath,
+                current.exists ? current.value : FieldValue.delete(),
+              );
+            }
+            batch.set(ref(write.path), masked, { merge: true });
+          } else {
+            batch.set(ref(write.path), payload, { merge: true });
+          }
         }
         await batch.commit();
       } finally {
@@ -151,6 +195,16 @@ export function cloudflareFirestoreAdapter(adminDb) {
         kind: "update",
         path,
         fields: fields || {},
+        transforms: transforms || [],
+      };
+    },
+
+    writeMaskedUpdate(path, fields, fieldPaths = [], transforms = null) {
+      return {
+        kind: "masked_update",
+        path,
+        fields: fields || {},
+        fieldPaths: Array.isArray(fieldPaths) ? fieldPaths : [],
         transforms: transforms || [],
       };
     },

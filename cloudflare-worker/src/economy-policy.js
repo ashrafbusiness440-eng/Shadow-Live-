@@ -100,6 +100,34 @@ export function resolveRevenuePolicy(
   };
 }
 
+export function agencyPolicySnapshotFor(receiverData = {}, agencyIdInput = "") {
+  const agencyId = clean(agencyIdInput);
+  const snapshot =
+    receiverData?.agencyPolicySnapshot &&
+    typeof receiverData.agencyPolicySnapshot === "object" &&
+    !Array.isArray(receiverData.agencyPolicySnapshot)
+      ? receiverData.agencyPolicySnapshot
+      : null;
+  if (!agencyId || !snapshot || clean(snapshot.agencyId) !== agencyId) {
+    return null;
+  }
+  return snapshot;
+}
+
+export function economyWithAgencyPolicySnapshot(
+  economy = {},
+  receiverData = {},
+  agencyIdInput = "",
+) {
+  const snapshot = agencyPolicySnapshotFor(receiverData, agencyIdInput);
+  if (!snapshot) return economy;
+  const next = { ...economy };
+  if (Array.isArray(snapshot.tiers) && snapshot.tiers.length) {
+    next.tiers = snapshot.tiers;
+  }
+  return next;
+}
+
 export function resolveGiftRevenuePolicy(
   economy,
   receiverData,

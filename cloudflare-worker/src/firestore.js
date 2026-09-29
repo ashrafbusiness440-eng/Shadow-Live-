@@ -493,6 +493,7 @@ export function firestoreClient(env) {
       orderBy = [],
       limit = 100,
       transaction = null,
+      startAfter = [],
     } = {}) {
       const parts = String(collectionPath || "").split("/").filter(Boolean);
       if (!parts.length || parts.length % 2 === 0) {
@@ -539,6 +540,21 @@ export function firestoreClient(env) {
               : "ASCENDING",
           })),
         } : {}),
+        ...(Array.isArray(startAfter) && startAfter.length ? {
+          startAt: {
+            before: false,
+            values: startAfter.map((item) =>
+              item && typeof item === "object" && item.referencePath
+                ? { referenceValue: documentName(item.referencePath) }
+                : encodeValue(
+                    item && typeof item === "object" &&
+                    Object.prototype.hasOwnProperty.call(item, "value")
+                      ? item.value
+                      : item,
+                  )
+            ),
+          },
+        } : {}),
         limit: Math.max(1, Math.min(1000, Number(limit || 100))),
       };
 
@@ -581,6 +597,22 @@ export function firestoreClient(env) {
       if (Array.isArray(fieldPaths)) {
         write.updateMask = { fieldPaths };
       }
+      if (updateTransforms?.length) {
+        write.updateTransforms = updateTransforms;
+      }
+      return write;
+    },
+
+    writeMaskedUpdate(path, fields, fieldPaths = [], updateTransforms = null) {
+      const write = {
+        update: {
+          name: documentName(path),
+          fields: encodeFields(fields),
+        },
+        updateMask: {
+          fieldPaths: Array.isArray(fieldPaths) ? fieldPaths : [],
+        },
+      };
       if (updateTransforms?.length) {
         write.updateTransforms = updateTransforms;
       }
