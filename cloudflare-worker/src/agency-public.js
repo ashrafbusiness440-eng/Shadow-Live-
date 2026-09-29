@@ -3,6 +3,7 @@ import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { boundedAgencyPageSize } from "./agency-data-model.js";
 import {
+  agencyPublicRankingPrefix,
   currentAgencyMonthKey,
   normalizeAgencyMonthKey,
 } from "./agency-policy.js";
@@ -234,14 +235,22 @@ export async function loadPublicAgencyRanking(
     throw new ApiError("agency_ranking_month_out_of_range", 400);
   }
 
+  const rankingPrefix = agencyPublicRankingPrefix(agencyId, month);
   const rows = await db.runQuery("agency_host_monthly", {
     filters: [
-      { field: "agencyId", op: "==", value: agencyId },
-      { field: "month", op: "==", value: month },
+      {
+        field: "publicRankingKey",
+        op: ">=",
+        value: rankingPrefix,
+      },
+      {
+        field: "publicRankingKey",
+        op: "<",
+        value: rankingPrefix + "\uf8ff",
+      },
     ],
     orderBy: [
-      { field: "supportCoins", direction: "desc" },
-      { field: "hostUid", direction: "asc" },
+      { field: "publicRankingKey", direction: "asc" },
     ],
     limit: PUBLIC_RANKING_MAX,
   });
@@ -252,7 +261,8 @@ export async function loadPublicAgencyRanking(
     if (
       !hostUid ||
       clean(monthly.agencyId) !== agencyId ||
-      clean(monthly.month) !== month
+      clean(monthly.month) !== month ||
+      !clean(monthly.publicRankingKey).startsWith(rankingPrefix)
     ) {
       throw new ApiError("agency_ranking_corrupt", 409);
     }
