@@ -51,7 +51,7 @@ test("agency monthly settlement reads a fixed 32-shard set with direct document 
     true,
   );
   const start = sourceText.indexOf("export async function settleAgencyMonth");
-  const end = sourceText.indexOf("export async function handler", start);
+  const end = sourceText.indexOf("const AGENCY_SURPLUS_PAGE_MAX=25", start);
   const settlement = sourceText.slice(start, end);
   assert.equal(settlement.includes(".where("), false);
   assert.equal(sourceText.includes('collection("agency_monthly_accrual_shards")'), true);
@@ -241,7 +241,7 @@ test("Stage 07-B Agency Wallet settlement stays bounded and never replays Host s
   ]) {
     const sourceText = source(relativePath);
     const start = sourceText.indexOf("export async function settleAgencyMonth");
-    const end = sourceText.indexOf("export async function handler", start);
+    const end = sourceText.indexOf("const AGENCY_SURPLUS_PAGE_MAX=25", start);
     const settlement = sourceText.slice(start, end);
     assert.equal(start >= 0, true);
     assert.equal(settlement.includes(".where("), false);
@@ -296,7 +296,7 @@ test("Stage 08-B monthly Bonus settlement stays bounded and query-free", () => {
   ]) {
     const sourceText = source(relativePath);
     const start = sourceText.indexOf("export async function settleAgencyMonth");
-    const end = sourceText.indexOf("export async function handler", start);
+    const end = sourceText.indexOf("const AGENCY_SURPLUS_PAGE_MAX=25", start);
     const settlement = sourceText.slice(start, end);
     assert.equal(start >= 0, true);
     assert.equal(settlement.includes("AGENCY_MONTHLY_ACCRUAL_SHARDS"), true);
@@ -318,7 +318,7 @@ test("Stage 08-C replay and policy snapshot stay bounded and direct", () => {
   ]) {
     const sourceText = source(relativePath);
     const start = sourceText.indexOf("export async function settleAgencyMonth");
-    const end = sourceText.indexOf("export async function handler", start);
+    const end = sourceText.indexOf("const AGENCY_SURPLUS_PAGE_MAX=25", start);
     const settlement = sourceText.slice(start, end);
     assert.equal(settlement.includes("tx.get(bonusAccrualRef)"), true);
     assert.equal(settlement.includes("tx.get(economyRef)"), true);
