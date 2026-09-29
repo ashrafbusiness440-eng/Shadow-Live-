@@ -5,8 +5,9 @@ import { boundedAgencyPageSize } from "./agency-data-model.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 
 const clean = (value) => String(value ?? "").trim();
-const PUBLIC_HOST_PAGE_DEFAULT = 20;
-export const PUBLIC_HOST_PAGE_MAX = 24;
+const PUBLIC_HOST_PAGE_DEFAULT = 12;
+export const PUBLIC_HOST_PAGE_MAX = 12;
+const PUBLIC_USER_READ_CONCURRENCY = 4;
 
 class ApiError extends Error {
   constructor(code, status = 400, details = null) {
@@ -110,14 +111,28 @@ export async function loadPublicAgencyPage(db, body = {}) {
       clean(membership.status) === "active";
   });
 
-  const [ownerSnap, ...hostUserSnaps] = await Promise.all([
-    db.get("users/" + ownerUid),
-    ...activeHostRows.map((row) => {
-      const uid = clean(row?.data?.uid) || membershipCursor(agencyId, row);
-      return db.get("users/" + uid);
-    }),
-  ]);
+  const ownerSnap = await db.get("users/" + ownerUid);
   if (!ownerSnap.exists) throw new ApiError("agency_owner_missing", 409);
+
+  const hostUserSnaps = [];
+  for (
+    let offset = 0;
+    offset < activeHostRows.length;
+    offset += PUBLIC_USER_READ_CONCURRENCY
+  ) {
+    const batch = activeHostRows.slice(
+      offset,
+      offset + PUBLIC_USER_READ_CONCURRENCY,
+    );
+    const snapshots = await Promise.all(
+      batch.map((row) => {
+        const uid =
+          clean(row?.data?.uid) || membershipCursor(agencyId, row);
+        return db.get("users/" + uid);
+      }),
+    );
+    hostUserSnaps.push(...snapshots);
+  }
 
   const hosts = activeHostRows.map((row, index) => {
     const membership = row.data || {};
