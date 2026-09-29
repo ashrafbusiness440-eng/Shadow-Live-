@@ -191,6 +191,16 @@ before(async()=>{
       agencyDiamonds:5,
       status:"settled",
     });
+    await setDoc(doc(context.firestore(),"agency_monthly_accrual_shards",agencyId+"__2026-09__00"),{
+      agencyId,
+      month:"2026-09",
+      shard:0,
+      supportCoins:100000,
+      hostShareCoins:50000,
+      agencyShareCoins:5000,
+      platformShareCoins:45000,
+      giftCount:1,
+    });
     await setDoc(doc(context.firestore(),"agency_status_events","rules_agency_event"),{
       agencyId,
       type:"suspend",
@@ -388,8 +398,17 @@ test("agency owner can read own agency finance and policy but cannot write serve
   const ownerDb=phoneDbFor(agencyOwnerUid);
   await assertSucceeds(getDoc(doc(ownerDb,"agency_wallets",agencyId)));
   await assertSucceeds(getDoc(doc(ownerDb,"agency_monthly_statements",agencyId+"__2026-09")));
+  await assertSucceeds(getDoc(doc(ownerDb,"agency_monthly_accrual_shards",agencyId+"__2026-09__00")));
   await assertSucceeds(getDoc(doc(ownerDb,"agency_policy_overrides",agencyId)));
   await assertFails(updateDoc(doc(ownerDb,"agency_wallets",agencyId),{diamonds:9999}));
+  await assertFails(updateDoc(
+    doc(ownerDb,"agency_monthly_statements",agencyId+"__2026-09"),
+    {agencyDiamonds:9999},
+  ));
+  await assertFails(updateDoc(
+    doc(ownerDb,"agency_monthly_accrual_shards",agencyId+"__2026-09__00"),
+    {agencyShareCoins:9999},
+  ));
   await assertFails(updateDoc(doc(ownerDb,"agency_policy_overrides",agencyId),{agencyShareBps:9000}));
   await assertFails(setDoc(doc(ownerDb,"agency_transfers","forged_transfer"),{
     agencyId,
@@ -410,14 +429,31 @@ test("agency outsider cannot read private agency data",async()=>{
     outsiderDb,"agency_host_monthly",agencyId+"__2026-09__"+agencyHostUid,
   )));
   await assertFails(getDoc(doc(outsiderDb,"agency_wallets",agencyId)));
+  await assertFails(getDoc(doc(
+    outsiderDb,"agency_monthly_statements",agencyId+"__2026-09",
+  )));
+  await assertFails(getDoc(doc(
+    outsiderDb,"agency_monthly_accrual_shards",agencyId+"__2026-09__00",
+  )));
 });
 
 test("platform granular capabilities allow only their intended agency reads",async()=>{
   const adminDb=phoneDbFor(platformAgencyAdminUid);
   await assertSucceeds(getDoc(doc(adminDb,"agency_wallets",agencyId)));
   await assertSucceeds(getDoc(doc(
+    adminDb,"agency_monthly_statements",agencyId+"__2026-09",
+  )));
+  await assertSucceeds(getDoc(doc(
+    adminDb,"agency_monthly_accrual_shards",agencyId+"__2026-09__00",
+  )));
+  await assertSucceeds(getDoc(doc(
     adminDb,"agency_memberships",agencyId+"__"+agencyHostUid,
   )));
+  await assertFails(updateDoc(doc(adminDb,"agency_wallets",agencyId),{diamonds:9999}));
+  await assertFails(updateDoc(
+    doc(adminDb,"agency_monthly_statements",agencyId+"__2026-09"),
+    {agencyDiamonds:9999},
+  ));
   await assertFails(getDoc(doc(adminDb,"agency_policy_overrides",agencyId)));
 });
 
