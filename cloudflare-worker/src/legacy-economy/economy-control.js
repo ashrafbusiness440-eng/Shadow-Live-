@@ -189,6 +189,98 @@ function agencyMonthlyShardRefs(db,agencyId,month){
   );
 }
 
+function assertSettledAgencyStatementConsistency({
+  statement,
+  ledger,
+  agencyId,
+  month,
+  statementId,
+  ledgerId,
+  coinsPerDiamond,
+}){
+  if(
+    clean(statement.status)!=="settled" ||
+    clean(statement.agencyId)!==agencyId ||
+    clean(statement.month)!==month ||
+    clean(statement.ledgerId)!==ledgerId ||
+    clean(statement.hostSalaryMode)!=="target_immediate" ||
+    statement.hostSalaryRepaidAtMonthEnd!==false ||
+    Number(statement.shardCount)!==AGENCY_MONTHLY_ACCRUAL_SHARDS ||
+    Number(statement.coinsPerDiamond)!==coinsPerDiamond
+  ){
+    throw Error("settlement_state_conflict");
+  }
+
+  const totals=validateAgencySettlementTotals({
+    supportCoins:statement.supportCoins,
+    hostShareCoins:statement.hostShareCoins,
+    agencyShareCoins:statement.agencyShareCoins,
+    platformShareCoins:statement.platformShareCoins,
+    giftCount:statement.giftCount,
+  });
+  const paidDiamonds=agencyFinancialInteger(
+    statement.agencyDiamonds || 0,
+    "statement_diamonds",
+  );
+  const openingRemainderCoins=agencyFinancialInteger(
+    statement.openingRemainderCoins || 0,
+    "statement_opening_remainder_coins",
+  );
+  const remainderCoins=agencyFinancialInteger(
+    statement.agencyRemainderCoins || 0,
+    "statement_remainder_coins",
+  );
+  if(
+    openingRemainderCoins>=coinsPerDiamond ||
+    remainderCoins>=coinsPerDiamond
+  ){
+    throw Error("agency_remainder_invariant_failed");
+  }
+
+  if(
+    clean(ledger.agencyId)!==agencyId ||
+    clean(ledger.asset)!=="diamonds" ||
+    clean(ledger.reason)!=="agency_monthly_share" ||
+    clean(ledger.sourceType)!=="agency_monthly_statement" ||
+    clean(ledger.sourceId)!==statementId ||
+    clean(ledger.settlementMonth)!==month ||
+    clean(ledger.idempotencyKey)!==ledgerId ||
+    Number(ledger.coinsPerDiamond)!==coinsPerDiamond
+  ){
+    throw Error("settlement_ledger_conflict");
+  }
+  const ledgerDelta=agencyFinancialInteger(ledger.delta || 0,"ledger_delta");
+  const ledgerPayableCoins=agencyFinancialInteger(
+    ledger.payableCoins || 0,
+    "ledger_payable_coins",
+  );
+  const ledgerOpeningRemainder=agencyFinancialInteger(
+    ledger.openingRemainderCoins || 0,
+    "ledger_opening_remainder_coins",
+  );
+  const ledgerRemainder=agencyFinancialInteger(
+    ledger.remainderCoins || 0,
+    "ledger_remainder_coins",
+  );
+  const openingBalance=agencyFinancialInteger(
+    ledger.openingBalance || 0,
+    "ledger_opening_balance",
+  );
+  const closingBalance=agencyFinancialInteger(
+    ledger.closingBalance || 0,
+    "ledger_closing_balance",
+  );
+  if(
+    ledgerDelta!==paidDiamonds ||
+    ledgerPayableCoins!==totals.agencyShareCoins ||
+    ledgerOpeningRemainder!==openingRemainderCoins ||
+    ledgerRemainder!==remainderCoins ||
+    closingBalance-openingBalance!==paidDiamonds
+  ){
+    throw Error("settlement_ledger_conflict");
+  }
+}
+
 export async function settleAgencyMonth(db,actorUid,agencyIdInput,monthInput,options={}){
   const agencyId=clean(agencyIdInput);
   if(!/^[A-Za-z0-9_-]{3,180}$/.test(agencyId)){
@@ -222,16 +314,18 @@ export async function settleAgencyMonth(db,actorUid,agencyIdInput,monthInput,opt
     ]);
     if(existing.exists){
       const statement=existing.data()||{};
-      if(clean(statement.status)!=="settled"){
-        throw Error("settlement_state_conflict");
-      }
-      agencyFinancialInteger(
-        statement.agencyDiamonds || 0,
-        "statement_diamonds",
-      );
       if(!existingLedger.exists){
         throw Error("settlement_ledger_missing");
       }
+      assertSettledAgencyStatementConsistency({
+        statement,
+        ledger:existingLedger.data()||{},
+        agencyId,
+        month,
+        statementId,
+        ledgerId,
+        coinsPerDiamond,
+      });
       return {alreadySettled:true,settlement:statement};
     }
     if(existingLedger.exists){
@@ -282,7 +376,14 @@ export async function settleAgencyMonth(db,actorUid,agencyIdInput,monthInput,opt
       wallet.remainderCoins || 0,
       "wallet_remainder_coins",
     );
-    if(previousRemainderCoins>=coinsPerDiamond){
+    const currentLifetimeDiamonds=agencyFinancialInteger(
+      wallet.lifetimeDiamonds ?? currentDiamonds,
+      "wallet_lifetime_diamonds",
+    );
+    if(
+      previousRemainderCoins>=coinsPerDiamond ||
+      currentLifetimeDiamonds<currentDiamonds
+    ){
       throw Error("agency_remainder_invariant_failed");
     }
 
@@ -303,7 +404,11 @@ export async function settleAgencyMonth(db,actorUid,agencyIdInput,monthInput,opt
       throw Error("agency_remainder_invariant_failed");
     }
     const closingDiamonds=currentDiamonds+diamondsEarned;
-    if(!Number.isSafeInteger(closingDiamonds)){
+    const closingLifetimeDiamonds=currentLifetimeDiamonds+diamondsEarned;
+    if(
+      !Number.isSafeInteger(closingDiamonds) ||
+      !Number.isSafeInteger(closingLifetimeDiamonds)
+    ){
       throw Error("invalid_agency_financial_closing_diamonds");
     }
 
@@ -327,7 +432,7 @@ export async function settleAgencyMonth(db,actorUid,agencyIdInput,monthInput,opt
       agencyId,
       diamonds:closingDiamonds,
       remainderCoins,
-      lifetimeDiamonds:FieldValue.increment(diamondsEarned),
+      lifetimeDiamonds:closingLifetimeDiamonds,
       updatedAt:FieldValue.serverTimestamp(),
     },{merge:true});
     tx.create(settlementRef,{
