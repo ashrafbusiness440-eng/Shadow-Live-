@@ -10,6 +10,7 @@ void main() {
         'name': 'Host Core Agency',
         'country': 'AE',
         'status': 'active',
+        'roomId': 'agency_room_741201',
       },
       'owner': {
         'uid': 'owner-1',
@@ -55,6 +56,7 @@ void main() {
 
     expect(data.agency.agencyId, '741201');
     expect(data.agency.name, 'Host Core Agency');
+    expect(data.agency.roomId, 'agency_room_741201');
     expect(data.owner.uid, 'owner-1');
     expect(data.membershipRole, 'host');
     expect(data.membershipStatus, 'active');
@@ -102,6 +104,7 @@ void main() {
     expect(data.agency.publicId, '741202');
     expect(data.agency.country, isNull);
     expect(data.agency.logoUrl, isNull);
+    expect(data.agency.roomId, isNull);
     expect(data.target.currentLevel, isNull);
     expect(data.target.nextLevel, isNull);
     expect(data.owner.publicId, isNull);

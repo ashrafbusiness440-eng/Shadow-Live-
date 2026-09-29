@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
+import { readFileSync } from "node:fs";
 import { deleteApp, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 
@@ -71,6 +72,7 @@ test("11-A Host My Agency returns only the signed-in Host core data", async () =
       country: "AE",
       ownerUid,
       status: "active",
+      roomId: "agency_room_741201",
       agencyProfitDiamonds: 999999,
     }),
     adminDb.collection("users").doc(ownerUid).set({
@@ -94,6 +96,7 @@ test("11-A Host My Agency returns only the signed-in Host core data", async () =
   assert.equal(result.ok, true);
   assert.equal(result.agency.agencyId, agencyId);
   assert.equal(result.agency.name, "Host Core Agency");
+  assert.equal(result.agency.roomId, "agency_room_741201");
   assert.equal(result.owner.uid, ownerUid);
   assert.equal(result.membership.role, "host");
   assert.equal(result.target.month, "2026-09");
@@ -201,6 +204,7 @@ test("11-A pressure contract is five direct reads with zero query/write", async 
             name: "Pressure Agency",
             ownerUid,
             status: "active",
+            agencyRoomId: "agency_room_741203",
           },
         };
       }
@@ -238,6 +242,7 @@ test("11-A pressure contract is five direct reads with zero query/write", async 
   );
 
   assert.equal(result.ok, true);
+  assert.equal(result.agency.roomId, "agency_room_741203");
   assert.deepEqual(calls.gets, [
     "users/" + uid,
     "agency_user_memberships/" + uid,
@@ -291,4 +296,27 @@ test("11-A non-Host membership fails closed before Agency reads", async () => {
     "users/" + uid,
     "agency_user_memberships/" + uid,
   ]);
+});
+
+
+test("11-B Host UI reuses public ranking/archive and existing room/chat routes", () => {
+  const page = readFileSync(
+    new URL("../../lib/features/agency/screens/host_my_agency_page.dart", import.meta.url),
+    "utf8",
+  );
+  const hostService = readFileSync(
+    new URL("../../lib/features/agency/services/host_my_agency_service.dart", import.meta.url),
+    "utf8",
+  );
+
+  assert.equal(page.includes("PublicAgencyService"), true);
+  assert.equal(page.includes("loadRanking("), true);
+  assert.equal(page.includes("loadArchive("), true);
+  assert.equal(page.includes("host-agency-ranking-card"), true);
+  assert.equal(page.includes("host-agency-archive-button"), true);
+  assert.equal(page.includes("host-agency-room-button"), true);
+  assert.equal(page.includes("ProfileActionService.openChat"), true);
+  assert.equal(page.includes("AppRoutes.voiceChatRoom"), true);
+  assert.equal(page.includes("FirebaseFirestore"), false);
+  assert.equal(hostService.includes("roomId"), true);
 });

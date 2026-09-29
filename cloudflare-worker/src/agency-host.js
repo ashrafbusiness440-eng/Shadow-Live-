@@ -39,6 +39,11 @@ function validAgencyId(value) {
   return /^\d{6}$/.test(clean(value));
 }
 
+function safeAgencyRoomId(value) {
+  const roomId = clean(value);
+  return /^[A-Za-z0-9_-]{3,180}$/.test(roomId) ? roomId : null;
+}
+
 function personSummary(uidInput, snap) {
   const uid = clean(uidInput);
   const user = snap?.exists ? snap.data || {} : {};
@@ -173,6 +178,7 @@ export async function loadAgencyHostCore(db, uidInput, now = new Date()) {
       logoUrl:
         clean(agency.logoUrl || agency.imageUrl || agency.profileImageUrl) ||
         null,
+      roomId: safeAgencyRoomId(agency.roomId || agency.agencyRoomId),
     },
     owner: personSummary(ownerUid, ownerSnap),
     membership: {

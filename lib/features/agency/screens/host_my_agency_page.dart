@@ -1,7 +1,11 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../../../services/navigation_service.dart';
 import '../../profile/screens/public_profile_screen.dart';
+import '../../profile/services/profile_action_service.dart';
 import '../services/host_my_agency_service.dart';
+import '../services/public_agency_service.dart';
 
 class HostMyAgencyPage extends StatefulWidget {
   const HostMyAgencyPage({super.key});
@@ -12,10 +16,16 @@ class HostMyAgencyPage extends StatefulWidget {
 
 class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
   final HostMyAgencyService _service = HostMyAgencyService();
+  final PublicAgencyService _publicAgencyService = PublicAgencyService();
 
   HostMyAgencyCoreData? _data;
+  PublicAgencyRankingData? _ranking;
+  PublicAgencyArchiveData? _archive;
   bool _loading = true;
+  bool _rankingLoading = false;
+  bool _archiveLoading = false;
   String? _error;
+  String? _rankingError;
 
   @override
   void initState() {
@@ -26,6 +36,7 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
   @override
   void dispose() {
     _service.close();
+    _publicAgencyService.close();
     super.dispose();
   }
 
@@ -41,12 +52,97 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
         _data = data;
         _loading = false;
       });
+      await _loadRanking(data.agency.agencyId);
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _error = error.toString();
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _loadRanking(String agencyId, {String? month}) async {
+    if (_rankingLoading) return;
+    setState(() {
+      _rankingLoading = true;
+      _rankingError = null;
+    });
+    try {
+      final ranking = await _publicAgencyService.loadRanking(
+        agencyId: agencyId,
+        month: month,
+      );
+      if (!mounted) return;
+      setState(() {
+        _ranking = ranking;
+        _rankingLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _rankingError = error.toString();
+        _rankingLoading = false;
+      });
+    }
+  }
+
+  Future<void> _showArchive() async {
+    final data = _data;
+    if (data == null || _archiveLoading) return;
+    setState(() => _archiveLoading = true);
+    try {
+      final archive = _archive ??
+          await _publicAgencyService.loadArchive(
+            agencyId: data.agency.agencyId,
+          );
+      if (!mounted) return;
+      setState(() {
+        _archive = archive;
+        _archiveLoading = false;
+      });
+      if (archive.months.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('لا يوجد سجل شهري مغلق بعد.')),
+        );
+        return;
+      }
+      final selected = await showModalBottomSheet<String>(
+        context: context,
+        backgroundColor: const Color(0xFF0D1220),
+        builder: (sheetContext) => SafeArea(
+          child: Directionality(
+            textDirection: TextDirection.rtl,
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
+              children: [
+                const ListTile(
+                  leading: Icon(Icons.history_rounded),
+                  title: Text('السجل الشهري'),
+                  subtitle: Text('آخر الأشهر المغلقة ذات النشاط'),
+                ),
+                ...archive.months.map(
+                  (month) => ListTile(
+                    title: Text(_monthLabel(month)),
+                    trailing: const Icon(Icons.chevron_left_rounded),
+                    onTap: () => Navigator.pop(sheetContext, month),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      if (selected != null && mounted) {
+        await _loadRanking(data.agency.agencyId, month: selected);
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _archiveLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر تحميل السجل الشهري.')),
+      );
     }
   }
 
@@ -57,6 +153,41 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
       MaterialPageRoute(
         builder: (_) => PublicProfileScreen(userId: owner.uid),
       ),
+    );
+  }
+
+  void _openRankingPerson(PublicAgencyPerson person) {
+    if (person.uid.isEmpty) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PublicProfileScreen(userId: person.uid),
+      ),
+    );
+  }
+
+  Future<void> _contactOwner() async {
+    final owner = _data?.owner;
+    final me = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (owner == null || owner.uid.isEmpty || owner.uid == me) return;
+    await ProfileActionService.openChat(
+      context,
+      otherUid: owner.uid,
+      otherName: owner.displayName,
+      otherPhoto: owner.profileImageUrl ?? '',
+    );
+  }
+
+  void _openAgencyRoom() {
+    final data = _data;
+    final roomId = data?.agency.roomId?.trim() ?? '';
+    if (data == null ||
+        data.agency.status != 'active' ||
+        roomId.isEmpty) {
+      return;
+    }
+    NavigationService.navigateTo(
+      AppRoutes.voiceChatRoom,
+      arguments: {'roomId': roomId},
     );
   }
 
@@ -92,10 +223,35 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
           _AgencyHeader(data: data),
           const SizedBox(height: 16),
           _OwnerCard(owner: data.owner, onTap: _openOwner),
+          const SizedBox(height: 12),
+          _AgencyActionsCard(
+            canEnterRoom:
+                data.agency.status == 'active' &&
+                (data.agency.roomId?.trim().isNotEmpty ?? false),
+            canContactOwner:
+                data.owner.uid.isNotEmpty &&
+                data.owner.uid != (FirebaseAuth.instance.currentUser?.uid ?? ''),
+            onEnterRoom: _openAgencyRoom,
+            onContactOwner: _contactOwner,
+          ),
           const SizedBox(height: 16),
           _TargetCard(target: data.target),
           const SizedBox(height: 16),
           _ActivityCard(activity: data.activity),
+          const SizedBox(height: 16),
+          _HostRankingCard(
+            data: _ranking,
+            loading: _rankingLoading,
+            archiveLoading: _archiveLoading,
+            error: _rankingError,
+            currentUid: FirebaseAuth.instance.currentUser?.uid ?? '',
+            onRetry: () => _loadRanking(
+              data.agency.agencyId,
+              month: _ranking?.month,
+            ),
+            onArchive: _showArchive,
+            onPersonTap: _openRankingPerson,
+          ),
         ],
       ),
     );
@@ -230,6 +386,49 @@ class _OwnerCard extends StatelessWidget {
           Icons.chevron_left_rounded,
           color: Colors.white38,
         ),
+      ),
+    );
+  }
+}
+
+class _AgencyActionsCard extends StatelessWidget {
+  const _AgencyActionsCard({
+    required this.canEnterRoom,
+    required this.canContactOwner,
+    required this.onEnterRoom,
+    required this.onContactOwner,
+  });
+
+  final bool canEnterRoom;
+  final bool canContactOwner;
+  final VoidCallback onEnterRoom;
+  final Future<void> Function() onContactOwner;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: _cardDecoration(),
+      child: Row(
+        children: [
+          Expanded(
+            child: FilledButton.icon(
+              key: const Key('host-agency-room-button'),
+              onPressed: canEnterRoom ? onEnterRoom : null,
+              icon: const Icon(Icons.meeting_room_rounded),
+              label: Text(canEnterRoom ? 'دخول غرفة الوكالة' : 'لا توجد غرفة مرتبطة'),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: OutlinedButton.icon(
+              key: const Key('host-agency-contact-button'),
+              onPressed: canContactOwner ? onContactOwner : null,
+              icon: const Icon(Icons.chat_bubble_outline_rounded),
+              label: Text(canContactOwner ? 'مراسلة المالك' : 'أنت مالك الوكالة'),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -379,6 +578,224 @@ class _ActivityCard extends StatelessWidget {
             style: const TextStyle(color: Colors.white70),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _HostRankingCard extends StatelessWidget {
+  const _HostRankingCard({
+    required this.data,
+    required this.loading,
+    required this.archiveLoading,
+    required this.error,
+    required this.currentUid,
+    required this.onRetry,
+    required this.onArchive,
+    required this.onPersonTap,
+  });
+
+  final PublicAgencyRankingData? data;
+  final bool loading;
+  final bool archiveLoading;
+  final String? error;
+  final String currentUid;
+  final Future<void> Function() onRetry;
+  final Future<void> Function() onArchive;
+  final void Function(PublicAgencyPerson) onPersonTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ranking = data;
+    PublicAgencyRankingEntry? ownEntry;
+    if (ranking != null && currentUid.isNotEmpty) {
+      for (final entry in ranking.top10) {
+        if (entry.person.uid == currentUid) {
+          ownEntry = entry;
+          break;
+        }
+      }
+    }
+
+    return Container(
+      key: const Key('host-agency-ranking-card'),
+      padding: const EdgeInsets.all(16),
+      decoration: _cardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.emoji_events_rounded,
+                color: Color(0xFFFFD875),
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'ترتيب الدعم الشهري',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                key: const Key('host-agency-archive-button'),
+                onPressed: archiveLoading ? null : onArchive,
+                icon: archiveLoading
+                    ? const SizedBox.square(
+                        dimension: 15,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.history_rounded, size: 18),
+                label: const Text('السجل'),
+              ),
+            ],
+          ),
+          if (ranking != null) ...[
+            Text(
+              _monthLabel(ranking.month) +
+                  (ranking.month == ranking.currentMonth
+                      ? ' • الشهر الحالي'
+                      : ' • سجل'),
+              style: const TextStyle(color: Colors.white54, fontSize: 12),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              decoration: BoxDecoration(
+                color: Colors.black26,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                ownEntry == null
+                    ? 'ترتيبك: خارج Top 10'
+                    : 'ترتيبك: #${ownEntry.rank} • ${_formatCoins(ownEntry.supportCoins)} Coins',
+                style: const TextStyle(
+                  color: Color(0xFFB99CFF),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          if (loading && ranking == null)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 18),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (error != null && ranking == null)
+            Column(
+              children: [
+                const Text(
+                  'تعذر تحميل الترتيب.',
+                  style: TextStyle(color: Colors.white54),
+                ),
+                TextButton(
+                  onPressed: onRetry,
+                  child: const Text('إعادة المحاولة'),
+                ),
+              ],
+            )
+          else if (ranking == null || ranking.top10.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 18),
+              child: Text(
+                'لا يوجد ترتيب لهذا الشهر بعد.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white54),
+              ),
+            )
+          else
+            ...ranking.top10.map(
+              (entry) => _HostRankingTile(
+                entry: entry,
+                isCurrentUser: entry.person.uid == currentUid,
+                onTap: () => onPersonTap(entry.person),
+              ),
+            ),
+          if (loading && ranking != null)
+            const LinearProgressIndicator(minHeight: 2),
+        ],
+      ),
+    );
+  }
+}
+
+class _HostRankingTile extends StatelessWidget {
+  const _HostRankingTile({
+    required this.entry,
+    required this.isCurrentUser,
+    required this.onTap,
+  });
+
+  final PublicAgencyRankingEntry entry;
+  final bool isCurrentUser;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final person = entry.person;
+    final image = person.profileImageUrl?.trim() ?? '';
+    return ListTile(
+      dense: true,
+      onTap: onTap,
+      tileColor: isCurrentUser ? Colors.white10 : Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      leading: SizedBox(
+        width: 42,
+        child: Text(
+          '#${entry.rank}',
+          textDirection: TextDirection.ltr,
+          style: TextStyle(
+            color: isCurrentUser
+                ? const Color(0xFFFFD875)
+                : Colors.white60,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
+      title: Row(
+        children: [
+          CircleAvatar(
+            radius: 15,
+            backgroundColor: const Color(0xFF2A3150),
+            backgroundImage: image.isEmpty ? null : NetworkImage(image),
+            child: image.isEmpty
+                ? const Icon(Icons.person_rounded, size: 16, color: Colors.white70)
+                : null,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              person.displayName + (isCurrentUser ? ' • أنت' : ''),
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+      subtitle: person.publicId == null
+          ? null
+          : Text(
+              'ID ${person.publicId}',
+              textDirection: TextDirection.ltr,
+              style: const TextStyle(color: Colors.white38),
+            ),
+      trailing: Text(
+        _formatCoins(entry.supportCoins),
+        textDirection: TextDirection.ltr,
+        style: const TextStyle(
+          color: Color(0xFFB99CFF),
+          fontWeight: FontWeight.w800,
+        ),
       ),
     );
   }
@@ -578,6 +995,31 @@ String _formatCoins(int value) {
     return '${amount.toStringAsFixed(value % 1000 == 0 ? 0 : 1)}K';
   }
   return value.toString();
+}
+
+String _monthLabel(String value) {
+  final parts = value.split('-');
+  if (parts.length != 2) return value;
+  final year = int.tryParse(parts[0]);
+  final month = int.tryParse(parts[1]);
+  const names = <String>[
+    'يناير',
+    'فبراير',
+    'مارس',
+    'أبريل',
+    'مايو',
+    'يونيو',
+    'يوليو',
+    'أغسطس',
+    'سبتمبر',
+    'أكتوبر',
+    'نوفمبر',
+    'ديسمبر',
+  ];
+  if (year == null || month == null || month < 1 || month > 12) {
+    return value;
+  }
+  return '${names[month - 1]} $year';
 }
 
 String _formatDuration(int seconds) {
