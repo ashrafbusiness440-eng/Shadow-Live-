@@ -934,6 +934,357 @@ export async function allowAgencyReapply(
   throw new ApiError("transaction_failed", 500);
 }
 
+
+function controlOperationFingerprint(action, payload = {}) {
+  return JSON.stringify({
+    action: clean(action),
+    agencyId: clean(payload.agencyId),
+    name: clean(payload.name),
+    country: payload.country == null ? null : clean(payload.country),
+    newOwnerPublicId: clean(payload.newOwnerPublicId),
+  });
+}
+
+function controlOperationPath(actorUid, key) {
+  return `agency_control_operations/${clean(actorUid)}__${clean(key)}`;
+}
+
+function sanitizeAgencyForControl(agency = {}, ownerUser = {}) {
+  return {
+    agencyId: clean(agency.agencyId || agency.publicId),
+    publicId: clean(agency.publicId || agency.agencyId),
+    name: clean(agency.name),
+    country: clean(agency.country) || null,
+    status: clean(agency.status),
+    ownerUid: clean(agency.ownerUid),
+    ownerPublicId: clean(ownerUser.publicId) || null,
+    memberCount: Number(agency.memberCount || 0),
+    hostCount: Number(agency.hostCount || 0),
+    managerCount: Number(agency.managerCount || 0),
+    seniorManagerCount: Number(agency.seniorManagerCount || 0),
+    updatedAt: agency.updatedAt || null,
+  };
+}
+
+export async function getAgencyControlDetails(db, agencyIdInput) {
+  const agencyId = clean(agencyIdInput);
+  if (!validAgencyId(agencyId)) throw new ApiError("invalid_agency_id", 400);
+  const agencySnap = await db.get(`agencies/${agencyId}`);
+  if (!agencySnap.exists) throw new ApiError("agency_not_found", 404);
+  const agency = agencySnap.data || {};
+  const ownerUid = clean(agency.ownerUid);
+  const ownerSnap = ownerUid ? await db.get(`users/${ownerUid}`) : null;
+  return sanitizeAgencyForControl(agency, ownerSnap?.data || {});
+}
+
+export async function updateAgencyIdentity(
+  db,
+  actorUid,
+  body = {},
+  { now = new Date() } = {},
+) {
+  const agencyId = clean(body.agencyId);
+  const name = clean(body.name);
+  const country = clean(body.country) || null;
+  const key = clean(body.idempotencyKey);
+  if (!validAgencyId(agencyId)) throw new ApiError("invalid_agency_id", 400);
+  if (!name || name.length > 80) throw new ApiError("invalid_agency_name", 400);
+  if (country != null && (country.length < 2 || country.length > 64)) {
+    throw new ApiError("invalid_agency_country", 400);
+  }
+  if (!validIdempotencyKey(key)) throw new ApiError("invalid_idempotency_key", 400);
+
+  const operationPath = controlOperationPath(actorUid, key);
+  const fingerprint = controlOperationFingerprint("updateIdentity", {
+    agencyId,
+    name,
+    country,
+  });
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const tx = await db.beginTransaction();
+    try {
+      const [operationSnap, agencySnap] = await Promise.all([
+        db.get(operationPath, tx),
+        db.get(`agencies/${agencyId}`, tx),
+      ]);
+      if (operationSnap.exists) {
+        const existing = operationSnap.data || {};
+        if (clean(existing.requestFingerprint) !== fingerprint) {
+          throw new ApiError("idempotency_conflict", 409);
+        }
+        await db.rollback(tx);
+        return { ok: true, code: "duplicate", ...(existing.result || {}) };
+      }
+      if (!agencySnap.exists) throw new ApiError("agency_not_found", 404);
+      const agency = agencySnap.data || {};
+      if (clean(agency.status) === "closed") {
+        throw new ApiError("agency_closed", 409);
+      }
+
+      const before = {
+        name: clean(agency.name),
+        country: clean(agency.country) || null,
+      };
+      const result = {
+        agencyId,
+        name,
+        country,
+        status: clean(agency.status),
+      };
+      await db.commit(tx, [
+        db.writeUpdate(
+          `agencies/${agencyId}`,
+          { name, country, updatedAt: now },
+          ["name", "country", "updatedAt"],
+        ),
+        db.writeCreate(operationPath, {
+          actorUid,
+          action: "updateAgencyIdentity",
+          requestFingerprint: fingerprint,
+          status: "completed",
+          result,
+          createdAt: now,
+        }),
+        db.writeCreate(`admin_audit_logs/agency_identity_${agencyId}_${key}`, {
+          actorUid,
+          action: "updateAgencyIdentity",
+          targetType: "agency",
+          targetId: agencyId,
+          before,
+          after: { name, country },
+          idempotencyKey: key,
+          createdAt: now,
+        }),
+      ]);
+      return { ok: true, code: "ok", ...result };
+    } catch (error) {
+      await db.rollback(tx);
+      if (error instanceof ApiError) throw error;
+      if (isTransientFirestoreError(error) && attempt < 2) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, firestoreErrorRetryDelayMs(attempt))
+        );
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new ApiError("transaction_failed", 500);
+}
+
+export async function transferAgencyOwnership(
+  db,
+  actorUid,
+  body = {},
+  { now = new Date() } = {},
+) {
+  const agencyId = clean(body.agencyId);
+  const newOwnerPublicId = clean(body.newOwnerPublicId);
+  const key = clean(body.idempotencyKey);
+  if (!validAgencyId(agencyId)) throw new ApiError("invalid_agency_id", 400);
+  if (!/^\d{6}$/.test(newOwnerPublicId)) {
+    throw new ApiError("invalid_owner_public_id", 400);
+  }
+  if (!validIdempotencyKey(key)) throw new ApiError("invalid_idempotency_key", 400);
+
+  const publicIdSnap = await db.get(`public_ids/${newOwnerPublicId}`);
+  const newOwnerUid = clean(publicIdSnap.data?.uid);
+  if (!publicIdSnap.exists || !newOwnerUid) throw new ApiError("owner_not_found", 404);
+
+  const operationPath = controlOperationPath(actorUid, key);
+  const fingerprint = controlOperationFingerprint("transferOwnership", {
+    agencyId,
+    newOwnerPublicId,
+  });
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const tx = await db.beginTransaction();
+    try {
+      const [
+        operationSnap,
+        agencySnap,
+        newMembershipSnap,
+        newUserMembershipSnap,
+        newUserSnap,
+        managerSlotsSnap,
+      ] = await Promise.all([
+        db.get(operationPath, tx),
+        db.get(`agencies/${agencyId}`, tx),
+        db.get(`agency_memberships/${agencyId}__${newOwnerUid}`, tx),
+        db.get(`agency_user_memberships/${newOwnerUid}`, tx),
+        db.get(`users/${newOwnerUid}`, tx),
+        db.get(`agency_manager_slots/${agencyId}`, tx),
+      ]);
+
+      if (operationSnap.exists) {
+        const existing = operationSnap.data || {};
+        if (clean(existing.requestFingerprint) !== fingerprint) {
+          throw new ApiError("idempotency_conflict", 409);
+        }
+        await db.rollback(tx);
+        return { ok: true, code: "duplicate", ...(existing.result || {}) };
+      }
+      if (!agencySnap.exists) throw new ApiError("agency_not_found", 404);
+      const agency = agencySnap.data || {};
+      if (clean(agency.status) === "closed") throw new ApiError("agency_closed", 409);
+
+      const oldOwnerUid = clean(agency.ownerUid);
+      if (!oldOwnerUid) throw new ApiError("agency_owner_missing", 409);
+      if (oldOwnerUid === newOwnerUid) throw new ApiError("owner_unchanged", 409);
+      if (!newMembershipSnap.exists || !newUserMembershipSnap.exists) {
+        throw new ApiError("new_owner_must_be_active_member", 409);
+      }
+      const newMembership = newMembershipSnap.data || {};
+      const newUserMembership = newUserMembershipSnap.data || {};
+      const newOwnerRole = clean(newMembership.role);
+      if (
+        clean(newMembership.status) !== "active" ||
+        clean(newUserMembership.status) !== "active" ||
+        clean(newMembership.agencyId) !== agencyId ||
+        clean(newUserMembership.agencyId) !== agencyId ||
+        !["host", "manager", "senior_manager"].includes(newOwnerRole)
+      ) {
+        throw new ApiError("new_owner_must_be_active_member", 409);
+      }
+      if (
+        !newUserSnap.exists ||
+        clean(newUserSnap.data?.accountStatus || "active") !== "active" ||
+        clean(newUserSnap.data?.agencyId) !== agencyId
+      ) {
+        throw new ApiError("new_owner_unavailable", 409);
+      }
+
+      const [oldMembershipSnap, oldUserMembershipSnap, oldUserSnap] =
+        await Promise.all([
+          db.get(`agency_memberships/${agencyId}__${oldOwnerUid}`, tx),
+          db.get(`agency_user_memberships/${oldOwnerUid}`, tx),
+          db.get(`users/${oldOwnerUid}`, tx),
+        ]);
+      if (
+        !oldMembershipSnap.exists ||
+        !oldUserMembershipSnap.exists ||
+        !oldUserSnap.exists ||
+        clean(oldMembershipSnap.data?.status) !== "active" ||
+        clean(oldMembershipSnap.data?.role) !== "owner" ||
+        clean(oldUserMembershipSnap.data?.status) !== "active" ||
+        clean(oldUserMembershipSnap.data?.role) !== "owner"
+      ) {
+        throw new ApiError("agency_owner_membership_conflict", 409);
+      }
+      if (!managerSlotsSnap.exists) throw new ApiError("agency_manager_slots_missing", 409);
+
+      const managerUids = Array.isArray(managerSlotsSnap.data?.managerUids)
+        ? managerSlotsSnap.data.managerUids.map(clean).filter(Boolean)
+        : [];
+      let seniorManagerUid = clean(managerSlotsSnap.data?.seniorManagerUid) || null;
+      let nextManagerUids = [...managerUids];
+      if (newOwnerRole === "manager") {
+        if (!nextManagerUids.includes(newOwnerUid)) {
+          throw new ApiError("agency_manager_slot_conflict", 409);
+        }
+        nextManagerUids = nextManagerUids.map((uid) =>
+          uid === newOwnerUid ? oldOwnerUid : uid
+        );
+      } else if (newOwnerRole === "senior_manager") {
+        if (seniorManagerUid !== newOwnerUid) {
+          throw new ApiError("agency_manager_slot_conflict", 409);
+        }
+        seniorManagerUid = oldOwnerUid;
+      }
+
+      const result = {
+        agencyId,
+        oldOwnerUid,
+        newOwnerUid,
+        newOwnerPublicId,
+        previousNewOwnerRole: newOwnerRole,
+        previousOwnerRole: newOwnerRole,
+      };
+      await db.commit(tx, [
+        db.writeUpdate(
+          `agencies/${agencyId}`,
+          { ownerUid: newOwnerUid, updatedAt: now },
+          ["ownerUid", "updatedAt"],
+        ),
+        db.writeUpdate(
+          `agency_memberships/${agencyId}__${newOwnerUid}`,
+          { role: "owner", updatedAt: now },
+          ["role", "updatedAt"],
+        ),
+        db.writeUpdate(
+          `agency_user_memberships/${newOwnerUid}`,
+          { role: "owner", updatedAt: now },
+          ["role", "updatedAt"],
+        ),
+        db.writeUpdate(
+          `users/${newOwnerUid}`,
+          { agencyRole: "owner" },
+          ["agencyRole"],
+        ),
+        db.writeUpdate(
+          `agency_memberships/${agencyId}__${oldOwnerUid}`,
+          { role: newOwnerRole, updatedAt: now },
+          ["role", "updatedAt"],
+        ),
+        db.writeUpdate(
+          `agency_user_memberships/${oldOwnerUid}`,
+          { role: newOwnerRole, updatedAt: now },
+          ["role", "updatedAt"],
+        ),
+        db.writeUpdate(
+          `users/${oldOwnerUid}`,
+          { agencyRole: newOwnerRole },
+          ["agencyRole"],
+        ),
+        db.writeUpdate(
+          `agency_manager_slots/${agencyId}`,
+          {
+            managerUids: nextManagerUids,
+            seniorManagerUid,
+            updatedAt: now,
+          },
+          ["managerUids", "seniorManagerUid", "updatedAt"],
+        ),
+        db.writeCreate(operationPath, {
+          actorUid,
+          action: "transferAgencyOwnership",
+          requestFingerprint: fingerprint,
+          status: "completed",
+          result,
+          createdAt: now,
+        }),
+        db.writeCreate(`admin_audit_logs/agency_owner_transfer_${agencyId}_${key}`, {
+          actorUid,
+          action: "transferAgencyOwnership",
+          targetType: "agency",
+          targetId: agencyId,
+          before: { ownerUid: oldOwnerUid, targetRole: newOwnerRole },
+          after: {
+            ownerUid: newOwnerUid,
+            previousOwnerUid: oldOwnerUid,
+            previousOwnerRole: newOwnerRole,
+          },
+          idempotencyKey: key,
+          createdAt: now,
+        }),
+      ]);
+      return { ok: true, code: "ok", ...result };
+    } catch (error) {
+      await db.rollback(tx);
+      if (error instanceof ApiError) throw error;
+      if (isTransientFirestoreError(error) && attempt < 2) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, firestoreErrorRetryDelayMs(attempt))
+        );
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new ApiError("transaction_failed", 500);
+}
+
 export async function directCreateAgency(
   db,
   actorUid,
@@ -993,6 +1344,8 @@ export async function agencyControl(request, env) {
         permissions: {
           canReviewApplications: actor.permissions.canReviewApplications,
           canDirectCreate: actor.permissions.canManageAgencies,
+          canManageExisting: actor.permissions.canManageAgencies,
+          canTransferOwnership: actor.permissions.isOwner,
         },
       });
     }
@@ -1015,6 +1368,25 @@ export async function agencyControl(request, env) {
     if (action === "directCreate") {
       if (!actor.permissions.canManageAgencies) throw new ApiError("forbidden", 403);
       return json(request, env, await directCreateAgency(db, decoded.sub, body));
+    }
+    if (action === "getAgency") {
+      if (!actor.permissions.canManageAgencies) throw new ApiError("forbidden", 403);
+      return json(request, env, {
+        ok: true,
+        agency: await getAgencyControlDetails(db, body.agencyId),
+        permissions: {
+          canManageExisting: actor.permissions.canManageAgencies,
+          canTransferOwnership: actor.permissions.isOwner,
+        },
+      });
+    }
+    if (action === "updateIdentity") {
+      if (!actor.permissions.canManageAgencies) throw new ApiError("forbidden", 403);
+      return json(request, env, await updateAgencyIdentity(db, decoded.sub, body));
+    }
+    if (action === "transferOwnership") {
+      if (!actor.permissions.isOwner) throw new ApiError("forbidden", 403);
+      return json(request, env, await transferAgencyOwnership(db, decoded.sub, body));
     }
     throw new ApiError("invalid_action", 400);
   } catch (error) {
