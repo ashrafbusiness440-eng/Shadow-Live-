@@ -99,6 +99,19 @@ function validIdempotencyKey(value) {
   return /^[A-Za-z0-9_-]{12,120}$/.test(clean(value));
 }
 
+function agencyPolicySnapshotFromOverride(agencyIdInput, snapshot) {
+  const agencyId = clean(agencyIdInput);
+  if (!agencyId || !snapshot?.exists) return null;
+  const data = snapshot.data || {};
+  return {
+    agencyId,
+    policyVersion: clean(data.policyVersion) || null,
+    updatedAt: data.updatedAt || null,
+    ...(Array.isArray(data.tiers) ? { tiers: data.tiers } : {}),
+    ...(Array.isArray(data.targets) ? { targets: data.targets } : {}),
+  };
+}
+
 function requestIdFor(actorUid, key) {
   const actor = clean(actorUid).replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80);
   if (!actor) throw new ApiError("invalid_actor", 400);
@@ -1130,6 +1143,7 @@ export async function respondAgencyMembershipRequest(
         acceptanceSnap,
         agencySnap,
         hostMonthSnap,
+        policyOverrideSnap,
       ] = await Promise.all([
         db.get(`users/${uid}`, tx),
         db.get(`agency_user_memberships/${uid}`, tx),
@@ -1143,6 +1157,9 @@ export async function respondAgencyMembershipRequest(
               `agency_host_monthly/${agencyId}__${rankingMonth}__${uid}`,
               tx,
             )
+          : Promise.resolve({ exists: false, data: null }),
+        decision === "accept"
+          ? db.get(`agency_policy_overrides/${agencyId}`, tx)
           : Promise.resolve({ exists: false, data: null }),
       ]);
       if (decision === "accept") {
@@ -1290,6 +1307,8 @@ export async function respondAgencyMembershipRequest(
               agencyPublicSupportMonth: rankingMonth,
               agencyPublicSupportCoins:
                 agencyPublicSupportSeed(hostMonthSnap),
+              agencyPolicySnapshot:
+                agencyPolicySnapshotFromOverride(agencyId, policyOverrideSnap),
             },
             [
               "agencyId",
@@ -1298,6 +1317,7 @@ export async function respondAgencyMembershipRequest(
               "agencyPublicSupportAgencyId",
               "agencyPublicSupportMonth",
               "agencyPublicSupportCoins",
+              "agencyPolicySnapshot",
             ],
           ),
           db.writeUpdate(
@@ -1452,6 +1472,7 @@ export async function commitAcceptedAgencyMembership(
         agencySnap,
         acceptanceSnap,
         hostMonthSnap,
+        policyOverrideSnap,
       ] = await Promise.all([
         db.get(`users/${uid}`, tx),
         db.get(`agency_user_memberships/${uid}`, tx),
@@ -1462,6 +1483,7 @@ export async function commitAcceptedAgencyMembership(
           `agency_host_monthly/${agencyId}__${rankingMonth}__${uid}`,
           tx,
         ),
+        db.get(`agency_policy_overrides/${agencyId}`, tx),
       ]);
       ensureAgencyActive(agencySnap);
 
@@ -1552,6 +1574,8 @@ export async function commitAcceptedAgencyMembership(
             agencyPublicSupportMonth: rankingMonth,
             agencyPublicSupportCoins:
               agencyPublicSupportSeed(hostMonthSnap),
+            agencyPolicySnapshot:
+              agencyPolicySnapshotFromOverride(agencyId, policyOverrideSnap),
           },
           [
             "agencyId",
@@ -1560,6 +1584,7 @@ export async function commitAcceptedAgencyMembership(
             "agencyPublicSupportAgencyId",
             "agencyPublicSupportMonth",
             "agencyPublicSupportCoins",
+            "agencyPolicySnapshot",
           ],
         ),
         db.writeUpdate(
