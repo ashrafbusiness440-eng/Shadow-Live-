@@ -5,9 +5,7 @@ on:
     branches: [main]
     paths:
       - 'firestore.rules'
-      - 'firestore.indexes.json'
       - 'firebase.json'
-      - '.github/scripts/ensure-firestore-indexes.mjs'
       - '.firebaserc'
       - '.github/workflows/deploy-firestore-rules.yml'
   workflow_dispatch:
@@ -227,8 +225,3 @@ jobs:
             console.log('Paused legacy Firebase settlement scheduler:', job.name);
           }
           NODE
-
-      - name: Ensure required Firestore composite indexes are READY
-        env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-        run: node .github/scripts/ensure-firestore-indexes.mjs
