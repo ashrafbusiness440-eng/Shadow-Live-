@@ -374,3 +374,25 @@ test("Stage 09-B surplus settlement stays bounded paginated and off Gift hot pat
     assert.equal(gift.includes("agency_surplus_policy_snapshots/"), false);
   }
 });
+
+
+test("Stage 09-C surplus replay hardening adds no extra IO or scans", () => {
+  for (const relativePath of [
+    "../economy/economy-control.js",
+    "../../cloudflare-worker/src/legacy-economy/economy-control.js",
+  ]) {
+    const sourceText = source(relativePath);
+    const start = sourceText.indexOf("const AGENCY_SURPLUS_PAGE_MAX=25");
+    const end = sourceText.indexOf("export async function handler", start);
+    const settlement = sourceText.slice(start, end);
+    assert.equal(start >= 0, true);
+    assert.equal(settlement.includes("validateFrozenAgencySurplusPolicy"), true);
+    assert.equal(settlement.includes("calculateAgencyMonthEndSurplusFromSnapshot"), true);
+    assert.equal(settlement.includes("agency_surplus_policy_snapshot_conflict"), true);
+    assert.equal(settlement.includes("agency_surplus_settlement_conflict"), true);
+    assert.equal(settlement.includes("agency_surplus_ledger_conflict"), true);
+    assert.equal(settlement.includes(".list("), false);
+    assert.equal(settlement.includes(".limit(pageSize+1)"), true);
+    assert.equal(settlement.includes("AGENCY_SURPLUS_PAGE_MAX=25"), true);
+  }
+});
