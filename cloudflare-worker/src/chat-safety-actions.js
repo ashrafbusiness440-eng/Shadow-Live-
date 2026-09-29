@@ -2,7 +2,7 @@ import { json, readJson } from "./http.js";
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
-import { resolveRevenuePolicy } from "./economy-policy.js";
+import { resolveGiftRevenuePolicy } from "./economy-policy.js";
 import { calculateAgencyTargetProgress } from "./agency-policy.js";
 import {
   legacyPresenceFresh,
@@ -424,30 +424,17 @@ export async function sendGift(db, uid, body, options = {}) {
 
     const economyData = economy.data || {};
     const agencyId = clean(receiverData.agencyId);
-    let activeHostCount = 0;
-    if (agencyId) {
-      const agencyMonth = await db.get(
-        `agency_support_stats/${agencyId}/monthly/${periods.month}`,
-        transaction,
-      );
-      const activeHostIds = Array.isArray(agencyMonth.data?.activeHostIds)
-        ? agencyMonth.data.activeHostIds
-        : [];
-      activeHostCount = activeHostIds.length;
-    }
-
     const previousMonthCoins =
       clean(receiverData.giftRevenueMonth) === periods.month
         ? Math.max(0, Number(receiverData.giftRevenueMonthCoins || 0))
         : 0;
     const monthlyGrossCoins = previousMonthCoins + totalCost;
-    const revenue = resolveRevenuePolicy(
+    const revenue = resolveGiftRevenuePolicy(
       economyData,
       receiverData,
       monthlyGrossCoins,
       agencyId,
       periods.month,
-      activeHostCount,
     );
 
     const policyEnabled = economyData.enabled !== false;
@@ -607,8 +594,8 @@ export async function sendGift(db, uid, body, options = {}) {
         writes.push(
           db.writeUpdate(
             periodPath,
-            { activeHostCount, updatedAt: now },
-            ["activeHostCount", "updatedAt"],
+            { updatedAt: now },
+            ["updatedAt"],
             agencyStatsTransforms,
           ),
         );
@@ -772,6 +759,7 @@ export async function sendGift(db, uid, body, options = {}) {
         hostBonusBps: revenue.hostBonusBps,
         agencyBaseShareBps: revenue.agencyBaseShareBps,
         agencyBonusBps: revenue.agencyBonusBps,
+        agencyBonusDeferredToMonthEnd: revenue.agencyBonusDeferredToMonthEnd,
         agencyShareBps: revenue.agencyShareBps,
         agencyShareCoins,
         agencyActiveHostCount: revenue.activeHostCount,
