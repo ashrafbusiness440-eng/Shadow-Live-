@@ -1,7 +1,7 @@
 import { json, readJson } from "./http.js";
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
-import { resolveRevenuePolicy } from "./economy-policy.js";
+import { resolveGiftRevenuePolicy } from "./economy-policy.js";
 import { calculateAgencyTargetProgress } from "./agency-policy.js";
 import { advanceRoomRocket } from "./room-rocket.js";
 import {
@@ -280,30 +280,17 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     const economy = economySnap.data || {};
     const agencyId = clean(receiver.agencyId || "");
 
-    let activeHostCount = 0;
-    if (agencyId) {
-      const agencyMonthSnap = await db.get(
-        `agency_support_stats/${agencyId}/monthly/${periods.month}`,
-        transaction,
-      );
-      const activeHostIds = Array.isArray(agencyMonthSnap.data?.activeHostIds)
-        ? agencyMonthSnap.data.activeHostIds
-        : [];
-      activeHostCount = activeHostIds.length;
-    }
-
     const previousMonthCoins =
       clean(receiver.giftRevenueMonth) === periods.month
         ? Math.max(0, Number(receiver.giftRevenueMonthCoins || 0))
         : 0;
     const monthlyGrossCoins = previousMonthCoins + totalCost;
-    const revenue = resolveRevenuePolicy(
+    const revenue = resolveGiftRevenuePolicy(
       economy,
       receiver,
       monthlyGrossCoins,
       agencyId,
       periods.month,
-      activeHostCount,
     );
     const policyEnabled = economy.policyMode === "tiered_host_agency"
       ? economy.enabled !== false
@@ -593,10 +580,9 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
           db.writeUpdate(
             path,
             {
-              activeHostCount,
               updatedAt: now,
             },
-            ["activeHostCount", "updatedAt"],
+            ["updatedAt"],
             agencyStatsTransforms,
           ),
         );
@@ -765,6 +751,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
         hostBonusBps: revenue.hostBonusBps,
         agencyBaseShareBps: revenue.agencyBaseShareBps,
         agencyBonusBps: revenue.agencyBonusBps,
+        agencyBonusDeferredToMonthEnd: revenue.agencyBonusDeferredToMonthEnd,
         agencyShareBps: revenue.agencyShareBps,
         agencyShareCoins,
         agencyActiveHostCount: revenue.activeHostCount,
@@ -950,7 +937,7 @@ export async function roomGift(request, env, ctx) {
         primary: "agency_support_stats",
         action: "room_gift_commit",
         outcome: "daily_weekly_monthly",
-        reads: 1,
+        reads: 0,
         writes: 3,
         retries: giftRetries,
       });

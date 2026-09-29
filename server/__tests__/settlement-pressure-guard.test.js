@@ -254,3 +254,36 @@ test("Stage 07-B Agency Wallet settlement stays bounded and never replays Host s
     assert.equal(settlement.includes('hostSalaryRepaidAtMonthEnd:false'), true);
   }
 });
+
+
+test("Stage 08-A defers Agency Bonus off Room and Chat gift hot paths", () => {
+  for (const relativePath of [
+    "../../cloudflare-worker/src/room-gift.js",
+    "../../cloudflare-worker/src/chat-safety-actions.js",
+  ]) {
+    const sourceText = source(relativePath);
+    assert.equal(sourceText.includes("resolveGiftRevenuePolicy"), true);
+    assert.equal(sourceText.includes("resolveRevenuePolicy("), false);
+    assert.equal(sourceText.includes("activeHostIds.length"), false);
+    assert.equal(
+      sourceText.includes("agencyBonusDeferredToMonthEnd"),
+      true,
+    );
+  }
+});
+
+test("Stage 08-A active agency host marker avoids repeated monthly count writes", () => {
+  const sourceText = source("../economy/mic-activity-admin.js");
+  assert.equal(
+    sourceText.includes("previousQualifiedDays > 0"),
+    true,
+  );
+  assert.equal(
+    sourceText.includes("FieldValue.increment(1)"),
+    true,
+  );
+  assert.equal(
+    sourceText.includes("activeHostIds: FieldValue.arrayUnion(userId)"),
+    true,
+  );
+});
