@@ -135,7 +135,7 @@ for (const desired of desiredIndexes) {
     encodeURIComponent(collectionGroup) +
     "/indexes";
 
-  const listed = await jsonFetch(base + "?pageSize=200", { headers });
+  const listed = await jsonFetch(base, { headers });
   let index = (listed.indexes || []).find((item) =>
     String(item.queryScope || "COLLECTION") === queryScope &&
     sameFields(item.fields, desired.fields)
