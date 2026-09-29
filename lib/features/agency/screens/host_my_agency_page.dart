@@ -607,10 +607,15 @@ class _HostRankingCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ranking = data;
-    final ownEntry = ranking?.top10
-        .where((entry) => entry.person.uid == currentUid)
-        .cast<PublicAgencyRankingEntry?>()
-        .firstOrNull;
+    PublicAgencyRankingEntry? ownEntry;
+    if (ranking != null && currentUid.isNotEmpty) {
+      for (final entry in ranking.top10) {
+        if (entry.person.uid == currentUid) {
+          ownEntry = entry;
+          break;
+        }
+      }
+    }
 
     return Container(
       key: const Key('host-agency-ranking-card'),
