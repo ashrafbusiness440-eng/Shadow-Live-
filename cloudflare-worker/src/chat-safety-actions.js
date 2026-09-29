@@ -432,6 +432,23 @@ export async function sendGift(db, uid, body, options = {}) {
         ? Math.max(0, Number(receiverData.giftRevenueMonthCoins || 0))
         : 0;
     const monthlyGrossCoins = previousMonthCoins + totalCost;
+    const previousAgencyPublicSupportCoins =
+      agencyId &&
+      clean(receiverData.agencyPublicSupportAgencyId) === agencyId &&
+      clean(receiverData.agencyPublicSupportMonth) === periods.month
+        ? Math.max(
+            0,
+            Number(receiverData.agencyPublicSupportCoins || 0),
+          )
+        : 0;
+    const agencyPublicSupportCoins =
+      previousAgencyPublicSupportCoins + totalCost;
+    if (
+      agencyId &&
+      !Number.isSafeInteger(agencyPublicSupportCoins)
+    ) {
+      throw new ApiError("invalid_agency_public_support", 409);
+    }
     const revenue = resolveGiftRevenuePolicy(
       economyData,
       receiverData,
@@ -520,6 +537,17 @@ export async function sendGift(db, uid, body, options = {}) {
       "giftRevenueMonthCoins",
       "currentGiftRevenueTier",
     ];
+    if (agencyId) {
+      receiverFields.agencyPublicSupportAgencyId = agencyId;
+      receiverFields.agencyPublicSupportMonth = periods.month;
+      receiverFields.agencyPublicSupportCoins =
+        agencyPublicSupportCoins;
+      receiverMask.push(
+        "agencyPublicSupportAgencyId",
+        "agencyPublicSupportMonth",
+        "agencyPublicSupportCoins",
+      );
+    }
     const receiverTransforms = [
       db.increment("totalGiftsReceived", quantity),
       db.increment("totalValueReceived", totalCost),
@@ -640,7 +668,7 @@ export async function sendGift(db, uid, body, options = {}) {
               agencyId,
               month: periods.month,
               hostUid: receiverId,
-              supportCoins: monthlyGrossCoins,
+              supportCoins: agencyPublicSupportCoins,
             }),
             nextTargetCoins: agencyTarget?.remainingToNextTargetCoins || 0,
             salaryPaidDiamonds: agencyTarget?.paidDiamonds || 0,
