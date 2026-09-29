@@ -141,7 +141,13 @@ test("10-A public agency page paginates active Hosts only", async () => {
 test("10-A pressure contract caps the query at 25 and performs no writes", async () => {
   const agencyId = "731205";
   const ownerUid = "pressure_owner";
-  const calls = { gets: [], queries: [], writes: 0 };
+  const calls = {
+    gets: [],
+    queries: [],
+    writes: 0,
+    activeHostGets: 0,
+    maxActiveHostGets: 0,
+  };
   const rows = Array.from(
     { length: PUBLIC_HOST_PAGE_MAX + 1 },
     (_, index) => {
@@ -183,6 +189,13 @@ test("10-A pressure contract caps the query at 25 and performs no writes", async
         };
       }
       const uid = path.replace("users/", "");
+      calls.activeHostGets += 1;
+      calls.maxActiveHostGets = Math.max(
+        calls.maxActiveHostGets,
+        calls.activeHostGets,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      calls.activeHostGets -= 1;
       return { exists: true, data: user(uid, "920000", uid) };
     },
     async runQuery(collectionPath, options) {
@@ -219,6 +232,7 @@ test("10-A pressure contract caps the query at 25 and performs no writes", async
     calls.gets.filter((path) => path.startsWith("users/")).length,
     PUBLIC_HOST_PAGE_MAX + 1,
   );
+  assert.ok(calls.maxActiveHostGets <= 4);
 });
 
 test("10-A non-active agency fails closed before the members query", async () => {
