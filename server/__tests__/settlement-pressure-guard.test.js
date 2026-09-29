@@ -341,3 +341,37 @@ test("Stage 09-A surplus snapshot adds no Gift hot-path policy reads", () => {
     assert.equal(sourceText.includes('agency_policy_overrides/'), false);
   }
 });
+
+
+test("Stage 09-B surplus settlement stays bounded paginated and off Gift hot path", () => {
+  for (const relativePath of [
+    "../economy/economy-control.js",
+    "../../cloudflare-worker/src/legacy-economy/economy-control.js",
+  ]) {
+    const sourceText = source(relativePath);
+    const start = sourceText.indexOf("export async function settleAgencyHostSurplusPage");
+    const end = sourceText.indexOf("export async function handler", start);
+    const settlement = sourceText.slice(start, end);
+    assert.equal(start >= 0, true);
+    assert.equal(settlement.includes("const AGENCY_SURPLUS_PAGE_MAX=25"), false);
+    assert.equal(sourceText.includes("const AGENCY_SURPLUS_PAGE_MAX=25"), true);
+    assert.equal(settlement.includes('"surplusPageKey"'), true);
+    assert.equal(settlement.includes('.orderBy("surplusPageKey","asc")'), true);
+    assert.equal(settlement.includes(".limit(pageSize+1)"), true);
+    assert.equal(settlement.includes(".list("), false);
+    assert.equal(settlement.includes('collection("agency_surplus_policy_snapshots")'), true);
+    assert.equal(settlement.includes('collection("agency_surplus_settlements")'), true);
+    assert.equal(settlement.includes('hostSalaryRepaidAtMonthEnd:false'), true);
+    assert.equal(settlement.includes('collection("users").where'), false);
+  }
+
+  for (const relativePath of [
+    "../../cloudflare-worker/src/room-gift.js",
+    "../../cloudflare-worker/src/chat-safety-actions.js",
+  ]) {
+    const gift = source(relativePath);
+    assert.equal(gift.includes("surplusPageKey"), true);
+    assert.equal(gift.includes("agency_surplus_settlements/"), false);
+    assert.equal(gift.includes("agency_surplus_policy_snapshots/"), false);
+  }
+});
