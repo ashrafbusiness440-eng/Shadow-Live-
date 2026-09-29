@@ -1,7 +1,7 @@
 import { getApps, initializeApp, cert } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
-import { convertPayableCoinsToDiamonds } from "./economy-policy.js";
+import { calculateAgencyMonthlyBonus, convertPayableCoinsToDiamonds } from "./economy-policy.js";
 import { economyPermissions } from "./economy-permissions.js";
 import {
   agencyFinancialInteger,
@@ -189,6 +189,28 @@ function agencyMonthlyShardRefs(db,agencyId,month){
   );
 }
 
+function effectiveAgencyBonusPolicy(economy={},override={}){
+  return {
+    ...economy,
+    agencyPerformanceBonusBps:
+      override.agencyPerformanceBonusBps ??
+      economy.agencyPerformanceBonusBps,
+    agencyBonusActiveHosts:
+      override.agencyBonusActiveHosts ??
+      economy.agencyBonusActiveHosts,
+  };
+}
+
+function agencyMonthlyActiveHostCount(data={}){
+  const fallback=Array.isArray(data.activeHostIds)
+    ? data.activeHostIds.length
+    : 0;
+  return agencyFinancialInteger(
+    data.activeHostCount ?? fallback,
+    "active_host_count",
+  );
+}
+
 function assertSettledAgencyStatementConsistency({
   statement,
   ledger,
@@ -222,6 +244,25 @@ function assertSettledAgencyStatementConsistency({
     statement.agencyDiamonds || 0,
     "statement_diamonds",
   );
+  const agencyBonusCoins=agencyFinancialInteger(
+    statement.agencyBonusCoins || 0,
+    "statement_bonus_coins",
+  );
+  const agencyPayableCoins=agencyFinancialInteger(
+    statement.agencyPayableCoins ?? totals.agencyShareCoins,
+    "statement_payable_coins",
+  );
+  const platformAfterAgencyBonusCoins=agencyFinancialInteger(
+    statement.platformAfterAgencyBonusCoins ?? totals.platformShareCoins,
+    "statement_platform_after_bonus_coins",
+  );
+  if(
+    agencyPayableCoins!==totals.agencyShareCoins+agencyBonusCoins ||
+    platformAfterAgencyBonusCoins+agencyBonusCoins!==totals.platformShareCoins ||
+    totals.hostShareCoins+agencyPayableCoins+platformAfterAgencyBonusCoins!==totals.supportCoins
+  ){
+    throw Error("agency_bonus_settlement_invariant_failed");
+  }
   const openingRemainderCoins=agencyFinancialInteger(
     statement.openingRemainderCoins || 0,
     "statement_opening_remainder_coins",
@@ -272,7 +313,7 @@ function assertSettledAgencyStatementConsistency({
   );
   if(
     ledgerDelta!==paidDiamonds ||
-    ledgerPayableCoins!==totals.agencyShareCoins ||
+    ledgerPayableCoins!==agencyPayableCoins ||
     ledgerOpeningRemainder!==openingRemainderCoins ||
     ledgerRemainder!==remainderCoins ||
     closingBalance-openingBalance!==paidDiamonds
@@ -293,8 +334,15 @@ export async function settleAgencyMonth(db,actorUid,agencyIdInput,monthInput,opt
 
   const statementId=agencyId+"__"+month;
   const settlementRef=db.collection("agency_monthly_statements").doc(statementId);
-  const economySnap=await db.collection("system_config").doc("gift_economy").get();
+  const [economySnap,overrideSnap]=await Promise.all([
+    db.collection("system_config").doc("gift_economy").get(),
+    db.collection("agency_policy_overrides").doc(agencyId).get(),
+  ]);
   const economy=economySnap.exists?(economySnap.data()||{}):{};
+  const bonusPolicy=effectiveAgencyBonusPolicy(
+    economy,
+    overrideSnap.exists?(overrideSnap.data()||{}):{},
+  );
   const coinsPerDiamond=agencyFinancialInteger(
     economy.coinsPerDiamond ?? 10000,
     "coins_per_diamond",
@@ -305,6 +353,11 @@ export async function settleAgencyMonth(db,actorUid,agencyIdInput,monthInput,opt
   const auditRef=db.collection("admin_audit_logs").doc();
   const ledgerId="agency_monthly_share_"+statementId;
   const ledgerRef=db.collection("financial_ledger").doc(ledgerId);
+  const bonusAccrualRef=db.collection("agency_bonus_accruals").doc(statementId);
+  const activityRef=db.collection("agency_support_stats")
+    .doc(agencyId)
+    .collection("monthly")
+    .doc(month);
   const shardRefs=agencyMonthlyShardRefs(db,agencyId,month);
 
   return db.runTransaction(async tx=>{
@@ -332,8 +385,9 @@ export async function settleAgencyMonth(db,actorUid,agencyIdInput,monthInput,opt
       throw Error("settlement_ledger_conflict");
     }
 
-    const [walletSnap,...shardSnaps]=await Promise.all([
+    const [walletSnap,activitySnap,...shardSnaps]=await Promise.all([
       tx.get(walletRef),
+      tx.get(activityRef),
       ...shardRefs.map(ref=>tx.get(ref)),
     ]);
 
@@ -367,6 +421,35 @@ export async function settleAgencyMonth(db,actorUid,agencyIdInput,monthInput,opt
       throw Error("settlement_not_found");
     }
 
+    const activity=activitySnap.exists?(activitySnap.data()||{}):{};
+    const activeHostCount=agencyMonthlyActiveHostCount(activity);
+    const bonus=calculateAgencyMonthlyBonus(
+      bonusPolicy,
+      {
+        supportCoins:totals.supportCoins,
+        activeHostCount,
+        hasAgency:true,
+      },
+    );
+    const agencyBonusCoins=agencyFinancialInteger(
+      bonus.agencyBonusCoins,
+      "bonus_coins",
+    );
+    const agencyPayableCoins=totals.agencyShareCoins+agencyBonusCoins;
+    if(!Number.isSafeInteger(agencyPayableCoins)){
+      throw Error("invalid_agency_financial_payable_coins");
+    }
+    const platformAfterAgencyBonusCoins=
+      totals.platformShareCoins-agencyBonusCoins;
+    if(
+      platformAfterAgencyBonusCoins<0 ||
+      totals.hostShareCoins+
+        agencyPayableCoins+
+        platformAfterAgencyBonusCoins!==totals.supportCoins
+    ){
+      throw Error("agency_bonus_settlement_invariant_failed");
+    }
+
     const wallet=walletSnap.exists?(walletSnap.data()||{}):{};
     const currentDiamonds=agencyFinancialInteger(
       wallet.diamonds || 0,
@@ -389,7 +472,7 @@ export async function settleAgencyMonth(db,actorUid,agencyIdInput,monthInput,opt
 
     const conversion=convertPayableCoinsToDiamonds(
       previousRemainderCoins,
-      totals.agencyShareCoins,
+      agencyPayableCoins,
       coinsPerDiamond,
     );
     const diamondsEarned=agencyFinancialInteger(
@@ -416,6 +499,16 @@ export async function settleAgencyMonth(db,actorUid,agencyIdInput,monthInput,opt
       agencyId,
       month,
       ...totals,
+      agencyBaseShareCoins:totals.agencyShareCoins,
+      agencyBonusEligible:bonus.eligible,
+      agencyBonusBps:bonus.agencyBonusBps,
+      agencyBonusCoins,
+      agencyPayableCoins,
+      agencyActiveHostCount:activeHostCount,
+      agencyRequiredActiveHosts:bonus.requiredActiveHosts,
+      platformAfterAgencyBonusCoins,
+      bonusPolicySource:overrideSnap.exists?"agency_override":"global",
+      bonusAccrualId:statementId,
       shardCount:AGENCY_MONTHLY_ACCRUAL_SHARDS,
       coinsPerDiamond,
       openingRemainderCoins:previousRemainderCoins,
@@ -435,6 +528,24 @@ export async function settleAgencyMonth(db,actorUid,agencyIdInput,monthInput,opt
       lifetimeDiamonds:closingLifetimeDiamonds,
       updatedAt:FieldValue.serverTimestamp(),
     },{merge:true});
+    tx.create(bonusAccrualRef,{
+      agencyId,
+      month,
+      supportCoins:totals.supportCoins,
+      agencyBaseShareCoins:totals.agencyShareCoins,
+      activeHostCount,
+      requiredActiveHosts:bonus.requiredActiveHosts,
+      eligible:bonus.eligible,
+      bonusBps:bonus.agencyBonusBps,
+      bonusCoins:agencyBonusCoins,
+      agencyPayableCoins,
+      platformAfterAgencyBonusCoins,
+      policySource:overrideSnap.exists?"agency_override":"global",
+      status:"settled",
+      statementId,
+      ledgerId,
+      createdAt:FieldValue.serverTimestamp(),
+    });
     tx.create(settlementRef,{
       ...statement,
       settledAt:FieldValue.serverTimestamp(),
@@ -445,7 +556,10 @@ export async function settleAgencyMonth(db,actorUid,agencyIdInput,monthInput,opt
       delta:diamondsEarned,
       openingBalance:currentDiamonds,
       closingBalance:closingDiamonds,
-      payableCoins:totals.agencyShareCoins,
+      payableCoins:agencyPayableCoins,
+      baseAgencyShareCoins:totals.agencyShareCoins,
+      agencyBonusCoins,
+      platformAfterAgencyBonusCoins,
       openingRemainderCoins:previousRemainderCoins,
       remainderCoins,
       coinsPerDiamond,
