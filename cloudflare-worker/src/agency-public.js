@@ -27,7 +27,7 @@ function validCursor(value) {
   return !cursor || (cursor.length <= 180 && !cursor.includes("/"));
 }
 
-function publicPersonSummary(uidInput, userSnap, extra = {}) {
+function publicPersonSummary(uidInput, userSnap) {
   const uid = clean(uidInput);
   const user = userSnap?.exists ? userSnap.data || {} : {};
   return {
@@ -38,7 +38,6 @@ function publicPersonSummary(uidInput, userSnap, extra = {}) {
       "Shadow Live",
     profileImageUrl:
       clean(user.profileImageUrl || user.photoUrl || user.avatarUrl) || null,
-    ...extra,
   };
 }
 
@@ -137,9 +136,7 @@ export async function loadPublicAgencyPage(db, body = {}) {
   const hosts = activeHostRows.map((row, index) => {
     const membership = row.data || {};
     const uid = clean(membership.uid) || membershipCursor(agencyId, row);
-    return publicPersonSummary(uid, hostUserSnaps[index], {
-      joinedAt: membership.joinedAt || null,
-    });
+    return publicPersonSummary(uid, hostUserSnaps[index]);
   });
 
   return {
