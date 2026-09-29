@@ -7,6 +7,7 @@ import {
   assertAgencySettlementMonthClosed,
   calculateAgencyTargetProgress,
   calculateAgencyMonthEndSurplus,
+  calculateAgencyMonthEndSurplusFromSnapshot,
   resolveAgencySurplusPolicy,
   validateAgencySettlementTotals,
 } from "../economy/agency-policy.js";
@@ -305,5 +306,33 @@ test("09-A surplus fails closed on unset toggle and corrupted progress",()=>{
       surplusToShadow:false,
     }),
     /invalid_agency_target_surplus_progress_coins/,
+  );
+});
+
+
+test("09-B historical surplus snapshot uses stored threshold exactly",()=>{
+  const off=calculateAgencyMonthEndSurplusFromSnapshot({
+    progressCoins:70000,
+    targetThresholdCoins:50000,
+    surplusToShadow:false,
+  });
+  assert.equal(off.surplusCoins,20000);
+  assert.equal(off.destination,"host_wallet_coins");
+
+  const on=calculateAgencyMonthEndSurplusFromSnapshot({
+    progressCoins:51234567,
+    targetThresholdCoins:50000000,
+    surplusToShadow:true,
+  });
+  assert.equal(on.surplusCoins,1234567);
+  assert.equal(on.destination,"shadow_profit");
+
+  assert.throws(
+    ()=>calculateAgencyMonthEndSurplusFromSnapshot({
+      progressCoins:50000,
+      targetThresholdCoins:100000,
+      surplusToShadow:false,
+    }),
+    /agency_surplus_target_threshold_conflict/,
   );
 });
