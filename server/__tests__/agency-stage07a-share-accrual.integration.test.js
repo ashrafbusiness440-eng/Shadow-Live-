@@ -188,6 +188,7 @@ test("07-A room gifts accrue the approved base Agency Share by tier without muta
     assert.equal(accrual.data().agencyShareCoins,tier.agencyCoins);
     assert.equal(accrual.data().supportCoins,100000);
     assert.equal(hostMonth.data().supportCoins,100000);
+    assert.equal(hostMonth.data().publicSupportCoins,100000);
     assert.equal(
       hostMonth.data().publicRankingKey,
       agencyPublicRankingKey({
@@ -312,6 +313,8 @@ test("07-A Room and Chat use the same separated Agency Share accrual contract",a
   assert.equal(chatTx.data().agencyShareCoins,6000);
   assert.equal(roomHostMonth.data().supportCoins,100000);
   assert.equal(chatHostMonth.data().supportCoins,100000);
+  assert.equal(roomHostMonth.data().publicSupportCoins,100000);
+  assert.equal(chatHostMonth.data().publicSupportCoins,100000);
   assert.equal(
     roomHostMonth.data().publicRankingKey,
     agencyPublicRankingKey({
