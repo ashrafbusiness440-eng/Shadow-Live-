@@ -23,12 +23,17 @@ class _OwnerAgencyDashboardPageState extends State<OwnerAgencyDashboardPage> {
   late HostMyAgencyCoreData _data;
   OwnerAgencyPerformanceData? _performance;
   OwnerAgencyStatement? _statement;
+  OwnerAgencyMembersData? _membersData;
+  List<OwnerAgencyPendingRequest>? _pendingRequests;
   bool _refreshing = false;
   bool _performanceLoading = false;
   bool _statementLoading = false;
+  bool _managementLoading = false;
+  bool _managementBusy = false;
   String? _error;
   String? _performanceError;
   String? _statementError;
+  String? _managementError;
 
   @override
   void initState() {
@@ -120,6 +125,176 @@ class _OwnerAgencyDashboardPageState extends State<OwnerAgencyDashboardPage> {
     }
   }
 
+  Future<void> _loadManagement() async {
+    if (_managementLoading) return;
+    setState(() {
+      _managementLoading = true;
+      _managementError = null;
+    });
+    try {
+      final agencyId = _data.agency.agencyId;
+      final members = await _ownerService.loadMembers(agencyId);
+      final pending = await _ownerService.loadPending(agencyId);
+      if (!mounted) return;
+      setState(() {
+        _membersData = members;
+        _pendingRequests = pending;
+        _managementLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _managementError = error.toString();
+        _managementLoading = false;
+      });
+    }
+  }
+
+  String _operationKey(String prefix) =>
+      '${prefix}_${DateTime.now().microsecondsSinceEpoch}';
+
+  Future<String?> _textDialog({
+    required String title,
+    required String hint,
+    bool digitsOnly = false,
+  }) async {
+    final controller = TextEditingController();
+    final value = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: controller,
+          keyboardType: digitsOnly ? TextInputType.number : TextInputType.text,
+          decoration: InputDecoration(hintText: hint),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('تأكيد'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return value?.trim();
+  }
+
+  Future<void> _runManagementAction(
+    Future<void> Function() action,
+  ) async {
+    if (_managementBusy) return;
+    setState(() {
+      _managementBusy = true;
+      _managementError = null;
+    });
+    try {
+      await action();
+      if (!mounted) return;
+      setState(() => _managementBusy = false);
+      await _loadManagement();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _managementError = error.toString();
+        _managementBusy = false;
+      });
+    }
+  }
+
+  Future<void> _inviteHost() async {
+    final publicId = await _textDialog(
+      title: 'دعوة مضيف',
+      hint: 'Public ID من 6 أرقام',
+      digitsOnly: true,
+    );
+    if (publicId == null || !RegExp(r'^\d{6}$').hasMatch(publicId)) return;
+    await _runManagementAction(
+      () => _ownerService.inviteHost(
+        agencyId: _data.agency.agencyId,
+        targetPublicId: publicId,
+        idempotencyKey: _operationKey('owner_invite'),
+      ),
+    );
+  }
+
+  Future<void> _setMemberRole(
+    OwnerAgencyMember member,
+    String role,
+  ) async {
+    if (member.role == role || member.role == 'owner') return;
+    await _runManagementAction(
+      () => _ownerService.setManagerRole(
+        agencyId: _data.agency.agencyId,
+        targetUid: member.uid,
+        targetRole: role,
+        idempotencyKey: _operationKey('owner_role'),
+      ),
+    );
+  }
+
+  Future<void> _removeMember(OwnerAgencyMember member) async {
+    if (member.role == 'owner') return;
+    final reason = await _textDialog(
+      title: 'إزالة عضو من الوكالة',
+      hint: 'السبب',
+    );
+    if (reason == null) return;
+    await _runManagementAction(
+      () => _ownerService.removeMember(
+        agencyId: _data.agency.agencyId,
+        targetUid: member.uid,
+        idempotencyKey: _operationKey('owner_remove'),
+        reason: reason,
+      ),
+    );
+  }
+
+  Future<void> _respondPending(
+    OwnerAgencyPendingRequest request,
+    String decision,
+  ) async {
+    final reason = decision == 'reject'
+        ? await _textDialog(
+            title: request.type == 'leave'
+                ? 'رفض طلب المغادرة'
+                : 'رفض طلب الانضمام',
+            hint: 'السبب',
+          )
+        : null;
+    if (decision == 'reject' && reason == null) return;
+    await _runManagementAction(() {
+      if (request.type == 'leave') {
+        return _ownerService.respondLeave(
+          requestId: request.requestId,
+          decision: decision,
+          idempotencyKey: _operationKey('owner_leave_response'),
+          reason: reason,
+        );
+      }
+      return _ownerService.respondJoin(
+        requestId: request.requestId,
+        decision: decision,
+        idempotencyKey: _operationKey('owner_join_response'),
+        reason: reason,
+      );
+    });
+  }
+
+  Future<void> _cancelInvite(OwnerAgencyPendingRequest request) async {
+    await _runManagementAction(
+      () => _ownerService.cancelRequest(
+        requestId: request.requestId,
+        idempotencyKey: _operationKey('owner_invite_cancel'),
+        reason: 'owner_cancelled_invite',
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ownerAllowed = _data.membershipRole == 'owner';
@@ -166,6 +341,25 @@ class _OwnerAgencyDashboardPageState extends State<OwnerAgencyDashboardPage> {
                       loading: _statementLoading,
                       error: _statementError,
                       onLoad: _loadPreviousStatement,
+                    ),
+                    const SizedBox(height: 18),
+                    const _SectionTitle(
+                      icon: Icons.manage_accounts_rounded,
+                      title: 'إدارة الوكالة',
+                    ),
+                    const SizedBox(height: 10),
+                    _AgencyManagementCard(
+                      data: _membersData,
+                      pending: _pendingRequests,
+                      loading: _managementLoading,
+                      busy: _managementBusy,
+                      error: _managementError,
+                      onLoad: _loadManagement,
+                      onInvite: _inviteHost,
+                      onSetRole: _setMemberRole,
+                      onRemove: _removeMember,
+                      onRespond: _respondPending,
+                      onCancelInvite: _cancelInvite,
                     ),
                     if (_error != null) ...[
                       const SizedBox(height: 12),
@@ -597,6 +791,284 @@ class _AgencyStatementCard extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _AgencyManagementCard extends StatelessWidget {
+  const _AgencyManagementCard({
+    required this.data,
+    required this.pending,
+    required this.loading,
+    required this.busy,
+    required this.error,
+    required this.onLoad,
+    required this.onInvite,
+    required this.onSetRole,
+    required this.onRemove,
+    required this.onRespond,
+    required this.onCancelInvite,
+  });
+
+  final OwnerAgencyMembersData? data;
+  final List<OwnerAgencyPendingRequest>? pending;
+  final bool loading;
+  final bool busy;
+  final String? error;
+  final Future<void> Function() onLoad;
+  final Future<void> Function() onInvite;
+  final Future<void> Function(OwnerAgencyMember, String) onSetRole;
+  final Future<void> Function(OwnerAgencyMember) onRemove;
+  final Future<void> Function(OwnerAgencyPendingRequest, String) onRespond;
+  final Future<void> Function(OwnerAgencyPendingRequest) onCancelInvite;
+
+  @override
+  Widget build(BuildContext context) {
+    if (data == null) {
+      return Container(
+        key: const Key('owner-agency-management-lazy'),
+        padding: const EdgeInsets.all(18),
+        decoration: _cardDecoration(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'الأعضاء والطلبات لا يتم تحميلهم تلقائيًا لتخفيف الضغط.',
+              style: TextStyle(color: Colors.white70, height: 1.4),
+            ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              key: const Key('owner-agency-management-load'),
+              onPressed: loading ? null : onLoad,
+              icon: const Icon(Icons.manage_accounts_rounded),
+              label: Text(loading ? 'جارٍ التحميل...' : 'فتح إدارة الوكالة'),
+            ),
+            if (error != null) ...[
+              const SizedBox(height: 8),
+              const Text(
+                'تعذر تحميل إدارة الوكالة.',
+                style: TextStyle(color: Colors.redAccent),
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+
+    final requests = pending ?? const <OwnerAgencyPendingRequest>[];
+    return Container(
+      key: const Key('owner-agency-management-card'),
+      padding: const EdgeInsets.all(18),
+      decoration: _cardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(child: _Metric(label: 'الأعضاء', value: '${data!.memberCount}')),
+              const SizedBox(width: 8),
+              Expanded(child: _Metric(label: 'Hosts', value: '${data!.hostCount}')),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _Metric(
+                  label: 'الإدارة',
+                  value: '${data!.managerCount + data!.seniorManagerCount}',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  key: const Key('owner-agency-invite-host'),
+                  onPressed: busy ? null : onInvite,
+                  icon: const Icon(Icons.person_add_alt_1_rounded),
+                  label: const Text('دعوة مضيف'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                key: const Key('owner-agency-management-refresh'),
+                onPressed: loading || busy ? null : onLoad,
+                icon: const Icon(Icons.refresh_rounded),
+              ),
+            ],
+          ),
+          if (data!.truncated) ...[
+            const SizedBox(height: 8),
+            const Text(
+              'المعروض أول 25 عضو فقط.',
+              style: TextStyle(color: Colors.amberAccent, fontSize: 12),
+            ),
+          ],
+          const SizedBox(height: 14),
+          const Text(
+            'الأعضاء',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 6),
+          ...data!.members.map(
+            (member) => _MemberManagementTile(
+              member: member,
+              busy: busy,
+              onSetRole: onSetRole,
+              onRemove: onRemove,
+            ),
+          ),
+          const Divider(color: Color(0x22FFFFFF), height: 26),
+          Text(
+            'الطلبات المعلّقة (${requests.length})',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          if (requests.isEmpty)
+            const Text(
+              'لا توجد طلبات معلّقة.',
+              style: TextStyle(color: Colors.white54),
+            )
+          else
+            ...requests.map(
+              (request) => _PendingManagementTile(
+                request: request,
+                busy: busy,
+                onRespond: onRespond,
+                onCancelInvite: onCancelInvite,
+              ),
+            ),
+          if (error != null) ...[
+            const SizedBox(height: 8),
+            const Text(
+              'آخر عملية لم تكتمل. أعد التحديث قبل المحاولة مجددًا.',
+              style: TextStyle(color: Colors.redAccent, fontSize: 12),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _MemberManagementTile extends StatelessWidget {
+  const _MemberManagementTile({
+    required this.member,
+    required this.busy,
+    required this.onSetRole,
+    required this.onRemove,
+  });
+
+  final OwnerAgencyMember member;
+  final bool busy;
+  final Future<void> Function(OwnerAgencyMember, String) onSetRole;
+  final Future<void> Function(OwnerAgencyMember) onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final owner = member.role == 'owner';
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      title: Text(
+        member.displayName ?? member.publicId ?? member.uid,
+        style: const TextStyle(color: Colors.white),
+      ),
+      subtitle: Text(
+        '${member.publicId ?? '—'} • ${_roleLabel(member.role)}',
+        style: const TextStyle(color: Colors.white54),
+      ),
+      trailing: owner
+          ? const Icon(Icons.workspace_premium_rounded, color: Color(0xFFFFD875))
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                PopupMenuButton<String>(
+                  key: Key('owner-member-role-${member.uid}'),
+                  enabled: !busy,
+                  onSelected: (role) => onSetRole(member, role),
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'host', child: Text('Host')),
+                    PopupMenuItem(value: 'manager', child: Text('Manager')),
+                    PopupMenuItem(
+                      value: 'senior_manager',
+                      child: Text('Senior Manager'),
+                    ),
+                  ],
+                  icon: const Icon(Icons.admin_panel_settings_rounded),
+                ),
+                IconButton(
+                  key: Key('owner-member-remove-${member.uid}'),
+                  onPressed: busy ? null : () => onRemove(member),
+                  icon: const Icon(Icons.person_remove_alt_1_rounded),
+                ),
+              ],
+            ),
+    );
+  }
+}
+
+class _PendingManagementTile extends StatelessWidget {
+  const _PendingManagementTile({
+    required this.request,
+    required this.busy,
+    required this.onRespond,
+    required this.onCancelInvite,
+  });
+
+  final OwnerAgencyPendingRequest request;
+  final bool busy;
+  final Future<void> Function(OwnerAgencyPendingRequest, String) onRespond;
+  final Future<void> Function(OwnerAgencyPendingRequest) onCancelInvite;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = request.type == 'leave'
+        ? 'طلب مغادرة'
+        : request.type == 'join'
+            ? 'طلب انضمام'
+            : 'دعوة معلّقة';
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      title: Text(
+        request.userPublicId ?? request.uid,
+        style: const TextStyle(color: Colors.white),
+      ),
+      subtitle: Text(label, style: const TextStyle(color: Colors.white54)),
+      trailing: request.type == 'invite'
+          ? TextButton(
+              onPressed: busy ? null : () => onCancelInvite(request),
+              child: const Text('إلغاء'),
+            )
+          : Wrap(
+              spacing: 4,
+              children: [
+                TextButton(
+                  onPressed: busy ? null : () => onRespond(request, 'reject'),
+                  child: const Text('رفض'),
+                ),
+                FilledButton(
+                  onPressed: busy ? null : () => onRespond(request, 'accept'),
+                  child: const Text('قبول'),
+                ),
+              ],
+            ),
+    );
+  }
+}
+
+String _roleLabel(String role) {
+  switch (role) {
+    case 'owner':
+      return 'Owner';
+    case 'senior_manager':
+      return 'Senior Manager';
+    case 'manager':
+      return 'Manager';
+    default:
+      return 'Host';
   }
 }
 

@@ -80,4 +80,49 @@ void main() {
     expect(missing.agencyPayableCoins, 0);
     expect(missing.agencyDiamonds, 0);
   });
+  test('12-C parses bounded Owner management payloads', () {
+    final members = OwnerAgencyMembersData.fromJson({
+      'agency': {
+        'memberCount': 4,
+        'hostCount': 1,
+        'managerCount': 2,
+        'seniorManagerCount': 0,
+      },
+      'truncated': false,
+      'members': [
+        {
+          'uid': 'owner_1',
+          'role': 'owner',
+          'status': 'active',
+          'publicId': '812301',
+          'displayName': 'Owner',
+        },
+        {
+          'uid': 'manager_1',
+          'role': 'manager',
+          'status': 'active',
+          'publicId': '812302',
+          'displayName': 'Manager',
+        },
+      ],
+    });
+
+    expect(members.memberCount, 4);
+    expect(members.hostCount, 1);
+    expect(members.managerCount, 2);
+    expect(members.members.length, 2);
+    expect(members.members[1].role, 'manager');
+
+    final pending = OwnerAgencyPendingRequest.fromJson({
+      'requestId': 'leave_1',
+      'uid': 'host_1',
+      'userPublicId': '812399',
+      'type': 'leave',
+      'status': 'pending',
+    });
+    expect(pending.type, 'leave');
+    expect(pending.status, 'pending');
+    expect(pending.userPublicId, '812399');
+  });
+
 }

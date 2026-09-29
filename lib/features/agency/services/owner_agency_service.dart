@@ -180,6 +180,98 @@ class OwnerAgencyStatement {
   }
 }
 
+class OwnerAgencyMember {
+  const OwnerAgencyMember({
+    required this.uid,
+    required this.role,
+    required this.status,
+    required this.publicId,
+    required this.displayName,
+  });
+
+  final String uid;
+  final String role;
+  final String status;
+  final String? publicId;
+  final String? displayName;
+
+  factory OwnerAgencyMember.fromJson(Map<String, dynamic> json) {
+    return OwnerAgencyMember(
+      uid: (json['uid'] ?? '').toString(),
+      role: (json['role'] ?? '').toString(),
+      status: (json['status'] ?? '').toString(),
+      publicId: _nullable(json['publicId']),
+      displayName: _nullable(json['displayName']),
+    );
+  }
+}
+
+class OwnerAgencyMembersData {
+  const OwnerAgencyMembersData({
+    required this.memberCount,
+    required this.hostCount,
+    required this.managerCount,
+    required this.seniorManagerCount,
+    required this.truncated,
+    required this.members,
+  });
+
+  final int memberCount;
+  final int hostCount;
+  final int managerCount;
+  final int seniorManagerCount;
+  final bool truncated;
+  final List<OwnerAgencyMember> members;
+
+  factory OwnerAgencyMembersData.fromJson(Map<String, dynamic> json) {
+    final agency = json['agency'];
+    final members = json['members'];
+    if (agency is! Map || members is! List) {
+      throw const FormatException('invalid_owner_agency_members');
+    }
+    final agencyMap = Map<String, dynamic>.from(agency);
+    return OwnerAgencyMembersData(
+      memberCount: _int(agencyMap['memberCount']),
+      hostCount: _int(agencyMap['hostCount']),
+      managerCount: _int(agencyMap['managerCount']),
+      seniorManagerCount: _int(agencyMap['seniorManagerCount']),
+      truncated: json['truncated'] == true,
+      members: members
+          .whereType<Map>()
+          .map((item) => OwnerAgencyMember.fromJson(
+                Map<String, dynamic>.from(item),
+              ))
+          .toList(growable: false),
+    );
+  }
+}
+
+class OwnerAgencyPendingRequest {
+  const OwnerAgencyPendingRequest({
+    required this.requestId,
+    required this.uid,
+    required this.userPublicId,
+    required this.type,
+    required this.status,
+  });
+
+  final String requestId;
+  final String uid;
+  final String? userPublicId;
+  final String type;
+  final String status;
+
+  factory OwnerAgencyPendingRequest.fromJson(Map<String, dynamic> json) {
+    return OwnerAgencyPendingRequest(
+      requestId: (json['requestId'] ?? '').toString(),
+      uid: (json['uid'] ?? '').toString(),
+      userPublicId: _nullable(json['userPublicId']),
+      type: (json['type'] ?? '').toString(),
+      status: (json['status'] ?? '').toString(),
+    );
+  }
+}
+
 class OwnerAgencyService {
   OwnerAgencyService({
     http.Client? client,
@@ -204,6 +296,31 @@ class OwnerAgencyService {
     final token = await _auth.currentUser?.getIdToken();
     if (token == null || token.isEmpty) throw StateError('not_signed_in');
     return token;
+  }
+
+  Future<Map<String, dynamic>> _postMembership(
+    Map<String, dynamic> body,
+  ) async {
+    final token = await _token();
+    final response = await _client.post(
+      Uri.parse('$_baseUrl/agency-membership'),
+      headers: {
+        'authorization': 'Bearer $token',
+        'content-type': 'application/json',
+      },
+      body: jsonEncode(body),
+    );
+    Map<String, dynamic> decoded = const {};
+    try {
+      final value = jsonDecode(response.body);
+      if (value is Map) decoded = Map<String, dynamic>.from(value);
+    } catch (_) {}
+    if (response.statusCode != 200 || decoded['ok'] != true) {
+      throw StateError(
+        (decoded['code'] ?? 'agency_membership_management_failed').toString(),
+      );
+    }
+    return decoded;
   }
 
   Future<Map<String, dynamic>> _post(Map<String, dynamic> body) async {
@@ -242,9 +359,127 @@ class OwnerAgencyService {
     return OwnerAgencyStatement.fromJson(body);
   }
 
+  Future<OwnerAgencyMembersData> loadMembers(String agencyId) async {
+    final body = await _postMembership({
+      'action': 'listAgencyMembers',
+      'agencyId': agencyId.trim(),
+      'limit': 25,
+    });
+    return OwnerAgencyMembersData.fromJson(body);
+  }
+
+  Future<List<OwnerAgencyPendingRequest>> loadPending(String agencyId) async {
+    final body = await _postMembership({
+      'action': 'listAgencyPending',
+      'agencyId': agencyId.trim(),
+      'limit': 25,
+    });
+    final requests = body['requests'];
+    if (requests is! List) {
+      throw const FormatException('invalid_owner_agency_pending');
+    }
+    return requests
+        .whereType<Map>()
+        .map((item) => OwnerAgencyPendingRequest.fromJson(
+              Map<String, dynamic>.from(item),
+            ))
+        .toList(growable: false);
+  }
+
+  Future<void> inviteHost({
+    required String agencyId,
+    required String targetPublicId,
+    required String idempotencyKey,
+  }) async {
+    await _postMembership({
+      'action': 'invite',
+      'agencyId': agencyId.trim(),
+      'targetPublicId': targetPublicId.trim(),
+      'idempotencyKey': idempotencyKey,
+    });
+  }
+
+  Future<void> respondJoin({
+    required String requestId,
+    required String decision,
+    required String idempotencyKey,
+    String? reason,
+  }) async {
+    await _postMembership({
+      'action': 'respond',
+      'requestId': requestId,
+      'decision': decision,
+      'idempotencyKey': idempotencyKey,
+      if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+    });
+  }
+
+  Future<void> respondLeave({
+    required String requestId,
+    required String decision,
+    required String idempotencyKey,
+    String? reason,
+  }) async {
+    await _postMembership({
+      'action': 'respondLeave',
+      'requestId': requestId,
+      'decision': decision,
+      'idempotencyKey': idempotencyKey,
+      if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+    });
+  }
+
+  Future<void> cancelRequest({
+    required String requestId,
+    required String idempotencyKey,
+    String? reason,
+  }) async {
+    await _postMembership({
+      'action': 'cancel',
+      'requestId': requestId,
+      'idempotencyKey': idempotencyKey,
+      if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+    });
+  }
+
+  Future<void> setManagerRole({
+    required String agencyId,
+    required String targetUid,
+    required String targetRole,
+    required String idempotencyKey,
+  }) async {
+    await _postMembership({
+      'action': 'setManagerRole',
+      'agencyId': agencyId.trim(),
+      'targetUid': targetUid,
+      'targetRole': targetRole,
+      'idempotencyKey': idempotencyKey,
+    });
+  }
+
+  Future<void> removeMember({
+    required String agencyId,
+    required String targetUid,
+    required String idempotencyKey,
+    String? reason,
+  }) async {
+    await _postMembership({
+      'action': 'remove',
+      'agencyId': agencyId.trim(),
+      'targetUid': targetUid,
+      'idempotencyKey': idempotencyKey,
+      if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+    });
+  }
+
   void close() {
     if (_ownsClient) _client.close();
   }
+}
+
+String? _nullable(dynamic value) {
+  final text = (value ?? '').toString().trim();
+  return text.isEmpty ? null : text;
 }
 
 int _int(dynamic value) {
