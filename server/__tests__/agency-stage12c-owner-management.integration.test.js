@@ -308,7 +308,7 @@ test("12-C management UI is lazy bounded and listener-free", () => {
     "export async function respondAgencyLeaveRequest",
   );
   const end = membership.indexOf(
-    "function responseFingerprint",
+    "export async function respondAgencyMembershipRequest",
     start,
   );
   const source = membership.slice(start, end);
