@@ -11,6 +11,7 @@ class HostAgencyIdentity {
     required this.country,
     required this.status,
     required this.logoUrl,
+    required this.roomId,
   });
 
   final String agencyId;
@@ -19,6 +20,7 @@ class HostAgencyIdentity {
   final String? country;
   final String status;
   final String? logoUrl;
+  final String? roomId;
 
   factory HostAgencyIdentity.fromJson(Map<String, dynamic> json) {
     return HostAgencyIdentity(
@@ -28,6 +30,7 @@ class HostAgencyIdentity {
       country: _nullableString(json['country']),
       status: (json['status'] ?? 'active').toString().trim(),
       logoUrl: _nullableString(json['logoUrl']),
+      roomId: _nullableString(json['roomId']),
     );
   }
 }
