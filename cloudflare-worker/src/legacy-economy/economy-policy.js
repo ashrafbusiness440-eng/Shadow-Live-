@@ -100,6 +100,100 @@ export function resolveRevenuePolicy(
   };
 }
 
+export function resolveGiftRevenuePolicy(
+  economy,
+  receiverData,
+  monthlyGrossCoins,
+  agencyId,
+  monthKey,
+) {
+  const revenue=resolveRevenuePolicy(
+    economy,
+    receiverData,
+    monthlyGrossCoins,
+    agencyId,
+    monthKey,
+    0,
+  );
+  const agencyShareBps=agencyId
+    ? Math.max(
+        0,
+        Math.min(10000-revenue.hostShareBps,revenue.agencyBaseShareBps),
+      )
+    : 0;
+  return {
+    ...revenue,
+    agencyBonusBps:0,
+    agencyShareBps,
+    platformShareBps:Math.max(
+      0,
+      10000-revenue.hostShareBps-agencyShareBps,
+    ),
+    activeHostCount:0,
+    agencyBonusDeferredToMonthEnd:Boolean(agencyId),
+  };
+}
+
+function agencyBonusFinancialInteger(value,field){
+  const parsed=Number(value);
+  if(!Number.isSafeInteger(parsed)||parsed<0){
+    throw new Error("invalid_agency_bonus_"+field);
+  }
+  return parsed;
+}
+
+export function calculateAgencyMonthlyBonus(
+  economy,
+  {
+    supportCoins=0,
+    activeHostCount=0,
+    hasAgency=true,
+  }={},
+) {
+  const support=agencyBonusFinancialInteger(
+    supportCoins,
+    "support_coins",
+  );
+  const activeHosts=agencyBonusFinancialInteger(
+    activeHostCount,
+    "active_host_count",
+  );
+  const requiredActiveHosts=Math.max(
+    1,
+    Math.min(100000,Number(economy?.agencyBonusActiveHosts||10)),
+  );
+  const configuredBonusBps=Math.max(
+    0,
+    Math.min(3000,Number(economy?.agencyPerformanceBonusBps??200)),
+  );
+  if(
+    !Number.isSafeInteger(requiredActiveHosts) ||
+    !Number.isSafeInteger(configuredBonusBps)
+  ){
+    throw new Error("invalid_agency_bonus_policy");
+  }
+  const policyEnabled=economy?.enabled!==false;
+  const eligible=
+    policyEnabled &&
+    hasAgency===true &&
+    activeHosts>=requiredActiveHosts &&
+    configuredBonusBps>0;
+  const agencyBonusBps=eligible?configuredBonusBps:0;
+  const rawBonus=
+    (BigInt(support)*BigInt(agencyBonusBps))/10000n;
+  if(rawBonus>BigInt(Number.MAX_SAFE_INTEGER)){
+    throw new Error("invalid_agency_bonus_amount");
+  }
+  return {
+    eligible,
+    supportCoins:support,
+    activeHostCount:activeHosts,
+    requiredActiveHosts,
+    agencyBonusBps,
+    agencyBonusCoins:Number(rawBonus),
+  };
+}
+
 export function activityPayoutBps(economy, qualifiedDays) {
   const defaults = {
     "0":0,"1":0,"2":0,"3":2500,"4":4000,
