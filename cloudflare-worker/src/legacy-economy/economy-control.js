@@ -339,9 +339,19 @@ export async function settleAgencyMonth(db,actorUid,agencyIdInput,monthInput,opt
     db.collection("agency_policy_overrides").doc(agencyId).get(),
   ]);
   const economy=economySnap.exists?(economySnap.data()||{}):{};
+  const agencyOverride=overrideSnap.exists?(overrideSnap.data()||{}):{};
+  const bonusOverrideApplied=
+    Object.prototype.hasOwnProperty.call(
+      agencyOverride,
+      "agencyPerformanceBonusBps",
+    ) ||
+    Object.prototype.hasOwnProperty.call(
+      agencyOverride,
+      "agencyBonusActiveHosts",
+    );
   const bonusPolicy=effectiveAgencyBonusPolicy(
     economy,
-    overrideSnap.exists?(overrideSnap.data()||{}):{},
+    agencyOverride,
   );
   const coinsPerDiamond=agencyFinancialInteger(
     economy.coinsPerDiamond ?? 10000,
@@ -507,7 +517,7 @@ export async function settleAgencyMonth(db,actorUid,agencyIdInput,monthInput,opt
       agencyActiveHostCount:activeHostCount,
       agencyRequiredActiveHosts:bonus.requiredActiveHosts,
       platformAfterAgencyBonusCoins,
-      bonusPolicySource:overrideSnap.exists?"agency_override":"global",
+      bonusPolicySource:bonusOverrideApplied?"agency_override":"global",
       bonusAccrualId:statementId,
       shardCount:AGENCY_MONTHLY_ACCRUAL_SHARDS,
       coinsPerDiamond,
@@ -540,7 +550,7 @@ export async function settleAgencyMonth(db,actorUid,agencyIdInput,monthInput,opt
       bonusCoins:agencyBonusCoins,
       agencyPayableCoins,
       platformAfterAgencyBonusCoins,
-      policySource:overrideSnap.exists?"agency_override":"global",
+      policySource:bonusOverrideApplied?"agency_override":"global",
       status:"settled",
       statementId,
       ledgerId,
