@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../profile/screens/public_profile_screen.dart';
@@ -25,6 +27,11 @@ class _PublicAgencyPageState extends State<PublicAgencyPage> {
   String? _error;
   String? _nextCursor;
   bool _hasMore = false;
+  PublicAgencyRankingData? _ranking;
+  PublicAgencyArchiveData? _archive;
+  bool _rankingLoading = true;
+  bool _archiveLoading = false;
+  String? _rankingError;
 
   @override
   void initState() {
@@ -55,6 +62,7 @@ class _PublicAgencyPageState extends State<PublicAgencyPage> {
         _hasMore = data.hasMore;
         _loading = false;
       });
+      unawaited(_loadRanking(month: _ranking?.month));
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -86,6 +94,118 @@ class _PublicAgencyPageState extends State<PublicAgencyPage> {
       setState(() => _loadingMore = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('تعذر تحميل المزيد: $error')),
+      );
+    }
+  }
+
+  Future<void> _loadRanking({String? month}) async {
+    if (_rankingLoading && _ranking != null) return;
+    setState(() {
+      _rankingLoading = true;
+      _rankingError = null;
+    });
+    try {
+      final data = await _service.loadRanking(
+        agencyId: widget.agencyId,
+        month: month,
+      );
+      if (!mounted) return;
+      setState(() {
+        _ranking = data;
+        _rankingLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _rankingError = error.toString();
+        _rankingLoading = false;
+      });
+    }
+  }
+
+  Future<void> _showArchive() async {
+    if (_archiveLoading) return;
+    setState(() => _archiveLoading = true);
+    try {
+      final archive = _archive ??
+          await _service.loadArchive(agencyId: widget.agencyId);
+      if (!mounted) return;
+      setState(() {
+        _archive = archive;
+        _archiveLoading = false;
+      });
+
+      final selected = await showModalBottomSheet<String>(
+        context: context,
+        backgroundColor: const Color(0xFF0D1120),
+        showDragHandle: true,
+        builder: (sheetContext) {
+          final months = archive.months;
+          return Directionality(
+            textDirection: TextDirection.rtl,
+            child: SafeArea(
+              child: ListView(
+                shrinkWrap: true,
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 22),
+                children: [
+                  const Text(
+                    'الأرشيف الشهري',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  ListTile(
+                    leading: const Icon(
+                      Icons.bolt_rounded,
+                      color: Color(0xFFB99CFF),
+                    ),
+                    title: Text(
+                      'الشهر الحالي — ' + _monthLabel(archive.currentMonth),
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    onTap: () =>
+                        Navigator.pop(sheetContext, archive.currentMonth),
+                  ),
+                  if (months.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 18),
+                      child: Text(
+                        'لا يوجد أرشيف شهري سابق فيه نشاط حتى الآن.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.white54),
+                      ),
+                    )
+                  else
+                    ...months.map(
+                      (month) => ListTile(
+                        leading: const Icon(
+                          Icons.history_rounded,
+                          color: Colors.white54,
+                        ),
+                        title: Text(
+                          _monthLabel(month),
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                        onTap: () => Navigator.pop(sheetContext, month),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+      if (selected != null && mounted) {
+        unawaited(_loadRanking(month: selected));
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _archiveLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذر تحميل الأرشيف: $error')),
       );
     }
   }
@@ -142,6 +262,16 @@ class _PublicAgencyPageState extends State<PublicAgencyPage> {
             onTap: () => _openProfile(data.owner),
           ),
           const SizedBox(height: 20),
+          _RankingSection(
+            data: _ranking,
+            loading: _rankingLoading,
+            archiveLoading: _archiveLoading,
+            error: _rankingError,
+            onRetry: () => _loadRanking(month: _ranking?.month),
+            onArchive: _showArchive,
+            onPersonTap: _openProfile,
+          ),
+          const SizedBox(height: 20),
           _SectionTitle(
             icon: Icons.groups_rounded,
             title: 'Hosts (' + data.agency.hostCount.toString() + ')',
@@ -179,6 +309,218 @@ class _PublicAgencyPageState extends State<PublicAgencyPage> {
           ],
         ],
       ),
+    );
+  }
+}
+
+class _RankingSection extends StatelessWidget {
+  const _RankingSection({
+    required this.data,
+    required this.loading,
+    required this.archiveLoading,
+    required this.error,
+    required this.onRetry,
+    required this.onArchive,
+    required this.onPersonTap,
+  });
+
+  final PublicAgencyRankingData? data;
+  final bool loading;
+  final bool archiveLoading;
+  final String? error;
+  final Future<void> Function() onRetry;
+  final Future<void> Function() onArchive;
+  final void Function(PublicAgencyPerson) onPersonTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ranking = data;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0E1324),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.emoji_events_rounded,
+                color: Color(0xFFFFD875),
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Top 10 — الترتيب',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: archiveLoading ? null : onArchive,
+                icon: archiveLoading
+                    ? const SizedBox.square(
+                        dimension: 15,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.history_rounded, size: 18),
+                label: const Text('الأرشيف'),
+              ),
+            ],
+          ),
+          if (ranking != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              _monthLabel(ranking.month) +
+                  (ranking.month == ranking.currentMonth
+                      ? ' • الشهر الحالي'
+                      : ' • أرشيف'),
+              style: const TextStyle(
+                color: Colors.white54,
+                fontSize: 12,
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          if (loading && ranking == null)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 20),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (error != null && ranking == null)
+            _RankingError(onRetry: onRetry)
+          else if (ranking == null || ranking.top10.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 18),
+              child: Text(
+                'لا يوجد ترتيب لهذا الشهر بعد.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white54),
+              ),
+            )
+          else
+            ...ranking.top10.map(
+              (entry) => Padding(
+                padding: const EdgeInsets.only(bottom: 7),
+                child: _RankingTile(
+                  entry: entry,
+                  onTap: () => onPersonTap(entry.person),
+                ),
+              ),
+            ),
+          if (loading && ranking != null)
+            const LinearProgressIndicator(minHeight: 2),
+        ],
+      ),
+    );
+  }
+}
+
+class _RankingTile extends StatelessWidget {
+  const _RankingTile({
+    required this.entry,
+    required this.onTap,
+  });
+
+  final PublicAgencyRankingEntry entry;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final person = entry.person;
+    final imageUrl = person.profileImageUrl?.trim() ?? '';
+    return Material(
+      color: Colors.black26,
+      borderRadius: BorderRadius.circular(13),
+      child: ListTile(
+        dense: true,
+        onTap: onTap,
+        leading: SizedBox(
+          width: 42,
+          child: Text(
+            '#' + entry.rank.toString(),
+            textDirection: TextDirection.ltr,
+            style: TextStyle(
+              color: entry.rank <= 3
+                  ? const Color(0xFFFFD875)
+                  : Colors.white60,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        title: Row(
+          children: [
+            CircleAvatar(
+              radius: 16,
+              backgroundColor: const Color(0xFF2A3150),
+              backgroundImage:
+                  imageUrl.isEmpty ? null : NetworkImage(imageUrl),
+              child: imageUrl.isEmpty
+                  ? const Icon(
+                      Icons.person_rounded,
+                      size: 17,
+                      color: Colors.white70,
+                    )
+                  : null,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                person.displayName,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+        subtitle: person.publicId == null
+            ? null
+            : Text(
+                'ID ' + person.publicId!,
+                textDirection: TextDirection.ltr,
+                style: const TextStyle(color: Colors.white38),
+              ),
+        trailing: Text(
+          _formatCoins(entry.supportCoins),
+          textDirection: TextDirection.ltr,
+          style: const TextStyle(
+            color: Color(0xFFB99CFF),
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RankingError extends StatelessWidget {
+  const _RankingError({required this.onRetry});
+
+  final Future<void> Function() onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        const Text(
+          'تعذر تحميل الترتيب.',
+          style: TextStyle(color: Colors.white54),
+        ),
+        const SizedBox(height: 6),
+        TextButton(
+          onPressed: onRetry,
+          child: const Text('إعادة المحاولة'),
+        ),
+      ],
     );
   }
 }
@@ -430,4 +772,46 @@ class _ErrorState extends StatelessWidget {
       ),
     );
   }
+}
+
+
+String _formatCoins(int value) {
+  if (value >= 1000000000) {
+    final amount = value / 1000000000;
+    return amount.toStringAsFixed(value % 1000000000 == 0 ? 0 : 1) + 'B';
+  }
+  if (value >= 1000000) {
+    final amount = value / 1000000;
+    return amount.toStringAsFixed(value % 1000000 == 0 ? 0 : 1) + 'M';
+  }
+  if (value >= 1000) {
+    final amount = value / 1000;
+    return amount.toStringAsFixed(value % 1000 == 0 ? 0 : 1) + 'K';
+  }
+  return value.toString();
+}
+
+String _monthLabel(String value) {
+  final parts = value.split('-');
+  if (parts.length != 2) return value;
+  final month = int.tryParse(parts[1]);
+  final year = int.tryParse(parts[0]);
+  const names = <String>[
+    'يناير',
+    'فبراير',
+    'مارس',
+    'أبريل',
+    'مايو',
+    'يونيو',
+    'يوليو',
+    'أغسطس',
+    'سبتمبر',
+    'أكتوبر',
+    'نوفمبر',
+    'ديسمبر',
+  ];
+  if (month == null || month < 1 || month > 12 || year == null) {
+    return value;
+  }
+  return names[month - 1] + ' ' + year.toString();
 }

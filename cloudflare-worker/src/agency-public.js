@@ -2,12 +2,19 @@ import { json, readJson, firestoreQuotaResponse } from "./http.js";
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { boundedAgencyPageSize } from "./agency-data-model.js";
+import {
+  currentAgencyMonthKey,
+  normalizeAgencyMonthKey,
+} from "./agency-policy.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 
 const clean = (value) => String(value ?? "").trim();
 const PUBLIC_HOST_PAGE_DEFAULT = 12;
 export const PUBLIC_HOST_PAGE_MAX = 12;
 const PUBLIC_USER_READ_CONCURRENCY = 4;
+const PUBLIC_ARCHIVE_READ_CONCURRENCY = 3;
+export const PUBLIC_RANKING_MAX = 10;
+export const PUBLIC_ARCHIVE_MONTHS_MAX = 6;
 
 class ApiError extends Error {
   constructor(code, status = 400, details = null) {
@@ -25,6 +32,55 @@ function validAgencyId(value) {
 function validCursor(value) {
   const cursor = clean(value);
   return !cursor || (cursor.length <= 180 && !cursor.includes("/"));
+}
+
+function previousAgencyMonths(currentMonth, count = PUBLIC_ARCHIVE_MONTHS_MAX) {
+  const [yearText, monthText] = currentMonth.split("-");
+  const year = Number(yearText);
+  const monthIndex = Number(monthText) - 1;
+  return Array.from({ length: count }, (_, index) => {
+    const date = new Date(Date.UTC(year, monthIndex - index - 1, 1));
+    return date.toISOString().slice(0, 7);
+  });
+}
+
+function allowedRankingMonths(now = new Date()) {
+  const current = currentAgencyMonthKey(now);
+  return new Set([current, ...previousAgencyMonths(current)]);
+}
+
+async function readActiveAgency(db, agencyId) {
+  const agencySnap = await db.get("agencies/" + agencyId);
+  if (!agencySnap.exists) throw new ApiError("agency_not_found", 404);
+  const agency = agencySnap.data || {};
+  if (clean(agency.status) !== "active") {
+    throw new ApiError("agency_unavailable", 404);
+  }
+  return agency;
+}
+
+function rankingSupportCoins(value) {
+  const parsed = Number(value ?? 0);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) {
+    throw new ApiError("agency_ranking_corrupt", 409);
+  }
+  return parsed;
+}
+
+async function readPublicPeople(db, rows, uidResolver) {
+  const snapshots = [];
+  for (
+    let offset = 0;
+    offset < rows.length;
+    offset += PUBLIC_USER_READ_CONCURRENCY
+  ) {
+    const batch = rows.slice(offset, offset + PUBLIC_USER_READ_CONCURRENCY);
+    const readBatch = await Promise.all(
+      batch.map((row) => db.get("users/" + uidResolver(row))),
+    );
+    snapshots.push(...readBatch);
+  }
+  return snapshots;
 }
 
 function publicPersonSummary(uidInput, userSnap) {
@@ -66,13 +122,7 @@ export async function loadPublicAgencyPage(db, body = {}) {
     boundedAgencyPageSize(body.limit, PUBLIC_HOST_PAGE_DEFAULT),
   );
 
-  const agencySnap = await db.get("agencies/" + agencyId);
-  if (!agencySnap.exists) throw new ApiError("agency_not_found", 404);
-
-  const agency = agencySnap.data || {};
-  if (clean(agency.status) !== "active") {
-    throw new ApiError("agency_unavailable", 404);
-  }
+  const agency = await readActiveAgency(db, agencyId);
 
   const ownerUid = clean(agency.ownerUid);
   if (!ownerUid) throw new ApiError("agency_owner_missing", 409);
@@ -159,6 +209,119 @@ export async function loadPublicAgencyPage(db, body = {}) {
   };
 }
 
+
+export async function loadPublicAgencyRanking(
+  db,
+  body = {},
+  now = new Date(),
+) {
+  const agencyId = clean(body.agencyId);
+  if (!validAgencyId(agencyId)) {
+    throw new ApiError("invalid_agency_id", 400);
+  }
+  await readActiveAgency(db, agencyId);
+
+  const currentMonth = currentAgencyMonthKey(now);
+  let month = currentMonth;
+  if (clean(body.month)) {
+    try {
+      month = normalizeAgencyMonthKey(body.month);
+    } catch (_) {
+      throw new ApiError("invalid_agency_month", 400);
+    }
+  }
+  if (!allowedRankingMonths(now).has(month)) {
+    throw new ApiError("agency_ranking_month_out_of_range", 400);
+  }
+
+  const rows = await db.runQuery("agency_host_monthly", {
+    filters: [
+      { field: "agencyId", op: "==", value: agencyId },
+      { field: "month", op: "==", value: month },
+    ],
+    orderBy: [
+      { field: "supportCoins", direction: "desc" },
+      { field: "hostUid", direction: "asc" },
+    ],
+    limit: PUBLIC_RANKING_MAX,
+  });
+
+  const normalizedRows = rows.map((row) => {
+    const monthly = row?.data || {};
+    const hostUid = clean(monthly.hostUid);
+    if (
+      !hostUid ||
+      clean(monthly.agencyId) !== agencyId ||
+      clean(monthly.month) !== month
+    ) {
+      throw new ApiError("agency_ranking_corrupt", 409);
+    }
+    return {
+      hostUid,
+      supportCoins: rankingSupportCoins(monthly.supportCoins),
+    };
+  });
+
+  const userSnaps = await readPublicPeople(
+    db,
+    normalizedRows,
+    (row) => row.hostUid,
+  );
+
+  return {
+    ok: true,
+    month,
+    currentMonth,
+    top10: normalizedRows.map((row, index) => ({
+      rank: index + 1,
+      supportCoins: row.supportCoins,
+      ...publicPersonSummary(row.hostUid, userSnaps[index]),
+    })),
+  };
+}
+
+export async function loadPublicAgencyArchive(
+  db,
+  body = {},
+  now = new Date(),
+) {
+  const agencyId = clean(body.agencyId);
+  if (!validAgencyId(agencyId)) {
+    throw new ApiError("invalid_agency_id", 400);
+  }
+  await readActiveAgency(db, agencyId);
+
+  const currentMonth = currentAgencyMonthKey(now);
+  const candidates = previousAgencyMonths(currentMonth);
+  const months = [];
+
+  for (
+    let offset = 0;
+    offset < candidates.length;
+    offset += PUBLIC_ARCHIVE_READ_CONCURRENCY
+  ) {
+    const batch = candidates.slice(
+      offset,
+      offset + PUBLIC_ARCHIVE_READ_CONCURRENCY,
+    );
+    const snaps = await Promise.all(
+      batch.map((month) =>
+        db.get("agency_support_stats/" + agencyId + "/monthly/" + month),
+      ),
+    );
+    for (let index = 0; index < batch.length; index += 1) {
+      if (snaps[index]?.exists) months.push(batch[index]);
+    }
+  }
+
+  return {
+    ok: true,
+    currentMonth,
+    months,
+    maxMonths: PUBLIC_ARCHIVE_MONTHS_MAX,
+  };
+}
+
 export async function agencyPublic(request, env) {
   if (request.method !== "POST") {
     return json(request, env, { ok: false, code: "method_not_allowed" }, 405);
@@ -167,9 +330,35 @@ export async function agencyPublic(request, env) {
   try {
     await verifyFirebaseIdToken(request, env);
     const body = await readJson(request);
-    annotatePressureRequest(request, { action: "agencyPublic:load" });
-    const result = await loadPublicAgencyPage(firestoreClient(env), body);
-    return json(request, env, result);
+    const action = clean(body.action) || "page";
+    const db = firestoreClient(env);
+
+    if (action === "ranking") {
+      annotatePressureRequest(request, { action: "agencyPublic:ranking" });
+      return json(
+        request,
+        env,
+        await loadPublicAgencyRanking(db, body),
+      );
+    }
+    if (action === "archive") {
+      annotatePressureRequest(request, { action: "agencyPublic:archive" });
+      return json(
+        request,
+        env,
+        await loadPublicAgencyArchive(db, body),
+      );
+    }
+    if (action !== "page") {
+      throw new ApiError("invalid_agency_public_action", 400);
+    }
+
+    annotatePressureRequest(request, { action: "agencyPublic:page" });
+    return json(
+      request,
+      env,
+      await loadPublicAgencyPage(db, body),
+    );
   } catch (error) {
     if (error instanceof ApiError) {
       return json(

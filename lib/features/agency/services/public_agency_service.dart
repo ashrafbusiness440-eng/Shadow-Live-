@@ -55,6 +55,88 @@ class PublicAgencyPerson {
   }
 }
 
+class PublicAgencyRankingEntry {
+  const PublicAgencyRankingEntry({
+    required this.rank,
+    required this.supportCoins,
+    required this.person,
+  });
+
+  final int rank;
+  final int supportCoins;
+  final PublicAgencyPerson person;
+
+  factory PublicAgencyRankingEntry.fromJson(Map<String, dynamic> json) {
+    return PublicAgencyRankingEntry(
+      rank: _nonNegativeInt(json['rank']),
+      supportCoins: _nonNegativeInt(json['supportCoins']),
+      person: PublicAgencyPerson.fromJson(json),
+    );
+  }
+}
+
+class PublicAgencyRankingData {
+  const PublicAgencyRankingData({
+    required this.month,
+    required this.currentMonth,
+    required this.top10,
+  });
+
+  final String month;
+  final String currentMonth;
+  final List<PublicAgencyRankingEntry> top10;
+
+  factory PublicAgencyRankingData.fromJson(Map<String, dynamic> json) {
+    final raw = json['top10'];
+    return PublicAgencyRankingData(
+      month: (json['month'] ?? '').toString().trim(),
+      currentMonth: (json['currentMonth'] ?? '').toString().trim(),
+      top10: raw is List
+          ? raw
+              .whereType<Map>()
+              .map(
+                (entry) => PublicAgencyRankingEntry.fromJson(
+                  Map<String, dynamic>.from(entry),
+                ),
+              )
+              .where(
+                (entry) =>
+                    entry.rank > 0 &&
+                    entry.rank <= 10 &&
+                    entry.person.uid.isNotEmpty,
+              )
+              .toList(growable: false)
+          : const <PublicAgencyRankingEntry>[],
+    );
+  }
+}
+
+class PublicAgencyArchiveData {
+  const PublicAgencyArchiveData({
+    required this.currentMonth,
+    required this.months,
+    required this.maxMonths,
+  });
+
+  final String currentMonth;
+  final List<String> months;
+  final int maxMonths;
+
+  factory PublicAgencyArchiveData.fromJson(Map<String, dynamic> json) {
+    final raw = json['months'];
+    return PublicAgencyArchiveData(
+      currentMonth: (json['currentMonth'] ?? '').toString().trim(),
+      months: raw is List
+          ? raw
+              .map((item) => item.toString().trim())
+              .where((item) => item.isNotEmpty)
+              .toList(growable: false)
+          : const <String>[],
+      maxMonths: _nonNegativeInt(json['maxMonths']),
+    );
+  }
+}
+
 class PublicAgencyPageData {
   const PublicAgencyPageData({
     required this.agency,
@@ -125,11 +207,9 @@ class PublicAgencyService {
     return token;
   }
 
-  Future<PublicAgencyPageData> load({
-    required String agencyId,
-    String? cursor,
-    int limit = 12,
-  }) async {
+  Future<Map<String, dynamic>> _post(
+    Map<String, dynamic> payload,
+  ) async {
     final token = await _idToken();
     final response = await _client.post(
       Uri.parse('$_baseUrl/agency-public'),
@@ -137,12 +217,7 @@ class PublicAgencyService {
         'authorization': 'Bearer $token',
         'content-type': 'application/json',
       },
-      body: jsonEncode({
-        'agencyId': agencyId.trim(),
-        'limit': limit.clamp(1, 12),
-        if (cursor != null && cursor.trim().isNotEmpty)
-          'cursor': cursor.trim(),
-      }),
+      body: jsonEncode(payload),
     );
 
     Map<String, dynamic> body = const <String, dynamic>{};
@@ -156,7 +231,45 @@ class PublicAgencyService {
         (body['code'] ?? 'public_agency_load_failed').toString(),
       );
     }
+    return body;
+  }
+
+  Future<PublicAgencyPageData> load({
+    required String agencyId,
+    String? cursor,
+    int limit = 12,
+  }) async {
+    final body = await _post({
+      'action': 'page',
+      'agencyId': agencyId.trim(),
+      'limit': limit.clamp(1, 12),
+      if (cursor != null && cursor.trim().isNotEmpty)
+        'cursor': cursor.trim(),
+    });
     return PublicAgencyPageData.fromJson(body);
+  }
+
+  Future<PublicAgencyRankingData> loadRanking({
+    required String agencyId,
+    String? month,
+  }) async {
+    final body = await _post({
+      'action': 'ranking',
+      'agencyId': agencyId.trim(),
+      if (month != null && month.trim().isNotEmpty)
+        'month': month.trim(),
+    });
+    return PublicAgencyRankingData.fromJson(body);
+  }
+
+  Future<PublicAgencyArchiveData> loadArchive({
+    required String agencyId,
+  }) async {
+    final body = await _post({
+      'action': 'archive',
+      'agencyId': agencyId.trim(),
+    });
+    return PublicAgencyArchiveData.fromJson(body);
   }
 
   void close() {

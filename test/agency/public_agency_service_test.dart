@@ -75,4 +75,50 @@ void main() {
     expect(data.hasMore, isFalse);
     expect(data.nextCursor, isNull);
   });
+
+  test('Stage 10-B parses Top 10 public support ranking without financial fields', () {
+    final data = PublicAgencyRankingData.fromJson({
+      'month': '2026-09',
+      'currentMonth': '2026-09',
+      'top10': [
+        {
+          'rank': 1,
+          'supportCoins': 1500000,
+          'uid': 'host_a',
+          'publicId': '200001',
+          'displayName': 'Host A',
+          'profileImageUrl': null,
+        },
+        {
+          'rank': 2,
+          'supportCoins': 750000,
+          'uid': 'host_b',
+          'publicId': '200002',
+          'displayName': 'Host B',
+          'profileImageUrl': 'https://example.invalid/b.webp',
+        },
+      ],
+    });
+
+    expect(data.month, '2026-09');
+    expect(data.currentMonth, '2026-09');
+    expect(data.top10.length, 2);
+    expect(data.top10.first.rank, 1);
+    expect(data.top10.first.supportCoins, 1500000);
+    expect(data.top10.first.person.uid, 'host_a');
+    expect(data.top10.last.rank, 2);
+  });
+
+  test('Stage 10-B parses bounded monthly archive months in order', () {
+    final data = PublicAgencyArchiveData.fromJson({
+      'currentMonth': '2026-09',
+      'months': ['2026-08', '2026-06'],
+      'maxMonths': 6,
+    });
+
+    expect(data.currentMonth, '2026-09');
+    expect(data.months, ['2026-08', '2026-06']);
+    expect(data.maxMonths, 6);
+  });
+
 }
