@@ -51,7 +51,7 @@ test("agency monthly settlement reads a fixed 32-shard set with direct document 
     true,
   );
   const start = sourceText.indexOf("export async function settleAgencyMonth");
-  const end = sourceText.indexOf("export async function handler", start);
+  const end = sourceText.indexOf("const AGENCY_SURPLUS_PAGE_MAX=25", start);
   const settlement = sourceText.slice(start, end);
   assert.equal(settlement.includes(".where("), false);
   assert.equal(sourceText.includes('collection("agency_monthly_accrual_shards")'), true);
@@ -241,7 +241,7 @@ test("Stage 07-B Agency Wallet settlement stays bounded and never replays Host s
   ]) {
     const sourceText = source(relativePath);
     const start = sourceText.indexOf("export async function settleAgencyMonth");
-    const end = sourceText.indexOf("export async function handler", start);
+    const end = sourceText.indexOf("const AGENCY_SURPLUS_PAGE_MAX=25", start);
     const settlement = sourceText.slice(start, end);
     assert.equal(start >= 0, true);
     assert.equal(settlement.includes(".where("), false);
@@ -296,7 +296,7 @@ test("Stage 08-B monthly Bonus settlement stays bounded and query-free", () => {
   ]) {
     const sourceText = source(relativePath);
     const start = sourceText.indexOf("export async function settleAgencyMonth");
-    const end = sourceText.indexOf("export async function handler", start);
+    const end = sourceText.indexOf("const AGENCY_SURPLUS_PAGE_MAX=25", start);
     const settlement = sourceText.slice(start, end);
     assert.equal(start >= 0, true);
     assert.equal(settlement.includes("AGENCY_MONTHLY_ACCRUAL_SHARDS"), true);
@@ -318,7 +318,7 @@ test("Stage 08-C replay and policy snapshot stay bounded and direct", () => {
   ]) {
     const sourceText = source(relativePath);
     const start = sourceText.indexOf("export async function settleAgencyMonth");
-    const end = sourceText.indexOf("export async function handler", start);
+    const end = sourceText.indexOf("const AGENCY_SURPLUS_PAGE_MAX=25", start);
     const settlement = sourceText.slice(start, end);
     assert.equal(settlement.includes("tx.get(bonusAccrualRef)"), true);
     assert.equal(settlement.includes("tx.get(economyRef)"), true);
@@ -339,5 +339,38 @@ test("Stage 09-A surplus snapshot adds no Gift hot-path policy reads", () => {
     assert.equal(sourceText.includes("targetThresholdCoins"), true);
     assert.equal(sourceText.includes("surplusToShadow"), false);
     assert.equal(sourceText.includes('agency_policy_overrides/'), false);
+  }
+});
+
+
+test("Stage 09-B surplus settlement stays bounded paginated and off Gift hot path", () => {
+  for (const relativePath of [
+    "../economy/economy-control.js",
+    "../../cloudflare-worker/src/legacy-economy/economy-control.js",
+  ]) {
+    const sourceText = source(relativePath);
+    const start = sourceText.indexOf("const AGENCY_SURPLUS_PAGE_MAX=25");
+    const end = sourceText.indexOf("export async function handler", start);
+    const settlement = sourceText.slice(start, end);
+    assert.equal(start >= 0, true);
+    assert.equal(settlement.includes("const AGENCY_SURPLUS_PAGE_MAX=25"), true);
+    assert.equal(settlement.includes('"surplusPageKey"'), true);
+    assert.equal(settlement.includes('.orderBy("surplusPageKey","asc")'), true);
+    assert.equal(settlement.includes(".limit(pageSize+1)"), true);
+    assert.equal(settlement.includes(".list("), false);
+    assert.equal(settlement.includes('collection("agency_surplus_policy_snapshots")'), true);
+    assert.equal(settlement.includes('collection("agency_surplus_settlements")'), true);
+    assert.equal(settlement.includes('hostSalaryRepaidAtMonthEnd:false'), true);
+    assert.equal(settlement.includes('collection("users").where'), false);
+  }
+
+  for (const relativePath of [
+    "../../cloudflare-worker/src/room-gift.js",
+    "../../cloudflare-worker/src/chat-safety-actions.js",
+  ]) {
+    const gift = source(relativePath);
+    assert.equal(gift.includes("surplusPageKey"), true);
+    assert.equal(gift.includes("agency_surplus_settlements/"), false);
+    assert.equal(gift.includes("agency_surplus_policy_snapshots/"), false);
   }
 });

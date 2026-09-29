@@ -442,6 +442,19 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    match /agency_surplus_policy_snapshots/{snapshotId} {
+      allow read: if canPlatformViewAgencyFinance()
+        || isAgencyOwnerMember(resource.data.agencyId);
+      allow create, update, delete: if false;
+    }
+
+    match /agency_surplus_settlements/{settlementId} {
+      allow read: if canPlatformViewAgencyFinance()
+        || isAgencyOwnerMember(resource.data.agencyId)
+        || (signedIn() && resource.data.hostUid == request.auth.uid);
+      allow create, update, delete: if false;
+    }
+
     match /agency_transfers/{transferId} {
       allow read: if canPlatformViewAgencyFinance()
         || isAgencyOwnerMember(resource.data.agencyId);

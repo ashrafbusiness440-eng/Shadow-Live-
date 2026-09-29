@@ -91,6 +91,8 @@ export const AGENCY_COLLECTIONS = Object.freeze({
   monthlyStatements: "agency_monthly_statements",
   wallets: "agency_wallets",
   bonusAccruals: "agency_bonus_accruals",
+  surplusPolicySnapshots: "agency_surplus_policy_snapshots",
+  surplusSettlements: "agency_surplus_settlements",
   transfers: "agency_transfers",
   statusEvents: "agency_status_events",
 });
@@ -255,6 +257,14 @@ export function agencyCarryoverPath(agencyId) {
 
 export function agencyBonusAccrualPath(agencyId, month) {
   return `${AGENCY_COLLECTIONS.bonusAccruals}/${safePart(agencyId, "agency_id")}__${normalizeMonthKey(month)}`;
+}
+
+export function agencySurplusPolicySnapshotPath(agencyId, month) {
+  return `${AGENCY_COLLECTIONS.surplusPolicySnapshots}/${safePart(agencyId, "agency_id")}__${normalizeMonthKey(month)}`;
+}
+
+export function agencySurplusSettlementPath(agencyId, month, uid) {
+  return `${AGENCY_COLLECTIONS.surplusSettlements}/${safePart(agencyId, "agency_id")}__${normalizeMonthKey(month)}__${safePart(uid, "user_id")}`;
 }
 
 export function agencyTransferPath(operationId) {

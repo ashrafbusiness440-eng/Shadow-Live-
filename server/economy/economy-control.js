@@ -6,6 +6,8 @@ import { economyPermissions } from "./economy-permissions.js";
 import {
   agencyFinancialInteger,
   assertAgencySettlementMonthClosed,
+  calculateAgencyMonthEndSurplusFromSnapshot,
+  resolveAgencySurplusPolicy,
   validateAgencySettlementTotals,
 } from "./agency-policy.js";
 
@@ -662,6 +664,399 @@ export async function settleAgencyMonth(db,actorUid,agencyIdInput,monthInput,opt
   });
 }
 
+
+const AGENCY_SURPLUS_PAGE_MAX=25;
+
+function agencySurplusPageSize(value){
+  const parsed=Number(value);
+  if(!Number.isFinite(parsed))return 25;
+  return Math.max(1,Math.min(AGENCY_SURPLUS_PAGE_MAX,Math.floor(parsed)));
+}
+
+function agencySurplusPagePrefix(agencyId,month){
+  return agencyId+"__"+month+"__";
+}
+
+function validateFrozenAgencySurplusPolicy(data,agencyId,month){
+  if(
+    clean(data.agencyId)!==agencyId ||
+    clean(data.month)!==month ||
+    typeof data.surplusToShadow!=="boolean" ||
+    !["shadow_profit","host_wallet_coins"].includes(clean(data.mode))
+  ){
+    throw Error("agency_surplus_policy_snapshot_conflict");
+  }
+  return {
+    agencyId,
+    month,
+    surplusToShadow:data.surplusToShadow,
+    mode:clean(data.mode),
+    snapshotId:agencyId+"__"+month,
+  };
+}
+
+async function freezeAgencySurplusPolicy(db,actorUid,agencyId,month){
+  const snapshotId=agencyId+"__"+month;
+  const snapshotRef=db.collection("agency_surplus_policy_snapshots").doc(snapshotId);
+  const overrideRef=db.collection("agency_policy_overrides").doc(agencyId);
+  return db.runTransaction(async tx=>{
+    const existing=await tx.get(snapshotRef);
+    if(existing.exists){
+      return validateFrozenAgencySurplusPolicy(
+        existing.data()||{},
+        agencyId,
+        month,
+      );
+    }
+    const overrideSnap=await tx.get(overrideRef);
+    const policy=resolveAgencySurplusPolicy(
+      overrideSnap.exists?(overrideSnap.data()||{}):{},
+    );
+    if(!policy.configured){
+      throw Error("agency_surplus_policy_unconfigured");
+    }
+    const snapshot={
+      agencyId,
+      month,
+      surplusToShadow:policy.surplusToShadow,
+      mode:policy.mode,
+      snapshotId,
+    };
+    tx.create(snapshotRef,{
+      ...snapshot,
+      frozenBy:actorUid,
+      status:"frozen",
+      createdAt:FieldValue.serverTimestamp(),
+    });
+    return snapshot;
+  });
+}
+
+function assertAgencyHostSurplusReplay({
+  settlement,
+  ledger,
+  agencyId,
+  month,
+  hostUid,
+  settlementId,
+  ledgerId,
+  policySnapshot,
+}){
+  if(
+    clean(settlement.status)!=="settled" ||
+    clean(settlement.agencyId)!==agencyId ||
+    clean(settlement.month)!==month ||
+    clean(settlement.hostUid)!==hostUid ||
+    clean(settlement.ledgerId)!==ledgerId ||
+    clean(settlement.policySnapshotId)!==policySnapshot.snapshotId ||
+    settlement.surplusToShadow!==policySnapshot.surplusToShadow ||
+    (
+      clean(settlement.destination)!==clean(policySnapshot.mode) &&
+      clean(settlement.destination)!=="none"
+    ) ||
+    settlement.hostSalaryRepaidAtMonthEnd!==false
+  ){
+    throw Error("agency_surplus_settlement_conflict");
+  }
+  const surplusCoins=agencyFinancialInteger(
+    settlement.surplusCoins||0,
+    "surplus_settlement_coins",
+  );
+  if(
+    clean(ledger.sourceType)!=="agency_surplus_settlement" ||
+    clean(ledger.sourceId)!==settlementId ||
+    clean(ledger.idempotencyKey)!==ledgerId ||
+    clean(ledger.agencyId)!==agencyId ||
+    clean(ledger.hostUid)!==hostUid ||
+    clean(ledger.settlementMonth)!==month ||
+    agencyFinancialInteger(ledger.delta||0,"surplus_ledger_delta")!==surplusCoins
+  ){
+    throw Error("agency_surplus_ledger_conflict");
+  }
+}
+
+async function settleAgencyHostSurplus(
+  db,
+  actorUid,
+  policySnapshot,
+  hostMonthlyId,
+){
+  const agencyId=policySnapshot.agencyId;
+  const month=policySnapshot.month;
+  const monthlyRef=db.collection("agency_host_monthly").doc(hostMonthlyId);
+  const settlementId=hostMonthlyId;
+  const settlementRef=db.collection("agency_surplus_settlements").doc(settlementId);
+  const ledgerId="agency_host_surplus_"+settlementId;
+  const ledgerRef=db.collection("financial_ledger").doc(ledgerId);
+  const auditRef=db.collection("admin_audit_logs").doc(
+    "agency_host_surplus_"+settlementId,
+  );
+
+  return db.runTransaction(async tx=>{
+    const [existing,existingLedger,monthlySnap]=await Promise.all([
+      tx.get(settlementRef),
+      tx.get(ledgerRef),
+      tx.get(monthlyRef),
+    ]);
+    if(!monthlySnap.exists){
+      throw Error("agency_host_month_not_found");
+    }
+    const monthly=monthlySnap.data()||{};
+    const hostUid=clean(monthly.hostUid);
+    const expectedPageKey=agencyId+"__"+month+"__"+hostUid;
+    if(
+      !hostUid ||
+      clean(monthly.agencyId)!==agencyId ||
+      clean(monthly.month)!==month ||
+      clean(monthly.surplusPageKey)!==expectedPageKey ||
+      hostMonthlyId!==expectedPageKey
+    ){
+      throw Error("agency_host_month_conflict");
+    }
+
+    if(existing.exists){
+      if(!existingLedger.exists){
+        throw Error("agency_surplus_ledger_missing");
+      }
+      const settlement=existing.data()||{};
+      assertAgencyHostSurplusReplay({
+        settlement,
+        ledger:existingLedger.data()||{},
+        agencyId,
+        month,
+        hostUid,
+        settlementId,
+        ledgerId,
+        policySnapshot,
+      });
+      return {
+        alreadySettled:true,
+        hostUid,
+        settlement,
+      };
+    }
+    if(existingLedger.exists){
+      throw Error("agency_surplus_ledger_conflict");
+    }
+
+    const progressCoins=agencyFinancialInteger(
+      monthly.hostShareCoins||0,
+      "surplus_host_share_coins",
+    );
+    const targetThresholdCoins=agencyFinancialInteger(
+      monthly.targetThresholdCoins||0,
+      "surplus_target_threshold_coins",
+    );
+    const salaryPaidDiamonds=agencyFinancialInteger(
+      monthly.salaryPaidDiamonds||0,
+      "surplus_salary_paid_diamonds",
+    );
+    const surplus=calculateAgencyMonthEndSurplusFromSnapshot({
+      progressCoins,
+      targetThresholdCoins,
+      surplusToShadow:policySnapshot.surplusToShadow,
+    });
+
+    let openingCoins=0;
+    let closingCoins=0;
+    let userRef=null;
+    if(surplus.destination==="host_wallet_coins"&&surplus.surplusCoins>0){
+      userRef=db.collection("users").doc(hostUid);
+      const userSnap=await tx.get(userRef);
+      if(!userSnap.exists){
+        throw Error("surplus_host_not_found");
+      }
+      const user=userSnap.data()||{};
+      openingCoins=agencyFinancialInteger(
+        user.coins??user.balance??0,
+        "surplus_host_wallet_coins",
+      );
+      closingCoins=openingCoins+surplus.surplusCoins;
+      if(!Number.isSafeInteger(closingCoins)){
+        throw Error("invalid_agency_financial_surplus_closing_coins");
+      }
+    }
+
+    const hostWalletCoins=
+      surplus.destination==="host_wallet_coins"
+        ? surplus.surplusCoins
+        : 0;
+    const shadowProfitCoins=
+      surplus.destination==="shadow_profit"
+        ? surplus.surplusCoins
+        : 0;
+    const settlement={
+      agencyId,
+      month,
+      hostUid,
+      hostMonthlyId,
+      policySnapshotId:policySnapshot.snapshotId,
+      surplusToShadow:policySnapshot.surplusToShadow,
+      destination:surplus.destination,
+      progressCoins:surplus.progressCoins,
+      targetThresholdCoins:surplus.completedTargetCoins,
+      surplusCoins:surplus.surplusCoins,
+      hostWalletCoins,
+      shadowProfitCoins,
+      salaryPaidDiamondsSnapshot:salaryPaidDiamonds,
+      hostSalaryMode:"target_immediate",
+      hostSalaryRepaidAtMonthEnd:false,
+      ledgerId,
+      status:"settled",
+      settledBy:actorUid,
+    };
+
+    if(userRef){
+      tx.update(userRef,{
+        coins:closingCoins,
+        walletUpdatedAt:FieldValue.serverTimestamp(),
+      });
+    }
+    tx.update(monthlyRef,{
+      surplusSettlementId:settlementId,
+      surplusPolicySnapshotId:policySnapshot.snapshotId,
+      surplusToShadow:policySnapshot.surplusToShadow,
+      surplusMode:surplus.destination,
+      surplusCoins:surplus.surplusCoins,
+      surplusHostWalletCoins:hostWalletCoins,
+      surplusShadowProfitCoins:shadowProfitCoins,
+      surplusSettledAt:FieldValue.serverTimestamp(),
+    });
+    tx.create(settlementRef,{
+      ...settlement,
+      settledAt:FieldValue.serverTimestamp(),
+    });
+    tx.create(ledgerRef,{
+      agencyId,
+      hostUid,
+      userId:surplus.destination==="host_wallet_coins"?hostUid:null,
+      accountType:
+        surplus.destination==="shadow_profit"
+          ?"shadow_profit"
+          :surplus.destination==="host_wallet_coins"
+            ?"host_wallet"
+            :"none",
+      asset:"coins",
+      delta:surplus.surplusCoins,
+      openingBalance:
+        surplus.destination==="host_wallet_coins"
+          ?openingCoins
+          :null,
+      closingBalance:
+        surplus.destination==="host_wallet_coins"
+          ?closingCoins
+          :null,
+      reason:
+        surplus.destination==="shadow_profit"
+          ?"agency_host_surplus_shadow_profit"
+          :surplus.destination==="host_wallet_coins"
+            ?"agency_host_surplus_host_wallet"
+            :"agency_host_surplus_none",
+      sourceType:"agency_surplus_settlement",
+      sourceId:settlementId,
+      settlementMonth:month,
+      idempotencyKey:ledgerId,
+      targetThresholdCoins:surplus.completedTargetCoins,
+      progressCoins:surplus.progressCoins,
+      salaryPaidDiamondsSnapshot:salaryPaidDiamonds,
+      hostSalaryRepaidAtMonthEnd:false,
+      createdAt:FieldValue.serverTimestamp(),
+    });
+    tx.create(auditRef,{
+      actorUid,
+      action:"settleAgencyHostSurplus",
+      targetType:"agency_host_monthly",
+      targetId:hostMonthlyId,
+      agencyId,
+      hostUid,
+      month,
+      after:settlement,
+      createdAt:FieldValue.serverTimestamp(),
+    });
+    return {
+      alreadySettled:false,
+      hostUid,
+      settlement,
+    };
+  });
+}
+
+export async function settleAgencyHostSurplusPage(
+  db,
+  actorUid,
+  agencyIdInput,
+  monthInput,
+  options={},
+){
+  const agencyId=clean(agencyIdInput);
+  if(!/^[A-Za-z0-9_-]{3,180}$/.test(agencyId)){
+    throw Error("invalid_settlement");
+  }
+  const month=assertAgencySettlementMonthClosed(
+    monthInput,
+    options.now??new Date(),
+  );
+  const pageSize=agencySurplusPageSize(options.limit);
+  const prefix=agencySurplusPagePrefix(agencyId,month);
+  const cursor=clean(options.cursor);
+  if(
+    cursor &&
+    (
+      cursor.length>420 ||
+      !cursor.startsWith(prefix) ||
+      cursor.includes("/")
+    )
+  ){
+    throw Error("invalid_surplus_cursor");
+  }
+
+  const policySnapshot=await freezeAgencySurplusPolicy(
+    db,
+    actorUid,
+    agencyId,
+    month,
+  );
+
+  let query=db.collection("agency_host_monthly");
+  query=query.where(
+    "surplusPageKey",
+    cursor?">":">=",
+    cursor||prefix,
+  );
+  query=query.where("surplusPageKey","<",prefix+"\uf8ff");
+  query=query.orderBy("surplusPageKey","asc").limit(pageSize+1);
+  const page=await query.get();
+  const pageDocs=page.docs.slice(0,pageSize);
+  const results=[];
+  for(const doc of pageDocs){
+    results.push(await settleAgencyHostSurplus(
+      db,
+      actorUid,
+      policySnapshot,
+      doc.id,
+    ));
+  }
+
+  const hasMore=page.docs.length>pageSize;
+  const lastProcessed=pageDocs.at(-1);
+  const nextCursor=hasMore&&lastProcessed
+    ? clean(lastProcessed.data()?.surplusPageKey)
+    : null;
+  return {
+    agencyId,
+    month,
+    policySnapshot,
+    pageSize,
+    processedCount:results.length,
+    settledCount:results.filter(item=>!item.alreadySettled).length,
+    duplicateCount:results.filter(item=>item.alreadySettled).length,
+    done:!hasMore,
+    nextCursor,
+    results,
+  };
+}
+
+
 export async function handler(req,res){
   if(cors(req,res))return;
   if(req.method!=="POST")return out(res,405,{ok:false,code:"method_not_allowed"});
@@ -746,14 +1141,43 @@ export async function handler(req,res){
       return out(res,200,{ok:true,...result});
     }
 
+    if(action==="settleAgencyHostSurplusPage"){
+      if(!canSettleAgency)throw Error("settlement_forbidden");
+      const result=await settleAgencyHostSurplusPage(
+        db,
+        uid,
+        req.body?.agencyId,
+        req.body?.month,
+        {
+          limit:req.body?.limit,
+          cursor:req.body?.cursor,
+        },
+      );
+      return out(res,200,{ok:true,...result});
+    }
+
     return out(res,400,{ok:false,code:"invalid_action"});
   }catch(error){
     const code=clean(error?.message)||"server_error";
     const status=code==="unauthorized"?401:
       ["forbidden","owner_required","settlement_forbidden"].includes(code)?403:
       ["user_not_found","settlement_not_found"].includes(code)?404:
-      ["invalid_query","invalid_reason","invalid_action","invalid_settlement","invalid_agency_month"].includes(code)?400:
-      code==="agency_month_not_closed"?409:500;
+      [
+        "invalid_query",
+        "invalid_reason",
+        "invalid_action",
+        "invalid_settlement",
+        "invalid_agency_month",
+        "invalid_surplus_cursor",
+      ].includes(code)?400:
+      [
+        "agency_month_not_closed",
+        "agency_surplus_policy_unconfigured",
+        "agency_surplus_policy_snapshot_conflict",
+        "agency_host_month_conflict",
+        "agency_surplus_settlement_conflict",
+        "agency_surplus_ledger_conflict",
+      ].includes(code)?409:500;
     return out(res,status,{ok:false,code});
   }
 }
