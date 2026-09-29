@@ -1,0 +1,178 @@
+import 'dart:convert';
+
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
+
+class PublicAgencyIdentity {
+  const PublicAgencyIdentity({
+    required this.agencyId,
+    required this.publicId,
+    required this.name,
+    required this.country,
+    required this.memberCount,
+    required this.hostCount,
+  });
+
+  final String agencyId;
+  final String publicId;
+  final String name;
+  final String? country;
+  final int memberCount;
+  final int hostCount;
+
+  factory PublicAgencyIdentity.fromJson(Map<String, dynamic> json) {
+    return PublicAgencyIdentity(
+      agencyId: (json['agencyId'] ?? '').toString().trim(),
+      publicId: (json['publicId'] ?? json['agencyId'] ?? '').toString().trim(),
+      name: (json['name'] ?? 'Shadow Live Agency').toString().trim(),
+      country: _nullableString(json['country']),
+      memberCount: _nonNegativeInt(json['memberCount']),
+      hostCount: _nonNegativeInt(json['hostCount']),
+    );
+  }
+}
+
+class PublicAgencyPerson {
+  const PublicAgencyPerson({
+    required this.uid,
+    required this.publicId,
+    required this.displayName,
+    required this.profileImageUrl,
+    this.joinedAt,
+  });
+
+  final String uid;
+  final String? publicId;
+  final String displayName;
+  final String? profileImageUrl;
+  final String? joinedAt;
+
+  factory PublicAgencyPerson.fromJson(Map<String, dynamic> json) {
+    return PublicAgencyPerson(
+      uid: (json['uid'] ?? '').toString().trim(),
+      publicId: _nullableString(json['publicId']),
+      displayName: (json['displayName'] ?? 'Shadow Live').toString().trim(),
+      profileImageUrl: _nullableString(json['profileImageUrl']),
+      joinedAt: _nullableString(json['joinedAt']),
+    );
+  }
+}
+
+class PublicAgencyPageData {
+  const PublicAgencyPageData({
+    required this.agency,
+    required this.owner,
+    required this.hosts,
+    required this.limit,
+    required this.hasMore,
+    required this.nextCursor,
+  });
+
+  final PublicAgencyIdentity agency;
+  final PublicAgencyPerson owner;
+  final List<PublicAgencyPerson> hosts;
+  final int limit;
+  final bool hasMore;
+  final String? nextCursor;
+
+  factory PublicAgencyPageData.fromJson(Map<String, dynamic> json) {
+    final agency = json['agency'];
+    final owner = json['owner'];
+    final page = json['page'];
+    if (agency is! Map || owner is! Map || page is! Map) {
+      throw const FormatException('invalid_public_agency_page');
+    }
+    final rawHosts = json['hosts'];
+    return PublicAgencyPageData(
+      agency: PublicAgencyIdentity.fromJson(Map<String, dynamic>.from(agency)),
+      owner: PublicAgencyPerson.fromJson(Map<String, dynamic>.from(owner)),
+      hosts: rawHosts is List
+          ? rawHosts
+              .whereType<Map>()
+              .map((entry) => PublicAgencyPerson.fromJson(
+                    Map<String, dynamic>.from(entry),
+                  ))
+              .where((entry) => entry.uid.isNotEmpty)
+              .toList(growable: false)
+          : const <PublicAgencyPerson>[],
+      limit: _nonNegativeInt(page['limit']),
+      hasMore: page['hasMore'] == true,
+      nextCursor: _nullableString(page['nextCursor']),
+    );
+  }
+}
+
+class PublicAgencyService {
+  PublicAgencyService({
+    http.Client? client,
+    FirebaseAuth? auth,
+    String? baseUrl,
+  })  : _client = client ?? http.Client(),
+        _ownsClient = client == null,
+        _auth = auth ?? FirebaseAuth.instance,
+        _baseUrl = baseUrl ??
+            const String.fromEnvironment(
+              'SHADOW_CLOUDFLARE_API_BASE_URL',
+              defaultValue:
+                  'https://shadow-live.ashraf-business-440.workers.dev/api',
+            );
+
+  final http.Client _client;
+  final bool _ownsClient;
+  final FirebaseAuth _auth;
+  final String _baseUrl;
+
+  Future<String> _idToken() async {
+    final token = await _auth.currentUser?.getIdToken();
+    if (token == null || token.isEmpty) throw StateError('not_signed_in');
+    return token;
+  }
+
+  Future<PublicAgencyPageData> load({
+    required String agencyId,
+    String? cursor,
+    int limit = 20,
+  }) async {
+    final token = await _idToken();
+    final response = await _client.post(
+      Uri.parse('$_baseUrl/agency-public'),
+      headers: {
+        'authorization': 'Bearer $token',
+        'content-type': 'application/json',
+      },
+      body: jsonEncode({
+        'agencyId': agencyId.trim(),
+        'limit': limit.clamp(1, 24),
+        if (cursor != null && cursor.trim().isNotEmpty)
+          'cursor': cursor.trim(),
+      }),
+    );
+
+    Map<String, dynamic> body = const <String, dynamic>{};
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map) body = Map<String, dynamic>.from(decoded);
+    } catch (_) {}
+
+    if (response.statusCode != 200 || body['ok'] != true) {
+      throw StateError(
+        (body['code'] ?? 'public_agency_load_failed').toString(),
+      );
+    }
+    return PublicAgencyPageData.fromJson(body);
+  }
+
+  void close() {
+    if (_ownsClient) _client.close();
+  }
+}
+
+String? _nullableString(dynamic value) {
+  final normalized = (value ?? '').toString().trim();
+  return normalized.isEmpty ? null : normalized;
+}
+
+int _nonNegativeInt(dynamic value) {
+  final number = value is num ? value.toInt() : int.tryParse('$value') ?? 0;
+  return number < 0 ? 0 : number;
+}
