@@ -10,6 +10,7 @@ import {
   loadPublicAgencyArchive,
   loadPublicAgencyRanking,
 } from "../../cloudflare-worker/src/agency-public.js";
+import { agencyPublicRankingKey } from "../../cloudflare-worker/src/agency-policy.js";
 import { cloudflareFirestoreAdapter } from "./helpers/cloudflare-firestore-adapter.js";
 
 const app = initializeApp(
@@ -62,6 +63,12 @@ test("10-B Top 10 ranks by public supportCoins, not Host financial share", async
         agencyId,
         month: "2026-09",
         hostUid: hostA,
+        publicRankingKey: agencyPublicRankingKey({
+          agencyId,
+          month: "2026-09",
+          hostUid: hostA,
+          supportCoins: 300000,
+        }),
         supportCoins: 300000,
         hostShareCoins: 1,
         targetId: "private_target",
@@ -72,6 +79,12 @@ test("10-B Top 10 ranks by public supportCoins, not Host financial share", async
         agencyId,
         month: "2026-09",
         hostUid: hostB,
+        publicRankingKey: agencyPublicRankingKey({
+          agencyId,
+          month: "2026-09",
+          hostUid: hostB,
+          supportCoins: 100000,
+        }),
         supportCoins: 100000,
         hostShareCoins: 999999999,
         targetId: "private_target",
@@ -82,6 +95,12 @@ test("10-B Top 10 ranks by public supportCoins, not Host financial share", async
         agencyId,
         month: "2026-09",
         hostUid: hostC,
+        publicRankingKey: agencyPublicRankingKey({
+          agencyId,
+          month: "2026-09",
+          hostUid: hostC,
+          supportCoins: 200000,
+        }),
         supportCoins: 200000,
         hostShareCoins: 888888888,
         targetId: "private_target",
@@ -160,6 +179,12 @@ test("10-B pressure contract keeps ranking query at 10 and profile reads at max 
       agencyId,
       month: "2026-09",
       hostUid: "host_" + index,
+      publicRankingKey: agencyPublicRankingKey({
+        agencyId,
+        month: "2026-09",
+        hostUid: "host_" + index,
+        supportCoins: 1000000 - index,
+      }),
       supportCoins: 1000000 - index,
       hostShareCoins: 999999999,
     },
@@ -214,13 +239,21 @@ test("10-B pressure contract keeps ranking query at 10 and profile reads at max 
   assert.equal(calls.queries.length, 1);
   assert.equal(calls.queries[0].collectionPath, "agency_host_monthly");
   assert.equal(calls.queries[0].options.limit, PUBLIC_RANKING_MAX);
+  const prefix = agencyId + "__2026-09__";
   assert.deepEqual(calls.queries[0].options.filters, [
-    { field: "agencyId", op: "==", value: agencyId },
-    { field: "month", op: "==", value: "2026-09" },
+    {
+      field: "publicRankingKey",
+      op: ">=",
+      value: prefix,
+    },
+    {
+      field: "publicRankingKey",
+      op: "<",
+      value: prefix + "\uf8ff",
+    },
   ]);
   assert.deepEqual(calls.queries[0].options.orderBy, [
-    { field: "supportCoins", direction: "desc" },
-    { field: "hostUid", direction: "asc" },
+    { field: "publicRankingKey", direction: "asc" },
   ]);
   assert.ok(calls.maxActiveUserGets <= 4);
   assert.equal(calls.writes, 0);
@@ -324,19 +357,37 @@ test("10-B rejects ranking months outside current plus six-month archive window 
   assert.equal(queries, 0);
 });
 
-test("10-B Firestore index config exactly covers the bounded ranking query", () => {
+test("10-B ranking is single-field indexless and adds no Gift write operation", () => {
   const config = JSON.parse(
     fs.readFileSync("firestore.indexes.json", "utf8"),
   );
-  const index = (config.indexes || []).find(
-    (item) => item.collectionGroup === "agency_host_monthly",
-  );
-  assert.ok(index);
-  assert.equal(index.queryScope, "COLLECTION");
-  assert.deepEqual(index.fields, [
-    { fieldPath: "agencyId", order: "ASCENDING" },
-    { fieldPath: "month", order: "ASCENDING" },
-    { fieldPath: "supportCoins", order: "DESCENDING" },
-    { fieldPath: "hostUid", order: "ASCENDING" },
-  ]);
+  assert.deepEqual(config.indexes || [], []);
+
+  const high = agencyPublicRankingKey({
+    agencyId: "741299",
+    month: "2026-09",
+    hostUid: "host_high",
+    supportCoins: 900000,
+  });
+  const low = agencyPublicRankingKey({
+    agencyId: "741299",
+    month: "2026-09",
+    hostUid: "host_low",
+    supportCoins: 100000,
+  });
+  assert.ok(high < low, "higher support must sort first lexicographically");
+
+  for (const path of [
+    "cloudflare-worker/src/room-gift.js",
+    "cloudflare-worker/src/chat-safety-actions.js",
+  ]) {
+    const source = fs.readFileSync(path, "utf8");
+    assert.equal(source.includes("publicRankingKey: agencyPublicRankingKey({"), true);
+    assert.equal(
+      (source.match(/agency_host_monthly\//g) || []).length,
+      1,
+      "ranking must reuse the existing agency_host_monthly write",
+    );
+    assert.equal(source.includes("agency_public_rankings/"), false);
+  }
 });
