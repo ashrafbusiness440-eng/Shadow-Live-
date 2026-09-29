@@ -1603,6 +1603,7 @@ export async function propagateAgencyPolicyPage(
     ? {
         agencyId,
         policyVersion: clean(override.policyVersion) || null,
+        updatedAt: override.updatedAt || null,
         ...(Array.isArray(override.tiers) ? { tiers: override.tiers } : {}),
         ...(Array.isArray(override.targets) ? { targets: override.targets } : {}),
       }
@@ -1623,11 +1624,8 @@ export async function propagateAgencyPolicyPage(
       page.map((row) =>
         db.writeUpdate(
           "users/" + row.id,
-          {
-            agencyPolicySnapshot: snapshot,
-            agencyPolicyUpdatedAt: now,
-          },
-          ["agencyPolicySnapshot", "agencyPolicyUpdatedAt"],
+          { agencyPolicySnapshot: snapshot },
+          ["agencyPolicySnapshot"],
         )
       ),
     );
