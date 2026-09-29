@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import 'control_api_endpoints.dart';
 import 'control_firebase.dart';
+import 'agency_policy_control_page.dart';
 
 class AgencyControlPage extends StatefulWidget {
   const AgencyControlPage({super.key});
@@ -19,6 +20,8 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
   bool canDirectCreate = false;
   bool canManageExisting = false;
   bool canTransferOwnership = false;
+  bool canManagePolicies = false;
+  bool canManageMemberships = false;
   final TextEditingController agencyLookup = TextEditingController();
   Map<String, dynamic>? managedAgency;
   List<Map<String, dynamic>> applications = [];
@@ -94,6 +97,8 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
         canDirectCreate = permissions['canDirectCreate'] == true;
         canManageExisting = permissions['canManageExisting'] == true;
         canTransferOwnership = permissions['canTransferOwnership'] == true;
+        canManagePolicies = permissions['canManagePolicies'] == true;
+        canManageMemberships = permissions['canManageMemberships'] == true;
         loading = false;
       });
     } catch (e) {
@@ -374,6 +379,8 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
       setState(() {
         managedAgency = agency;
         canTransferOwnership = permissions['canTransferOwnership'] == true;
+        canManagePolicies = permissions['canManagePolicies'] == true;
+        canManageMemberships = permissions['canManageMemberships'] == true;
       });
     } catch (e) {
       if (!mounted) return;
@@ -755,6 +762,35 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
                                         Icons.manage_accounts_outlined,
                                       ),
                                       label: const Text('نقل الملكية'),
+                                    ),
+                                  if (canManagePolicies ||
+                                      canManageMemberships)
+                                    OutlinedButton.icon(
+                                      onPressed: busy
+                                          ? null
+                                          : () {
+                                              final id =
+                                                  (agency['agencyId'] ?? '')
+                                                      .toString();
+                                              Navigator.of(context).push(
+                                                MaterialPageRoute<void>(
+                                                  builder: (_) =>
+                                                      AgencyPolicyControlPage(
+                                                    agencyId: id,
+                                                    canManagePolicies:
+                                                        canManagePolicies,
+                                                    canManageMemberships:
+                                                        canManageMemberships,
+                                                  ),
+                                                ),
+                                              );
+                                            },
+                                      icon: const Icon(
+                                        Icons.tune_outlined,
+                                      ),
+                                      label: const Text(
+                                        'السياسات والاستثناءات',
+                                      ),
                                     ),
                                 ],
                               ),
