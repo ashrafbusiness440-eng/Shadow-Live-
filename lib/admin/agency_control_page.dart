@@ -502,7 +502,76 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  if (canManageExisting) ...[
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const Text(
+                              'إدارة وكالة موجودة',
+                              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: agencyLookup,
+                                    keyboardType: TextInputType.number,
+                                    maxLength: 6,
+                                    decoration: const InputDecoration(labelText: 'Agency ID'),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                FilledButton(
+                                  onPressed: busy ? null : loadManagedAgency,
+                                  child: const Text('تحميل'),
+                                ),
+                              ],
+                            ),
+                            if (managedAgency case final agency?) ...[
+                              const Divider(height: 24),
+                              Text(
+                                (agency['name'] ?? '').toString(),
+                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                              ),
+                              Text('ID: ' + (agency['agencyId'] ?? '').toString()),
+                              Text('الدولة: ' + (agency['country'] ?? '—').toString()),
+                              Text('الحالة: ' + (agency['status'] ?? '').toString()),
+                              Text('Owner: ' + (agency['ownerPublicId'] ?? agency['ownerUid'] ?? '').toString()),
+                              Text(
+                                'الأعضاء: ' + (agency['memberCount'] ?? 0).toString() +
+                                ' • Hosts: ' + (agency['hostCount'] ?? 0).toString() +
+                                ' • Managers: ' + (agency['managerCount'] ?? 0).toString() +
+                                ' • Senior: ' + (agency['seniorManagerCount'] ?? 0).toString(),
+                              ),
+                              const SizedBox(height: 10),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  OutlinedButton.icon(
+                                    onPressed: busy ? null : editManagedAgencyIdentity,
+                                    icon: const Icon(Icons.edit_outlined),
+                                    label: const Text('تعديل الاسم/الدولة'),
+                                  ),
+                                  if (canTransferOwnership)
+                                    FilledButton.icon(
+                                      onPressed: busy ? null : transferManagedAgencyOwnership,
+                                      icon: const Icon(Icons.manage_accounts_outlined),
+                                      label: const Text('نقل الملكية'),
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   if (applications.isEmpty)
                     const Card(
                       child: ListTile(
