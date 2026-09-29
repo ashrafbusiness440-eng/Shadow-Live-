@@ -1780,6 +1780,7 @@ async function changeAgencyMembershipStatus(
         acceptanceSnap,
         actorUserSnap,
         actorMembershipSnap,
+        managerSlotsSnap,
       ] = await Promise.all([
         db.get("agency_memberships/" + agencyId + "__" + targetUid, tx),
         db.get("users/" + targetUid, tx),
@@ -1788,6 +1789,9 @@ async function changeAgencyMembershipStatus(
         action === "remove" ? db.get("users/" + actorUid, tx) : Promise.resolve(null),
         action === "remove"
           ? db.get("agency_user_memberships/" + actorUid, tx)
+          : Promise.resolve(null),
+        role === "manager" || role === "senior_manager"
+          ? db.get("agency_manager_slots/" + agencyId, tx)
           : Promise.resolve(null),
       ]);
 
@@ -1830,6 +1834,23 @@ async function changeAgencyMembershipStatus(
         if (!platformAllowed && !agencyOwnerAllowed) {
           throw new ApiError("forbidden", 403);
         }
+      }
+
+      let departureManagerSlots = null;
+      if (role === "manager" || role === "senior_manager") {
+        if (!managerSlotsSnap?.exists) {
+          throw new ApiError("agency_manager_slots_missing", 409);
+        }
+        const slots = normalizedManagerSlots(managerSlotsSnap.data || {});
+        ensureManagerCountersConsistent(agencySnap.data || {}, slots);
+        ensureRoleSlotConsistency(role, targetUid, slots);
+        departureManagerSlots = {
+          seniorManagerUid:
+            slots.seniorManagerUid === targetUid
+              ? null
+              : slots.seniorManagerUid,
+          managerUids: slots.managerUids.filter((uid) => uid !== targetUid),
+        };
       }
 
       const memberCount = Number(agencySnap.data?.memberCount);
@@ -1954,6 +1975,20 @@ async function changeAgencyMembershipStatus(
           },
         ),
       ];
+
+      if (departureManagerSlots) {
+        writes.push(
+          db.writeUpdate(
+            "agency_manager_slots/" + agencyId,
+            {
+              seniorManagerUid: departureManagerSlots.seniorManagerUid,
+              managerUids: departureManagerSlots.managerUids,
+              updatedAt: now,
+            },
+            ["seniorManagerUid", "managerUids", "updatedAt"],
+          ),
+        );
+      }
 
       if (ownerUid && ownerUid !== targetUid) {
         writes.push(
