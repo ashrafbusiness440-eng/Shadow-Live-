@@ -15,9 +15,16 @@ import {
   agencyMemberPermissions,
   canPerformAgencyAction,
 } from "./agency-permissions.js";
+import { currentAgencyMonthKey } from "./agency-policy.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 
 const clean = (value) => String(value ?? "").trim();
+
+function agencyPublicSupportSeed(monthlySnap) {
+  if (!monthlySnap?.exists) return 0;
+  const value = Number(monthlySnap.data?.supportCoins ?? 0);
+  return Number.isSafeInteger(value) && value >= 0 ? value : 0;
+}
 
 class ApiError extends Error {
   constructor(code, status = 400, details = null) {
@@ -519,6 +526,7 @@ export async function respondAgencyMembershipRequest(
         if (!actor.agency) throw new ApiError("forbidden", 403);
       }
 
+      const rankingMonth = currentAgencyMonthKey(now);
       const [
         userSnap,
         membershipSnap,
@@ -527,6 +535,7 @@ export async function respondAgencyMembershipRequest(
         pairSnap,
         acceptanceSnap,
         agencySnap,
+        hostMonthSnap,
       ] = await Promise.all([
         db.get(`users/${uid}`, tx),
         db.get(`agency_user_memberships/${uid}`, tx),
@@ -535,6 +544,12 @@ export async function respondAgencyMembershipRequest(
         db.get(pairPath, tx),
         db.get(acceptanceLockPath(uid), tx),
         db.get(`agencies/${agencyId}`, tx),
+        decision === "accept"
+          ? db.get(
+              `agency_host_monthly/${agencyId}__${rankingMonth}__${uid}`,
+              tx,
+            )
+          : Promise.resolve({ exists: false, data: null }),
       ]);
       if (decision === "accept") {
         ensureAgencyActive(agencySnap);
@@ -677,8 +692,19 @@ export async function respondAgencyMembershipRequest(
               agencyId,
               agencyRole: "host",
               agencyJoinedAt: now,
+              agencyPublicSupportAgencyId: agencyId,
+              agencyPublicSupportMonth: rankingMonth,
+              agencyPublicSupportCoins:
+                agencyPublicSupportSeed(hostMonthSnap),
             },
-            ["agencyId", "agencyRole", "agencyJoinedAt"],
+            [
+              "agencyId",
+              "agencyRole",
+              "agencyJoinedAt",
+              "agencyPublicSupportAgencyId",
+              "agencyPublicSupportMonth",
+              "agencyPublicSupportCoins",
+            ],
           ),
           db.writeUpdate(
             `agencies/${agencyId}`,
@@ -824,18 +850,24 @@ export async function commitAcceptedAgencyMembership(
         );
       }
 
+      const rankingMonth = currentAgencyMonthKey(now);
       const [
         userSnap,
         userMembershipSnap,
         agencyMembershipSnap,
         agencySnap,
         acceptanceSnap,
+        hostMonthSnap,
       ] = await Promise.all([
         db.get(`users/${uid}`, tx),
         db.get(`agency_user_memberships/${uid}`, tx),
         db.get(`agency_memberships/${agencyId}__${uid}`, tx),
         db.get(`agencies/${agencyId}`, tx),
         db.get(acceptanceLockPath(uid), tx),
+        db.get(
+          `agency_host_monthly/${agencyId}__${rankingMonth}__${uid}`,
+          tx,
+        ),
       ]);
       ensureAgencyActive(agencySnap);
 
@@ -922,8 +954,19 @@ export async function commitAcceptedAgencyMembership(
             agencyId,
             agencyRole: "host",
             agencyJoinedAt: now,
+            agencyPublicSupportAgencyId: agencyId,
+            agencyPublicSupportMonth: rankingMonth,
+            agencyPublicSupportCoins:
+              agencyPublicSupportSeed(hostMonthSnap),
           },
-          ["agencyId", "agencyRole", "agencyJoinedAt"],
+          [
+            "agencyId",
+            "agencyRole",
+            "agencyJoinedAt",
+            "agencyPublicSupportAgencyId",
+            "agencyPublicSupportMonth",
+            "agencyPublicSupportCoins",
+          ],
         ),
         db.writeUpdate(
           `agencies/${agencyId}`,
