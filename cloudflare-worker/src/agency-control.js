@@ -13,6 +13,15 @@ import {
   createAgencyMembershipDocument,
 } from "./agency-data-model.js";
 import { platformAgencyPermissions } from "./agency-permissions.js";
+import {
+  DEFAULT_AGENCY_TARGETS,
+  normalizeAgencyTargets,
+} from "./agency-policy.js";
+import {
+  DEFAULT_REVENUE_TIERS,
+  revenueTiers,
+} from "./economy-policy.js";
+import { overrideAgencyRejoinCooldown } from "./agency-membership.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 
 const clean = (value) => String(value ?? "").trim();
@@ -1285,6 +1294,382 @@ export async function transferAgencyOwnership(
   throw new ApiError("transaction_failed", 500);
 }
 
+
+function policyInteger(value, field, { min = 0, max = Number.MAX_SAFE_INTEGER } = {}) {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < min || parsed > max) {
+    throw new ApiError("invalid_agency_policy_" + field, 400);
+  }
+  return parsed;
+}
+
+function normalizeAgencyRevenueTierOverride(raw) {
+  if (!Array.isArray(raw) || raw.length < 1 || raw.length > 16) {
+    throw new ApiError("invalid_agency_policy_tiers", 400);
+  }
+  const seen = new Set();
+  const tiers = raw.map((item, index) => {
+    const id = clean(item?.id || ("tier_" + String(index + 1)));
+    const nameAr = clean(item?.nameAr || id);
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(id) || seen.has(id)) {
+      throw new ApiError("invalid_agency_policy_tier_id", 400);
+    }
+    seen.add(id);
+    const minGiftCoins = policyInteger(
+      item?.minGiftCoins,
+      "tier_min_gift_coins",
+      { min: 0 },
+    );
+    const hostShareBps = policyInteger(
+      item?.hostShareBps,
+      "tier_host_share_bps",
+      { min: 0, max: 10000 },
+    );
+    const agencyShareBps = policyInteger(
+      item?.agencyShareBps,
+      "tier_agency_share_bps",
+      { min: 0, max: 10000 },
+    );
+    if (hostShareBps + agencyShareBps > 10000) {
+      throw new ApiError("invalid_agency_policy_tier_share_sum", 400);
+    }
+    return { id, nameAr, minGiftCoins, hostShareBps, agencyShareBps };
+  }).sort((a, b) => a.minGiftCoins - b.minGiftCoins);
+  for (let index = 1; index < tiers.length; index += 1) {
+    if (tiers[index].minGiftCoins <= tiers[index - 1].minGiftCoins) {
+      throw new ApiError("invalid_agency_policy_tier_order", 400);
+    }
+  }
+  return tiers;
+}
+
+function normalizeAgencyTargetOverride(raw) {
+  if (!Array.isArray(raw) || raw.length < 1 || raw.length > 64) {
+    throw new ApiError("invalid_agency_policy_targets", 400);
+  }
+  const seen = new Set();
+  for (const item of raw) {
+    const id = clean(item?.id);
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(id) || seen.has(id)) {
+      throw new ApiError("invalid_agency_policy_target_id", 400);
+    }
+    seen.add(id);
+    policyInteger(item?.thresholdCoins, "target_threshold_coins", { min: 1 });
+    policyInteger(item?.salaryDiamonds, "target_salary_diamonds", { min: 0 });
+  }
+  try {
+    return normalizeAgencyTargets(raw);
+  } catch (error) {
+    throw new ApiError(clean(error?.message) || "invalid_agency_policy_targets", 400);
+  }
+}
+
+function sanitizeAgencyPolicyOverride(data = {}) {
+  const result = {
+    agencyId: clean(data.agencyId) || null,
+    policyVersion: clean(data.policyVersion) || null,
+    updatedBy: clean(data.updatedBy) || null,
+    updatedAt: data.updatedAt || null,
+  };
+  if (Array.isArray(data.tiers)) result.tiers = data.tiers;
+  if (Array.isArray(data.targets)) result.targets = data.targets;
+  if (Object.prototype.hasOwnProperty.call(data, "agencyPerformanceBonusBps")) {
+    result.agencyPerformanceBonusBps = Number(data.agencyPerformanceBonusBps);
+  }
+  if (Object.prototype.hasOwnProperty.call(data, "agencyBonusActiveHosts")) {
+    result.agencyBonusActiveHosts = Number(data.agencyBonusActiveHosts);
+  }
+  if (Object.prototype.hasOwnProperty.call(data, "surplusToShadow")) {
+    result.surplusToShadow = data.surplusToShadow;
+  }
+  return result;
+}
+
+function effectiveAgencyPolicy(economy = {}, override = {}) {
+  const has = (field) => Object.prototype.hasOwnProperty.call(override, field);
+  const tiers = has("tiers")
+    ? override.tiers
+    : revenueTiers(
+        Array.isArray(economy.tiers) && economy.tiers.length
+          ? economy
+          : { ...economy, tiers: DEFAULT_REVENUE_TIERS },
+      );
+  const targets = has("targets")
+    ? override.targets
+    : normalizeAgencyTargets(
+        Array.isArray(economy.agencyTargets) && economy.agencyTargets.length
+          ? economy.agencyTargets
+          : DEFAULT_AGENCY_TARGETS,
+      );
+  return {
+    tiers,
+    targets,
+    agencyPerformanceBonusBps: has("agencyPerformanceBonusBps")
+      ? Number(override.agencyPerformanceBonusBps)
+      : Math.max(0, Math.min(3000, Number(economy.agencyPerformanceBonusBps ?? 200))),
+    agencyBonusActiveHosts: has("agencyBonusActiveHosts")
+      ? Number(override.agencyBonusActiveHosts)
+      : Math.max(1, Math.min(100000, Number(economy.agencyBonusActiveHosts || 10))),
+    surplusToShadow: has("surplusToShadow") ? override.surplusToShadow : null,
+    inherited: {
+      tiers: !has("tiers"),
+      targets: !has("targets"),
+      bonus:
+        !has("agencyPerformanceBonusBps") &&
+        !has("agencyBonusActiveHosts"),
+      surplus: !has("surplusToShadow"),
+    },
+  };
+}
+
+function agencyPolicyFingerprint(body = {}) {
+  return JSON.stringify({
+    action: "updateAgencyPolicy",
+    agencyId: clean(body.agencyId),
+    overrideTiers: body.overrideTiers === true,
+    tiers: body.overrideTiers === true ? body.tiers : null,
+    overrideTargets: body.overrideTargets === true,
+    targets: body.overrideTargets === true ? body.targets : null,
+    overrideBonus: body.overrideBonus === true,
+    agencyPerformanceBonusBps:
+      body.overrideBonus === true ? Number(body.agencyPerformanceBonusBps) : null,
+    agencyBonusActiveHosts:
+      body.overrideBonus === true ? Number(body.agencyBonusActiveHosts) : null,
+    surplusToShadow: body.surplusToShadow,
+  });
+}
+
+export async function getAgencyPolicyControlDetails(db, agencyIdInput) {
+  const agencyId = clean(agencyIdInput);
+  if (!validAgencyId(agencyId)) throw new ApiError("invalid_agency_id", 400);
+  const [agencySnap, overrideSnap, economySnap] = await Promise.all([
+    db.get("agencies/" + agencyId),
+    db.get("agency_policy_overrides/" + agencyId),
+    db.get("system_config/gift_economy"),
+  ]);
+  if (!agencySnap.exists) throw new ApiError("agency_not_found", 404);
+  const override = overrideSnap.exists ? overrideSnap.data || {} : {};
+  const economy = economySnap.exists ? economySnap.data || {} : {};
+  return {
+    agencyId,
+    agencyStatus: clean(agencySnap.data?.status),
+    overrideExists: overrideSnap.exists,
+    override: sanitizeAgencyPolicyOverride(override),
+    effective: effectiveAgencyPolicy(economy, override),
+  };
+}
+
+export async function updateAgencyPolicyOverride(
+  db,
+  actorUid,
+  body = {},
+  { now = new Date() } = {},
+) {
+  const agencyId = clean(body.agencyId);
+  const key = clean(body.idempotencyKey);
+  if (!validAgencyId(agencyId)) throw new ApiError("invalid_agency_id", 400);
+  if (!validIdempotencyKey(key)) throw new ApiError("invalid_idempotency_key", 400);
+  if (typeof body.surplusToShadow !== "boolean") {
+    throw new ApiError("agency_surplus_policy_required", 400);
+  }
+
+  const next = {
+    schemaVersion: 1,
+    agencyId,
+    policyVersion: key,
+    updatedBy: actorUid,
+    updatedAt: now,
+    surplusToShadow: body.surplusToShadow,
+  };
+  if (body.overrideTiers === true) {
+    next.tiers = normalizeAgencyRevenueTierOverride(body.tiers);
+  }
+  if (body.overrideTargets === true) {
+    next.targets = normalizeAgencyTargetOverride(body.targets);
+  }
+  if (body.overrideBonus === true) {
+    next.agencyPerformanceBonusBps = policyInteger(
+      body.agencyPerformanceBonusBps,
+      "agency_bonus_bps",
+      { min: 0, max: 3000 },
+    );
+    next.agencyBonusActiveHosts = policyInteger(
+      body.agencyBonusActiveHosts,
+      "agency_bonus_active_hosts",
+      { min: 1, max: 100000 },
+    );
+  }
+
+  const opPath = controlOperationPath(actorUid, key);
+  const fp = agencyPolicyFingerprint(body);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const tx = await db.beginTransaction();
+    try {
+      const [opSnap, agencySnap, beforeSnap] = await Promise.all([
+        db.get(opPath, tx),
+        db.get("agencies/" + agencyId, tx),
+        db.get("agency_policy_overrides/" + agencyId, tx),
+      ]);
+      if (opSnap.exists) {
+        const existing = opSnap.data || {};
+        if (clean(existing.requestFingerprint) !== fp) {
+          throw new ApiError("idempotency_conflict", 409);
+        }
+        await db.rollback(tx);
+        return { ok: true, code: "duplicate", ...(existing.result || {}) };
+      }
+      if (!agencySnap.exists) throw new ApiError("agency_not_found", 404);
+      if (clean(agencySnap.data?.status) === "closed") {
+        throw new ApiError("agency_closed", 409);
+      }
+      const result = {
+        agencyId,
+        policyVersion: key,
+        propagationRequired: true,
+      };
+      const policyWrite = beforeSnap.exists
+        ? db.writeUpdate("agency_policy_overrides/" + agencyId, next)
+        : db.writeCreate("agency_policy_overrides/" + agencyId, next);
+      await db.commit(tx, [
+        policyWrite,
+        db.writeUpdate(
+          "agencies/" + agencyId,
+          { policyVersion: key, policyUpdatedAt: now },
+          ["policyVersion", "policyUpdatedAt"],
+        ),
+        db.writeCreate(opPath, {
+          actorUid,
+          action: "updateAgencyPolicy",
+          requestFingerprint: fp,
+          status: "completed",
+          result,
+          createdAt: now,
+        }),
+        db.writeCreate(
+          "admin_audit_logs/agency_policy_" + agencyId + "_" + key,
+          {
+            actorUid,
+            action: "updateAgencyPolicy",
+            targetType: "agency_policy_override",
+            targetId: agencyId,
+            before: beforeSnap.exists
+              ? sanitizeAgencyPolicyOverride(beforeSnap.data || {})
+              : null,
+            after: sanitizeAgencyPolicyOverride(next),
+            idempotencyKey: key,
+            createdAt: now,
+          },
+        ),
+      ]);
+      return { ok: true, code: "ok", ...result };
+    } catch (error) {
+      await db.rollback(tx);
+      if (error instanceof ApiError) throw error;
+      if (isTransientFirestoreError(error) && attempt < 2) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, firestoreErrorRetryDelayMs(attempt))
+        );
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new ApiError("transaction_failed", 500);
+}
+
+export async function propagateAgencyPolicyPage(
+  db,
+  agencyIdInput,
+  {
+    cursor = null,
+    limit = 25,
+    now = new Date(),
+  } = {},
+) {
+  const agencyId = clean(agencyIdInput);
+  if (!validAgencyId(agencyId)) throw new ApiError("invalid_agency_id", 400);
+  const pageLimit = Math.max(1, Math.min(25, Math.floor(Number(limit || 25))));
+  const cursorUid = clean(cursor);
+  if (cursorUid && cursorUid.includes("/")) {
+    throw new ApiError("invalid_policy_cursor", 400);
+  }
+  const [agencySnap, overrideSnap] = await Promise.all([
+    db.get("agencies/" + agencyId),
+    db.get("agency_policy_overrides/" + agencyId),
+  ]);
+  if (!agencySnap.exists) throw new ApiError("agency_not_found", 404);
+  const override = overrideSnap.exists ? overrideSnap.data || {} : null;
+  const snapshot = override
+    ? {
+        agencyId,
+        policyVersion: clean(override.policyVersion) || null,
+        ...(Array.isArray(override.tiers) ? { tiers: override.tiers } : {}),
+        ...(Array.isArray(override.targets) ? { targets: override.targets } : {}),
+      }
+    : null;
+
+  const rows = await db.runQuery("users", {
+    filters: [{ field: "agencyId", op: "==", value: agencyId }],
+    orderBy: [{ field: "__name__", direction: "asc" }],
+    limit: pageLimit + 1,
+    ...(cursorUid
+      ? { startAfter: [{ referencePath: "users/" + cursorUid }] }
+      : {}),
+  });
+  const page = rows.slice(0, pageLimit);
+  if (page.length) {
+    await db.commit(
+      null,
+      page.map((row) =>
+        db.writeUpdate(
+          "users/" + row.id,
+          {
+            agencyPolicySnapshot: snapshot,
+            agencyPolicyUpdatedAt: now,
+          },
+          ["agencyPolicySnapshot", "agencyPolicyUpdatedAt"],
+        )
+      ),
+    );
+  }
+  const hasMore = rows.length > pageLimit;
+  return {
+    ok: true,
+    agencyId,
+    updated: page.length,
+    hasMore,
+    nextCursor: hasMore && page.length ? page[page.length - 1].id : null,
+    policyVersion: snapshot?.policyVersion || null,
+  };
+}
+
+export async function overrideAgencyCooldownByPublicId(
+  db,
+  actorUid,
+  body = {},
+  options = {},
+) {
+  const targetPublicId = clean(body.targetPublicId);
+  if (!/^\d{6}$/.test(targetPublicId)) {
+    throw new ApiError("invalid_target_public_id", 400);
+  }
+  const publicIdSnap = await db.get("public_ids/" + targetPublicId);
+  const targetUid = clean(publicIdSnap.data?.uid);
+  if (!publicIdSnap.exists || !targetUid) {
+    throw new ApiError("target_user_not_found", 404);
+  }
+  return overrideAgencyRejoinCooldown(
+    db,
+    actorUid,
+    {
+      targetUid,
+      reason: body.reason,
+      idempotencyKey: body.idempotencyKey,
+    },
+    options,
+  );
+}
+
 export async function directCreateAgency(
   db,
   actorUid,
@@ -1346,6 +1731,8 @@ export async function agencyControl(request, env) {
           canDirectCreate: actor.permissions.canManageAgencies,
           canManageExisting: actor.permissions.canManageAgencies,
           canTransferOwnership: actor.permissions.isOwner,
+          canManagePolicies: actor.permissions.canManagePolicies,
+          canManageMemberships: actor.permissions.canManageMemberships,
         },
       });
     }
@@ -1377,6 +1764,8 @@ export async function agencyControl(request, env) {
         permissions: {
           canManageExisting: actor.permissions.canManageAgencies,
           canTransferOwnership: actor.permissions.isOwner,
+          canManagePolicies: actor.permissions.canManagePolicies,
+          canManageMemberships: actor.permissions.canManageMemberships,
         },
       });
     }
@@ -1387,6 +1776,44 @@ export async function agencyControl(request, env) {
     if (action === "transferOwnership") {
       if (!actor.permissions.isOwner) throw new ApiError("forbidden", 403);
       return json(request, env, await transferAgencyOwnership(db, decoded.sub, body));
+    }
+    if (action === "getPolicy") {
+      if (!actor.permissions.canManagePolicies) throw new ApiError("forbidden", 403);
+      return json(
+        request,
+        env,
+        {
+          ok: true,
+          ...(await getAgencyPolicyControlDetails(db, body.agencyId)),
+        },
+      );
+    }
+    if (action === "updatePolicy") {
+      if (!actor.permissions.canManagePolicies) throw new ApiError("forbidden", 403);
+      return json(
+        request,
+        env,
+        await updateAgencyPolicyOverride(db, decoded.sub, body),
+      );
+    }
+    if (action === "propagatePolicy") {
+      if (!actor.permissions.canManagePolicies) throw new ApiError("forbidden", 403);
+      return json(
+        request,
+        env,
+        await propagateAgencyPolicyPage(db, body.agencyId, {
+          cursor: body.cursor,
+          limit: body.limit,
+        }),
+      );
+    }
+    if (action === "overrideCooldownByPublicId") {
+      if (!actor.permissions.canManageMemberships) throw new ApiError("forbidden", 403);
+      return json(
+        request,
+        env,
+        await overrideAgencyCooldownByPublicId(db, decoded.sub, body),
+      );
     }
     throw new ApiError("invalid_action", 400);
   } catch (error) {
