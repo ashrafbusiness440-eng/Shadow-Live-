@@ -1578,7 +1578,7 @@ export async function updateAgencyPolicyOverride(
         "agencyBonusActiveHosts",
       ];
       const policyWrite = beforeSnap.exists
-        ? db.writeUpdate(
+        ? db.writeMaskedUpdate(
             "agency_policy_overrides/" + agencyId,
             next,
             policyFields,
