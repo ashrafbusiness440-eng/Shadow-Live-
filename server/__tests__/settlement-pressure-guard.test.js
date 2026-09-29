@@ -328,3 +328,16 @@ test("Stage 08-C replay and policy snapshot stay bounded and direct", () => {
     assert.equal(settlement.includes("AGENCY_MONTHLY_ACCRUAL_SHARDS"), true);
   }
 });
+
+
+test("Stage 09-A surplus snapshot adds no Gift hot-path policy reads", () => {
+  for (const relativePath of [
+    "../../cloudflare-worker/src/room-gift.js",
+    "../../cloudflare-worker/src/chat-safety-actions.js",
+  ]) {
+    const sourceText = source(relativePath);
+    assert.equal(sourceText.includes("targetThresholdCoins"), true);
+    assert.equal(sourceText.includes("surplusToShadow"), false);
+    assert.equal(sourceText.includes('agency_policy_overrides/'), false);
+  }
+});

@@ -131,6 +131,75 @@ export function calculateAgencyTargetProgress({
   };
 }
 
+export function resolveAgencySurplusPolicy(override = {}) {
+  if (!Object.prototype.hasOwnProperty.call(override, "surplusToShadow")) {
+    return {
+      configured: false,
+      surplusToShadow: null,
+      mode: "unconfigured",
+    };
+  }
+  if (typeof override.surplusToShadow !== "boolean") {
+    throw new Error("invalid_agency_surplus_policy");
+  }
+  return {
+    configured: true,
+    surplusToShadow: override.surplusToShadow,
+    mode: override.surplusToShadow ? "shadow_profit" : "host_wallet_coins",
+  };
+}
+
+export function calculateAgencyMonthEndSurplus({
+  progressCoins = 0,
+  targets,
+  surplusToShadow,
+} = {}) {
+  const progress = targetFinancialInteger(
+    progressCoins,
+    "surplus_progress_coins",
+  );
+  if (typeof surplusToShadow !== "boolean") {
+    throw new Error("agency_surplus_policy_unconfigured");
+  }
+
+  const normalizedTargets = normalizeAgencyTargets(targets);
+  let reachedTarget = null;
+  let nextTarget = normalizedTargets[0] || null;
+  for (const target of normalizedTargets) {
+    if (progress >= target.thresholdCoins) {
+      reachedTarget = target;
+      nextTarget = null;
+      continue;
+    }
+    nextTarget = target;
+    break;
+  }
+
+  const completedTargetCoins = reachedTarget?.thresholdCoins || 0;
+  const surplusCoins = progress - completedTargetCoins;
+  if (!Number.isSafeInteger(surplusCoins) || surplusCoins < 0) {
+    throw new Error("invalid_agency_target_surplus_coins");
+  }
+
+  return {
+    progressCoins: progress,
+    reachedTarget,
+    nextTarget,
+    completedTargetCoins,
+    surplusCoins,
+    surplusToShadow,
+    destination:
+      surplusCoins === 0
+        ? "none"
+        : surplusToShadow
+          ? "shadow_profit"
+          : "host_wallet_coins",
+  };
+}
+
+// Legacy compatibility helper. Stage 09 canonical logic uses
+// calculateAgencyMonthEndSurplus() so custom target thresholds never depend
+// on salary-Diamond conversion math.
 export function agencySurplusCoins({
   progressCoins = 0,
   paidDiamonds = 0,
