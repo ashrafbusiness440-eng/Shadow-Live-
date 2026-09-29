@@ -6,6 +6,7 @@ import '../../profile/screens/public_profile_screen.dart';
 import '../../profile/services/profile_action_service.dart';
 import '../services/host_my_agency_service.dart';
 import '../services/public_agency_service.dart';
+import 'owner_agency_dashboard_page.dart';
 
 class HostMyAgencyPage extends StatefulWidget {
   const HostMyAgencyPage({super.key});
@@ -280,6 +281,16 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
     }
   }
 
+  void _openOwnerDashboard() {
+    final data = _data;
+    if (data == null || data.membershipRole != 'owner') return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => OwnerAgencyDashboardPage(initialCore: data),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Directionality(
@@ -310,6 +321,10 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
         padding: const EdgeInsets.fromLTRB(16, 18, 16, 28),
         children: [
           _AgencyHeader(data: data),
+          if (data.membershipRole == 'owner') ...[
+            const SizedBox(height: 12),
+            _OwnerDashboardEntry(onTap: _openOwnerDashboard),
+          ],
           const SizedBox(height: 16),
           _OwnerCard(owner: data.owner, onTap: _openOwner),
           const SizedBox(height: 12),
@@ -431,6 +446,46 @@ class _AgencyHeader extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+
+class _OwnerDashboardEntry extends StatelessWidget {
+  const _OwnerDashboardEntry({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('owner-agency-dashboard-entry'),
+      decoration: _cardDecoration(),
+      child: ListTile(
+        onTap: onTap,
+        leading: const CircleAvatar(
+          backgroundColor: Color(0xFF6E49D8),
+          child: Icon(
+            Icons.dashboard_customize_rounded,
+            color: Colors.white,
+          ),
+        ),
+        title: const Text(
+          'لوحة مالك الوكالة',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        subtitle: const Text(
+          'أدائي كمضيف، ثم أرباح وأداء الوكالة وإدارتها ضمن Stage 12.',
+          style: TextStyle(color: Colors.white60),
+        ),
+        trailing: const Icon(
+          Icons.chevron_left_rounded,
+          color: Colors.white38,
+        ),
       ),
     );
   }
