@@ -14,6 +14,22 @@ function assignPath(target, path, value) {
   cursor[parts[parts.length - 1]] = value;
 }
 
+function readPath(target, path) {
+  const parts = String(path || "").split(".").filter(Boolean);
+  let cursor = target;
+  for (const part of parts) {
+    if (
+      cursor == null ||
+      typeof cursor !== "object" ||
+      !Object.prototype.hasOwnProperty.call(cursor, part)
+    ) {
+      return { exists: false, value: undefined };
+    }
+    cursor = cursor[part];
+  }
+  return { exists: true, value: cursor };
+}
+
 function transformValue(transform) {
   if (transform?.setToServerValue === "REQUEST_TIME") {
     return FieldValue.serverTimestamp();
@@ -149,11 +165,21 @@ export function cloudflareFirestoreAdapter(adminDb) {
             );
             continue;
           }
-          batch.set(
-            ref(write.path),
-            mergePayload(write.fields, write.transforms),
-            { merge: true },
-          );
+          const payload = mergePayload(write.fields, write.transforms);
+          if (Array.isArray(write.fieldPaths)) {
+            const masked = {};
+            for (const fieldPath of write.fieldPaths) {
+              const current = readPath(payload, fieldPath);
+              assignPath(
+                masked,
+                fieldPath,
+                current.exists ? current.value : FieldValue.delete(),
+              );
+            }
+            batch.update(ref(write.path), masked);
+          } else {
+            batch.set(ref(write.path), payload, { merge: true });
+          }
         }
         await batch.commit();
       } finally {
@@ -164,11 +190,12 @@ export function cloudflareFirestoreAdapter(adminDb) {
       }
     },
 
-    writeUpdate(path, fields, _fieldPaths = null, transforms = null) {
+    writeUpdate(path, fields, fieldPaths = null, transforms = null) {
       return {
         kind: "update",
         path,
         fields: fields || {},
+        fieldPaths: Array.isArray(fieldPaths) ? fieldPaths : null,
         transforms: transforms || [],
       };
     },
