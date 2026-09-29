@@ -1295,6 +1295,39 @@ export async function transferAgencyOwnership(
 }
 
 
+export async function directCreateAgency(
+  db,
+  actorUid,
+  body = {},
+  { now = new Date(), agencyIdCandidates: suppliedAgencyIds = null } = {},
+) {
+  const ownerPublicId = clean(body.ownerPublicId);
+  const name = clean(body.name);
+  const country = clean(body.country) || null;
+  if (!/^\d{6}$/.test(ownerPublicId)) throw new ApiError("invalid_owner_public_id", 400);
+  if (!name || name.length > 80) throw new ApiError("invalid_agency_name", 400);
+  if (country != null && (country.length < 2 || country.length > 64)) {
+    throw new ApiError("invalid_agency_country", 400);
+  }
+  const publicIdSnap = await db.get(`public_ids/${ownerPublicId}`);
+  if (!publicIdSnap.exists || !clean(publicIdSnap.data?.uid)) {
+    throw new ApiError("owner_not_found", 404);
+  }
+  return createAgencyForOwner({
+    db,
+    actorUid,
+    ownerUid: clean(publicIdSnap.data.uid),
+    ownerPublicId,
+    name,
+    country,
+    operationId: clean(body.idempotencyKey),
+    requestedAgencyId: clean(body.agencyId) || null,
+    createdFrom: "control_direct",
+    now,
+    suppliedAgencyIds,
+  });
+}
+
 function policyInteger(value, field, { min = 0, max = Number.MAX_SAFE_INTEGER } = {}) {
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < min || parsed > max) {
@@ -1730,39 +1763,6 @@ export async function overrideAgencyCooldownByPublicId(
     },
     options,
   );
-}
-
-export async function directCreateAgency(
-  db,
-  actorUid,
-  body = {},
-  { now = new Date(), agencyIdCandidates: suppliedAgencyIds = null } = {},
-) {
-  const ownerPublicId = clean(body.ownerPublicId);
-  const name = clean(body.name);
-  const country = clean(body.country) || null;
-  if (!/^\d{6}$/.test(ownerPublicId)) throw new ApiError("invalid_owner_public_id", 400);
-  if (!name || name.length > 80) throw new ApiError("invalid_agency_name", 400);
-  if (country != null && (country.length < 2 || country.length > 64)) {
-    throw new ApiError("invalid_agency_country", 400);
-  }
-  const publicIdSnap = await db.get(`public_ids/${ownerPublicId}`);
-  if (!publicIdSnap.exists || !clean(publicIdSnap.data?.uid)) {
-    throw new ApiError("owner_not_found", 404);
-  }
-  return createAgencyForOwner({
-    db,
-    actorUid,
-    ownerUid: clean(publicIdSnap.data.uid),
-    ownerPublicId,
-    name,
-    country,
-    operationId: clean(body.idempotencyKey),
-    requestedAgencyId: clean(body.agencyId) || null,
-    createdFrom: "control_direct",
-    now,
-    suppliedAgencyIds,
-  });
 }
 
 export async function agencyControl(request, env) {
