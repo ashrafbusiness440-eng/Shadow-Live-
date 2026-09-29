@@ -32,7 +32,6 @@ class _AgencyPolicyControlPageState extends State<AgencyPolicyControlPage> {
   bool surplusToShadow = false;
   bool surplusConfigured = false;
   bool propagationHasMore = false;
-  String? propagationCursor;
 
   final bonusPercent = TextEditingController();
   final activeHosts = TextEditingController();
@@ -116,6 +115,9 @@ class _AgencyPolicyControlPageState extends State<AgencyPolicyControlPage> {
       final inherited = effective['inherited'] is Map
           ? Map<String, dynamic>.from(effective['inherited'] as Map)
           : <String, dynamic>{};
+      final propagation = body['propagation'] is Map
+          ? Map<String, dynamic>.from(body['propagation'] as Map)
+          : <String, dynamic>{};
       final nextTiers = effective['tiers'] is List
           ? (effective['tiers'] as List)
               .whereType<Map>()
@@ -142,8 +144,8 @@ class _AgencyPolicyControlPageState extends State<AgencyPolicyControlPage> {
             bpsToPercent(effective['agencyPerformanceBonusBps']).toString();
         activeHosts.text =
             NumberHelper.intValue(effective['agencyBonusActiveHosts']).toString();
-        propagationHasMore = false;
-        propagationCursor = null;
+        propagationHasMore =
+            body['overrideExists'] == true && propagation['complete'] != true;
       });
       if (override.isEmpty && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -376,7 +378,6 @@ class _AgencyPolicyControlPageState extends State<AgencyPolicyControlPage> {
         'surplusToShadow': surplusToShadow,
         'idempotencyKey': operationKey('agency_policy'),
       });
-      propagationCursor = null;
       propagationHasMore = true;
       await propagateNextPage(showDoneMessage: false);
       if (!mounted) return;
@@ -406,12 +407,10 @@ class _AgencyPolicyControlPageState extends State<AgencyPolicyControlPage> {
       'action': 'propagatePolicy',
       'agencyId': widget.agencyId,
       'limit': 25,
-      if (propagationCursor != null) 'cursor': propagationCursor,
     });
     if (!mounted) return;
     setState(() {
       propagationHasMore = body['hasMore'] == true;
-      propagationCursor = body['nextCursor']?.toString();
     });
     if (showDoneMessage) {
       ScaffoldMessenger.of(context).showSnackBar(
