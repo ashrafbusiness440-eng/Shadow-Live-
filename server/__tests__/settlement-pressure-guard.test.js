@@ -287,3 +287,25 @@ test("Stage 08-A active agency host marker avoids repeated monthly count writes"
     true,
   );
 });
+
+
+test("Stage 08-B monthly Bonus settlement stays bounded and query-free", () => {
+  for (const relativePath of [
+    "../economy/economy-control.js",
+    "../../cloudflare-worker/src/legacy-economy/economy-control.js",
+  ]) {
+    const sourceText = source(relativePath);
+    const start = sourceText.indexOf("export async function settleAgencyMonth");
+    const end = sourceText.indexOf("export async function handler", start);
+    const settlement = sourceText.slice(start, end);
+    assert.equal(start >= 0, true);
+    assert.equal(settlement.includes("AGENCY_MONTHLY_ACCRUAL_SHARDS"), true);
+    assert.equal(settlement.includes('collection("agency_policy_overrides").doc(agencyId)'), true);
+    assert.equal(settlement.includes('collection("agency_support_stats")'), true);
+    assert.equal(settlement.includes('collection("agency_bonus_accruals").doc(statementId)'), true);
+    assert.equal(settlement.includes(".where("), false);
+    assert.equal(settlement.includes(".list("), false);
+    assert.equal(settlement.includes("calculateAgencyMonthlyBonus"), true);
+    assert.equal(settlement.includes('hostSalaryRepaidAtMonthEnd:false'), true);
+  }
+});
