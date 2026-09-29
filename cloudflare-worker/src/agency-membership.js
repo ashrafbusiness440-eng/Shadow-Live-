@@ -715,6 +715,338 @@ export async function getMyAgencyLeaveRequestStatus(
   };
 }
 
+function leaveResponseFingerprint({ requestId, decision }) {
+  return fingerprint({
+    action: "respondLeave",
+    requestId: clean(requestId),
+    decision: clean(decision),
+  });
+}
+
+export async function respondAgencyLeaveRequest(
+  db,
+  actorUid,
+  body = {},
+  { now = new Date() } = {},
+) {
+  const requestId = clean(body.requestId);
+  const decision = clean(body.decision);
+  const key = clean(body.idempotencyKey);
+  const reason = clean(body.reason).slice(0, 500) || null;
+  if (!requestId || requestId.includes("/")) {
+    throw new ApiError("invalid_request_id", 400);
+  }
+  if (!["accept", "reject"].includes(decision)) {
+    throw new ApiError("invalid_membership_decision", 400);
+  }
+  if (!validIdempotencyKey(key)) {
+    throw new ApiError("invalid_idempotency_key", 400);
+  }
+
+  const opPath = operationPath(actorUid, key);
+  const requestPath = "agency_membership_requests/" + requestId;
+  const fp = leaveResponseFingerprint({ requestId, decision });
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const tx = await db.beginTransaction();
+    try {
+      const [operationSnap, requestSnap] = await Promise.all([
+        db.get(opPath, tx),
+        db.get(requestPath, tx),
+      ]);
+
+      if (operationSnap.exists) {
+        const existing = operationSnap.data || {};
+        if (clean(existing.requestFingerprint) !== fp) {
+          throw new ApiError("idempotency_conflict", 409);
+        }
+        await db.rollback(tx);
+        return { ok: true, code: "duplicate", ...(existing.result || {}) };
+      }
+
+      if (!requestSnap.exists) {
+        throw new ApiError("membership_request_not_found", 404);
+      }
+      const request = requestSnap.data || {};
+      if (
+        clean(request.status) !== "pending" ||
+        clean(request.type) !== "leave"
+      ) {
+        throw new ApiError("agency_leave_request_not_pending", 409);
+      }
+
+      const agencyId = clean(request.agencyId);
+      const uid = clean(request.uid);
+      if (!/^\d{6}$/.test(agencyId) || !uid) {
+        throw new ApiError("agency_leave_request_invalid", 409);
+      }
+
+      const [
+        agencySnap,
+        actorMembershipSnap,
+        actorUserSnap,
+        membershipSnap,
+        agencyMembershipSnap,
+        userSnap,
+        pairSnap,
+        pendingSnap,
+        acceptanceSnap,
+        slotsSnap,
+      ] = await Promise.all([
+        db.get("agencies/" + agencyId, tx),
+        db.get("agency_user_memberships/" + actorUid, tx),
+        db.get("users/" + actorUid, tx),
+        db.get("agency_user_memberships/" + uid, tx),
+        db.get("agency_memberships/" + agencyId + "__" + uid, tx),
+        db.get("users/" + uid, tx),
+        db.get(requestKeyPath(agencyId, uid), tx),
+        db.get(pendingPath(agencyId, uid), tx),
+        db.get(acceptanceLockPath(uid), tx),
+        db.get("agency_manager_slots/" + agencyId, tx),
+      ]);
+
+      if (!agencySnap.exists) throw new ApiError("agency_not_found", 404);
+      const agency = agencySnap.data || {};
+      const actorMembership =
+        actorMembershipSnap.exists ? actorMembershipSnap.data || {} : {};
+      const actorUser = actorUserSnap.exists ? actorUserSnap.data || {} : {};
+      if (
+        clean(agency.status) !== "active" ||
+        clean(agency.ownerUid) !== actorUid ||
+        clean(actorMembership.agencyId) !== agencyId ||
+        clean(actorMembership.uid) !== actorUid ||
+        clean(actorMembership.status) !== "active" ||
+        clean(actorMembership.role) !== "owner" ||
+        clean(actorUser.agencyId) !== agencyId
+      ) {
+        throw new ApiError("agency_owner_required", 403);
+      }
+
+      if (!membershipSnap.exists || !agencyMembershipSnap.exists || !userSnap.exists) {
+        throw new ApiError("agency_membership_not_found", 404);
+      }
+      const membership = membershipSnap.data || {};
+      const agencyMembership = agencyMembershipSnap.data || {};
+      const role = clean(membership.role);
+      if (
+        clean(membership.agencyId) !== agencyId ||
+        clean(membership.uid) !== uid ||
+        clean(membership.status) !== "active" ||
+        clean(agencyMembership.agencyId) !== agencyId ||
+        clean(agencyMembership.uid) !== uid ||
+        clean(agencyMembership.status) !== "active" ||
+        clean(agencyMembership.role) !== role ||
+        clean(userSnap.data?.agencyId) !== agencyId ||
+        clean(userSnap.data?.agencyRole) !== role
+      ) {
+        throw new ApiError("agency_membership_index_conflict", 409);
+      }
+      if (role === "owner" || !["host", "manager", "senior_manager"].includes(role)) {
+        throw new ApiError("agency_membership_role_conflict", 409);
+      }
+      if (
+        !pairSnap.exists ||
+        clean(pairSnap.data?.requestId) !== requestId ||
+        clean(pairSnap.data?.type) !== "leave" ||
+        clean(pairSnap.data?.status) !== "pending" ||
+        !pendingSnap.exists ||
+        clean(pendingSnap.data?.requestId) !== requestId ||
+        clean(pendingSnap.data?.type) !== "leave" ||
+        clean(pendingSnap.data?.status) !== "pending"
+      ) {
+        throw new ApiError("agency_leave_request_conflict", 409);
+      }
+
+      const status = decision === "accept" ? "accepted" : "rejected";
+      const result = {
+        requestId,
+        agencyId,
+        uid,
+        type: "leave",
+        status,
+        departureStatus: decision === "accept" ? "left" : null,
+      };
+
+      const writes = [
+        db.writeUpdate(
+          requestPath,
+          {
+            status,
+            agencyConsent: decision === "accept",
+            updatedAt: now,
+            resolvedAt: now,
+            resolvedBy: actorUid,
+            reason,
+          },
+          [
+            "status",
+            "agencyConsent",
+            "updatedAt",
+            "resolvedAt",
+            "resolvedBy",
+            "reason",
+          ],
+        ),
+        db.writeDelete(requestKeyPath(agencyId, uid)),
+        db.writeDelete(pendingPath(agencyId, uid)),
+        db.writeCreate(opPath, {
+          actorUid,
+          action: "respondAgencyLeaveRequest",
+          requestId,
+          requestFingerprint: fp,
+          status: "completed",
+          result,
+          createdAt: now,
+        }),
+        db.writeCreate(
+          "admin_audit_logs/agency_leave_response_" + requestId + "_" + key,
+          {
+            actorUid,
+            action:
+              decision === "accept"
+                ? "acceptAgencyLeaveRequest"
+                : "rejectAgencyLeaveRequest",
+            targetType: "agency_membership_request",
+            targetId: requestId,
+            before: {
+              agencyId,
+              uid,
+              role,
+              status: "pending",
+            },
+            after: {
+              ...result,
+              reason,
+            },
+            idempotencyKey: key,
+            createdAt: now,
+          },
+        ),
+        db.writeCreate(
+          "notifications/agency_leave_response_" + requestId + "_" + key,
+          {
+            userId: uid,
+            type:
+              decision === "accept"
+                ? "agency_leave_request_accepted"
+                : "agency_leave_request_rejected",
+            category: "system",
+            title:
+              decision === "accept"
+                ? "تمت الموافقة على مغادرة الوكالة"
+                : "تم رفض طلب مغادرة الوكالة",
+            body:
+              reason ||
+              (decision === "accept"
+                ? "تم إنهاء عضويتك في الوكالة. يمكنك الانضمام إلى وكالة بعد 7 أيام."
+                : "بقيت عضويتك في الوكالة فعالة."),
+            read: false,
+            requestId,
+            agencyId,
+            createdAt: now,
+          },
+        ),
+      ];
+
+      if (decision === "accept") {
+        const memberCount = Number(agency.memberCount);
+        const roleCounterField = counterFieldForRole(role);
+        const roleCount = Number(agency[roleCounterField]);
+        if (
+          !Number.isInteger(memberCount) ||
+          memberCount <= 1 ||
+          !roleCounterField ||
+          !Number.isInteger(roleCount) ||
+          roleCount <= 0
+        ) {
+          throw new ApiError("agency_counter_conflict", 409);
+        }
+
+        let departureManagerSlots = null;
+        if (role === "manager" || role === "senior_manager") {
+          if (!slotsSnap.exists) {
+            throw new ApiError("agency_manager_slots_missing", 409);
+          }
+          const slots = normalizedManagerSlots(slotsSnap.data || {});
+          ensureManagerCountersConsistent(agency, slots);
+          ensureRoleSlotConsistency(role, uid, slots);
+          departureManagerSlots = {
+            seniorManagerUid:
+              slots.seniorManagerUid === uid ? null : slots.seniorManagerUid,
+            managerUids: slots.managerUids.filter((value) => value !== uid),
+          };
+        }
+
+        const cooldownUntil = cooldownUntilFor(now);
+        const membershipPatch = {
+          status: "left",
+          updatedAt: now,
+          leftAt: now,
+          removedAt: membership.removedAt || null,
+          cooldownUntil,
+        };
+        result.cooldownUntil = cooldownUntil;
+
+        writes.push(
+          db.writeUpdate(
+            "agency_memberships/" + agencyId + "__" + uid,
+            membershipPatch,
+            ["status", "updatedAt", "leftAt", "removedAt", "cooldownUntil"],
+          ),
+          db.writeUpdate(
+            "agency_user_memberships/" + uid,
+            membershipPatch,
+            ["status", "updatedAt", "leftAt", "removedAt", "cooldownUntil"],
+          ),
+          db.writeUpdate(
+            "users/" + uid,
+            { agencyId: "", agencyRole: "" },
+            ["agencyId", "agencyRole"],
+          ),
+          db.writeUpdate(
+            "agencies/" + agencyId,
+            { updatedAt: now },
+            ["updatedAt"],
+            [
+              db.increment("memberCount", -1),
+              db.increment(roleCounterField, -1),
+            ],
+          ),
+          db.writeDelete(acceptanceLockPath(uid)),
+        );
+
+        if (departureManagerSlots) {
+          writes.push(
+            db.writeUpdate(
+              "agency_manager_slots/" + agencyId,
+              {
+                seniorManagerUid: departureManagerSlots.seniorManagerUid,
+                managerUids: departureManagerSlots.managerUids,
+                updatedAt: now,
+              },
+              ["seniorManagerUid", "managerUids", "updatedAt"],
+            ),
+          );
+        }
+      }
+
+      await db.commit(tx, writes);
+      return { ok: true, code: "ok", ...result };
+    } catch (error) {
+      await db.rollback(tx);
+      if (error instanceof ApiError) throw error;
+      if (isTransientFirestoreError(error) && attempt < 2) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, firestoreErrorRetryDelayMs(attempt))
+        );
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new ApiError("transaction_failed", 500);
+}
+
 function responseFingerprint({ requestId, decision }) {
   return fingerprint({
     action: "respond",
@@ -2552,6 +2884,8 @@ export async function agencyMembership(request, env) {
       result = await inviteAgencyHost(db, decoded.sub, body);
     } else if (action === "respond") {
       result = await respondAgencyMembershipRequest(db, decoded.sub, body);
+    } else if (action === "respondLeave") {
+      result = await respondAgencyLeaveRequest(db, decoded.sub, body);
     } else if (action === "cancel") {
       result = await cancelAgencyMembershipRequest(db, decoded.sub, body);
     } else if (action === "commitAccepted") {
