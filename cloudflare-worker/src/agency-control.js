@@ -1565,8 +1565,24 @@ export async function updateAgencyPolicyOverride(
         policyVersion: key,
         propagationRequired: true,
       };
+      const policyFields = [
+        "schemaVersion",
+        "agencyId",
+        "policyVersion",
+        "updatedBy",
+        "updatedAt",
+        "surplusToShadow",
+        "tiers",
+        "targets",
+        "agencyPerformanceBonusBps",
+        "agencyBonusActiveHosts",
+      ];
       const policyWrite = beforeSnap.exists
-        ? db.writeUpdate("agency_policy_overrides/" + agencyId, next)
+        ? db.writeUpdate(
+            "agency_policy_overrides/" + agencyId,
+            next,
+            policyFields,
+          )
         : db.writeCreate("agency_policy_overrides/" + agencyId, next);
       await db.commit(tx, [
         policyWrite,
