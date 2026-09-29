@@ -3,7 +3,10 @@ import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 import { resolveGiftRevenuePolicy } from "./economy-policy.js";
-import { calculateAgencyTargetProgress } from "./agency-policy.js";
+import {
+  agencyPublicRankingKey,
+  calculateAgencyTargetProgress,
+} from "./agency-policy.js";
 import {
   legacyPresenceFresh,
   realtimeUserPresentFromNamespace,
@@ -429,6 +432,23 @@ export async function sendGift(db, uid, body, options = {}) {
         ? Math.max(0, Number(receiverData.giftRevenueMonthCoins || 0))
         : 0;
     const monthlyGrossCoins = previousMonthCoins + totalCost;
+    const previousAgencyPublicSupportCoins =
+      agencyId &&
+      clean(receiverData.agencyPublicSupportAgencyId) === agencyId &&
+      clean(receiverData.agencyPublicSupportMonth) === periods.month
+        ? Math.max(
+            0,
+            Number(receiverData.agencyPublicSupportCoins || 0),
+          )
+        : 0;
+    const agencyPublicSupportCoins =
+      previousAgencyPublicSupportCoins + totalCost;
+    if (
+      agencyId &&
+      !Number.isSafeInteger(agencyPublicSupportCoins)
+    ) {
+      throw new ApiError("invalid_agency_public_support", 409);
+    }
     const revenue = resolveGiftRevenuePolicy(
       economyData,
       receiverData,
@@ -517,6 +537,17 @@ export async function sendGift(db, uid, body, options = {}) {
       "giftRevenueMonthCoins",
       "currentGiftRevenueTier",
     ];
+    if (agencyId) {
+      receiverFields.agencyPublicSupportAgencyId = agencyId;
+      receiverFields.agencyPublicSupportMonth = periods.month;
+      receiverFields.agencyPublicSupportCoins =
+        agencyPublicSupportCoins;
+      receiverMask.push(
+        "agencyPublicSupportAgencyId",
+        "agencyPublicSupportMonth",
+        "agencyPublicSupportCoins",
+      );
+    }
     const receiverTransforms = [
       db.increment("totalGiftsReceived", quantity),
       db.increment("totalValueReceived", totalCost),
@@ -633,6 +664,13 @@ export async function sendGift(db, uid, body, options = {}) {
               agencyTarget?.reachedTarget?.thresholdCoins || 0,
             surplusPageKey:
               `${agencyId}__${periods.month}__${receiverId}`,
+            publicRankingKey: agencyPublicRankingKey({
+              agencyId,
+              month: periods.month,
+              hostUid: receiverId,
+              supportCoins: agencyPublicSupportCoins,
+            }),
+            publicSupportCoins: agencyPublicSupportCoins,
             nextTargetCoins: agencyTarget?.remainingToNextTargetCoins || 0,
             salaryPaidDiamonds: agencyTarget?.paidDiamonds || 0,
             updatedAt: now,
@@ -644,6 +682,8 @@ export async function sendGift(db, uid, body, options = {}) {
             "targetId",
             "targetThresholdCoins",
             "surplusPageKey",
+            "publicRankingKey",
+            "publicSupportCoins",
             "nextTargetCoins",
             "salaryPaidDiamonds",
             "updatedAt",

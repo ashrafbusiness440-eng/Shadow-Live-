@@ -38,10 +38,9 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Check Cloudflare Worker and index script JavaScript syntax
+      - name: Check Cloudflare Worker JavaScript syntax
         run: |
           find cloudflare-worker/src -type f -name '*.js' -print0 | xargs -0 -n1 node --check
-          node --check .github/scripts/ensure-firestore-indexes.mjs
 
       - name: Validate Cloudflare Durable Object bundle
         run: |

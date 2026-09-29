@@ -4,6 +4,7 @@ import {deleteApp, initializeApp} from "firebase-admin/app";
 import {getFirestore} from "firebase-admin/firestore";
 
 import {sendGift as sendChatGift} from "../../cloudflare-worker/src/chat-safety-actions.js";
+import {agencyPublicRankingKey} from "../../cloudflare-worker/src/agency-policy.js";
 import {sendRoomGift} from "../../cloudflare-worker/src/room-gift.js";
 import {cloudflareFirestoreAdapter} from "./helpers/cloudflare-firestore-adapter.js";
 
@@ -157,11 +158,13 @@ test("07-A room gifts accrue the approved base Agency Share by tier without muta
       },
     );
 
-    const [transaction,accrual,wallet,statement]=await Promise.all([
+    const [transaction,accrual,wallet,statement,hostMonth,hostUser]=await Promise.all([
       db.collection("gift_transactions").doc(key).get(),
       db.collection("agency_monthly_accrual_shards").doc(shardId(agencyId,key)).get(),
       db.collection("agency_wallets").doc(agencyId).get(),
       db.collection("agency_monthly_statements").doc(agencyId+"__"+month).get(),
+      db.collection("agency_host_monthly").doc(agencyId+"__"+month+"__"+hostId).get(),
+      db.collection("users").doc(hostId).get(),
     ]);
 
     assert.equal(result.revenueTierId,tier.id);
@@ -184,6 +187,25 @@ test("07-A room gifts accrue the approved base Agency Share by tier without muta
     assert.equal(accrual.data().month,month);
     assert.equal(accrual.data().agencyShareCoins,tier.agencyCoins);
     assert.equal(accrual.data().supportCoins,100000);
+    assert.equal(hostMonth.data().supportCoins,100000);
+    assert.equal(hostMonth.data().publicSupportCoins,100000);
+    assert.equal(
+      hostMonth.data().publicRankingKey,
+      agencyPublicRankingKey({
+        agencyId,
+        month,
+        hostUid:hostId,
+        supportCoins:100000,
+      }),
+    );
+    assert.equal(hostUser.data().agencyPublicSupportAgencyId,agencyId);
+    assert.equal(hostUser.data().agencyPublicSupportMonth,month);
+    assert.equal(hostUser.data().agencyPublicSupportCoins,100000);
+    assert.equal(
+      hostUser.data().giftRevenueMonthCoins,
+      tier.previousGross+100000,
+      "public Agency support must stay separate from global monthly gift revenue",
+    );
 
     assert.equal(wallet.data().diamonds,7);
     assert.equal(wallet.data().remainderCoins,4321);
@@ -267,18 +289,50 @@ test("07-A Room and Chat use the same separated Agency Share accrual contract",a
 
   const roomShardId=shardId(agencyId,roomKey);
   const chatShardId=shardId(agencyId,chatKey);
-  const [roomTx,chatTx,roomShard,chatShard,wallet]=await Promise.all([
+  const [
+    roomTx,
+    chatTx,
+    roomShard,
+    chatShard,
+    wallet,
+    roomHostMonth,
+    chatHostMonth,
+  ]=await Promise.all([
     db.collection("gift_transactions").doc(roomKey).get(),
     db.collection("gift_transactions").doc(chatKey).get(),
     db.collection("agency_monthly_accrual_shards").doc(roomShardId).get(),
     db.collection("agency_monthly_accrual_shards").doc(chatShardId).get(),
     db.collection("agency_wallets").doc(agencyId).get(),
+    db.collection("agency_host_monthly").doc(agencyId+"__"+month+"__"+roomHost).get(),
+    db.collection("agency_host_monthly").doc(agencyId+"__"+month+"__"+chatHost).get(),
   ]);
 
   assert.equal(roomTx.data().agencyShareBps,600);
   assert.equal(chatTx.data().agencyShareBps,600);
   assert.equal(roomTx.data().agencyShareCoins,6000);
   assert.equal(chatTx.data().agencyShareCoins,6000);
+  assert.equal(roomHostMonth.data().supportCoins,100000);
+  assert.equal(chatHostMonth.data().supportCoins,100000);
+  assert.equal(roomHostMonth.data().publicSupportCoins,100000);
+  assert.equal(chatHostMonth.data().publicSupportCoins,100000);
+  assert.equal(
+    roomHostMonth.data().publicRankingKey,
+    agencyPublicRankingKey({
+      agencyId,
+      month,
+      hostUid:roomHost,
+      supportCoins:100000,
+    }),
+  );
+  assert.equal(
+    chatHostMonth.data().publicRankingKey,
+    agencyPublicRankingKey({
+      agencyId,
+      month,
+      hostUid:chatHost,
+      supportCoins:100000,
+    }),
+  );
 
   const expectedShardTotals=new Map();
   for(const id of [roomShardId,chatShardId]){

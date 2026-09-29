@@ -2,7 +2,10 @@ import { json, readJson } from "./http.js";
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { resolveGiftRevenuePolicy } from "./economy-policy.js";
-import { calculateAgencyTargetProgress } from "./agency-policy.js";
+import {
+  agencyPublicRankingKey,
+  calculateAgencyTargetProgress,
+} from "./agency-policy.js";
 import { advanceRoomRocket } from "./room-rocket.js";
 import {
   legacyPresenceFresh,
@@ -285,6 +288,23 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
         ? Math.max(0, Number(receiver.giftRevenueMonthCoins || 0))
         : 0;
     const monthlyGrossCoins = previousMonthCoins + totalCost;
+    const previousAgencyPublicSupportCoins =
+      agencyId &&
+      clean(receiver.agencyPublicSupportAgencyId) === agencyId &&
+      clean(receiver.agencyPublicSupportMonth) === periods.month
+        ? Math.max(
+            0,
+            Number(receiver.agencyPublicSupportCoins || 0),
+          )
+        : 0;
+    const agencyPublicSupportCoins =
+      previousAgencyPublicSupportCoins + totalCost;
+    if (
+      agencyId &&
+      !Number.isSafeInteger(agencyPublicSupportCoins)
+    ) {
+      throw new ApiError("invalid_agency_public_support", 409);
+    }
     const revenue = resolveGiftRevenuePolicy(
       economy,
       receiver,
@@ -419,6 +439,17 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       "giftRevenueMonthCoins",
       "currentGiftRevenueTier",
     ];
+    if (agencyId) {
+      receiverFields.agencyPublicSupportAgencyId = agencyId;
+      receiverFields.agencyPublicSupportMonth = periods.month;
+      receiverFields.agencyPublicSupportCoins =
+        agencyPublicSupportCoins;
+      receiverMask.push(
+        "agencyPublicSupportAgencyId",
+        "agencyPublicSupportMonth",
+        "agencyPublicSupportCoins",
+      );
+    }
     const receiverTransforms = [
       db.increment("totalGiftsReceived", quantity),
       db.increment("totalValueReceived", totalCost),
@@ -620,6 +651,13 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
               agencyTarget?.reachedTarget?.thresholdCoins || 0,
             surplusPageKey:
               `${agencyId}__${periods.month}__${receiverId}`,
+            publicRankingKey: agencyPublicRankingKey({
+              agencyId,
+              month: periods.month,
+              hostUid: receiverId,
+              supportCoins: agencyPublicSupportCoins,
+            }),
+            publicSupportCoins: agencyPublicSupportCoins,
             nextTargetCoins: agencyTarget?.remainingToNextTargetCoins || 0,
             salaryPaidDiamonds: agencyTarget?.paidDiamonds || 0,
             updatedAt: now,
@@ -631,6 +669,8 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
             "targetId",
             "targetThresholdCoins",
             "surplusPageKey",
+            "publicRankingKey",
+            "publicSupportCoins",
             "nextTargetCoins",
             "salaryPaidDiamonds",
             "updatedAt",

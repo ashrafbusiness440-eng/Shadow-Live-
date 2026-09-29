@@ -221,6 +221,15 @@ test("same agency can be rejoined at cooldown boundary without duplicate history
     idempotencyKey: "stage04c2_same_join_0001",
   }, { now: new Date("2026-09-29T00:00:00.000Z") });
 
+  await adminDb.collection("agency_host_monthly")
+    .doc(agencyId + "__2026-10__" + hostUid)
+    .set({
+      agencyId,
+      month: "2026-10",
+      hostUid,
+      supportCoins: 345000,
+    });
+
   const accepted = await respondAgencyMembershipRequest(db, ownerUid, {
     requestId: join.requestId,
     decision: "accept",
@@ -229,9 +238,10 @@ test("same agency can be rejoined at cooldown boundary without duplicate history
 
   assert.equal(accepted.membershipCommitted, true);
 
-  const [membership, agency] = await Promise.all([
+  const [membership, agency, user] = await Promise.all([
     adminDb.collection("agency_memberships").doc(agencyId + "__" + hostUid).get(),
     adminDb.collection("agencies").doc(agencyId).get(),
+    adminDb.collection("users").doc(hostUid).get(),
   ]);
   assert.equal(membership.data().status, "active");
   assert.equal(membership.data().leftAt, null);
@@ -239,4 +249,7 @@ test("same agency can be rejoined at cooldown boundary without duplicate history
   assert.equal(membership.data().cooldownUntil, null);
   assert.equal(agency.data().memberCount, 2);
   assert.equal(agency.data().hostCount, 1);
+  assert.equal(user.data().agencyPublicSupportAgencyId, agencyId);
+  assert.equal(user.data().agencyPublicSupportMonth, "2026-10");
+  assert.equal(user.data().agencyPublicSupportCoins, 345000);
 });
