@@ -2,7 +2,10 @@ import { json, readJson } from "./http.js";
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { resolveGiftRevenuePolicy } from "./economy-policy.js";
-import { calculateAgencyTargetProgress } from "./agency-policy.js";
+import {
+  agencyPublicRankingKey,
+  calculateAgencyTargetProgress,
+} from "./agency-policy.js";
 import { advanceRoomRocket } from "./room-rocket.js";
 import {
   legacyPresenceFresh,
@@ -620,6 +623,12 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
               agencyTarget?.reachedTarget?.thresholdCoins || 0,
             surplusPageKey:
               `${agencyId}__${periods.month}__${receiverId}`,
+            publicRankingKey: agencyPublicRankingKey({
+              agencyId,
+              month: periods.month,
+              hostUid: receiverId,
+              supportCoins: monthlyGrossCoins,
+            }),
             nextTargetCoins: agencyTarget?.remainingToNextTargetCoins || 0,
             salaryPaidDiamonds: agencyTarget?.paidDiamonds || 0,
             updatedAt: now,
@@ -631,6 +640,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
             "targetId",
             "targetThresholdCoins",
             "surplusPageKey",
+            "publicRankingKey",
             "nextTargetCoins",
             "salaryPaidDiamonds",
             "updatedAt",
