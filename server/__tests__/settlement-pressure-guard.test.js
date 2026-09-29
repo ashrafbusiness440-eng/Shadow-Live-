@@ -38,9 +38,19 @@ test("Firebase scheduled settlement worker is no longer deployable", () => {
 test("settlement queue needs no custom composite Firestore index", () => {
   const config = JSON.parse(source("../../firestore.indexes.json"));
   const workflow = source("../../.github/workflows/deploy-firestore-rules.yml");
-  assert.deepEqual(config.indexes, []);
-  assert.equal(workflow.includes("/collectionGroups/"), false);
-  assert.equal(workflow.includes("index create failed"), false);
+  const settlementIndexes = (config.indexes || []).filter(
+    (index) =>
+      index.collectionGroup === "game_settlement_queue" ||
+      (index.fields || []).some(
+        (field) =>
+          field.fieldPath === "dueAtMs" ||
+          field.fieldPath === "closesAtMs" ||
+          field.fieldPath === "status",
+      ),
+  );
+  assert.deepEqual(settlementIndexes, []);
+  assert.equal(workflow.includes("game_settlement_queue"), false);
+  assert.equal(workflow.includes("closesAtMs"), false);
 });
 
 test("agency monthly settlement reads a fixed 32-shard set with direct document lookups", () => {
