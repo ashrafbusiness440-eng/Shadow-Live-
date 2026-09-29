@@ -493,6 +493,7 @@ export function firestoreClient(env) {
       orderBy = [],
       limit = 100,
       transaction = null,
+      startAfter = [],
     } = {}) {
       const parts = String(collectionPath || "").split("/").filter(Boolean);
       if (!parts.length || parts.length % 2 === 0) {
@@ -538,6 +539,21 @@ export function firestoreClient(env) {
               ? "DESCENDING"
               : "ASCENDING",
           })),
+        } : {}),
+        ...(Array.isArray(startAfter) && startAfter.length ? {
+          startAt: {
+            before: false,
+            values: startAfter.map((item) =>
+              item && typeof item === "object" && item.referencePath
+                ? { referenceValue: documentName(item.referencePath) }
+                : encodeValue(
+                    item && typeof item === "object" &&
+                    Object.prototype.hasOwnProperty.call(item, "value")
+                      ? item.value
+                      : item,
+                  )
+            ),
+          },
         } : {}),
         limit: Math.max(1, Math.min(1000, Number(limit || 100))),
       };
