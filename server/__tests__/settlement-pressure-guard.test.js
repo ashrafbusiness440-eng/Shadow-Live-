@@ -396,3 +396,23 @@ test("Stage 09-C surplus replay hardening adds no extra IO or scans", () => {
     assert.equal(settlement.includes("AGENCY_SURPLUS_PAGE_MAX=25"), true);
   }
 });
+
+
+test("Stage 09-C surplus replay stays bounded and uses no extra scans", () => {
+  for (const relativePath of [
+    "../economy/economy-control.js",
+    "../../cloudflare-worker/src/legacy-economy/economy-control.js",
+  ]) {
+    const sourceText = source(relativePath);
+    const start = sourceText.indexOf("const AGENCY_SURPLUS_PAGE_MAX=25");
+    const end = sourceText.indexOf("export async function handler", start);
+    const settlement = sourceText.slice(start, end);
+    assert.equal(start >= 0, true);
+    assert.equal(settlement.includes("assertAgencyHostSurplusReplay"), true);
+    assert.equal(settlement.includes("validateFrozenAgencySurplusPolicy"), true);
+    assert.equal(settlement.includes(".list("), false);
+    assert.equal(settlement.includes('collection("users").where'), false);
+    assert.equal(settlement.includes(".limit(pageSize+1)"), true);
+    assert.equal(settlement.includes("AGENCY_SURPLUS_PAGE_MAX=25"), true);
+  }
+});
