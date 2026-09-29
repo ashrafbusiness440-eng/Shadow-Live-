@@ -166,9 +166,9 @@ export function cloudflareFirestoreAdapter(adminDb) {
             continue;
           }
           const payload = mergePayload(write.fields, write.transforms);
-          if (Array.isArray(write.fieldPaths)) {
+          if (write.kind === "masked_update") {
             const masked = {};
-            for (const fieldPath of write.fieldPaths) {
+            for (const fieldPath of write.fieldPaths || []) {
               const current = readPath(payload, fieldPath);
               assignPath(
                 masked,
@@ -190,12 +190,21 @@ export function cloudflareFirestoreAdapter(adminDb) {
       }
     },
 
-    writeUpdate(path, fields, fieldPaths = null, transforms = null) {
+    writeUpdate(path, fields, _fieldPaths = null, transforms = null) {
       return {
         kind: "update",
         path,
         fields: fields || {},
-        fieldPaths: Array.isArray(fieldPaths) ? fieldPaths : null,
+        transforms: transforms || [],
+      };
+    },
+
+    writeMaskedUpdate(path, fields, fieldPaths = [], transforms = null) {
+      return {
+        kind: "masked_update",
+        path,
+        fields: fields || {},
+        fieldPaths: Array.isArray(fieldPaths) ? fieldPaths : [],
         transforms: transforms || [],
       };
     },
