@@ -722,7 +722,7 @@ String _previousMonth(String month) {
     return month;
   }
   final previous = DateTime.utc(year, monthNumber, 0);
-  return '${previous.year.toString().padLeft(4, '0')}-${previous.month.toString().padLeft(2, '0')}';
+  return "${previous.year.toString().padLeft(4, '0')}-${previous.month.toString().padLeft(2, '0')}";
 }
 
 String _minutes(int seconds) {
