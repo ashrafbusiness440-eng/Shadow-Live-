@@ -776,6 +776,19 @@ class _ProfileScreenState extends State<ProfileScreen>
           'مقتنياتي',
           () => unawaited(_openMyItems()),
         ),
+        const SizedBox(height: 10),
+        if (_text(profile, 'agencyId', '').isNotEmpty)
+          _action(
+            Icons.apartment_rounded,
+            'وكالتي',
+            () => Navigator.pushNamed(context, AppRoutes.myAgency),
+          )
+        else
+          _action(
+            Icons.apartment_outlined,
+            'الوكالة: لا يوجد',
+            null,
+          ),
         const SizedBox(height: 16),
         _card(
           'الملف الشخصي',

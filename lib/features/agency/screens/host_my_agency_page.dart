@@ -21,11 +21,15 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
   HostMyAgencyCoreData? _data;
   PublicAgencyRankingData? _ranking;
   PublicAgencyArchiveData? _archive;
+  HostAgencyLeaveStatus? _leaveStatus;
   bool _loading = true;
   bool _rankingLoading = false;
   bool _archiveLoading = false;
+  bool _leaveStatusLoading = false;
+  bool _leaveSubmitting = false;
   String? _error;
   String? _rankingError;
+  String? _leaveStatusError;
 
   @override
   void initState() {
@@ -52,6 +56,7 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
         _data = data;
         _loading = false;
       });
+      await _loadLeaveStatus(data.agency.agencyId);
       await _loadRanking(data.agency.agencyId);
     } catch (error) {
       if (!mounted) return;
@@ -191,6 +196,90 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
     );
   }
 
+  Future<void> _loadLeaveStatus(String agencyId) async {
+    if (_leaveStatusLoading) return;
+    setState(() {
+      _leaveStatusLoading = true;
+      _leaveStatusError = null;
+    });
+    try {
+      final status = await _service.loadLeaveStatus(agencyId: agencyId);
+      if (!mounted) return;
+      setState(() {
+        _leaveStatus = status;
+        _leaveStatusLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _leaveStatusError = error.toString();
+        _leaveStatusLoading = false;
+      });
+    }
+  }
+
+  Future<void> _requestLeave() async {
+    final data = _data;
+    final status = _leaveStatus;
+    if (data == null ||
+        _leaveSubmitting ||
+        data.membershipRole == 'owner' ||
+        status?.request?.status == 'pending') {
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          backgroundColor: const Color(0xFF101522),
+          title: const Text('طلب مغادرة الوكالة'),
+          content: const Text(
+            'سيتم إرسال طلب المغادرة للمراجعة. عضويتك تبقى نشطة إلى أن تتم معالجة الطلب.',
+            style: TextStyle(color: Colors.white70, height: 1.5),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('إرسال الطلب'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _leaveSubmitting = true);
+    try {
+      final result = await _service.requestLeave(
+        agencyId: data.agency.agencyId,
+      );
+      if (!mounted) return;
+      setState(() {
+        _leaveStatus = result;
+        _leaveStatusError = null;
+        _leaveSubmitting = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم إرسال طلب مغادرة الوكالة.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _leaveSubmitting = false;
+        _leaveStatusError = error.toString();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر إرسال طلب المغادرة حاليًا.')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Directionality(
@@ -238,6 +327,16 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
           _TargetCard(target: data.target),
           const SizedBox(height: 16),
           _ActivityCard(activity: data.activity),
+          const SizedBox(height: 16),
+          _LeaveRequestCard(
+            role: data.membershipRole,
+            status: _leaveStatus,
+            loading: _leaveStatusLoading,
+            submitting: _leaveSubmitting,
+            error: _leaveStatusError,
+            onRetry: () => _loadLeaveStatus(data.agency.agencyId),
+            onRequestLeave: _requestLeave,
+          ),
           const SizedBox(height: 16),
           _HostRankingCard(
             data: _ranking,
@@ -426,6 +525,114 @@ class _AgencyActionsCard extends StatelessWidget {
               onPressed: canContactOwner ? onContactOwner : null,
               icon: const Icon(Icons.chat_bubble_outline_rounded),
               label: Text(canContactOwner ? 'مراسلة المالك' : 'أنت مالك الوكالة'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+class _LeaveRequestCard extends StatelessWidget {
+  const _LeaveRequestCard({
+    required this.role,
+    required this.status,
+    required this.loading,
+    required this.submitting,
+    required this.error,
+    required this.onRetry,
+    required this.onRequestLeave,
+  });
+
+  final String role;
+  final HostAgencyLeaveStatus? status;
+  final bool loading;
+  final bool submitting;
+  final String? error;
+  final Future<void> Function() onRetry;
+  final Future<void> Function() onRequestLeave;
+
+  @override
+  Widget build(BuildContext context) {
+    final request = status?.request;
+    final owner = role == 'owner';
+    final pending = request?.status == 'pending';
+    final canRequest =
+        !owner && status?.canRequestLeave == true && !pending && !submitting;
+
+    return Container(
+      key: const Key('host-agency-leave-card'),
+      padding: const EdgeInsets.all(18),
+      decoration: _cardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const _SectionHeader(
+            icon: Icons.exit_to_app_rounded,
+            title: 'مغادرة الوكالة',
+          ),
+          const SizedBox(height: 12),
+          if (loading)
+            const LinearProgressIndicator(minHeight: 3)
+          else if (error != null)
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'تعذر تحميل حالة طلب المغادرة.',
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                ),
+                TextButton(
+                  key: const Key('host-agency-leave-retry'),
+                  onPressed: onRetry,
+                  child: const Text('إعادة المحاولة'),
+                ),
+              ],
+            )
+          else if (owner)
+            const Text(
+              'مالك الوكالة لا يستخدم مسار مغادرة الأعضاء.',
+              style: TextStyle(color: Colors.white70),
+            )
+          else if (pending)
+            const Row(
+              children: [
+                Icon(Icons.schedule_rounded, color: Color(0xFFFFD875)),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'طلب المغادرة قيد المراجعة. عضويتك ما زالت نشطة.',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                ),
+              ],
+            )
+          else
+            const Text(
+              'يمكنك إرسال طلب مغادرة. لن تتغير عضويتك أو Target أو نشاطك عند إرسال الطلب.',
+              style: TextStyle(color: Colors.white70, height: 1.5),
+            ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            key: const Key('host-agency-leave-request-button'),
+            onPressed: canRequest ? onRequestLeave : null,
+            icon: submitting
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.logout_rounded),
+            label: Text(
+              pending
+                  ? 'طلب المغادرة قيد المراجعة'
+                  : owner
+                      ? 'غير متاح للمالك'
+                      : submitting
+                          ? 'جارٍ إرسال الطلب...'
+                          : 'طلب مغادرة الوكالة',
             ),
           ),
         ],

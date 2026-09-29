@@ -188,6 +188,55 @@ class HostMyAgencyCoreData {
   }
 }
 
+
+class HostAgencyLeaveRequest {
+  const HostAgencyLeaveRequest({
+    required this.requestId,
+    required this.agencyId,
+    required this.status,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String requestId;
+  final String agencyId;
+  final String status;
+  final String? createdAt;
+  final String? updatedAt;
+
+  factory HostAgencyLeaveRequest.fromJson(Map<String, dynamic> json) {
+    return HostAgencyLeaveRequest(
+      requestId: (json['requestId'] ?? '').toString().trim(),
+      agencyId: (json['agencyId'] ?? '').toString().trim(),
+      status: (json['status'] ?? '').toString().trim(),
+      createdAt: _nullableString(json['createdAt']),
+      updatedAt: _nullableString(json['updatedAt']),
+    );
+  }
+}
+
+class HostAgencyLeaveStatus {
+  const HostAgencyLeaveStatus({
+    required this.canRequestLeave,
+    required this.request,
+  });
+
+  final bool canRequestLeave;
+  final HostAgencyLeaveRequest? request;
+
+  factory HostAgencyLeaveStatus.fromJson(Map<String, dynamic> json) {
+    final request = json['request'];
+    return HostAgencyLeaveStatus(
+      canRequestLeave: json['canRequestLeave'] == true,
+      request: request is Map
+          ? HostAgencyLeaveRequest.fromJson(
+              Map<String, dynamic>.from(request),
+            )
+          : null,
+    );
+  }
+}
+
 class HostMyAgencyService {
   HostMyAgencyService({
     http.Client? client,
@@ -237,6 +286,74 @@ class HostMyAgencyService {
       );
     }
     return HostMyAgencyCoreData.fromJson(body);
+  }
+
+
+  Future<HostAgencyLeaveStatus> loadLeaveStatus({
+    required String agencyId,
+  }) async {
+    final token = await _idToken();
+    final response = await _client.post(
+      Uri.parse('$_baseUrl/agency-membership'),
+      headers: {
+        'authorization': 'Bearer $token',
+        'content-type': 'application/json',
+      },
+      body: jsonEncode({
+        'action': 'leaveStatus',
+        'agencyId': agencyId.trim(),
+      }),
+    );
+
+    Map<String, dynamic> body = const <String, dynamic>{};
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map) body = Map<String, dynamic>.from(decoded);
+    } catch (_) {}
+
+    if (response.statusCode != 200 || body['ok'] != true) {
+      throw StateError(
+        (body['code'] ?? 'agency_leave_status_failed').toString(),
+      );
+    }
+    return HostAgencyLeaveStatus.fromJson(body);
+  }
+
+  Future<HostAgencyLeaveStatus> requestLeave({
+    required String agencyId,
+  }) async {
+    final token = await _idToken();
+    final idempotencyKey =
+        'leave_' + DateTime.now().microsecondsSinceEpoch.toString();
+    final response = await _client.post(
+      Uri.parse('$_baseUrl/agency-membership'),
+      headers: {
+        'authorization': 'Bearer $token',
+        'content-type': 'application/json',
+      },
+      body: jsonEncode({
+        'action': 'requestLeave',
+        'agencyId': agencyId.trim(),
+        'idempotencyKey': idempotencyKey,
+      }),
+    );
+
+    Map<String, dynamic> body = const <String, dynamic>{};
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map) body = Map<String, dynamic>.from(decoded);
+    } catch (_) {}
+
+    if (response.statusCode != 200 || body['ok'] != true) {
+      throw StateError(
+        (body['code'] ?? 'agency_leave_request_failed').toString(),
+      );
+    }
+
+    return HostAgencyLeaveStatus(
+      canRequestLeave: false,
+      request: HostAgencyLeaveRequest.fromJson(body),
+    );
   }
 
   void close() {

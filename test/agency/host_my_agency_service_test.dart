@@ -109,4 +109,32 @@ void main() {
     expect(data.target.nextLevel, isNull);
     expect(data.owner.publicId, isNull);
   });
+
+  test('11-C parses Host leave request status', () {
+    final pending = HostAgencyLeaveStatus.fromJson({
+      'ok': true,
+      'canRequestLeave': false,
+      'request': {
+        'requestId': 'host__leave_1',
+        'agencyId': '741201',
+        'status': 'pending',
+        'createdAt': '2026-09-29T17:30:00.000Z',
+        'updatedAt': '2026-09-29T17:30:00.000Z',
+      },
+    });
+
+    expect(pending.canRequestLeave, isFalse);
+    expect(pending.request?.requestId, 'host__leave_1');
+    expect(pending.request?.agencyId, '741201');
+    expect(pending.request?.status, 'pending');
+
+    final empty = HostAgencyLeaveStatus.fromJson({
+      'ok': true,
+      'canRequestLeave': true,
+      'request': null,
+    });
+    expect(empty.canRequestLeave, isTrue);
+    expect(empty.request, isNull);
+  });
+
 }
