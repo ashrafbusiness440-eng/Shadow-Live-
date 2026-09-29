@@ -225,11 +225,11 @@ export async function settleAgencyMonth(db,actorUid,agencyIdInput,monthInput,opt
       if(clean(statement.status)!=="settled"){
         throw Error("settlement_state_conflict");
       }
-      const paidDiamonds=agencyFinancialInteger(
+      agencyFinancialInteger(
         statement.agencyDiamonds || 0,
         "statement_diamonds",
       );
-      if(paidDiamonds>0&&!existingLedger.exists){
+      if(!existingLedger.exists){
         throw Error("settlement_ledger_missing");
       }
       return {alreadySettled:true,settlement:statement};

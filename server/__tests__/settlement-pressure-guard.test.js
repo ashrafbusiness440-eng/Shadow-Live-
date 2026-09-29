@@ -232,3 +232,25 @@ test("Stage 07-A gift hot paths accrue Agency Share on shards and never mutate A
     assert.equal(sourceText.includes("agency_monthly_statements/"), false);
   }
 });
+
+
+test("Stage 07-B Agency Wallet settlement stays bounded and never replays Host salary", () => {
+  for (const relativePath of [
+    "../economy/economy-control.js",
+    "../../cloudflare-worker/src/legacy-economy/economy-control.js",
+  ]) {
+    const sourceText = source(relativePath);
+    const start = sourceText.indexOf("export async function settleAgencyMonth");
+    const end = sourceText.indexOf("export async function handler", start);
+    const settlement = sourceText.slice(start, end);
+    assert.equal(start >= 0, true);
+    assert.equal(settlement.includes(".where("), false);
+    assert.equal(settlement.includes(".list("), false);
+    assert.equal(settlement.includes('collection("users")'), false);
+    assert.equal(settlement.includes('collection("agency_wallets").doc(agencyId)'), true);
+    assert.equal(settlement.includes('collection("agency_monthly_statements").doc(statementId)'), true);
+    assert.equal(settlement.includes('collection("financial_ledger").doc(ledgerId)'), true);
+    assert.equal(settlement.includes("AGENCY_MONTHLY_ACCRUAL_SHARDS"), true);
+    assert.equal(settlement.includes('hostSalaryRepaidAtMonthEnd:false'), true);
+  }
+});
