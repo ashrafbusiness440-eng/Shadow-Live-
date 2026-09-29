@@ -209,6 +209,25 @@ before(async()=>{
       bonusCoins:2000,
       status:"settled",
     });
+    await setDoc(doc(context.firestore(),"agency_surplus_policy_snapshots",agencyId+"__2026-09"),{
+      agencyId,
+      month:"2026-09",
+      snapshotId:agencyId+"__2026-09",
+      surplusToShadow:false,
+      mode:"host_wallet_coins",
+      status:"frozen",
+    });
+    await setDoc(doc(
+      context.firestore(),
+      "agency_surplus_settlements",
+      agencyId+"__2026-09__"+agencyHostUid,
+    ),{
+      agencyId,
+      month:"2026-09",
+      hostUid:agencyHostUid,
+      status:"settled",
+      surplusCoins:20000,
+    });
     await setDoc(doc(context.firestore(),"agency_status_events","rules_agency_event"),{
       agencyId,
       type:"suspend",
@@ -389,6 +408,17 @@ test("agency host reads own progress but not agency finance or policy",async()=>
   )));
   await assertFails(getDoc(doc(hostDb,"agency_wallets",agencyId)));
   await assertFails(getDoc(doc(hostDb,"agency_bonus_accruals",agencyId+"__2026-09")));
+  await assertFails(getDoc(doc(hostDb,"agency_surplus_policy_snapshots",agencyId+"__2026-09")));
+  await assertSucceeds(getDoc(doc(
+    hostDb,
+    "agency_surplus_settlements",
+    agencyId+"__2026-09__"+agencyHostUid,
+  )));
+  await assertFails(updateDoc(doc(
+    hostDb,
+    "agency_surplus_settlements",
+    agencyId+"__2026-09__"+agencyHostUid,
+  ),{surplusCoins:9999}));
   await assertFails(getDoc(doc(hostDb,"agency_policy_overrides",agencyId)));
 });
 
@@ -401,6 +431,12 @@ test("agency manager reads host state and manager slots but not finance or polic
   await assertSucceeds(getDoc(doc(managerDb,"agency_status_events","rules_agency_event")));
   await assertFails(getDoc(doc(managerDb,"agency_wallets",agencyId)));
   await assertFails(getDoc(doc(managerDb,"agency_bonus_accruals",agencyId+"__2026-09")));
+  await assertFails(getDoc(doc(managerDb,"agency_surplus_policy_snapshots",agencyId+"__2026-09")));
+  await assertFails(getDoc(doc(
+    managerDb,
+    "agency_surplus_settlements",
+    agencyId+"__2026-09__"+agencyHostUid,
+  )));
   await assertFails(getDoc(doc(managerDb,"agency_policy_overrides",agencyId)));
 });
 
@@ -410,6 +446,12 @@ test("agency owner can read own agency finance and policy but cannot write serve
   await assertSucceeds(getDoc(doc(ownerDb,"agency_monthly_statements",agencyId+"__2026-09")));
   await assertSucceeds(getDoc(doc(ownerDb,"agency_monthly_accrual_shards",agencyId+"__2026-09__00")));
   await assertSucceeds(getDoc(doc(ownerDb,"agency_bonus_accruals",agencyId+"__2026-09")));
+  await assertSucceeds(getDoc(doc(ownerDb,"agency_surplus_policy_snapshots",agencyId+"__2026-09")));
+  await assertSucceeds(getDoc(doc(
+    ownerDb,
+    "agency_surplus_settlements",
+    agencyId+"__2026-09__"+agencyHostUid,
+  )));
   await assertSucceeds(getDoc(doc(ownerDb,"agency_policy_overrides",agencyId)));
   await assertFails(updateDoc(doc(ownerDb,"agency_wallets",agencyId),{diamonds:9999}));
   await assertFails(updateDoc(
@@ -423,6 +465,14 @@ test("agency owner can read own agency finance and policy but cannot write serve
   await assertFails(updateDoc(
     doc(ownerDb,"agency_bonus_accruals",agencyId+"__2026-09"),
     {bonusCoins:9999},
+  ));
+  await assertFails(updateDoc(
+    doc(ownerDb,"agency_surplus_policy_snapshots",agencyId+"__2026-09"),
+    {surplusToShadow:true},
+  ));
+  await assertFails(updateDoc(
+    doc(ownerDb,"agency_surplus_settlements",agencyId+"__2026-09__"+agencyHostUid),
+    {surplusCoins:9999},
   ));
   await assertFails(updateDoc(doc(ownerDb,"agency_policy_overrides",agencyId),{agencyShareBps:9000}));
   await assertFails(setDoc(doc(ownerDb,"agency_transfers","forged_transfer"),{
@@ -453,6 +503,14 @@ test("agency outsider cannot read private agency data",async()=>{
   await assertFails(getDoc(doc(
     outsiderDb,"agency_bonus_accruals",agencyId+"__2026-09",
   )));
+  await assertFails(getDoc(doc(
+    outsiderDb,"agency_surplus_policy_snapshots",agencyId+"__2026-09",
+  )));
+  await assertFails(getDoc(doc(
+    outsiderDb,
+    "agency_surplus_settlements",
+    agencyId+"__2026-09__"+agencyHostUid,
+  )));
 });
 
 test("platform granular capabilities allow only their intended agency reads",async()=>{
@@ -468,12 +526,28 @@ test("platform granular capabilities allow only their intended agency reads",asy
     adminDb,"agency_bonus_accruals",agencyId+"__2026-09",
   )));
   await assertSucceeds(getDoc(doc(
+    adminDb,"agency_surplus_policy_snapshots",agencyId+"__2026-09",
+  )));
+  await assertSucceeds(getDoc(doc(
+    adminDb,
+    "agency_surplus_settlements",
+    agencyId+"__2026-09__"+agencyHostUid,
+  )));
+  await assertSucceeds(getDoc(doc(
     adminDb,"agency_memberships",agencyId+"__"+agencyHostUid,
   )));
   await assertFails(updateDoc(doc(adminDb,"agency_wallets",agencyId),{diamonds:9999}));
   await assertFails(updateDoc(
     doc(adminDb,"agency_monthly_statements",agencyId+"__2026-09"),
     {agencyDiamonds:9999},
+  ));
+  await assertFails(updateDoc(
+    doc(adminDb,"agency_surplus_policy_snapshots",agencyId+"__2026-09"),
+    {surplusToShadow:true},
+  ));
+  await assertFails(updateDoc(
+    doc(adminDb,"agency_surplus_settlements",agencyId+"__2026-09__"+agencyHostUid),
+    {surplusCoins:9999},
   ));
   await assertFails(getDoc(doc(adminDb,"agency_policy_overrides",agencyId)));
 });
