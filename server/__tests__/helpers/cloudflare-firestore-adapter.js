@@ -176,7 +176,7 @@ export function cloudflareFirestoreAdapter(adminDb) {
                 current.exists ? current.value : FieldValue.delete(),
               );
             }
-            batch.update(ref(write.path), masked);
+            batch.set(ref(write.path), masked, { merge: true });
           } else {
             batch.set(ref(write.path), payload, { merge: true });
           }
