@@ -149,6 +149,43 @@ export function resolveAgencySurplusPolicy(override = {}) {
   };
 }
 
+export function calculateAgencyMonthEndSurplusFromSnapshot({
+  progressCoins = 0,
+  targetThresholdCoins = 0,
+  surplusToShadow,
+} = {}) {
+  const progress = targetFinancialInteger(
+    progressCoins,
+    "surplus_progress_coins",
+  );
+  const threshold = targetFinancialInteger(
+    targetThresholdCoins,
+    "surplus_target_threshold_coins",
+  );
+  if (typeof surplusToShadow !== "boolean") {
+    throw new Error("agency_surplus_policy_unconfigured");
+  }
+  if (threshold > progress) {
+    throw new Error("agency_surplus_target_threshold_conflict");
+  }
+  const surplusCoins = progress - threshold;
+  if (!Number.isSafeInteger(surplusCoins) || surplusCoins < 0) {
+    throw new Error("invalid_agency_target_surplus_coins");
+  }
+  return {
+    progressCoins: progress,
+    completedTargetCoins: threshold,
+    surplusCoins,
+    surplusToShadow,
+    destination:
+      surplusCoins === 0
+        ? "none"
+        : surplusToShadow
+          ? "shadow_profit"
+          : "host_wallet_coins",
+  };
+}
+
 export function calculateAgencyMonthEndSurplus({
   progressCoins = 0,
   targets,
@@ -176,24 +213,16 @@ export function calculateAgencyMonthEndSurplus({
   }
 
   const completedTargetCoins = reachedTarget?.thresholdCoins || 0;
-  const surplusCoins = progress - completedTargetCoins;
-  if (!Number.isSafeInteger(surplusCoins) || surplusCoins < 0) {
-    throw new Error("invalid_agency_target_surplus_coins");
-  }
+  const snapshot = calculateAgencyMonthEndSurplusFromSnapshot({
+    progressCoins: progress,
+    targetThresholdCoins: completedTargetCoins,
+    surplusToShadow,
+  });
 
   return {
-    progressCoins: progress,
+    ...snapshot,
     reachedTarget,
     nextTarget,
-    completedTargetCoins,
-    surplusCoins,
-    surplusToShadow,
-    destination:
-      surplusCoins === 0
-        ? "none"
-        : surplusToShadow
-          ? "shadow_profit"
-          : "host_wallet_coins",
   };
 }
 
