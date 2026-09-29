@@ -263,4 +263,16 @@ test("13-A pressure guard: identity/ownership control is direct-read and scan-fr
     route.includes('if (!actor.permissions.isOwner) throw new ApiError("forbidden", 403);'),
     true,
   );
+
+  const controlPage = readFileSync(
+    new URL("../../lib/admin/agency_control_page.dart", import.meta.url),
+    "utf8",
+  );
+  assert.equal(controlPage.includes("'action': 'getAgency'"), true);
+  assert.equal(controlPage.includes("'action': 'updateIdentity'"), true);
+  assert.equal(controlPage.includes("'action': 'transferOwnership'"), true);
+  assert.equal(controlPage.includes("Timer.periodic"), false);
+  assert.equal(controlPage.includes(".snapshots()"), false);
+  assert.equal(controlPage.includes("StreamBuilder"), false);
+  assert.equal(controlPage.includes("FirebaseFirestore"), false);
 });
