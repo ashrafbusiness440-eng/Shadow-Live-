@@ -750,8 +750,10 @@ function assertAgencyHostSurplusReplay({
     clean(settlement.ledgerId)!==ledgerId ||
     clean(settlement.policySnapshotId)!==policySnapshot.snapshotId ||
     settlement.surplusToShadow!==policySnapshot.surplusToShadow ||
-    clean(settlement.destination)!==clean(policySnapshot.mode) &&
-      clean(settlement.destination)!=="none" ||
+    (
+      clean(settlement.destination)!==clean(policySnapshot.mode) &&
+      clean(settlement.destination)!=="none"
+    ) ||
     settlement.hostSalaryRepaidAtMonthEnd!==false
   ){
     throw Error("agency_surplus_settlement_conflict");
@@ -931,7 +933,9 @@ async function settleAgencyHostSurplus(
       accountType:
         surplus.destination==="shadow_profit"
           ?"shadow_profit"
-          :"host_wallet",
+          :surplus.destination==="host_wallet_coins"
+            ?"host_wallet"
+            :"none",
       asset:"coins",
       delta:surplus.surplusCoins,
       openingBalance:
