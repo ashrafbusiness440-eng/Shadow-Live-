@@ -11,6 +11,10 @@ import {
   updateAgencyPolicyOverride,
 } from "../../cloudflare-worker/src/agency-control.js";
 import { sendRoomGift } from "../../cloudflare-worker/src/room-gift.js";
+import {
+  requestAgencyJoin,
+  respondAgencyMembershipRequest,
+} from "../../cloudflare-worker/src/agency-membership.js";
 import { cloudflareFirestoreAdapter } from "./helpers/cloudflare-firestore-adapter.js";
 
 const app = initializeApp(
@@ -305,6 +309,65 @@ test("13-B room gift consumes propagated tier and Target overrides with no polic
   assert.equal(chatGiftSource.includes("agency_policy_overrides"), false);
   assert.equal(roomGiftSource.includes("economyWithAgencyPolicySnapshot"), true);
   assert.equal(chatGiftSource.includes("economyWithAgencyPolicySnapshot"), true);
+});
+
+test("13-B newly accepted Host receives current policy snapshot on the cold membership path", async () => {
+  const agencyId = "813105";
+  const actorUid = "stage13b_platform_owner";
+  const targetUid = "stage13b_new_host";
+  await seedAgency(agencyId, actorUid);
+  await updateAgencyPolicyOverride(db, actorUid, {
+    agencyId,
+    overrideTiers: true,
+    tiers: customTiers,
+    overrideTargets: true,
+    targets: customTargets,
+    overrideBonus: false,
+    surplusToShadow: false,
+    idempotencyKey: "stage13b_policy_0005",
+  });
+
+  await adminDb.collection("users").doc(targetUid).set({
+    publicId: "713105",
+    role: "user",
+    accountStatus: "active",
+    agencyId: "",
+    agencyRole: "",
+    coins: 0,
+    diamonds: 0,
+  });
+
+  const join = await requestAgencyJoin(
+    db,
+    targetUid,
+    {
+      agencyId,
+      idempotencyKey: "stage13b_join_0005",
+    },
+    { now: new Date("2026-09-30T00:50:00.000Z") },
+  );
+  const accepted = await respondAgencyMembershipRequest(
+    db,
+    actorUid,
+    {
+      requestId: join.requestId,
+      decision: "accept",
+      idempotencyKey: "stage13b_accept_0005",
+    },
+    { now: new Date("2026-09-30T00:51:00.000Z") },
+  );
+  assert.equal(accepted.membershipCommitted, true);
+
+  const user = await adminDb.collection("users").doc(targetUid).get();
+  assert.equal(user.data().agencyId, agencyId);
+  assert.equal(user.data().agencyRole, "host");
+  assert.equal(user.data().agencyPolicySnapshot.agencyId, agencyId);
+  assert.equal(
+    user.data().agencyPolicySnapshot.policyVersion,
+    "stage13b_policy_0005",
+  );
+  assert.equal(user.data().agencyPolicySnapshot.tiers[0].hostShareBps, 5500);
+  assert.equal(user.data().agencyPolicySnapshot.targets[0].salaryDiamonds, 7);
 });
 
 test("13-B cooldown exception resolves Public ID and reuses audited Stage 04 override", async () => {
