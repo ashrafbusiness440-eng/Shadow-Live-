@@ -1456,6 +1456,11 @@ export async function getAgencyPolicyControlDetails(db, agencyIdInput) {
     overrideExists: overrideSnap.exists,
     override: sanitizeAgencyPolicyOverride(override),
     effective: effectiveAgencyPolicy(economy, override),
+    propagation: {
+      complete: agencySnap.data?.policyPropagationComplete === true,
+      cursor: clean(agencySnap.data?.policyPropagationCursor) || null,
+      policyVersion: clean(agencySnap.data?.policyVersion) || null,
+    },
   };
 }
 
@@ -1534,8 +1539,18 @@ export async function updateAgencyPolicyOverride(
         policyWrite,
         db.writeUpdate(
           "agencies/" + agencyId,
-          { policyVersion: key, policyUpdatedAt: now },
-          ["policyVersion", "policyUpdatedAt"],
+          {
+            policyVersion: key,
+            policyUpdatedAt: now,
+            policyPropagationCursor: null,
+            policyPropagationComplete: false,
+          },
+          [
+            "policyVersion",
+            "policyUpdatedAt",
+            "policyPropagationCursor",
+            "policyPropagationComplete",
+          ],
         ),
         db.writeCreate(opPath, {
           actorUid,
@@ -1581,7 +1596,6 @@ export async function propagateAgencyPolicyPage(
   db,
   agencyIdInput,
   {
-    cursor = null,
     limit = 25,
     now = new Date(),
   } = {},
@@ -1589,56 +1603,106 @@ export async function propagateAgencyPolicyPage(
   const agencyId = clean(agencyIdInput);
   if (!validAgencyId(agencyId)) throw new ApiError("invalid_agency_id", 400);
   const pageLimit = Math.max(1, Math.min(25, Math.floor(Number(limit || 25))));
-  const cursorUid = clean(cursor);
-  if (cursorUid && cursorUid.includes("/")) {
-    throw new ApiError("invalid_policy_cursor", 400);
-  }
-  const [agencySnap, overrideSnap] = await Promise.all([
-    db.get("agencies/" + agencyId),
-    db.get("agency_policy_overrides/" + agencyId),
-  ]);
-  if (!agencySnap.exists) throw new ApiError("agency_not_found", 404);
-  const override = overrideSnap.exists ? overrideSnap.data || {} : null;
-  const snapshot = override
-    ? {
-        agencyId,
-        policyVersion: clean(override.policyVersion) || null,
-        updatedAt: override.updatedAt || null,
-        ...(Array.isArray(override.tiers) ? { tiers: override.tiers } : {}),
-        ...(Array.isArray(override.targets) ? { targets: override.targets } : {}),
-      }
-    : null;
 
-  const rows = await db.runQuery("users", {
-    filters: [{ field: "agencyId", op: "==", value: agencyId }],
-    orderBy: [{ field: "__name__", direction: "asc" }],
-    limit: pageLimit + 1,
-    ...(cursorUid
-      ? { startAfter: [{ referencePath: "users/" + cursorUid }] }
-      : {}),
-  });
-  const page = rows.slice(0, pageLimit);
-  if (page.length) {
-    await db.commit(
-      null,
-      page.map((row) =>
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const tx = await db.beginTransaction();
+    try {
+      const [agencySnap, overrideSnap] = await Promise.all([
+        db.get("agencies/" + agencyId, tx),
+        db.get("agency_policy_overrides/" + agencyId, tx),
+      ]);
+      if (!agencySnap.exists) throw new ApiError("agency_not_found", 404);
+      if (agencySnap.data?.policyPropagationComplete === true) {
+        await db.rollback(tx);
+        return {
+          ok: true,
+          code: "already_complete",
+          agencyId,
+          updated: 0,
+          hasMore: false,
+          nextCursor: null,
+          policyVersion: clean(agencySnap.data?.policyVersion) || null,
+        };
+      }
+
+      const override = overrideSnap.exists ? overrideSnap.data || {} : null;
+      const policyVersion = clean(override?.policyVersion) || null;
+      if (
+        policyVersion &&
+        clean(agencySnap.data?.policyVersion) !== policyVersion
+      ) {
+        throw new ApiError("agency_policy_version_conflict", 409);
+      }
+      const snapshot = override
+        ? {
+            agencyId,
+            policyVersion,
+            updatedAt: override.updatedAt || null,
+            ...(Array.isArray(override.tiers) ? { tiers: override.tiers } : {}),
+            ...(Array.isArray(override.targets) ? { targets: override.targets } : {}),
+          }
+        : null;
+      const cursorUid = clean(agencySnap.data?.policyPropagationCursor);
+
+      const rows = await db.runQuery("users", {
+        filters: [{ field: "agencyId", op: "==", value: agencyId }],
+        orderBy: [{ field: "__name__", direction: "asc" }],
+        limit: pageLimit + 1,
+        transaction: tx,
+        ...(cursorUid
+          ? { startAfter: [{ referencePath: "users/" + cursorUid }] }
+          : {}),
+      });
+      const page = rows.slice(0, pageLimit);
+      const hasMore = rows.length > pageLimit;
+      const nextCursor =
+        hasMore && page.length ? page[page.length - 1].id : null;
+
+      await db.commit(tx, [
+        ...page.map((row) =>
+          db.writeUpdate(
+            "users/" + row.id,
+            { agencyPolicySnapshot: snapshot },
+            ["agencyPolicySnapshot"],
+          )
+        ),
         db.writeUpdate(
-          "users/" + row.id,
-          { agencyPolicySnapshot: snapshot },
-          ["agencyPolicySnapshot"],
-        )
-      ),
-    );
+          "agencies/" + agencyId,
+          {
+            policyPropagationCursor: nextCursor,
+            policyPropagationComplete: !hasMore,
+            policyPropagationUpdatedAt: now,
+          },
+          [
+            "policyPropagationCursor",
+            "policyPropagationComplete",
+            "policyPropagationUpdatedAt",
+          ],
+        ),
+      ]);
+
+      return {
+        ok: true,
+        code: "ok",
+        agencyId,
+        updated: page.length,
+        hasMore,
+        nextCursor,
+        policyVersion,
+      };
+    } catch (error) {
+      await db.rollback(tx);
+      if (error instanceof ApiError) throw error;
+      if (isTransientFirestoreError(error) && attempt < 2) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, firestoreErrorRetryDelayMs(attempt))
+        );
+        continue;
+      }
+      throw error;
+    }
   }
-  const hasMore = rows.length > pageLimit;
-  return {
-    ok: true,
-    agencyId,
-    updated: page.length,
-    hasMore,
-    nextCursor: hasMore && page.length ? page[page.length - 1].id : null,
-    policyVersion: snapshot?.policyVersion || null,
-  };
+  throw new ApiError("transaction_failed", 500);
 }
 
 export async function overrideAgencyCooldownByPublicId(
@@ -1800,7 +1864,6 @@ export async function agencyControl(request, env) {
         request,
         env,
         await propagateAgencyPolicyPage(db, body.agencyId, {
-          cursor: body.cursor,
           limit: body.limit,
         }),
       );
