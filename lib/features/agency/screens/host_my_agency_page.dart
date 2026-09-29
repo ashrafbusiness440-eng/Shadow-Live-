@@ -1,7 +1,11 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../../../services/navigation_service.dart';
 import '../../profile/screens/public_profile_screen.dart';
+import '../../profile/services/profile_action_service.dart';
 import '../services/host_my_agency_service.dart';
+import '../services/public_agency_service.dart';
 
 class HostMyAgencyPage extends StatefulWidget {
   const HostMyAgencyPage({super.key});
@@ -12,10 +16,16 @@ class HostMyAgencyPage extends StatefulWidget {
 
 class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
   final HostMyAgencyService _service = HostMyAgencyService();
+  final PublicAgencyService _publicAgencyService = PublicAgencyService();
 
   HostMyAgencyCoreData? _data;
+  PublicAgencyRankingData? _ranking;
+  PublicAgencyArchiveData? _archive;
   bool _loading = true;
+  bool _rankingLoading = false;
+  bool _archiveLoading = false;
   String? _error;
+  String? _rankingError;
 
   @override
   void initState() {
@@ -26,6 +36,7 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
   @override
   void dispose() {
     _service.close();
+    _publicAgencyService.close();
     super.dispose();
   }
 
@@ -41,12 +52,97 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
         _data = data;
         _loading = false;
       });
+      await _loadRanking(data.agency.agencyId);
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _error = error.toString();
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _loadRanking(String agencyId, {String? month}) async {
+    if (_rankingLoading) return;
+    setState(() {
+      _rankingLoading = true;
+      _rankingError = null;
+    });
+    try {
+      final ranking = await _publicAgencyService.loadRanking(
+        agencyId: agencyId,
+        month: month,
+      );
+      if (!mounted) return;
+      setState(() {
+        _ranking = ranking;
+        _rankingLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _rankingError = error.toString();
+        _rankingLoading = false;
+      });
+    }
+  }
+
+  Future<void> _showArchive() async {
+    final data = _data;
+    if (data == null || _archiveLoading) return;
+    setState(() => _archiveLoading = true);
+    try {
+      final archive = _archive ??
+          await _publicAgencyService.loadArchive(
+            agencyId: data.agency.agencyId,
+          );
+      if (!mounted) return;
+      setState(() {
+        _archive = archive;
+        _archiveLoading = false;
+      });
+      if (archive.months.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('لا يوجد سجل شهري مغلق بعد.')),
+        );
+        return;
+      }
+      final selected = await showModalBottomSheet<String>(
+        context: context,
+        backgroundColor: const Color(0xFF0D1220),
+        builder: (sheetContext) => SafeArea(
+          child: Directionality(
+            textDirection: TextDirection.rtl,
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
+              children: [
+                const ListTile(
+                  leading: Icon(Icons.history_rounded),
+                  title: Text('السجل الشهري'),
+                  subtitle: Text('آخر الأشهر المغلقة ذات النشاط'),
+                ),
+                ...archive.months.map(
+                  (month) => ListTile(
+                    title: Text(_monthLabel(month)),
+                    trailing: const Icon(Icons.chevron_left_rounded),
+                    onTap: () => Navigator.pop(sheetContext, month),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      if (selected != null && mounted) {
+        await _loadRanking(data.agency.agencyId, month: selected);
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _archiveLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر تحميل السجل الشهري.')),
+      );
     }
   }
 
@@ -57,6 +153,32 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
       MaterialPageRoute(
         builder: (_) => PublicProfileScreen(userId: owner.uid),
       ),
+    );
+  }
+
+  Future<void> _contactOwner() async {
+    final owner = _data?.owner;
+    final me = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (owner == null || owner.uid.isEmpty || owner.uid == me) return;
+    await ProfileActionService.openChat(
+      context,
+      otherUid: owner.uid,
+      otherName: owner.displayName,
+      otherPhoto: owner.profileImageUrl ?? '',
+    );
+  }
+
+  void _openAgencyRoom() {
+    final data = _data;
+    final roomId = data?.agency.roomId?.trim() ?? '';
+    if (data == null ||
+        data.agency.status != 'active' ||
+        roomId.isEmpty) {
+      return;
+    }
+    NavigationService.navigateTo(
+      AppRoutes.voiceChatRoom,
+      arguments: {'roomId': roomId},
     );
   }
 
