@@ -131,7 +131,7 @@ class PublicAgencyService {
   Future<PublicAgencyPageData> load({
     required String agencyId,
     String? cursor,
-    int limit = 20,
+    int limit = 12,
   }) async {
     final token = await _idToken();
     final response = await _client.post(
@@ -142,7 +142,7 @@ class PublicAgencyService {
       },
       body: jsonEncode({
         'agencyId': agencyId.trim(),
-        'limit': limit.clamp(1, 24),
+        'limit': limit.clamp(1, 12),
         if (cursor != null && cursor.trim().isNotEmpty)
           'cursor': cursor.trim(),
       }),
