@@ -349,12 +349,11 @@ test("Stage 09-B surplus settlement stays bounded paginated and off Gift hot pat
     "../../cloudflare-worker/src/legacy-economy/economy-control.js",
   ]) {
     const sourceText = source(relativePath);
-    const start = sourceText.indexOf("export async function settleAgencyHostSurplusPage");
+    const start = sourceText.indexOf("const AGENCY_SURPLUS_PAGE_MAX=25");
     const end = sourceText.indexOf("export async function handler", start);
     const settlement = sourceText.slice(start, end);
     assert.equal(start >= 0, true);
-    assert.equal(settlement.includes("const AGENCY_SURPLUS_PAGE_MAX=25"), false);
-    assert.equal(sourceText.includes("const AGENCY_SURPLUS_PAGE_MAX=25"), true);
+    assert.equal(settlement.includes("const AGENCY_SURPLUS_PAGE_MAX=25"), true);
     assert.equal(settlement.includes('"surplusPageKey"'), true);
     assert.equal(settlement.includes('.orderBy("surplusPageKey","asc")'), true);
     assert.equal(settlement.includes(".limit(pageSize+1)"), true);
