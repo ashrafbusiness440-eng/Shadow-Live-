@@ -567,13 +567,16 @@ async function setRoomModerator(db,uid,body){
 }
 
 function roomResponse(roomId,data){
+  const roomType=clean(data.roomType||data.type||"personal");
+  const agencyId=clean(data.agencyId);
   return {
     roomId,
     name:clean(data.name||data.title||"غرفتي"),
     publicId:clean(data.publicId),
     ownerUid:clean(data.ownerUid||data.ownerId),
     hostUid:clean(data.hostUid||data.hostId),
-    roomType:clean(data.roomType||"personal"),
+    roomType,
+    agencyId:roomType==="agency"&&/^\d{6}$/.test(agencyId)?agencyId:"",
     category:clean(data.category||"دردشة"),
     ownerName:clean(data.ownerName),
     ownerLocation:clean(data.ownerLocation),

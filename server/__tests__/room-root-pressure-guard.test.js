@@ -62,3 +62,35 @@ test("room chat touches the room root at most once per minute", () => {
     true,
   );
 });
+
+
+test("Agency room House link reuses room metadata without an Agency bootstrap read", () => {
+  const voice = source("../../cloudflare-worker/src/voice-session-legacy.js");
+  const main = source("../../lib/main.dart");
+
+  const roomResponseStart = voice.indexOf("function roomResponse(roomId,data)");
+  const bootstrapStart = voice.indexOf("async function roomBootstrap");
+  const bootstrapEnd = voice.indexOf("async function ", bootstrapStart + 20);
+  assert.notEqual(roomResponseStart, -1);
+  assert.notEqual(bootstrapStart, -1);
+
+  const roomResponseBlock = voice.slice(roomResponseStart, bootstrapStart);
+  const bootstrapBlock = voice.slice(
+    bootstrapStart,
+    bootstrapEnd === -1 ? voice.length : bootstrapEnd,
+  );
+
+  assert.equal(roomResponseBlock.includes("const agencyId=clean(data.agencyId);"), true);
+  assert.equal(
+    roomResponseBlock.includes(
+      'agencyId:roomType==="agency"&&/^\\d{6}$/.test(agencyId)?agencyId:""',
+    ),
+    true,
+  );
+  assert.equal(bootstrapBlock.includes('collection("agencies")'), false);
+  assert.equal(bootstrapBlock.includes("agencies/"), false);
+
+  assert.equal(main.includes("agency-room-house-button"), true);
+  assert.equal(main.includes("agencyIdForRoom(_roomArguments)"), true);
+  assert.equal(main.includes("PublicAgencyPage(agencyId: agencyId)"), true);
+});
