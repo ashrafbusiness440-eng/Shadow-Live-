@@ -603,6 +603,22 @@ export function firestoreClient(env) {
       return write;
     },
 
+    writeMaskedUpdate(path, fields, fieldPaths = [], updateTransforms = null) {
+      const write = {
+        update: {
+          name: documentName(path),
+          fields: encodeFields(fields),
+        },
+        updateMask: {
+          fieldPaths: Array.isArray(fieldPaths) ? fieldPaths : [],
+        },
+      };
+      if (updateTransforms?.length) {
+        write.updateTransforms = updateTransforms;
+      }
+      return write;
+    },
+
     increment(fieldPath, amount) {
       return {
         fieldPath,
