@@ -71,6 +71,7 @@ test("11-A Host My Agency returns only the signed-in Host core data", async () =
       country: "AE",
       ownerUid,
       status: "active",
+      roomId: "agency_room_741201",
       agencyProfitDiamonds: 999999,
     }),
     adminDb.collection("users").doc(ownerUid).set({
@@ -94,6 +95,7 @@ test("11-A Host My Agency returns only the signed-in Host core data", async () =
   assert.equal(result.ok, true);
   assert.equal(result.agency.agencyId, agencyId);
   assert.equal(result.agency.name, "Host Core Agency");
+  assert.equal(result.agency.roomId, "agency_room_741201");
   assert.equal(result.owner.uid, ownerUid);
   assert.equal(result.membership.role, "host");
   assert.equal(result.target.month, "2026-09");
@@ -201,6 +203,7 @@ test("11-A pressure contract is five direct reads with zero query/write", async 
             name: "Pressure Agency",
             ownerUid,
             status: "active",
+            agencyRoomId: "agency_room_741203",
           },
         };
       }
@@ -238,6 +241,7 @@ test("11-A pressure contract is five direct reads with zero query/write", async 
   );
 
   assert.equal(result.ok, true);
+  assert.equal(result.agency.roomId, "agency_room_741203");
   assert.deepEqual(calls.gets, [
     "users/" + uid,
     "agency_user_memberships/" + uid,
