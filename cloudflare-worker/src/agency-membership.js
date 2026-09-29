@@ -715,6 +715,14 @@ export async function getMyAgencyLeaveRequestStatus(
   };
 }
 
+function responseFingerprint({ requestId, decision }) {
+  return fingerprint({
+    action: "respond",
+    requestId: clean(requestId),
+    decision: clean(decision),
+  });
+}
+
 function leaveResponseFingerprint({ requestId, decision }) {
   return fingerprint({
     action: "respondLeave",
@@ -1045,14 +1053,6 @@ export async function respondAgencyLeaveRequest(
     }
   }
   throw new ApiError("transaction_failed", 500);
-}
-
-function responseFingerprint({ requestId, decision }) {
-  return fingerprint({
-    action: "respond",
-    requestId: clean(requestId),
-    decision: clean(decision),
-  });
 }
 
 export async function respondAgencyMembershipRequest(
