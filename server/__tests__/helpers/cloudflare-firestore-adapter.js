@@ -87,6 +87,7 @@ export function cloudflareFirestoreAdapter(adminDb) {
       filters = [],
       orderBy = [],
       limit = 100,
+      startAfter = [],
     } = {}) {
       let query = adminDb.collection(collectionPath);
       for (const filter of filters) {
@@ -104,6 +105,23 @@ export function cloudflareFirestoreAdapter(adminDb) {
           String(order.direction || "asc").toLowerCase() === "desc"
             ? "desc"
             : "asc",
+        );
+      }
+      if (Array.isArray(startAfter) && startAfter.length) {
+        query = query.startAfter(
+          ...startAfter.map((item) => {
+            if (item && typeof item === "object" && item.referencePath) {
+              return adminDb.doc(item.referencePath);
+            }
+            if (
+              item &&
+              typeof item === "object" &&
+              Object.prototype.hasOwnProperty.call(item, "value")
+            ) {
+              return item.value;
+            }
+            return item;
+          }),
         );
       }
       query = query.limit(Math.max(1, Math.min(1000, Number(limit || 100))));
