@@ -204,13 +204,18 @@ test("13-B propagates policy snapshots in bounded cursor pages and never touches
   assert.equal(first.hasMore, true);
   assert.ok(first.nextCursor);
 
-  const second = await propagateAgencyPolicyPage(db, agencyId, {
-    limit: 25,
-    cursor: first.nextCursor,
-  });
+  const afterFirst = await getAgencyPolicyControlDetails(db, agencyId);
+  assert.equal(afterFirst.propagation.complete, false);
+  assert.equal(afterFirst.propagation.cursor, first.nextCursor);
+
+  const second = await propagateAgencyPolicyPage(db, agencyId, { limit: 25 });
   assert.equal(second.updated, 5);
   assert.equal(second.hasMore, false);
   assert.equal(second.nextCursor, null);
+
+  const afterSecond = await getAgencyPolicyControlDetails(db, agencyId);
+  assert.equal(afterSecond.propagation.complete, true);
+  assert.equal(afterSecond.propagation.cursor, null);
 
   const [firstMember, lastMember, outsider] = await Promise.all([
     adminDb.collection("users").doc("stage13b_member_00").get(),
