@@ -288,6 +288,23 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
         ? Math.max(0, Number(receiver.giftRevenueMonthCoins || 0))
         : 0;
     const monthlyGrossCoins = previousMonthCoins + totalCost;
+    const previousAgencyPublicSupportCoins =
+      agencyId &&
+      clean(receiver.agencyPublicSupportAgencyId) === agencyId &&
+      clean(receiver.agencyPublicSupportMonth) === periods.month
+        ? Math.max(
+            0,
+            Number(receiver.agencyPublicSupportCoins || 0),
+          )
+        : 0;
+    const agencyPublicSupportCoins =
+      previousAgencyPublicSupportCoins + totalCost;
+    if (
+      agencyId &&
+      !Number.isSafeInteger(agencyPublicSupportCoins)
+    ) {
+      throw new ApiError("invalid_agency_public_support", 409);
+    }
     const revenue = resolveGiftRevenuePolicy(
       economy,
       receiver,
@@ -422,6 +439,17 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       "giftRevenueMonthCoins",
       "currentGiftRevenueTier",
     ];
+    if (agencyId) {
+      receiverFields.agencyPublicSupportAgencyId = agencyId;
+      receiverFields.agencyPublicSupportMonth = periods.month;
+      receiverFields.agencyPublicSupportCoins =
+        agencyPublicSupportCoins;
+      receiverMask.push(
+        "agencyPublicSupportAgencyId",
+        "agencyPublicSupportMonth",
+        "agencyPublicSupportCoins",
+      );
+    }
     const receiverTransforms = [
       db.increment("totalGiftsReceived", quantity),
       db.increment("totalValueReceived", totalCost),
@@ -627,7 +655,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
               agencyId,
               month: periods.month,
               hostUid: receiverId,
-              supportCoins: monthlyGrossCoins,
+              supportCoins: agencyPublicSupportCoins,
             }),
             nextTargetCoins: agencyTarget?.remainingToNextTargetCoins || 0,
             salaryPaidDiamonds: agencyTarget?.paidDiamonds || 0,
