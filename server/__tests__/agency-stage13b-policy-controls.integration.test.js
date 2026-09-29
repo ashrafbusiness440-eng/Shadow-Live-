@@ -157,6 +157,53 @@ test("13-B policy control inherits global then stores an idempotent per-agency o
   assert.equal(audit.data().action, "updateAgencyPolicy");
 });
 
+test("13-B disabling tier Target and Bonus overrides removes stale values and restores inheritance", async () => {
+  const agencyId = "813106";
+  const actorUid = "stage13b_platform_owner";
+  await seedAgency(agencyId, actorUid);
+
+  await updateAgencyPolicyOverride(db, actorUid, {
+    agencyId,
+    overrideTiers: true,
+    tiers: customTiers,
+    overrideTargets: true,
+    targets: customTargets,
+    overrideBonus: true,
+    agencyPerformanceBonusBps: 125,
+    agencyBonusActiveHosts: 3,
+    surplusToShadow: true,
+    idempotencyKey: "stage13b_policy_0006_on",
+  });
+
+  await updateAgencyPolicyOverride(db, actorUid, {
+    agencyId,
+    overrideTiers: false,
+    overrideTargets: false,
+    overrideBonus: false,
+    surplusToShadow: false,
+    idempotencyKey: "stage13b_policy_0006_off",
+  });
+
+  const current = await getAgencyPolicyControlDetails(db, agencyId);
+  assert.equal(current.effective.inherited.tiers, true);
+  assert.equal(current.effective.inherited.targets, true);
+  assert.equal(current.effective.inherited.bonus, true);
+  assert.equal(current.effective.inherited.surplus, false);
+  assert.equal(current.effective.tiers[0].hostShareBps, 5000);
+  assert.equal(current.effective.targets[0].id, "starter_g");
+  assert.equal(current.effective.agencyPerformanceBonusBps, 200);
+  assert.equal(current.effective.agencyBonusActiveHosts, 10);
+  assert.equal(current.effective.surplusToShadow, false);
+
+  const stored = await adminDb.collection("agency_policy_overrides")
+    .doc(agencyId).get();
+  assert.equal("tiers" in stored.data(), false);
+  assert.equal("targets" in stored.data(), false);
+  assert.equal("agencyPerformanceBonusBps" in stored.data(), false);
+  assert.equal("agencyBonusActiveHosts" in stored.data(), false);
+  assert.equal(stored.data().surplusToShadow, false);
+});
+
 test("13-B propagates policy snapshots in bounded cursor pages and never touches outsiders", async () => {
   const agencyId = "813102";
   const actorUid = "stage13b_platform_owner";
