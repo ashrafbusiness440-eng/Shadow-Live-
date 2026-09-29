@@ -243,7 +243,8 @@ class _TargetCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final denominator = target.targetCoins <= 0 ? 1 : target.targetCoins;
-    final ratio = (target.progressCoins / denominator).clamp(0.0, 1.0);
+    final ratio =
+        (target.progressCoins / denominator).clamp(0.0, 1.0).toDouble();
     final current = target.currentLevel;
     final next = target.nextLevel;
 
@@ -331,7 +332,8 @@ class _ActivityCard extends StatelessWidget {
     final requiredDays = activity.requiredQualifiedDays <= 0
         ? 1
         : activity.requiredQualifiedDays;
-    final ratio = (activity.qualifiedDays / requiredDays).clamp(0.0, 1.0);
+    final ratio =
+        (activity.qualifiedDays / requiredDays).clamp(0.0, 1.0).toDouble();
 
     return Container(
       padding: const EdgeInsets.all(18),
