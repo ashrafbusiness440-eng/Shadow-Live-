@@ -259,6 +259,39 @@ export function currentAgencyMonthKey(now = new Date()) {
   return date.toISOString().slice(0, 7);
 }
 
+export function agencyPublicRankingPrefix(agencyIdInput, monthInput) {
+  const agencyId = clean(agencyIdInput);
+  if (!/^[A-Za-z0-9_-]{3,180}$/.test(agencyId)) {
+    throw new Error("invalid_agency_ranking_agency_id");
+  }
+  const month = normalizeAgencyMonthKey(monthInput);
+  return agencyId + "__" + month + "__";
+}
+
+export function agencyPublicRankingKey({
+  agencyId,
+  month,
+  hostUid,
+  supportCoins,
+} = {}) {
+  const prefix = agencyPublicRankingPrefix(agencyId, month);
+  const uid = clean(hostUid);
+  if (!uid || uid.length > 180 || uid.includes("/")) {
+    throw new Error("invalid_agency_ranking_host_uid");
+  }
+  const coins = agencyFinancialInteger(
+    supportCoins || 0,
+    "public_ranking_support_coins",
+  );
+  const inverted = Number.MAX_SAFE_INTEGER - coins;
+  return (
+    prefix +
+    String(inverted).padStart(16, "0") +
+    "__" +
+    uid
+  );
+}
+
 export function assertAgencySettlementMonthClosed(monthInput, now = new Date()) {
   const month = normalizeAgencyMonthKey(monthInput);
   const currentMonth = currentAgencyMonthKey(now);
