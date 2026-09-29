@@ -6,6 +6,8 @@ import {
   agencyFinancialInteger,
   assertAgencySettlementMonthClosed,
   calculateAgencyTargetProgress,
+  calculateAgencyMonthEndSurplus,
+  resolveAgencySurplusPolicy,
   validateAgencySettlementTotals,
 } from "../economy/agency-policy.js";
 
@@ -200,4 +202,108 @@ test("settlement totals must balance exactly before wallet mutation",()=>{
     platformShareCoins:44000,
     giftCount:1,
   }),/agency_settlement_invariant_failed/);
+});
+
+
+test("09-A surplus policy requires an explicit per-agency toggle",()=>{
+  assert.deepEqual(resolveAgencySurplusPolicy({}),{
+    configured:false,
+    surplusToShadow:null,
+    mode:"unconfigured",
+  });
+  assert.deepEqual(resolveAgencySurplusPolicy({surplusToShadow:true}),{
+    configured:true,
+    surplusToShadow:true,
+    mode:"shadow_profit",
+  });
+  assert.deepEqual(resolveAgencySurplusPolicy({surplusToShadow:false}),{
+    configured:true,
+    surplusToShadow:false,
+    mode:"host_wallet_coins",
+  });
+  assert.throws(
+    ()=>resolveAgencySurplusPolicy({surplusToShadow:"true"}),
+    /invalid_agency_surplus_policy/,
+  );
+});
+
+test("09-A month-end surplus is Host Share above the last reached Target threshold",()=>{
+  const beforeFirst=calculateAgencyMonthEndSurplus({
+    progressCoins:40000,
+    surplusToShadow:false,
+  });
+  assert.equal(beforeFirst.reachedTarget,null);
+  assert.equal(beforeFirst.completedTargetCoins,0);
+  assert.equal(beforeFirst.surplusCoins,40000);
+  assert.equal(beforeFirst.destination,"host_wallet_coins");
+
+  const exact=calculateAgencyMonthEndSurplus({
+    progressCoins:50000,
+    surplusToShadow:true,
+  });
+  assert.equal(exact.reachedTarget?.id,"starter_g");
+  assert.equal(exact.completedTargetCoins,50000);
+  assert.equal(exact.surplusCoins,0);
+  assert.equal(exact.destination,"none");
+
+  const between=calculateAgencyMonthEndSurplus({
+    progressCoins:70000,
+    surplusToShadow:true,
+  });
+  assert.equal(between.reachedTarget?.id,"starter_g");
+  assert.equal(between.nextTarget?.id,"starter_f");
+  assert.equal(between.completedTargetCoins,50000);
+  assert.equal(between.surplusCoins,20000);
+  assert.equal(between.destination,"shadow_profit");
+
+  const diamond=calculateAgencyMonthEndSurplus({
+    progressCoins:51234567,
+    surplusToShadow:false,
+  });
+  assert.equal(diamond.reachedTarget?.id,"diamond");
+  assert.equal(diamond.nextTarget,null);
+  assert.equal(diamond.completedTargetCoins,50000000);
+  assert.equal(diamond.surplusCoins,1234567);
+  assert.equal(diamond.destination,"host_wallet_coins");
+});
+
+test("09-A surplus uses Target threshold, not salary-Diamond conversion",()=>{
+  const customTargets=[
+    {
+      id:"custom_one",
+      tierId:"starter",
+      rank:"C1",
+      thresholdCoins:90000,
+      salaryDiamonds:5,
+    },
+    {
+      id:"custom_two",
+      tierId:"starter",
+      rank:"C2",
+      thresholdCoins:200000,
+      salaryDiamonds:10,
+    },
+  ];
+  const result=calculateAgencyMonthEndSurplus({
+    progressCoins:150000,
+    targets:customTargets,
+    surplusToShadow:false,
+  });
+  assert.equal(result.reachedTarget?.id,"custom_one");
+  assert.equal(result.completedTargetCoins,90000);
+  assert.equal(result.surplusCoins,60000);
+});
+
+test("09-A surplus fails closed on unset toggle and corrupted progress",()=>{
+  assert.throws(
+    ()=>calculateAgencyMonthEndSurplus({progressCoins:70000}),
+    /agency_surplus_policy_unconfigured/,
+  );
+  assert.throws(
+    ()=>calculateAgencyMonthEndSurplus({
+      progressCoins:-1,
+      surplusToShadow:false,
+    }),
+    /invalid_agency_target_surplus_progress_coins/,
+  );
 });
