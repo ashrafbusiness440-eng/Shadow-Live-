@@ -436,7 +436,7 @@ class _RankingTile extends StatelessWidget {
     final person = entry.person;
     final imageUrl = person.profileImageUrl?.trim() ?? '';
     return Material(
-      color: Colors.black20,
+      color: Colors.black26,
       borderRadius: BorderRadius.circular(13),
       child: ListTile(
         dense: true,
