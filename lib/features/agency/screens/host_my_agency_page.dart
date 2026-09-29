@@ -156,6 +156,15 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
     );
   }
 
+  void _openRankingPerson(PublicAgencyPerson person) {
+    if (person.uid.isEmpty) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PublicProfileScreen(userId: person.uid),
+      ),
+    );
+  }
+
   Future<void> _contactOwner() async {
     final owner = _data?.owner;
     final me = FirebaseAuth.instance.currentUser?.uid ?? '';
@@ -214,10 +223,35 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
           _AgencyHeader(data: data),
           const SizedBox(height: 16),
           _OwnerCard(owner: data.owner, onTap: _openOwner),
+          const SizedBox(height: 12),
+          _AgencyActionsCard(
+            canEnterRoom:
+                data.agency.status == 'active' &&
+                (data.agency.roomId?.trim().isNotEmpty ?? false),
+            canContactOwner:
+                data.owner.uid.isNotEmpty &&
+                data.owner.uid != (FirebaseAuth.instance.currentUser?.uid ?? ''),
+            onEnterRoom: _openAgencyRoom,
+            onContactOwner: _contactOwner,
+          ),
           const SizedBox(height: 16),
           _TargetCard(target: data.target),
           const SizedBox(height: 16),
           _ActivityCard(activity: data.activity),
+          const SizedBox(height: 16),
+          _HostRankingCard(
+            data: _ranking,
+            loading: _rankingLoading,
+            archiveLoading: _archiveLoading,
+            error: _rankingError,
+            currentUid: FirebaseAuth.instance.currentUser?.uid ?? '',
+            onRetry: () => _loadRanking(
+              data.agency.agencyId,
+              month: _ranking?.month,
+            ),
+            onArchive: _showArchive,
+            onPersonTap: _openRankingPerson,
+          ),
         ],
       ),
     );
