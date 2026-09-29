@@ -618,6 +618,8 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
             targetId: agencyTarget?.reachedTarget?.id || "",
             targetThresholdCoins:
               agencyTarget?.reachedTarget?.thresholdCoins || 0,
+            surplusPageKey:
+              `${agencyId}__${periods.month}__${receiverId}`,
             nextTargetCoins: agencyTarget?.remainingToNextTargetCoins || 0,
             salaryPaidDiamonds: agencyTarget?.paidDiamonds || 0,
             updatedAt: now,
@@ -628,6 +630,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
             "month",
             "targetId",
             "targetThresholdCoins",
+            "surplusPageKey",
             "nextTargetCoins",
             "salaryPaidDiamonds",
             "updatedAt",
