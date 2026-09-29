@@ -70,6 +70,7 @@ test("10-B Top 10 ranks by public supportCoins, not Host financial share", async
           supportCoins: 300000,
         }),
         supportCoins: 300000,
+        publicSupportCoins: 300000,
         hostShareCoins: 1,
         targetId: "private_target",
       }),
@@ -86,6 +87,7 @@ test("10-B Top 10 ranks by public supportCoins, not Host financial share", async
           supportCoins: 100000,
         }),
         supportCoins: 100000,
+        publicSupportCoins: 100000,
         hostShareCoins: 999999999,
         targetId: "private_target",
       }),
@@ -102,6 +104,7 @@ test("10-B Top 10 ranks by public supportCoins, not Host financial share", async
           supportCoins: 200000,
         }),
         supportCoins: 200000,
+        publicSupportCoins: 200000,
         hostShareCoins: 888888888,
         targetId: "private_target",
       }),
@@ -185,7 +188,8 @@ test("10-B pressure contract keeps ranking query at 10 and profile reads at max 
         hostUid: "host_" + index,
         supportCoins: 1000000 - index,
       }),
-      supportCoins: 1000000 - index,
+      supportCoins: 777777777,
+      publicSupportCoins: 1000000 - index,
       hostShareCoins: 999999999,
     },
   }));
@@ -383,6 +387,9 @@ test("10-B ranking is single-field indexless and adds no Gift write operation", 
   ]) {
     const source = fs.readFileSync(path, "utf8");
     assert.equal(source.includes("publicRankingKey: agencyPublicRankingKey({"), true);
+    assert.equal(source.includes("publicSupportCoins: agencyPublicSupportCoins"), true);
+    assert.equal(source.includes("agencyPublicSupportAgencyId"), true);
+    assert.equal(source.includes("agencyPublicSupportMonth"), true);
     assert.equal(
       (source.match(/agency_host_monthly\//g) || []).length,
       1,
