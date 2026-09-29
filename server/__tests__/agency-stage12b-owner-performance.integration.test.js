@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
   loadAgencyOwnerPerformance,
@@ -225,4 +226,28 @@ test("12-B statement rejects current month before finance reads", async () => {
     /agency_month_not_closed/,
   );
   assert.equal(calls.gets.length, 0);
+});
+
+
+test("12-B Flutter owner dashboard remains pressure-safe and lazy for statements", () => {
+  const page = readFileSync(
+    new URL("../../lib/features/agency/screens/owner_agency_dashboard_page.dart", import.meta.url),
+    "utf8",
+  );
+  const service = readFileSync(
+    new URL("../../lib/features/agency/services/owner_agency_service.dart", import.meta.url),
+    "utf8",
+  );
+
+  assert.equal(page.includes("owner-agency-performance-card"), true);
+  assert.equal(page.includes("owner-agency-load-statement"), true);
+  assert.equal(page.includes("Future.microtask(_loadPerformance)"), true);
+  assert.equal(page.includes("_loadPreviousStatement"), true);
+  assert.equal(page.includes("Timer.periodic"), false);
+  assert.equal(page.includes(".snapshots()"), false);
+  assert.equal(page.includes("StreamBuilder"), false);
+  assert.equal(page.includes("FirebaseFirestore"), false);
+  assert.equal(service.includes("/agency-owner"), true);
+  assert.equal(service.includes("'action': 'performance'"), true);
+  assert.equal(service.includes("'action': 'statement'"), true);
 });
