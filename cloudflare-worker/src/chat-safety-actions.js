@@ -629,6 +629,8 @@ export async function sendGift(db, uid, body, options = {}) {
             hostUid: receiverId,
             month: periods.month,
             targetId: agencyTarget?.reachedTarget?.id || "",
+            targetThresholdCoins:
+              agencyTarget?.reachedTarget?.thresholdCoins || 0,
             nextTargetCoins: agencyTarget?.remainingToNextTargetCoins || 0,
             salaryPaidDiamonds: agencyTarget?.paidDiamonds || 0,
             updatedAt: now,
@@ -638,6 +640,7 @@ export async function sendGift(db, uid, body, options = {}) {
             "hostUid",
             "month",
             "targetId",
+            "targetThresholdCoins",
             "nextTargetCoins",
             "salaryPaidDiamonds",
             "updatedAt",
