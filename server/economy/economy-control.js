@@ -678,11 +678,20 @@ function agencySurplusPagePrefix(agencyId,month){
 }
 
 function validateFrozenAgencySurplusPolicy(data,agencyId,month){
+  const snapshotId=agencyId+"__"+month;
+  const expectedMode=
+    data.surplusToShadow===true
+      ?"shadow_profit"
+      :data.surplusToShadow===false
+        ?"host_wallet_coins"
+        :"";
   if(
+    clean(data.status)!=="frozen" ||
     clean(data.agencyId)!==agencyId ||
     clean(data.month)!==month ||
+    clean(data.snapshotId)!==snapshotId ||
     typeof data.surplusToShadow!=="boolean" ||
-    !["shadow_profit","host_wallet_coins"].includes(clean(data.mode))
+    clean(data.mode)!==expectedMode
   ){
     throw Error("agency_surplus_policy_snapshot_conflict");
   }
@@ -690,8 +699,8 @@ function validateFrozenAgencySurplusPolicy(data,agencyId,month){
     agencyId,
     month,
     surplusToShadow:data.surplusToShadow,
-    mode:clean(data.mode),
-    snapshotId:agencyId+"__"+month,
+    mode:expectedMode,
+    snapshotId,
   };
 }
 
@@ -742,26 +751,76 @@ function assertAgencyHostSurplusReplay({
   ledgerId,
   policySnapshot,
 }){
+  const progressCoins=agencyFinancialInteger(
+    settlement.progressCoins||0,
+    "surplus_settlement_progress_coins",
+  );
+  const targetThresholdCoins=agencyFinancialInteger(
+    settlement.targetThresholdCoins||0,
+    "surplus_settlement_target_threshold_coins",
+  );
+  const salaryPaidDiamonds=agencyFinancialInteger(
+    settlement.salaryPaidDiamondsSnapshot||0,
+    "surplus_settlement_salary_paid_diamonds",
+  );
+  const expected=calculateAgencyMonthEndSurplusFromSnapshot({
+    progressCoins,
+    targetThresholdCoins,
+    surplusToShadow:policySnapshot.surplusToShadow,
+  });
+  const surplusCoins=agencyFinancialInteger(
+    settlement.surplusCoins||0,
+    "surplus_settlement_coins",
+  );
+  const hostWalletCoins=agencyFinancialInteger(
+    settlement.hostWalletCoins||0,
+    "surplus_settlement_host_wallet_coins",
+  );
+  const shadowProfitCoins=agencyFinancialInteger(
+    settlement.shadowProfitCoins||0,
+    "surplus_settlement_shadow_profit_coins",
+  );
+  const expectedHostWalletCoins=
+    expected.destination==="host_wallet_coins"
+      ?expected.surplusCoins
+      :0;
+  const expectedShadowProfitCoins=
+    expected.destination==="shadow_profit"
+      ?expected.surplusCoins
+      :0;
+
   if(
     clean(settlement.status)!=="settled" ||
     clean(settlement.agencyId)!==agencyId ||
     clean(settlement.month)!==month ||
     clean(settlement.hostUid)!==hostUid ||
+    clean(settlement.hostMonthlyId)!==settlementId ||
     clean(settlement.ledgerId)!==ledgerId ||
     clean(settlement.policySnapshotId)!==policySnapshot.snapshotId ||
     settlement.surplusToShadow!==policySnapshot.surplusToShadow ||
-    (
-      clean(settlement.destination)!==clean(policySnapshot.mode) &&
-      clean(settlement.destination)!=="none"
-    ) ||
+    clean(settlement.destination)!==expected.destination ||
+    surplusCoins!==expected.surplusCoins ||
+    hostWalletCoins!==expectedHostWalletCoins ||
+    shadowProfitCoins!==expectedShadowProfitCoins ||
+    clean(settlement.hostSalaryMode)!=="target_immediate" ||
     settlement.hostSalaryRepaidAtMonthEnd!==false
   ){
     throw Error("agency_surplus_settlement_conflict");
   }
-  const surplusCoins=agencyFinancialInteger(
-    settlement.surplusCoins||0,
-    "surplus_settlement_coins",
-  );
+
+  const expectedAccountType=
+    expected.destination==="shadow_profit"
+      ?"shadow_profit"
+      :expected.destination==="host_wallet_coins"
+        ?"host_wallet"
+        :"none";
+  const expectedReason=
+    expected.destination==="shadow_profit"
+      ?"agency_host_surplus_shadow_profit"
+      :expected.destination==="host_wallet_coins"
+        ?"agency_host_surplus_host_wallet"
+        :"agency_host_surplus_none";
+
   if(
     clean(ledger.sourceType)!=="agency_surplus_settlement" ||
     clean(ledger.sourceId)!==settlementId ||
@@ -769,7 +828,46 @@ function assertAgencyHostSurplusReplay({
     clean(ledger.agencyId)!==agencyId ||
     clean(ledger.hostUid)!==hostUid ||
     clean(ledger.settlementMonth)!==month ||
-    agencyFinancialInteger(ledger.delta||0,"surplus_ledger_delta")!==surplusCoins
+    clean(ledger.asset)!=="coins" ||
+    clean(ledger.accountType)!==expectedAccountType ||
+    clean(ledger.reason)!==expectedReason ||
+    agencyFinancialInteger(ledger.delta||0,"surplus_ledger_delta")!==surplusCoins ||
+    agencyFinancialInteger(
+      ledger.targetThresholdCoins||0,
+      "surplus_ledger_target_threshold_coins",
+    )!==targetThresholdCoins ||
+    agencyFinancialInteger(
+      ledger.progressCoins||0,
+      "surplus_ledger_progress_coins",
+    )!==progressCoins ||
+    agencyFinancialInteger(
+      ledger.salaryPaidDiamondsSnapshot||0,
+      "surplus_ledger_salary_paid_diamonds",
+    )!==salaryPaidDiamonds ||
+    ledger.hostSalaryRepaidAtMonthEnd!==false
+  ){
+    throw Error("agency_surplus_ledger_conflict");
+  }
+
+  if(expected.destination==="host_wallet_coins"){
+    const openingBalance=agencyFinancialInteger(
+      ledger.openingBalance||0,
+      "surplus_ledger_opening_balance",
+    );
+    const closingBalance=agencyFinancialInteger(
+      ledger.closingBalance||0,
+      "surplus_ledger_closing_balance",
+    );
+    if(
+      clean(ledger.userId)!==hostUid ||
+      closingBalance-openingBalance!==surplusCoins
+    ){
+      throw Error("agency_surplus_ledger_conflict");
+    }
+  }else if(
+    ledger.userId!==null ||
+    ledger.openingBalance!==null ||
+    ledger.closingBalance!==null
   ){
     throw Error("agency_surplus_ledger_conflict");
   }
