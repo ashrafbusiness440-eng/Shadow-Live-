@@ -214,6 +214,7 @@ function agencyMonthlyActiveHostCount(data={}){
 function assertSettledAgencyStatementConsistency({
   statement,
   ledger,
+  bonusAccrual,
   agencyId,
   month,
   statementId,
@@ -314,11 +315,58 @@ function assertSettledAgencyStatementConsistency({
   if(
     ledgerDelta!==paidDiamonds ||
     ledgerPayableCoins!==agencyPayableCoins ||
+    agencyFinancialInteger(
+      ledger.baseAgencyShareCoins ?? totals.agencyShareCoins,
+      "ledger_base_agency_share_coins",
+    )!==totals.agencyShareCoins ||
+    agencyFinancialInteger(
+      ledger.agencyBonusCoins ?? agencyBonusCoins,
+      "ledger_bonus_coins",
+    )!==agencyBonusCoins ||
+    agencyFinancialInteger(
+      ledger.platformAfterAgencyBonusCoins ?? platformAfterAgencyBonusCoins,
+      "ledger_platform_after_bonus_coins",
+    )!==platformAfterAgencyBonusCoins ||
     ledgerOpeningRemainder!==openingRemainderCoins ||
     ledgerRemainder!==remainderCoins ||
     closingBalance-openingBalance!==paidDiamonds
   ){
     throw Error("settlement_ledger_conflict");
+  }
+
+  if(
+    clean(bonusAccrual.agencyId)!==agencyId ||
+    clean(bonusAccrual.month)!==month ||
+    clean(bonusAccrual.status)!=="settled" ||
+    clean(bonusAccrual.statementId)!==statementId ||
+    clean(bonusAccrual.ledgerId)!==ledgerId ||
+    agencyFinancialInteger(
+      bonusAccrual.supportCoins || 0,
+      "bonus_accrual_support_coins",
+    )!==totals.supportCoins ||
+    agencyFinancialInteger(
+      bonusAccrual.agencyBaseShareCoins || 0,
+      "bonus_accrual_base_share_coins",
+    )!==totals.agencyShareCoins ||
+    agencyFinancialInteger(
+      bonusAccrual.bonusCoins || 0,
+      "bonus_accrual_bonus_coins",
+    )!==agencyBonusCoins ||
+    agencyFinancialInteger(
+      bonusAccrual.agencyPayableCoins || 0,
+      "bonus_accrual_payable_coins",
+    )!==agencyPayableCoins ||
+    agencyFinancialInteger(
+      bonusAccrual.platformAfterAgencyBonusCoins || 0,
+      "bonus_accrual_platform_after_bonus_coins",
+    )!==platformAfterAgencyBonusCoins ||
+    Number(bonusAccrual.activeHostCount)!==Number(statement.agencyActiveHostCount) ||
+    Number(bonusAccrual.requiredActiveHosts)!==Number(statement.agencyRequiredActiveHosts) ||
+    Boolean(bonusAccrual.eligible)!==Boolean(statement.agencyBonusEligible) ||
+    Number(bonusAccrual.bonusBps)!==Number(statement.agencyBonusBps) ||
+    clean(bonusAccrual.policySource)!==clean(statement.bonusPolicySource)
+  ){
+    throw Error("settlement_bonus_accrual_conflict");
   }
 }
 
@@ -334,31 +382,8 @@ export async function settleAgencyMonth(db,actorUid,agencyIdInput,monthInput,opt
 
   const statementId=agencyId+"__"+month;
   const settlementRef=db.collection("agency_monthly_statements").doc(statementId);
-  const [economySnap,overrideSnap]=await Promise.all([
-    db.collection("system_config").doc("gift_economy").get(),
-    db.collection("agency_policy_overrides").doc(agencyId).get(),
-  ]);
-  const economy=economySnap.exists?(economySnap.data()||{}):{};
-  const agencyOverride=overrideSnap.exists?(overrideSnap.data()||{}):{};
-  const bonusOverrideApplied=
-    Object.prototype.hasOwnProperty.call(
-      agencyOverride,
-      "agencyPerformanceBonusBps",
-    ) ||
-    Object.prototype.hasOwnProperty.call(
-      agencyOverride,
-      "agencyBonusActiveHosts",
-    );
-  const bonusPolicy=effectiveAgencyBonusPolicy(
-    economy,
-    agencyOverride,
-  );
-  const coinsPerDiamond=agencyFinancialInteger(
-    economy.coinsPerDiamond ?? 10000,
-    "coins_per_diamond",
-  );
-  if(coinsPerDiamond<=0)throw Error("invalid_agency_financial_coins_per_diamond");
-
+  const economyRef=db.collection("system_config").doc("gift_economy");
+  const overrideRef=db.collection("agency_policy_overrides").doc(agencyId);
   const walletRef=db.collection("agency_wallets").doc(agencyId);
   const auditRef=db.collection("admin_audit_logs").doc();
   const ledgerId="agency_monthly_share_"+statementId;
@@ -371,35 +396,80 @@ export async function settleAgencyMonth(db,actorUid,agencyIdInput,monthInput,opt
   const shardRefs=agencyMonthlyShardRefs(db,agencyId,month);
 
   return db.runTransaction(async tx=>{
-    const [existing,existingLedger]=await Promise.all([
+    const [existing,existingLedger,existingBonusAccrual]=await Promise.all([
       tx.get(settlementRef),
       tx.get(ledgerRef),
+      tx.get(bonusAccrualRef),
     ]);
     if(existing.exists){
       const statement=existing.data()||{};
       if(!existingLedger.exists){
         throw Error("settlement_ledger_missing");
       }
+      if(!existingBonusAccrual.exists){
+        throw Error("settlement_bonus_accrual_missing");
+      }
+      const historicalCoinsPerDiamond=agencyFinancialInteger(
+        statement.coinsPerDiamond,
+        "statement_coins_per_diamond",
+      );
+      if(historicalCoinsPerDiamond<=0){
+        throw Error("invalid_agency_financial_coins_per_diamond");
+      }
       assertSettledAgencyStatementConsistency({
         statement,
         ledger:existingLedger.data()||{},
+        bonusAccrual:existingBonusAccrual.data()||{},
         agencyId,
         month,
         statementId,
         ledgerId,
-        coinsPerDiamond,
+        coinsPerDiamond:historicalCoinsPerDiamond,
       });
       return {alreadySettled:true,settlement:statement};
     }
     if(existingLedger.exists){
       throw Error("settlement_ledger_conflict");
     }
+    if(existingBonusAccrual.exists){
+      throw Error("settlement_bonus_accrual_conflict");
+    }
 
-    const [walletSnap,activitySnap,...shardSnaps]=await Promise.all([
+    const [
+      economySnap,
+      overrideSnap,
+      walletSnap,
+      activitySnap,
+      ...shardSnaps
+    ]=await Promise.all([
+      tx.get(economyRef),
+      tx.get(overrideRef),
       tx.get(walletRef),
       tx.get(activityRef),
       ...shardRefs.map(ref=>tx.get(ref)),
     ]);
+    const economy=economySnap.exists?(economySnap.data()||{}):{};
+    const agencyOverride=overrideSnap.exists?(overrideSnap.data()||{}):{};
+    const bonusOverrideApplied=
+      Object.prototype.hasOwnProperty.call(
+        agencyOverride,
+        "agencyPerformanceBonusBps",
+      ) ||
+      Object.prototype.hasOwnProperty.call(
+        agencyOverride,
+        "agencyBonusActiveHosts",
+      );
+    const bonusPolicy=effectiveAgencyBonusPolicy(
+      economy,
+      agencyOverride,
+    );
+    const coinsPerDiamond=agencyFinancialInteger(
+      economy.coinsPerDiamond ?? 10000,
+      "coins_per_diamond",
+    );
+    if(coinsPerDiamond<=0){
+      throw Error("invalid_agency_financial_coins_per_diamond");
+    }
 
     const rawTotals=shardSnaps.reduce((sum,snap)=>{
       if(!snap.exists)return sum;
