@@ -309,3 +309,22 @@ test("Stage 08-B monthly Bonus settlement stays bounded and query-free", () => {
     assert.equal(settlement.includes('hostSalaryRepaidAtMonthEnd:false'), true);
   }
 });
+
+
+test("Stage 08-C replay and policy snapshot stay bounded and direct", () => {
+  for (const relativePath of [
+    "../economy/economy-control.js",
+    "../../cloudflare-worker/src/legacy-economy/economy-control.js",
+  ]) {
+    const sourceText = source(relativePath);
+    const start = sourceText.indexOf("export async function settleAgencyMonth");
+    const end = sourceText.indexOf("export async function handler", start);
+    const settlement = sourceText.slice(start, end);
+    assert.equal(settlement.includes("tx.get(bonusAccrualRef)"), true);
+    assert.equal(settlement.includes("tx.get(economyRef)"), true);
+    assert.equal(settlement.includes("tx.get(overrideRef)"), true);
+    assert.equal(settlement.includes(".where("), false);
+    assert.equal(settlement.includes(".list("), false);
+    assert.equal(settlement.includes("AGENCY_MONTHLY_ACCRUAL_SHARDS"), true);
+  }
+});
