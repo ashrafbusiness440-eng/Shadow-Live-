@@ -217,3 +217,18 @@ test("Stage 05 closure keeps mutations query free and management reads bounded f
   assert.equal(listSource.includes('db.runQuery("agency_memberships"'), true);
   assert.equal(listSource.includes("ensureManagerCountersConsistent(agency, slots)"), true);
 });
+
+
+test("Stage 07-A gift hot paths accrue Agency Share on shards and never mutate Agency Wallet directly", () => {
+  for (const relativePath of [
+    "../../cloudflare-worker/src/room-gift.js",
+    "../../cloudflare-worker/src/chat-safety-actions.js",
+  ]) {
+    const sourceText = source(relativePath);
+    assert.equal(sourceText.includes("AGENCY_MONTHLY_ACCRUAL_SHARDS = 32"), true);
+    assert.equal(sourceText.includes("agencyAccrualShard(key)"), true);
+    assert.equal(sourceText.includes("agency_monthly_accrual_shards/"), true);
+    assert.equal(sourceText.includes("agency_wallets/"), false);
+    assert.equal(sourceText.includes("agency_monthly_statements/"), false);
+  }
+});
