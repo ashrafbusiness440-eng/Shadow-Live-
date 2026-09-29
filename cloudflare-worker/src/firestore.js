@@ -504,7 +504,7 @@ export function firestoreClient(env) {
         ? `${documentRoot}/${parentPath}:runQuery`
         : `${root}/documents:runQuery`;
 
-      const fieldFilters = filters.map(({ field, op, value }) => ({
+      const fieldFilters = filters.map(({ field, op, value, referencePath }) => ({
         fieldFilter: {
           field: { fieldPath: field },
           op: ({
@@ -516,7 +516,9 @@ export function firestoreClient(env) {
             ">=": "GREATER_THAN_OR_EQUAL",
             "array-contains": "ARRAY_CONTAINS",
           })[op] || "EQUAL",
-          value: encodeValue(value),
+          value: referencePath
+            ? { referenceValue: documentName(referencePath) }
+            : encodeValue(value),
         },
       }));
 
