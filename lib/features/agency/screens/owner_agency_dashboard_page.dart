@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/host_my_agency_service.dart';
+import '../services/owner_agency_service.dart';
 
 class OwnerAgencyDashboardPage extends StatefulWidget {
   const OwnerAgencyDashboardPage({
@@ -17,20 +18,29 @@ class OwnerAgencyDashboardPage extends StatefulWidget {
 
 class _OwnerAgencyDashboardPageState extends State<OwnerAgencyDashboardPage> {
   final HostMyAgencyService _service = HostMyAgencyService();
+  final OwnerAgencyService _ownerService = OwnerAgencyService();
 
   late HostMyAgencyCoreData _data;
+  OwnerAgencyPerformanceData? _performance;
+  OwnerAgencyStatement? _statement;
   bool _refreshing = false;
+  bool _performanceLoading = false;
+  bool _statementLoading = false;
   String? _error;
+  String? _performanceError;
+  String? _statementError;
 
   @override
   void initState() {
     super.initState();
     _data = widget.initialCore;
+    Future.microtask(_loadPerformance);
   }
 
   @override
   void dispose() {
     _service.close();
+    _ownerService.close();
     super.dispose();
   }
 
@@ -50,15 +60,62 @@ class _OwnerAgencyDashboardPageState extends State<OwnerAgencyDashboardPage> {
         });
         return;
       }
-      setState(() {
-        _data = data;
-        _refreshing = false;
-      });
+      setState(() => _data = data);
+      await _loadPerformance();
+      if (!mounted) return;
+      setState(() => _refreshing = false);
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _error = error.toString();
         _refreshing = false;
+      });
+    }
+  }
+
+  Future<void> _loadPerformance() async {
+    if (_performanceLoading) return;
+    setState(() {
+      _performanceLoading = true;
+      _performanceError = null;
+    });
+    try {
+      final data = await _ownerService.loadPerformance();
+      if (!mounted) return;
+      setState(() {
+        _performance = data;
+        _performanceLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _performanceError = error.toString();
+        _performanceLoading = false;
+      });
+    }
+  }
+
+  Future<void> _loadPreviousStatement() async {
+    if (_statementLoading) return;
+    final month = _performance?.current.month;
+    if (month == null || month.isEmpty) return;
+    setState(() {
+      _statementLoading = true;
+      _statementError = null;
+    });
+    try {
+      final statement =
+          await _ownerService.loadStatement(_previousMonth(month));
+      if (!mounted) return;
+      setState(() {
+        _statement = statement;
+        _statementLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _statementError = error.toString();
+        _statementLoading = false;
       });
     }
   }
@@ -91,6 +148,25 @@ class _OwnerAgencyDashboardPageState extends State<OwnerAgencyDashboardPage> {
                     ),
                     const SizedBox(height: 10),
                     _OwnerHostPerformanceCard(data: _data),
+                    const SizedBox(height: 18),
+                    const _SectionTitle(
+                      icon: Icons.insights_rounded,
+                      title: 'أرباح وأداء وكالتي',
+                    ),
+                    const SizedBox(height: 10),
+                    _AgencyPerformanceCard(
+                      data: _performance,
+                      loading: _performanceLoading,
+                      error: _performanceError,
+                      onRetry: _loadPerformance,
+                    ),
+                    const SizedBox(height: 10),
+                    _AgencyStatementCard(
+                      statement: _statement,
+                      loading: _statementLoading,
+                      error: _statementError,
+                      onLoad: _loadPreviousStatement,
+                    ),
                     if (_error != null) ...[
                       const SizedBox(height: 12),
                       _RefreshErrorCard(onRetry: _refresh),
@@ -272,6 +348,258 @@ class _OwnerHostPerformanceCard extends StatelessWidget {
   }
 }
 
+class _AgencyPerformanceCard extends StatelessWidget {
+  const _AgencyPerformanceCard({
+    required this.data,
+    required this.loading,
+    required this.error,
+    required this.onRetry,
+  });
+
+  final OwnerAgencyPerformanceData? data;
+  final bool loading;
+  final String? error;
+  final Future<void> Function() onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading && data == null) {
+      return Container(
+        key: const Key('owner-agency-performance-loading'),
+        padding: const EdgeInsets.all(18),
+        decoration: _cardDecoration(),
+        child: const Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (data == null) {
+      return Container(
+        key: const Key('owner-agency-performance-error'),
+        padding: const EdgeInsets.all(18),
+        decoration: _cardDecoration(),
+        child: Column(
+          children: [
+            const Text(
+              'تعذر تحميل أرباح وأداء الوكالة.',
+              style: TextStyle(color: Colors.white70),
+            ),
+            const SizedBox(height: 10),
+            TextButton(
+              onPressed: onRetry,
+              child: const Text('إعادة المحاولة'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final current = data!.current;
+    final bonus = current.bonus;
+    return Container(
+      key: const Key('owner-agency-performance-card'),
+      padding: const EdgeInsets.all(18),
+      decoration: _cardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'الشهر ${current.month}',
+            style: const TextStyle(
+              color: Color(0xFFB99CFF),
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _Metric(
+                  label: 'دعم الوكالة',
+                  value: _compact(current.supportCoins),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _Metric(
+                  label: 'حصة الوكالة',
+                  value: _compact(current.agencyBaseShareCoins),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _Metric(
+                  label: 'تقديري + Bonus',
+                  value: _compact(current.estimatedAgencyPayableCoins),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _Metric(
+                  label: 'Hosts نشطون',
+                  value:
+                      '${current.activeHostCount}/${bonus.requiredActiveHosts}',
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _Metric(
+                  label: 'عدد الهدايا',
+                  value: _compact(current.giftCount),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _Metric(
+                  label: 'Bonus تقديري',
+                  value: _compact(bonus.estimatedCoins),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            bonus.eligible
+                ? 'Bonus الوكالة مؤهل حاليًا (${_bps(bonus.bps)}). يثبت نهائيًا عند إغلاق الشهر.'
+                : 'Bonus الوكالة غير مؤهل حاليًا. التقييم النهائي يتم عند إغلاق الشهر.',
+            style: const TextStyle(color: Colors.white70, height: 1.4),
+          ),
+          const SizedBox(height: 14),
+          const Divider(color: Color(0x22FFFFFF)),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _Metric(
+                  label: 'محفظة الوكالة',
+                  value: '${current.wallet.diamonds} D',
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _Metric(
+                  label: 'Carryover Coins',
+                  value: _compact(current.wallet.remainderCoins),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _Metric(
+                  label: 'Lifetime Diamonds',
+                  value: current.wallet.lifetimeDiamonds.toString(),
+                ),
+              ),
+            ],
+          ),
+          if (error != null) ...[
+            const SizedBox(height: 10),
+            const Text(
+              'آخر تحديث لم يكتمل؛ المعروض هو آخر بيانات ناجحة.',
+              style: TextStyle(color: Colors.amberAccent, fontSize: 12),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _AgencyStatementCard extends StatelessWidget {
+  const _AgencyStatementCard({
+    required this.statement,
+    required this.loading,
+    required this.error,
+    required this.onLoad,
+  });
+
+  final OwnerAgencyStatement? statement;
+  final bool loading;
+  final String? error;
+  final Future<void> Function() onLoad;
+
+  @override
+  Widget build(BuildContext context) {
+    final value = statement;
+    return Container(
+      key: const Key('owner-agency-statement-card'),
+      padding: const EdgeInsets.all(18),
+      decoration: _cardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'كشف الشهر السابق',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (value == null && !loading)
+            const Text(
+              'لا يتم تحميل الكشف تلقائيًا لتخفيف الضغط. افتحه عند الحاجة.',
+              style: TextStyle(color: Colors.white60, height: 1.4),
+            )
+          else if (loading)
+            const Center(child: CircularProgressIndicator())
+          else if (value != null && !value.settled)
+            Text(
+              'الشهر ${value.month}: لا يوجد كشف مقفل حتى الآن.',
+              style: const TextStyle(color: Colors.white70),
+            )
+          else if (value != null) ...[
+            Text(
+              'الشهر ${value.month}',
+              style: const TextStyle(color: Color(0xFFB99CFF)),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _Metric(
+                    label: 'Base Share',
+                    value: _compact(value.agencyBaseShareCoins),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _Metric(
+                    label: 'Bonus',
+                    value: _compact(value.agencyBonusCoins),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _Metric(
+                    label: 'Diamonds',
+                    value: value.agencyDiamonds.toString(),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          if (error != null) ...[
+            const SizedBox(height: 8),
+            const Text(
+              'تعذر تحميل الكشف.',
+              style: TextStyle(color: Colors.redAccent),
+            ),
+          ],
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            key: const Key('owner-agency-load-statement'),
+            onPressed: loading ? null : onLoad,
+            icon: const Icon(Icons.receipt_long_rounded),
+            label: Text(loading ? 'جارٍ التحميل...' : 'تحميل كشف الشهر السابق'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _Metric extends StatelessWidget {
   const _Metric({required this.label, required this.value});
 
@@ -378,6 +706,23 @@ String _compact(int value) {
     return '${n.toStringAsFixed(n >= 10 || n % 1 == 0 ? 0 : 1)}K';
   }
   return value.toString();
+}
+
+String _bps(int bps) {
+  final value = bps / 100;
+  return value % 1 == 0 ? '${value.toInt()}%' : '${value.toStringAsFixed(2)}%';
+}
+
+String _previousMonth(String month) {
+  final parts = month.split('-');
+  if (parts.length != 2) return month;
+  final year = int.tryParse(parts[0]);
+  final monthNumber = int.tryParse(parts[1]);
+  if (year == null || monthNumber == null || monthNumber < 1 || monthNumber > 12) {
+    return month;
+  }
+  final previous = DateTime.utc(year, monthNumber, 0);
+  return "${previous.year.toString().padLeft(4, '0')}-${previous.month.toString().padLeft(2, '0')}";
 }
 
 String _minutes(int seconds) {
