@@ -2,7 +2,11 @@ import { json, readJson } from "./http.js";
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
-import { resolveGiftRevenuePolicy } from "./economy-policy.js";
+import {
+  agencyPolicySnapshotFor,
+  economyWithAgencyPolicySnapshot,
+  resolveGiftRevenuePolicy,
+} from "./economy-policy.js";
 import {
   agencyPublicRankingKey,
   calculateAgencyTargetProgress,
@@ -449,8 +453,17 @@ export async function sendGift(db, uid, body, options = {}) {
     ) {
       throw new ApiError("invalid_agency_public_support", 409);
     }
-    const revenue = resolveGiftRevenuePolicy(
+    const agencyPolicySnapshot = agencyPolicySnapshotFor(
+      receiverData,
+      agencyId,
+    );
+    const effectiveEconomy = economyWithAgencyPolicySnapshot(
       economyData,
+      receiverData,
+      agencyId,
+    );
+    const revenue = resolveGiftRevenuePolicy(
+      effectiveEconomy,
       receiverData,
       monthlyGrossCoins,
       agencyId,
@@ -483,7 +496,7 @@ export async function sendGift(db, uid, body, options = {}) {
           addedHostShareCoins: recipientShareCoins,
           storedPaidDiamonds: receiverData.agencySalaryPaidDiamonds,
           targets:
-            receiverData.agencyPolicySnapshot?.targets ||
+            agencyPolicySnapshot?.targets ||
             economyData.agencyTargets,
         })
       : null;
