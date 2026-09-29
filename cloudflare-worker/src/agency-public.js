@@ -268,7 +268,7 @@ export async function loadPublicAgencyRanking(
     }
     return {
       hostUid,
-      supportCoins: rankingSupportCoins(monthly.supportCoins),
+      supportCoins: rankingSupportCoins(monthly.publicSupportCoins),
     };
   });
 
