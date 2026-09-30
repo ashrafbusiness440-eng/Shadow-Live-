@@ -231,6 +231,8 @@ test("11-A pressure contract is five direct reads with zero query/write", async 
           exists: true,
           data: {
             agencyId,
+            accountStatus: "active",
+            sessionsRevokedAt: "2026-09-01T00:00:00.000Z",
             agencyTargetMonth: "2026-09",
             agencyTargetProgressCoins: 100000,
             agencySalaryPaidDiamonds: 10,
@@ -290,6 +292,7 @@ test("11-A pressure contract is five direct reads with zero query/write", async 
     fakeDb,
     uid,
     new Date("2026-09-29T12:00:00.000Z"),
+    { sessionPayload: { sub: uid, iat: 1790683200 } },
   );
 
   assert.equal(result.ok, true);
@@ -303,6 +306,55 @@ test("11-A pressure contract is five direct reads with zero query/write", async 
   ]);
   assert.equal(calls.queries, 0);
   assert.equal(calls.writes, 0);
+});
+
+test("11-A revoked session fails from the existing users read", async () => {
+  const uid = "stage11a_revoked_host";
+  const calls = [];
+
+  const fakeDb = {
+    async get(path) {
+      calls.push(path);
+      if (path === "users/" + uid) {
+        return {
+          exists: true,
+          data: {
+            agencyId: "741206",
+            accountStatus: "active",
+            sessionsRevokedAt: "2026-09-30T12:00:00.000Z",
+          },
+        };
+      }
+      if (path === "agency_user_memberships/" + uid) {
+        return {
+          exists: true,
+          data: {
+            agencyId: "741206",
+            uid,
+            role: "host",
+            status: "active",
+          },
+        };
+      }
+      throw new Error("unexpected_get:" + path);
+    },
+  };
+
+  await assert.rejects(
+    () =>
+      loadAgencyHostCore(
+        fakeDb,
+        uid,
+        new Date("2026-09-30T13:00:00.000Z"),
+        { sessionPayload: { sub: uid, iat: 1790767800 } },
+      ),
+    (error) => error && error.message === "unauthorized",
+  );
+
+  assert.deepEqual(calls, [
+    "users/" + uid,
+    "agency_user_memberships/" + uid,
+  ]);
 });
 
 test("11-A non-Host membership fails closed before Agency reads", async () => {
@@ -372,5 +424,7 @@ test("11-B Host UI reuses public ranking/archive and existing room/chat routes",
   assert.equal(hostService.includes("roomId"), true);
   assert.equal(hostService.includes(".timeout(_requestTimeout)"), true);
   assert.equal(hostService.includes("agency_host_core_timeout"), true);
-  assert.equal(page.includes("انتهت مهلة تحميل معلومات الوكالة"), true);
+  assert.equal(page.includes("انتهت مهلة تحديث جلسة الدخول"), true);
+  assert.equal(page.includes("الخادم تأخر في تحميل معلومات الوكالة"), true);
+  assert.equal(hostService.includes("Duration(seconds: 20)"), true);
 });

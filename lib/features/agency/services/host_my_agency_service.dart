@@ -243,7 +243,7 @@ class HostMyAgencyService {
     http.Client? client,
     FirebaseAuth? auth,
     String? baseUrl,
-    Duration requestTimeout = const Duration(seconds: 12),
+    Duration requestTimeout = const Duration(seconds: 20),
   })  : _client = client ?? http.Client(),
         _ownsClient = client == null,
         _auth = auth ?? FirebaseAuth.instance,

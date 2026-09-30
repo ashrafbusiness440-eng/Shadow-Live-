@@ -1181,9 +1181,11 @@ class _ErrorState extends StatelessWidget {
 
   String get _message {
     final code = errorCode ?? '';
-    if (code.contains('agency_host_core_timeout') ||
-        code.contains('agency_host_auth_timeout')) {
-      return 'انتهت مهلة تحميل معلومات الوكالة. تحقق من الاتصال ثم أعد المحاولة.';
+    if (code.contains('agency_host_auth_timeout')) {
+      return 'انتهت مهلة تحديث جلسة الدخول. تحقق من الاتصال ثم أعد المحاولة.';
+    }
+    if (code.contains('agency_host_core_timeout')) {
+      return 'الخادم تأخر في تحميل معلومات الوكالة. أعد المحاولة بعد التحقق من الاتصال.';
     }
     if (code.contains('agency_host_not_found') ||
         code.contains('agency_host_not_active')) {
