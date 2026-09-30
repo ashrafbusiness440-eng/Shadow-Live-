@@ -102,14 +102,18 @@ class _SystemHealthCardState extends State<SystemHealthCard> {
         _ => 'الحالة غير واضحة حاليًا',
       };
 
-  String _statusAction(String state) => switch (state) {
-        'green' => 'لا تحتاج لأي إجراء الآن. فقط راقب المؤشر العام.',
-        'yellow' =>
-          'راقب زمن الاستجابة والأخطاء. إذا بقيت الحالة صفراء افتح التفاصيل.',
-        'red' =>
-          'افتح التفاصيل الآن وحدد أبطأ مسار وأي أخطاء 5xx أو 429.',
-        _ => 'حدّث القياسات ثم راجع التفاصيل إذا استمرت الحالة غير واضحة.',
-      };
+  String _statusAction(String state) {
+    if (state == 'green') {
+      return 'لا تحتاج لأي إجراء الآن. فقط راقب المؤشر العام.';
+    }
+    if (state == 'yellow') {
+      return 'راقب زمن الاستجابة والأخطاء. إذا بقيت الحالة صفراء افتح التفاصيل.';
+    }
+    if (state == 'red') {
+      return 'افتح التفاصيل الآن وحدد أبطأ مسار وأي أخطاء 5xx أو 429.';
+    }
+    return 'حدّث القياسات ثم راجع التفاصيل إذا استمرت الحالة غير واضحة.';
+  }
 
   String _humanReason(String reason) {
     final value = reason.trim();
