@@ -218,6 +218,7 @@ const List<ShadowCountryOption> shadowCountries = <ShadowCountryOption>[
   ShadowCountryOption('زيمبابوي', 'ZW'),
   ShadowCountryOption('كوسوفو', 'XK'),
   ShadowCountryOption('تايوان', 'TW'),
+  ShadowCountryOption('أخرى', ''),
 ];
 
 ShadowCountryOption? shadowCountryByName(String? name) {
@@ -226,6 +227,8 @@ ShadowCountryOption? shadowCountryByName(String? name) {
 
   const aliases = <String, String>{
     'الإمارات': 'الإمارات العربية المتحدة',
+    'UAE': 'الإمارات العربية المتحدة',
+    'United Arab Emirates': 'الإمارات العربية المتحدة',
   };
   final normalized = aliases[value] ?? value;
 
