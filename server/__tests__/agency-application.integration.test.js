@@ -119,12 +119,12 @@ test("verified host stays bound by UID if public ID changes before submit", asyn
   });
 
   await adminDb.collection("public_ids").doc(hostIds[0]).delete();
-  await adminDb.collection("public_ids").doc("87654321").set({
+  await adminDb.collection("public_ids").doc("91876543").set({
     uid: hostUids[0],
     createdAt: new Date(),
   });
   await adminDb.collection("users").doc(hostUids[0]).set(
-    { publicId: "87654321" },
+    { publicId: "91876543" },
     { merge: true },
   );
 
