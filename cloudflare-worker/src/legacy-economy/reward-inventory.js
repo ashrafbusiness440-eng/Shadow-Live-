@@ -74,8 +74,11 @@ function serializeReward(doc,nowMs){
 }
 
 export async function listInventory(db,uid,nowMs=Date.now()){
-  const snapshot=await db.collection("user_rewards").doc(uid)
-    .collection("items").get();
+  const rootRef=db.collection("user_rewards").doc(uid);
+  const [snapshot,root]=await Promise.all([
+    rootRef.collection("items").limit(100).get(),
+    rootRef.get(),
+  ]);
   const items=snapshot.docs.map((doc)=>serializeReward(doc,nowMs))
     .filter((item)=>ALLOWED_TYPES.has(item.type))
     .sort((a,b)=>{
@@ -83,7 +86,6 @@ export async function listInventory(db,uid,nowMs=Date.now()){
       if(a.active!==b.active) return a.active?-1:1;
       return b.expiresAtMs-a.expiresAtMs;
     });
-  const root=await db.collection("user_rewards").doc(uid).get();
   return {
     items,
     activeByType:root.exists&&root.data()?.activeByType
