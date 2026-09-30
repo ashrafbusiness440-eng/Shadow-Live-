@@ -280,11 +280,11 @@ test("owner can move manager to senior and later demote to host without counter 
 
 
 test("role transitions keep My Agency core readable for manager and senior manager", async () => {
-  const agencyId = "709001";
+  const agencyId = "710001";
   const ownerUid = "stage05a_role_core_owner";
   const memberUid = "stage05a_role_core_member";
-  await seedAgency(agencyId, ownerUid, "709901");
-  await addMember(agencyId, memberUid, "709101", "host");
+  await seedAgency(agencyId, ownerUid, "710901");
+  await addMember(agencyId, memberUid, "710101", "host");
 
   await setAgencyManagerRole(db, ownerUid, {
     agencyId,
