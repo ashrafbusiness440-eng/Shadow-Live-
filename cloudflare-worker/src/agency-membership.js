@@ -132,7 +132,7 @@ function hasAgencyMembership(snapshot) {
 function hasActiveApplicationLock(snapshot) {
   if (!snapshot?.exists) return false;
   const status = clean(snapshot.data?.status);
-  return status === "pending" || status === "under_review";
+  return ["draft", "reserved", "pending", "under_review"].includes(status);
 }
 
 function fingerprint(payload) {
