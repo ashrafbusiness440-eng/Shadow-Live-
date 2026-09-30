@@ -52,7 +52,7 @@ class _AgencyApplicationPageState extends State<AgencyApplicationPage> {
   }
 
   void _configureHostSlots(AgencyApplicationStatus status) {
-    final count = status.requiredHostCount.clamp(0, 30);
+    final count = status.requiredHostCount.clamp(0, 30).toInt();
     for (final controller in _hosts) {
       controller.dispose();
     }
