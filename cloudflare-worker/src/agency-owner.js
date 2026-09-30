@@ -16,7 +16,7 @@ class ApiError extends Error {
 }
 
 function validAgencyId(value) {
-  return /^\d{6}$/.test(clean(value));
+  return /^\d{3,8}$/.test(clean(value));
 }
 
 function validMonth(value) {
