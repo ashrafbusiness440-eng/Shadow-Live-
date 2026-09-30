@@ -113,7 +113,7 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
         canCloseAgencies = permissions['canCloseAgencies'] == true;
         canSetApplicationHostCount =
             permissions['canSetApplicationHostCount'] == true;
-        applicationHostCount = parsedHostCount.clamp(0, 30);
+        applicationHostCount = parsedHostCount.clamp(0, 30).toInt();
         loading = false;
       });
     } catch (e) {
@@ -127,7 +127,7 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
 
   Future<void> saveApplicationHostCount(int value) async {
     if (busy || !canSetApplicationHostCount) return;
-    final next = value.clamp(0, 30);
+    final next = value.clamp(0, 30).toInt();
     setState(() => busy = true);
     try {
       final body = await post({
