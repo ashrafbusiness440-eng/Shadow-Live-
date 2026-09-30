@@ -346,7 +346,7 @@ test("11-A revoked session fails from the existing users read", async () => {
         fakeDb,
         uid,
         new Date("2026-09-30T13:00:00.000Z"),
-        { sessionPayload: { sub: uid, iat: 1790778600 } },
+        { sessionPayload: { sub: uid, iat: 1790767800 } },
       ),
     (error) => error && error.message === "unauthorized",
   );
