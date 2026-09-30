@@ -7,7 +7,9 @@ import { submitAgencyApplication } from "../../cloudflare-worker/src/agency-appl
 import {
   approveAgencyApplication,
   directCreateAgency,
+  getAgencyApplicationSettings,
   listAgencyReviewQueue,
+  setAgencyApplicationHostCount,
   startAgencyReview,
 } from "../../cloudflare-worker/src/agency-control.js";
 import { cloudflareFirestoreAdapter } from "./helpers/cloudflare-firestore-adapter.js";
@@ -51,6 +53,38 @@ async function seedApplication(prefix, ownerPublicId, hostIds) {
   }, { now: new Date("2026-09-28T15:00:00.000Z") });
   return { ownerUid, hostUids, applicationId: result.applicationId };
 }
+
+test("Shadow Control can configure application hosts from 0 to 30", async () => {
+  const changed = await setAgencyApplicationHostCount(
+    db,
+    "control_owner_stage03b",
+    {
+      requiredHostCount: 7,
+      idempotencyKey: "stage03b_host_count_set_0001",
+    },
+    { now: new Date("2026-09-28T15:30:00.000Z") },
+  );
+  assert.equal(changed.requiredHostCount, 7);
+  assert.equal((await getAgencyApplicationSettings(db)).requiredHostCount, 7);
+
+  await assert.rejects(
+    setAgencyApplicationHostCount(db, "control_owner_stage03b", {
+      requiredHostCount: 31,
+      idempotencyKey: "stage03b_host_count_invalid_0001",
+    }),
+    /invalid_agency_application_host_count/,
+  );
+
+  const restored = await setAgencyApplicationHostCount(
+    db,
+    "control_owner_stage03b",
+    {
+      requiredHostCount: 5,
+      idempotencyKey: "stage03b_host_count_restore_0001",
+    },
+  );
+  assert.equal(restored.requiredHostCount, 5);
+});
 
 test("review queue stays bounded and includes pending and under review applications", async () => {
   const first = await seedApplication(
