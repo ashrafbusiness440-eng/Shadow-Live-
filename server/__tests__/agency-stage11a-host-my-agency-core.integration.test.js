@@ -166,6 +166,57 @@ test("11-A stale monthly Host counters reset in the read model", async () => {
   assert.equal(result.activity.micSecondsMonth, 0);
 });
 
+test("11-A newly auto-joined Host loads with zeroed monthly state", async () => {
+  const agencyId = "741205";
+  const uid = "stage11a_fresh_auto_host";
+  const ownerUid = "stage11a_fresh_auto_owner";
+
+  await Promise.all([
+    adminDb.collection("users").doc(uid).set({
+      agencyId,
+      agencyRole: "host",
+      publicId: "36627984",
+      displayName: "Fresh Host",
+    }),
+    adminDb.collection("agency_user_memberships").doc(uid).set({
+      agencyId,
+      uid,
+      role: "host",
+      status: "active",
+    }),
+    adminDb.collection("agencies").doc(agencyId).set({
+      agencyId,
+      publicId: agencyId,
+      name: "Fresh Auto Join Agency",
+      country: "الباشان",
+      ownerUid,
+      status: "active",
+    }),
+    adminDb.collection("users").doc(ownerUid).set({
+      publicId: "930005",
+      displayName: "Fresh Agency Owner",
+    }),
+  ]);
+
+  const result = await loadAgencyHostCore(
+    db,
+    uid,
+    new Date("2026-09-30T18:30:00.000Z"),
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.membership.role, "host");
+  assert.equal(result.membership.status, "active");
+  assert.equal(result.target.month, "2026-09");
+  assert.equal(result.target.progressCoins, 0);
+  assert.equal(result.target.paidDiamonds, 0);
+  assert.equal(result.target.currentLevel, null);
+  assert.equal(result.target.nextLevel.id, "starter_g");
+  assert.equal(result.target.remainingCoins, 50000);
+  assert.equal(result.activity.qualifiedDays, 0);
+  assert.equal(result.activity.micSecondsMonth, 0);
+});
+
 test("11-A pressure contract is five direct reads with zero query/write", async () => {
   const agencyId = "741203";
   const uid = "stage11a_pressure_host";
@@ -319,4 +370,7 @@ test("11-B Host UI reuses public ranking/archive and existing room/chat routes",
   assert.equal(page.includes("AppRoutes.voiceChatRoom"), true);
   assert.equal(page.includes("FirebaseFirestore"), false);
   assert.equal(hostService.includes("roomId"), true);
+  assert.equal(hostService.includes(".timeout(_requestTimeout)"), true);
+  assert.equal(hostService.includes("agency_host_core_timeout"), true);
+  assert.equal(page.includes("انتهت مهلة تحميل معلومات الوكالة"), true);
 });
