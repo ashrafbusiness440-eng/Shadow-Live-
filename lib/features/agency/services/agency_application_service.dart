@@ -82,7 +82,7 @@ class AgencyApplicationService {
     String? baseUrl,
   })  : _client = client ?? http.Client(),
         _ownsClient = client == null,
-        _auth = auth ?? FirebaseAuth.instance,
+        _auth = auth,
         _tokenProvider = tokenProvider,
         _baseUrl = baseUrl ??
             const String.fromEnvironment(
@@ -93,14 +93,14 @@ class AgencyApplicationService {
 
   final http.Client _client;
   final bool _ownsClient;
-  final FirebaseAuth _auth;
+  final FirebaseAuth? _auth;
   final Future<String> Function()? _tokenProvider;
   final String _baseUrl;
 
   Future<String> _idToken() async {
     final token = _tokenProvider != null
         ? await _tokenProvider!()
-        : await _auth.currentUser?.getIdToken();
+        : await (_auth ?? FirebaseAuth.instance).currentUser?.getIdToken();
     if (token == null || token.isEmpty) {
       throw const AgencyApplicationException('not_signed_in');
     }
