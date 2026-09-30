@@ -12,6 +12,7 @@ import {
 } from "../../cloudflare-worker/src/agency-public.js";
 import { agencyPublicRankingKey } from "../../cloudflare-worker/src/agency-policy.js";
 import { cloudflareFirestoreAdapter } from "./helpers/cloudflare-firestore-adapter.js";
+import "./agency-stage15a-search.integration.test.js";
 
 const app = initializeApp(
   { projectId: "shadow-live-economy-test" },

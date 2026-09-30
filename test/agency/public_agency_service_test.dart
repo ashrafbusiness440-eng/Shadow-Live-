@@ -121,4 +121,30 @@ void main() {
     expect(data.maxMonths, 6);
   });
 
+  test('Stage 15-A parses bounded Agency search results and cursor', () {
+    final data = PublicAgencySearchData.fromJson({
+      'results': [
+        {
+          'agencyId': '815001',
+          'publicId': '815001',
+          'name': 'Shadow Agency',
+          'country': 'UAE',
+          'memberCount': 7,
+          'hostCount': 5,
+        },
+      ],
+      'page': {
+        'limit': 20,
+        'hasMore': true,
+        'nextCursor': 'Shadow Agency|815001',
+      },
+    });
+
+    expect(data.results.single.agencyId, '815001');
+    expect(data.results.single.country, 'UAE');
+    expect(data.limit, 20);
+    expect(data.hasMore, isTrue);
+    expect(data.nextCursor, 'Shadow Agency|815001');
+  });
+
 }

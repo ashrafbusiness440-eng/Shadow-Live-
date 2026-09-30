@@ -16,6 +16,7 @@ const PUBLIC_USER_READ_CONCURRENCY = 4;
 const PUBLIC_ARCHIVE_READ_CONCURRENCY = 3;
 export const PUBLIC_RANKING_MAX = 10;
 export const PUBLIC_ARCHIVE_MONTHS_MAX = 6;
+export const PUBLIC_AGENCY_SEARCH_MAX = 20;
 
 class ApiError extends Error {
   constructor(code, status = 400, details = null) {
@@ -33,6 +34,88 @@ function validAgencyId(value) {
 function validCursor(value) {
   const cursor = clean(value);
   return !cursor || (cursor.length <= 180 && !cursor.includes("/"));
+}
+
+function publicAgencySummary(row) {
+  const agency = row?.data || {};
+  return {
+    agencyId: clean(agency.agencyId || row?.id),
+    publicId: clean(agency.publicId || agency.agencyId || row?.id),
+    name: clean(agency.name) || "Shadow Live Agency",
+    country: clean(agency.country) || null,
+    memberCount: Math.max(0, Number(agency.memberCount || 0)),
+    hostCount: Math.max(0, Number(agency.hostCount || 0)),
+  };
+}
+
+function parseSearchCursor(cursorInput, field) {
+  const cursor = clean(cursorInput);
+  if (!cursor) return null;
+  const separator = cursor.lastIndexOf("|");
+  if (separator < 1) throw new ApiError("invalid_cursor", 400);
+  const value = cursor.slice(0, separator);
+  const agencyId = cursor.slice(separator + 1);
+  if (!value || value.length > 80 || !validAgencyId(agencyId)) {
+    throw new ApiError("invalid_cursor", 400);
+  }
+  return { value, referencePath: `agencies/${agencyId}`, field };
+}
+
+export async function searchPublicAgencies(db, body = {}) {
+  const query = clean(body.query);
+  const mode = clean(body.mode) || (validAgencyId(query) ? "id" : "name");
+  if (!query || query.length > 80 || !["id", "name", "country"].includes(mode)) {
+    throw new ApiError("invalid_agency_search", 400);
+  }
+  if (mode === "id") {
+    if (!validAgencyId(query)) throw new ApiError("invalid_agency_id", 400);
+    const snap = await db.get(`agencies/${query}`);
+    const active = snap.exists && clean(snap.data?.status) === "active";
+    return { ok: true, results: active ? [publicAgencySummary(snap)] : [], page: {
+      limit: 1, hasMore: false, nextCursor: null,
+    } };
+  }
+
+  if (query.length < 2) throw new ApiError("agency_search_too_short", 400);
+  const limit = Math.min(
+    PUBLIC_AGENCY_SEARCH_MAX,
+    boundedAgencyPageSize(body.limit, PUBLIC_AGENCY_SEARCH_MAX),
+  );
+  const field = mode === "country" ? "country" : "name";
+  const cursor = parseSearchCursor(body.cursor, field);
+  const fetchLimit = Math.min(81, (limit * 4) + 1);
+  const rows = await db.runQuery("agencies", {
+    filters: [
+      { field, op: ">=", value: query },
+      { field, op: "<", value: query + "\uf8ff" },
+    ],
+    orderBy: [
+      { field, direction: "asc" },
+      { field: "__name__", direction: "asc" },
+    ],
+    ...(cursor ? { startAfter: [cursor.value, { referencePath: cursor.referencePath }] } : {}),
+    limit: fetchLimit,
+  });
+  const pageRows = [];
+  let consumedCount = 0;
+  for (const row of rows) {
+    consumedCount += 1;
+    if (clean(row?.data?.status) === "active") pageRows.push(row);
+    if (pageRows.length === limit) break;
+  }
+  const hasMore = rows.length > consumedCount || rows.length === fetchLimit;
+  const last = rows[consumedCount - 1];
+  const lastId = clean(last?.data?.agencyId || last?.id);
+  const lastValue = clean(last?.data?.[field]);
+  return {
+    ok: true,
+    results: pageRows.map(publicAgencySummary),
+    page: {
+      limit,
+      hasMore,
+      nextCursor: hasMore && lastId && lastValue ? `${lastValue}|${lastId}` : null,
+    },
+  };
 }
 
 function previousAgencyMonths(currentMonth, count = PUBLIC_ARCHIVE_MONTHS_MAX) {
@@ -358,6 +441,10 @@ export async function agencyPublic(request, env) {
         env,
         await loadPublicAgencyArchive(db, body),
       );
+    }
+    if (action === "search") {
+      annotatePressureRequest(request, { action: "agencyPublic:search" });
+      return json(request, env, await searchPublicAgencies(db, body));
     }
     if (action !== "page") {
       throw new ApiError("invalid_agency_public_action", 400);
