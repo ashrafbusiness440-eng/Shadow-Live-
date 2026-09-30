@@ -253,6 +253,53 @@ async function loadAgencyActor(
   };
 }
 
+async function joinReviewerNotificationUids(
+  db,
+  tx,
+  agencyId,
+  agency = {},
+) {
+  const ownerUid = clean(agency.ownerUid);
+  if (!ownerUid) throw new ApiError("agency_owner_missing", 409);
+
+  const recipients = new Set([ownerUid]);
+  const slotsSnap = await db.get(`agency_manager_slots/${agencyId}`, tx);
+  if (!slotsSnap.exists) return [...recipients];
+
+  const slots = slotsSnap.data || {};
+  const seniorManagerUid = clean(slots.seniorManagerUid);
+  const managerUids = Array.isArray(slots.managerUids)
+    ? slots.managerUids.map(clean).filter(Boolean).slice(0, AGENCY_LIMITS.agencyManagers)
+    : [];
+  const reviewerUids = [
+    ...(seniorManagerUid ? [seniorManagerUid] : []),
+    ...managerUids,
+  ];
+
+  const membershipSnaps = await Promise.all(
+    reviewerUids.map((reviewerUid) =>
+      db.get(`agency_user_memberships/${reviewerUid}`, tx)
+    ),
+  );
+  reviewerUids.forEach((reviewerUid, index) => {
+    const membershipSnap = membershipSnaps[index];
+    const membership =
+      membershipSnap?.exists &&
+      clean(membershipSnap.data?.agencyId) === agencyId
+        ? membershipSnap.data || {}
+        : {};
+    if (canPerformAgencyAction({
+      action: "reviewMembershipRequest",
+      membership,
+      agencyStatus: clean(agency.status),
+    })) {
+      recipients.add(reviewerUid);
+    }
+  });
+
+  return [...recipients];
+}
+
 async function createRequest({
   db,
   actorUid,
@@ -261,7 +308,7 @@ async function createRequest({
   type,
   idempotencyKey,
   userPublicId,
-  notificationUserId,
+  notificationUserId = null,
   now,
 }) {
   const key = clean(idempotencyKey);
@@ -336,6 +383,45 @@ async function createRequest({
       };
       const result = requestSummary(fullRequest);
       const notificationId = `agency_membership_${type}_${requestId}`;
+      const notificationUserIds =
+        type === "join"
+          ? await joinReviewerNotificationUids(
+              db,
+              tx,
+              agencyId,
+              agencySnap.data || {},
+            )
+          : [clean(notificationUserId || uid)].filter(Boolean);
+      const primaryNotificationUid =
+        type === "join"
+          ? clean(agencySnap.data?.ownerUid)
+          : clean(notificationUserId || uid);
+      const notificationWrites = notificationUserIds.map((recipientUid) => {
+        const suffix =
+          recipientUid === primaryNotificationUid
+            ? ""
+            : "_" + recipientUid.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80);
+        return db.writeCreate(`notifications/${notificationId}${suffix}`, {
+          userId: recipientUid,
+          type:
+            type === "join"
+              ? "agency_join_request"
+              : "agency_membership_invite",
+          category: "system",
+          title:
+            type === "join"
+              ? "طلب انضمام جديد للوكالة"
+              : "دعوة للانضمام إلى وكالة",
+          body:
+            type === "join"
+              ? "يوجد مستخدم بانتظار مراجعة طلب الانضمام."
+              : "لديك دعوة للانضمام إلى وكالة.",
+          read: false,
+          requestId,
+          agencyId,
+          createdAt: now,
+        });
+      });
 
       const writes = [
         db.writeCreate(requestPath, fullRequest),
@@ -370,26 +456,16 @@ async function createRequest({
           idempotencyKey: key,
           createdAt: now,
         }),
-        db.writeCreate(`notifications/${notificationId}`, {
-          userId: notificationUserId,
-          type:
-            type === "join"
-              ? "agency_join_request"
-              : "agency_membership_invite",
-          category: "system",
-          title:
-            type === "join"
-              ? "طلب انضمام جديد للوكالة"
-              : "دعوة للانضمام إلى وكالة",
-          body:
-            type === "join"
-              ? "يوجد مستخدم بانتظار مراجعة طلب الانضمام."
-              : "لديك دعوة للانضمام إلى وكالة.",
-          read: false,
+        db.writeCreate(acceptanceLockPath(uid), {
           requestId,
           agencyId,
+          uid,
+          type,
+          status: "pending",
           createdAt: now,
+          updatedAt: now,
         }),
+        ...notificationWrites,
       ];
 
       await db.commit(tx, writes);
@@ -417,10 +493,6 @@ export async function requestAgencyJoin(
 ) {
   const agencyId = clean(body.agencyId);
   if (!/^\d{3,8}$/.test(agencyId)) throw new ApiError("invalid_agency_id", 400);
-  const agencySnap = await db.get(`agencies/${agencyId}`);
-  ensureAgencyActive(agencySnap);
-  const ownerUid = clean(agencySnap.data?.ownerUid);
-  if (!ownerUid) throw new ApiError("agency_owner_missing", 409);
   return createRequest({
     db,
     actorUid,
@@ -429,7 +501,6 @@ export async function requestAgencyJoin(
     type: "join",
     idempotencyKey: body.idempotencyKey,
     userPublicId: null,
-    notificationUserId: ownerUid,
     now,
   });
 }
