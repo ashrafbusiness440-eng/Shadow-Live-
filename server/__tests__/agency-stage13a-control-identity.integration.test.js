@@ -6,6 +6,7 @@ import { getFirestore } from "firebase-admin/firestore";
 
 import {
   getAgencyControlDetails,
+  randomAgencyId,
   transferAgencyOwnership,
   updateAgencyIdentity,
 } from "../../cloudflare-worker/src/agency-control.js";
@@ -105,6 +106,12 @@ async function seedAgency({
     }),
   ]);
 }
+
+test("13-A automatic Agency / Room IDs stay six digits by default", () => {
+  for (let index = 0; index < 200; index += 1) {
+    assert.match(randomAgencyId(), /^\d{6}$/);
+  }
+});
 
 test("13-A lookup is direct and identity update is idempotent", async () => {
   const agencyId = "813001";
