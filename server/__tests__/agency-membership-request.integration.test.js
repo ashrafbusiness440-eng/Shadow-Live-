@@ -110,6 +110,92 @@ test("join request records user consent and appears in bounded agency queue", as
   assert.equal(duplicate.requestId, first.requestId);
 });
 
+test("join request notifies only authorized agency reviewers and manager review requires capability", async () => {
+  const agencyId = "641002";
+  const ownerUid = "stage04a_review_owner";
+  const seniorUid = "stage04a_review_senior";
+  const managerUid = "stage04a_review_manager";
+  const managerNoCapUid = "stage04a_review_manager_no_cap";
+  const applicantUid = "stage04a_review_applicant";
+
+  await seedAgency(agencyId, ownerUid, "641902", "Review Agency");
+  await Promise.all([
+    seedUser(seniorUid, "641202", { agencyId, agencyRole: "senior_manager" }),
+    seedUser(managerUid, "641203", { agencyId, agencyRole: "manager" }),
+    seedUser(managerNoCapUid, "641204", { agencyId, agencyRole: "manager" }),
+    seedUser(applicantUid, "641205", {
+      displayName: "Applicant User",
+      profileImageUrl: "https://example.invalid/applicant.webp",
+    }),
+  ]);
+
+  await Promise.all([
+    adminDb.collection("agency_user_memberships").doc(seniorUid).set({
+      agencyId,
+      uid: seniorUid,
+      role: "senior_manager",
+      status: "active",
+      capabilities: [],
+    }),
+    adminDb.collection("agency_user_memberships").doc(managerUid).set({
+      agencyId,
+      uid: managerUid,
+      role: "manager",
+      status: "active",
+      capabilities: ["reviewMembershipRequest"],
+    }),
+    adminDb.collection("agency_user_memberships").doc(managerNoCapUid).set({
+      agencyId,
+      uid: managerNoCapUid,
+      role: "manager",
+      status: "active",
+      capabilities: [],
+    }),
+    adminDb.collection("agency_manager_slots").doc(agencyId).set({
+      agencyId,
+      seniorManagerUid: seniorUid,
+      managerUids: [managerUid, managerNoCapUid],
+    }),
+  ]);
+
+  const join = await requestAgencyJoin(db, applicantUid, {
+    agencyId,
+    idempotencyKey: "stage04a_authorized_review_join_0001",
+  }, { now: new Date("2026-09-28T18:05:00.000Z") });
+
+  const notificationBase = "agency_membership_join_" + join.requestId;
+  const [ownerNotice, seniorNotice, managerNotice, blockedNotice] =
+    await Promise.all([
+      adminDb.collection("notifications").doc(notificationBase).get(),
+      adminDb.collection("notifications")
+        .doc(notificationBase + "_" + seniorUid).get(),
+      adminDb.collection("notifications")
+        .doc(notificationBase + "_" + managerUid).get(),
+      adminDb.collection("notifications")
+        .doc(notificationBase + "_" + managerNoCapUid).get(),
+    ]);
+  assert.equal(ownerNotice.data().userId, ownerUid);
+  assert.equal(seniorNotice.data().userId, seniorUid);
+  assert.equal(managerNotice.data().userId, managerUid);
+  assert.equal(blockedNotice.exists, false);
+
+  const managerQueue = await listAgencyMembershipPending(db, managerUid, {
+    agencyId,
+  });
+  const row = managerQueue.requests.find(
+    (request) => request.requestId === join.requestId,
+  );
+  assert.equal(row.displayName, "Applicant User");
+  assert.equal(row.profileImageUrl, "https://example.invalid/applicant.webp");
+  assert.equal(row.accountStatus, "active");
+  assert.equal(row.conflictStatus, "none");
+
+  await assert.rejects(
+    listAgencyMembershipPending(db, managerNoCapUid, { agencyId }),
+    /forbidden/,
+  );
+});
+
 test("agency invite records agency consent and target user can see it", async () => {
   const agencyId = "642001";
   const ownerUid = "stage04a_invite_owner";
