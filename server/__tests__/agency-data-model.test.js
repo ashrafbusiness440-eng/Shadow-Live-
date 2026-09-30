@@ -76,11 +76,14 @@ test("canonical agency paths are deterministic and direct lookup friendly",()=>{
     "agency_application_operations/user_1__operation_123456",
   );
   assert.equal(agencyIdRegistryPath("654321"),"agency_ids/654321");
+  assert.equal(agencyIdRegistryPath("321"),"agency_ids/321");
+  assert.equal(agencyIdRegistryPath("12345678"),"agency_ids/12345678");
   assert.equal(
     agencyCreationOperationPath("owner_1","operation_123456"),
     "agency_creation_operations/owner_1__operation_123456",
   );
-  assert.throws(()=>agencyIdRegistryPath("12345"),/invalid_agency_public_id/);
+  assert.throws(()=>agencyIdRegistryPath("12"),/invalid_agency_public_id/);
+  assert.throws(()=>agencyIdRegistryPath("123456789"),/invalid_agency_public_id/);
   assert.equal(
     agencyReviewOperationPath("owner_1","review_operation_123"),
     "agency_review_operations/owner_1__review_operation_123",
@@ -122,7 +125,7 @@ test("agency calendar keys reject invalid values",()=>{
   assert.throws(()=>normalizeDayKey("2026-02-31"),/invalid_agency_day/);
 });
 
-test("agency creation requires a six digit public id",()=>{
+test("agency creation accepts 3-8 digit public ids",()=>{
   const doc=createAgencyDocument({
     agencyId:"123456",
     ownerUid:"owner_1",
@@ -133,16 +136,34 @@ test("agency creation requires a six digit public id",()=>{
   assert.equal(doc.status,"active");
   assert.equal(doc.ownerUid,"owner_1");
   assert.equal(doc.memberCount,1);
+  assert.equal(
+    createAgencyDocument({
+      agencyId:"123456",ownerUid:"owner_1",name:"Shadow",publicId:"321",now:"now",
+    }).publicId,
+    "321",
+  );
+  assert.equal(
+    createAgencyDocument({
+      agencyId:"123456",ownerUid:"owner_1",name:"Shadow",publicId:"12345678",now:"now",
+    }).publicId,
+    "12345678",
+  );
   assert.throws(
     ()=>createAgencyDocument({
-      agencyId:"123456",ownerUid:"owner_1",name:"Shadow",publicId:"12345",now:"now",
+      agencyId:"123456",ownerUid:"owner_1",name:"Shadow",publicId:"12",now:"now",
+    }),
+    /invalid_agency_public_id/,
+  );
+  assert.throws(
+    ()=>createAgencyDocument({
+      agencyId:"123456",ownerUid:"owner_1",name:"Shadow",publicId:"123456789",now:"now",
     }),
     /invalid_agency_public_id/,
   );
 });
 
 test("application data model requires exactly five unique host ids",()=>{
-  const hostIds=["100001","100002","100003","100004","100005"];
+  const hostIds=["101","1002","10003","100004","10000005"];
   const hostUids=["h1","h2","h3","h4","h5"];
   assert.deepEqual(normalizeApplicationHostIds(hostIds),hostIds);
   const doc=createAgencyApplicationDocument({
@@ -161,11 +182,11 @@ test("application data model requires exactly five unique host ids",()=>{
   assert.equal(doc.reapplyMode,"30d");
   assert.throws(()=>normalizeApplicationHostIds(["100001"]),/invalid_agency_application_hosts/);
   assert.throws(
-    ()=>normalizeApplicationHostIds(["100001","100002","100003","100004","100004"]),
+    ()=>normalizeApplicationHostIds(["101","1002","10003","100004","100004"]),
     /duplicate_agency_application_host/,
   );
   assert.throws(
-    ()=>normalizeApplicationHostIds(["bad001","100002","100003","100004","100005"]),
+    ()=>normalizeApplicationHostIds(["12","1002","10003","100004","10000005"]),
     /invalid_agency_application_host_id/,
   );
 });
