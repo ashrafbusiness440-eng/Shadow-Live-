@@ -833,7 +833,15 @@ export async function rejectAgencyApplication(
       const hostUids = Array.isArray(application.hostUids)
         ? application.hostUids.map(clean).filter(Boolean)
         : [];
-      if (!applicantUid || hostUids.length !== 5) {
+      const requiredHostCount = Number.isInteger(Number(application.requiredHostCount))
+        ? Number(application.requiredHostCount)
+        : AGENCY_LIMITS.applicationHostIds;
+      if (
+        !applicantUid ||
+        requiredHostCount < AGENCY_LIMITS.minApplicationHostIds ||
+        requiredHostCount > AGENCY_LIMITS.maxApplicationHostIds ||
+        hostUids.length !== requiredHostCount
+      ) {
         throw new ApiError("application_participants_invalid", 409);
       }
       const participantUids = [applicantUid, ...hostUids];
@@ -899,7 +907,7 @@ export async function rejectAgencyApplication(
           "reapplyAllowedAt",
           "updatedAt",
         ]),
-        ...hostUids.map((uid) =>
+        ...hostUids.flatMap((uid) => [
           db.writeUpdate(`agency_application_locks/${uid}`, {
             status: "released",
             releasedAt: now,
@@ -914,8 +922,22 @@ export async function rejectAgencyApplication(
             "reapplyAllowedAt",
             "rejectionReason",
             "updatedAt",
-          ])
-        ),
+          ]),
+          db.writeCreate(
+            `notifications/agency_application_host_rejected_${applicationId}_${uid}`,
+            {
+              userId: uid,
+              type: "agency_application_host_rejected",
+              category: "system",
+              title: "تم رفض انضمامك إلى الوكالة",
+              body: "تم رفض طلب إنشاء الوكالة، وتم فك حجز حسابك ويمكنك الانضمام إلى وكالة أخرى.",
+              read: false,
+              applicationId,
+              rejectionReason: reason,
+              createdAt: now,
+            },
+          ),
+        ]),
         db.writeCreate(operationPath, {
           actorUid,
           action: "rejectAgencyApplication",
