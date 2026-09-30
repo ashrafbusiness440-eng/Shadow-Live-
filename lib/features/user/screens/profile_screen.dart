@@ -785,9 +785,14 @@ class _ProfileScreenState extends State<ProfileScreen>
           )
         else
           _action(
-            Icons.apartment_outlined,
-            'الوكالة: لا يوجد',
-            null,
+            Icons.add_business_rounded,
+            'إنشاء / طلب وكالة',
+            () => Navigator.pushNamed(
+              context,
+              AppRoutes.agencyApplication,
+            ).then((_) {
+              if (mounted) _load();
+            }),
           ),
         const SizedBox(height: 16),
         _card(
