@@ -84,7 +84,7 @@ function creationFingerprint(payload) {
   });
 }
 
-function randomAgencyId() {
+export function randomAgencyId() {
   const buffer = new Uint32Array(1);
   crypto.getRandomValues(buffer);
   return String(100000 + (buffer[0] % 900000));
