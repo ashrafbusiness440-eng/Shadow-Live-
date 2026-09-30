@@ -491,7 +491,12 @@ async function createAgencyForOwner({
               throw new ApiError("application_lock_conflict", 409);
             }
           }
-        } else if (ownerLockSnap.exists && ["pending", "under_review"].includes(clean(ownerLockSnap.data?.status))) {
+        } else if (
+          ownerLockSnap.exists &&
+          ["draft", "pending", "under_review"].includes(
+            clean(ownerLockSnap.data?.status),
+          )
+        ) {
           throw new ApiError("owner_has_active_application", 409);
         }
 
@@ -551,7 +556,16 @@ async function createAgencyForOwner({
           }),
           db.writeCreate(`agencies/${candidate}`, agency),
           db.writeCreate(`agency_memberships/${candidate}__${ownerUid}`, ownerMembership),
-          db.writeCreate(`agency_user_memberships/${ownerUid}`, ownerMembership),
+          ownerMembershipSnap.exists
+            ? db.writeUpdate(
+                `agency_user_memberships/${ownerUid}`,
+                ownerMembership,
+                Object.keys(ownerMembership),
+              )
+            : db.writeCreate(
+                `agency_user_memberships/${ownerUid}`,
+                ownerMembership,
+              ),
           db.writeCreate(`agency_manager_slots/${candidate}`, managerSlots),
           db.writeCreate(`agency_wallets/${candidate}`, {
             agencyId: candidate,
