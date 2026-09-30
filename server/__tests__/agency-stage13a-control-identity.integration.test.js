@@ -9,6 +9,8 @@ import {
   transferAgencyOwnership,
   updateAgencyIdentity,
 } from "../../cloudflare-worker/src/agency-control.js";
+import { listAgencyMembers } from "../../cloudflare-worker/src/agency-membership.js";
+import { searchPublicAgencies } from "../../cloudflare-worker/src/agency-public.js";
 import { cloudflareFirestoreAdapter } from "./helpers/cloudflare-firestore-adapter.js";
 
 const app = initializeApp(
@@ -49,6 +51,14 @@ async function seedAgency({
     role: newOwnerRole,
   };
   await Promise.all([
+    adminDb.collection("agency_ids").doc(agencyId).set({
+      agencyId,
+      ownerUid: oldOwnerUid,
+      publicId: agencyId,
+      source: "test",
+      reserved: false,
+      allocatedAt: now,
+    }),
     adminDb.collection("agencies").doc(agencyId).set({
       schemaVersion: 1,
       agencyId,
@@ -138,6 +148,99 @@ test("13-A lookup is direct and identity update is idempotent", async () => {
   assert.equal(audit.data().after.name, "Stage 13-A Updated");
   assert.equal(notification.data().userId, oldOwnerUid);
   assert.equal(notification.data().type, "agency_identity_updated");
+});
+
+test("13-A Agency / Room public ID can change from 6 digits to 3-8 without moving internal records", async () => {
+  const agencyId = "813004";
+  const oldOwnerUid = "stage13a_owner_4";
+  const memberUid = "stage13a_manager_4";
+  await seedAgency({
+    agencyId,
+    oldOwnerUid,
+    newOwnerUid: memberUid,
+    oldOwnerPublicId: "713031",
+    newOwnerPublicId: "713032",
+  });
+
+  const body = {
+    agencyId,
+    publicId: "731",
+    name: "Stage 13-A Agency",
+    country: "UAE",
+    idempotencyKey: "stage13a_public_id_0001",
+  };
+  const now = new Date("2026-09-29T20:15:00.000Z");
+  const first = await updateAgencyIdentity(db, "shadow_owner", body, { now });
+  const duplicate = await updateAgencyIdentity(db, "shadow_owner", body, { now });
+
+  assert.equal(first.code, "ok");
+  assert.equal(first.agencyId, agencyId);
+  assert.equal(first.publicId, "731");
+  assert.equal(duplicate.code, "duplicate");
+
+  const [agency, nextRegistry, oldRegistry] = await Promise.all([
+    adminDb.collection("agencies").doc(agencyId).get(),
+    adminDb.collection("agency_ids").doc("731").get(),
+    adminDb.collection("agency_ids").doc(agencyId).get(),
+  ]);
+  assert.equal(agency.exists, true);
+  assert.equal(agency.data().agencyId, agencyId);
+  assert.equal(agency.data().publicId, "731");
+  assert.equal(nextRegistry.data().agencyId, agencyId);
+  assert.equal(nextRegistry.data().reserved, false);
+  assert.equal(oldRegistry.data().reserved, true);
+  assert.equal(oldRegistry.data().currentPublicId, "731");
+
+  const controlLookup = await getAgencyControlDetails(db, "731");
+  assert.equal(controlLookup.agencyId, agencyId);
+  assert.equal(controlLookup.publicId, "731");
+
+  const publicSearch = await searchPublicAgencies(db, {
+    query: "731",
+    mode: "id",
+  });
+  assert.equal(publicSearch.results.length, 1);
+  assert.equal(publicSearch.results[0].agencyId, agencyId);
+  assert.equal(publicSearch.results[0].publicId, "731");
+
+  const members = await listAgencyMembers(db, oldOwnerUid, {
+    agencyId: "731",
+    limit: 50,
+  });
+  assert.equal(members.agency.agencyId, agencyId);
+  assert.equal(members.agency.publicId, "731");
+  assert.equal(members.members.length, 2);
+
+  await assert.rejects(
+    updateAgencyIdentity(
+      db,
+      "shadow_owner",
+      {
+        agencyId,
+        publicId: "12",
+        name: "Stage 13-A Agency",
+        country: "UAE",
+        idempotencyKey: "stage13a_public_id_short",
+      },
+      { now },
+    ),
+    /invalid_agency_public_id/,
+  );
+  await assert.rejects(
+    updateAgencyIdentity(
+      db,
+      "shadow_owner",
+      {
+        agencyId,
+        publicId: "123456789",
+        name: "Stage 13-A Agency",
+        country: "UAE",
+        idempotencyKey: "stage13a_public_id_long",
+      },
+      { now },
+    ),
+    /invalid_agency_public_id/,
+  );
 });
 
 test("13-A ownership transfer swaps the incoming member role and preserves counters", async () => {
