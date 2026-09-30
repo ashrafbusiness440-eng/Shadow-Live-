@@ -115,6 +115,18 @@ service cloud.firestore {
         );
     }
 
+    function setupCompletionPublicIdAllowed() {
+      return resource.data.get('setupComplete', false) == true
+        || request.resource.data.get('setupComplete', false) != true
+        || (
+          request.resource.data.publicId is string
+          && (
+            request.resource.data.publicId.matches('^[0-9]{8}$')
+            || request.resource.data.get('publicIdUpdatedBy', '') != ''
+          )
+        );
+    }
+
     function protectedUserFieldsUnchanged() {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
         'role',
@@ -261,7 +273,8 @@ service cloud.firestore {
       allow list: if signedIn() && hasCapability('viewUsers');
       allow update: if signedIn() && request.auth.uid == userId
         && protectedUserFieldsUnchanged()
-        && publicIdTransitionAllowed(userId);
+        && publicIdTransitionAllowed(userId)
+        && setupCompletionPublicIdAllowed();
       allow delete: if false;
     }
 
