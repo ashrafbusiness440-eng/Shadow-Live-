@@ -770,10 +770,60 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
                       leading: Icon(Icons.security),
                       title: Text('طلبات إنشاء الوكالات'),
                       subtitle: Text(
-                        'القائمة محدودة Server-side. الموافقة تنشئ Agency ID فريد وعضوية Owner فقط؛ الـ5 Hosts لا يُضافون تلقائيًا.',
+                        'القائمة محدودة Server-side. عند الموافقة تُنشأ الوكالة ويُضاف كل Host محجوز تلقائيًا كعضو Host.',
                       ),
                     ),
                   ),
+                  if (canSetApplicationHostCount) ...[
+                    const SizedBox(height: 12),
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const Text(
+                              'عدد المضيفين في طلب إنشاء الوكالة',
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            const Text(
+                              'يمكن ضبط العدد من 0 إلى 30. التغيير يطبق على الطلبات الجديدة؛ الطلب الذي بدأ حجز مضيفيه يحتفظ بعدده.',
+                            ),
+                            const SizedBox(height: 12),
+                            DropdownButtonFormField<int>(
+                              initialValue: applicationHostCount,
+                              decoration: const InputDecoration(
+                                labelText: 'عدد المضيفين المطلوب',
+                                border: OutlineInputBorder(),
+                              ),
+                              items: [
+                                for (var value = 0; value <= 30; value += 1)
+                                  DropdownMenuItem<int>(
+                                    value: value,
+                                    child: Text(
+                                      value == 0
+                                          ? '0 — بدون مضيفين'
+                                          : value.toString(),
+                                    ),
+                                  ),
+                              ],
+                              onChanged: busy
+                                  ? null
+                                  : (value) {
+                                      if (value != null) {
+                                        saveApplicationHostCount(value);
+                                      }
+                                    },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                   if (canManageExisting) ...[
                     Card(
                       child: Padding(
