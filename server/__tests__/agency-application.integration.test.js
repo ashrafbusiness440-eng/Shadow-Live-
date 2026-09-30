@@ -106,6 +106,50 @@ test("host verification reserves 3-8 digit ids until release or final decision",
   assert.equal(reservedAgain.ok, true);
 });
 
+test("verified host stays bound by UID if public ID changes before submit", async () => {
+  const applicantUid = "stage03_uid_snapshot_applicant";
+  const hostIds = ["1234", "318002", "318003", "318004", "318005"];
+  const hostUids = await seedFiveHosts("stage03_uid_snapshot", hostIds);
+  await seedUser(applicantUid, "319912");
+  const key = "stage03_uid_snapshot_key_0001";
+
+  await reserveAgencyApplicationHost(db, applicantUid, {
+    hostId: hostIds[0],
+    idempotencyKey: key,
+  });
+
+  await adminDb.collection("public_ids").doc(hostIds[0]).delete();
+  await adminDb.collection("public_ids").doc("87654321").set({
+    uid: hostUids[0],
+    createdAt: new Date(),
+  });
+  await adminDb.collection("users").doc(hostUids[0]).set(
+    { publicId: "87654321" },
+    { merge: true },
+  );
+
+  for (const hostId of hostIds.slice(1)) {
+    await reserveAgencyApplicationHost(db, applicantUid, {
+      hostId,
+      idempotencyKey: key,
+    });
+  }
+
+  const result = await submitAgencyApplication(db, applicantUid, {
+    name: "UID Snapshot Agency",
+    country: "الباشان",
+    hostIds,
+    idempotencyKey: key,
+  });
+
+  assert.equal(result.ok, true);
+  const application = await adminDb.collection("agency_applications")
+    .doc(result.applicationId).get();
+  assert.equal(application.data().hostUids[0], hostUids[0]);
+  assert.equal(application.data().hostIds[0], "1234");
+  assert.equal(application.data().hostProfiles[0].uid, hostUids[0]);
+});
+
 test("agency application creates one pending application with five public host ids and locks", async () => {
   const applicantUid = "stage03_applicant_success";
   const applicantPublicId = "319900";
