@@ -181,6 +181,40 @@ class PublicAgencyPageData {
   }
 }
 
+class PublicAgencySearchData {
+  const PublicAgencySearchData({
+    required this.results,
+    required this.limit,
+    required this.hasMore,
+    required this.nextCursor,
+  });
+
+  final List<PublicAgencyIdentity> results;
+  final int limit;
+  final bool hasMore;
+  final String? nextCursor;
+
+  factory PublicAgencySearchData.fromJson(Map<String, dynamic> json) {
+    final rawResults = json['results'];
+    final page = json['page'];
+    if (page is! Map) throw const FormatException('invalid_agency_search');
+    return PublicAgencySearchData(
+      results: rawResults is List
+          ? rawResults
+              .whereType<Map>()
+              .map((row) => PublicAgencyIdentity.fromJson(
+                    Map<String, dynamic>.from(row),
+                  ))
+              .where((row) => row.agencyId.isNotEmpty)
+              .toList(growable: false)
+          : const <PublicAgencyIdentity>[],
+      limit: _nonNegativeInt(page['limit']),
+      hasMore: page['hasMore'] == true,
+      nextCursor: _nullableString(page['nextCursor']),
+    );
+  }
+}
+
 class PublicAgencyService {
   PublicAgencyService({
     http.Client? client,
@@ -247,6 +281,23 @@ class PublicAgencyService {
         'cursor': cursor.trim(),
     });
     return PublicAgencyPageData.fromJson(body);
+  }
+
+  Future<PublicAgencySearchData> search({
+    required String query,
+    required String mode,
+    String? cursor,
+    int limit = 20,
+  }) async {
+    final body = await _post({
+      'action': 'search',
+      'query': query.trim(),
+      'mode': mode,
+      'limit': limit.clamp(1, 20),
+      if (cursor != null && cursor.trim().isNotEmpty)
+        'cursor': cursor.trim(),
+    });
+    return PublicAgencySearchData.fromJson(body);
   }
 
   Future<PublicAgencyRankingData> loadRanking({
