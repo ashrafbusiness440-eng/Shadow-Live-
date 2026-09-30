@@ -2,7 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_chat_room/admin/control_admin_id_override.dart';
 
 void main(){
-  test('owner override accepts short numeric IDs such as 1111',(){
+  test('owner override accepts numeric IDs from 3 to 8 digits',(){
+    expect(AdminIdOverridePolicy.valid('111'),isTrue);
     expect(AdminIdOverridePolicy.valid('1111'),isTrue);
     expect(AdminIdOverridePolicy.valid('48470239'),isTrue);
   });
@@ -15,6 +16,7 @@ void main(){
   test('rejects letters, too short and too long IDs',(){
     expect(AdminIdOverridePolicy.valid('ab12'),isFalse);
     expect(AdminIdOverridePolicy.valid('11'),isFalse);
+    expect(AdminIdOverridePolicy.valid('123456789'),isFalse);
     expect(AdminIdOverridePolicy.valid('1234567890123'),isFalse);
   });
 
