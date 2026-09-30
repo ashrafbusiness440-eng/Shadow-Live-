@@ -667,6 +667,7 @@ class _SystemHealthCardState extends State<SystemHealthCard> {
         ),
       ),
     );
+  }
 }
 
 class _WindowHealthCard extends StatelessWidget {
