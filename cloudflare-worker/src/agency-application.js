@@ -597,6 +597,7 @@ export async function submitAgencyApplication(
               rejectedAt: null,
               rejectedBy: null,
               rejectionReason: null,
+              requiredHostCount,
               updatedAt: nowDate,
             }, [
               "applicationId",
@@ -640,7 +641,6 @@ export async function submitAgencyApplication(
             rejectedAt: null,
             rejectedBy: null,
             rejectionReason: null,
-            requiredHostCount,
             updatedAt: nowDate,
           };
           return lockSnap.exists
