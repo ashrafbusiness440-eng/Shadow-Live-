@@ -95,12 +95,12 @@ class _SystemHealthCardState extends State<SystemHealthCard> {
         _ => '⚪',
       };
 
-  String _statusHeadline(String state) => switch (state) {
-        'green' => 'لا يوجد ضغط حاليًا',
-        'yellow' => 'يوجد بطء يحتاج مراقبة',
-        'red' => 'يوجد ضغط يحتاج تدخل',
-        _ => 'الحالة غير واضحة حاليًا',
-      };
+  String _statusHeadline(String state) {
+    if (state == 'green') return 'لا يوجد ضغط حاليًا';
+    if (state == 'yellow') return 'يوجد بطء يحتاج مراقبة';
+    if (state == 'red') return 'يوجد ضغط يحتاج تدخل';
+    return 'الحالة غير واضحة حاليًا';
+  }
 
   String _statusAction(String state) {
     if (state == 'green') {
