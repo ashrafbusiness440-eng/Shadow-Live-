@@ -109,7 +109,7 @@ export async function loadAgencyHostCore(
     !validAgencyId(agencyId) ||
     clean(user.agencyId) !== agencyId ||
     membershipStatus !== "active" ||
-    !["host", "owner"].includes(role)
+    !["host", "manager", "senior_manager", "owner"].includes(role)
   ) {
     throw new ApiError("agency_host_not_active", 403);
   }
