@@ -429,7 +429,7 @@ class _AgencyPolicyControlPageState extends State<AgencyPolicyControlPage> {
     if (busy || !widget.canManageMemberships) return;
     final publicId = exceptionPublicId.text.trim();
     final reason = exceptionReason.text.trim();
-    if (!RegExp(r'^\d{6}$').hasMatch(publicId) || reason.isEmpty) {
+    if (!RegExp(r'^\d{3,8}$').hasMatch(publicId) || reason.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('أدخل Public ID صحيح وسبب الاستثناء.')),
       );
@@ -678,7 +678,7 @@ class _AgencyPolicyControlPageState extends State<AgencyPolicyControlPage> {
                     controller: exceptionPublicId,
                     enabled: !busy,
                     keyboardType: TextInputType.number,
-                    maxLength: 6,
+                    maxLength: 8,
                     decoration: const InputDecoration(
                       labelText: 'Public ID للمستخدم',
                     ),

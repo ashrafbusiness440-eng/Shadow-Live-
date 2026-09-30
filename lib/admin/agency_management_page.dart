@@ -91,9 +91,9 @@ class _AgencyManagementPageState extends State<AgencyManagementPage> {
 
   Future<void> loadAgency() async {
     final value = agencyId.text.trim();
-    if (!RegExp(r'^\d{6}$').hasMatch(value)) {
+    if (!RegExp(r'^\d{3,8}$').hasMatch(value)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Agency ID يجب أن يكون 6 أرقام.')),
+        const SnackBar(content: Text('Agency ID يجب أن يكون من 3 إلى 8 أرقام.')),
       );
       return;
     }
@@ -248,10 +248,10 @@ class _AgencyManagementPageState extends State<AgencyManagementPage> {
           TextField(
             controller: agencyId,
             keyboardType: TextInputType.number,
-            maxLength: 6,
+            maxLength: 8,
             decoration: const InputDecoration(
               labelText: 'Agency ID',
-              hintText: '6 أرقام',
+              hintText: 'من 3 إلى 8 أرقام',
               border: OutlineInputBorder(),
               prefixIcon: Icon(Icons.apartment_outlined),
             ),

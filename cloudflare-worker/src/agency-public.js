@@ -28,7 +28,7 @@ class ApiError extends Error {
 }
 
 function validAgencyId(value) {
-  return /^\d{6}$/.test(clean(value));
+  return /^\d{3,8}$/.test(clean(value));
 }
 
 function validCursor(value) {
@@ -69,8 +69,35 @@ export async function searchPublicAgencies(db, body = {}) {
   }
   if (mode === "id") {
     if (!validAgencyId(query)) throw new ApiError("invalid_agency_id", 400);
-    const snap = await db.get(`agencies/${query}`);
-    const active = snap.exists && clean(snap.data?.status) === "active";
+
+    // Keep the common/default Agency ID path at one direct read.
+    const directSnap = await db.get(`agencies/${query}`);
+    if (directSnap.exists) {
+      const directPublicId = clean(directSnap.data?.publicId || query);
+      const active =
+        clean(directSnap.data?.status) === "active" &&
+        directPublicId === query;
+      return { ok: true, results: active ? [publicAgencySummary(directSnap)] : [], page: {
+        limit: 1, hasMore: false, nextCursor: null,
+      } };
+    }
+
+    // A changed Agency / Room ID resolves through the direct registry.
+    const registrySnap = await db.get(`agency_ids/${query}`);
+    const resolvedAgencyId =
+      registrySnap.exists && registrySnap.data?.reserved !== true
+        ? clean(registrySnap.data?.agencyId)
+        : "";
+    if (!validAgencyId(resolvedAgencyId)) {
+      return { ok: true, results: [], page: {
+        limit: 1, hasMore: false, nextCursor: null,
+      } };
+    }
+    const snap = await db.get(`agencies/${resolvedAgencyId}`);
+    const active =
+      snap.exists &&
+      clean(snap.data?.status) === "active" &&
+      clean(snap.data?.publicId || resolvedAgencyId) === query;
     return { ok: true, results: active ? [publicAgencySummary(snap)] : [], page: {
       limit: 1, hasMore: false, nextCursor: null,
     } };

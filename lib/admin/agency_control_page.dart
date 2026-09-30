@@ -143,10 +143,10 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
         content: TextField(
           controller: agencyId,
           keyboardType: TextInputType.number,
-          maxLength: 6,
+          maxLength: 8,
           decoration: const InputDecoration(
             labelText: 'Agency ID — اختياري',
-            hintText: 'اتركه فارغًا للتوليد التلقائي',
+            hintText: 'فارغ = توليد تلقائي من 6 أرقام',
             border: OutlineInputBorder(),
           ),
         ),
@@ -165,10 +165,10 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
     final chosenId = agencyId.text.trim();
     agencyId.dispose();
     if (accepted != true || busy) return;
-    if (chosenId.isNotEmpty && !RegExp(r'^\d{6}$').hasMatch(chosenId)) {
+    if (chosenId.isNotEmpty && !RegExp(r'^\d{3,8}$').hasMatch(chosenId)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Agency ID يجب أن يكون 6 أرقام.')),
+          const SnackBar(content: Text('Agency ID يجب أن يكون من 3 إلى 8 أرقام.')),
         );
       }
       return;
@@ -364,9 +364,9 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
   Future<void> loadManagedAgency() async {
     if (busy || !canManageExisting) return;
     final agencyId = agencyLookup.text.trim();
-    if (!RegExp(r'^\d{6}$').hasMatch(agencyId)) {
+    if (!RegExp(r'^\d{3,8}$').hasMatch(agencyId)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Agency ID يجب أن يكون 6 أرقام.')),
+        const SnackBar(content: Text('Agency ID يجب أن يكون من 3 إلى 8 أرقام.')),
       );
       return;
     }
@@ -402,27 +402,41 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
   Future<void> editManagedAgencyIdentity() async {
     final agency = managedAgency;
     if (agency == null || busy) return;
+    final publicId = TextEditingController(
+      text: (agency['publicId'] ?? agency['agencyId'] ?? '').toString(),
+    );
     final name = TextEditingController(text: (agency['name'] ?? '').toString());
     final country =
         TextEditingController(text: (agency['country'] ?? '').toString());
     final accepted = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('تعديل اسم ودولة الوكالة'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: name,
-              maxLength: 80,
-              decoration: const InputDecoration(labelText: 'اسم الوكالة *'),
-            ),
-            TextField(
-              controller: country,
-              maxLength: 64,
-              decoration: const InputDecoration(labelText: 'الدولة'),
-            ),
-          ],
+        title: const Text('تعديل بيانات الوكالة'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: publicId,
+                keyboardType: TextInputType.number,
+                maxLength: 8,
+                decoration: const InputDecoration(
+                  labelText: 'Agency / Room ID *',
+                  hintText: 'من 3 إلى 8 أرقام',
+                ),
+              ),
+              TextField(
+                controller: name,
+                maxLength: 80,
+                decoration: const InputDecoration(labelText: 'اسم الوكالة *'),
+              ),
+              TextField(
+                controller: country,
+                maxLength: 64,
+                decoration: const InputDecoration(labelText: 'الدولة'),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -436,24 +450,40 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
         ],
       ),
     );
+    final nextPublicId = publicId.text.trim();
     final nextName = name.text.trim();
     final nextCountry = country.text.trim();
+    publicId.dispose();
     name.dispose();
     country.dispose();
     if (accepted != true || nextName.isEmpty || busy) return;
+    if (!RegExp(r'^\d{3,8}$').hasMatch(nextPublicId)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Agency / Room ID يجب أن يكون من 3 إلى 8 أرقام.'),
+          ),
+        );
+      }
+      return;
+    }
     setState(() => busy = true);
     try {
-      await post({
+      final body = await post({
         'action': 'updateIdentity',
         'agencyId': (agency['agencyId'] ?? '').toString(),
+        'publicId': nextPublicId,
         'name': nextName,
         'country': nextCountry,
         'idempotencyKey': operationKey('agency_identity'),
       });
+      agencyLookup.text = (body['publicId'] ?? nextPublicId).toString();
       await loadManagedAgency();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تم تحديث اسم/دولة الوكالة.')),
+          const SnackBar(
+            content: Text('تم تحديث بيانات وAgency / Room ID للوكالة.'),
+          ),
         );
       }
     } catch (e) {
@@ -485,7 +515,7 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
             TextField(
               controller: publicId,
               keyboardType: TextInputType.number,
-              maxLength: 6,
+              maxLength: 8,
               decoration:
                   const InputDecoration(labelText: 'Public ID للمالك الجديد'),
             ),
@@ -506,7 +536,7 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
     final nextOwner = publicId.text.trim();
     publicId.dispose();
     if (accepted != true ||
-        !RegExp(r'^\d{6}$').hasMatch(nextOwner) ||
+        !RegExp(r'^\d{3,8}$').hasMatch(nextOwner) ||
         busy) {
       return;
     }
@@ -656,7 +686,7 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
               TextField(
                 controller: ownerPublicId,
                 keyboardType: TextInputType.number,
-                maxLength: 6,
+                maxLength: 8,
                 decoration: const InputDecoration(
                   labelText: 'Public ID لصاحب الوكالة *',
                   border: OutlineInputBorder(),
@@ -666,10 +696,10 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
               TextField(
                 controller: agencyId,
                 keyboardType: TextInputType.number,
-                maxLength: 6,
+                maxLength: 8,
                 decoration: const InputDecoration(
                   labelText: 'Agency ID — اختياري',
-                  hintText: 'فارغ = توليد تلقائي فريد',
+                  hintText: 'فارغ = توليد تلقائي فريد من 6 أرقام',
                   border: OutlineInputBorder(),
                 ),
               ),
@@ -700,12 +730,12 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
     agencyId.dispose();
     if (accepted != true || busy) return;
     if ((payload['name'] ?? '').isEmpty ||
-        !RegExp(r'^\d{6}$').hasMatch(payload['ownerPublicId'] ?? '') ||
+        !RegExp(r'^\d{3,8}$').hasMatch(payload['ownerPublicId'] ?? '') ||
         ((payload['agencyId'] ?? '').isNotEmpty &&
-            !RegExp(r'^\d{6}$').hasMatch(payload['agencyId'] ?? ''))) {
+            !RegExp(r'^\d{3,8}$').hasMatch(payload['agencyId'] ?? ''))) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تحقق من الاسم وPublic ID وAgency ID.')),
+          const SnackBar(content: Text('تحقق من الاسم، User Public ID (3–8)، وAgency ID (3–8 أو فارغ للتوليد 6).')),
         );
       }
       return;
@@ -792,7 +822,7 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
                                   child: TextField(
                                     controller: agencyLookup,
                                     keyboardType: TextInputType.number,
-                                    maxLength: 6,
+                                    maxLength: 8,
                                     decoration: const InputDecoration(
                                       labelText: 'Agency ID',
                                     ),
@@ -814,8 +844,8 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
                                   fontWeight: FontWeight.w800,
                                 ),
                               ),
-                              Text('ID: ' +
-                                  (agency['agencyId'] ?? '').toString()),
+                              Text('Agency / Room ID: ' +
+                                  (agency['publicId'] ?? agency['agencyId'] ?? '').toString()),
                               Text('الدولة: ' +
                                   (agency['country'] ?? '—').toString()),
                               Text('الحالة: ' +

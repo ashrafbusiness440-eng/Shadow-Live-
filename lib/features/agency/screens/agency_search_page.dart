@@ -90,7 +90,7 @@ class _AgencySearchPageState extends State<AgencySearchPage> {
               controller: _query,
               keyboardType:
                   _mode == 'id' ? TextInputType.number : TextInputType.text,
-              maxLength: _mode == 'id' ? 6 : 80,
+              maxLength: _mode == 'id' ? 8 : 80,
               onSubmitted: (_) => _search(),
               decoration: InputDecoration(
                 labelText: _mode == 'id'

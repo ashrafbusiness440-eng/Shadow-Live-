@@ -71,8 +71,8 @@ class _AgencyApplicationPageState extends State<AgencyApplicationPage> {
     }
     final ids = _hosts.map((controller) => controller.text.trim()).toList();
     for (var index = 0; index < ids.length; index += 1) {
-      if (!RegExp(r'^\d{6}$').hasMatch(ids[index])) {
-        return 'ID المضيف رقم ${index + 1} يجب أن يكون 6 أرقام.';
+      if (!RegExp(r'^\d{3,8}$').hasMatch(ids[index])) {
+        return 'ID المضيف رقم ${index + 1} يجب أن يكون من 3 إلى 8 أرقام.';
       }
     }
     if (ids.toSet().length != ids.length) {
@@ -157,7 +157,7 @@ class _AgencyApplicationPageState extends State<AgencyApplicationPage> {
       case 'invalid_agency_application_hosts':
         return 'يجب إدخال خمسة مضيفين بالضبط.';
       case 'invalid_agency_application_host_id':
-        return 'كل ID مضيف يجب أن يكون 6 أرقام.';
+        return 'كل ID مضيف يجب أن يكون من 3 إلى 8 أرقام.';
       default:
         return 'تعذر تنفيذ الطلب الآن. حاول مرة أخرى.';
     }
@@ -337,11 +337,11 @@ class _AgencyApplicationPageState extends State<AgencyApplicationPage> {
                 controller: _hosts[index],
                 enabled: !_submitting,
                 keyboardType: TextInputType.number,
-                maxLength: 6,
+                maxLength: 8,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 decoration: InputDecoration(
                   labelText: 'ID المضيف ${index + 1} *',
-                  hintText: '6 أرقام',
+                  hintText: 'من 3 إلى 8 أرقام',
                   counterText: '',
                   border: const OutlineInputBorder(),
                   prefixIcon: const Icon(Icons.person_add_alt_1_rounded),

@@ -218,8 +218,8 @@ export async function changePublicId(request, env) {
     const key = clean(body.idempotencyKey);
 
     if (
-      !/^\d{3,12}$/.test(currentId) ||
-      !/^\d{3,12}$/.test(newId) ||
+      !/^\d{3,8}$/.test(currentId) ||
+      !/^\d{3,8}$/.test(newId) ||
       currentId === newId ||
       reason.length < 3 ||
       reason.length > 160 ||

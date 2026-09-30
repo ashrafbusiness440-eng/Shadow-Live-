@@ -416,7 +416,7 @@ export async function requestAgencyJoin(
   { now = new Date() } = {},
 ) {
   const agencyId = clean(body.agencyId);
-  if (!/^\d{6}$/.test(agencyId)) throw new ApiError("invalid_agency_id", 400);
+  if (!/^\d{3,8}$/.test(agencyId)) throw new ApiError("invalid_agency_id", 400);
   const agencySnap = await db.get(`agencies/${agencyId}`);
   ensureAgencyActive(agencySnap);
   const ownerUid = clean(agencySnap.data?.ownerUid);
@@ -442,8 +442,8 @@ export async function inviteAgencyHost(
 ) {
   const agencyId = clean(body.agencyId);
   const targetPublicId = clean(body.targetPublicId);
-  if (!/^\d{6}$/.test(agencyId)) throw new ApiError("invalid_agency_id", 400);
-  if (!/^\d{6}$/.test(targetPublicId)) {
+  if (!/^\d{3,8}$/.test(agencyId)) throw new ApiError("invalid_agency_id", 400);
+  if (!/^\d{3,8}$/.test(targetPublicId)) {
     throw new ApiError("invalid_target_public_id", 400);
   }
   const actor = await loadAgencyActor(db, actorUid, agencyId, "invite");
@@ -483,7 +483,7 @@ export async function requestAgencyLeave(
 ) {
   const agencyId = clean(body.agencyId);
   const key = clean(body.idempotencyKey);
-  if (!/^\d{6}$/.test(agencyId)) {
+  if (!/^\d{3,8}$/.test(agencyId)) {
     throw new ApiError("invalid_agency_id", 400);
   }
   if (!validIdempotencyKey(key)) {
@@ -684,7 +684,7 @@ export async function getMyAgencyLeaveRequestStatus(
   body = {},
 ) {
   const agencyId = clean(body.agencyId);
-  if (!/^\d{6}$/.test(agencyId)) {
+  if (!/^\d{3,8}$/.test(agencyId)) {
     throw new ApiError("invalid_agency_id", 400);
   }
 
@@ -798,7 +798,7 @@ export async function respondAgencyLeaveRequest(
 
       const agencyId = clean(request.agencyId);
       const uid = clean(request.uid);
-      if (!/^\d{6}$/.test(agencyId) || !uid) {
+      if (!/^\d{3,8}$/.test(agencyId) || !uid) {
         throw new ApiError("agency_leave_request_invalid", 409);
       }
 
@@ -1775,7 +1775,7 @@ export async function setAgencyManagerRole(
   const targetRole = clean(body.targetRole);
   const key = clean(body.idempotencyKey);
 
-  if (!/^\d{6}$/.test(agencyId)) {
+  if (!/^\d{3,8}$/.test(agencyId)) {
     throw new ApiError("invalid_agency_id", 400);
   }
   if (!targetUid || targetUid.includes("/")) {
@@ -2084,7 +2084,7 @@ async function changeAgencyMembershipStatus(
   }
 
   const requestedAgencyId = clean(body.agencyId);
-  if (requestedAgencyId && !/^\d{6}$/.test(requestedAgencyId)) {
+  if (requestedAgencyId && !/^\d{3,8}$/.test(requestedAgencyId)) {
     throw new ApiError("invalid_agency_id", 400);
   }
 
@@ -2720,15 +2720,36 @@ function activeMemberSummary(row, userSnap) {
   };
 }
 
+async function resolveAgencyMembershipLookupId(db, input) {
+  const lookupId = clean(input);
+  if (!/^\d{3,8}$/.test(lookupId)) {
+    throw new ApiError("invalid_agency_id", 400);
+  }
+
+  const directSnap = await db.get("agencies/" + lookupId);
+  if (directSnap.exists) return lookupId;
+
+  const registrySnap = await db.get("agency_ids/" + lookupId);
+  const resolved = clean(registrySnap.data?.agencyId);
+  if (
+    !registrySnap.exists ||
+    registrySnap.data?.reserved === true ||
+    !/^\d{3,8}$/.test(resolved)
+  ) {
+    throw new ApiError("agency_not_found", 404);
+  }
+  return resolved;
+}
+
 export async function listAgencyMembers(
   db,
   actorUid,
   body = {},
 ) {
-  const agencyId = clean(body.agencyId);
-  if (!/^\d{6}$/.test(agencyId)) {
-    throw new ApiError("invalid_agency_id", 400);
-  }
+  const agencyId = await resolveAgencyMembershipLookupId(
+    db,
+    body.agencyId,
+  );
   const limit = Math.min(50, boundedAgencyPageSize(body.limit, 25));
   const [agencySnap, slotsSnap, actorUserSnap, actorMembershipSnap] =
     await Promise.all([
@@ -2810,6 +2831,7 @@ export async function listAgencyMembers(
     ok: true,
     agency: {
       agencyId,
+      publicId: clean(agency.publicId || agencyId),
       name: clean(agency.name),
       status: agencyStatus,
       ownerUid: clean(agency.ownerUid),
@@ -2846,7 +2868,7 @@ export async function listAgencyMembershipPending(
   body = {},
 ) {
   const agencyId = clean(body.agencyId);
-  if (!/^\d{6}$/.test(agencyId)) throw new ApiError("invalid_agency_id", 400);
+  if (!/^\d{3,8}$/.test(agencyId)) throw new ApiError("invalid_agency_id", 400);
   await loadAgencyActor(db, actorUid, agencyId, "review");
   const limit = Math.min(50, boundedAgencyPageSize(body.limit, 50));
   const rows = await db.runQuery("agency_membership_pending", {

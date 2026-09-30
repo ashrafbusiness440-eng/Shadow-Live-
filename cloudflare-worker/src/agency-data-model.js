@@ -146,7 +146,7 @@ export function agencyPath(agencyId) {
 
 export function agencyIdRegistryPath(agencyId) {
   const id = clean(agencyId);
-  if (!/^\d{6}$/.test(id)) throw new Error("invalid_agency_public_id");
+  if (!/^\d{3,8}$/.test(id)) throw new Error("invalid_agency_public_id");
   return `${AGENCY_COLLECTIONS.agencyIds}/${id}`;
 }
 
@@ -280,7 +280,7 @@ export function normalizeApplicationHostIds(rawIds) {
     throw new Error("invalid_agency_application_hosts");
   }
   const ids = rawIds.map((value) => clean(value));
-  if (ids.some((value) => !/^\d{6}$/.test(value))) {
+  if (ids.some((value) => !/^\d{3,8}$/.test(value))) {
     throw new Error("invalid_agency_application_host_id");
   }
   if (new Set(ids).size !== ids.length) {
@@ -304,7 +304,7 @@ export function createAgencyDocument({
   const displayName = clean(name);
   const normalizedPublicId = clean(publicId || id);
   if (!displayName || displayName.length > 80) throw new Error("invalid_agency_name");
-  if (!/^\d{6}$/.test(normalizedPublicId)) throw new Error("invalid_agency_public_id");
+  if (!/^\d{3,8}$/.test(normalizedPublicId)) throw new Error("invalid_agency_public_id");
   const normalizedCountry = country == null ? null : clean(country);
   if (normalizedCountry != null && (normalizedCountry.length < 2 || normalizedCountry.length > 64)) {
     throw new Error("invalid_agency_country");
@@ -403,7 +403,7 @@ export function createAgencyApplicationDocument({
   const applicationName = clean(name);
   if (!applicationName || applicationName.length > 80) throw new Error("invalid_agency_name");
   const publicId = clean(requestedPublicId);
-  if (publicId && !/^\d{6}$/.test(publicId)) throw new Error("invalid_agency_public_id");
+  if (publicId && !/^\d{3,8}$/.test(publicId)) throw new Error("invalid_agency_public_id");
   const normalizedHostIds = normalizeApplicationHostIds(hostIds);
   const normalizedHostUids = Array.isArray(hostUids)
     ? hostUids.map((uid) => safePart(uid, "host_uid"))

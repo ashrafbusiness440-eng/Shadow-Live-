@@ -209,10 +209,10 @@ class _OwnerAgencyDashboardPageState extends State<OwnerAgencyDashboardPage> {
   Future<void> _inviteHost() async {
     final publicId = await _textDialog(
       title: 'دعوة مضيف',
-      hint: 'Public ID من 6 أرقام',
+      hint: 'Public ID من 3 إلى 8 أرقام',
       digitsOnly: true,
     );
-    if (publicId == null || !RegExp(r'^\d{6}$').hasMatch(publicId)) return;
+    if (publicId == null || !RegExp(r'^\d{3,8}$').hasMatch(publicId)) return;
     await _runManagementAction(
       () => _ownerService.inviteHost(
         agencyId: _data.agency.agencyId,

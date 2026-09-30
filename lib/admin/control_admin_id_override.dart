@@ -1,5 +1,5 @@
 abstract final class AdminIdOverridePolicy {
-  static final RegExp _allowed = RegExp(r'^\d{3,12}$');
+  static final RegExp _allowed = RegExp(r'^\d{3,8}$');
 
   static String normalize(String value) {
     var text=value.trim();
@@ -14,7 +14,7 @@ abstract final class AdminIdOverridePolicy {
   static bool valid(String value)=>_allowed.hasMatch(normalize(value));
 
   static void validate(String value){
-    if(!valid(value))throw ArgumentError('الـID يجب أن يكون رقمياً من 3 إلى 12 خانة');
+    if(!valid(value))throw ArgumentError('الـID يجب أن يكون رقمياً من 3 إلى 8 خانات');
   }
 
   static void validateChange(String currentId,String newId){
