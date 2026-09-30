@@ -13,4 +13,43 @@ void main() {
       expect(value, inInclusiveRange(10000000, 99999999));
     }
   });
+
+  test('repairs only short automatic IDs while setup is incomplete', () {
+    expect(
+      needsInitialUserPublicIdRepair({
+        'publicId': '661831',
+        'setupComplete': false,
+      }),
+      isTrue,
+    );
+    expect(
+      needsInitialUserPublicIdRepair({
+        'publicId': '123',
+        'setupComplete': false,
+      }),
+      isTrue,
+    );
+    expect(
+      needsInitialUserPublicIdRepair({
+        'publicId': '12345678',
+        'setupComplete': false,
+      }),
+      isFalse,
+    );
+    expect(
+      needsInitialUserPublicIdRepair({
+        'publicId': '661831',
+        'setupComplete': true,
+      }),
+      isFalse,
+    );
+    expect(
+      needsInitialUserPublicIdRepair({
+        'publicId': '661831',
+        'setupComplete': false,
+        'publicIdUpdatedBy': 'owner_uid',
+      }),
+      isFalse,
+    );
+  });
 }
