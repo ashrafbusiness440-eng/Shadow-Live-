@@ -6,6 +6,15 @@ import '../../utils/search_index.dart';
 String generateDefaultUserPublicId(Random random) =>
     (10000000 + random.nextInt(90000000)).toString();
 
+bool needsInitialUserPublicIdRepair(Map<String, dynamic>? data) {
+  if (data == null) return false;
+  final current = (data['publicId'] ?? '').toString().trim();
+  if (!RegExp(r'^\d{3,7}$').hasMatch(current)) return false;
+  if (data['setupComplete'] == true) return false;
+  final updatedBy = (data['publicIdUpdatedBy'] ?? '').toString().trim();
+  return updatedBy.isEmpty;
+}
+
 class FirebaseService {
  final FirebaseAuth _auth=FirebaseAuth.instance;final FirebaseFirestore _firestore=FirebaseFirestore.instance;
  Future<UserCredential> signInWithEmail(String email,String password)async{try{return await _auth.signInWithEmailAndPassword(email:email.trim(),password:password);}catch(e){throw _handleAuthError(e);}}
@@ -53,28 +62,59 @@ class FirebaseService {
  }
 
  Future<String> ensurePublicId(String userId)async{
-  final userRef=_firestore.collection('users').doc(userId);final existing=await userRef.get();final current=existing.data()?['publicId']?.toString();
-  if(current!=null&&current.isNotEmpty){await _syncPublicProfile(userId);return current;}
+  final userRef=_firestore.collection('users').doc(userId);
+  final existing=await userRef.get();
+  final existingData=existing.data();
+  final current=(existingData?['publicId']??'').toString().trim();
+  if(current.isNotEmpty&&!needsInitialUserPublicIdRepair(existingData)){
+   await _syncPublicProfile(userId);
+   return current;
+  }
   final random=Random.secure();
   for(var attempt=0;attempt<16;attempt++){
-   final id=generateDefaultUserPublicId(random);final idRef=_firestore.collection('public_ids').doc(id);
+   final id=generateDefaultUserPublicId(random);
+   final idRef=_firestore.collection('public_ids').doc(id);
    try{
     final result=await _firestore.runTransaction<String>((tx)async{
-     final userSnap=await tx.get(userRef);final already=userSnap.data()?['publicId']?.toString();if(already!=null&&already.isNotEmpty)return already;
+     final userSnap=await tx.get(userRef);
+     final userData=userSnap.data();
+     final already=(userData?['publicId']??'').toString().trim();
+     final repair=needsInitialUserPublicIdRepair(userData);
+     if(already.isNotEmpty&&!repair)return already;
+
      final roomIdRef=_firestore.collection('room_ids').doc(id);
-     final idSnap=await tx.get(idRef);final roomIdSnap=await tx.get(roomIdRef);
+     final oldIdRef=repair?_firestore.collection('public_ids').doc(already):null;
+     final idSnap=await tx.get(idRef);
+     final roomIdSnap=await tx.get(roomIdRef);
+     final oldIdSnap=oldIdRef==null?null:await tx.get(oldIdRef);
      if(idSnap.exists||roomIdSnap.exists)throw StateError('collision');
-     tx.set(idRef,{'uid':userId,'createdAt':FieldValue.serverTimestamp()});
-     tx.set(userRef,{'publicId':id,'updatedAt':FieldValue.serverTimestamp()},SetOptions(merge:true));return id;
+
+     tx.set(idRef,{
+      'uid':userId,
+      'createdAt':FieldValue.serverTimestamp(),
+     });
+     tx.set(userRef,{
+      'publicId':id,
+      'updatedAt':FieldValue.serverTimestamp(),
+     },SetOptions(merge:true));
+     if(oldIdRef!=null&&oldIdSnap!.exists){
+      tx.update(oldIdRef,{
+       'reserved':true,
+       'currentPublicId':id,
+       'retiredAt':FieldValue.serverTimestamp(),
+      });
+     }
+     return id;
     });
-    await _syncPublicProfile(userId);return result;
+    await _syncPublicProfile(userId);
+    return result;
    }catch(e){if(e is StateError)continue;rethrow;}
   }
   throw Exception('تعذر إنشاء ID فريد');
  }
  Map<String,dynamic> _profileDefaults(String userId)=>{'uid':userId,'role':'user','coins':0,'diamonds':0,'balance':0,'vipLevel':0,'isOnline':true,'setupStep':'profile','setupComplete':false};
  Future<void> createUserProfile(String userId,Map<String,dynamic> data)async{try{final ref=_firestore.collection('users').doc(userId);final snap=await ref.get();if(!snap.exists){await ref.set({..._profileDefaults(userId),...data,'createdAt':FieldValue.serverTimestamp(),'updatedAt':FieldValue.serverTimestamp()});}else{await ref.set({...data,'updatedAt':FieldValue.serverTimestamp()},SetOptions(merge:true));}await ensurePublicId(userId);await _syncPublicProfile(userId);}catch(e){throw Exception('Failed to create user profile: $e');}}
- Future<Map<String,dynamic>?> getUserProfile(String userId)async{try{final doc=await _firestore.collection('users').doc(userId).get();if(!doc.exists)return null;final data=doc.data();if(data!=null&&(data['publicId']==null||data['publicId'].toString().isEmpty))data['publicId']=await ensurePublicId(userId);await _syncPublicProfile(userId);return data;}catch(e){throw Exception('Failed to get user profile: $e');}}
+ Future<Map<String,dynamic>?> getUserProfile(String userId)async{try{final doc=await _firestore.collection('users').doc(userId).get();if(!doc.exists)return null;final data=doc.data();if(data!=null&&((data['publicId']==null||data['publicId'].toString().isEmpty)||needsInitialUserPublicIdRepair(data)))data['publicId']=await ensurePublicId(userId);await _syncPublicProfile(userId);return data;}catch(e){throw Exception('Failed to get user profile: $e');}}
  Future<void> updateUserProfile(String userId,Map<String,dynamic> data)async{try{await _firestore.collection('users').doc(userId).set({...data,'updatedAt':FieldValue.serverTimestamp()},SetOptions(merge:true));await _syncPublicProfile(userId);}catch(e){throw Exception('Failed to update user profile: $e');}}
  Future<void> updateSetupStep(String userId,String step,{bool complete=false})=>updateUserProfile(userId,{'setupStep':step,'setupComplete':complete});
  Map<String,dynamic> _roomSearchData(Map<String,dynamic> roomData){

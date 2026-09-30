@@ -93,8 +93,20 @@ service cloud.firestore {
         || (
           (!('publicId' in resource.data) || resource.data.publicId == null || resource.data.publicId == '')
           && request.resource.data.publicId is string
-          && request.resource.data.publicId.matches('^[0-9]{3,8}$')
+          && request.resource.data.publicId.matches('^[0-9]{8}$')
           && getAfter(/databases/$(database)/documents/public_ids/$(request.resource.data.publicId)).data.uid == userId
+        )
+        || (
+          resource.data.publicId is string
+          && resource.data.publicId.matches('^[0-9]{3,7}$')
+          && resource.data.get('setupComplete', false) != true
+          && resource.data.get('publicIdUpdatedBy', '') == ''
+          && request.resource.data.publicId is string
+          && request.resource.data.publicId.matches('^[0-9]{8}$')
+          && getAfter(/databases/$(database)/documents/public_ids/$(request.resource.data.publicId)).data.uid == userId
+          && get(/databases/$(database)/documents/public_ids/$(resource.data.publicId)).data.uid == userId
+          && getAfter(/databases/$(database)/documents/public_ids/$(resource.data.publicId)).data.reserved == true
+          && getAfter(/databases/$(database)/documents/public_ids/$(resource.data.publicId)).data.currentPublicId == request.resource.data.publicId
         )
         || (
           ('publicId' in resource.data)
@@ -529,13 +541,28 @@ service cloud.firestore {
       allow get: if signedIn();
       allow list: if false;
       allow create: if signedIn()
-        && publicId.matches('^[0-9]{3,8}$')
+        && publicId.matches('^[0-9]{8}$')
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.keys().hasOnly(['uid','createdAt'])
         && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.publicId == publicId
         && !exists(/databases/$(database)/documents/public_ids/$(publicId))
         && !exists(/databases/$(database)/documents/room_ids/$(publicId));
-      allow update, delete: if false;
+      allow update: if signedIn()
+        && publicId.matches('^[0-9]{3,7}$')
+        && resource.data.uid == request.auth.uid
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.publicId == publicId
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('setupComplete', false) != true
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('publicIdUpdatedBy', '') == ''
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'reserved',
+          'currentPublicId',
+          'retiredAt'
+        ])
+        && request.resource.data.reserved == true
+        && request.resource.data.currentPublicId is string
+        && request.resource.data.currentPublicId.matches('^[0-9]{8}$')
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.publicId == request.resource.data.currentPublicId;
+      allow delete: if false;
     }
 
     match /room_ids/{publicId} {
