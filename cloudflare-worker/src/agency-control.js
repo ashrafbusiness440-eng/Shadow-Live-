@@ -6,6 +6,7 @@ import {
   isTransientFirestoreError,
 } from "./firestore.js";
 import {
+  AGENCY_LIMITS,
   AGENCY_REAPPLY_MODE,
   boundedAgencyPageSize,
   createAgencyDocument,
@@ -116,6 +117,9 @@ function sanitizeApplication(row) {
     name: clean(data.name),
     country: clean(data.country) || null,
     hostIds: Array.isArray(data.hostIds) ? data.hostIds.map(clean) : [],
+    requiredHostCount: Number.isInteger(Number(data.requiredHostCount))
+      ? Number(data.requiredHostCount)
+      : (Array.isArray(data.hostIds) ? data.hostIds.length : AGENCY_LIMITS.applicationHostIds),
     status: clean(data.status),
     reviewedBy: clean(data.reviewedBy) || null,
     createdAt: data.createdAt || null,
@@ -130,6 +134,142 @@ async function loadActor(db, actorUid) {
     user: actor.data || {},
     permissions: platformAgencyPermissions(actor.data || {}),
   };
+}
+
+
+function normalizeApplicationHostCount(value) {
+  const count = Number(value);
+  if (
+    !Number.isInteger(count) ||
+    count < AGENCY_LIMITS.minApplicationHostIds ||
+    count > AGENCY_LIMITS.maxApplicationHostIds
+  ) {
+    throw new ApiError("invalid_agency_application_host_count", 400, {
+      min: AGENCY_LIMITS.minApplicationHostIds,
+      max: AGENCY_LIMITS.maxApplicationHostIds,
+    });
+  }
+  return count;
+}
+
+export async function getAgencyApplicationSettings(db) {
+  const snap = await db.get("system_config/agency_application");
+  const raw = snap.exists
+    ? Number(snap.data?.requiredHostCount)
+    : AGENCY_LIMITS.applicationHostIds;
+  const requiredHostCount =
+    Number.isInteger(raw) &&
+    raw >= AGENCY_LIMITS.minApplicationHostIds &&
+    raw <= AGENCY_LIMITS.maxApplicationHostIds
+      ? raw
+      : AGENCY_LIMITS.applicationHostIds;
+  return {
+    requiredHostCount,
+    minHostCount: AGENCY_LIMITS.minApplicationHostIds,
+    maxHostCount: AGENCY_LIMITS.maxApplicationHostIds,
+  };
+}
+
+export async function setAgencyApplicationHostCount(
+  db,
+  actorUid,
+  body = {},
+  { now = new Date() } = {},
+) {
+  const requiredHostCount = normalizeApplicationHostCount(body.requiredHostCount);
+  const key = clean(body.idempotencyKey);
+  if (!validIdempotencyKey(key)) {
+    throw new ApiError("invalid_idempotency_key", 400);
+  }
+  const operationPath = controlOperationPath(actorUid, key);
+  const settingsPath = "system_config/agency_application";
+  const fingerprint = JSON.stringify({
+    action: "setApplicationHostCount",
+    requiredHostCount,
+  });
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const tx = await db.beginTransaction();
+    try {
+      const [operationSnap, settingsSnap] = await Promise.all([
+        db.get(operationPath, tx),
+        db.get(settingsPath, tx),
+      ]);
+      if (operationSnap.exists) {
+        const existing = operationSnap.data || {};
+        if (clean(existing.requestFingerprint) !== fingerprint) {
+          throw new ApiError("idempotency_conflict", 409);
+        }
+        await db.rollback(tx);
+        return { ok: true, code: "duplicate", ...(existing.result || {}) };
+      }
+
+      const beforeCount = settingsSnap.exists
+        ? Number(settingsSnap.data?.requiredHostCount)
+        : AGENCY_LIMITS.applicationHostIds;
+      const result = {
+        requiredHostCount,
+        minHostCount: AGENCY_LIMITS.minApplicationHostIds,
+        maxHostCount: AGENCY_LIMITS.maxApplicationHostIds,
+      };
+      const settingsFields = {
+        requiredHostCount,
+        updatedBy: actorUid,
+        updatedAt: now,
+      };
+      const settingsWrite = settingsSnap.exists
+        ? db.writeUpdate(
+            settingsPath,
+            settingsFields,
+            ["requiredHostCount", "updatedBy", "updatedAt"],
+          )
+        : db.writeCreate(settingsPath, {
+            ...settingsFields,
+            createdAt: now,
+          });
+
+      await db.commit(tx, [
+        settingsWrite,
+        db.writeCreate(operationPath, {
+          actorUid,
+          action: "setApplicationHostCount",
+          requestFingerprint: fingerprint,
+          status: "completed",
+          result,
+          createdAt: now,
+        }),
+        db.writeCreate(
+          `admin_audit_logs/agency_application_host_count_${key}`,
+          {
+            actorUid,
+            action: "setAgencyApplicationHostCount",
+            targetType: "agency_application_settings",
+            targetId: "agency_application",
+            before: {
+              requiredHostCount: Number.isInteger(beforeCount)
+                ? beforeCount
+                : AGENCY_LIMITS.applicationHostIds,
+            },
+            after: { requiredHostCount },
+            idempotencyKey: key,
+            createdAt: now,
+          },
+        ),
+      ]);
+      return { ok: true, code: "ok", ...result };
+    } catch (error) {
+      await db.rollback(tx);
+      if (error instanceof ApiError) throw error;
+      if (isTransientFirestoreError(error) && attempt < 2) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, firestoreErrorRetryDelayMs(attempt))
+        );
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new ApiError("transaction_failed", 500);
 }
 
 export async function listAgencyReviewQueue(db, limitInput = 50) {
@@ -2077,14 +2217,16 @@ export async function agencyControl(request, env) {
 
     if (action === "listReviewQueue") {
       if (!actor.permissions.canReviewApplications) throw new ApiError("forbidden", 403);
-      const [applications, manualBlocks] = await Promise.all([
+      const [applications, manualBlocks, applicationSettings] = await Promise.all([
         listAgencyReviewQueue(db, body.limit),
         listAgencyManualReapplyBlocks(db, 25),
+        getAgencyApplicationSettings(db),
       ]);
       return json(request, env, {
         ok: true,
         applications,
         manualBlocks,
+        applicationSettings,
         limit: Math.min(50, boundedAgencyPageSize(body.limit, 50)),
         permissions: {
           canReviewApplications: actor.permissions.canReviewApplications,
@@ -2095,8 +2237,17 @@ export async function agencyControl(request, env) {
           canManageMemberships: actor.permissions.canManageMemberships,
           canSuspendAgencies: actor.permissions.canSuspendAgencies,
           canCloseAgencies: actor.permissions.canCloseAgencies,
+          canSetApplicationHostCount: actor.permissions.isOwner,
         },
       });
+    }
+    if (action === "setApplicationHostCount") {
+      if (!actor.permissions.isOwner) throw new ApiError("forbidden", 403);
+      return json(
+        request,
+        env,
+        await setAgencyApplicationHostCount(db, decoded.sub, body),
+      );
     }
     if (action === "startReview") {
       if (!actor.permissions.canReviewApplications) throw new ApiError("forbidden", 403);
