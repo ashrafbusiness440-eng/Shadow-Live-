@@ -95,8 +95,102 @@ class _SystemHealthCardState extends State<SystemHealthCard> {
         _ => '⚪',
       };
 
-  Widget _metric(String label, String value) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+  String _statusHeadline(String state) => switch (state) {
+        'green' => 'لا يوجد ضغط حاليًا',
+        'yellow' => 'يوجد بطء يحتاج مراقبة',
+        'red' => 'يوجد ضغط يحتاج تدخل',
+        _ => 'الحالة غير واضحة حاليًا',
+      };
+
+  String _statusAction(String state) => switch (state) {
+        'green' => 'لا تحتاج لأي إجراء الآن. فقط راقب المؤشر العام.',
+        'yellow' =>
+          'راقب زمن الاستجابة والأخطاء. إذا بقيت الحالة صفراء افتح التفاصيل.',
+        'red' =>
+          'افتح التفاصيل الآن وحدد أبطأ مسار وأي أخطاء 5xx أو 429.',
+        _ => 'حدّث القياسات ثم راجع التفاصيل إذا استمرت الحالة غير واضحة.',
+      };
+
+  String _humanReason(String reason) {
+    final value = reason.trim();
+    if (value.isEmpty) return 'لا توجد ملاحظة إضافية.';
+    if (value == 'All monitored pressure indicators are within target') {
+      return 'كل مؤشرات الضغط التي نراقبها ضمن الحدود الطبيعية.';
+    }
+    if (value.startsWith('slowest active path:')) {
+      return 'أبطأ مسار حاليًا: ' +
+          value.substring('slowest active path:'.length).trim();
+    }
+    if (value.startsWith('p95 high at ')) {
+      return 'زمن الاستجابة مرتفع حاليًا: ' +
+          value.substring('p95 high at '.length);
+    }
+    if (value.startsWith('p95 elevated at ')) {
+      return 'زمن الاستجابة أعلى من المعتاد: ' +
+          value.substring('p95 elevated at '.length);
+    }
+    if (value.startsWith('p95 above target at ')) {
+      return 'زمن الاستجابة فوق الهدف قليلًا: ' +
+          value.substring('p95 above target at '.length);
+    }
+    if (value.startsWith('p99 high at ')) {
+      return 'أبطأ الطلبات مرتفعة جدًا: ' +
+          value.substring('p99 high at '.length);
+    }
+    if (value.startsWith('p99 elevated at ')) {
+      return 'أبطأ الطلبات أعلى من المعتاد: ' +
+          value.substring('p99 elevated at '.length);
+    }
+    if (value.startsWith('HTTP 429 detected')) {
+      return 'ظهر تقييد 429؛ هذا يعني ضغطًا أو بلوغ حد مؤقت.';
+    }
+    if (value.contains('HTTP 5xx') || value.startsWith('5xx rate ')) {
+      return 'ظهرت أخطاء من الخادم وتحتاج متابعة.';
+    }
+    if (value.startsWith('retry rate ')) {
+      return 'زادت إعادة المحاولة عن الطبيعي.';
+    }
+    if (value.startsWith('reconnect rate ')) {
+      return 'إعادة الاتصال أعلى من الطبيعي.';
+    }
+    if (value.startsWith('traffic ')) {
+      return 'حجم الطلبات أعلى من المعدل المعتاد: ' +
+          value.substring('traffic '.length);
+    }
+    if (value.startsWith('Firestore reads ')) {
+      return 'قراءات Firestore أعلى من المعدل المعتاد: ' +
+          value.substring('Firestore reads '.length);
+    }
+    if (value.startsWith('Firestore writes ')) {
+      return 'كتابات Firestore أعلى من المعدل المعتاد: ' +
+          value.substring('Firestore writes '.length);
+    }
+    return value;
+  }
+
+  String _latencyHint(num p95) {
+    if (p95 <= 0) return 'لا توجد طلبات كافية للقياس الآن';
+    if (p95 < 800) return 'سريع وضمن الهدف';
+    if (p95 < 1500) return 'أعلى من الهدف قليلًا';
+    if (p95 < 3000) return 'بطيء ويحتاج مراقبة';
+    return 'بطيء جدًا ويحتاج انتباه';
+  }
+
+  Color _latencyColor(num p95) {
+    if (p95 <= 0 || p95 < 800) return Colors.greenAccent;
+    if (p95 < 3000) return Colors.amberAccent;
+    return Colors.redAccent;
+  }
+
+  Widget _metric(
+    String label,
+    String value,
+    String help, {
+    Color? valueColor,
+  }) =>
+      Container(
+        constraints: const BoxConstraints(minWidth: 128),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: .04),
           borderRadius: BorderRadius.circular(12),
@@ -104,20 +198,32 @@ class _SystemHealthCardState extends State<SystemHealthCard> {
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              value,
-              style: const TextStyle(
-                fontWeight: FontWeight.w900,
-                fontSize: 16,
-              ),
-            ),
-            const SizedBox(height: 2),
             Text(
               label,
               style: const TextStyle(
                 color: Color(0xFFAAA3B8),
                 fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              value,
+              style: TextStyle(
+                color: valueColor,
+                fontWeight: FontWeight.w900,
+                fontSize: 17,
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              help,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: .58),
+                fontSize: 10.5,
+                height: 1.25,
               ),
             ),
           ],
@@ -156,20 +262,38 @@ class _SystemHealthCardState extends State<SystemHealthCard> {
         child: SafeArea(
           child: DraggableScrollableSheet(
             expand: false,
-            initialChildSize: .82,
-            minChildSize: .55,
-            maxChildSize: .96,
+            initialChildSize: .9,
+            minChildSize: .6,
+            maxChildSize: .97,
             builder: (context, controller) => ListView(
               controller: controller,
               padding: const EdgeInsets.all(16),
               children: [
                 const Text(
-                  'تفاصيل حالة النظام',
+                  'تقرير حالة النظام',
                   style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 6),
+                const Text(
+                  'اقرأ اللون أولًا: الأخضر طبيعي، الأصفر يحتاج مراقبة، '
+                  'والأحمر يحتاج تدخل. ركّز على زمن الاستجابة و5xx و429 '
+                  'وإعادة الاتصال؛ أما عدد الطلبات والقراءات والكتابات فهو '
+                  'حجم استخدام ولا يعني وجود مشكلة لوحده.',
+                  style: TextStyle(
+                    color: Color(0xFFCBC5D6),
+                    height: 1.45,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                const _GuideCard(),
+                const SizedBox(height: 14),
+                const Text(
+                  'ماذا حدث عبر الوقت؟',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 8),
                 for (final entry in const [
-                  ('5m', 'آخر 5 دقائق'),
+                  ('5m', 'الآن — آخر 5 دقائق'),
                   ('1h', 'آخر ساعة'),
                   ('24h', 'آخر 24 ساعة'),
                 ]) ...[
@@ -179,67 +303,87 @@ class _SystemHealthCardState extends State<SystemHealthCard> {
                   ),
                   const SizedBox(height: 8),
                 ],
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
                 const Text(
                   'أكثر المسارات نشاطًا',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 4),
+                const Text(
+                  'هذا القسم يساعدك تعرف أي مسار كان أبطأ أو أكثر استخدامًا. '
+                  'وجود مسار هنا لا يعني أنه مشكلة تلقائيًا.',
+                  style: TextStyle(color: Color(0xFFAAA3B8), height: 1.35),
+                ),
+                const SizedBox(height: 8),
                 if (endpoints.isEmpty)
-                  const Text(
-                    'لا توجد بيانات كافية ضمن النافذة الحالية.',
-                    style: TextStyle(color: Color(0xFFAAA3B8)),
+                  const _InfoMessage(
+                    icon: Icons.check_circle_outline,
+                    text:
+                        'النشاط الحالي منخفض، لذلك لا يوجد مسار بارز يحتاج مراقبة الآن.',
                   )
                 else
                   for (final endpoint in endpoints.take(8))
                     ListTile(
                       dense: true,
+                      contentPadding: EdgeInsets.zero,
                       leading: const Icon(Icons.route_outlined),
                       title: Text(
                         (endpoint['route'] ?? '—').toString(),
                         overflow: TextOverflow.ellipsis,
                       ),
                       subtitle: Text(
-                        (endpoint['action'] ?? '').toString() +
-                            ' • p95 ' +
+                        'الإجراء: ' +
+                            (endpoint['action'] ?? '—').toString() +
+                            ' • زمن p95: ' +
                             _fmt(_num(endpoint['p95Ms'])) +
                             ' ms',
                       ),
                       trailing: Text(
-                        _fmt(_num(endpoint['requests'])) + ' req',
+                        _fmt(_num(endpoint['requests'])) + ' طلب',
                         style: const TextStyle(fontWeight: FontWeight.w800),
                       ),
                     ),
-                const Divider(height: 28),
+                const Divider(height: 30),
                 const Text(
-                  'Firestore — أعلى الموارد',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+                  'استهلاك Firestore',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 4),
+                const Text(
+                  'هذه أرقام تشخيصية لمعرفة أين تذهب القراءات والكتابات. '
+                  'لا تعتبرها مشكلة لمجرد أنها موجودة؛ المشكلة تظهر عندما '
+                  'ترتفع مع بطء أو أخطاء أو 429.',
+                  style: TextStyle(color: Color(0xFFAAA3B8), height: 1.35),
+                ),
+                const SizedBox(height: 8),
                 if (firestore.isEmpty)
-                  const Text(
-                    'لا توجد عمليات Firestore ضمن النافذة الحالية.',
-                    style: TextStyle(color: Color(0xFFAAA3B8)),
+                  const _InfoMessage(
+                    icon: Icons.storage_outlined,
+                    text: 'لا توجد عمليات Firestore بارزة ضمن النافذة الحالية.',
                   )
                 else
                   for (final row in firestore.take(10))
                     ListTile(
                       dense: true,
+                      contentPadding: EdgeInsets.zero,
                       leading: const Icon(Icons.storage_outlined),
                       title: Text(
                         (row['resource'] ?? 'unknown').toString(),
                         overflow: TextOverflow.ellipsis,
                       ),
                       subtitle: Text(
-                        (row['operation'] ?? '').toString() +
-                            ' • ' +
-                            (row['outcome'] ?? '').toString(),
+                        'العملية: ' +
+                            (row['operation'] ?? '—').toString() +
+                            ' • النتيجة: ' +
+                            (row['outcome'] ?? '—').toString(),
                       ),
                       trailing: Text(
-                        'R ' +
+                        'قراءة ' +
                             _fmt(_num(row['reads'])) +
-                            ' / W ' +
+                            '\nكتابة ' +
                             _fmt(_num(row['writes'])),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 11),
                       ),
                     ),
               ],
@@ -316,6 +460,11 @@ class _SystemHealthCardState extends State<SystemHealthCard> {
         : const <String>[];
     final color = _statusColor(state);
 
+    final p95 = _num(current['p95Ms']);
+    final status429 = _num(current['status429']);
+    final status5xx = _num(current['status5xx']);
+    final reconnects = _num(current['realtimeReconnects']);
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -326,7 +475,7 @@ class _SystemHealthCardState extends State<SystemHealthCard> {
               children: [
                 Text(
                   _statusEmoji(state),
-                  style: const TextStyle(fontSize: 30),
+                  style: const TextStyle(fontSize: 34),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -334,17 +483,25 @@ class _SystemHealthCardState extends State<SystemHealthCard> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'حالة النظام',
+                        'حالة النظام الآن',
                         style: TextStyle(
                           fontSize: 19,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
                       Text(
-                        '$label • Health Score $score/100',
+                        _statusHeadline(state),
                         style: TextStyle(
                           color: color,
-                          fontWeight: FontWeight.w800,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      Text(
+                        'المؤشر العام: $score/100 • $label',
+                        style: const TextStyle(
+                          color: Color(0xFFAAA3B8),
+                          fontSize: 11,
                         ),
                       ),
                     ],
@@ -357,36 +514,129 @@ class _SystemHealthCardState extends State<SystemHealthCard> {
                 ),
               ],
             ),
-            if (reasons.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(
-                reasons.first,
-                style: const TextStyle(color: Color(0xFFCBC5D6)),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: .08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: color.withValues(alpha: .28)),
               ),
-            ],
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'هل تحتاج تتدخل؟',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    _statusAction(state),
+                    style: const TextStyle(height: 1.35),
+                  ),
+                  if (reasons.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'السبب: ' + _humanReason(reasons.first),
+                      style: const TextStyle(
+                        color: Color(0xFFCBC5D6),
+                        fontSize: 12,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
             const SizedBox(height: 14),
+            const Text(
+              'المؤشرات التي لازم تراقبها',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'إذا بقيت هذه المؤشرات طبيعية، لا تهتم بباقي الأرقام.',
+              style: TextStyle(color: Color(0xFFAAA3B8), fontSize: 11),
+            ),
+            const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               runSpacing: 8,
               children: [
                 _metric(
-                  'Requests/min',
-                  _fmt(_num(current['requestsPerMinute']), decimals: 1),
+                  'زمن الاستجابة',
+                  _fmt(p95) + ' ms',
+                  _latencyHint(p95),
+                  valueColor: _latencyColor(p95),
                 ),
                 _metric(
-                  'FS Reads/min',
-                  _fmt(_num(current['firestoreReadsPerMinute']), decimals: 1),
+                  'أخطاء الخادم 5xx',
+                  _fmt(status5xx),
+                  status5xx == 0
+                      ? 'ممتاز — الأفضل دائمًا 0'
+                      : 'يوجد خطأ خادم ويحتاج متابعة',
+                  valueColor:
+                      status5xx == 0 ? Colors.greenAccent : Colors.redAccent,
                 ),
                 _metric(
-                  'FS Writes/min',
-                  _fmt(_num(current['firestoreWritesPerMinute']), decimals: 1),
+                  'تقييد 429',
+                  _fmt(status429),
+                  status429 == 0
+                      ? 'ممتاز — لا يوجد تقييد'
+                      : 'ضغط أو بلوغ حد مؤقت',
+                  valueColor:
+                      status429 == 0 ? Colors.greenAccent : Colors.redAccent,
                 ),
-                _metric('p95', _fmt(_num(current['p95Ms'])) + ' ms'),
-                _metric('429', _fmt(_num(current['status429']))),
-                _metric('5xx', _fmt(_num(current['status5xx']))),
                 _metric(
-                  'Reconnects',
-                  _fmt(_num(current['realtimeReconnects'])),
+                  'إعادة الاتصال',
+                  _fmt(reconnects),
+                  reconnects == 0
+                      ? 'الاتصال مستقر'
+                      : 'راقب استقرار الاتصال',
+                  valueColor:
+                      reconnects == 0 ? Colors.greenAccent : Colors.amberAccent,
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              'حجم الاستخدام الحالي',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'هذه الأرقام لا تعني ضغطًا لوحدها؛ هي فقط توضح حجم النشاط.',
+              style: TextStyle(color: Color(0xFFAAA3B8), fontSize: 11),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _metric(
+                  'الطلبات بالدقيقة',
+                  _fmt(
+                    _num(current['requestsPerMinute']),
+                    decimals: 1,
+                  ),
+                  'عدد طلبات الخادم',
+                ),
+                _metric(
+                  'قراءات Firestore',
+                  _fmt(
+                    _num(current['firestoreReadsPerMinute']),
+                    decimals: 1,
+                  ) + '/دقيقة',
+                  'قراءة بيانات من القاعدة',
+                ),
+                _metric(
+                  'كتابات Firestore',
+                  _fmt(
+                    _num(current['firestoreWritesPerMinute']),
+                    decimals: 1,
+                  ) + '/دقيقة',
+                  'تحديثات على قاعدة البيانات',
                 ),
               ],
             ),
@@ -395,7 +645,7 @@ class _SystemHealthCardState extends State<SystemHealthCard> {
               children: [
                 Expanded(
                   child: Text(
-                    'تحديث شبه لحظي كل 15 ثانية • بدون Firestore polling للقياسات',
+                    'يتحدث كل 15 ثانية • بدون polling على Firestore للقياسات',
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: .55),
                       fontSize: 11,
@@ -405,7 +655,7 @@ class _SystemHealthCardState extends State<SystemHealthCard> {
                 TextButton.icon(
                   onPressed: _showDetails,
                   icon: const Icon(Icons.analytics_outlined),
-                  label: const Text('التفاصيل'),
+                  label: const Text('شرح وتفاصيل'),
                 ),
               ],
             ),
@@ -413,7 +663,6 @@ class _SystemHealthCardState extends State<SystemHealthCard> {
         ),
       ),
     );
-  }
 }
 
 class _WindowHealthCard extends StatelessWidget {
@@ -422,35 +671,300 @@ class _WindowHealthCard extends StatelessWidget {
   final String label;
   final Map<String, dynamic> data;
 
-  num _num(dynamic value) => value is num ? value : num.tryParse('$value') ?? 0;
+  num _num(dynamic value) =>
+      value is num ? value : num.tryParse('$value') ?? 0;
 
-  @override
-  Widget build(BuildContext context) => Card(
-        color: const Color(0xFF151022),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label, style: const TextStyle(fontWeight: FontWeight.w900)),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 12,
-                runSpacing: 7,
+  Color _stateColor() {
+    final p95 = _num(data['p95Ms']);
+    final status429 = _num(data['status429']);
+    final status5xx = _num(data['status5xx']);
+    if (status429 > 0 || status5xx > 0 || p95 >= 3000) {
+      return Colors.redAccent;
+    }
+    if (p95 >= 800 || _num(data['realtimeReconnects']) > 0) {
+      return Colors.amberAccent;
+    }
+    return Colors.greenAccent;
+  }
+
+  String _summary() {
+    final requests = _num(data['requestsPerMinute']);
+    final p95 = _num(data['p95Ms']);
+    final status429 = _num(data['status429']);
+    final status5xx = _num(data['status5xx']);
+    final reconnects = _num(data['realtimeReconnects']);
+
+    if (requests <= 0 && p95 <= 0 && status429 <= 0 && status5xx <= 0) {
+      return 'لا يوجد نشاط طلبات كافٍ الآن؛ لا توجد علامة ضغط من هذه الفترة.';
+    }
+    if (status429 > 0) {
+      return 'ظهر تقييد 429 خلال هذه الفترة؛ هذا أهم شيء يحتاج انتباه.';
+    }
+    if (status5xx > 0) {
+      return 'ظهرت أخطاء خادم خلال هذه الفترة وتحتاج متابعة.';
+    }
+    if (p95 >= 3000) {
+      return 'ظهر بطء واضح خلال هذه الفترة، حتى لو كانت الحالة الحالية أفضل.';
+    }
+    if (p95 >= 800) {
+      return 'ظهر بطء بسيط أو متوسط خلال هذه الفترة.';
+    }
+    if (reconnects > 0) {
+      return 'السرعة جيدة عمومًا، لكن حدثت إعادة اتصال.';
+    }
+    return 'المؤشرات ضمن الطبيعي في هذه الفترة.';
+  }
+
+  Widget _line(IconData icon, String title, String value, String help) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 18, color: const Color(0xFFBDB5CB)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Req/min ' + _num(data['requestsPerMinute']).toStringAsFixed(1)),
-                  Text('p95 ' + _num(data['p95Ms']).round().toString() + 'ms'),
-                  Text('p99 ' + _num(data['p99Ms']).round().toString() + 'ms'),
-                  Text('429 ' + _num(data['status429']).round().toString()),
-                  Text('5xx ' + _num(data['status5xx']).round().toString()),
-                  Text('Reads/min ' + _num(data['firestoreReadsPerMinute']).toStringAsFixed(1)),
-                  Text('Writes/min ' + _num(data['firestoreWritesPerMinute']).toStringAsFixed(1)),
-                  Text('Retries ' + _num(data['firestoreRetries']).round().toString()),
-                  Text('Reconnects ' + _num(data['realtimeReconnects']).round().toString()),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          title,
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                      Text(
+                        value,
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    help,
+                    style: const TextStyle(
+                      color: Color(0xFFAAA3B8),
+                      fontSize: 10.5,
+                    ),
+                  ),
                 ],
               ),
-            ],
-          ),
+            ),
+          ],
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _stateColor();
+    final requests = _num(data['requestsPerMinute']);
+    final p95 = _num(data['p95Ms']);
+    final p99 = _num(data['p99Ms']);
+    final status429 = _num(data['status429']);
+    final status5xx = _num(data['status5xx']);
+    final reconnects = _num(data['realtimeReconnects']);
+    final retries = _num(data['firestoreRetries']);
+    final reads = _num(data['firestoreReadsPerMinute']);
+    final writes = _num(data['firestoreWritesPerMinute']);
+
+    return Card(
+      color: const Color(0xFF151022),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 7),
+            Text(
+              _summary(),
+              style: TextStyle(color: color, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 10),
+            _line(
+              Icons.speed_outlined,
+              'زمن معظم الطلبات (p95)',
+              p95.round().toString() + ' ms',
+              'الأهم للسرعة؛ كلما قل كان أفضل.',
+            ),
+            _line(
+              Icons.warning_amber_rounded,
+              'أخطاء الخادم',
+              status5xx.round().toString(),
+              '5xx — الأفضل أن يبقى 0.',
+            ),
+            _line(
+              Icons.block_outlined,
+              'تقييد الطلبات',
+              status429.round().toString(),
+              '429 — الأفضل أن يبقى 0.',
+            ),
+            _line(
+              Icons.wifi_tethering_error_rounded,
+              'إعادة الاتصال',
+              reconnects.round().toString(),
+              'ارتفاعه قد يدل على عدم استقرار الاتصال.',
+            ),
+            const Divider(height: 20),
+            const Text(
+              'معلومات إضافية',
+              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'أبطأ 1% تقريبًا (p99): ' +
+                  p99.round().toString() +
+                  ' ms • إعادة محاولات Firestore: ' +
+                  retries.round().toString(),
+              style: const TextStyle(
+                color: Color(0xFFAAA3B8),
+                fontSize: 11,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'حجم الاستخدام: ' +
+                  requests.toStringAsFixed(1) +
+                  ' طلب/دقيقة • ' +
+                  reads.toStringAsFixed(1) +
+                  ' قراءة/دقيقة • ' +
+                  writes.toStringAsFixed(1) +
+                  ' كتابة/دقيقة',
+              style: const TextStyle(
+                color: Color(0xFFAAA3B8),
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GuideCard extends StatelessWidget {
+  const _GuideCard();
+
+  Widget _item(Color color, String title, String text) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 10,
+              height: 10,
+              margin: const EdgeInsets.only(top: 4),
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: RichText(
+                text: TextSpan(
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                  children: [
+                    TextSpan(
+                      text: title + ': ',
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    TextSpan(
+                      text: text,
+                      style: const TextStyle(color: Color(0xFFCBC5D6)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: .035),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'كيف أقرأ التقرير؟',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 6),
+            _item(
+              Colors.greenAccent,
+              'أخضر',
+              'الوضع طبيعي ولا تحتاج لأي إجراء.',
+            ),
+            _item(
+              Colors.amberAccent,
+              'أصفر',
+              'يوجد بطء أو مؤشر يحتاج مراقبة.',
+            ),
+            _item(
+              Colors.redAccent,
+              'أحمر',
+              'يوجد ضغط أو خطأ يحتاج تدخل.',
+            ),
+          ],
         ),
       );
 }
+
+class _InfoMessage extends StatelessWidget {
+  const _InfoMessage({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: .035),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white12),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: Colors.greenAccent),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                text,
+                style: const TextStyle(
+                  color: Color(0xFFCBC5D6),
+                  height: 1.35,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
