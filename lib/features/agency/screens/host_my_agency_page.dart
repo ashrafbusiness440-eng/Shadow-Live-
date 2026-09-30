@@ -6,6 +6,7 @@ import '../../profile/screens/public_profile_screen.dart';
 import '../../profile/services/profile_action_service.dart';
 import '../services/host_my_agency_service.dart';
 import '../services/public_agency_service.dart';
+import 'agency_membership_review_page.dart';
 import 'owner_agency_dashboard_page.dart';
 
 class HostMyAgencyPage extends StatefulWidget {
@@ -291,6 +292,16 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
     );
   }
 
+  void _openMembershipReview() {
+    final data = _data;
+    if (data == null || !data.canReviewMembershipRequests) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AgencyMembershipReviewPage(initialCore: data),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Directionality(
@@ -327,6 +338,9 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
           if (data.membershipRole == 'owner') ...[
             const SizedBox(height: 12),
             _OwnerDashboardEntry(onTap: _openOwnerDashboard),
+          ] else if (data.canReviewMembershipRequests) ...[
+            const SizedBox(height: 12),
+            _AgencyReviewEntry(onTap: _openMembershipReview),
           ],
           const SizedBox(height: 16),
           _OwnerCard(owner: data.owner, onTap: _openOwner),
@@ -454,6 +468,42 @@ class _AgencyHeader extends StatelessWidget {
   }
 }
 
+
+class _AgencyReviewEntry extends StatelessWidget {
+  const _AgencyReviewEntry({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('agency-membership-review-entry'),
+      decoration: _cardDecoration(),
+      child: ListTile(
+        onTap: onTap,
+        leading: const CircleAvatar(
+          backgroundColor: Color(0xFF31204F),
+          child: Icon(
+            Icons.rule_folder_rounded,
+            color: Color(0xFFB99CFF),
+          ),
+        ),
+        title: const Text(
+          'إدارة الوكالة',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        subtitle: const Text(
+          'مراجعة طلبات الانضمام والمغادرة المعلّقة',
+          style: TextStyle(color: Colors.white54),
+        ),
+        trailing: const Icon(Icons.chevron_left_rounded),
+      ),
+    );
+  }
+}
 
 class _OwnerDashboardEntry extends StatelessWidget {
   const _OwnerDashboardEntry({required this.onTap});
