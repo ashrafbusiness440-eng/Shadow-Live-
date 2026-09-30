@@ -220,6 +220,15 @@ const List<ShadowCountryOption> shadowCountries = <ShadowCountryOption>[
   ShadowCountryOption('تايوان', 'TW'),
 ];
 
+ShadowCountryOption? shadowCountryByName(String? name) {
+  final value = (name ?? '').trim();
+  if (value.isEmpty) return null;
+  for (final country in shadowCountries) {
+    if (country.nameAr == value) return country;
+  }
+  return null;
+}
+
 Future<ShadowCountryOption?> showShadowCountryPicker(
   BuildContext context, {
   String? selectedName,
