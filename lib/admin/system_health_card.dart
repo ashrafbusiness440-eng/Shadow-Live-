@@ -81,19 +81,19 @@ class _SystemHealthCardState extends State<SystemHealthCard> {
     }
   }
 
-  Color _statusColor(String state) => switch (state) {
-        'green' => Colors.greenAccent,
-        'yellow' => Colors.amberAccent,
-        'red' => Colors.redAccent,
-        _ => Colors.blueGrey,
-      };
+  Color _statusColor(String state) {
+    if (state == 'green') return Colors.greenAccent;
+    if (state == 'yellow') return Colors.amberAccent;
+    if (state == 'red') return Colors.redAccent;
+    return Colors.blueGrey;
+  }
 
-  String _statusEmoji(String state) => switch (state) {
-        'green' => '🟢',
-        'yellow' => '🟡',
-        'red' => '🔴',
-        _ => '⚪',
-      };
+  String _statusEmoji(String state) {
+    if (state == 'green') return '🟢';
+    if (state == 'yellow') return '🟡';
+    if (state == 'red') return '🔴';
+    return '⚪';
+  }
 
   String _statusHeadline(String state) {
     if (state == 'green') return 'لا يوجد ضغط حاليًا';
