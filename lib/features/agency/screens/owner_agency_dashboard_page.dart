@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../../profile/screens/public_profile_screen.dart';
 import '../services/host_my_agency_service.dart';
 import '../services/owner_agency_service.dart';
 
@@ -25,6 +27,10 @@ class _OwnerAgencyDashboardPageState extends State<OwnerAgencyDashboardPage> {
   OwnerAgencyStatement? _statement;
   OwnerAgencyMembersData? _membersData;
   List<OwnerAgencyPendingRequest>? _pendingRequests;
+  int? _pendingNextOffset;
+  bool _pendingHasMore = false;
+  bool _pendingTruncated = false;
+  bool _pendingLoadingMore = false;
   bool _refreshing = false;
   bool _performanceLoading = false;
   bool _statementLoading = false;
@@ -134,11 +140,14 @@ class _OwnerAgencyDashboardPageState extends State<OwnerAgencyDashboardPage> {
     try {
       final agencyId = _data.agency.agencyId;
       final members = await _ownerService.loadMembers(agencyId);
-      final pending = await _ownerService.loadPending(agencyId);
+      final pending = await _ownerService.loadPendingPage(agencyId);
       if (!mounted) return;
       setState(() {
         _membersData = members;
-        _pendingRequests = pending;
+        _pendingRequests = pending.requests;
+        _pendingNextOffset = pending.nextOffset;
+        _pendingHasMore = pending.hasMore;
+        _pendingTruncated = pending.truncated;
         _managementLoading = false;
       });
     } catch (error) {
@@ -146,6 +155,48 @@ class _OwnerAgencyDashboardPageState extends State<OwnerAgencyDashboardPage> {
       setState(() {
         _managementError = error.toString();
         _managementLoading = false;
+      });
+    }
+  }
+
+  Future<void> _loadMorePending() async {
+    final offset = _pendingNextOffset;
+    if (_pendingLoadingMore || !_pendingHasMore || offset == null) return;
+    setState(() {
+      _pendingLoadingMore = true;
+      _managementError = null;
+    });
+    try {
+      final page = await _ownerService.loadPendingPage(
+        _data.agency.agencyId,
+        offset: offset,
+      );
+      if (!mounted) return;
+      final existing = {
+        for (final item in _pendingRequests ?? const <OwnerAgencyPendingRequest>[])
+          item.requestId: item,
+      };
+      for (final item in page.requests) {
+        existing[item.requestId] = item;
+      }
+      final merged = existing.values.toList()
+        ..sort((a, b) {
+          final left = a.createdAt?.millisecondsSinceEpoch ?? 0;
+          final right = b.createdAt?.millisecondsSinceEpoch ?? 0;
+          return right.compareTo(left);
+        });
+      setState(() {
+        _pendingRequests = merged;
+        _pendingNextOffset = page.nextOffset;
+        _pendingHasMore = page.hasMore;
+        _pendingTruncated = page.truncated;
+        _pendingLoadingMore = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _managementError = error.toString();
+        _pendingLoadingMore = false;
       });
     }
   }
@@ -351,10 +402,14 @@ class _OwnerAgencyDashboardPageState extends State<OwnerAgencyDashboardPage> {
                     _AgencyManagementCard(
                       data: _membersData,
                       pending: _pendingRequests,
+                      pendingHasMore: _pendingHasMore,
+                      pendingLoadingMore: _pendingLoadingMore,
+                      pendingTruncated: _pendingTruncated,
                       loading: _managementLoading,
                       busy: _managementBusy,
                       error: _managementError,
                       onLoad: _loadManagement,
+                      onLoadMorePending: _loadMorePending,
                       onInvite: _inviteHost,
                       onSetRole: _setMemberRole,
                       onRemove: _removeMember,
