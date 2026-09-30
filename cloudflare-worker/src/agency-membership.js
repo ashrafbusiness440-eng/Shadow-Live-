@@ -2972,6 +2972,57 @@ export async function listAgencyMembers(
   };
 }
 
+function pendingConflictStatus({
+  agencyId,
+  request,
+  userSnap,
+  lockSnap,
+}) {
+  const user = userSnap?.exists ? userSnap.data || {} : {};
+  const accountStatus = clean(user.accountStatus || "active");
+  if (!userSnap?.exists) return "user_missing";
+  if (accountStatus !== "active") return "account_inactive";
+
+  const type = clean(request.type);
+  const linkedAgencyId = clean(user.agencyId);
+  if (type === "leave") {
+    return linkedAgencyId === agencyId ? "none" : "membership_changed";
+  }
+  if (linkedAgencyId) return "already_in_agency";
+
+  if (
+    lockSnap?.exists &&
+    clean(lockSnap.data?.requestId) !== clean(request.requestId)
+  ) {
+    return "reserved_other_request";
+  }
+  return "none";
+}
+
+function pendingRequestView({
+  agencyId,
+  row,
+  userSnap,
+  lockSnap,
+}) {
+  const request = row?.data || {};
+  const user = userSnap?.exists ? userSnap.data || {} : {};
+  return {
+    ...requestSummary(request),
+    displayName:
+      clean(user.displayName || user.name || user.username) || null,
+    profileImageUrl:
+      clean(user.profileImageUrl || user.photoUrl || user.avatarUrl) || null,
+    accountStatus: clean(user.accountStatus || "active"),
+    conflictStatus: pendingConflictStatus({
+      agencyId,
+      request,
+      userSnap,
+      lockSnap,
+    }),
+  };
+}
+
 export async function listAgencyMembershipPending(
   db,
   actorUid,
@@ -2980,15 +3031,108 @@ export async function listAgencyMembershipPending(
   const agencyId = clean(body.agencyId);
   if (!/^\d{3,8}$/.test(agencyId)) throw new ApiError("invalid_agency_id", 400);
   await loadAgencyActor(db, actorUid, agencyId, "review");
-  const limit = Math.min(50, boundedAgencyPageSize(body.limit, 50));
+
+  const limit = Math.min(25, boundedAgencyPageSize(body.limit, 25));
+  const offsetRaw = Number(body.offset || 0);
+  const offset =
+    Number.isInteger(offsetRaw) && offsetRaw >= 0
+      ? Math.min(75, offsetRaw)
+      : 0;
+  const windowLimit = 100;
   const rows = await db.runQuery("agency_membership_pending", {
     filters: [{ field: "agencyId", op: "==", value: agencyId }],
-    limit,
+    limit: windowLimit,
   });
+  const sorted = rows.slice().sort((left, right) => {
+    const leftTime = timestampMs(left?.data?.createdAt);
+    const rightTime = timestampMs(right?.data?.createdAt);
+    if (leftTime !== rightTime) return rightTime - leftTime;
+    return clean(right?.data?.requestId).localeCompare(
+      clean(left?.data?.requestId),
+    );
+  });
+  const pageRows = sorted.slice(offset, offset + limit);
+
+  const userSnaps = await Promise.all(
+    pageRows.map((row) => {
+      const uid = clean(row?.data?.uid);
+      return uid ? db.get("users/" + uid) : Promise.resolve({ exists: false });
+    }),
+  );
+  const lockSnaps = await Promise.all(
+    pageRows.map((row) => {
+      const uid = clean(row?.data?.uid);
+      return uid
+        ? db.get(acceptanceLockPath(uid))
+        : Promise.resolve({ exists: false });
+    }),
+  );
+
+  const consumed = offset + pageRows.length;
+  const hasMore = consumed < sorted.length;
   return {
     ok: true,
     limit,
-    requests: rows.map((row) => requestSummary(row.data || {})),
+    offset,
+    nextOffset: hasMore ? consumed : null,
+    hasMore,
+    truncated: sorted.length === windowLimit && !hasMore,
+    requests: pageRows.map((row, index) =>
+      pendingRequestView({
+        agencyId,
+        row,
+        userSnap: userSnaps[index],
+        lockSnap: lockSnaps[index],
+      })
+    ),
+  };
+}
+
+export async function getMyAgencyMembershipRequest(
+  db,
+  actorUid,
+  body = {},
+) {
+  const requestId = clean(body.requestId);
+  if (!requestId || requestId.includes("/")) {
+    throw new ApiError("invalid_request_id", 400);
+  }
+
+  const requestSnap = await db.get(
+    `agency_membership_requests/${requestId}`,
+  );
+  if (!requestSnap.exists) {
+    throw new ApiError("membership_request_not_found", 404);
+  }
+  const request = requestSnap.data || {};
+  if (clean(request.uid) !== actorUid) {
+    throw new ApiError("forbidden", 403);
+  }
+
+  const agencyId = clean(request.agencyId);
+  if (!/^\d{3,8}$/.test(agencyId)) {
+    throw new ApiError("membership_request_invalid", 409);
+  }
+  const agencySnap = await db.get(`agencies/${agencyId}`);
+  if (!agencySnap.exists) {
+    throw new ApiError("agency_not_found", 404);
+  }
+  const agency = agencySnap.data || {};
+  return {
+    ok: true,
+    request: requestSummary(request),
+    agency: {
+      agencyId,
+      publicId: clean(agency.publicId || agencyId),
+      name: clean(agency.name) || "Shadow Live Agency",
+      country: clean(agency.country) || null,
+      logoUrl:
+        clean(agency.logoUrl || agency.imageUrl || agency.profileImageUrl) ||
+        null,
+      memberCount: Math.max(0, Number(agency.memberCount || 0)),
+      hostCount: Math.max(0, Number(agency.hostCount || 0)),
+      status: clean(agency.status) || "active",
+    },
   };
 }
 
@@ -3063,6 +3207,8 @@ export async function agencyMembership(request, env) {
       result = await listAgencyMembers(db, decoded.sub, body);
     } else if (action === "listAgencyPending") {
       result = await listAgencyMembershipPending(db, decoded.sub, body);
+    } else if (action === "getMyRequest") {
+      result = await getMyAgencyMembershipRequest(db, decoded.sub, body);
     } else if (action === "listMy") {
       result = await listMyAgencyMembershipRequests(db, decoded.sub, body);
     } else {
