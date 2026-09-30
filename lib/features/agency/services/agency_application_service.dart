@@ -12,6 +12,54 @@ class AgencyApplicationException implements Exception {
   String toString() => code;
 }
 
+class AgencyApplicationHost {
+  const AgencyApplicationHost({
+    required this.uid,
+    required this.publicId,
+    required this.displayName,
+    required this.photoUrl,
+  });
+
+  final String uid;
+  final String publicId;
+  final String displayName;
+  final String? photoUrl;
+
+  factory AgencyApplicationHost.fromJson(Map<String, dynamic> json) {
+    return AgencyApplicationHost(
+      uid: (json['uid'] ?? '').toString().trim(),
+      publicId: (json['publicId'] ?? '').toString().trim(),
+      displayName: (json['displayName'] ?? '').toString().trim(),
+      photoUrl: _nullableString(json['photoUrl']),
+    );
+  }
+}
+
+class AgencyApplicationHostReservation {
+  const AgencyApplicationHostReservation({
+    required this.applicationId,
+    required this.requiredHostCount,
+    required this.host,
+  });
+
+  final String applicationId;
+  final int requiredHostCount;
+  final AgencyApplicationHost host;
+
+  factory AgencyApplicationHostReservation.fromJson(Map<String, dynamic> json) {
+    final rawHost = json['host'];
+    return AgencyApplicationHostReservation(
+      applicationId: (json['applicationId'] ?? '').toString().trim(),
+      requiredHostCount: _nonNegativeInt(json['requiredHostCount']),
+      host: AgencyApplicationHost.fromJson(
+        rawHost is Map
+            ? Map<String, dynamic>.from(rawHost)
+            : const <String, dynamic>{},
+      ),
+    );
+  }
+}
+
 class AgencyApplicationStatus {
   const AgencyApplicationStatus({
     required this.status,
@@ -20,6 +68,9 @@ class AgencyApplicationStatus {
     required this.reapplyMode,
     required this.remainingSeconds,
     required this.rejectionReason,
+    required this.requiredHostCount,
+    required this.reservedHosts,
+    required this.reservationKey,
   });
 
   final String status;
@@ -28,6 +79,9 @@ class AgencyApplicationStatus {
   final String? reapplyMode;
   final int remainingSeconds;
   final String? rejectionReason;
+  final int requiredHostCount;
+  final List<AgencyApplicationHost> reservedHosts;
+  final String? reservationKey;
 
   bool get isPending => status == 'pending' || status == 'under_review';
   bool get isRejected => status == 'rejected';
@@ -41,6 +95,18 @@ class AgencyApplicationStatus {
       reapplyMode: _nullableString(json['reapplyMode']),
       remainingSeconds: _nonNegativeInt(json['remainingSeconds']),
       rejectionReason: _nullableString(json['rejectionReason']),
+      requiredHostCount: _boundedHostCount(json['requiredHostCount']),
+      reservedHosts: json['reservedHosts'] is List
+          ? (json['reservedHosts'] as List)
+              .whereType<Map>()
+              .map(
+                (item) => AgencyApplicationHost.fromJson(
+                  Map<String, dynamic>.from(item),
+                ),
+              )
+              .toList(growable: false)
+          : const <AgencyApplicationHost>[],
+      reservationKey: _nullableString(json['reservationKey']),
     );
   }
 }
@@ -52,6 +118,7 @@ class AgencyApplicationSubmitResult {
     required this.name,
     required this.country,
     required this.hostIds,
+    required this.requiredHostCount,
   });
 
   final String applicationId;
@@ -59,6 +126,7 @@ class AgencyApplicationSubmitResult {
   final String name;
   final String? country;
   final List<String> hostIds;
+  final int requiredHostCount;
 
   factory AgencyApplicationSubmitResult.fromJson(Map<String, dynamic> json) {
     final rawHosts = json['hostIds'];
@@ -70,6 +138,7 @@ class AgencyApplicationSubmitResult {
       hostIds: rawHosts is List
           ? rawHosts.map((value) => value.toString().trim()).toList()
           : const <String>[],
+      requiredHostCount: _boundedHostCount(json['requiredHostCount']),
     );
   }
 }
@@ -141,18 +210,41 @@ class AgencyApplicationService {
     return AgencyApplicationStatus.fromJson(body);
   }
 
+  Future<AgencyApplicationHostReservation> reserveHost({
+    required String hostId,
+    required String idempotencyKey,
+  }) async {
+    final body = await _post({
+      'action': 'reserveHost',
+      'hostId': hostId.trim(),
+      'idempotencyKey': idempotencyKey,
+    });
+    return AgencyApplicationHostReservation.fromJson(body);
+  }
+
+  Future<void> releaseHost({
+    required String hostId,
+    required String idempotencyKey,
+  }) async {
+    await _post({
+      'action': 'releaseHost',
+      'hostId': hostId.trim(),
+      'idempotencyKey': idempotencyKey,
+    });
+  }
+
   Future<AgencyApplicationSubmitResult> submit({
     required String name,
     required String country,
     required List<String> hostIds,
+    required String idempotencyKey,
   }) async {
     final body = await _post({
       'action': 'submit',
       'name': name.trim(),
       if (country.trim().isNotEmpty) 'country': country.trim(),
       'hostIds': hostIds.map((value) => value.trim()).toList(growable: false),
-      'idempotencyKey':
-          'agency_apply_${DateTime.now().microsecondsSinceEpoch}',
+      'idempotencyKey': idempotencyKey,
     });
     return AgencyApplicationSubmitResult.fromJson(body);
   }
@@ -170,4 +262,10 @@ String? _nullableString(dynamic value) {
 int _nonNegativeInt(dynamic value) {
   final parsed = value is num ? value.toInt() : int.tryParse('$value') ?? 0;
   return parsed < 0 ? 0 : parsed;
+}
+
+int _boundedHostCount(dynamic value) {
+  final parsed = _nonNegativeInt(value);
+  if (parsed > 30) return 30;
+  return parsed;
 }
