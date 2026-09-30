@@ -45,6 +45,8 @@ test("agency model keeps bounded pressure constants",()=>{
   assert.equal(AGENCY_LIMITS.managerSlots,3);
   assert.equal(AGENCY_LIMITS.agencyManagers,2);
   assert.equal(AGENCY_LIMITS.seniorManagers,1);
+  assert.equal(AGENCY_LIMITS.minApplicationHostIds,0);
+  assert.equal(AGENCY_LIMITS.maxApplicationHostIds,30);
   assert.equal(boundedAgencyPageSize(999),100);
   assert.equal(boundedAgencyPageSize(0),1);
 });
@@ -162,7 +164,7 @@ test("agency creation accepts 3-8 digit public ids",()=>{
   );
 });
 
-test("application data model requires exactly five unique host ids",()=>{
+test("application data model supports configured 0-30 unique host ids",()=>{
   const hostIds=["101","1002","10003","100004","10000005"];
   const hostUids=["h1","h2","h3","h4","h5"];
   assert.deepEqual(normalizeApplicationHostIds(hostIds),hostIds);
@@ -180,7 +182,19 @@ test("application data model requires exactly five unique host ids",()=>{
   assert.equal(doc.hostUids.length,5);
   assert.equal(doc.status,"pending");
   assert.equal(doc.reapplyMode,"30d");
-  assert.throws(()=>normalizeApplicationHostIds(["100001"]),/invalid_agency_application_hosts/);
+  assert.deepEqual(normalizeApplicationHostIds([],0),[]);
+  assert.deepEqual(
+    normalizeApplicationHostIds(["123","1234","12345"],3),
+    ["123","1234","12345"],
+  );
+  assert.throws(
+    ()=>normalizeApplicationHostIds(["100001"],5),
+    /invalid_agency_application_hosts/,
+  );
+  assert.throws(
+    ()=>normalizeApplicationHostIds([],31),
+    /invalid_agency_application_host_count/,
+  );
   assert.throws(
     ()=>normalizeApplicationHostIds(["101","1002","10003","100004","100004"]),
     /duplicate_agency_application_host/,
