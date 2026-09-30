@@ -413,10 +413,10 @@ export async function releaseAgencyApplicationHost(
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const transaction = await db.beginTransaction();
     try {
-      const [applicantLockSnap, publicIdSnap] = await Promise.all([
-        db.get(applicantLockPath, transaction),
-        db.get(`public_ids/${hostId}`, transaction),
-      ]);
+      const applicantLockSnap = await db.get(
+        applicantLockPath,
+        transaction,
+      );
       if (
         !applicantLockSnap.exists ||
         clean(applicantLockSnap.data?.status) !== "draft" ||
@@ -425,10 +425,28 @@ export async function releaseAgencyApplicationHost(
         throw new ApiError("agency_application_draft_not_editable", 409);
       }
 
-      const hostUid = clean(publicIdSnap.data?.uid);
-      if (!publicIdSnap.exists || !hostUid) {
-        throw new ApiError("agency_host_id_not_found", 404, { hostId });
+      const lock = applicantLockSnap.data || {};
+      const reservedIds = Array.isArray(lock.hostIds)
+        ? lock.hostIds.map(clean)
+        : [];
+      const reservedUids = Array.isArray(lock.hostUids)
+        ? lock.hostUids.map(clean)
+        : [];
+      const reservedIndex = reservedIds.indexOf(hostId);
+      if (
+        reservedIndex < 0 ||
+        reservedIndex >= reservedUids.length ||
+        !reservedUids[reservedIndex]
+      ) {
+        await db.rollback(transaction);
+        return {
+          ok: true,
+          code: "already_released",
+          applicationId,
+          hostId,
+        };
       }
+      const hostUid = reservedUids[reservedIndex];
       const hostLockPath = `agency_application_locks/${hostUid}`;
       const hostLockSnap = await db.get(hostLockPath, transaction);
       if (
@@ -450,7 +468,6 @@ export async function releaseAgencyApplicationHost(
         });
       }
 
-      const lock = applicantLockSnap.data || {};
       const hostIds = Array.isArray(lock.hostIds)
         ? lock.hostIds.map(clean).filter((value) => value && value !== hostId)
         : [];
@@ -558,16 +575,12 @@ export async function submitAgencyApplication(
         applicantMembershipSnap,
         applicantLockSnap,
         settingsSnap,
-        ...publicIdSnaps
       ] = await Promise.all([
         db.get(operationPath, transaction),
         db.get(`users/${applicantUid}`, transaction),
         db.get(applicantMembershipPath, transaction),
         db.get(applicantLockPath, transaction),
         db.get("system_config/agency_application", transaction),
-        ...hostIds.map((hostId) =>
-          db.get(`public_ids/${hostId}`, transaction)
-        ),
       ]);
 
       if (operationSnap.exists) {
@@ -618,20 +631,52 @@ export async function submitAgencyApplication(
         });
       }
 
-      const hostUids = publicIdSnaps.map((snap, index) => {
-        if (!snap.exists) {
-          throw new ApiError("agency_host_id_not_found", 404, {
-            hostId: hostIds[index],
-          });
+      let hostUids;
+      if (draftForThisApplication) {
+        const draftHostIds = Array.isArray(applicantLockSnap.data?.hostIds)
+          ? applicantLockSnap.data.hostIds.map(clean)
+          : [];
+        const draftHostUids = Array.isArray(applicantLockSnap.data?.hostUids)
+          ? applicantLockSnap.data.hostUids.map(clean)
+          : [];
+        if (
+          draftHostIds.length !== requiredHostCount ||
+          draftHostUids.length !== requiredHostCount ||
+          new Set(draftHostIds).size !== draftHostIds.length ||
+          new Set(draftHostUids).size !== draftHostUids.length
+        ) {
+          throw new ApiError("agency_host_reservation_missing", 409);
         }
-        const uid = clean(snap.data?.uid);
-        if (!uid) {
-          throw new ApiError("agency_host_id_not_found", 404, {
-            hostId: hostIds[index],
-          });
-        }
-        return uid;
-      });
+        hostUids = hostIds.map((hostId) => {
+          const index = draftHostIds.indexOf(hostId);
+          if (index < 0 || !draftHostUids[index]) {
+            throw new ApiError("agency_host_reservation_missing", 409, {
+              hostId,
+            });
+          }
+          return draftHostUids[index];
+        });
+      } else {
+        const publicIdSnaps = await Promise.all(
+          hostIds.map((hostId) =>
+            db.get(`public_ids/${hostId}`, transaction)
+          ),
+        );
+        hostUids = publicIdSnaps.map((snap, index) => {
+          if (!snap.exists) {
+            throw new ApiError("agency_host_id_not_found", 404, {
+              hostId: hostIds[index],
+            });
+          }
+          const uid = clean(snap.data?.uid);
+          if (!uid) {
+            throw new ApiError("agency_host_id_not_found", 404, {
+              hostId: hostIds[index],
+            });
+          }
+          return uid;
+        });
+      }
       if (new Set(hostUids).size !== hostUids.length) {
         throw new ApiError("duplicate_agency_application_host", 400);
       }
@@ -683,6 +728,14 @@ export async function submitAgencyApplication(
         }
       }
 
+      const hostProfiles = hostUids.map((uid, index) =>
+        profileSnapshot(
+          hostState[index * 3],
+          hostIds[index],
+          uid,
+        )
+      );
+
       const application = createAgencyApplicationDocument({
         applicationId,
         applicantUid,
@@ -708,6 +761,7 @@ export async function submitAgencyApplication(
         db.writeCreate(applicationPath, {
           ...application,
           applicantPublicId: clean(applicantSnap.data?.publicId) || null,
+          hostProfiles,
         }),
         applicantLockSnap.exists
           ? db.writeUpdate(applicantLockPath, {
