@@ -1200,6 +1200,19 @@ class _PendingManagementTile extends StatelessWidget {
               '$label • ${_roleLabel(request.targetRole)} • ${_relativeWait(request.createdAt)}',
               style: const TextStyle(color: Colors.white54),
             ),
+            Text(
+              'وقت الطلب: ${_createdAtLabel(request.createdAt)}',
+              style: const TextStyle(color: Colors.white38, fontSize: 12),
+            ),
+            Text(
+              'الحساب: ${_accountStatusLabel(request.accountStatus)} • الوكالة: ${_agencyLinkStatusLabel(request)}',
+              style: TextStyle(
+                color: statusLabel == null
+                    ? Colors.white54
+                    : Colors.amberAccent,
+                fontSize: 12,
+              ),
+            ),
             if (statusLabel != null)
               Text(
                 statusLabel,
@@ -1257,6 +1270,48 @@ String _relativeWait(DateTime? createdAt) {
   if (diff.inHours < 1) return 'منذ ${diff.inMinutes} د';
   if (diff.inDays < 1) return 'منذ ${diff.inHours} س';
   return 'منذ ${diff.inDays} ي';
+}
+
+String _createdAtLabel(DateTime? createdAt) {
+  if (createdAt == null) return '—';
+  final value = createdAt.toLocal();
+  String two(int number) => number.toString().padLeft(2, '0');
+  return '${two(value.day)}/${two(value.month)}/${value.year} '
+      '${two(value.hour)}:${two(value.minute)}';
+}
+
+String _accountStatusLabel(String status) {
+  switch (status) {
+    case 'active':
+      return 'نشط';
+    case 'suspended':
+      return 'موقوف';
+    case 'disabled':
+      return 'معطّل';
+    case 'banned':
+      return 'محظور';
+    default:
+      return status.isEmpty ? 'غير متاح' : status;
+  }
+}
+
+String _agencyLinkStatusLabel(OwnerAgencyPendingRequest request) {
+  switch (request.conflictStatus) {
+    case 'none':
+      return request.type == 'leave' ? 'عضو حالي' : 'غير مرتبط';
+    case 'already_in_agency':
+      return 'عضو بوكالة أخرى';
+    case 'reserved_other_request':
+      return 'محجوز بطلب آخر';
+    case 'membership_changed':
+      return 'تغيّرت العضوية';
+    case 'user_missing':
+      return 'غير متاح';
+    case 'account_inactive':
+      return 'يلزم التحقق';
+    default:
+      return request.conflictStatus;
+  }
 }
 
 String? _pendingConflictLabel(OwnerAgencyPendingRequest request) {
