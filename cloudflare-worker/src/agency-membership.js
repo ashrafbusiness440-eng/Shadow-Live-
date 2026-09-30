@@ -1253,9 +1253,21 @@ export async function respondAgencyMembershipRequest(
       const agencyConsent =
         request.agencyConsent === true || (type === "join" && decision === "accept");
       const accepted = decision === "accept" && userConsent && agencyConsent;
-      if (accepted && acceptanceSnap.exists) {
+      const acceptanceLockMatches =
+        acceptanceSnap.exists &&
+        clean(acceptanceSnap.data?.requestId) === requestId &&
+        clean(acceptanceSnap.data?.agencyId) === agencyId;
+      if (acceptanceSnap.exists && !acceptanceLockMatches) {
         throw new ApiError("membership_acceptance_conflict", 409, {
           requestId: clean(acceptanceSnap.data?.requestId) || null,
+        });
+      }
+      if (
+        acceptanceLockMatches &&
+        clean(acceptanceSnap.data?.status) !== "pending"
+      ) {
+        throw new ApiError("membership_acceptance_conflict", 409, {
+          requestId,
         });
       }
 
@@ -1402,16 +1414,32 @@ export async function respondAgencyMembershipRequest(
           ),
           db.writeDelete(pairPath),
           db.writeDelete(queuePath),
-          db.writeCreate(acceptanceLockPath(uid), {
-            requestId,
-            agencyId,
-            uid,
-            status: "committed",
-            membershipRole: "host",
-            membershipCommittedAt: now,
-            createdAt: now,
-            updatedAt: now,
-          }),
+          acceptanceLockMatches
+            ? db.writeUpdate(
+                acceptanceLockPath(uid),
+                {
+                  status: "committed",
+                  membershipRole: "host",
+                  membershipCommittedAt: now,
+                  updatedAt: now,
+                },
+                [
+                  "status",
+                  "membershipRole",
+                  "membershipCommittedAt",
+                  "updatedAt",
+                ],
+              )
+            : db.writeCreate(acceptanceLockPath(uid), {
+                requestId,
+                agencyId,
+                uid,
+                status: "committed",
+                membershipRole: "host",
+                membershipCommittedAt: now,
+                createdAt: now,
+                updatedAt: now,
+              }),
           db.writeCreate(
             `admin_audit_logs/agency_membership_commit_${requestId}`,
             {
@@ -1452,6 +1480,9 @@ export async function respondAgencyMembershipRequest(
         }
       } else if (decision === "reject") {
         writes.push(db.writeDelete(pairPath), db.writeDelete(queuePath));
+        if (acceptanceLockMatches) {
+          writes.push(db.writeDelete(acceptanceLockPath(uid)));
+        }
       }
 
       await db.commit(tx, writes);
@@ -2684,6 +2715,11 @@ export async function cancelAgencyMembershipRequest(
       const agencyId = clean(request.agencyId);
       const uid = clean(request.uid);
       const type = clean(request.type);
+      const acceptanceSnap = await db.get(acceptanceLockPath(uid), tx);
+      const acceptanceLockMatches =
+        acceptanceSnap.exists &&
+        clean(acceptanceSnap.data?.requestId) === requestId &&
+        clean(acceptanceSnap.data?.agencyId) === agencyId;
 
       if (type === "join") {
         if (actorUid !== uid) throw new ApiError("forbidden", 403);
@@ -2711,6 +2747,9 @@ export async function cancelAgencyMembershipRequest(
         }, ["status", "updatedAt", "resolvedAt", "resolvedBy", "reason"]),
         db.writeDelete(requestKeyPath(agencyId, uid)),
         db.writeDelete(pendingPath(agencyId, uid)),
+        ...(acceptanceLockMatches
+          ? [db.writeDelete(acceptanceLockPath(uid))]
+          : []),
         db.writeCreate(opPath, {
           actorUid,
           action: "cancelAgencyMembershipRequest",
