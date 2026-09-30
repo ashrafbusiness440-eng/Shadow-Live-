@@ -495,22 +495,36 @@ async function createAgencyForOwner({
           throw new ApiError("owner_has_active_application", 409);
         }
 
-        const agency = createAgencyDocument({
-          agencyId: candidate,
-          publicId: candidate,
-          ownerUid,
-          name,
-          country,
-          createdFrom,
-          sourceApplicationId: applicationId,
-          now,
-        });
+        const agency = {
+          ...createAgencyDocument({
+            agencyId: candidate,
+            publicId: candidate,
+            ownerUid,
+            name,
+            country,
+            createdFrom,
+            sourceApplicationId: applicationId,
+            now,
+          }),
+          memberCount: 1 + (applicationId ? hostUids.length : 0),
+          hostCount: applicationId ? hostUids.length : 0,
+        };
         const ownerMembership = createAgencyMembershipDocument({
           agencyId: candidate,
           uid: ownerUid,
           role: "owner",
           joinedAt: now,
         });
+        const hostMemberships = applicationId
+          ? hostUids.map((uid) =>
+              createAgencyMembershipDocument({
+                agencyId: candidate,
+                uid,
+                role: "host",
+                joinedAt: now,
+              })
+            )
+          : [];
         const managerSlots = createAgencyManagerSlotsDocument({
           agencyId: candidate,
           now,
@@ -523,6 +537,7 @@ async function createAgencyForOwner({
           name: agency.name,
           country: agency.country,
           status: "active",
+          hostCount: hostUids.length,
           ...(applicationId ? { applicationId } : {}),
         };
 
@@ -596,13 +611,56 @@ async function createAgencyForOwner({
               updatedAt: now,
             }, ["status", "agencyId", "updatedAt"]),
           );
-          for (const uid of hostUids) {
+          for (let index = 0; index < hostUids.length; index += 1) {
+            const uid = hostUids[index];
+            const hostMembership = hostMemberships[index];
+            const previousUserMembership =
+              reads[hostReadsOffset + index * 3 + 1];
             writes.push(
+              db.writeCreate(
+                `agency_memberships/${candidate}__${uid}`,
+                hostMembership,
+              ),
+              previousUserMembership.exists
+                ? db.writeUpdate(
+                    `agency_user_memberships/${uid}`,
+                    hostMembership,
+                    Object.keys(hostMembership),
+                  )
+                : db.writeCreate(
+                    `agency_user_memberships/${uid}`,
+                    hostMembership,
+                  ),
+              db.writeUpdate(
+                `users/${uid}`,
+                {
+                  agencyId: candidate,
+                  agencyRole: "host",
+                  agencyJoinedAt: now,
+                },
+                ["agencyId", "agencyRole", "agencyJoinedAt"],
+              ),
               db.writeUpdate(`agency_application_locks/${uid}`, {
                 status: "approved",
                 agencyId: candidate,
+                joinedAt: now,
                 updatedAt: now,
-              }, ["status", "agencyId", "updatedAt"]),
+              }, ["status", "agencyId", "joinedAt", "updatedAt"]),
+              db.writeCreate(
+                `notifications/agency_application_host_approved_${applicationId}_${uid}`,
+                {
+                  userId: uid,
+                  type: "agency_application_host_approved",
+                  category: "system",
+                  title: "تم قبول انضمامك إلى الوكالة",
+                  body: `${agency.name} — ${candidate}`,
+                  read: false,
+                  agencyId: candidate,
+                  applicationId,
+                  role: "host",
+                  createdAt: now,
+                },
+              ),
             );
           }
         }
@@ -641,7 +699,16 @@ export async function approveAgencyApplication(
   const hostUids = Array.isArray(application.hostUids)
     ? application.hostUids.map(clean).filter(Boolean)
     : [];
-  if (hostUids.length !== 5) throw new ApiError("application_hosts_invalid", 409);
+  const requiredHostCount = Number.isInteger(Number(application.requiredHostCount))
+    ? Number(application.requiredHostCount)
+    : AGENCY_LIMITS.applicationHostIds;
+  if (
+    requiredHostCount < AGENCY_LIMITS.minApplicationHostIds ||
+    requiredHostCount > AGENCY_LIMITS.maxApplicationHostIds ||
+    hostUids.length !== requiredHostCount
+  ) {
+    throw new ApiError("application_hosts_invalid", 409);
+  }
 
   return createAgencyForOwner({
     db,
