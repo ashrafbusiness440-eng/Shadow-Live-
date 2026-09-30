@@ -131,9 +131,13 @@ test("13-A lookup is direct and identity update is idempotent", async () => {
 
   const audit = await adminDb.collection("admin_audit_logs")
     .doc("agency_identity_" + agencyId + "_stage13a_identity_0001").get();
+  const notification = await adminDb.collection("notifications")
+    .doc("agency_identity_" + agencyId + "_stage13a_identity_0001").get();
   assert.equal(audit.exists, true);
   assert.equal(audit.data().before.name, "Stage 13-A Agency");
   assert.equal(audit.data().after.name, "Stage 13-A Updated");
+  assert.equal(notification.data().userId, oldOwnerUid);
+  assert.equal(notification.data().type, "agency_identity_updated");
 });
 
 test("13-A ownership transfer swaps the incoming member role and preserves counters", async () => {
@@ -195,9 +199,19 @@ test("13-A ownership transfer swaps the incoming member role and preserves count
 
   const audit = await adminDb.collection("admin_audit_logs")
     .doc("agency_owner_transfer_" + agencyId + "_stage13a_transfer_0001").get();
+  const [oldOwnerNotification, newOwnerNotification] = await Promise.all([
+    adminDb.collection("notifications")
+      .doc("agency_owner_transfer_old_" + agencyId + "_stage13a_transfer_0001").get(),
+    adminDb.collection("notifications")
+      .doc("agency_owner_transfer_new_" + agencyId + "_stage13a_transfer_0001").get(),
+  ]);
   assert.equal(audit.exists, true);
   assert.equal(audit.data().before.ownerUid, oldOwnerUid);
   assert.equal(audit.data().after.ownerUid, newOwnerUid);
+  assert.equal(oldOwnerNotification.data().userId, oldOwnerUid);
+  assert.equal(oldOwnerNotification.data().type, "agency_ownership_transferred");
+  assert.equal(newOwnerNotification.data().userId, newOwnerUid);
+  assert.equal(newOwnerNotification.data().type, "agency_ownership_received");
 });
 
 test("13-A ownership requires the incoming owner to already be active in the agency", async () => {

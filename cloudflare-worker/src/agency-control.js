@@ -427,6 +427,17 @@ async function createAgencyForOwner({
             idempotencyKey: key,
             createdAt: now,
           }),
+          db.writeCreate(`notifications/agency_created_${candidate}_${key}`, {
+            userId: ownerUid,
+            type: applicationId ? "agency_application_approved" : "agency_created",
+            category: "system",
+            title: applicationId ? "تم قبول طلب إنشاء الوكالة" : "تم إنشاء وكالتك",
+            body: `${agency.name} — ${candidate}`,
+            read: false,
+            agencyId: candidate,
+            ...(applicationId ? { applicationId } : {}),
+            createdAt: now,
+          }),
         ];
 
         if (applicationId) {
@@ -1044,7 +1055,8 @@ export async function updateAgencyIdentity(
         country,
         status: clean(agency.status),
       };
-      await db.commit(tx, [
+      const ownerUid = clean(agency.ownerUid);
+      const writes = [
         db.writeUpdate(
           `agencies/${agencyId}`,
           { name, country, updatedAt: now },
@@ -1068,7 +1080,20 @@ export async function updateAgencyIdentity(
           idempotencyKey: key,
           createdAt: now,
         }),
-      ]);
+      ];
+      if (ownerUid) {
+        writes.push(db.writeCreate(`notifications/agency_identity_${agencyId}_${key}`, {
+          userId: ownerUid,
+          type: "agency_identity_updated",
+          category: "system",
+          title: "تم تحديث بيانات الوكالة",
+          body: `${name}${country ? ` — ${country}` : ""}`,
+          read: false,
+          agencyId,
+          createdAt: now,
+        }));
+      }
+      await db.commit(tx, writes);
       return { ok: true, code: "ok", ...result };
     } catch (error) {
       await db.rollback(tx);
@@ -1278,6 +1303,26 @@ export async function transferAgencyOwnership(
             previousOwnerRole: newOwnerRole,
           },
           idempotencyKey: key,
+          createdAt: now,
+        }),
+        db.writeCreate(`notifications/agency_owner_transfer_new_${agencyId}_${key}`, {
+          userId: newOwnerUid,
+          type: "agency_ownership_received",
+          category: "system",
+          title: "أصبحت مالك الوكالة",
+          body: agencyId,
+          read: false,
+          agencyId,
+          createdAt: now,
+        }),
+        db.writeCreate(`notifications/agency_owner_transfer_old_${agencyId}_${key}`, {
+          userId: oldOwnerUid,
+          type: "agency_ownership_transferred",
+          category: "system",
+          title: "تم نقل ملكية الوكالة",
+          body: agencyId,
+          read: false,
+          agencyId,
           createdAt: now,
         }),
       ]);

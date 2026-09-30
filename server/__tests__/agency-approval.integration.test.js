@@ -106,6 +106,7 @@ test("approval creates unique agency owner membership wallet and preserves host 
     application,
     operation,
     audit,
+    notification,
     ...hostChecks
   ] = await Promise.all([
     adminDb.collection("agency_ids").doc("623001").get(),
@@ -120,6 +121,8 @@ test("approval creates unique agency owner membership wallet and preserves host 
       .doc("reviewer_stage03b__stage03b_approve_operation_0001").get(),
     adminDb.collection("admin_audit_logs")
       .doc("agency_create_623001_stage03b_approve_operation_0001").get(),
+    adminDb.collection("notifications")
+      .doc("agency_created_623001_stage03b_approve_operation_0001").get(),
     ...seeded.hostUids.flatMap((uid) => [
       adminDb.collection("agency_user_memberships").doc(uid).get(),
       adminDb.collection("agency_application_locks").doc(uid).get(),
@@ -141,6 +144,9 @@ test("approval creates unique agency owner membership wallet and preserves host 
   assert.equal(application.data().agencyId, "623001");
   assert.equal(operation.data().status, "completed");
   assert.equal(audit.data().action, "approveAgencyApplication");
+  assert.equal(notification.data().userId, seeded.ownerUid);
+  assert.equal(notification.data().type, "agency_application_approved");
+  assert.equal(notification.data().read, false);
 
   for (let i = 0; i < hostChecks.length; i += 2) {
     assert.equal(hostChecks[i].exists, false);
