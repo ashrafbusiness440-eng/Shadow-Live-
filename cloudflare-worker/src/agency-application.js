@@ -384,6 +384,124 @@ export async function reserveAgencyApplicationHost(
   throw new ApiError("transaction_failed", 500);
 }
 
+
+export async function releaseAgencyApplicationHost(
+  db,
+  applicantUidInput,
+  body = {},
+  { now = new Date() } = {},
+) {
+  const applicantUid = clean(applicantUidInput);
+  const hostId = clean(body.hostId);
+  const key = clean(body.idempotencyKey);
+  if (!applicantUid || !validIdempotencyKey(key)) {
+    throw new ApiError("invalid_request", 400);
+  }
+  if (!/^\d{3,8}$/.test(hostId)) {
+    throw new ApiError("invalid_agency_application_host_id", 400);
+  }
+
+  const applicationId = applicationIdFor(applicantUid, key);
+  const applicantLockPath = `agency_application_locks/${applicantUid}`;
+  const nowDate = now instanceof Date ? now : new Date(now);
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const transaction = await db.beginTransaction();
+    try {
+      const [applicantLockSnap, publicIdSnap] = await Promise.all([
+        db.get(applicantLockPath, transaction),
+        db.get(`public_ids/${hostId}`, transaction),
+      ]);
+      if (
+        !applicantLockSnap.exists ||
+        clean(applicantLockSnap.data?.status) !== "draft" ||
+        !sameApplicationLock(applicantLockSnap, applicationId)
+      ) {
+        throw new ApiError("agency_application_draft_not_editable", 409);
+      }
+
+      const hostUid = clean(publicIdSnap.data?.uid);
+      if (!publicIdSnap.exists || !hostUid) {
+        throw new ApiError("agency_host_id_not_found", 404, { hostId });
+      }
+      const hostLockPath = `agency_application_locks/${hostUid}`;
+      const hostLockSnap = await db.get(hostLockPath, transaction);
+      if (
+        !hostLockSnap.exists ||
+        !sameApplicationLock(hostLockSnap, applicationId) ||
+        clean(hostLockSnap.data?.hostPublicId) !== hostId
+      ) {
+        await db.rollback(transaction);
+        return {
+          ok: true,
+          code: "already_released",
+          applicationId,
+          hostId,
+        };
+      }
+      if (clean(hostLockSnap.data?.status) !== "reserved") {
+        throw new ApiError("agency_host_reservation_not_editable", 409, {
+          hostId,
+        });
+      }
+
+      const lock = applicantLockSnap.data || {};
+      const hostIds = Array.isArray(lock.hostIds)
+        ? lock.hostIds.map(clean).filter((value) => value && value !== hostId)
+        : [];
+      const hostUids = Array.isArray(lock.hostUids)
+        ? lock.hostUids.map(clean).filter((value) => value && value !== hostUid)
+        : [];
+      const hostProfiles = Array.isArray(lock.hostProfiles)
+        ? lock.hostProfiles.filter((item) => {
+            if (!item || typeof item !== "object") return false;
+            return clean(item.uid) !== hostUid && clean(item.publicId) !== hostId;
+          })
+        : [];
+
+      await db.commit(transaction, [
+        db.writeUpdate(
+          applicantLockPath,
+          {
+            hostIds,
+            hostUids,
+            hostProfiles,
+            updatedAt: nowDate,
+          },
+          ["hostIds", "hostUids", "hostProfiles", "updatedAt"],
+        ),
+        db.writeUpdate(
+          hostLockPath,
+          {
+            status: "released",
+            releasedAt: nowDate,
+            updatedAt: nowDate,
+          },
+          ["status", "releasedAt", "updatedAt"],
+        ),
+      ]);
+
+      return {
+        ok: true,
+        code: "ok",
+        applicationId,
+        hostId,
+      };
+    } catch (error) {
+      await db.rollback(transaction);
+      if (error instanceof ApiError) throw error;
+      if (isTransientFirestoreError(error) && attempt < 2) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, firestoreErrorRetryDelayMs(attempt))
+        );
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new ApiError("transaction_failed", 500);
+}
+
 export async function submitAgencyApplication(
   db,
   applicantUidInput,
@@ -830,6 +948,14 @@ export async function agencyApplication(request, env) {
     }
     if (action === "reserveHost") {
       const result = await reserveAgencyApplicationHost(
+        firestoreClient(env),
+        decoded.sub,
+        body,
+      );
+      return json(request, env, result);
+    }
+    if (action === "releaseHost") {
+      const result = await releaseAgencyApplicationHost(
         firestoreClient(env),
         decoded.sub,
         body,
