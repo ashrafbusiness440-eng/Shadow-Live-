@@ -714,7 +714,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _wallet(Icons.diamond_rounded, diamonds, const Color(0xFF64D8FF), 1),
         const SizedBox(width: 6),
         IconButton(
-          onPressed: () => _soon('الإشعارات'),
+          onPressed: () => NavigationService.navigateTo(AppRoutes.notifications),
           icon: const Icon(Icons.notifications_none_rounded, color: Colors.white),
           tooltip: 'الإشعارات',
         ),
