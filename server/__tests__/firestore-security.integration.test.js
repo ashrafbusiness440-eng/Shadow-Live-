@@ -6,7 +6,7 @@ import {
   assertSucceeds,
   initializeTestEnvironment,
 } from "@firebase/rules-unit-testing";
-import {collection, deleteDoc, doc, getDoc, getDocs, limit, query, setDoc, updateDoc} from "firebase/firestore";
+import {collection, deleteDoc, doc, getDoc, getDocs, limit, query, setDoc, updateDoc, writeBatch} from "firebase/firestore";
 
 let env;
 const projectId="shadow-live-economy-test";
@@ -18,6 +18,9 @@ const agencyManagerUid="rules_agency_manager";
 const agencyHostUid="rules_agency_host";
 const agencyOutsiderUid="rules_agency_outsider";
 const platformAgencyAdminUid="rules_platform_agency_admin";
+const initialIdUid="rules_initial_id_user";
+const shortInitialIdUid="rules_short_initial_id_user";
+const legacyShortIdUid="rules_legacy_short_id_user";
 
 function phoneDbFor(userId) {
   return env.authenticatedContext(userId,{
@@ -94,6 +97,30 @@ before(async()=>{
       giftHostMicSecondsMonth:0,
       giftHostQualifiedDays:0,
     });
+    for (const userId of [initialIdUid,shortInitialIdUid,legacyShortIdUid]) {
+      await setDoc(doc(context.firestore(),"users",userId),{
+        role:"user",
+        displayName:userId,
+        coins:0,
+        diamonds:0,
+        setupStep:"success",
+        setupComplete:false,
+      });
+    }
+    await setDoc(doc(context.firestore(),"users",legacyShortIdUid),{
+      role:"user",
+      displayName:legacyShortIdUid,
+      coins:0,
+      diamonds:0,
+      setupStep:"success",
+      setupComplete:false,
+      publicId:"661831",
+    });
+    await setDoc(doc(context.firestore(),"public_ids","661831"),{
+      uid:legacyShortIdUid,
+      createdAt:new Date(),
+    });
+
     await setDoc(doc(context.firestore(),"conversations","rules_chat"),{
       participants:[uid,otherUid],
       createdAt:new Date(),
@@ -252,6 +279,59 @@ before(async()=>{
 });
 
 after(async()=>{if(env)await env.cleanup();});
+
+test("new account can claim an 8-digit initial public ID",async()=>{
+  const userDb=phoneDbFor(initialIdUid);
+  const batch=writeBatch(userDb);
+  batch.set(doc(userDb,"public_ids","81234567"),{
+    uid:initialIdUid,
+    createdAt:new Date(),
+  });
+  batch.update(doc(userDb,"users",initialIdUid),{publicId:"81234567"});
+  await assertSucceeds(batch.commit());
+
+  const user=await getDoc(doc(userDb,"users",initialIdUid));
+  assert.equal(user.data()?.publicId,"81234567");
+});
+
+test("new account cannot claim a 6-digit initial public ID",async()=>{
+  const userDb=phoneDbFor(shortInitialIdUid);
+  const batch=writeBatch(userDb);
+  batch.set(doc(userDb,"public_ids","612345"),{
+    uid:shortInitialIdUid,
+    createdAt:new Date(),
+  });
+  batch.update(doc(userDb,"users",shortInitialIdUid),{publicId:"612345"});
+  await assertFails(batch.commit());
+});
+
+test("setup-incomplete legacy short public ID can repair atomically to 8 digits",async()=>{
+  const userDb=phoneDbFor(legacyShortIdUid);
+  const batch=writeBatch(userDb);
+  batch.set(doc(userDb,"public_ids","87654321"),{
+    uid:legacyShortIdUid,
+    createdAt:new Date(),
+  });
+  batch.update(doc(userDb,"users",legacyShortIdUid),{
+    publicId:"87654321",
+  });
+  batch.update(doc(userDb,"public_ids","661831"),{
+    reserved:true,
+    currentPublicId:"87654321",
+    retiredAt:new Date(),
+  });
+  await assertSucceeds(batch.commit());
+
+  const [user,oldId,newId]=await Promise.all([
+    getDoc(doc(userDb,"users",legacyShortIdUid)),
+    getDoc(doc(userDb,"public_ids","661831")),
+    getDoc(doc(userDb,"public_ids","87654321")),
+  ]);
+  assert.equal(user.data()?.publicId,"87654321");
+  assert.equal(oldId.data()?.reserved,true);
+  assert.equal(oldId.data()?.currentPublicId,"87654321");
+  assert.equal(newId.data()?.uid,legacyShortIdUid);
+});
 
 test("regular user can still update an ordinary profile field",async()=>{
   const userDb=phoneUserDb();
