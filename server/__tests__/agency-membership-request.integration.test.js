@@ -219,7 +219,7 @@ test("user accepts agency invite and commits membership", async () => {
   assert.equal(agency.data().hostCount, 1);
 });
 
-test("acceptance lock prevents accepting two different agencies", async () => {
+test("pending membership lock prevents concurrent requests across agencies and releases on resolution", async () => {
   const userUid = "stage04a_double_accept_user";
   await seedUser(userUid, "645101");
   await seedAgency("645001", "stage04a_double_owner_a", "645901", "Agency A");
@@ -230,44 +230,43 @@ test("acceptance lock prevents accepting two different agencies", async () => {
     targetPublicId: "645101",
     idempotencyKey: "stage04a_double_invite_a_0001",
   });
-  const second = await inviteAgencyHost(db, "stage04a_double_owner_b", {
-    agencyId: "645002",
-    targetPublicId: "645101",
-    idempotencyKey: "stage04a_double_invite_b_0001",
-  });
 
-  await respondAgencyMembershipRequest(db, userUid, {
-    requestId: first.requestId,
-    decision: "accept",
-    idempotencyKey: "stage04a_double_accept_a_0001",
-  });
+  const pendingLock = await adminDb
+    .collection("agency_membership_acceptance_locks")
+    .doc(userUid)
+    .get();
+  assert.equal(pendingLock.data().requestId, first.requestId);
+  assert.equal(pendingLock.data().agencyId, "645001");
+  assert.equal(pendingLock.data().status, "pending");
 
   await assert.rejects(
-    respondAgencyMembershipRequest(db, userUid, {
-      requestId: second.requestId,
-      decision: "accept",
-      idempotencyKey: "stage04a_double_accept_b_0001",
+    inviteAgencyHost(db, "stage04a_double_owner_b", {
+      agencyId: "645002",
+      targetPublicId: "645101",
+      idempotencyKey: "stage04a_double_invite_b_0001",
     }),
-    /user_already_in_agency|membership_acceptance_conflict/,
+    /membership_acceptance_conflict/,
   );
 
   const rejected = await respondAgencyMembershipRequest(db, userUid, {
-    requestId: second.requestId,
+    requestId: first.requestId,
     decision: "reject",
-    reason: "انضممت لوكالة أخرى",
-    idempotencyKey: "stage04a_double_reject_b_0001",
+    reason: "رفض الدعوة الأولى",
+    idempotencyKey: "stage04a_double_reject_a_0001",
   });
   assert.equal(rejected.status, "rejected");
   assert.equal(
-    (await adminDb.collection("agency_membership_request_keys")
-      .doc("645002__" + userUid).get()).exists,
+    (await adminDb.collection("agency_membership_acceptance_locks")
+      .doc(userUid).get()).exists,
     false,
   );
-  assert.equal(
-    (await adminDb.collection("agency_membership_pending")
-      .doc("645002__" + userUid).get()).exists,
-    false,
-  );
+
+  const second = await inviteAgencyHost(db, "stage04a_double_owner_b", {
+    agencyId: "645002",
+    targetPublicId: "645101",
+    idempotencyKey: "stage04a_double_invite_b_after_release_0001",
+  });
+  assert.equal(second.status, "pending");
 });
 
 test("reject and cancel release pair and pending request keys", async () => {
@@ -296,6 +295,11 @@ test("reject and cancel release pair and pending request keys", async () => {
       .doc(agencyId + "__" + rejectUid).get()).exists,
     false,
   );
+  assert.equal(
+    (await adminDb.collection("agency_membership_acceptance_locks")
+      .doc(rejectUid).get()).exists,
+    false,
+  );
 
   const join = await requestAgencyJoin(db, cancelUid, {
     agencyId,
@@ -310,6 +314,11 @@ test("reject and cancel release pair and pending request keys", async () => {
   assert.equal(
     (await adminDb.collection("agency_membership_pending")
       .doc(agencyId + "__" + cancelUid).get()).exists,
+    false,
+  );
+  assert.equal(
+    (await adminDb.collection("agency_membership_acceptance_locks")
+      .doc(cancelUid).get()).exists,
     false,
   );
 });
