@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../profile/screens/public_profile_screen.dart';
+import '../services/agency_membership_service.dart';
 import '../services/public_agency_service.dart';
 
 class PublicAgencyPage extends StatefulWidget {
@@ -19,6 +20,7 @@ class PublicAgencyPage extends StatefulWidget {
 
 class _PublicAgencyPageState extends State<PublicAgencyPage> {
   final PublicAgencyService _service = PublicAgencyService();
+  final AgencyMembershipService _membershipService = AgencyMembershipService();
 
   PublicAgencyPageData? _data;
   final List<PublicAgencyPerson> _hosts = <PublicAgencyPerson>[];
@@ -31,6 +33,8 @@ class _PublicAgencyPageState extends State<PublicAgencyPage> {
   PublicAgencyArchiveData? _archive;
   bool _rankingLoading = true;
   bool _archiveLoading = false;
+  bool _joinSubmitting = false;
+  bool _joinSubmitted = false;
   String? _rankingError;
 
   @override
@@ -42,6 +46,7 @@ class _PublicAgencyPageState extends State<PublicAgencyPage> {
   @override
   void dispose() {
     _service.close();
+    _membershipService.close();
     super.dispose();
   }
 
@@ -210,6 +215,47 @@ class _PublicAgencyPageState extends State<PublicAgencyPage> {
     }
   }
 
+  Future<void> _requestJoin() async {
+    if (_joinSubmitting || _joinSubmitted) return;
+    setState(() => _joinSubmitting = true);
+    try {
+      await _membershipService.requestJoin(
+        agencyId: widget.agencyId,
+        idempotencyKey:
+            'public_join_${DateTime.now().microsecondsSinceEpoch}',
+      );
+      if (!mounted) return;
+      setState(() {
+        _joinSubmitting = false;
+        _joinSubmitted = true;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تم إرسال طلب الانضمام إلى الوكالة.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _joinSubmitting = false);
+      final code = error.toString().replaceFirst('Bad state: ', '');
+      final message = switch (code) {
+        'user_already_in_agency' => 'أنت مرتبط بوكالة بالفعل.',
+        'membership_acceptance_conflict' =>
+          'لديك طلب أو دعوة وكالة أخرى قيد الانتظار.',
+        'membership_request_pair_conflict' =>
+          'لديك طلب انضمام معلّق لهذه الوكالة.',
+        'user_agency_application_conflict' =>
+          'لديك طلب إنشاء وكالة قيد المراجعة.',
+        'agency_not_accepting_members' =>
+          'هذه الوكالة لا تستقبل أعضاء حاليًا.',
+        _ => 'تعذر إرسال طلب الانضمام حاليًا.',
+      };
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    }
+  }
+
   void _openProfile(PublicAgencyPerson person) {
     if (person.uid.isEmpty) return;
     Navigator.push(
@@ -250,6 +296,29 @@ class _PublicAgencyPageState extends State<PublicAgencyPage> {
         padding: const EdgeInsets.fromLTRB(16, 18, 16, 28),
         children: [
           _AgencyIdentityCard(agency: data.agency),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            key: const Key('agency-public-request-join'),
+            onPressed:
+                _joinSubmitting || _joinSubmitted ? null : _requestJoin,
+            icon: _joinSubmitting
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(
+                    _joinSubmitted
+                        ? Icons.check_circle_rounded
+                        : Icons.person_add_alt_1_rounded,
+                  ),
+            label: Text(
+              _joinSubmitted
+                  ? 'تم إرسال طلب الانضمام'
+                  : _joinSubmitting
+                      ? 'جاري الإرسال…'
+                      : 'طلب الانضمام كمضيف',
+            ),
+          ),
           const SizedBox(height: 16),
           const _SectionTitle(
             icon: Icons.workspace_premium_rounded,
