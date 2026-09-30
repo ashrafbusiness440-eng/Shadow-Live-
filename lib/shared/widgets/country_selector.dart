@@ -223,8 +223,22 @@ const List<ShadowCountryOption> shadowCountries = <ShadowCountryOption>[
 ShadowCountryOption? shadowCountryByName(String? name) {
   final value = (name ?? '').trim();
   if (value.isEmpty) return null;
+
+  const aliases = <String, String>{
+    'الإمارات': 'الإمارات العربية المتحدة',
+  };
+  final normalized = aliases[value] ?? value;
+
   for (final country in shadowCountries) {
-    if (country.nameAr == value) return country;
+    if (country.nameAr == normalized ||
+        normalized == '${country.flag} ${country.nameAr}' ||
+        normalized == '${country.flag}  ${country.nameAr}') {
+      return country;
+    }
+  }
+
+  for (final country in shadowCountries) {
+    if (value.endsWith(country.nameAr)) return country;
   }
   return null;
 }
