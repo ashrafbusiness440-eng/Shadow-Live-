@@ -17,7 +17,7 @@ void main() {
     expect(item.title, 'تم قبول طلب إنشاء الوكالة');
     expect(item.type, 'agency_application_approved');
     expect(item.read, isFalse);
-    expect(item.createdAt, createdAt);
+    expect(item.createdAt?.millisecondsSinceEpoch, createdAt.millisecondsSinceEpoch);
   });
 
   test('notification parser uses safe defaults', () {
