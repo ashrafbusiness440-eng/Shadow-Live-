@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -242,6 +243,7 @@ class HostMyAgencyService {
     http.Client? client,
     FirebaseAuth? auth,
     String? baseUrl,
+    Duration requestTimeout = const Duration(seconds: 12),
   })  : _client = client ?? http.Client(),
         _ownsClient = client == null,
         _auth = auth ?? FirebaseAuth.instance,
@@ -250,29 +252,44 @@ class HostMyAgencyService {
               'SHADOW_CLOUDFLARE_API_BASE_URL',
               defaultValue:
                   'https://shadow-live.ashraf-business-440.workers.dev/api',
-            );
+            ),
+        _requestTimeout = requestTimeout;
 
   final http.Client _client;
   final bool _ownsClient;
   final FirebaseAuth _auth;
   final String _baseUrl;
+  final Duration _requestTimeout;
 
   Future<String> _idToken() async {
-    final token = await _auth.currentUser?.getIdToken();
-    if (token == null || token.isEmpty) throw StateError('not_signed_in');
-    return token;
+    try {
+      final token = await _auth.currentUser
+          ?.getIdToken()
+          .timeout(_requestTimeout);
+      if (token == null || token.isEmpty) throw StateError('not_signed_in');
+      return token;
+    } on TimeoutException {
+      throw StateError('agency_host_auth_timeout');
+    }
   }
 
   Future<HostMyAgencyCoreData> loadCore() async {
     final token = await _idToken();
-    final response = await _client.post(
-      Uri.parse('$_baseUrl/agency-host'),
-      headers: {
-        'authorization': 'Bearer $token',
-        'content-type': 'application/json',
-      },
-      body: jsonEncode(const {'action': 'core'}),
-    );
+    late http.Response response;
+    try {
+      response = await _client
+          .post(
+            Uri.parse('$_baseUrl/agency-host'),
+            headers: {
+              'authorization': 'Bearer $token',
+              'content-type': 'application/json',
+            },
+            body: jsonEncode(const {'action': 'core'}),
+          )
+          .timeout(_requestTimeout);
+    } on TimeoutException {
+      throw StateError('agency_host_core_timeout');
+    }
 
     Map<String, dynamic> body = const <String, dynamic>{};
     try {
