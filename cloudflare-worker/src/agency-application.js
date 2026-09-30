@@ -865,11 +865,13 @@ export async function getAgencyApplicationStatus(
     ? applicationSnap.data || {}
     : {};
   const status = clean(application.status || lock.status || "none");
-  const requiredHostCount = Number.isInteger(Number(
+  const storedRequiredHostCount = Number.isInteger(Number(
     application.requiredHostCount ?? lock.requiredHostCount,
   ))
     ? Number(application.requiredHostCount ?? lock.requiredHostCount)
     : configuredHostCount;
+  const requiredHostCount =
+    status === "rejected" ? configuredHostCount : storedRequiredHostCount;
   const reapplyMode = clean(
     application.reapplyMode || lock.reapplyMode,
   ) || null;
