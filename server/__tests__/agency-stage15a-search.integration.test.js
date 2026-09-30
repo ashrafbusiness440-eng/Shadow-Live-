@@ -43,14 +43,14 @@ test("15-A Agency ID search is one direct read and hides inactive agencies", asy
 
 test("15-A name and country searches are bounded and cursor-paginated", async () => {
   await Promise.all([
-    seed("815011", "Alpha Agency", "Syria"),
-    seed("815012", "Alpha Club", "Syria"),
-    seed("815013", "Alpha Closed", "Syria", "suspended"),
-    seed("815014", "Beta Agency", "UAE"),
+    seed("815011", "Stage15A Alpha Agency", "Stage15A-Syria"),
+    seed("815012", "Stage15A Alpha Club", "Stage15A-Syria"),
+    seed("815013", "Stage15A Alpha Closed", "Stage15A-Syria", "suspended"),
+    seed("815014", "Stage15A Beta Agency", "UAE"),
   ]);
   const first = await searchPublicAgencies(db, {
     mode: "name",
-    query: "Alpha",
+    query: "Stage15A Alpha",
     limit: 1,
   });
   assert.equal(first.results.length, 1);
@@ -58,7 +58,7 @@ test("15-A name and country searches are bounded and cursor-paginated", async ()
   assert.ok(first.page.nextCursor);
   const second = await searchPublicAgencies(db, {
     mode: "name",
-    query: "Alpha",
+    query: "Stage15A Alpha",
     limit: 1,
     cursor: first.page.nextCursor,
   });
@@ -67,7 +67,7 @@ test("15-A name and country searches are bounded and cursor-paginated", async ()
 
   const country = await searchPublicAgencies(db, {
     mode: "country",
-    query: "Syria",
+    query: "Stage15A-Syria",
     limit: PUBLIC_AGENCY_SEARCH_MAX,
   });
   assert.deepEqual(
