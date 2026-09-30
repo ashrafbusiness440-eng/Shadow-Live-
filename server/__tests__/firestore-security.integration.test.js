@@ -21,6 +21,9 @@ const platformAgencyAdminUid="rules_platform_agency_admin";
 const initialIdUid="rules_initial_id_user";
 const shortInitialIdUid="rules_short_initial_id_user";
 const legacyShortIdUid="rules_legacy_short_id_user";
+const blockedShortSetupUid="rules_blocked_short_setup_user";
+const manualShortSetupUid="rules_manual_short_setup_user";
+const eightDigitSetupUid="rules_eight_digit_setup_user";
 
 function phoneDbFor(userId) {
   return env.authenticatedContext(userId,{
@@ -119,6 +122,35 @@ before(async()=>{
     await setDoc(doc(context.firestore(),"public_ids","661831"),{
       uid:legacyShortIdUid,
       createdAt:new Date(),
+    });
+
+    await setDoc(doc(context.firestore(),"users",blockedShortSetupUid),{
+      role:"user",
+      displayName:"Blocked Short",
+      coins:0,
+      diamonds:0,
+      setupStep:"ready",
+      setupComplete:false,
+      publicId:"661832",
+    });
+    await setDoc(doc(context.firestore(),"users",manualShortSetupUid),{
+      role:"user",
+      displayName:"Manual Short",
+      coins:0,
+      diamonds:0,
+      setupStep:"ready",
+      setupComplete:false,
+      publicId:"7777",
+      publicIdUpdatedBy:"shadow_owner",
+    });
+    await setDoc(doc(context.firestore(),"users",eightDigitSetupUid),{
+      role:"user",
+      displayName:"Eight Digit",
+      coins:0,
+      diamonds:0,
+      setupStep:"ready",
+      setupComplete:false,
+      publicId:"81234568",
     });
 
     await setDoc(doc(context.firestore(),"conversations","rules_chat"),{
@@ -331,6 +363,39 @@ test("setup-incomplete legacy short public ID can repair atomically to 8 digits"
   assert.equal(oldId.data()?.reserved,true);
   assert.equal(oldId.data()?.currentPublicId,"87654321");
   assert.equal(newId.data()?.uid,legacyShortIdUid);
+});
+
+test("setup cannot complete while an automatic public ID is still short",async()=>{
+  const userDb=phoneDbFor(blockedShortSetupUid);
+  await assertFails(
+    updateDoc(doc(userDb,"users",blockedShortSetupUid),{
+      setupStep:"complete",
+      setupComplete:true,
+      onboardingComplete:true,
+    }),
+  );
+});
+
+test("setup can complete with an owner-assigned short public ID",async()=>{
+  const userDb=phoneDbFor(manualShortSetupUid);
+  await assertSucceeds(
+    updateDoc(doc(userDb,"users",manualShortSetupUid),{
+      setupStep:"complete",
+      setupComplete:true,
+      onboardingComplete:true,
+    }),
+  );
+});
+
+test("setup can complete with an 8-digit automatic public ID",async()=>{
+  const userDb=phoneDbFor(eightDigitSetupUid);
+  await assertSucceeds(
+    updateDoc(doc(userDb,"users",eightDigitSetupUid),{
+      setupStep:"complete",
+      setupComplete:true,
+      onboardingComplete:true,
+    }),
+  );
 });
 
 test("regular user can still update an ordinary profile field",async()=>{
