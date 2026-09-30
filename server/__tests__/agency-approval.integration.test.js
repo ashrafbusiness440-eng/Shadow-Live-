@@ -73,7 +73,7 @@ test("review queue stays bounded and includes pending and under review applicati
   assert.ok(rows.some((row) => row.applicationId === second.applicationId && row.status === "under_review"));
 });
 
-test("approval creates unique agency owner membership wallet and preserves host candidates as non members", async () => {
+test("approval creates the agency and auto-joins every reserved host", async () => {
   const seeded = await seedApplication(
     "stage03b_approve",
     "323901",
@@ -125,7 +125,12 @@ test("approval creates unique agency owner membership wallet and preserves host 
       .doc("agency_created_623001_stage03b_approve_operation_0001").get(),
     ...seeded.hostUids.flatMap((uid) => [
       adminDb.collection("agency_user_memberships").doc(uid).get(),
+      adminDb.collection("agency_memberships").doc("623001__" + uid).get(),
+      adminDb.collection("users").doc(uid).get(),
       adminDb.collection("agency_application_locks").doc(uid).get(),
+      adminDb.collection("notifications")
+        .doc("agency_application_host_approved_" + seeded.applicationId + "_" + uid)
+        .get(),
     ]),
   ]);
 
@@ -133,6 +138,9 @@ test("approval creates unique agency owner membership wallet and preserves host 
   assert.equal(agency.data().ownerUid, seeded.ownerUid);
   assert.equal(agency.data().publicId, "623001");
   assert.equal(agency.data().createdFrom, "application");
+  assert.equal(agency.data().memberCount, 6);
+  assert.equal(agency.data().hostCount, 5);
+  assert.equal(result.hostCount, 5);
   assert.equal(ownerMembership.data().role, "owner");
   assert.equal(userMembership.data().role, "owner");
   assert.deepEqual(managerSlots.data().managerUids, []);
@@ -148,10 +156,25 @@ test("approval creates unique agency owner membership wallet and preserves host 
   assert.equal(notification.data().type, "agency_application_approved");
   assert.equal(notification.data().read, false);
 
-  for (let i = 0; i < hostChecks.length; i += 2) {
-    assert.equal(hostChecks[i].exists, false);
-    assert.equal(hostChecks[i + 1].data().status, "approved");
-    assert.equal(hostChecks[i + 1].data().agencyId, "623001");
+  for (let i = 0; i < hostChecks.length; i += 5) {
+    const userMembership = hostChecks[i];
+    const agencyMembership = hostChecks[i + 1];
+    const user = hostChecks[i + 2];
+    const lock = hostChecks[i + 3];
+    const hostNotification = hostChecks[i + 4];
+    assert.equal(userMembership.exists, true);
+    assert.equal(userMembership.data().role, "host");
+    assert.equal(userMembership.data().status, "active");
+    assert.equal(userMembership.data().agencyId, "623001");
+    assert.equal(agencyMembership.exists, true);
+    assert.equal(agencyMembership.data().role, "host");
+    assert.equal(user.data().agencyId, "623001");
+    assert.equal(user.data().agencyRole, "host");
+    assert.equal(lock.data().status, "approved");
+    assert.equal(lock.data().agencyId, "623001");
+    assert.equal(hostNotification.exists, true);
+    assert.equal(hostNotification.data().type, "agency_application_host_approved");
+    assert.equal(hostNotification.data().read, false);
   }
 
   const duplicate = await approveAgencyApplication(db, "reviewer_stage03b", {
