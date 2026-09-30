@@ -311,7 +311,10 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
       return const Center(child: CircularProgressIndicator());
     }
     if (_error != null || _data == null) {
-      return _ErrorState(onRetry: _load);
+      return _ErrorState(
+        errorCode: _error,
+        onRetry: _load,
+      );
     }
 
     final data = _data!;
@@ -1168,9 +1171,26 @@ class _StatusChip extends StatelessWidget {
 }
 
 class _ErrorState extends StatelessWidget {
-  const _ErrorState({required this.onRetry});
+  const _ErrorState({
+    required this.errorCode,
+    required this.onRetry,
+  });
 
+  final String? errorCode;
   final Future<void> Function() onRetry;
+
+  String get _message {
+    final code = errorCode ?? '';
+    if (code.contains('agency_host_core_timeout') ||
+        code.contains('agency_host_auth_timeout')) {
+      return 'انتهت مهلة تحميل معلومات الوكالة. تحقق من الاتصال ثم أعد المحاولة.';
+    }
+    if (code.contains('agency_host_not_found') ||
+        code.contains('agency_host_not_active')) {
+      return 'عضويتك في الوكالة لم تكتمل بشكل صحيح. حدّث الصفحة، وإذا استمرت المشكلة راجع الإدارة.';
+    }
+    return 'تعذر تحميل معلومات الوكالة.';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1186,14 +1206,16 @@ class _ErrorState extends StatelessWidget {
               color: Colors.white38,
             ),
             const SizedBox(height: 12),
-            const Text(
-              'تعذر تحميل معلومات الوكالة.',
-              style: TextStyle(color: Colors.white70),
+            Text(
+              _message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white70, height: 1.45),
             ),
             const SizedBox(height: 12),
-            OutlinedButton(
+            OutlinedButton.icon(
               onPressed: onRetry,
-              child: const Text('إعادة المحاولة'),
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('إعادة المحاولة'),
             ),
           ],
         ),
