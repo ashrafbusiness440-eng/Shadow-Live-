@@ -132,3 +132,55 @@ test("expired reward cannot be activated",async()=>{
     /reward_expired/,
   );
 });
+
+
+test("My Items starts bounded item and root reads in parallel",async()=>{
+  let itemsStarted=false;
+  let rootStarted=false;
+  let releaseItems;
+  const itemsPending=new Promise((resolve)=>{
+    releaseItems=()=>resolve({docs:[]});
+  });
+  const rootRef={
+    collection(name){
+      assert.equal(name,"items");
+      return {
+        limit(value){
+          assert.equal(value,100);
+          return {
+            get(){
+              itemsStarted=true;
+              return itemsPending;
+            },
+          };
+        },
+      };
+    },
+    get(){
+      rootStarted=true;
+      return Promise.resolve({exists:false,data:()=>undefined});
+    },
+  };
+  const fakeDb={
+    collection(name){
+      assert.equal(name,"user_rewards");
+      return {
+        doc(uid){
+          assert.equal(uid,"parallel_user");
+          return rootRef;
+        },
+      };
+    },
+  };
+
+  const pending=listInventory(fakeDb,"parallel_user",Date.now());
+  assert.equal(itemsStarted,true);
+  assert.equal(
+    rootStarted,
+    true,
+    "root read must start before the item query finishes",
+  );
+  releaseItems();
+  const result=await pending;
+  assert.deepEqual(result,{items:[],activeByType:{}});
+});
