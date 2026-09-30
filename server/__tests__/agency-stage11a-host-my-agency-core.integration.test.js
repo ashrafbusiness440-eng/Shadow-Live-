@@ -424,5 +424,7 @@ test("11-B Host UI reuses public ranking/archive and existing room/chat routes",
   assert.equal(hostService.includes("roomId"), true);
   assert.equal(hostService.includes(".timeout(_requestTimeout)"), true);
   assert.equal(hostService.includes("agency_host_core_timeout"), true);
-  assert.equal(page.includes("انتهت مهلة تحميل معلومات الوكالة"), true);
+  assert.equal(page.includes("انتهت مهلة تحديث جلسة الدخول"), true);
+  assert.equal(page.includes("الخادم تأخر في تحميل معلومات الوكالة"), true);
+  assert.equal(hostService.includes("Duration(seconds: 20)"), true);
 });
