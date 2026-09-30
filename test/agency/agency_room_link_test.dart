@@ -15,6 +15,17 @@ void main() {
       }
     });
 
+    test('prefers the explicit Agency / Room public ID', () {
+      expect(
+        agencyIdForRoom({
+          'roomType': 'agency',
+          'agencyRoomId': '7777',
+          'agencyId': '123456',
+        }),
+        '7777',
+      );
+    });
+
     test('supports the legacy type fallback without any lookup', () {
       expect(
         agencyIdForRoom({
