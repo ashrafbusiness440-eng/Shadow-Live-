@@ -357,50 +357,76 @@ test("11-A revoked session fails from the existing users read", async () => {
   ]);
 });
 
-test("11-A non-Host membership fails closed before Agency reads", async () => {
-  const uid = "stage11a_manager_only";
-  const calls = [];
-
-  const fakeDb = {
-    async get(path) {
-      calls.push(path);
-      if (path === "users/" + uid) {
-        return {
-          exists: true,
-          data: { agencyId: "741204" },
-        };
-      }
-      if (path === "agency_user_memberships/" + uid) {
-        return {
-          exists: true,
-          data: {
-            agencyId: "741204",
-            uid,
-            role: "manager",
-            status: "active",
-          },
-        };
-      }
-      throw new Error("unexpected_get:" + path);
+test("11-A manager role transitions keep My Agency valid and review permission stays explicit", async () => {
+  const cases = [
+    {
+      agencyId: "741204",
+      uid: "stage11a_manager_with_review",
+      ownerUid: "stage11a_manager_owner",
+      role: "manager",
+      capabilities: ["reviewMembershipRequest"],
+      canReview: true,
     },
-  };
+    {
+      agencyId: "741207",
+      uid: "stage11a_manager_without_review",
+      ownerUid: "stage11a_manager_owner_no_cap",
+      role: "manager",
+      capabilities: [],
+      canReview: false,
+    },
+    {
+      agencyId: "741208",
+      uid: "stage11a_senior_manager",
+      ownerUid: "stage11a_senior_owner",
+      role: "senior_manager",
+      capabilities: [],
+      canReview: true,
+    },
+  ];
 
-  await assert.rejects(
-    () =>
-      loadAgencyHostCore(
-        fakeDb,
-        uid,
-        new Date("2026-09-29T12:00:00.000Z"),
-      ),
-    (error) => error && error.message === "agency_host_not_active",
-  );
+  for (const entry of cases) {
+    await Promise.all([
+      adminDb.collection("users").doc(entry.uid).set({
+        agencyId: entry.agencyId,
+        agencyRole: entry.role,
+        accountStatus: "active",
+        publicId: entry.agencyId.slice(0, 5) + "1",
+      }),
+      adminDb.collection("agency_user_memberships").doc(entry.uid).set({
+        agencyId: entry.agencyId,
+        uid: entry.uid,
+        role: entry.role,
+        status: "active",
+        capabilities: entry.capabilities,
+      }),
+      adminDb.collection("agencies").doc(entry.agencyId).set({
+        agencyId: entry.agencyId,
+        publicId: entry.agencyId,
+        ownerUid: entry.ownerUid,
+        status: "active",
+        name: "Management Role Agency",
+      }),
+      adminDb.collection("users").doc(entry.ownerUid).set({
+        publicId: entry.agencyId.slice(0, 5) + "9",
+        displayName: "Management Role Owner",
+      }),
+    ]);
 
-  assert.deepEqual(calls, [
-    "users/" + uid,
-    "agency_user_memberships/" + uid,
-  ]);
+    const result = await loadAgencyHostCore(
+      db,
+      entry.uid,
+      new Date("2026-09-29T12:00:00.000Z"),
+    );
+
+    assert.equal(result.ok, true);
+    assert.equal(result.membership.role, entry.role);
+    assert.equal(
+      result.membership.permissions.canReviewMembershipRequests,
+      entry.canReview,
+    );
+  }
 });
-
 
 test("11-B Host UI reuses public ranking/archive and existing room/chat routes", () => {
   const page = readFileSync(
