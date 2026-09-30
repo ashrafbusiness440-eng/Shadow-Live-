@@ -31,6 +31,7 @@ class AppRoutes {
   static const String editProfile = '/edit-profile';
   static const String settings = '/settings';
   static const String myAgency = '/my-agency';
+  static const String agencyApplication = '/agency-application';
   static const String agencySearch = '/agency-search';
   static const String notifications = '/notifications';
   static const String roomList = '/room-list';
