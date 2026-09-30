@@ -4,6 +4,8 @@ export const AGENCY_DATA_MODEL_VERSION = 1;
 
 export const AGENCY_LIMITS = Object.freeze({
   applicationHostIds: 5,
+  minApplicationHostIds: 0,
+  maxApplicationHostIds: 30,
   managerSlots: 3,
   agencyManagers: 2,
   seniorManagers: 1,
@@ -275,8 +277,19 @@ export function agencyStatusEventPath(eventId) {
   return `${AGENCY_COLLECTIONS.statusEvents}/${safePart(eventId, "agency_status_event_id", 220)}`;
 }
 
-export function normalizeApplicationHostIds(rawIds) {
-  if (!Array.isArray(rawIds) || rawIds.length !== AGENCY_LIMITS.applicationHostIds) {
+export function normalizeApplicationHostIds(
+  rawIds,
+  requiredCount = AGENCY_LIMITS.applicationHostIds,
+) {
+  const count = Number(requiredCount);
+  if (
+    !Number.isInteger(count) ||
+    count < AGENCY_LIMITS.minApplicationHostIds ||
+    count > AGENCY_LIMITS.maxApplicationHostIds
+  ) {
+    throw new Error("invalid_agency_application_host_count");
+  }
+  if (!Array.isArray(rawIds) || rawIds.length !== count) {
     throw new Error("invalid_agency_application_hosts");
   }
   const ids = rawIds.map((value) => clean(value));
@@ -394,6 +407,7 @@ export function createAgencyApplicationDocument({
   requestedPublicId,
   hostIds,
   hostUids,
+  requiredHostCount = AGENCY_LIMITS.applicationHostIds,
   country = null,
   reapplyMode = null,
   now,
@@ -404,12 +418,15 @@ export function createAgencyApplicationDocument({
   if (!applicationName || applicationName.length > 80) throw new Error("invalid_agency_name");
   const publicId = clean(requestedPublicId);
   if (publicId && !/^\d{3,8}$/.test(publicId)) throw new Error("invalid_agency_public_id");
-  const normalizedHostIds = normalizeApplicationHostIds(hostIds);
+  const normalizedHostIds = normalizeApplicationHostIds(
+    hostIds,
+    requiredHostCount,
+  );
   const normalizedHostUids = Array.isArray(hostUids)
     ? hostUids.map((uid) => safePart(uid, "host_uid"))
     : [];
   if (
-    normalizedHostUids.length !== AGENCY_LIMITS.applicationHostIds ||
+    normalizedHostUids.length !== requiredHostCount ||
     new Set(normalizedHostUids).size !== normalizedHostUids.length
   ) {
     throw new Error("invalid_agency_application_host_uids");
@@ -427,6 +444,7 @@ export function createAgencyApplicationDocument({
     country: normalizedCountry,
     hostIds: normalizedHostIds,
     hostUids: normalizedHostUids,
+    requiredHostCount,
     status: "pending",
     reapplyMode: mode,
     reapplyAllowedAt: null,
