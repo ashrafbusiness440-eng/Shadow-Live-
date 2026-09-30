@@ -41,7 +41,7 @@ function validIdempotencyKey(value) {
 }
 
 function validAgencyId(value) {
-  return /^\d{6}$/.test(clean(value));
+  return /^\d{3,8}$/.test(clean(value));
 }
 
 function timestampMs(value) {
@@ -989,9 +989,27 @@ function sanitizeAgencyForControl(agency = {}, ownerUser = {}) {
   };
 }
 
+async function resolveAgencyControlId(db, agencyIdInput) {
+  const lookupId = clean(agencyIdInput);
+  if (!validAgencyId(lookupId)) throw new ApiError("invalid_agency_id", 400);
+
+  const directSnap = await db.get(`agencies/${lookupId}`);
+  if (directSnap.exists) return lookupId;
+
+  const registrySnap = await db.get(`agency_ids/${lookupId}`);
+  const resolvedAgencyId = clean(registrySnap.data?.agencyId);
+  if (
+    !registrySnap.exists ||
+    registrySnap.data?.reserved === true ||
+    !validAgencyId(resolvedAgencyId)
+  ) {
+    throw new ApiError("agency_not_found", 404);
+  }
+  return resolvedAgencyId;
+}
+
 export async function getAgencyControlDetails(db, agencyIdInput) {
-  const agencyId = clean(agencyIdInput);
-  if (!validAgencyId(agencyId)) throw new ApiError("invalid_agency_id", 400);
+  const agencyId = await resolveAgencyControlId(db, agencyIdInput);
   const agencySnap = await db.get(`agencies/${agencyId}`);
   if (!agencySnap.exists) throw new ApiError("agency_not_found", 404);
   const agency = agencySnap.data || {};
@@ -1007,10 +1025,14 @@ export async function updateAgencyIdentity(
   { now = new Date() } = {},
 ) {
   const agencyId = clean(body.agencyId);
+  const requestedPublicId = clean(body.publicId);
   const name = clean(body.name);
   const country = clean(body.country) || null;
   const key = clean(body.idempotencyKey);
   if (!validAgencyId(agencyId)) throw new ApiError("invalid_agency_id", 400);
+  if (requestedPublicId && !validAgencyId(requestedPublicId)) {
+    throw new ApiError("invalid_agency_public_id", 400);
+  }
   if (!name || name.length > 80) throw new ApiError("invalid_agency_name", 400);
   if (country != null && (country.length < 2 || country.length > 64)) {
     throw new ApiError("invalid_agency_country", 400);
@@ -1020,6 +1042,7 @@ export async function updateAgencyIdentity(
   const operationPath = controlOperationPath(actorUid, key);
   const fingerprint = controlOperationFingerprint("updateIdentity", {
     agencyId,
+    publicId: requestedPublicId || null,
     name,
     country,
   });
@@ -1045,12 +1068,33 @@ export async function updateAgencyIdentity(
         throw new ApiError("agency_closed", 409);
       }
 
+      const currentPublicId = clean(agency.publicId || agencyId);
+      if (!validAgencyId(currentPublicId)) {
+        throw new ApiError("agency_identity_corrupt", 409);
+      }
+      const nextPublicId = requestedPublicId || currentPublicId;
+      const publicIdChanged = nextPublicId !== currentPublicId;
+
+      let nextRegistrySnap = null;
+      let currentRegistrySnap = null;
+      if (publicIdChanged) {
+        [nextRegistrySnap, currentRegistrySnap] = await Promise.all([
+          db.get(`agency_ids/${nextPublicId}`, tx),
+          db.get(`agency_ids/${currentPublicId}`, tx),
+        ]);
+        if (nextRegistrySnap.exists) {
+          throw new ApiError("agency_id_taken", 409);
+        }
+      }
+
       const before = {
+        publicId: currentPublicId,
         name: clean(agency.name),
         country: clean(agency.country) || null,
       };
       const result = {
         agencyId,
+        publicId: nextPublicId,
         name,
         country,
         status: clean(agency.status),
@@ -1059,8 +1103,8 @@ export async function updateAgencyIdentity(
       const writes = [
         db.writeUpdate(
           `agencies/${agencyId}`,
-          { name, country, updatedAt: now },
-          ["name", "country", "updatedAt"],
+          { publicId: nextPublicId, name, country, updatedAt: now },
+          ["publicId", "name", "country", "updatedAt"],
         ),
         db.writeCreate(operationPath, {
           actorUid,
@@ -1076,18 +1120,62 @@ export async function updateAgencyIdentity(
           targetType: "agency",
           targetId: agencyId,
           before,
-          after: { name, country },
+          after: { publicId: nextPublicId, name, country },
           idempotencyKey: key,
           createdAt: now,
         }),
       ];
+
+      if (publicIdChanged) {
+        writes.push(
+          db.writeCreate(`agency_ids/${nextPublicId}`, {
+            agencyId,
+            ownerUid,
+            publicId: nextPublicId,
+            source: "control_change",
+            allocatedAt: now,
+            reserved: false,
+          }),
+        );
+        const retiredRegistry = {
+          agencyId: null,
+          publicId: currentPublicId,
+          reserved: true,
+          retiredAgencyId: agencyId,
+          currentPublicId: nextPublicId,
+          retiredAt: now,
+          retiredBy: actorUid,
+        };
+        if (currentRegistrySnap?.exists) {
+          writes.push(
+            db.writeUpdate(
+              `agency_ids/${currentPublicId}`,
+              retiredRegistry,
+              [
+                "agencyId",
+                "publicId",
+                "reserved",
+                "retiredAgencyId",
+                "currentPublicId",
+                "retiredAt",
+                "retiredBy",
+              ],
+            ),
+          );
+        } else {
+          writes.push(
+            db.writeCreate(`agency_ids/${currentPublicId}`, retiredRegistry),
+          );
+        }
+      }
+
       if (ownerUid) {
         writes.push(db.writeCreate(`notifications/agency_identity_${agencyId}_${key}`, {
           userId: ownerUid,
           type: "agency_identity_updated",
           category: "system",
           title: "تم تحديث بيانات الوكالة",
-          body: `${name}${country ? ` — ${country}` : ""}`,
+          body: `${name} — ID ${nextPublicId}${country ? ` — ${country}` : ""}`,
           read: false,
           agencyId,
           createdAt: now,
@@ -1120,7 +1208,7 @@ export async function transferAgencyOwnership(
   const newOwnerPublicId = clean(body.newOwnerPublicId);
   const key = clean(body.idempotencyKey);
   if (!validAgencyId(agencyId)) throw new ApiError("invalid_agency_id", 400);
-  if (!/^\d{6}$/.test(newOwnerPublicId)) {
+  if (!/^\d{3,8}$/.test(newOwnerPublicId)) {
     throw new ApiError("invalid_owner_public_id", 400);
   }
   if (!validIdempotencyKey(key)) throw new ApiError("invalid_idempotency_key", 400);
@@ -1491,7 +1579,7 @@ export async function directCreateAgency(
   const ownerPublicId = clean(body.ownerPublicId);
   const name = clean(body.name);
   const country = clean(body.country) || null;
-  if (!/^\d{6}$/.test(ownerPublicId)) throw new ApiError("invalid_owner_public_id", 400);
+  if (!/^\d{3,8}$/.test(ownerPublicId)) throw new ApiError("invalid_owner_public_id", 400);
   if (!name || name.length > 80) throw new ApiError("invalid_agency_name", 400);
   if (country != null && (country.length < 2 || country.length > 64)) {
     throw new ApiError("invalid_agency_country", 400);
@@ -1948,7 +2036,7 @@ export async function overrideAgencyCooldownByPublicId(
   options = {},
 ) {
   const targetPublicId = clean(body.targetPublicId);
-  if (!/^\d{6}$/.test(targetPublicId)) {
+  if (!/^\d{3,8}$/.test(targetPublicId)) {
     throw new ApiError("invalid_target_public_id", 400);
   }
   const publicIdSnap = await db.get("public_ids/" + targetPublicId);
