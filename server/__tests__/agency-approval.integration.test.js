@@ -86,6 +86,80 @@ test("Shadow Control can configure application hosts from 0 to 30", async () => 
   assert.equal(restored.requiredHostCount, 5);
 });
 
+test("Control can set required application hosts from 0 to 30", async () => {
+  const actorUid = "owner_stage03_settings";
+  const zero = await setAgencyApplicationHostCount(
+    db,
+    actorUid,
+    {
+      requiredHostCount: 0,
+      idempotencyKey: "stage03_settings_zero_0001",
+    },
+    { now: new Date("2026-09-28T15:30:00.000Z") },
+  );
+  assert.equal(zero.requiredHostCount, 0);
+  assert.equal((await getAgencyApplicationSettings(db)).requiredHostCount, 0);
+
+  const thirty = await setAgencyApplicationHostCount(
+    db,
+    actorUid,
+    {
+      requiredHostCount: 30,
+      idempotencyKey: "stage03_settings_thirty_0001",
+    },
+    { now: new Date("2026-09-28T15:31:00.000Z") },
+  );
+  assert.equal(thirty.requiredHostCount, 30);
+  assert.equal((await getAgencyApplicationSettings(db)).requiredHostCount, 30);
+
+  await assert.rejects(
+    setAgencyApplicationHostCount(db, actorUid, {
+      requiredHostCount: 31,
+      idempotencyKey: "stage03_settings_invalid_0001",
+    }),
+    /invalid_agency_application_host_count/,
+  );
+
+  await adminDb.collection("system_config").doc("agency_application").delete();
+});
+
+test("zero-host applications approve without synthetic host memberships", async () => {
+  await adminDb.collection("system_config").doc("agency_application").set({
+    requiredHostCount: 0,
+  });
+  const ownerUid = "stage03b_zero_approve_owner";
+  await seedUser(ownerUid, "323990");
+  const submitted = await submitAgencyApplication(
+    db,
+    ownerUid,
+    {
+      name: "Zero Host Approval",
+      hostIds: [],
+      idempotencyKey: "stage03b_zero_submit_0001",
+    },
+    { now: new Date("2026-09-28T15:40:00.000Z") },
+  );
+
+  const approved = await approveAgencyApplication(
+    db,
+    "reviewer_stage03b",
+    {
+      applicationId: submitted.applicationId,
+      idempotencyKey: "stage03b_zero_approve_0001",
+    },
+    {
+      now: new Date("2026-09-28T15:41:00.000Z"),
+      agencyIdCandidates: ["623990"],
+    },
+  );
+  assert.equal(approved.hostCount, 0);
+  const agency = await adminDb.collection("agencies").doc("623990").get();
+  assert.equal(agency.data().memberCount, 1);
+  assert.equal(agency.data().hostCount, 0);
+
+  await adminDb.collection("system_config").doc("agency_application").delete();
+});
+
 test("review queue stays bounded and includes pending and under review applications", async () => {
   const first = await seedApplication(
     "stage03b_queue_a",
