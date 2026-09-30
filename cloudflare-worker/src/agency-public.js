@@ -69,6 +69,20 @@ export async function searchPublicAgencies(db, body = {}) {
   }
   if (mode === "id") {
     if (!validAgencyId(query)) throw new ApiError("invalid_agency_id", 400);
+
+    // Keep the common/default Agency ID path at one direct read.
+    const directSnap = await db.get(`agencies/${query}`);
+    if (directSnap.exists) {
+      const directPublicId = clean(directSnap.data?.publicId || query);
+      const active =
+        clean(directSnap.data?.status) === "active" &&
+        directPublicId === query;
+      return { ok: true, results: active ? [publicAgencySummary(directSnap)] : [], page: {
+        limit: 1, hasMore: false, nextCursor: null,
+      } };
+    }
+
+    // A changed Agency / Room ID resolves through the direct registry.
     const registrySnap = await db.get(`agency_ids/${query}`);
     const resolvedAgencyId =
       registrySnap.exists && registrySnap.data?.reserved !== true
