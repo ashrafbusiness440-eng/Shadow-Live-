@@ -1,5 +1,8 @@
 import { json, readJson, firestoreQuotaResponse } from "./http.js";
-import { verifyFirebaseIdToken } from "./firebase-auth.js";
+import {
+  assertUserDocumentSessionState,
+  verifyFirebaseIdToken,
+} from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import {
   calculateAgencyTargetProgress,
@@ -75,7 +78,12 @@ function targetSummary(target) {
   };
 }
 
-export async function loadAgencyHostCore(db, uidInput, now = new Date()) {
+export async function loadAgencyHostCore(
+  db,
+  uidInput,
+  now = new Date(),
+  { sessionPayload = null } = {},
+) {
   const uid = clean(uidInput);
   if (!uid) throw new ApiError("unauthorized", 401);
 
@@ -89,6 +97,9 @@ export async function loadAgencyHostCore(db, uidInput, now = new Date()) {
   }
 
   const user = userSnap.data || {};
+  if (sessionPayload) {
+    assertUserDocumentSessionState(sessionPayload, user);
+  }
   const membership = membershipSnap.data || {};
   const agencyId = clean(membership.agencyId);
   const role = clean(membership.role);
@@ -213,7 +224,11 @@ export async function agencyHost(request, env) {
   }
 
   try {
-    const token = await verifyFirebaseIdToken(request, env);
+    const token = await verifyFirebaseIdToken(request, env, {
+      // loadAgencyHostCore already reads users/{uid}; reuse that document
+      // for accountStatus/session revocation instead of a duplicate lookup.
+      checkUserState: false,
+    });
     const body = await readJson(request);
     const action = clean(body.action) || "core";
     if (action !== "core") {
@@ -225,7 +240,9 @@ export async function agencyHost(request, env) {
     return json(
       request,
       env,
-      await loadAgencyHostCore(db, token.sub),
+      await loadAgencyHostCore(db, token.sub, new Date(), {
+        sessionPayload: token,
+      }),
     );
   } catch (error) {
     if (error instanceof ApiError) {
