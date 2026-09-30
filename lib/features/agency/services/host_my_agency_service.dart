@@ -154,6 +154,8 @@ class HostMyAgencyCoreData {
     required this.membershipStatus,
     required this.target,
     required this.activity,
+    this.membershipCapabilities = const <String>[],
+    this.canReviewMembershipRequests = false,
   });
 
   final HostAgencyIdentity agency;
@@ -162,6 +164,8 @@ class HostMyAgencyCoreData {
   final String membershipStatus;
   final HostAgencyTarget target;
   final HostAgencyActivity activity;
+  final List<String> membershipCapabilities;
+  final bool canReviewMembershipRequests;
 
   factory HostMyAgencyCoreData.fromJson(Map<String, dynamic> json) {
     final agency = json['agency'];
@@ -177,6 +181,12 @@ class HostMyAgencyCoreData {
       throw const FormatException('invalid_host_my_agency_core');
     }
 
+    final rawCapabilities = membership['capabilities'];
+    final rawPermissions = membership['permissions'];
+    final permissions = rawPermissions is Map
+        ? Map<String, dynamic>.from(rawPermissions)
+        : const <String, dynamic>{};
+
     return HostMyAgencyCoreData(
       agency: HostAgencyIdentity.fromJson(Map<String, dynamic>.from(agency)),
       owner: HostAgencyOwner.fromJson(Map<String, dynamic>.from(owner)),
@@ -185,6 +195,14 @@ class HostMyAgencyCoreData {
       target: HostAgencyTarget.fromJson(Map<String, dynamic>.from(target)),
       activity:
           HostAgencyActivity.fromJson(Map<String, dynamic>.from(activity)),
+      membershipCapabilities: rawCapabilities is List
+          ? rawCapabilities
+              .map((value) => value.toString().trim())
+              .where((value) => value.isNotEmpty)
+              .toList(growable: false)
+          : const <String>[],
+      canReviewMembershipRequests:
+          permissions['canReviewMembershipRequests'] == true,
     );
   }
 }
