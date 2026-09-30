@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'control_api_endpoints.dart';
 import 'control_firebase.dart';
 import 'agency_policy_control_page.dart';
+import '../shared/widgets/country_selector.dart';
 
 class AgencyControlPage extends StatefulWidget {
   const AgencyControlPage({super.key});
@@ -24,6 +25,8 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
   bool canManageMemberships = false;
   bool canSuspendAgencies = false;
   bool canCloseAgencies = false;
+  bool canSetApplicationHostCount = false;
+  int applicationHostCount = 5;
   final TextEditingController agencyLookup = TextEditingController();
   Map<String, dynamic>? managedAgency;
   List<Map<String, dynamic>> applications = [];
@@ -92,6 +95,11 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
       final permissions = body['permissions'] is Map
           ? Map<String, dynamic>.from(body['permissions'] as Map)
           : <String, dynamic>{};
+      final applicationSettings = body['applicationSettings'] is Map
+          ? Map<String, dynamic>.from(body['applicationSettings'] as Map)
+          : <String, dynamic>{};
+      final parsedHostCount =
+          int.tryParse((applicationSettings['requiredHostCount'] ?? 5).toString()) ?? 5;
       if (!mounted) return;
       setState(() {
         applications = rows;
@@ -103,6 +111,9 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
         canManageMemberships = permissions['canManageMemberships'] == true;
         canSuspendAgencies = permissions['canSuspendAgencies'] == true;
         canCloseAgencies = permissions['canCloseAgencies'] == true;
+        canSetApplicationHostCount =
+            permissions['canSetApplicationHostCount'] == true;
+        applicationHostCount = parsedHostCount.clamp(0, 30);
         loading = false;
       });
     } catch (e) {
@@ -111,6 +122,41 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('تعذر تحميل طلبات الوكالات: $e')),
       );
+    }
+  }
+
+  Future<void> saveApplicationHostCount(int value) async {
+    if (busy || !canSetApplicationHostCount) return;
+    final next = value.clamp(0, 30);
+    setState(() => busy = true);
+    try {
+      final body = await post({
+        'action': 'setApplicationHostCount',
+        'requiredHostCount': next,
+        'idempotencyKey': operationKey('agency_application_host_count'),
+      });
+      if (!mounted) return;
+      setState(() {
+        applicationHostCount =
+            int.tryParse((body['requiredHostCount'] ?? next).toString()) ?? next;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            applicationHostCount == 0
+                ? 'تم ضبط طلب إنشاء الوكالة بدون مضيفين.'
+                : 'تم ضبط عدد المضيفين المطلوب على $applicationHostCount.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر تحديث عدد المضيفين: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => busy = false);
     }
   }
 
