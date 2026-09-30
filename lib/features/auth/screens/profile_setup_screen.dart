@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../shared/services/firebase_service.dart';
 import '../../../shared/services/user_storage_service.dart';
+import '../../../shared/widgets/country_selector.dart';
 
 class ProfileSetupScreen extends StatefulWidget {
   const ProfileSetupScreen({super.key});
@@ -27,7 +28,6 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   bool _saving = false;
   static const _male = ['assets/images/avatars/male_1.png','assets/images/avatars/male_2.png','assets/images/avatars/male_3.png','assets/images/avatars/male_4.png','assets/images/avatars/male_5.png','assets/images/avatars/male_6.png'];
   static const _female = ['assets/images/avatars/female_1.png','assets/images/avatars/female_2.png','assets/images/avatars/female_3.png','assets/images/avatars/female_4.png','assets/images/avatars/female_5.png','assets/images/avatars/female_6.png'];
-  static const _countries = ['🇦🇪 الإمارات العربية المتحدة','🇸🇦 السعودية','🇸🇾 سوريا','🇯🇴 الأردن','🇱🇧 لبنان','🇮🇶 العراق','🇵🇸 فلسطين','🇰🇼 الكويت','🇶🇦 قطر','🇧🇭 البحرين','🇴🇲 عُمان','🇾🇪 اليمن','🇪🇬 مصر','🇱🇾 ليبيا','🇹🇳 تونس','🇩🇿 الجزائر','🇲🇦 المغرب','🇸🇩 السودان','🇸🇴 الصومال','🇩🇯 جيبوتي','🇲🇷 موريتانيا','🇰🇲 جزر القمر','🇹🇷 تركيا','🇺🇸 الولايات المتحدة','🇬🇧 المملكة المتحدة','🇫🇷 فرنسا','🇩🇪 ألمانيا','🇮🇹 إيطاليا','🇪🇸 إسبانيا','🇵🇹 البرتغال','🇳🇱 هولندا','🇧🇪 بلجيكا','🇨🇭 سويسرا','🇦🇹 النمسا','🇸🇪 السويد','🇳🇴 النرويج','🇩🇰 الدنمارك','🇫🇮 فنلندا','🇮🇪 أيرلندا','🇵🇱 بولندا','🇨🇿 التشيك','🇬🇷 اليونان','🇷🇴 رومانيا','🇧🇬 بلغاريا','🇭🇺 المجر','🇭🇷 كرواتيا','🇷🇸 صربيا','🇸🇰 سلوفاكيا','🇸🇮 سلوفينيا','🇱🇺 لوكسمبورغ','🇮🇸 آيسلندا','🇲🇹 مالطا','🇨🇾 قبرص','🇪🇪 إستونيا','🇱🇻 لاتفيا','🇱🇹 ليتوانيا','🇺🇦 أوكرانيا'];
   List<String> get _avatars => _gender == 'ذكر' ? _male : _female;
   bool get _hasImage => _selectedAvatarAsset != null || _pickedImageBytes != null;
   bool get _ready => _hasImage && _validateName(_displayNameController.text) == null && _birthDate != null && _selectedLocation != null && !_saving;
@@ -75,7 +75,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                 _tile(Icons.cake_outlined,_date,_pickBirth),
                 const SizedBox(height:18),
                 _label('الدولة'),
-                DropdownButtonFormField<String>(initialValue:_selectedLocation,isExpanded:true,dropdownColor:const Color(0xFF11182A),style:const TextStyle(color:Colors.white),decoration:_dec('اختر الدولة (مطلوب)',Icons.public_rounded),items:_countries.map((c)=>DropdownMenuItem(value:c,child:Text(c,overflow:TextOverflow.ellipsis))).toList(),onChanged:_saving?null:(v)=>setState(()=>_selectedLocation=v)),
+                ShadowCountryField(value:shadowCountryByName(_selectedLocation),optional:false,enabled:!_saving,onChanged:(country)=>setState(()=>_selectedLocation=country?.nameAr)),
                 const SizedBox(height:30),
                 SizedBox(height:58,child:DecoratedBox(decoration:BoxDecoration(borderRadius:BorderRadius.circular(17),gradient:LinearGradient(colors:_ready?const[Color(0xFF8A00FF),Color(0xFFFF00D4)]:const[Color(0xFF252A35),Color(0xFF252A35)])),child:TextButton(onPressed:_ready?_next:null,child:_saving?const SizedBox(width:24,height:24,child:CircularProgressIndicator(strokeWidth:2,color:Colors.white)):Text('متابعة',style:TextStyle(color:_ready?Colors.white:Colors.white38,fontSize:18,fontWeight:FontWeight.w900))))),
               ]),

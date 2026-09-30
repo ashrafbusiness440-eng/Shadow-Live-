@@ -3,7 +3,11 @@ import { after, test } from "node:test";
 import { deleteApp, getApps, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 
-import { submitAgencyApplication } from "../../cloudflare-worker/src/agency-application.js";
+import {
+  releaseAgencyApplicationHost,
+  reserveAgencyApplicationHost,
+  submitAgencyApplication,
+} from "../../cloudflare-worker/src/agency-application.js";
 import { cloudflareFirestoreAdapter } from "./helpers/cloudflare-firestore-adapter.js";
 
 const app = getApps()[0] || initializeApp({ projectId: "shadow-live-economy-test" });
@@ -37,6 +41,184 @@ async function seedFiveHosts(prefix, ids) {
   );
   return uids;
 }
+
+test("host verification reserves 3-8 digit ids until release or final decision", async () => {
+  const applicantUid = "stage03_reserve_applicant";
+  const otherApplicantUid = "stage03_reserve_other";
+  const hostUid = "stage03_reserve_host";
+  await seedUser(applicantUid, "319910");
+  await seedUser(otherApplicantUid, "319911");
+  await seedUser(hostUid, "123", { displayName: "Reserved Host" });
+
+  const key = "stage03_reserve_key_0001";
+  const reserved = await reserveAgencyApplicationHost(
+    db,
+    applicantUid,
+    {
+      hostId: "123",
+      idempotencyKey: key,
+    },
+    { now: new Date("2026-09-28T14:00:00.000Z") },
+  );
+
+  assert.equal(reserved.ok, true);
+  assert.equal(reserved.requiredHostCount, 5);
+  assert.equal(reserved.host.uid, hostUid);
+  assert.equal(reserved.host.publicId, "123");
+  assert.equal(reserved.host.displayName, "Reserved Host");
+
+  const [applicantLock, hostLock] = await Promise.all([
+    adminDb.collection("agency_application_locks").doc(applicantUid).get(),
+    adminDb.collection("agency_application_locks").doc(hostUid).get(),
+  ]);
+  assert.equal(applicantLock.data().status, "draft");
+  assert.deepEqual(applicantLock.data().hostIds, ["123"]);
+  assert.equal(hostLock.data().status, "reserved");
+  assert.equal(hostLock.data().hostPublicId, "123");
+
+  await assert.rejects(
+    reserveAgencyApplicationHost(db, otherApplicantUid, {
+      hostId: "123",
+      idempotencyKey: "stage03_reserve_other_0001",
+    }),
+    /agency_host_application_conflict/,
+  );
+
+  const released = await releaseAgencyApplicationHost(db, applicantUid, {
+    hostId: "123",
+    idempotencyKey: key,
+  });
+  assert.equal(released.ok, true);
+  assert.equal(
+    (await adminDb.collection("agency_application_locks").doc(hostUid).get())
+      .data().status,
+    "released",
+  );
+
+  const reservedAgain = await reserveAgencyApplicationHost(
+    db,
+    otherApplicantUid,
+    {
+      hostId: "123",
+      idempotencyKey: "stage03_reserve_other_0001",
+    },
+  );
+  assert.equal(reservedAgain.ok, true);
+});
+
+test("verified host stays bound by UID if public ID changes before submit", async () => {
+  const applicantUid = "stage03_uid_snapshot_applicant";
+  const hostIds = ["1234", "318002", "318003", "318004", "318005"];
+  const hostUids = await seedFiveHosts("stage03_uid_snapshot", hostIds);
+  await seedUser(applicantUid, "319912");
+  const key = "stage03_uid_snapshot_key_0001";
+
+  await reserveAgencyApplicationHost(db, applicantUid, {
+    hostId: hostIds[0],
+    idempotencyKey: key,
+  });
+
+  await adminDb.collection("public_ids").doc(hostIds[0]).delete();
+  await adminDb.collection("public_ids").doc("91876543").set({
+    uid: hostUids[0],
+    createdAt: new Date(),
+  });
+  await adminDb.collection("users").doc(hostUids[0]).set(
+    { publicId: "91876543" },
+    { merge: true },
+  );
+
+  for (const hostId of hostIds.slice(1)) {
+    await reserveAgencyApplicationHost(db, applicantUid, {
+      hostId,
+      idempotencyKey: key,
+    });
+  }
+
+  const result = await submitAgencyApplication(db, applicantUid, {
+    name: "UID Snapshot Agency",
+    country: "الباشان",
+    hostIds,
+    idempotencyKey: key,
+  });
+
+  assert.equal(result.ok, true);
+  const application = await adminDb.collection("agency_applications")
+    .doc(result.applicationId).get();
+  assert.equal(application.data().hostUids[0], hostUids[0]);
+  assert.equal(application.data().hostIds[0], "1234");
+  assert.equal(application.data().hostProfiles[0].uid, hostUids[0]);
+});
+
+test("configured zero hosts allows a host-free application", async () => {
+  const applicantUid = "stage03_zero_hosts";
+  await seedUser(applicantUid, "319920");
+  await adminDb.collection("system_config").doc("agency_application").set({
+    requiredHostCount: 0,
+  });
+
+  const result = await submitAgencyApplication(
+    db,
+    applicantUid,
+    {
+      name: "Zero Hosts Agency",
+      country: "الإمارات العربية المتحدة",
+      hostIds: [],
+      idempotencyKey: "stage03_zero_hosts_key_0001",
+    },
+    { now: new Date("2026-09-28T14:10:00.000Z") },
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.requiredHostCount, 0);
+  assert.deepEqual(result.hostIds, []);
+  const application = await adminDb.collection("agency_applications")
+    .doc(result.applicationId).get();
+  assert.equal(application.data().requiredHostCount, 0);
+  assert.deepEqual(application.data().hostUids, []);
+
+  await adminDb.collection("system_config").doc("agency_application").delete();
+});
+
+test("configured thirty hosts stays bounded and accepts 3-8 digit public ids", async () => {
+  const applicantUid = "stage03_thirty_hosts";
+  await seedUser(applicantUid, "319921");
+  await adminDb.collection("system_config").doc("agency_application").set({
+    requiredHostCount: 30,
+  });
+
+  const uniqueHostIds = Array.from({ length: 30 }, (_, index) => {
+    const length = 3 + (index % 6);
+    return String((10 ** (length - 1)) + index);
+  });
+  const hostUids = [];
+  for (let index = 0; index < uniqueHostIds.length; index += 1) {
+    const uid = "stage03_thirty_host_" + String(index + 1);
+    hostUids.push(uid);
+    await seedUser(uid, uniqueHostIds[index]);
+  }
+
+  const result = await submitAgencyApplication(
+    db,
+    applicantUid,
+    {
+      name: "Thirty Hosts Agency",
+      hostIds: uniqueHostIds,
+      idempotencyKey: "stage03_thirty_hosts_key_0001",
+    },
+    { now: new Date("2026-09-28T14:20:00.000Z") },
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.requiredHostCount, 30);
+  assert.equal(result.hostIds.length, 30);
+  const application = await adminDb.collection("agency_applications")
+    .doc(result.applicationId).get();
+  assert.equal(application.data().hostUids.length, 30);
+  assert.deepEqual(application.data().hostUids, hostUids);
+
+  await adminDb.collection("system_config").doc("agency_application").delete();
+});
 
 test("agency application creates one pending application with five public host ids and locks", async () => {
   const applicantUid = "stage03_applicant_success";

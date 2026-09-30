@@ -6,6 +6,7 @@ import {
   isTransientFirestoreError,
 } from "./firestore.js";
 import {
+  AGENCY_LIMITS,
   AGENCY_REAPPLY_MODE,
   boundedAgencyPageSize,
   createAgencyDocument,
@@ -116,6 +117,9 @@ function sanitizeApplication(row) {
     name: clean(data.name),
     country: clean(data.country) || null,
     hostIds: Array.isArray(data.hostIds) ? data.hostIds.map(clean) : [],
+    requiredHostCount: Number.isInteger(Number(data.requiredHostCount))
+      ? Number(data.requiredHostCount)
+      : (Array.isArray(data.hostIds) ? data.hostIds.length : AGENCY_LIMITS.applicationHostIds),
     status: clean(data.status),
     reviewedBy: clean(data.reviewedBy) || null,
     createdAt: data.createdAt || null,
@@ -130,6 +134,142 @@ async function loadActor(db, actorUid) {
     user: actor.data || {},
     permissions: platformAgencyPermissions(actor.data || {}),
   };
+}
+
+
+function normalizeApplicationHostCount(value) {
+  const count = Number(value);
+  if (
+    !Number.isInteger(count) ||
+    count < AGENCY_LIMITS.minApplicationHostIds ||
+    count > AGENCY_LIMITS.maxApplicationHostIds
+  ) {
+    throw new ApiError("invalid_agency_application_host_count", 400, {
+      min: AGENCY_LIMITS.minApplicationHostIds,
+      max: AGENCY_LIMITS.maxApplicationHostIds,
+    });
+  }
+  return count;
+}
+
+export async function getAgencyApplicationSettings(db) {
+  const snap = await db.get("system_config/agency_application");
+  const raw = snap.exists
+    ? Number(snap.data?.requiredHostCount)
+    : AGENCY_LIMITS.applicationHostIds;
+  const requiredHostCount =
+    Number.isInteger(raw) &&
+    raw >= AGENCY_LIMITS.minApplicationHostIds &&
+    raw <= AGENCY_LIMITS.maxApplicationHostIds
+      ? raw
+      : AGENCY_LIMITS.applicationHostIds;
+  return {
+    requiredHostCount,
+    minHostCount: AGENCY_LIMITS.minApplicationHostIds,
+    maxHostCount: AGENCY_LIMITS.maxApplicationHostIds,
+  };
+}
+
+export async function setAgencyApplicationHostCount(
+  db,
+  actorUid,
+  body = {},
+  { now = new Date() } = {},
+) {
+  const requiredHostCount = normalizeApplicationHostCount(body.requiredHostCount);
+  const key = clean(body.idempotencyKey);
+  if (!validIdempotencyKey(key)) {
+    throw new ApiError("invalid_idempotency_key", 400);
+  }
+  const operationPath = controlOperationPath(actorUid, key);
+  const settingsPath = "system_config/agency_application";
+  const fingerprint = JSON.stringify({
+    action: "setApplicationHostCount",
+    requiredHostCount,
+  });
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const tx = await db.beginTransaction();
+    try {
+      const [operationSnap, settingsSnap] = await Promise.all([
+        db.get(operationPath, tx),
+        db.get(settingsPath, tx),
+      ]);
+      if (operationSnap.exists) {
+        const existing = operationSnap.data || {};
+        if (clean(existing.requestFingerprint) !== fingerprint) {
+          throw new ApiError("idempotency_conflict", 409);
+        }
+        await db.rollback(tx);
+        return { ok: true, code: "duplicate", ...(existing.result || {}) };
+      }
+
+      const beforeCount = settingsSnap.exists
+        ? Number(settingsSnap.data?.requiredHostCount)
+        : AGENCY_LIMITS.applicationHostIds;
+      const result = {
+        requiredHostCount,
+        minHostCount: AGENCY_LIMITS.minApplicationHostIds,
+        maxHostCount: AGENCY_LIMITS.maxApplicationHostIds,
+      };
+      const settingsFields = {
+        requiredHostCount,
+        updatedBy: actorUid,
+        updatedAt: now,
+      };
+      const settingsWrite = settingsSnap.exists
+        ? db.writeUpdate(
+            settingsPath,
+            settingsFields,
+            ["requiredHostCount", "updatedBy", "updatedAt"],
+          )
+        : db.writeCreate(settingsPath, {
+            ...settingsFields,
+            createdAt: now,
+          });
+
+      await db.commit(tx, [
+        settingsWrite,
+        db.writeCreate(operationPath, {
+          actorUid,
+          action: "setApplicationHostCount",
+          requestFingerprint: fingerprint,
+          status: "completed",
+          result,
+          createdAt: now,
+        }),
+        db.writeCreate(
+          `admin_audit_logs/agency_application_host_count_${key}`,
+          {
+            actorUid,
+            action: "setAgencyApplicationHostCount",
+            targetType: "agency_application_settings",
+            targetId: "agency_application",
+            before: {
+              requiredHostCount: Number.isInteger(beforeCount)
+                ? beforeCount
+                : AGENCY_LIMITS.applicationHostIds,
+            },
+            after: { requiredHostCount },
+            idempotencyKey: key,
+            createdAt: now,
+          },
+        ),
+      ]);
+      return { ok: true, code: "ok", ...result };
+    } catch (error) {
+      await db.rollback(tx);
+      if (error instanceof ApiError) throw error;
+      if (isTransientFirestoreError(error) && attempt < 2) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, firestoreErrorRetryDelayMs(attempt))
+        );
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new ApiError("transaction_failed", 500);
 }
 
 export async function listAgencyReviewQueue(db, limitInput = 50) {
@@ -351,26 +491,45 @@ async function createAgencyForOwner({
               throw new ApiError("application_lock_conflict", 409);
             }
           }
-        } else if (ownerLockSnap.exists && ["pending", "under_review"].includes(clean(ownerLockSnap.data?.status))) {
+        } else if (
+          ownerLockSnap.exists &&
+          ["draft", "pending", "under_review"].includes(
+            clean(ownerLockSnap.data?.status),
+          )
+        ) {
           throw new ApiError("owner_has_active_application", 409);
         }
 
-        const agency = createAgencyDocument({
-          agencyId: candidate,
-          publicId: candidate,
-          ownerUid,
-          name,
-          country,
-          createdFrom,
-          sourceApplicationId: applicationId,
-          now,
-        });
+        const agency = {
+          ...createAgencyDocument({
+            agencyId: candidate,
+            publicId: candidate,
+            ownerUid,
+            name,
+            country,
+            createdFrom,
+            sourceApplicationId: applicationId,
+            now,
+          }),
+          memberCount: 1 + (applicationId ? hostUids.length : 0),
+          hostCount: applicationId ? hostUids.length : 0,
+        };
         const ownerMembership = createAgencyMembershipDocument({
           agencyId: candidate,
           uid: ownerUid,
           role: "owner",
           joinedAt: now,
         });
+        const hostMemberships = applicationId
+          ? hostUids.map((uid) =>
+              createAgencyMembershipDocument({
+                agencyId: candidate,
+                uid,
+                role: "host",
+                joinedAt: now,
+              })
+            )
+          : [];
         const managerSlots = createAgencyManagerSlotsDocument({
           agencyId: candidate,
           now,
@@ -383,6 +542,7 @@ async function createAgencyForOwner({
           name: agency.name,
           country: agency.country,
           status: "active",
+          hostCount: hostUids.length,
           ...(applicationId ? { applicationId } : {}),
         };
 
@@ -396,7 +556,16 @@ async function createAgencyForOwner({
           }),
           db.writeCreate(`agencies/${candidate}`, agency),
           db.writeCreate(`agency_memberships/${candidate}__${ownerUid}`, ownerMembership),
-          db.writeCreate(`agency_user_memberships/${ownerUid}`, ownerMembership),
+          ownerMembershipSnap.exists
+            ? db.writeUpdate(
+                `agency_user_memberships/${ownerUid}`,
+                ownerMembership,
+                Object.keys(ownerMembership),
+              )
+            : db.writeCreate(
+                `agency_user_memberships/${ownerUid}`,
+                ownerMembership,
+              ),
           db.writeCreate(`agency_manager_slots/${candidate}`, managerSlots),
           db.writeCreate(`agency_wallets/${candidate}`, {
             agencyId: candidate,
@@ -456,13 +625,56 @@ async function createAgencyForOwner({
               updatedAt: now,
             }, ["status", "agencyId", "updatedAt"]),
           );
-          for (const uid of hostUids) {
+          for (let index = 0; index < hostUids.length; index += 1) {
+            const uid = hostUids[index];
+            const hostMembership = hostMemberships[index];
+            const previousUserMembership =
+              reads[hostReadsOffset + index * 3 + 1];
             writes.push(
+              db.writeCreate(
+                `agency_memberships/${candidate}__${uid}`,
+                hostMembership,
+              ),
+              previousUserMembership.exists
+                ? db.writeUpdate(
+                    `agency_user_memberships/${uid}`,
+                    hostMembership,
+                    Object.keys(hostMembership),
+                  )
+                : db.writeCreate(
+                    `agency_user_memberships/${uid}`,
+                    hostMembership,
+                  ),
+              db.writeUpdate(
+                `users/${uid}`,
+                {
+                  agencyId: candidate,
+                  agencyRole: "host",
+                  agencyJoinedAt: now,
+                },
+                ["agencyId", "agencyRole", "agencyJoinedAt"],
+              ),
               db.writeUpdate(`agency_application_locks/${uid}`, {
                 status: "approved",
                 agencyId: candidate,
+                joinedAt: now,
                 updatedAt: now,
-              }, ["status", "agencyId", "updatedAt"]),
+              }, ["status", "agencyId", "joinedAt", "updatedAt"]),
+              db.writeCreate(
+                `notifications/agency_application_host_approved_${applicationId}_${uid}`,
+                {
+                  userId: uid,
+                  type: "agency_application_host_approved",
+                  category: "system",
+                  title: "تم قبول انضمامك إلى الوكالة",
+                  body: `${agency.name} — ${candidate}`,
+                  read: false,
+                  agencyId: candidate,
+                  applicationId,
+                  role: "host",
+                  createdAt: now,
+                },
+              ),
             );
           }
         }
@@ -501,7 +713,16 @@ export async function approveAgencyApplication(
   const hostUids = Array.isArray(application.hostUids)
     ? application.hostUids.map(clean).filter(Boolean)
     : [];
-  if (hostUids.length !== 5) throw new ApiError("application_hosts_invalid", 409);
+  const requiredHostCount = Number.isInteger(Number(application.requiredHostCount))
+    ? Number(application.requiredHostCount)
+    : AGENCY_LIMITS.applicationHostIds;
+  if (
+    requiredHostCount < AGENCY_LIMITS.minApplicationHostIds ||
+    requiredHostCount > AGENCY_LIMITS.maxApplicationHostIds ||
+    hostUids.length !== requiredHostCount
+  ) {
+    throw new ApiError("application_hosts_invalid", 409);
+  }
 
   return createAgencyForOwner({
     db,
@@ -626,7 +847,15 @@ export async function rejectAgencyApplication(
       const hostUids = Array.isArray(application.hostUids)
         ? application.hostUids.map(clean).filter(Boolean)
         : [];
-      if (!applicantUid || hostUids.length !== 5) {
+      const requiredHostCount = Number.isInteger(Number(application.requiredHostCount))
+        ? Number(application.requiredHostCount)
+        : AGENCY_LIMITS.applicationHostIds;
+      if (
+        !applicantUid ||
+        requiredHostCount < AGENCY_LIMITS.minApplicationHostIds ||
+        requiredHostCount > AGENCY_LIMITS.maxApplicationHostIds ||
+        hostUids.length !== requiredHostCount
+      ) {
         throw new ApiError("application_participants_invalid", 409);
       }
       const participantUids = [applicantUid, ...hostUids];
@@ -692,7 +921,7 @@ export async function rejectAgencyApplication(
           "reapplyAllowedAt",
           "updatedAt",
         ]),
-        ...hostUids.map((uid) =>
+        ...hostUids.flatMap((uid) => [
           db.writeUpdate(`agency_application_locks/${uid}`, {
             status: "released",
             releasedAt: now,
@@ -707,8 +936,22 @@ export async function rejectAgencyApplication(
             "reapplyAllowedAt",
             "rejectionReason",
             "updatedAt",
-          ])
-        ),
+          ]),
+          db.writeCreate(
+            `notifications/agency_application_host_rejected_${applicationId}_${uid}`,
+            {
+              userId: uid,
+              type: "agency_application_host_rejected",
+              category: "system",
+              title: "تم رفض انضمامك إلى الوكالة",
+              body: "تم رفض طلب إنشاء الوكالة، وتم فك حجز حسابك ويمكنك الانضمام إلى وكالة أخرى.",
+              read: false,
+              applicationId,
+              rejectionReason: reason,
+              createdAt: now,
+            },
+          ),
+        ]),
         db.writeCreate(operationPath, {
           actorUid,
           action: "rejectAgencyApplication",
@@ -2077,14 +2320,16 @@ export async function agencyControl(request, env) {
 
     if (action === "listReviewQueue") {
       if (!actor.permissions.canReviewApplications) throw new ApiError("forbidden", 403);
-      const [applications, manualBlocks] = await Promise.all([
+      const [applications, manualBlocks, applicationSettings] = await Promise.all([
         listAgencyReviewQueue(db, body.limit),
         listAgencyManualReapplyBlocks(db, 25),
+        getAgencyApplicationSettings(db),
       ]);
       return json(request, env, {
         ok: true,
         applications,
         manualBlocks,
+        applicationSettings,
         limit: Math.min(50, boundedAgencyPageSize(body.limit, 50)),
         permissions: {
           canReviewApplications: actor.permissions.canReviewApplications,
@@ -2095,8 +2340,17 @@ export async function agencyControl(request, env) {
           canManageMemberships: actor.permissions.canManageMemberships,
           canSuspendAgencies: actor.permissions.canSuspendAgencies,
           canCloseAgencies: actor.permissions.canCloseAgencies,
+          canSetApplicationHostCount: actor.permissions.isOwner,
         },
       });
+    }
+    if (action === "setApplicationHostCount") {
+      if (!actor.permissions.isOwner) throw new ApiError("forbidden", 403);
+      return json(
+        request,
+        env,
+        await setAgencyApplicationHostCount(db, decoded.sub, body),
+      );
     }
     if (action === "startReview") {
       if (!actor.permissions.canReviewApplications) throw new ApiError("forbidden", 403);

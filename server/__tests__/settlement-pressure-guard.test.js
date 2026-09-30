@@ -77,6 +77,9 @@ test("agency application submission stays bounded and query free", () => {
   assert.equal(sourceText.includes("public_ids/"), true);
   assert.equal(sourceText.includes("agency_application_locks/"), true);
   assert.equal(sourceText.includes("agency_application_operations/"), true);
+  assert.equal(sourceText.includes("reserveAgencyApplicationHost"), true);
+  assert.equal(sourceText.includes("releaseAgencyApplicationHost"), true);
+  assert.equal(sourceText.includes("system_config/agency_application"), true);
 });
 
 test("agency review queue is bounded and agency creation uses direct id registry lookups", () => {

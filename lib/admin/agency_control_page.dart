@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'control_api_endpoints.dart';
 import 'control_firebase.dart';
 import 'agency_policy_control_page.dart';
+import '../shared/widgets/country_selector.dart';
 
 class AgencyControlPage extends StatefulWidget {
   const AgencyControlPage({super.key});
@@ -24,6 +25,8 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
   bool canManageMemberships = false;
   bool canSuspendAgencies = false;
   bool canCloseAgencies = false;
+  bool canSetApplicationHostCount = false;
+  int applicationHostCount = 5;
   final TextEditingController agencyLookup = TextEditingController();
   Map<String, dynamic>? managedAgency;
   List<Map<String, dynamic>> applications = [];
@@ -92,6 +95,12 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
       final permissions = body['permissions'] is Map
           ? Map<String, dynamic>.from(body['permissions'] as Map)
           : <String, dynamic>{};
+      final applicationSettings = body['applicationSettings'] is Map
+          ? Map<String, dynamic>.from(body['applicationSettings'] as Map)
+          : <String, dynamic>{};
+      final parsedHostCount =
+          int.tryParse((applicationSettings['requiredHostCount'] ?? 5).toString()) ??
+              5;
       if (!mounted) return;
       setState(() {
         applications = rows;
@@ -103,6 +112,9 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
         canManageMemberships = permissions['canManageMemberships'] == true;
         canSuspendAgencies = permissions['canSuspendAgencies'] == true;
         canCloseAgencies = permissions['canCloseAgencies'] == true;
+        canSetApplicationHostCount =
+            permissions['canSetApplicationHostCount'] == true;
+        applicationHostCount = parsedHostCount.clamp(0, 30).toInt();
         loading = false;
       });
     } catch (e) {
@@ -111,6 +123,41 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('تعذر تحميل طلبات الوكالات: $e')),
       );
+    }
+  }
+
+  Future<void> saveApplicationHostCount(int value) async {
+    if (busy || !canSetApplicationHostCount) return;
+    final next = value.clamp(0, 30).toInt();
+    setState(() => busy = true);
+    try {
+      final body = await post({
+        'action': 'setApplicationHostCount',
+        'requiredHostCount': next,
+        'idempotencyKey': operationKey('agency_application_host_count'),
+      });
+      if (!mounted) return;
+      setState(() {
+        applicationHostCount =
+            int.tryParse((body['requiredHostCount'] ?? next).toString()) ?? next;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            applicationHostCount == 0
+                ? 'تم ضبط طلب إنشاء الوكالة بدون مضيفين.'
+                : 'تم ضبط عدد المضيفين المطلوب على $applicationHostCount.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر تحديث عدد المضيفين: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => busy = false);
     }
   }
 
@@ -406,56 +453,62 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
       text: (agency['publicId'] ?? agency['agencyId'] ?? '').toString(),
     );
     final name = TextEditingController(text: (agency['name'] ?? '').toString());
-    final country =
-        TextEditingController(text: (agency['country'] ?? '').toString());
+    ShadowCountryOption? selectedCountry =
+        shadowCountryByName((agency['country'] ?? '').toString());
+
     final accepted = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('تعديل بيانات الوكالة'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: publicId,
-                keyboardType: TextInputType.number,
-                maxLength: 8,
-                decoration: const InputDecoration(
-                  labelText: 'Agency / Room ID *',
-                  hintText: 'من 3 إلى 8 أرقام',
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('تعديل بيانات الوكالة'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: publicId,
+                  keyboardType: TextInputType.number,
+                  maxLength: 8,
+                  decoration: const InputDecoration(
+                    labelText: 'Agency / Room ID *',
+                    hintText: 'من 3 إلى 8 أرقام',
+                  ),
                 ),
-              ),
-              TextField(
-                controller: name,
-                maxLength: 80,
-                decoration: const InputDecoration(labelText: 'اسم الوكالة *'),
-              ),
-              TextField(
-                controller: country,
-                maxLength: 64,
-                decoration: const InputDecoration(labelText: 'الدولة'),
-              ),
-            ],
+                TextField(
+                  controller: name,
+                  maxLength: 80,
+                  decoration:
+                      const InputDecoration(labelText: 'اسم الوكالة *'),
+                ),
+                const SizedBox(height: 10),
+                ShadowCountryField(
+                  value: selectedCountry,
+                  onChanged: (value) =>
+                      setDialogState(() => selectedCountry = value),
+                ),
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('حفظ'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('إلغاء'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('حفظ'),
-          ),
-        ],
       ),
     );
+
     final nextPublicId = publicId.text.trim();
     final nextName = name.text.trim();
-    final nextCountry = country.text.trim();
+    final nextCountry = selectedCountry?.nameAr ?? '';
     publicId.dispose();
     name.dispose();
-    country.dispose();
+
     if (accepted != true || nextName.isEmpty || busy) return;
     if (!RegExp(r'^\d{3,8}$').hasMatch(nextPublicId)) {
       if (mounted) {
@@ -467,6 +520,7 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
       }
       return;
     }
+
     setState(() => busy = true);
     try {
       final body = await post({
@@ -656,78 +710,80 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
 
   Future<void> directCreate() async {
     final name = TextEditingController();
-    final country = TextEditingController();
     final ownerPublicId = TextEditingController();
     final agencyId = TextEditingController();
+    ShadowCountryOption? selectedCountry;
+
     final accepted = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('إنشاء وكالة مباشرة'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: name,
-                decoration: const InputDecoration(
-                  labelText: 'اسم الوكالة *',
-                  border: OutlineInputBorder(),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('إنشاء وكالة مباشرة'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: name,
+                  decoration: const InputDecoration(
+                    labelText: 'اسم الوكالة *',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: country,
-                decoration: const InputDecoration(
-                  labelText: 'الدولة',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 12),
+                ShadowCountryField(
+                  value: selectedCountry,
+                  onChanged: (value) =>
+                      setDialogState(() => selectedCountry = value),
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: ownerPublicId,
-                keyboardType: TextInputType.number,
-                maxLength: 8,
-                decoration: const InputDecoration(
-                  labelText: 'Public ID لصاحب الوكالة *',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: ownerPublicId,
+                  keyboardType: TextInputType.number,
+                  maxLength: 8,
+                  decoration: const InputDecoration(
+                    labelText: 'Public ID لصاحب الوكالة *',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: agencyId,
-                keyboardType: TextInputType.number,
-                maxLength: 8,
-                decoration: const InputDecoration(
-                  labelText: 'Agency ID — اختياري',
-                  hintText: 'فارغ = توليد تلقائي فريد من 6 أرقام',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: agencyId,
+                  keyboardType: TextInputType.number,
+                  maxLength: 8,
+                  decoration: const InputDecoration(
+                    labelText: 'Agency ID — اختياري',
+                    hintText: 'فارغ = توليد تلقائي فريد من 6 أرقام',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('إنشاء'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('إلغاء'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('إنشاء'),
-          ),
-        ],
       ),
     );
+
     final payload = {
       'name': name.text.trim(),
-      'country': country.text.trim(),
+      'country': selectedCountry?.nameAr ?? '',
       'ownerPublicId': ownerPublicId.text.trim(),
       'agencyId': agencyId.text.trim(),
     };
     name.dispose();
-    country.dispose();
     ownerPublicId.dispose();
     agencyId.dispose();
+
     if (accepted != true || busy) return;
     if ((payload['name'] ?? '').isEmpty ||
         !RegExp(r'^\d{3,8}$').hasMatch(payload['ownerPublicId'] ?? '') ||
@@ -735,11 +791,16 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
             !RegExp(r'^\d{3,8}$').hasMatch(payload['agencyId'] ?? ''))) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تحقق من الاسم، User Public ID (3–8)، وAgency ID (3–8 أو فارغ للتوليد 6).')),
+          const SnackBar(
+            content: Text(
+              'تحقق من الاسم، User Public ID (3–8)، وAgency ID (3–8 أو فارغ للتوليد 6).',
+            ),
+          ),
         );
       }
       return;
     }
+
     setState(() => busy = true);
     try {
       final body = await post({
@@ -750,7 +811,9 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('تم إنشاء الوكالة مباشرة — ID ${(body['agencyId'] ?? '').toString()}'),
+          content: Text(
+            'تم إنشاء الوكالة مباشرة — ID ${(body['agencyId'] ?? '').toString()}',
+          ),
         ),
       );
       await load();
@@ -797,10 +860,60 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
                       leading: Icon(Icons.security),
                       title: Text('طلبات إنشاء الوكالات'),
                       subtitle: Text(
-                        'القائمة محدودة Server-side. الموافقة تنشئ Agency ID فريد وعضوية Owner فقط؛ الـ5 Hosts لا يُضافون تلقائيًا.',
+                        'القائمة محدودة Server-side. عند الموافقة تُنشأ الوكالة ويُضاف كل Host محجوز تلقائيًا كعضو Host.',
                       ),
                     ),
                   ),
+                  if (canSetApplicationHostCount) ...[
+                    const SizedBox(height: 12),
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const Text(
+                              'عدد المضيفين في طلب إنشاء الوكالة',
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            const Text(
+                              'يمكن ضبط العدد من 0 إلى 30. التغيير يطبق على الطلبات الجديدة؛ الطلب الذي بدأ حجز مضيفيه يحتفظ بعدده.',
+                            ),
+                            const SizedBox(height: 12),
+                            DropdownButtonFormField<int>(
+                              initialValue: applicationHostCount,
+                              decoration: const InputDecoration(
+                                labelText: 'عدد المضيفين المطلوب',
+                                border: OutlineInputBorder(),
+                              ),
+                              items: [
+                                for (var value = 0; value <= 30; value += 1)
+                                  DropdownMenuItem<int>(
+                                    value: value,
+                                    child: Text(
+                                      value == 0
+                                          ? '0 — بدون مضيفين'
+                                          : value.toString(),
+                                    ),
+                                  ),
+                              ],
+                              onChanged: busy
+                                  ? null
+                                  : (value) {
+                                      if (value != null) {
+                                        saveApplicationHostCount(value);
+                                      }
+                                    },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                   if (canManageExisting) ...[
                     Card(
                       child: Padding(

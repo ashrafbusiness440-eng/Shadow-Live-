@@ -6,6 +6,7 @@ import {
   isTransientFirestoreError,
 } from "./firestore.js";
 import {
+  AGENCY_LIMITS,
   createAgencyApplicationDocument,
   normalizeApplicationHostIds,
 } from "./agency-data-model.js";
@@ -56,13 +57,25 @@ function activeMembership(snapshot) {
 function activeApplicationLock(snapshot) {
   if (!snapshot?.exists) return false;
   const status = clean(snapshot.data?.status);
-  return status === "pending" || status === "under_review";
+  return ["draft", "reserved", "pending", "under_review"].includes(status);
 }
 
-function assertApplicantLockAllowsSubmit(lockSnap, applicantUid, nowMs) {
+function assertApplicantLockAllowsSubmit(
+  lockSnap,
+  applicantUid,
+  nowMs,
+  applicationId = null,
+) {
   if (!lockSnap?.exists) return;
   const lock = lockSnap.data || {};
   const status = clean(lock.status);
+
+  if (status === "draft") {
+    if (applicationId && clean(lock.applicationId) === applicationId) return;
+    throw new ApiError("agency_application_participation_conflict", 409, {
+      applicationId: clean(lock.applicationId) || null,
+    });
+  }
 
   if (status === "pending" || status === "under_review") {
     const code = clean(lock.applicantUid) === applicantUid
@@ -113,6 +126,404 @@ function applicationFingerprint({ name, country, hostIds }) {
   });
 }
 
+
+function requiredHostCountFromSnapshot(snapshot) {
+  const raw = snapshot?.exists
+    ? Number(snapshot.data?.requiredHostCount)
+    : AGENCY_LIMITS.applicationHostIds;
+  if (
+    !Number.isInteger(raw) ||
+    raw < AGENCY_LIMITS.minApplicationHostIds ||
+    raw > AGENCY_LIMITS.maxApplicationHostIds
+  ) {
+    return AGENCY_LIMITS.applicationHostIds;
+  }
+  return raw;
+}
+
+function profileSnapshot(userSnap, hostId, uid) {
+  const user = userSnap?.data || {};
+  const displayName = clean(
+    user.displayName ||
+      user.name ||
+      user.username ||
+      user.nickname ||
+      user.fullName ||
+      hostId,
+  );
+  const photoUrl = clean(
+    user.photoUrl ||
+      user.photoURL ||
+      user.avatarUrl ||
+      user.avatarURL ||
+      user.profileImageUrl ||
+      user.profileImage,
+  );
+  return {
+    uid,
+    publicId: hostId,
+    displayName,
+    photoUrl: photoUrl || null,
+  };
+}
+
+function sameApplicationLock(lockSnap, applicationId) {
+  return (
+    lockSnap?.exists &&
+    clean(lockSnap.data?.applicationId) === clean(applicationId)
+  );
+}
+
+export async function reserveAgencyApplicationHost(
+  db,
+  applicantUidInput,
+  body = {},
+  { now = new Date() } = {},
+) {
+  const applicantUid = clean(applicantUidInput);
+  const hostId = clean(body.hostId);
+  const key = clean(body.idempotencyKey);
+  if (!applicantUid || !validIdempotencyKey(key)) {
+    throw new ApiError("invalid_request", 400);
+  }
+  if (!/^\d{3,8}$/.test(hostId)) {
+    throw new ApiError("invalid_agency_application_host_id", 400);
+  }
+
+  const applicationId = applicationIdFor(applicantUid, key);
+  const applicantLockPath = `agency_application_locks/${applicantUid}`;
+  const nowDate = now instanceof Date ? now : new Date(now);
+  const nowMs = nowDate.getTime();
+  if (!Number.isFinite(nowMs)) throw new ApiError("invalid_request", 400);
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const transaction = await db.beginTransaction();
+    try {
+      const [
+        settingsSnap,
+        applicantSnap,
+        applicantMembershipSnap,
+        applicantLockSnap,
+        publicIdSnap,
+      ] = await Promise.all([
+        db.get("system_config/agency_application", transaction),
+        db.get(`users/${applicantUid}`, transaction),
+        db.get(`agency_user_memberships/${applicantUid}`, transaction),
+        db.get(applicantLockPath, transaction),
+        db.get(`public_ids/${hostId}`, transaction),
+      ]);
+
+      if (!accountAvailableForAgency(applicantSnap)) {
+        throw new ApiError(
+          applicantSnap.exists ? "applicant_unavailable" : "applicant_not_found",
+          applicantSnap.exists ? 409 : 404,
+        );
+      }
+      if (userAlreadyInAgency(applicantSnap, applicantMembershipSnap)) {
+        throw new ApiError("applicant_already_in_agency", 409);
+      }
+      assertApplicantLockAllowsSubmit(
+        applicantLockSnap,
+        applicantUid,
+        nowMs,
+        applicationId,
+      );
+
+      const hostUid = clean(publicIdSnap.data?.uid);
+      if (!publicIdSnap.exists || !hostUid) {
+        throw new ApiError("agency_host_id_not_found", 404, { hostId });
+      }
+      if (hostUid === applicantUid) {
+        throw new ApiError("applicant_cannot_be_application_host", 409);
+      }
+
+      const [hostUserSnap, hostMembershipSnap, hostLockSnap] = await Promise.all([
+        db.get(`users/${hostUid}`, transaction),
+        db.get(`agency_user_memberships/${hostUid}`, transaction),
+        db.get(`agency_application_locks/${hostUid}`, transaction),
+      ]);
+      if (!accountAvailableForAgency(hostUserSnap)) {
+        throw new ApiError("agency_host_unavailable", 409, { hostId });
+      }
+      if (userAlreadyInAgency(hostUserSnap, hostMembershipSnap)) {
+        throw new ApiError("agency_host_already_in_agency", 409, { hostId });
+      }
+
+      if (activeApplicationLock(hostLockSnap)) {
+        if (
+          sameApplicationLock(hostLockSnap, applicationId) &&
+          clean(hostLockSnap.data?.hostPublicId) === hostId
+        ) {
+          const profile = profileSnapshot(hostUserSnap, hostId, hostUid);
+          await db.rollback(transaction);
+          return {
+            ok: true,
+            code: "duplicate",
+            applicationId,
+            requiredHostCount: Number(
+              applicantLockSnap.data?.requiredHostCount ??
+                requiredHostCountFromSnapshot(settingsSnap),
+            ),
+            host: profile,
+          };
+        }
+        throw new ApiError("agency_host_application_conflict", 409, { hostId });
+      }
+
+      const existingDraft =
+        applicantLockSnap.exists &&
+        clean(applicantLockSnap.data?.status) === "draft" &&
+        sameApplicationLock(applicantLockSnap, applicationId);
+      const requiredHostCount = existingDraft
+        ? Number(applicantLockSnap.data?.requiredHostCount)
+        : requiredHostCountFromSnapshot(settingsSnap);
+      if (
+        !Number.isInteger(requiredHostCount) ||
+        requiredHostCount < AGENCY_LIMITS.minApplicationHostIds ||
+        requiredHostCount > AGENCY_LIMITS.maxApplicationHostIds
+      ) {
+        throw new ApiError("invalid_agency_application_host_count", 409);
+      }
+      if (requiredHostCount === 0) {
+        throw new ApiError("agency_application_hosts_not_required", 409);
+      }
+
+      const hostIds = existingDraft && Array.isArray(applicantLockSnap.data?.hostIds)
+        ? applicantLockSnap.data.hostIds.map(clean).filter(Boolean)
+        : [];
+      const hostUids = existingDraft && Array.isArray(applicantLockSnap.data?.hostUids)
+        ? applicantLockSnap.data.hostUids.map(clean).filter(Boolean)
+        : [];
+      const hostProfiles =
+        existingDraft && Array.isArray(applicantLockSnap.data?.hostProfiles)
+          ? applicantLockSnap.data.hostProfiles
+              .filter((item) => item && typeof item === "object")
+              .map((item) => ({ ...item }))
+          : [];
+
+      if (hostIds.includes(hostId) || hostUids.includes(hostUid)) {
+        throw new ApiError("duplicate_agency_application_host", 409, { hostId });
+      }
+      if (hostIds.length >= requiredHostCount) {
+        throw new ApiError("agency_application_host_limit_reached", 409, {
+          requiredHostCount,
+        });
+      }
+
+      const profile = profileSnapshot(hostUserSnap, hostId, hostUid);
+      const nextHostIds = [...hostIds, hostId];
+      const nextHostUids = [...hostUids, hostUid];
+      const nextHostProfiles = [...hostProfiles, profile];
+      const applicantDraftFields = {
+        applicationId,
+        applicantUid,
+        participantType: "applicant",
+        status: "draft",
+        reservationKey: key,
+        requiredHostCount,
+        hostIds: nextHostIds,
+        hostUids: nextHostUids,
+        hostProfiles: nextHostProfiles,
+        reapplyMode: null,
+        reapplyAllowedAt: null,
+        rejectedAt: null,
+        rejectedBy: null,
+        rejectionReason: null,
+        updatedAt: nowDate,
+      };
+      const hostReservationFields = {
+        applicationId,
+        applicantUid,
+        participantType: "host_candidate",
+        hostUid,
+        hostPublicId: hostId,
+        status: "reserved",
+        reservationKey: key,
+        requiredHostCount,
+        reservedAt: nowDate,
+        updatedAt: nowDate,
+      };
+
+      const writes = [
+        applicantLockSnap.exists
+          ? db.writeUpdate(
+              applicantLockPath,
+              applicantDraftFields,
+              Object.keys(applicantDraftFields),
+            )
+          : db.writeCreate(applicantLockPath, {
+              ...applicantDraftFields,
+              createdAt: nowDate,
+            }),
+        hostLockSnap.exists
+          ? db.writeUpdate(
+              `agency_application_locks/${hostUid}`,
+              hostReservationFields,
+              Object.keys(hostReservationFields),
+            )
+          : db.writeCreate(`agency_application_locks/${hostUid}`, {
+              ...hostReservationFields,
+              createdAt: nowDate,
+            }),
+      ];
+      await db.commit(transaction, writes);
+      return {
+        ok: true,
+        code: "ok",
+        applicationId,
+        requiredHostCount,
+        host: profile,
+      };
+    } catch (error) {
+      await db.rollback(transaction);
+      if (error instanceof ApiError) throw error;
+      if (isTransientFirestoreError(error) && attempt < 2) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, firestoreErrorRetryDelayMs(attempt))
+        );
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new ApiError("transaction_failed", 500);
+}
+
+
+export async function releaseAgencyApplicationHost(
+  db,
+  applicantUidInput,
+  body = {},
+  { now = new Date() } = {},
+) {
+  const applicantUid = clean(applicantUidInput);
+  const hostId = clean(body.hostId);
+  const key = clean(body.idempotencyKey);
+  if (!applicantUid || !validIdempotencyKey(key)) {
+    throw new ApiError("invalid_request", 400);
+  }
+  if (!/^\d{3,8}$/.test(hostId)) {
+    throw new ApiError("invalid_agency_application_host_id", 400);
+  }
+
+  const applicationId = applicationIdFor(applicantUid, key);
+  const applicantLockPath = `agency_application_locks/${applicantUid}`;
+  const nowDate = now instanceof Date ? now : new Date(now);
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const transaction = await db.beginTransaction();
+    try {
+      const applicantLockSnap = await db.get(
+        applicantLockPath,
+        transaction,
+      );
+      if (
+        !applicantLockSnap.exists ||
+        clean(applicantLockSnap.data?.status) !== "draft" ||
+        !sameApplicationLock(applicantLockSnap, applicationId)
+      ) {
+        throw new ApiError("agency_application_draft_not_editable", 409);
+      }
+
+      const lock = applicantLockSnap.data || {};
+      const reservedIds = Array.isArray(lock.hostIds)
+        ? lock.hostIds.map(clean)
+        : [];
+      const reservedUids = Array.isArray(lock.hostUids)
+        ? lock.hostUids.map(clean)
+        : [];
+      const reservedIndex = reservedIds.indexOf(hostId);
+      if (
+        reservedIndex < 0 ||
+        reservedIndex >= reservedUids.length ||
+        !reservedUids[reservedIndex]
+      ) {
+        await db.rollback(transaction);
+        return {
+          ok: true,
+          code: "already_released",
+          applicationId,
+          hostId,
+        };
+      }
+      const hostUid = reservedUids[reservedIndex];
+      const hostLockPath = `agency_application_locks/${hostUid}`;
+      const hostLockSnap = await db.get(hostLockPath, transaction);
+      if (
+        !hostLockSnap.exists ||
+        !sameApplicationLock(hostLockSnap, applicationId) ||
+        clean(hostLockSnap.data?.hostPublicId) !== hostId
+      ) {
+        await db.rollback(transaction);
+        return {
+          ok: true,
+          code: "already_released",
+          applicationId,
+          hostId,
+        };
+      }
+      if (clean(hostLockSnap.data?.status) !== "reserved") {
+        throw new ApiError("agency_host_reservation_not_editable", 409, {
+          hostId,
+        });
+      }
+
+      const hostIds = Array.isArray(lock.hostIds)
+        ? lock.hostIds.map(clean).filter((value) => value && value !== hostId)
+        : [];
+      const hostUids = Array.isArray(lock.hostUids)
+        ? lock.hostUids.map(clean).filter((value) => value && value !== hostUid)
+        : [];
+      const hostProfiles = Array.isArray(lock.hostProfiles)
+        ? lock.hostProfiles.filter((item) => {
+            if (!item || typeof item !== "object") return false;
+            return clean(item.uid) !== hostUid && clean(item.publicId) !== hostId;
+          })
+        : [];
+
+      await db.commit(transaction, [
+        db.writeUpdate(
+          applicantLockPath,
+          {
+            hostIds,
+            hostUids,
+            hostProfiles,
+            updatedAt: nowDate,
+          },
+          ["hostIds", "hostUids", "hostProfiles", "updatedAt"],
+        ),
+        db.writeUpdate(
+          hostLockPath,
+          {
+            status: "released",
+            releasedAt: nowDate,
+            updatedAt: nowDate,
+          },
+          ["status", "releasedAt", "updatedAt"],
+        ),
+      ]);
+
+      return {
+        ok: true,
+        code: "ok",
+        applicationId,
+        hostId,
+      };
+    } catch (error) {
+      await db.rollback(transaction);
+      if (error instanceof ApiError) throw error;
+      if (isTransientFirestoreError(error) && attempt < 2) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, firestoreErrorRetryDelayMs(attempt))
+        );
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new ApiError("transaction_failed", 500);
+}
+
 export async function submitAgencyApplication(
   db,
   applicantUidInput,
@@ -125,7 +536,10 @@ export async function submitAgencyApplication(
   const key = clean(body.idempotencyKey);
   let hostIds;
   try {
-    hostIds = normalizeApplicationHostIds(body.hostIds);
+    if (!Array.isArray(body.hostIds)) {
+      throw new Error("invalid_agency_application_hosts");
+    }
+    hostIds = normalizeApplicationHostIds(body.hostIds, body.hostIds.length);
   } catch (error) {
     throw new ApiError(clean(error?.message) || "invalid_agency_application_hosts", 400);
   }
@@ -160,15 +574,13 @@ export async function submitAgencyApplication(
         applicantSnap,
         applicantMembershipSnap,
         applicantLockSnap,
-        ...publicIdSnaps
+        settingsSnap,
       ] = await Promise.all([
         db.get(operationPath, transaction),
         db.get(`users/${applicantUid}`, transaction),
         db.get(applicantMembershipPath, transaction),
         db.get(applicantLockPath, transaction),
-        ...hostIds.map((hostId) =>
-          db.get(`public_ids/${hostId}`, transaction)
-        ),
+        db.get("system_config/agency_application", transaction),
       ]);
 
       if (operationSnap.exists) {
@@ -198,22 +610,73 @@ export async function submitAgencyApplication(
         applicantLockSnap,
         applicantUid,
         nowMs,
+        applicationId,
       );
 
-      const hostUids = publicIdSnaps.map((snap, index) => {
-        if (!snap.exists) {
-          throw new ApiError("agency_host_id_not_found", 404, {
-            hostId: hostIds[index],
-          });
+      const draftForThisApplication =
+        applicantLockSnap.exists &&
+        clean(applicantLockSnap.data?.status) === "draft" &&
+        sameApplicationLock(applicantLockSnap, applicationId);
+      const requiredHostCount = draftForThisApplication
+        ? Number(applicantLockSnap.data?.requiredHostCount)
+        : requiredHostCountFromSnapshot(settingsSnap);
+      if (
+        !Number.isInteger(requiredHostCount) ||
+        requiredHostCount < AGENCY_LIMITS.minApplicationHostIds ||
+        requiredHostCount > AGENCY_LIMITS.maxApplicationHostIds ||
+        hostIds.length !== requiredHostCount
+      ) {
+        throw new ApiError("invalid_agency_application_hosts", 400, {
+          requiredHostCount,
+        });
+      }
+
+      let hostUids;
+      if (draftForThisApplication) {
+        const draftHostIds = Array.isArray(applicantLockSnap.data?.hostIds)
+          ? applicantLockSnap.data.hostIds.map(clean)
+          : [];
+        const draftHostUids = Array.isArray(applicantLockSnap.data?.hostUids)
+          ? applicantLockSnap.data.hostUids.map(clean)
+          : [];
+        if (
+          draftHostIds.length !== requiredHostCount ||
+          draftHostUids.length !== requiredHostCount ||
+          new Set(draftHostIds).size !== draftHostIds.length ||
+          new Set(draftHostUids).size !== draftHostUids.length
+        ) {
+          throw new ApiError("agency_host_reservation_missing", 409);
         }
-        const uid = clean(snap.data?.uid);
-        if (!uid) {
-          throw new ApiError("agency_host_id_not_found", 404, {
-            hostId: hostIds[index],
-          });
-        }
-        return uid;
-      });
+        hostUids = hostIds.map((hostId) => {
+          const index = draftHostIds.indexOf(hostId);
+          if (index < 0 || !draftHostUids[index]) {
+            throw new ApiError("agency_host_reservation_missing", 409, {
+              hostId,
+            });
+          }
+          return draftHostUids[index];
+        });
+      } else {
+        const publicIdSnaps = await Promise.all(
+          hostIds.map((hostId) =>
+            db.get(`public_ids/${hostId}`, transaction)
+          ),
+        );
+        hostUids = publicIdSnaps.map((snap, index) => {
+          if (!snap.exists) {
+            throw new ApiError("agency_host_id_not_found", 404, {
+              hostId: hostIds[index],
+            });
+          }
+          const uid = clean(snap.data?.uid);
+          if (!uid) {
+            throw new ApiError("agency_host_id_not_found", 404, {
+              hostId: hostIds[index],
+            });
+          }
+          return uid;
+        });
+      }
       if (new Set(hostUids).size !== hostUids.length) {
         throw new ApiError("duplicate_agency_application_host", 400);
       }
@@ -243,12 +706,35 @@ export async function submitAgencyApplication(
             hostId: hostIds[index],
           });
         }
-        if (activeApplicationLock(lockSnap)) {
+        if (
+          activeApplicationLock(lockSnap) &&
+          !sameApplicationLock(lockSnap, applicationId)
+        ) {
           throw new ApiError("agency_host_application_conflict", 409, {
             hostId: hostIds[index],
           });
         }
+        if (
+          draftForThisApplication &&
+          (
+            !lockSnap.exists ||
+            clean(lockSnap.data?.status) !== "reserved" ||
+            !sameApplicationLock(lockSnap, applicationId)
+          )
+        ) {
+          throw new ApiError("agency_host_reservation_missing", 409, {
+            hostId: hostIds[index],
+          });
+        }
       }
+
+      const hostProfiles = hostUids.map((uid, index) =>
+        profileSnapshot(
+          hostState[index * 3],
+          hostIds[index],
+          uid,
+        )
+      );
 
       const application = createAgencyApplicationDocument({
         applicationId,
@@ -257,6 +743,7 @@ export async function submitAgencyApplication(
         requestedPublicId: null,
         hostIds,
         hostUids,
+        requiredHostCount,
         country,
         reapplyMode: null,
         now: nowDate,
@@ -267,12 +754,14 @@ export async function submitAgencyApplication(
         name,
         country,
         hostIds,
+        requiredHostCount,
       };
 
       const writes = [
         db.writeCreate(applicationPath, {
           ...application,
           applicantPublicId: clean(applicantSnap.data?.publicId) || null,
+          hostProfiles,
         }),
         applicantLockSnap.exists
           ? db.writeUpdate(applicantLockPath, {
@@ -285,6 +774,7 @@ export async function submitAgencyApplication(
               rejectedAt: null,
               rejectedBy: null,
               rejectionReason: null,
+              requiredHostCount,
               updatedAt: nowDate,
             }, [
               "applicationId",
@@ -296,6 +786,7 @@ export async function submitAgencyApplication(
               "rejectedAt",
               "rejectedBy",
               "rejectionReason",
+              "requiredHostCount",
               "updatedAt",
             ])
           : db.writeCreate(applicantLockPath, {
@@ -308,6 +799,7 @@ export async function submitAgencyApplication(
               rejectedAt: null,
               rejectedBy: null,
               rejectionReason: null,
+              requiredHostCount,
               createdAt: nowDate,
               updatedAt: nowDate,
             }),
@@ -320,6 +812,7 @@ export async function submitAgencyApplication(
             hostUid: uid,
             hostPublicId: hostIds[index],
             status: "pending",
+            requiredHostCount,
             reapplyMode: null,
             reapplyAllowedAt: null,
             rejectedAt: null,
@@ -397,7 +890,11 @@ export async function getAgencyApplicationStatus(
 ) {
   const applicantUid = clean(applicantUidInput);
   if (!applicantUid) throw new ApiError("invalid_applicant", 400);
-  const lockSnap = await db.get(`agency_application_locks/${applicantUid}`);
+  const [lockSnap, settingsSnap] = await Promise.all([
+    db.get(`agency_application_locks/${applicantUid}`),
+    db.get("system_config/agency_application"),
+  ]);
+  const configuredHostCount = requiredHostCountFromSnapshot(settingsSnap);
   if (!lockSnap.exists) {
     return {
       ok: true,
@@ -408,6 +905,9 @@ export async function getAgencyApplicationStatus(
       reapplyAllowedAt: null,
       remainingSeconds: 0,
       rejectionReason: null,
+      requiredHostCount: configuredHostCount,
+      reservedHosts: [],
+      reservationKey: null,
     };
   }
   const lock = lockSnap.data || {};
@@ -419,6 +919,13 @@ export async function getAgencyApplicationStatus(
     ? applicationSnap.data || {}
     : {};
   const status = clean(application.status || lock.status || "none");
+  const storedRequiredHostCount = Number.isInteger(Number(
+    application.requiredHostCount ?? lock.requiredHostCount,
+  ))
+    ? Number(application.requiredHostCount ?? lock.requiredHostCount)
+    : configuredHostCount;
+  const requiredHostCount =
+    status === "rejected" ? configuredHostCount : storedRequiredHostCount;
   const reapplyMode = clean(
     application.reapplyMode || lock.reapplyMode,
   ) || null;
@@ -455,6 +962,21 @@ export async function getAgencyApplicationStatus(
     rejectionReason:
       clean(application.rejectionReason || lock.rejectionReason) || null,
     rejectedAt: application.rejectedAt || lock.rejectedAt || null,
+    requiredHostCount,
+    reservationKey: status === "draft"
+      ? clean(lock.reservationKey) || null
+      : null,
+    reservedHosts:
+      status === "draft" && Array.isArray(lock.hostProfiles)
+        ? lock.hostProfiles
+            .filter((item) => item && typeof item === "object")
+            .map((item) => ({
+              uid: clean(item.uid),
+              publicId: clean(item.publicId),
+              displayName: clean(item.displayName),
+              photoUrl: clean(item.photoUrl) || null,
+            }))
+        : [],
   };
 }
 
@@ -482,6 +1004,22 @@ export async function agencyApplication(request, env) {
       const result = await getAgencyApplicationStatus(
         firestoreClient(env),
         decoded.sub,
+      );
+      return json(request, env, result);
+    }
+    if (action === "reserveHost") {
+      const result = await reserveAgencyApplicationHost(
+        firestoreClient(env),
+        decoded.sub,
+        body,
+      );
+      return json(request, env, result);
+    }
+    if (action === "releaseHost") {
+      const result = await releaseAgencyApplicationHost(
+        firestoreClient(env),
+        decoded.sub,
+        body,
       );
       return json(request, env, result);
     }

@@ -57,8 +57,7 @@ void main() {
     service.close();
   });
 
-  test('submit sends exactly the user draft and a valid idempotency key',
-      () async {
+  test('submit reuses the draft reservation key', () async {
     late Map<String, dynamic> payload;
     final service = AgencyApplicationService(
       baseUrl: 'https://example.invalid/api',
@@ -81,6 +80,7 @@ void main() {
               '310004',
               '310005',
             ],
+            'requiredHostCount': 5,
           }),
           200,
         );
@@ -97,6 +97,7 @@ void main() {
         '310004',
         '310005',
       ],
+      idempotencyKey: 'agency_apply_1234567890123',
     );
 
     expect(payload['action'], 'submit');
@@ -109,12 +110,52 @@ void main() {
       '310004',
       '310005',
     ]);
-    expect(
-      (payload['idempotencyKey'] as String),
-      matches(RegExp(r'^agency_apply_\d{10,}$')),
-    );
+    expect(payload['idempotencyKey'], 'agency_apply_1234567890123');
     expect(result.applicationId, 'app_3');
     expect(result.hostIds.length, 5);
+    expect(result.requiredHostCount, 5);
+
+    service.close();
+  });
+
+  test('reserveHost returns verified host profile and uses the same draft key',
+      () async {
+    late Map<String, dynamic> payload;
+    final service = AgencyApplicationService(
+      baseUrl: 'https://example.invalid/api',
+      tokenProvider: () async => 'token-123',
+      client: MockClient((request) async {
+        payload = Map<String, dynamic>.from(
+          jsonDecode(request.body) as Map,
+        );
+        return http.Response(
+          jsonEncode({
+            'ok': true,
+            'applicationId': 'app_draft',
+            'requiredHostCount': 7,
+            'host': {
+              'uid': 'uid-1',
+              'publicId': '123',
+              'displayName': 'Host One',
+              'photoUrl': 'https://example.invalid/a.webp',
+            },
+          }),
+          200,
+        );
+      }),
+    );
+
+    final result = await service.reserveHost(
+      hostId: '123',
+      idempotencyKey: 'agency_apply_1234567890123',
+    );
+
+    expect(payload['action'], 'reserveHost');
+    expect(payload['hostId'], '123');
+    expect(payload['idempotencyKey'], 'agency_apply_1234567890123');
+    expect(result.requiredHostCount, 7);
+    expect(result.host.publicId, '123');
+    expect(result.host.displayName, 'Host One');
 
     service.close();
   });

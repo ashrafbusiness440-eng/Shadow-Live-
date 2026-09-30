@@ -121,7 +121,7 @@ test("24h rejection records reason deadline audit notification and releases host
     operation,
     audit,
     notification,
-    ...hostLocks
+    ...hostState
   ] = await Promise.all([
     adminDb.collection("agency_applications").doc(seeded.applicationId).get(),
     adminDb.collection("agency_application_locks").doc(seeded.ownerUid).get(),
@@ -131,9 +131,12 @@ test("24h rejection records reason deadline audit notification and releases host
       .doc("agency_application_reject_" + seeded.applicationId).get(),
     adminDb.collection("notifications")
       .doc("agency_application_rejected_" + seeded.applicationId).get(),
-    ...seeded.hostUids.map((uid) =>
-      adminDb.collection("agency_application_locks").doc(uid).get()
-    ),
+    ...seeded.hostUids.flatMap((uid) => [
+      adminDb.collection("agency_application_locks").doc(uid).get(),
+      adminDb.collection("notifications")
+        .doc("agency_application_host_rejected_" + seeded.applicationId + "_" + uid)
+        .get(),
+    ]),
   ]);
 
   assert.equal(application.data().status, "rejected");
@@ -147,10 +150,18 @@ test("24h rejection records reason deadline audit notification and releases host
   assert.equal(notification.data().userId, seeded.ownerUid);
   assert.equal(notification.data().type, "agency_application_rejected");
   assert.equal(notification.data().read, false);
-  for (const lock of hostLocks) {
+  for (let index = 0; index < hostState.length; index += 2) {
+    const lock = hostState[index];
+    const hostNotification = hostState[index + 1];
     assert.equal(lock.data().status, "released");
     assert.equal(lock.data().reapplyMode, null);
     assert.equal(lock.data().reapplyAllowedAt, null);
+    assert.equal(hostNotification.exists, true);
+    assert.equal(
+      hostNotification.data().type,
+      "agency_application_host_rejected",
+    );
+    assert.equal(hostNotification.data().read, false);
   }
 
   const statusBefore = await getAgencyApplicationStatus(

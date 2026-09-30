@@ -7,7 +7,9 @@ import { submitAgencyApplication } from "../../cloudflare-worker/src/agency-appl
 import {
   approveAgencyApplication,
   directCreateAgency,
+  getAgencyApplicationSettings,
   listAgencyReviewQueue,
+  setAgencyApplicationHostCount,
   startAgencyReview,
 } from "../../cloudflare-worker/src/agency-control.js";
 import { cloudflareFirestoreAdapter } from "./helpers/cloudflare-firestore-adapter.js";
@@ -52,6 +54,112 @@ async function seedApplication(prefix, ownerPublicId, hostIds) {
   return { ownerUid, hostUids, applicationId: result.applicationId };
 }
 
+test("Shadow Control can configure application hosts from 0 to 30", async () => {
+  const changed = await setAgencyApplicationHostCount(
+    db,
+    "control_owner_stage03b",
+    {
+      requiredHostCount: 7,
+      idempotencyKey: "stage03b_host_count_set_0001",
+    },
+    { now: new Date("2026-09-28T15:30:00.000Z") },
+  );
+  assert.equal(changed.requiredHostCount, 7);
+  assert.equal((await getAgencyApplicationSettings(db)).requiredHostCount, 7);
+
+  await assert.rejects(
+    setAgencyApplicationHostCount(db, "control_owner_stage03b", {
+      requiredHostCount: 31,
+      idempotencyKey: "stage03b_host_count_invalid_0001",
+    }),
+    /invalid_agency_application_host_count/,
+  );
+
+  const restored = await setAgencyApplicationHostCount(
+    db,
+    "control_owner_stage03b",
+    {
+      requiredHostCount: 5,
+      idempotencyKey: "stage03b_host_count_restore_0001",
+    },
+  );
+  assert.equal(restored.requiredHostCount, 5);
+});
+
+test("Control can set required application hosts from 0 to 30", async () => {
+  const actorUid = "owner_stage03_settings";
+  const zero = await setAgencyApplicationHostCount(
+    db,
+    actorUid,
+    {
+      requiredHostCount: 0,
+      idempotencyKey: "stage03_settings_zero_0001",
+    },
+    { now: new Date("2026-09-28T15:30:00.000Z") },
+  );
+  assert.equal(zero.requiredHostCount, 0);
+  assert.equal((await getAgencyApplicationSettings(db)).requiredHostCount, 0);
+
+  const thirty = await setAgencyApplicationHostCount(
+    db,
+    actorUid,
+    {
+      requiredHostCount: 30,
+      idempotencyKey: "stage03_settings_thirty_0001",
+    },
+    { now: new Date("2026-09-28T15:31:00.000Z") },
+  );
+  assert.equal(thirty.requiredHostCount, 30);
+  assert.equal((await getAgencyApplicationSettings(db)).requiredHostCount, 30);
+
+  await assert.rejects(
+    setAgencyApplicationHostCount(db, actorUid, {
+      requiredHostCount: 31,
+      idempotencyKey: "stage03_settings_invalid_0001",
+    }),
+    /invalid_agency_application_host_count/,
+  );
+
+  await adminDb.collection("system_config").doc("agency_application").delete();
+});
+
+test("zero-host applications approve without synthetic host memberships", async () => {
+  await adminDb.collection("system_config").doc("agency_application").set({
+    requiredHostCount: 0,
+  });
+  const ownerUid = "stage03b_zero_approve_owner";
+  await seedUser(ownerUid, "323990");
+  const submitted = await submitAgencyApplication(
+    db,
+    ownerUid,
+    {
+      name: "Zero Host Approval",
+      hostIds: [],
+      idempotencyKey: "stage03b_zero_submit_0001",
+    },
+    { now: new Date("2026-09-28T15:40:00.000Z") },
+  );
+
+  const approved = await approveAgencyApplication(
+    db,
+    "reviewer_stage03b",
+    {
+      applicationId: submitted.applicationId,
+      idempotencyKey: "stage03b_zero_approve_0001",
+    },
+    {
+      now: new Date("2026-09-28T15:41:00.000Z"),
+      agencyIdCandidates: ["623990"],
+    },
+  );
+  assert.equal(approved.hostCount, 0);
+  const agency = await adminDb.collection("agencies").doc("623990").get();
+  assert.equal(agency.data().memberCount, 1);
+  assert.equal(agency.data().hostCount, 0);
+
+  await adminDb.collection("system_config").doc("agency_application").delete();
+});
+
 test("review queue stays bounded and includes pending and under review applications", async () => {
   const first = await seedApplication(
     "stage03b_queue_a",
@@ -73,7 +181,7 @@ test("review queue stays bounded and includes pending and under review applicati
   assert.ok(rows.some((row) => row.applicationId === second.applicationId && row.status === "under_review"));
 });
 
-test("approval creates unique agency owner membership wallet and preserves host candidates as non members", async () => {
+test("approval creates the agency and auto-joins every reserved host", async () => {
   const seeded = await seedApplication(
     "stage03b_approve",
     "323901",
@@ -125,7 +233,12 @@ test("approval creates unique agency owner membership wallet and preserves host 
       .doc("agency_created_623001_stage03b_approve_operation_0001").get(),
     ...seeded.hostUids.flatMap((uid) => [
       adminDb.collection("agency_user_memberships").doc(uid).get(),
+      adminDb.collection("agency_memberships").doc("623001__" + uid).get(),
+      adminDb.collection("users").doc(uid).get(),
       adminDb.collection("agency_application_locks").doc(uid).get(),
+      adminDb.collection("notifications")
+        .doc("agency_application_host_approved_" + seeded.applicationId + "_" + uid)
+        .get(),
     ]),
   ]);
 
@@ -133,6 +246,9 @@ test("approval creates unique agency owner membership wallet and preserves host 
   assert.equal(agency.data().ownerUid, seeded.ownerUid);
   assert.equal(agency.data().publicId, "623001");
   assert.equal(agency.data().createdFrom, "application");
+  assert.equal(agency.data().memberCount, 6);
+  assert.equal(agency.data().hostCount, 5);
+  assert.equal(result.hostCount, 5);
   assert.equal(ownerMembership.data().role, "owner");
   assert.equal(userMembership.data().role, "owner");
   assert.deepEqual(managerSlots.data().managerUids, []);
@@ -148,10 +264,25 @@ test("approval creates unique agency owner membership wallet and preserves host 
   assert.equal(notification.data().type, "agency_application_approved");
   assert.equal(notification.data().read, false);
 
-  for (let i = 0; i < hostChecks.length; i += 2) {
-    assert.equal(hostChecks[i].exists, false);
-    assert.equal(hostChecks[i + 1].data().status, "approved");
-    assert.equal(hostChecks[i + 1].data().agencyId, "623001");
+  for (let i = 0; i < hostChecks.length; i += 5) {
+    const userMembership = hostChecks[i];
+    const agencyMembership = hostChecks[i + 1];
+    const user = hostChecks[i + 2];
+    const lock = hostChecks[i + 3];
+    const hostNotification = hostChecks[i + 4];
+    assert.equal(userMembership.exists, true);
+    assert.equal(userMembership.data().role, "host");
+    assert.equal(userMembership.data().status, "active");
+    assert.equal(userMembership.data().agencyId, "623001");
+    assert.equal(agencyMembership.exists, true);
+    assert.equal(agencyMembership.data().role, "host");
+    assert.equal(user.data().agencyId, "623001");
+    assert.equal(user.data().agencyRole, "host");
+    assert.equal(lock.data().status, "approved");
+    assert.equal(lock.data().agencyId, "623001");
+    assert.equal(hostNotification.exists, true);
+    assert.equal(hostNotification.data().type, "agency_application_host_approved");
+    assert.equal(hostNotification.data().read, false);
   }
 
   const duplicate = await approveAgencyApplication(db, "reviewer_stage03b", {
