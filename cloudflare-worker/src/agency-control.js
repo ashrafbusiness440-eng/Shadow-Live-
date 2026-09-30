@@ -11,6 +11,7 @@ import {
   createAgencyDocument,
   createAgencyManagerSlotsDocument,
   createAgencyMembershipDocument,
+  createAgencyStatusEventDocument,
 } from "./agency-data-model.js";
 import { platformAgencyPermissions } from "./agency-permissions.js";
 import {
@@ -951,6 +952,8 @@ function controlOperationFingerprint(action, payload = {}) {
     name: clean(payload.name),
     country: payload.country == null ? null : clean(payload.country),
     newOwnerPublicId: clean(payload.newOwnerPublicId),
+    status: clean(payload.status),
+    reason: clean(payload.reason),
   });
 }
 
@@ -1278,6 +1281,145 @@ export async function transferAgencyOwnership(
           createdAt: now,
         }),
       ]);
+      return { ok: true, code: "ok", ...result };
+    } catch (error) {
+      await db.rollback(tx);
+      if (error instanceof ApiError) throw error;
+      if (isTransientFirestoreError(error) && attempt < 2) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, firestoreErrorRetryDelayMs(attempt))
+        );
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new ApiError("transaction_failed", 500);
+}
+
+export async function changeAgencyStatus(
+  db,
+  actorUid,
+  body = {},
+  { now = new Date() } = {},
+) {
+  const agencyId = clean(body.agencyId);
+  const requestedStatus = clean(body.status);
+  const reason = clean(body.reason);
+  const key = clean(body.idempotencyKey);
+  if (!validAgencyId(agencyId)) throw new ApiError("invalid_agency_id", 400);
+  if (!["active", "suspended", "closed"].includes(requestedStatus)) {
+    throw new ApiError("invalid_agency_status", 400);
+  }
+  if (reason.length < 3 || reason.length > 500) {
+    throw new ApiError("agency_status_reason_required", 400);
+  }
+  if (!validIdempotencyKey(key)) throw new ApiError("invalid_idempotency_key", 400);
+
+  const operationPath = controlOperationPath(actorUid, key);
+  const fingerprint = controlOperationFingerprint("changeStatus", {
+    agencyId,
+    status: requestedStatus,
+    reason,
+  });
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const tx = await db.beginTransaction();
+    try {
+      const [operationSnap, agencySnap] = await Promise.all([
+        db.get(operationPath, tx),
+        db.get(`agencies/${agencyId}`, tx),
+      ]);
+      if (operationSnap.exists) {
+        const existing = operationSnap.data || {};
+        if (clean(existing.requestFingerprint) !== fingerprint) {
+          throw new ApiError("idempotency_conflict", 409);
+        }
+        await db.rollback(tx);
+        return { ok: true, code: "duplicate", ...(existing.result || {}) };
+      }
+      if (!agencySnap.exists) throw new ApiError("agency_not_found", 404);
+      const agency = agencySnap.data || {};
+      const previousStatus = clean(agency.status || "active");
+      if (previousStatus === "closed") throw new ApiError("agency_closed", 409);
+      if (previousStatus === requestedStatus) {
+        throw new ApiError("agency_status_unchanged", 409);
+      }
+      if (requestedStatus === "active" && previousStatus !== "suspended") {
+        throw new ApiError("agency_not_suspended", 409);
+      }
+
+      const eventType = requestedStatus === "active" ? "resume" :
+        requestedStatus === "suspended" ? "suspend" : "close";
+      const eventId = `${agencyId}_${eventType}_${key}`;
+      const ownerUid = clean(agency.ownerUid);
+      const result = { agencyId, status: requestedStatus, previousStatus };
+      const statusFields = requestedStatus === "active" ? {
+        status: "active",
+        suspendedAt: null,
+        suspendedBy: null,
+        suspensionReason: null,
+        updatedAt: now,
+      } : requestedStatus === "suspended" ? {
+        status: "suspended",
+        suspendedAt: now,
+        suspendedBy: actorUid,
+        suspensionReason: reason,
+        updatedAt: now,
+      } : {
+        status: "closed",
+        closedAt: now,
+        closedBy: actorUid,
+        closureReason: reason,
+        updatedAt: now,
+      };
+      const fieldMask = Object.keys(statusFields);
+      const writes = [
+        db.writeUpdate(`agencies/${agencyId}`, statusFields, fieldMask),
+        db.writeCreate(`agency_status_events/${eventId}`,
+          createAgencyStatusEventDocument({
+            eventId,
+            agencyId,
+            type: eventType,
+            reason,
+            actorUid,
+            now,
+          })),
+        db.writeCreate(operationPath, {
+          actorUid,
+          action: "changeAgencyStatus",
+          requestFingerprint: fingerprint,
+          status: "completed",
+          result,
+          createdAt: now,
+        }),
+        db.writeCreate(`admin_audit_logs/agency_status_${eventId}`, {
+          actorUid,
+          action: eventType === "resume" ? "resumeAgency" :
+            eventType === "suspend" ? "suspendAgency" : "closeAgency",
+          targetType: "agency",
+          targetId: agencyId,
+          before: { status: previousStatus },
+          after: { status: requestedStatus, reason },
+          idempotencyKey: key,
+          createdAt: now,
+        }),
+      ];
+      if (ownerUid) {
+        writes.push(db.writeCreate(`notifications/agency_status_${eventId}`, {
+          userId: ownerUid,
+          type: `agency_${eventType}`,
+          category: "system",
+          title: eventType === "resume" ? "تمت إعادة تفعيل الوكالة" :
+            eventType === "suspend" ? "تم تعليق الوكالة مؤقتًا" :
+              "تم إغلاق الوكالة نهائيًا",
+          body: reason,
+          read: false,
+          agencyId,
+          createdAt: now,
+        }));
+      }
+      await db.commit(tx, writes);
       return { ok: true, code: "ok", ...result };
     } catch (error) {
       await db.rollback(tx);
@@ -1811,6 +1953,8 @@ export async function agencyControl(request, env) {
           canTransferOwnership: actor.permissions.isOwner,
           canManagePolicies: actor.permissions.canManagePolicies,
           canManageMemberships: actor.permissions.canManageMemberships,
+          canSuspendAgencies: actor.permissions.canSuspendAgencies,
+          canCloseAgencies: actor.permissions.canCloseAgencies,
         },
       });
     }
@@ -1844,6 +1988,8 @@ export async function agencyControl(request, env) {
           canTransferOwnership: actor.permissions.isOwner,
           canManagePolicies: actor.permissions.canManagePolicies,
           canManageMemberships: actor.permissions.canManageMemberships,
+          canSuspendAgencies: actor.permissions.canSuspendAgencies,
+          canCloseAgencies: actor.permissions.canCloseAgencies,
         },
       });
     }
@@ -1854,6 +2000,15 @@ export async function agencyControl(request, env) {
     if (action === "transferOwnership") {
       if (!actor.permissions.isOwner) throw new ApiError("forbidden", 403);
       return json(request, env, await transferAgencyOwnership(db, decoded.sub, body));
+    }
+    if (action === "changeStatus") {
+      const requestedStatus = clean(body.status);
+      if (requestedStatus === "closed") {
+        if (!actor.permissions.canCloseAgencies) throw new ApiError("forbidden", 403);
+      } else if (!actor.permissions.canSuspendAgencies) {
+        throw new ApiError("forbidden", 403);
+      }
+      return json(request, env, await changeAgencyStatus(db, decoded.sub, body));
     }
     if (action === "getPolicy") {
       if (!actor.permissions.canManagePolicies) throw new ApiError("forbidden", 403);

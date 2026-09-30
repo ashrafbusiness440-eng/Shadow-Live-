@@ -16,6 +16,7 @@ import {
   respondAgencyMembershipRequest,
 } from "../../cloudflare-worker/src/agency-membership.js";
 import { cloudflareFirestoreAdapter } from "./helpers/cloudflare-firestore-adapter.js";
+import "./agency-stage13c-safety-closure.integration.test.js";
 
 const app = initializeApp(
   { projectId: "shadow-live-economy-test" },

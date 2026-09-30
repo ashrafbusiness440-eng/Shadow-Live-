@@ -22,6 +22,8 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
   bool canTransferOwnership = false;
   bool canManagePolicies = false;
   bool canManageMemberships = false;
+  bool canSuspendAgencies = false;
+  bool canCloseAgencies = false;
   final TextEditingController agencyLookup = TextEditingController();
   Map<String, dynamic>? managedAgency;
   List<Map<String, dynamic>> applications = [];
@@ -99,6 +101,8 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
         canTransferOwnership = permissions['canTransferOwnership'] == true;
         canManagePolicies = permissions['canManagePolicies'] == true;
         canManageMemberships = permissions['canManageMemberships'] == true;
+        canSuspendAgencies = permissions['canSuspendAgencies'] == true;
+        canCloseAgencies = permissions['canCloseAgencies'] == true;
         loading = false;
       });
     } catch (e) {
@@ -381,6 +385,8 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
         canTransferOwnership = permissions['canTransferOwnership'] == true;
         canManagePolicies = permissions['canManagePolicies'] == true;
         canManageMemberships = permissions['canManageMemberships'] == true;
+        canSuspendAgencies = permissions['canSuspendAgencies'] == true;
+        canCloseAgencies = permissions['canCloseAgencies'] == true;
       });
     } catch (e) {
       if (!mounted) return;
@@ -522,6 +528,95 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('تعذر نقل الملكية: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> changeManagedAgencyStatus(String status) async {
+    final agency = managedAgency;
+    if (agency == null || busy) return;
+    final isClose = status == 'closed';
+    final isResume = status == 'active';
+    if (isClose ? !canCloseAgencies : !canSuspendAgencies) return;
+    final reason = TextEditingController();
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          isClose
+              ? 'إغلاق الوكالة نهائيًا'
+              : isResume
+                  ? 'إعادة تفعيل الوكالة'
+                  : 'تعليق الوكالة مؤقتًا',
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              isClose
+                  ? 'الإغلاق دائم ومتاح للـOwner فقط. لن تُحذف البيانات أو الأرباح أو حقوق وسجل Hosts.'
+                  : isResume
+                      ? 'سيُعاد السماح بإدارة الوكالة وقبول Hosts جدد.'
+                      : 'سيُوقف قبول Hosts جدد وتُقيّد الإدارة، مع الحفاظ على البيانات والأرباح والحقوق.',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: reason,
+              minLines: 2,
+              maxLines: 4,
+              maxLength: 500,
+              decoration: const InputDecoration(
+                labelText: 'السبب *',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (reason.text.trim().length >= 3) Navigator.pop(context, true);
+            },
+            child: const Text('تأكيد'),
+          ),
+        ],
+      ),
+    );
+    final text = reason.text.trim();
+    reason.dispose();
+    if (accepted != true || text.length < 3 || busy) return;
+    setState(() => busy = true);
+    try {
+      await post({
+        'action': 'changeStatus',
+        'agencyId': (agency['agencyId'] ?? '').toString(),
+        'status': status,
+        'reason': text,
+        'idempotencyKey': operationKey('agency_status_$status'),
+      });
+      if (mounted) {
+        setState(() {
+          managedAgency = <String, dynamic>{...agency, 'status': status};
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(isClose
+              ? 'تم إغلاق الوكالة نهائيًا.'
+              : isResume
+                  ? 'تمت إعادة تفعيل الوكالة.'
+                  : 'تم تعليق الوكالة مؤقتًا.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر تغيير حالة الوكالة: $e')),
         );
       }
     } finally {
@@ -791,6 +886,42 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
                                       label: const Text(
                                         'السياسات والاستثناءات',
                                       ),
+                                    ),
+                                  if ((agency['status'] ?? '').toString() ==
+                                          'active' &&
+                                      canSuspendAgencies)
+                                    OutlinedButton.icon(
+                                      onPressed: busy
+                                          ? null
+                                          : () => changeManagedAgencyStatus(
+                                                'suspended',
+                                              ),
+                                      icon: const Icon(Icons.pause_circle_outline),
+                                      label: const Text('تعليق مؤقت'),
+                                    ),
+                                  if ((agency['status'] ?? '').toString() ==
+                                          'suspended' &&
+                                      canSuspendAgencies)
+                                    FilledButton.icon(
+                                      onPressed: busy
+                                          ? null
+                                          : () => changeManagedAgencyStatus(
+                                                'active',
+                                              ),
+                                      icon: const Icon(Icons.play_circle_outline),
+                                      label: const Text('إعادة التفعيل'),
+                                    ),
+                                  if ((agency['status'] ?? '').toString() !=
+                                          'closed' &&
+                                      canCloseAgencies)
+                                    OutlinedButton.icon(
+                                      onPressed: busy
+                                          ? null
+                                          : () => changeManagedAgencyStatus(
+                                                'closed',
+                                              ),
+                                      icon: const Icon(Icons.block_outlined),
+                                      label: const Text('إغلاق نهائي'),
                                     ),
                                 ],
                               ),
