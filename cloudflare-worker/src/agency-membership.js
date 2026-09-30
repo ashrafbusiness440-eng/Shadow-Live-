@@ -2720,15 +2720,36 @@ function activeMemberSummary(row, userSnap) {
   };
 }
 
+async function resolveAgencyMembershipLookupId(db, input) {
+  const lookupId = clean(input);
+  if (!/^\d{3,8}$/.test(lookupId)) {
+    throw new ApiError("invalid_agency_id", 400);
+  }
+
+  const directSnap = await db.get("agencies/" + lookupId);
+  if (directSnap.exists) return lookupId;
+
+  const registrySnap = await db.get("agency_ids/" + lookupId);
+  const resolved = clean(registrySnap.data?.agencyId);
+  if (
+    !registrySnap.exists ||
+    registrySnap.data?.reserved === true ||
+    !/^\d{3,8}$/.test(resolved)
+  ) {
+    throw new ApiError("agency_not_found", 404);
+  }
+  return resolved;
+}
+
 export async function listAgencyMembers(
   db,
   actorUid,
   body = {},
 ) {
-  const agencyId = clean(body.agencyId);
-  if (!/^\d{3,8}$/.test(agencyId)) {
-    throw new ApiError("invalid_agency_id", 400);
-  }
+  const agencyId = await resolveAgencyMembershipLookupId(
+    db,
+    body.agencyId,
+  );
   const limit = Math.min(50, boundedAgencyPageSize(body.limit, 25));
   const [agencySnap, slotsSnap, actorUserSnap, actorMembershipSnap] =
     await Promise.all([
@@ -2810,6 +2831,7 @@ export async function listAgencyMembers(
     ok: true,
     agency: {
       agencyId,
+      publicId: clean(agency.publicId || agencyId),
       name: clean(agency.name),
       status: agencyStatus,
       ownerUid: clean(agency.ownerUid),
