@@ -78,10 +78,12 @@ class AgencyApplicationService {
   AgencyApplicationService({
     http.Client? client,
     FirebaseAuth? auth,
+    Future<String> Function()? tokenProvider,
     String? baseUrl,
   })  : _client = client ?? http.Client(),
         _ownsClient = client == null,
         _auth = auth ?? FirebaseAuth.instance,
+        _tokenProvider = tokenProvider,
         _baseUrl = baseUrl ??
             const String.fromEnvironment(
               'SHADOW_CLOUDFLARE_API_BASE_URL',
@@ -92,10 +94,13 @@ class AgencyApplicationService {
   final http.Client _client;
   final bool _ownsClient;
   final FirebaseAuth _auth;
+  final Future<String> Function()? _tokenProvider;
   final String _baseUrl;
 
   Future<String> _idToken() async {
-    final token = await _auth.currentUser?.getIdToken();
+    final token = _tokenProvider != null
+        ? await _tokenProvider!()
+        : await _auth.currentUser?.getIdToken();
     if (token == null || token.isEmpty) {
       throw const AgencyApplicationException('not_signed_in');
     }
