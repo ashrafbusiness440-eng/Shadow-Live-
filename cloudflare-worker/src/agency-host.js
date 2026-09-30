@@ -36,7 +36,7 @@ function boundedInteger(value, fallback, min, max) {
 }
 
 function validAgencyId(value) {
-  return /^\d{6}$/.test(clean(value));
+  return /^\d{3,8}$/.test(clean(value));
 }
 
 function safeAgencyRoomId(value) {
