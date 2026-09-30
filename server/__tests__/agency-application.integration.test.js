@@ -187,12 +187,9 @@ test("configured thirty hosts stays bounded and accepts 3-8 digit public ids", a
     requiredHostCount: 30,
   });
 
-  const hostIds = Array.from({ length: 30 }, (_, index) =>
-    String(410 + index).padEnd(3 + (index % 6), String((index + 1) % 10)),
-  );
-  const uniqueHostIds = hostIds.map((id, index) => {
+  const uniqueHostIds = Array.from({ length: 30 }, (_, index) => {
     const length = 3 + (index % 6);
-    return String(50000000 + index).slice(0, length);
+    return String((10 ** (length - 1)) + index);
   });
   const hostUids = [];
   for (let index = 0; index < uniqueHostIds.length; index += 1) {
