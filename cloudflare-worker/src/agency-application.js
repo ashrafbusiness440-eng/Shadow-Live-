@@ -324,6 +324,11 @@ export async function reserveAgencyApplicationHost(
         hostIds: nextHostIds,
         hostUids: nextHostUids,
         hostProfiles: nextHostProfiles,
+        reapplyMode: null,
+        reapplyAllowedAt: null,
+        rejectedAt: null,
+        rejectedBy: null,
+        rejectionReason: null,
         updatedAt: nowDate,
       };
       const hostReservationFields = {
