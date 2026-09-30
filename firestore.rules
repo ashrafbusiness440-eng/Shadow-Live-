@@ -93,7 +93,7 @@ service cloud.firestore {
         || (
           (!('publicId' in resource.data) || resource.data.publicId == null || resource.data.publicId == '')
           && request.resource.data.publicId is string
-          && request.resource.data.publicId.matches('^[0-9]{6}$')
+          && request.resource.data.publicId.matches('^[0-9]{3,8}$')
           && getAfter(/databases/$(database)/documents/public_ids/$(request.resource.data.publicId)).data.uid == userId
         )
         || (
@@ -529,7 +529,7 @@ service cloud.firestore {
       allow get: if signedIn();
       allow list: if false;
       allow create: if signedIn()
-        && publicId.matches('^[0-9]{6}$')
+        && publicId.matches('^[0-9]{3,8}$')
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.keys().hasOnly(['uid','createdAt'])
         && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.publicId == publicId
