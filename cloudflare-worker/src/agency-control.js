@@ -1078,11 +1078,18 @@ export async function updateAgencyIdentity(
       let nextRegistrySnap = null;
       let currentRegistrySnap = null;
       if (publicIdChanged) {
-        [nextRegistrySnap, currentRegistrySnap] = await Promise.all([
-          db.get(`agency_ids/${nextPublicId}`, tx),
-          db.get(`agency_ids/${currentPublicId}`, tx),
-        ]);
-        if (nextRegistrySnap.exists) {
+        const [nextAgencySnap, nextRegistry, currentRegistry] =
+          await Promise.all([
+            db.get(`agencies/${nextPublicId}`, tx),
+            db.get(`agency_ids/${nextPublicId}`, tx),
+            db.get(`agency_ids/${currentPublicId}`, tx),
+          ]);
+        nextRegistrySnap = nextRegistry;
+        currentRegistrySnap = currentRegistry;
+        if (
+          nextRegistrySnap.exists ||
+          (nextAgencySnap.exists && nextPublicId !== agencyId)
+        ) {
           throw new ApiError("agency_id_taken", 409);
         }
       }
