@@ -264,7 +264,8 @@ int _nonNegativeInt(dynamic value) {
   return parsed < 0 ? 0 : parsed;
 }
 
-int _boundedHostCount(dynamic value) {
+int _boundedHostCount(dynamic value, {int fallback = 5}) {
+  if (value == null) return fallback;
   final parsed = _nonNegativeInt(value);
   if (parsed > 30) return 30;
   return parsed;
