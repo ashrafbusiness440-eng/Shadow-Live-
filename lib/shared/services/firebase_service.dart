@@ -3,6 +3,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../utils/search_index.dart';
 
+String generateDefaultUserPublicId(Random random) =>
+    (10000000 + random.nextInt(90000000)).toString();
+
 class FirebaseService {
  final FirebaseAuth _auth=FirebaseAuth.instance;final FirebaseFirestore _firestore=FirebaseFirestore.instance;
  Future<UserCredential> signInWithEmail(String email,String password)async{try{return await _auth.signInWithEmailAndPassword(email:email.trim(),password:password);}catch(e){throw _handleAuthError(e);}}
@@ -54,7 +57,7 @@ class FirebaseService {
   if(current!=null&&current.isNotEmpty){await _syncPublicProfile(userId);return current;}
   final random=Random.secure();
   for(var attempt=0;attempt<16;attempt++){
-   final id=(10000000+random.nextInt(90000000)).toString();final idRef=_firestore.collection('public_ids').doc(id);
+   final id=generateDefaultUserPublicId(random);final idRef=_firestore.collection('public_ids').doc(id);
    try{
     final result=await _firestore.runTransaction<String>((tx)async{
      final userSnap=await tx.get(userRef);final already=userSnap.data()?['publicId']?.toString();if(already!=null&&already.isNotEmpty)return already;
