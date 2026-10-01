@@ -249,6 +249,68 @@ class HostMyAgencyCoreData {
 }
 
 
+class HostTargetHistoryAchievement {
+  const HostTargetHistoryAchievement({
+    required this.targetId,
+    required this.tierId,
+    required this.rank,
+    required this.thresholdCoins,
+    required this.salaryDeltaDiamonds,
+    required this.salaryDiamonds,
+    required this.achievedAt,
+  });
+
+  final String targetId;
+  final String? tierId;
+  final String? rank;
+  final int thresholdCoins;
+  final int salaryDeltaDiamonds;
+  final int salaryDiamonds;
+  final String? achievedAt;
+
+  factory HostTargetHistoryAchievement.fromJson(Map<String, dynamic> json) {
+    return HostTargetHistoryAchievement(
+      targetId: (json['targetId'] ?? '').toString().trim(),
+      tierId: _nullableString(json['tierId']),
+      rank: _nullableString(json['rank']),
+      thresholdCoins: _nonNegativeInt(json['thresholdCoins']),
+      salaryDeltaDiamonds: _nonNegativeInt(json['salaryDeltaDiamonds']),
+      salaryDiamonds: _nonNegativeInt(json['salaryDiamonds']),
+      achievedAt: _nullableString(json['achievedAt']),
+    );
+  }
+}
+
+class HostTargetHistoryData {
+  const HostTargetHistoryData({
+    required this.month,
+    required this.currentMonth,
+    required this.achievements,
+  });
+
+  final String month;
+  final String currentMonth;
+  final List<HostTargetHistoryAchievement> achievements;
+
+  factory HostTargetHistoryData.fromJson(Map<String, dynamic> json) {
+    final raw = json['achievements'];
+    return HostTargetHistoryData(
+      month: (json['month'] ?? '').toString().trim(),
+      currentMonth: (json['currentMonth'] ?? '').toString().trim(),
+      achievements: raw is List
+          ? raw
+              .whereType<Map>()
+              .map(
+                (item) => HostTargetHistoryAchievement.fromJson(
+                  Map<String, dynamic>.from(item),
+                ),
+              )
+              .toList(growable: false)
+          : const <HostTargetHistoryAchievement>[],
+    );
+  }
+}
+
 class HostAgencyLeaveRequest {
   const HostAgencyLeaveRequest({
     required this.requestId,
@@ -364,6 +426,38 @@ class HostMyAgencyService {
     return HostMyAgencyCoreData.fromJson(body);
   }
 
+
+  Future<HostTargetHistoryData> loadTargetHistory({
+    String? month,
+  }) async {
+    final token = await _idToken();
+    final response = await _client
+        .post(
+          Uri.parse('$_baseUrl/agency-host'),
+          headers: {
+            'authorization': 'Bearer $token',
+            'content-type': 'application/json',
+          },
+          body: jsonEncode({
+            'action': 'targetHistory',
+            if (month != null && month.trim().isNotEmpty)
+              'month': month.trim(),
+          }),
+        )
+        .timeout(_requestTimeout);
+
+    Map<String, dynamic> body = const <String, dynamic>{};
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map) body = Map<String, dynamic>.from(decoded);
+    } catch (_) {}
+    if (response.statusCode != 200 || body['ok'] != true) {
+      throw StateError(
+        (body['code'] ?? 'agency_target_history_failed').toString(),
+      );
+    }
+    return HostTargetHistoryData.fromJson(body);
+  }
 
   Future<HostAgencyLeaveStatus> loadLeaveStatus({
     required String agencyId,
