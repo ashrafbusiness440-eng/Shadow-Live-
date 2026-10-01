@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../profile/screens/public_profile_screen.dart';
 import '../services/agency_membership_service.dart';
@@ -735,10 +736,34 @@ class _AgencyIdentityCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 5),
-          Text(
-            'Agency ID: ' + agency.publicId,
-            textDirection: TextDirection.ltr,
-            style: const TextStyle(color: Colors.white60),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Agency ID: ' + agency.publicId,
+                key: const Key('public-agency-id'),
+                textDirection: TextDirection.ltr,
+                style: const TextStyle(color: Colors.white60),
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                key: const Key('public-agency-copy-id'),
+                tooltip: 'نسخ Agency ID',
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                padding: EdgeInsets.zero,
+                onPressed: () async {
+                  await Clipboard.setData(
+                    ClipboardData(text: agency.publicId),
+                  );
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('تم نسخ Agency ID')),
+                  );
+                },
+                icon: const Icon(Icons.copy_rounded, size: 16),
+              ),
+            ],
           ),
           if (agency.country != null) ...[
             const SizedBox(height: 5),
