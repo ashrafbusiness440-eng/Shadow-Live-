@@ -1104,79 +1104,115 @@ class _MemberManagementTile extends StatelessWidget {
     final owner = member.role == 'owner';
     final image = member.profileImageUrl?.trim() ?? '';
     final publicId = member.publicId?.trim() ?? '';
+    final displayName =
+        member.displayName ?? (publicId.isEmpty ? member.uid : publicId);
+
     return Card(
+      key: Key('owner-agency-member-${member.uid}'),
       color: const Color(0xFF11182A),
-      margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        dense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        leading: CircleAvatar(
-          backgroundColor: const Color(0xFF2A3150),
-          backgroundImage: image.isEmpty ? null : NetworkImage(image),
-          child: image.isEmpty
-              ? const Icon(Icons.person_rounded)
-              : null,
-        ),
-        title: Text(
-          member.displayName ?? (publicId.isEmpty ? member.uid : publicId),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (publicId.isNotEmpty)
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Flexible(
-                    child: Text(
-                      'ID: $publicId',
-                      textDirection: TextDirection.ltr,
-                      style: const TextStyle(color: Colors.white54),
-                    ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                CircleAvatar(
+                  key: Key('owner-member-avatar-${member.uid}'),
+                  radius: 24,
+                  backgroundColor: const Color(0xFF2A3150),
+                  backgroundImage: image.isEmpty ? null : NetworkImage(image),
+                  child: image.isEmpty
+                      ? const Icon(Icons.person_rounded)
+                      : null,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        displayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 16,
+                        ),
+                      ),
+                      if (publicId.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                'ID: $publicId',
+                                key: Key('owner-member-id-${member.uid}'),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                textDirection: TextDirection.ltr,
+                                style: const TextStyle(
+                                  color: Colors.white54,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            IconButton(
+                              key: Key('owner-member-copy-id-${member.uid}'),
+                              tooltip: 'نسخ Public ID',
+                              visualDensity: VisualDensity.compact,
+                              constraints: const BoxConstraints(
+                                minWidth: 28,
+                                minHeight: 28,
+                              ),
+                              padding: EdgeInsets.zero,
+                              onPressed: () async {
+                                await Clipboard.setData(
+                                  ClipboardData(text: publicId),
+                                );
+                                if (!context.mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('تم نسخ ID')),
+                                );
+                              },
+                              icon: const Icon(Icons.copy_rounded, size: 16),
+                            ),
+                          ],
+                        ),
+                      ],
+                      const SizedBox(height: 2),
+                      Text(
+                        '${_roleLabel(member.role)} • العضوية: ${member.status == 'active' ? 'نشطة' : member.status} • الحساب: ${_accountStatusLabel(member.accountStatus)}',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 12,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 2),
-                  IconButton(
-                    key: Key('owner-member-copy-id-${member.uid}'),
-                    tooltip: 'نسخ Public ID',
-                    visualDensity: VisualDensity.compact,
-                    constraints:
-                        const BoxConstraints(minWidth: 28, minHeight: 28),
-                    padding: EdgeInsets.zero,
-                    onPressed: () async {
-                      await Clipboard.setData(
-                        ClipboardData(text: publicId),
-                      );
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('تم نسخ ID')),
-                      );
-                    },
-                    icon: const Icon(Icons.copy_rounded, size: 15),
+                ),
+                if (owner) ...[
+                  const SizedBox(width: 8),
+                  const Icon(
+                    Icons.workspace_premium_rounded,
+                    color: Color(0xFFFFD875),
                   ),
                 ],
-              ),
-            Text(
-              '${_roleLabel(member.role)} • العضوية: ${member.status == 'active' ? 'نشطة' : member.status} • الحساب: ${_accountStatusLabel(member.accountStatus)}',
-              style: const TextStyle(
-                color: Colors.white54,
-                fontSize: 12,
-              ),
+              ],
             ),
-          ],
-        ),
-        trailing: owner
-            ? const Icon(
-                Icons.workspace_premium_rounded,
-                color: Color(0xFFFFD875),
-              )
-            : Row(
-                mainAxisSize: MainAxisSize.min,
+            if (!owner) ...[
+              const SizedBox(height: 8),
+              const Divider(height: 1, color: Colors.white12),
+              const SizedBox(height: 4),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   IconButton(
                     key: Key('owner-member-performance-${member.uid}'),
@@ -1191,6 +1227,7 @@ class _MemberManagementTile extends StatelessWidget {
                   PopupMenuButton<String>(
                     key: Key('owner-member-role-${member.uid}'),
                     enabled: !busy,
+                    tooltip: 'تغيير الدور',
                     onSelected: (role) => onSetRole(member, role),
                     itemBuilder: (_) => const [
                       PopupMenuItem(value: 'host', child: Text('مضيف')),
@@ -1217,6 +1254,9 @@ class _MemberManagementTile extends StatelessWidget {
                   ),
                 ],
               ),
+            ],
+          ],
+        ),
       ),
     );
   }
