@@ -10,6 +10,11 @@ test("Agencies final UI keeps account images and pending request layout stable",
   const ownerPage = source(
     "lib/features/agency/screens/owner_agency_dashboard_page.dart",
   );
+  const managerPage = source(
+    "lib/features/agency/screens/agency_membership_review_page.dart",
+  );
+  const controlPage = source("lib/admin/agency_control_page.dart");
+  const controlSource = source("cloudflare-worker/src/agency-control.js");
   const membershipSource = source(
     "cloudflare-worker/src/agency-membership.js",
   );
@@ -34,6 +39,48 @@ test("Agencies final UI keeps account images and pending request layout stable",
   assert.equal(ownerPage.includes("maxLines: 1"), true);
   assert.equal(ownerPage.includes("owner-pending-copy-id-"), true);
   assert.equal(ownerPage.includes("إلغاء الدعوة"), true);
+  assert.equal(managerPage.includes("agency-review-pending-"), true);
+  assert.equal(managerPage.includes("maxLines: 1"), true);
+  assert.equal(managerPage.includes("agency-review-copy-id-"), true);
+  assert.equal(managerPage.includes("سبب الرفض — اختياري"), true);
+  assert.equal(controlPage.includes("profileImageUrl"), true);
+  assert.equal(
+    controlSource.includes(
+      "user.profileImageUrl || user.photoUrl || user.avatarUrl",
+    ),
+    true,
+  );
+});
+
+test("Agency activity rule is fixed at 14 days x 120 minutes and removes one mic config read", () => {
+  const hostSource = source("cloudflare-worker/src/agency-host.js");
+  const ownerSource = source("cloudflare-worker/src/agency-owner.js");
+  const voice = source("cloudflare-worker/src/voice-session-legacy.js");
+  const config = source(
+    "cloudflare-worker/src/legacy-economy/gift-economy-config.js",
+  );
+  const policy = source("cloudflare-worker/src/economy-policy.js");
+
+  assert.equal(hostSource.includes("const requiredQualifiedDays = 14;"), true);
+  assert.equal(hostSource.includes("const requiredMinutesPerDay = 120;"), true);
+  assert.equal(ownerSource.includes("const requiredQualifiedDays = 14;"), true);
+  assert.equal(ownerSource.includes("const requiredMinutesPerDay = 120;"), true);
+  assert.equal(voice.includes("const requiredMinutes=120;"), true);
+
+  const micStart = voice.indexOf("export async function recordMicActivity");
+  const micEnd = voice.indexOf("\nfunction zegoUserId", micStart);
+  const micSource = voice.slice(micStart, micEnd);
+  assert.equal(micSource.includes('doc("gift_economy")'), false);
+  assert.equal(micSource.includes("newlyQualifiedByMonth"), true);
+  assert.equal(micSource.includes("!wasQualified&&qualified"), true);
+
+  assert.equal(config.includes("const hostBonusQualifiedDays=14;"), true);
+  assert.equal(config.includes("const hostBonusMinutesPerQualifiedDay=120;"), true);
+  assert.equal(policy.includes("const requiredDays = 14;"), true);
+  assert.equal(
+    policy.includes("Activity is bonus-only. It never reduces base Host or Agency shares."),
+    true,
+  );
 });
 
 test("Agencies target table renders every configured level and display-only economics", () => {
