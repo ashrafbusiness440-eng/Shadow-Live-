@@ -45,9 +45,15 @@ export async function recordMicActivity(tx, db, userId, seat, endedAtMs = Date.n
         (newlyQualifiedByMonth.get(segment.month) || 0) + 1,
       );
     }
+    const previousEligibleSeconds = Math.min(previousSeconds, thresholdSeconds);
+    const nextEligibleSeconds = Math.min(nextSeconds, thresholdSeconds);
+    const eligibleDeltaSeconds = Math.max(
+      0,
+      nextEligibleSeconds - previousEligibleSeconds,
+    );
     addedSecondsByMonth.set(
       segment.month,
-      (addedSecondsByMonth.get(segment.month) || 0) + segment.seconds,
+      (addedSecondsByMonth.get(segment.month) || 0) + eligibleDeltaSeconds,
     );
 
     tx.set(dayRefs[index], {
