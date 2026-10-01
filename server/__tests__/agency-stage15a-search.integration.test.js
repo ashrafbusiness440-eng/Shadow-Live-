@@ -147,3 +147,35 @@ test("15-A pressure guard keeps discovery bounded and isolated from Gift/Room", 
   assert.equal(segment.includes("gift"), false);
   assert.equal(segment.includes("room"), false);
 });
+
+
+test("Batch 2 Flutter UX keeps unified My Agency discovery and bounded search controls", () => {
+  const searchPage = readFileSync(
+    new URL("../../lib/features/agency/screens/agency_search_page.dart", import.meta.url),
+    "utf8",
+  );
+  const entryPage = readFileSync(
+    new URL("../../lib/features/agency/screens/my_agency_entry_page.dart", import.meta.url),
+    "utf8",
+  );
+  const publicPage = readFileSync(
+    new URL("../../lib/features/agency/screens/public_agency_page.dart", import.meta.url),
+    "utf8",
+  );
+  const main = readFileSync(
+    new URL("../../lib/main.dart", import.meta.url),
+    "utf8",
+  );
+
+  assert.equal(searchPage.includes("Duration(milliseconds: 380)"), true);
+  assert.equal(searchPage.includes("showShadowCountryPicker"), true);
+  assert.equal(searchPage.includes("_requestSerial"), true);
+  assert.equal(searchPage.includes("_lastRequestKey"), true);
+  assert.equal(searchPage.includes("AgencySearchPage(embedded: true)"), false);
+  assert.equal(entryPage.includes("AgencySearchPage("), true);
+  assert.equal(entryPage.includes("AgencyApplicationPage(embedded: true)"), true);
+  assert.equal(entryPage.includes("joinEnabled:"), true);
+  assert.equal(publicPage.includes("joinEnabled"), true);
+  assert.equal(publicPage.includes("طلب الانضمام غير متاح حاليًا"), true);
+  assert.equal(main.includes("AppRoutes.myAgency: (context) => const MyAgencyEntryPage()"), true);
+});
