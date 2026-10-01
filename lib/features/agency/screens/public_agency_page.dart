@@ -772,6 +772,28 @@ class _AgencyIdentityCard extends StatelessWidget {
               style: const TextStyle(color: Colors.white70),
             ),
           ],
+          if (agency.description != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              agency.description!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white70,
+                height: 1.4,
+              ),
+            ),
+          ],
+          if (agency.publicContact != null) ...[
+            const SizedBox(height: 6),
+            SelectableText(
+              'التواصل: ${agency.publicContact}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFFB99CFF),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           Row(
             children: [
