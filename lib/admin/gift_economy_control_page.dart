@@ -63,8 +63,8 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
   bool enabled = false;
   String? error;
   List<_TierDraft> tiers = [];
-  final hostBonus = TextEditingController(text: '2');
-  final agencyBonus = TextEditingController(text: '2');
+  final hostBonus = TextEditingController(text: '0');
+  final agencyBonus = TextEditingController(text: '1');
   final hostBonusDays = TextEditingController(text: '14');
   final hostMinutesPerDay = TextEditingController(text: '120');
   final agencyBonusActiveHosts = TextEditingController(text: '10');
@@ -150,11 +150,16 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
       final rawTiers = config['tiers'] is List ? config['tiers'] as List : const [];
       if (!mounted) return;
       _replaceTiers(rawTiers);
-      hostBonus.text =
-          (((config['hostPerformanceBonusBps'] as num?)?.toDouble() ?? 200) / 100)
-              .toStringAsFixed(1);
+      hostBonus.text = '0.0';
+      final newAgencyBonusMode =
+          config['agencyPerformanceBonusMode'] == 'per_host_target_month_end';
       agencyBonus.text =
-          (((config['agencyPerformanceBonusBps'] as num?)?.toDouble() ?? 200) / 100)
+          (((newAgencyBonusMode
+                      ? config['agencyPerformanceBonusBps']
+                      : 100) as num?)
+                  ?.toDouble() ??
+              100) /
+          100)
               .toStringAsFixed(1);
       hostBonusDays.text = '14';
       hostMinutesPerDay.text = '120';
@@ -183,12 +188,11 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
         'action': 'save',
         'enabled': enabled,
         'tiers': tiers.map((e) => e.toPayload()).toList(),
-        'hostPerformanceBonusBps': _bps(hostBonus),
+        'hostPerformanceBonusBps': 0,
         'agencyPerformanceBonusBps': _bps(agencyBonus),
+        'agencyPerformanceBonusMode': 'per_host_target_month_end',
         'hostBonusQualifiedDays': 14,
         'hostBonusMinutesPerQualifiedDay': 120,
-        'agencyBonusActiveHosts':
-            int.tryParse(agencyBonusActiveHosts.text.trim()) ?? -1,
       });
       if (!mounted) return;
       setState(() => saving = false);
@@ -353,15 +357,7 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
                           runSpacing: 10,
                           children: [
                             _numberField(
-                              'Bonus المضيف',
-                              hostBonus,
-                              fieldKey: const ValueKey(
-                                'gift-economy-host-bonus-pct',
-                              ),
-                              suffix: '%',
-                            ),
-                            _numberField(
-                              'Bonus الوكالة',
+                              'Agency Performance Bonus',
                               agencyBonus,
                               fieldKey: const ValueKey(
                                 'gift-economy-agency-bonus-pct',
@@ -384,18 +380,11 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
                               ),
                               enabled: false,
                             ),
-                            _numberField(
-                              'مضيفون نشطون للوكالة',
-                              agencyBonusActiveHosts,
-                              fieldKey: const ValueKey(
-                                'gift-economy-agency-active-hosts',
-                              ),
-                            ),
                           ],
                         ),
                         const SizedBox(height: 10),
                         const Text(
-                          'سياسة التحفيز الجديدة: النسبة الأساسية لا تنخفض بسبب عدد الأيام. عند تحقيق شرط النشاط الكامل يضاف Bonus المضيف فوق نسبته الأساسية. Bonus الوكالة يعتمد على عدد المضيفين النشطين المؤهلين.',
+                          'Host Activity Bonus ليس نسبة مئوية: يُصرف مرة واحدة بنهاية الشهر حسب أعلى Target محقق وفق جدول المستويات المعتمد، بشرط 14 يوم × 120 دقيقة. Agency Performance Bonus افتراضيه 1% من أعلى Target لكل Host مؤهل، ويُجمع للوكالة بالتسوية الشهرية.',
                           style: TextStyle(color: Color(0xFFAAA3B8)),
                         ),
                       ],
