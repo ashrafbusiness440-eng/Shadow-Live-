@@ -236,6 +236,10 @@ export async function loadAgencyHostCore(
         clean(agency.logoUrl || agency.imageUrl || agency.profileImageUrl) ||
         null,
       roomId: safeAgencyRoomId(agency.roomId || agency.agencyRoomId),
+      description: clean(agency.description) || null,
+      publicContact: clean(agency.publicContact) || null,
+      backgroundUrl:
+        clean(agency.backgroundUrl || agency.roomBackgroundUrl) || null,
     },
     owner: personSummary(ownerUid, ownerSnap),
     membership: {
@@ -283,6 +287,124 @@ export async function loadAgencyHostCore(
         requiredQualifiedDays * requiredMinutesPerDay * 60,
     },
   };
+}
+
+export async function updateAgencyOwnerProfile(
+  db,
+  uidInput,
+  body = {},
+  { now = new Date(), sessionPayload = null } = {},
+) {
+  const uid = clean(uidInput);
+  const description = clean(body.description);
+  const publicContact = clean(body.publicContact);
+  const key = clean(body.idempotencyKey);
+  if (!uid) throw new ApiError("unauthorized", 401);
+  if (description.length > 500) {
+    throw new ApiError("invalid_agency_description", 400);
+  }
+  if (publicContact.length > 160) {
+    throw new ApiError("invalid_agency_public_contact", 400);
+  }
+  if (!validIdempotencyKey(key)) {
+    throw new ApiError("invalid_idempotency_key", 400);
+  }
+
+  const opPath = `agency_owner_operations/${uid}__${key}`;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const tx = await db.beginTransaction();
+    try {
+      const [opSnap, userSnap, membershipSnap] = await Promise.all([
+        db.get(opPath, tx),
+        db.get(`users/${uid}`, tx),
+        db.get(`agency_user_memberships/${uid}`, tx),
+      ]);
+      if (opSnap.exists) {
+        const existing = opSnap.data || {};
+        if (clean(existing.action) !== "updateAgencyOwnerProfile") {
+          throw new ApiError("idempotency_conflict", 409);
+        }
+        await db.rollback(tx);
+        return { ok: true, code: "duplicate", ...(existing.result || {}) };
+      }
+      if (!userSnap.exists || !membershipSnap.exists) {
+        throw new ApiError("agency_owner_required", 403);
+      }
+      const user = userSnap.data || {};
+      if (sessionPayload) {
+        assertUserDocumentSessionState(sessionPayload, user);
+      }
+      const membership = membershipSnap.data || {};
+      const agencyId = clean(membership.agencyId);
+      if (
+        !validAgencyId(agencyId) ||
+        clean(membership.role) !== "owner" ||
+        clean(membership.status) !== "active" ||
+        clean(user.agencyId) !== agencyId
+      ) {
+        throw new ApiError("agency_owner_required", 403);
+      }
+      const agencySnap = await db.get(`agencies/${agencyId}`, tx);
+      if (
+        !agencySnap.exists ||
+        clean(agencySnap.data?.ownerUid) !== uid ||
+        clean(agencySnap.data?.status) === "closed"
+      ) {
+        throw new ApiError("agency_owner_required", 403);
+      }
+      const result = {
+        agencyId,
+        description: description || null,
+        publicContact: publicContact || null,
+      };
+      await db.commit(tx, [
+        db.writeUpdate(
+          `agencies/${agencyId}`,
+          {
+            description: description || "",
+            publicContact: publicContact || "",
+            updatedAt: now,
+          },
+          ["description", "publicContact", "updatedAt"],
+        ),
+        db.writeCreate(opPath, {
+          actorUid: uid,
+          action: "updateAgencyOwnerProfile",
+          status: "completed",
+          result,
+          createdAt: now,
+        }),
+        db.writeCreate(
+          `admin_audit_logs/agency_owner_profile_${agencyId}_${key}`,
+          {
+            actorUid: uid,
+            action: "updateAgencyOwnerProfile",
+            targetType: "agency",
+            targetId: agencyId,
+            before: {
+              description: clean(agencySnap.data?.description) || null,
+              publicContact: clean(agencySnap.data?.publicContact) || null,
+            },
+            after: result,
+            idempotencyKey: key,
+            createdAt: now,
+          },
+        ),
+      ]);
+      return { ok: true, code: "ok", ...result };
+    } catch (error) {
+      await db.rollback(tx);
+      if (error instanceof ApiError) throw error;
+      if (isTransientFirestoreError(error) && attempt < 2) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, firestoreErrorRetryDelayMs(attempt))
+        );
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new ApiError("transaction_failed", 500);
 }
 
 export async function requestAgencyOwnershipTransfer(
@@ -537,6 +659,18 @@ export async function agencyHost(request, env) {
         request,
         env,
         await loadAgencyHostCore(db, token.sub, new Date(), {
+          sessionPayload: token,
+        }),
+      );
+    }
+    if (action === "updateProfile") {
+      annotatePressureRequest(request, {
+        action: "agencyHost:updateProfile",
+      });
+      return json(
+        request,
+        env,
+        await updateAgencyOwnerProfile(db, token.sub, body, {
           sessionPayload: token,
         }),
       );
