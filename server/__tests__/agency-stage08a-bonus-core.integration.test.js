@@ -23,9 +23,10 @@ const policy={
   policyMode:"tiered_host_agency",
   coinsPerUsd:10000,
   coinsPerDiamond:10000,
-  hostPerformanceBonusBps:200,
-  agencyPerformanceBonusBps:200,
-  hostBonusQualifiedDays:9,
+  hostPerformanceBonusBps:0,
+  agencyPerformanceBonusBps:100,
+  agencyPerformanceBonusMode:"per_host_target_month_end",
+  hostBonusQualifiedDays:14,
   hostBonusMinutesPerQualifiedDay:120,
   agencyBonusActiveHosts:10,
   tiers:[
@@ -72,50 +73,18 @@ function realtimeNamespaceWithPresentUids(uids=[]){
   };
 }
 
-test("08-A monthly Agency Bonus uses dynamic Control threshold and bps",()=>{
-  const below=calculateAgencyMonthlyBonus(policy,{
-    supportCoins:1000000,
-    activeHostCount:9,
-    hasAgency:true,
-  });
-  assert.equal(below.eligible,false);
-  assert.equal(below.agencyBonusBps,0);
-  assert.equal(below.agencyBonusCoins,0);
-  assert.equal(below.requiredActiveHosts,10);
-
-  const exact=calculateAgencyMonthlyBonus(policy,{
-    supportCoins:1000000,
-    activeHostCount:10,
-    hasAgency:true,
-  });
-  assert.equal(exact.eligible,true);
-  assert.equal(exact.agencyBonusBps,200);
-  assert.equal(exact.agencyBonusCoins,20000);
-
-  const custom=calculateAgencyMonthlyBonus({
-    ...policy,
-    agencyPerformanceBonusBps:125,
-    agencyBonusActiveHosts:3,
-  },{
-    supportCoins:800000,
-    activeHostCount:3,
-    hasAgency:true,
-  });
-  assert.equal(custom.eligible,true);
-  assert.equal(custom.requiredActiveHosts,3);
-  assert.equal(custom.agencyBonusBps,125);
-  assert.equal(custom.agencyBonusCoins,10000);
-
-  const disabled=calculateAgencyMonthlyBonus({
-    ...policy,
-    enabled:false,
-  },{
+test("08-A aggregate Agency Bonus is retired in favor of per-host Target settlement",()=>{
+  const result=calculateAgencyMonthlyBonus(policy,{
     supportCoins:1000000,
     activeHostCount:100,
     hasAgency:true,
   });
-  assert.equal(disabled.eligible,false);
-  assert.equal(disabled.agencyBonusCoins,0);
+  assert.equal(result.eligible,false);
+  assert.equal(result.agencyBonusBps,0);
+  assert.equal(result.agencyBonusCoins,0);
+  assert.equal(result.requiredActiveHosts,0);
+  assert.equal(result.configuredBonusBps,100);
+  assert.equal(result.mode,"per_host_target_month_end");
 
   assert.throws(
     ()=>calculateAgencyMonthlyBonus(policy,{
@@ -126,6 +95,7 @@ test("08-A monthly Agency Bonus uses dynamic Control threshold and bps",()=>{
     /invalid_agency_bonus_support_coins/,
   );
 });
+
 
 test("08-A room gift keeps Agency Bonus deferred even when activity threshold is already met",async()=>{
   await seedConfig();
@@ -185,7 +155,7 @@ test("08-A room gift keeps Agency Bonus deferred even when activity threshold is
   assert.equal(transaction.data().agencyBonusDeferredToMonthEnd,true);
   assert.equal(transaction.data().agencyShareBps,500);
   assert.equal(transaction.data().agencyActiveHostCount,0);
-  assert.equal(transaction.data().agencyRequiredActiveHosts,10);
+  assert.equal(transaction.data().agencyRequiredActiveHosts,0);
 });
 
 test("08-A chat gift matches room gift Base Agency Share with Bonus deferred",async()=>{
@@ -269,13 +239,19 @@ test("08-A agency active-host marker increments only on first qualified day of m
     });
   }
 
-  const [host,agencyMonth]=await Promise.all([
+  const [host,agencyMonth,hostMonth]=await Promise.all([
     db.collection("users").doc(hostUid).get(),
     db.collection("agency_support_stats").doc(agencyId)
       .collection("monthly").doc("2026-09").get(),
+    db.collection("agency_host_monthly")
+      .doc(agencyId+"__2026-09__"+hostUid).get(),
   ]);
 
   assert.equal(host.data().giftHostQualifiedDays,2);
+  assert.equal(host.data().giftHostMicSecondsMonth,2*7200);
   assert.equal(agencyMonth.data().activeHostCount,1);
   assert.deepEqual(agencyMonth.data().activeHostIds,[hostUid]);
+  assert.equal(hostMonth.data().activityQualifiedDays,2);
+  assert.equal(hostMonth.data().activityRequiredQualifiedDays,14);
+  assert.equal(hostMonth.data().activityRequiredMinutesPerDay,120);
 });
