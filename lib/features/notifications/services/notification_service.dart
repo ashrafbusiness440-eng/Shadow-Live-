@@ -18,6 +18,7 @@ class AppNotification {
     required this.finalDecision,
     required this.resolvedBy,
     required this.resolvedByName,
+    required this.resolvedAt,
   });
 
   final String id;
@@ -35,6 +36,7 @@ class AppNotification {
   final String? finalDecision;
   final String? resolvedBy;
   final String? resolvedByName;
+  final DateTime? resolvedAt;
 
   bool get agencyReviewAction =>
       (type == 'agency_join_request' || type == 'agency_leave_request') &&
@@ -50,6 +52,10 @@ class AppNotification {
     DateTime? createdAt;
     if (rawCreatedAt is Timestamp) createdAt = rawCreatedAt.toDate();
     if (rawCreatedAt is DateTime) createdAt = rawCreatedAt;
+    final rawResolvedAt = data['resolvedAt'];
+    DateTime? resolvedAt;
+    if (rawResolvedAt is Timestamp) resolvedAt = rawResolvedAt.toDate();
+    if (rawResolvedAt is DateTime) resolvedAt = rawResolvedAt;
     return AppNotification(
       id: id,
       title: (data['title'] ?? 'إشعار من النظام').toString().trim(),
@@ -66,6 +72,7 @@ class AppNotification {
       finalDecision: _nullable(data['finalDecision']),
       resolvedBy: _nullable(data['resolvedBy']),
       resolvedByName: _nullable(data['resolvedByName']),
+      resolvedAt: resolvedAt,
     );
   }
 }
