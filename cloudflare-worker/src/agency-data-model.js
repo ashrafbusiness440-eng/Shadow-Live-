@@ -1,30 +1,5 @@
 const clean = (value) => String(value ?? "").trim();
 
-export function normalizeAgencySearchText(value) {
-  return clean(value)
-    .normalize("NFKD")
-    .replace(/[\u064B-\u065F\u0670\u06D6-\u06ED]/g, "")
-    .replace(/ـ/g, "")
-    .replace(/[أإآٱ]/g, "ا")
-    .replace(/ى/g, "ي")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
-}
-
-export function agencyNameSearchTokens(value) {
-  const normalized = normalizeAgencySearchText(value);
-  if (normalized.length < 2) return [];
-  const tokens = new Set();
-  const maxLength = Math.min(6, normalized.length);
-  for (let size = 2; size <= maxLength; size += 1) {
-    for (let start = 0; start + size <= normalized.length; start += 1) {
-      tokens.add(normalized.slice(start, start + size));
-    }
-  }
-  return [...tokens].slice(0, 512);
-}
-
 export const AGENCY_DATA_MODEL_VERSION = 1;
 
 export const AGENCY_LIMITS = Object.freeze({
@@ -356,8 +331,6 @@ export function createAgencyDocument({
     agencyId: id,
     publicId: normalizedPublicId,
     name: displayName,
-    searchNameNormalized: normalizeAgencySearchText(displayName),
-    searchNameTokens: agencyNameSearchTokens(displayName),
     country: normalizedCountry,
     ownerUid: owner,
     createdFrom: normalizedCreatedFrom,
