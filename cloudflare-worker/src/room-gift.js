@@ -8,6 +8,7 @@ import {
 } from "./economy-policy.js";
 import {
   agencyPublicRankingKey,
+  agencyTargetAchievementDeltas,
   calculateAgencyTargetProgress,
 } from "./agency-policy.js";
 import {
@@ -380,6 +381,8 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       Number(receiver.pendingGiftEarningCoins || 0),
     );
     const accumulatedGiftCoins = previousPendingGiftCoins + recipientShareCoins;
+    const agencyTargetPolicy =
+      agencyPolicySnapshot?.targets || economy.agencyTargets;
     const agencyTarget = agencyId && earningsEnabled
       ? calculateAgencyTargetProgress({
           monthKey: agencyPeriods.month,
@@ -387,11 +390,16 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
           storedProgressCoins: receiver.agencyTargetProgressCoins,
           addedHostShareCoins: recipientShareCoins,
           storedPaidDiamonds: receiver.agencySalaryPaidDiamonds,
-          targets:
-            agencyPolicySnapshot?.targets ||
-            economy.agencyTargets,
+          targets: agencyTargetPolicy,
         })
       : null;
+    const agencyTargetAchievements = agencyTarget
+      ? agencyTargetAchievementDeltas({
+          previousProgressCoins: agencyTarget.previousProgressCoins,
+          progressCoins: agencyTarget.progressCoins,
+          targets: agencyTargetPolicy,
+        })
+      : [];
     const diamondsEarned = agencyTarget
       ? agencyTarget.salaryDeltaDiamonds
       : earningsEnabled
@@ -955,6 +963,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
         agencyTargetMonth: agencyTarget?.month || null,
         agencyTargetProgressCoins: agencyTarget?.progressCoins || 0,
         agencyTargetId: agencyTarget?.reachedTarget?.id || null,
+        agencyTargetAchievements,
         agencyNextTargetCoins: agencyTarget?.remainingToNextTargetCoins || 0,
         agencySalaryPaidDiamonds: agencyTarget?.paidDiamonds || 0,
         salaryDeltaDiamonds: agencyTarget?.salaryDeltaDiamonds || 0,
@@ -1026,6 +1035,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       agencyTargetMonth: agencyTarget?.month || null,
       agencyTargetProgressCoins: agencyTarget?.progressCoins || 0,
       agencyTargetId: agencyTarget?.reachedTarget?.id || null,
+      agencyTargetAchievements,
       agencyNextTargetCoins: agencyTarget?.remainingToNextTargetCoins || 0,
       agencySalaryPaidDiamonds: agencyTarget?.paidDiamonds || 0,
       salaryDeltaDiamonds: agencyTarget?.salaryDeltaDiamonds || 0,
