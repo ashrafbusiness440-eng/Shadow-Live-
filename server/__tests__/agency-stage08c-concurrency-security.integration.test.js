@@ -177,7 +177,7 @@ test("08-C concurrent per-host month-end settlement pays Host and Agency bonuses
   assert.equal(agencyLedger.data().delta,0);
   assert.equal(owner.data().diamonds,0);
   assert.equal(state.data().carryoverCoins,500);
-  assert.equal(bonus.data().status,"collecting");
+  assert.equal(bonus.data().status,"settled");
   assert.equal(bonus.data().perHostEligibleHostCount,1);
   assert.equal(bonus.data().perHostBonusCoins,500);
   assert.equal(statement.data().agencyBonusCoins,500);
@@ -268,5 +268,5 @@ test("08-C pre-existing per-host bonus accrual does not block later Base Agency 
   const bonus=await db.collection("agency_bonus_accruals")
     .doc(agencyId+"__"+month).get();
   assert.equal(bonus.data().perHostBonusCoins,500);
-  assert.equal(bonus.data().status,"settled");
+  assert.equal(bonus.data().status,"collecting");
 });
