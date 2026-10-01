@@ -164,6 +164,28 @@ export function normalizePolicy(raw={}){
   };
 }
 
+function safePolicyFallback(data={}){
+  const defaults=defaultPolicy();
+  const parsedAgencyBonus=Number(data.agencyPerformanceBonusBps);
+  const agencyPerformanceBonusBps=
+    clean(data.agencyPerformanceBonusMode)==="per_host_target_month_end" &&
+    Number.isSafeInteger(parsedAgencyBonus) &&
+    parsedAgencyBonus>=0 &&
+    parsedAgencyBonus<=3000
+      ?parsedAgencyBonus
+      :100;
+  return {
+    ...defaults,
+    ...data,
+    periodTimeZone:"Asia/Riyadh",
+    hostPerformanceBonusBps:0,
+    agencyPerformanceBonusBps,
+    agencyPerformanceBonusMode:"per_host_target_month_end",
+    hostBonusQualifiedDays:14,
+    hostBonusMinutesPerQualifiedDay:120,
+  };
+}
+
 export async function saveGiftEconomyPolicy(db,uid,raw={}){
   const policy=normalizePolicy(raw);
   const ref=db.collection("system_config").doc("gift_economy");
@@ -203,7 +225,7 @@ export async function handler(req,res){
       if(snap.exists){
         const data=snap.data()||{};
         try{config=normalizePolicy(data);}
-        catch(_){config={...defaultPolicy(),...data};}
+        catch(_){config=safePolicyFallback(data);}
       }
       return out(res,200,{ok:true,config});
     }
