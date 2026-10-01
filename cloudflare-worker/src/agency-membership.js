@@ -2837,19 +2837,21 @@ async function resolveAgencyMembershipLookupId(db, input) {
     throw new ApiError("invalid_agency_id", 400);
   }
 
-  const directSnap = await db.get("agencies/" + lookupId);
-  if (directSnap.exists) return lookupId;
-
   const registrySnap = await db.get("agency_ids/" + lookupId);
   const resolved = clean(registrySnap.data?.agencyId);
   if (
-    !registrySnap.exists ||
-    registrySnap.data?.reserved === true ||
-    !/^\d{3,8}$/.test(resolved)
+    registrySnap.exists &&
+    registrySnap.data?.reserved !== true &&
+    /^\d{3,8}$/.test(resolved)
   ) {
-    throw new ApiError("agency_not_found", 404);
+    return resolved;
   }
-  return resolved;
+
+  const directSnap = await db.get("agencies/" + lookupId);
+  const directPublicId = clean(directSnap.data?.publicId || lookupId);
+  if (directSnap.exists && directPublicId === lookupId) return lookupId;
+
+  throw new ApiError("agency_not_found", 404);
 }
 
 export async function listAgencyMembers(
