@@ -43,6 +43,7 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
   bool _leaveStatusLoading = false;
   bool _leaveSubmitting = false;
   bool _logoUploading = false;
+  bool _backgroundUploading = false;
   bool _openingAgencyRoom = false;
   bool _ownershipTransferSubmitting = false;
   bool _agencyProfileSaving = false;
@@ -388,6 +389,62 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
                       code.contains('unsupported_image_format')
                   ? 'صيغة الصورة غير مدعومة.'
                   : 'تعذر تحديث شعار الوكالة حاليًا.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    }
+  }
+
+  Future<void> _pickAgencyBackground() async {
+    final data = _data;
+    if (data == null ||
+        data.membershipRole != 'owner' ||
+        _backgroundUploading) {
+      return;
+    }
+
+    final picked = await _imagePicker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 84,
+      maxWidth: 1920,
+      maxHeight: 1920,
+    );
+    if (picked == null || !mounted) return;
+
+    final bytes = await picked.readAsBytes();
+    if (!mounted) return;
+
+    setState(() => _backgroundUploading = true);
+    try {
+      await _storage.upload(
+        scope: 'agency_background',
+        targetId: data.agency.agencyId,
+        bytes: bytes,
+        mimeType: detectSupportedImageMime(bytes),
+      );
+      final refreshed = await _service.loadCore();
+      if (!mounted) return;
+      setState(() {
+        _data = refreshed;
+        _backgroundUploading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تم تحديث خلفية الوكالة وغرفة الوكالة.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _backgroundUploading = false);
+      final code = error.toString().replaceFirst('Bad state: ', '');
+      final message = code.contains('agency_owner_required')
+          ? 'تعديل خلفية الوكالة متاح للمالك فقط.'
+          : code.contains('invalid_file_size')
+              ? 'حجم الخلفية أكبر من المسموح.'
+              : code.contains('invalid_file_type') ||
+                      code.contains('unsupported_image_format')
+                  ? 'صيغة الصورة غير مدعومة.'
+                  : 'تعذر تحديث خلفية الوكالة حاليًا.';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message)),
       );
@@ -821,6 +878,11 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
             const SizedBox(height: 10),
             _AgencyPackageInventoryEntry(onTap: _openPackageInventory),
             const SizedBox(height: 10),
+            _AgencyBackgroundEditEntry(
+              busy: _backgroundUploading,
+              onTap: _pickAgencyBackground,
+            ),
+            const SizedBox(height: 10),
             _OwnershipTransferRequestEntry(
               busy: _ownershipTransferSubmitting,
               onTap: _requestOwnershipTransfer,
@@ -905,10 +967,25 @@ class _AgencyHeader extends StatelessWidget {
     final agency = data.agency;
     final active = data.membershipStatus == 'active';
     final logo = agency.logoUrl?.trim() ?? '';
+    final background = agency.backgroundUrl?.trim() ?? '';
 
     return Container(
       padding: const EdgeInsets.all(18),
-      decoration: _cardDecoration(),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111526),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white12),
+        image: background.isEmpty
+            ? null
+            : DecorationImage(
+                image: NetworkImage(background),
+                fit: BoxFit.cover,
+                colorFilter: const ColorFilter.mode(
+                  Color(0xAA000000),
+                  BlendMode.darken,
+                ),
+              ),
+      ),
       child: Column(
         children: [
           Stack(
@@ -1160,6 +1237,54 @@ class _AgencyPackageInventoryEntry extends StatelessWidget {
           Icons.chevron_left_rounded,
           color: Colors.white38,
         ),
+      ),
+    );
+  }
+}
+
+class _AgencyBackgroundEditEntry extends StatelessWidget {
+  const _AgencyBackgroundEditEntry({
+    required this.busy,
+    required this.onTap,
+  });
+
+  final bool busy;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('owner-agency-background-edit-entry'),
+      decoration: _cardDecoration(),
+      child: ListTile(
+        onTap: busy ? null : onTap,
+        leading: const CircleAvatar(
+          backgroundColor: Color(0xFF1B3440),
+          child: Icon(
+            Icons.wallpaper_rounded,
+            color: Color(0xFF7ED8FF),
+          ),
+        ),
+        title: const Text(
+          'تعديل خلفية الوكالة',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        subtitle: const Text(
+          'تُستخدم كخلفية الوكالة وغطاء غرفة الوكالة المرتبطة.',
+          style: TextStyle(color: Colors.white60),
+        ),
+        trailing: busy
+            ? const SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(
+                Icons.chevron_left_rounded,
+                color: Colors.white38,
+              ),
       ),
     );
   }
