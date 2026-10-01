@@ -10,6 +10,10 @@ import {
   agencyPublicRankingKey,
   calculateAgencyTargetProgress,
 } from "./agency-policy.js";
+import {
+  buildAgencyTargetSharePayoutWrites,
+  prepareAgencyTargetSharePayout,
+} from "./agency-target-share.js";
 import { advanceRoomRocket } from "./room-rocket.js";
 import {
   legacyPresenceFresh,
@@ -399,7 +403,40 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
         ? accumulatedGiftCoins % 10000
         : previousPendingGiftCoins;
     const openingDiamonds = Math.max(0, Number(receiver.diamonds || 0));
-    const closingDiamonds = openingDiamonds + diamondsEarned;
+    const hostSalaryClosingDiamonds = openingDiamonds + diamondsEarned;
+    const agencyTargetSharePlan = agencyTarget
+      ? await prepareAgencyTargetSharePayout(
+          db,
+          transaction,
+          {
+            agencyId,
+            hostUid: receiverId,
+            hostUser: receiver,
+            agencyTarget,
+            effectiveEconomy,
+            month: agencyPeriods.month,
+          },
+        )
+      : null;
+    const agencyTargetSharePayout = agencyTargetSharePlan
+      ? buildAgencyTargetSharePayoutWrites(
+          db,
+          agencyTargetSharePlan,
+          {
+            operationId: key,
+            now,
+            ownerOpeningDiamonds: agencyTargetSharePlan.ownerIsHost
+              ? hostSalaryClosingDiamonds
+              : agencyTargetSharePlan.ownerOpeningDiamonds,
+            contextType: "room",
+            roomId,
+          },
+        )
+      : null;
+    const closingDiamonds =
+      agencyTargetSharePlan?.ownerIsHost === true
+        ? agencyTargetSharePayout.ownerClosingDiamonds
+        : hostSalaryClosingDiamonds;
 
     const senderName = clean(
       sender.displayName ||
@@ -518,6 +555,18 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
           "agencyNextTargetCoins",
           "agencyTargetUpdatedAt",
         );
+        if (agencyTargetSharePlan) {
+          receiverFields.agencySharePayoutMonth = agencyPeriods.month;
+          receiverFields.agencySharePaidCoinsMonth =
+            agencyTargetSharePlan.paidCoins;
+          receiverFields.agencySharePaidTargetIdMonth =
+            agencyTargetSharePlan.targetId;
+          receiverMask.push(
+            "agencySharePayoutMonth",
+            "agencySharePaidCoinsMonth",
+            "agencySharePaidTargetIdMonth",
+          );
+        }
       }
     }
     writes.push(
@@ -528,6 +577,9 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
         receiverTransforms,
       ),
     );
+    if (agencyTargetSharePayout) {
+      writes.push(...agencyTargetSharePayout.writes);
+    }
 
     // High-frequency room support lives in the period support documents below.
     // Do not mutate rooms/{roomId} for every gift: room-root listeners fan this
@@ -733,7 +785,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
           asset: "diamonds",
           delta: diamondsEarned,
           openingBalance: openingDiamonds,
-          closingBalance: closingDiamonds,
+          closingBalance: hostSalaryClosingDiamonds,
           reason: "agency_target_salary",
           sourceType: "gift",
           sourceId: key,
@@ -764,7 +816,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
           salaryDeltaDiamonds: diamondsEarned,
           salaryPaidDiamonds: agencyTarget.paidDiamonds,
           openingBalance: openingDiamonds,
-          closingBalance: closingDiamonds,
+          closingBalance: hostSalaryClosingDiamonds,
           createdAt: now,
         }),
         db.writeCreate(
@@ -872,6 +924,13 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
         agencyBonusDeferredToMonthEnd: revenue.agencyBonusDeferredToMonthEnd,
         agencyShareBps: revenue.agencyShareBps,
         agencyShareCoins,
+        agencyShareSettlementMode: agencyId ? "target_close" : "none",
+        agencyTargetShareDeltaCoins: agencyTargetSharePlan?.deltaCoins || 0,
+        agencyTargetShareDiamonds:
+          agencyTargetSharePlan?.shareDiamondsEarned || 0,
+        agencyTargetShareCarryoverCoins:
+          agencyTargetSharePlan?.remainderCoins || 0,
+        agencyOwnerUid: agencyTargetSharePlan?.ownerUid || null,
         agencyActiveHostCount: revenue.activeHostCount,
         agencyRequiredActiveHosts: revenue.requiredActiveHosts,
         platformShareBps: revenue.platformShareBps,
@@ -937,6 +996,13 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       revenueTierId: revenue.tierId,
       recipientShareCoins,
       agencyShareCoins,
+      agencyShareSettlementMode: agencyId ? "target_close" : "none",
+      agencyTargetShareDeltaCoins: agencyTargetSharePlan?.deltaCoins || 0,
+      agencyTargetShareDiamonds:
+        agencyTargetSharePlan?.shareDiamondsEarned || 0,
+      agencyTargetShareCarryoverCoins:
+        agencyTargetSharePlan?.remainderCoins || 0,
+      agencyOwnerUid: agencyTargetSharePlan?.ownerUid || null,
       platformShareCoins,
       diamondsEarned,
       earningsApplied: earningsEnabled,
