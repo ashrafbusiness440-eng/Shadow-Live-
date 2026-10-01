@@ -7,6 +7,10 @@ import {
   resolveRevenuePolicy,
   tierForMonthlyGross,
 } from "../economy/economy-policy.js";
+import {
+  agencyPerformanceBonusForTarget,
+  hostActivityBonusForTarget,
+} from "../economy/agency-policy.js";
 
 const policy={
   hostPerformanceBonusBps:200,
@@ -47,7 +51,7 @@ test("legacy activity multiplier helper stays isolated from agency payable",()=>
   assert.equal(activityPayoutBps(policy,12),10000);
 });
 
-test("host and agency bonuses apply without exceeding 100 percent",()=>{
+test("legacy percentage bonuses never inflate gift-time Host or Agency shares",()=>{
   const revenue=resolveRevenuePolicy(
     policy,
     {giftHostActivityMonth:"2026-09",giftHostQualifiedDays:14},
@@ -58,36 +62,18 @@ test("host and agency bonuses apply without exceeding 100 percent",()=>{
   );
   assert.equal(revenue.tierId,"diamond");
   assert.equal(revenue.hostBaseShareBps,6300);
-  assert.equal(revenue.hostBonusBps,200);
-  assert.equal(revenue.hostShareBps,6500);
+  assert.equal(revenue.hostBonusBps,0);
+  assert.equal(revenue.hostShareBps,6300);
   assert.equal(revenue.agencyBaseShareBps,1000);
-  assert.equal(revenue.agencyBonusBps,200);
-  assert.equal(revenue.agencyShareBps,1200);
-  assert.equal(revenue.platformShareBps,2300);
+  assert.equal(revenue.agencyBonusBps,0);
+  assert.equal(revenue.agencyShareBps,1000);
+  assert.equal(revenue.platformShareBps,2700);
   assert.equal(
     revenue.hostShareBps+revenue.agencyShareBps+revenue.platformShareBps,
     10000,
   );
-
-  const extreme={
-    ...policy,
-    hostPerformanceBonusBps:3000,
-    agencyPerformanceBonusBps:3000,
-    tiers:[{id:"x",minGiftCoins:0,hostShareBps:9000,agencyShareBps:1000}],
-  };
-  const clamped=resolveRevenuePolicy(
-    extreme,
-    {giftHostActivityMonth:"2026-09",giftHostQualifiedDays:14},
-    1,
-    "agency-a",
-    "2026-09",
-    10,
-  );
-  assert.equal(
-    clamped.hostShareBps+clamped.agencyShareBps+clamped.platformShareBps,
-    10000,
-  );
 });
+
 
 test("approved host bonus requires 14 days even when stale config says 9",()=>{
   const stale={...policy,hostBonusQualifiedDays:9};
@@ -111,7 +97,7 @@ test("approved host bonus requires 14 days even when stale config says 9",()=>{
     0,
   );
   assert.equal(qualified.requiredDays,14);
-  assert.equal(qualified.hostBonusBps,200);
+  assert.equal(qualified.hostBonusBps,0);
 });
 
 test("monthly settlement helper uses final monthly tier for the period",()=>{
@@ -162,12 +148,12 @@ test("diamond conversion preserves sub-10000 coin remainder",()=>{
   );
 });
 
-test("custom Shadow Control thresholds shares and bonuses change calculations without code changes",()=>{
+test("custom Shadow Control tiers change base shares while bonuses remain month-end only",()=>{
   const custom={
     ...policy,
     hostPerformanceBonusBps:300,
     agencyPerformanceBonusBps:100,
-    agencyBonusActiveHosts:3,
+    agencyPerformanceBonusMode:"per_host_target_month_end",
     tiers:[
       {id:"starter",minGiftCoins:0,hostShareBps:5000,agencyShareBps:400},
       {id:"custom",minGiftCoins:200000,hostShareBps:6100,agencyShareBps:700},
@@ -177,14 +163,72 @@ test("custom Shadow Control thresholds shares and bonuses change calculations wi
     monthlyGrossCoins:250000,
     supportCoins:250000,
     qualifiedDays:14,
-    activeHostCount:3,
+    activeHostCount:99,
     hasAgency:true,
   });
   assert.equal(result.tierId,"custom");
-  assert.equal(result.hostShareBps,6400);
-  assert.equal(result.agencyShareBps,800);
-  assert.equal(result.platformShareBps,2800);
-  assert.equal(result.hostPayableCoins,160000);
-  assert.equal(result.agencyPayableCoins,20000);
-  assert.equal(result.platformCoins,70000);
+  assert.equal(result.hostBonusBps,0);
+  assert.equal(result.agencyBonusBps,0);
+  assert.equal(result.hostShareBps,6100);
+  assert.equal(result.agencyShareBps,700);
+  assert.equal(result.platformShareBps,3200);
+  assert.equal(result.hostPayableCoins,152500);
+  assert.equal(result.agencyPayableCoins,17500);
+  assert.equal(result.platformCoins,80000);
+});
+
+test("approved Host Activity Bonus table is fixed by highest Target",()=>{
+  assert.deepEqual(
+    hostActivityBonusForTarget({id:"starter_g"}),
+    {asset:"coins",amount:5000},
+  );
+  assert.deepEqual(
+    hostActivityBonusForTarget({tierId:"starter",rank:"F"}),
+    {asset:"coins",amount:10000},
+  );
+  assert.deepEqual(
+    hostActivityBonusForTarget({id:"silver_c"}),
+    {asset:"diamonds",amount:57},
+  );
+  assert.deepEqual(
+    hostActivityBonusForTarget({id:"gold_a"}),
+    {asset:"diamonds",amount:240},
+  );
+  assert.deepEqual(
+    hostActivityBonusForTarget({id:"diamond"}),
+    {asset:"diamonds",amount:250},
+  );
+});
+
+test("Agency Performance Bonus is per eligible Host highest Target",()=>{
+  assert.deepEqual(
+    agencyPerformanceBonusForTarget({
+      targetThresholdCoins:850000,
+      qualifiedDays:13,
+      bonusBps:100,
+    }),
+    {
+      eligible:false,
+      targetThresholdCoins:850000,
+      qualifiedDays:13,
+      requiredQualifiedDays:14,
+      bonusBps:0,
+      bonusCoins:0,
+    },
+  );
+  assert.deepEqual(
+    agencyPerformanceBonusForTarget({
+      targetThresholdCoins:850000,
+      qualifiedDays:14,
+      bonusBps:100,
+    }),
+    {
+      eligible:true,
+      targetThresholdCoins:850000,
+      qualifiedDays:14,
+      requiredQualifiedDays:14,
+      bonusBps:100,
+      bonusCoins:8500,
+    },
+  );
 });
