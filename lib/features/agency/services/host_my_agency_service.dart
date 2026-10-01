@@ -423,6 +423,62 @@ class HostMyAgencyService {
     );
   }
 
+  Future<Map<String, dynamic>> requestOwnershipTransfer({
+    required String newOwnerPublicId,
+  }) async {
+    final publicId = newOwnerPublicId.trim();
+    if (!RegExp(r'^\d{3,8}
+    if (_ownsClient) _client.close();
+  }
+}
+
+HostAgencyLevel? _level(dynamic value) {
+  if (value is! Map) return null;
+  return HostAgencyLevel.fromJson(Map<String, dynamic>.from(value));
+}
+
+String? _nullableString(dynamic value) {
+  final normalized = (value ?? '').toString().trim();
+  return normalized.isEmpty ? null : normalized;
+}
+
+int _nonNegativeInt(dynamic value) {
+  final number = value is num ? value.toInt() : int.tryParse('$value') ?? 0;
+  return number < 0 ? 0 : number;
+}
+).hasMatch(publicId)) {
+      throw StateError('invalid_owner_public_id');
+    }
+    final token = await _idToken();
+    final response = await _client
+        .post(
+          Uri.parse('$_baseUrl/agency-host'),
+          headers: {
+            'authorization': 'Bearer $token',
+            'content-type': 'application/json',
+          },
+          body: jsonEncode({
+            'action': 'requestOwnershipTransfer',
+            'newOwnerPublicId': publicId,
+            'idempotencyKey':
+                'owner_transfer_' + DateTime.now().microsecondsSinceEpoch.toString(),
+          }),
+        )
+        .timeout(_requestTimeout);
+
+    Map<String, dynamic> body = const <String, dynamic>{};
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map) body = Map<String, dynamic>.from(decoded);
+    } catch (_) {}
+    if (response.statusCode != 200 || body['ok'] != true) {
+      throw StateError(
+        (body['code'] ?? 'agency_ownership_transfer_request_failed').toString(),
+      );
+    }
+    return body;
+  }
+
   void close() {
     if (_ownsClient) _client.close();
   }
