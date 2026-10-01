@@ -3136,6 +3136,66 @@ export async function getMyAgencyMembershipRequest(
   };
 }
 
+export async function getMyAgencyJoinEligibility(
+  db,
+  actorUid,
+) {
+  const [userSnap, membershipSnap, appLockSnap, acceptanceSnap] =
+    await Promise.all([
+      db.get(`users/${actorUid}`),
+      db.get(`agency_user_memberships/${actorUid}`),
+      db.get(`agency_application_locks/${actorUid}`),
+      db.get(acceptanceLockPath(actorUid)),
+    ]);
+
+  if (!userSnap.exists) throw new ApiError("user_not_found", 404);
+  const user = userSnap.data || {};
+  const membership = membershipSnap.exists ? membershipSnap.data || {} : {};
+  const appLock = appLockSnap.exists ? appLockSnap.data || {} : {};
+  const acceptance = acceptanceSnap.exists ? acceptanceSnap.data || {} : {};
+
+  const linkedAgencyId =
+    clean(user.agencyId) ||
+    (clean(membership.status) === "active"
+      ? clean(membership.agencyId)
+      : "");
+  const applicationStatus = clean(appLock.status);
+  const applicationReserved =
+    appLockSnap.exists &&
+    ["draft", "reserved", "pending", "under_review"].includes(
+      applicationStatus,
+    );
+  const membershipReserved =
+    acceptanceSnap.exists &&
+    ["pending", "accepted", "committed"].includes(clean(acceptance.status));
+
+  return {
+    ok: true,
+    canRequestJoin:
+      !linkedAgencyId &&
+      !applicationReserved &&
+      !membershipReserved,
+    linkedAgencyId: linkedAgencyId || null,
+    membershipRole: clean(membership.role) || null,
+    membershipStatus: clean(membership.status) || null,
+    membershipReservation: membershipReserved
+      ? {
+          requestId: clean(acceptance.requestId) || null,
+          agencyId: clean(acceptance.agencyId) || null,
+          status: clean(acceptance.status),
+          type: clean(acceptance.type) || null,
+        }
+      : null,
+    applicationReservation: applicationReserved
+      ? {
+          applicationId:
+            clean(appLock.applicationId || appLock.requestId) || null,
+          status: applicationStatus,
+        }
+      : null,
+  };
+}
+
 export async function listMyAgencyMembershipRequests(
   db,
   actorUid,
@@ -3209,6 +3269,8 @@ export async function agencyMembership(request, env) {
       result = await listAgencyMembershipPending(db, decoded.sub, body);
     } else if (action === "getMyRequest") {
       result = await getMyAgencyMembershipRequest(db, decoded.sub, body);
+    } else if (action === "eligibility") {
+      result = await getMyAgencyJoinEligibility(db, decoded.sub);
     } else if (action === "listMy") {
       result = await listMyAgencyMembershipRequests(db, decoded.sub, body);
     } else {
