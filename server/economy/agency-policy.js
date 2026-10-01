@@ -309,6 +309,48 @@ export function calculateAgencyTargetProgress({
   };
 }
 
+export function agencyTargetAchievementDeltas({
+  previousProgressCoins = 0,
+  progressCoins = 0,
+  targets,
+} = {}) {
+  const previousProgress = targetFinancialInteger(
+    previousProgressCoins,
+    "achievement_previous_progress_coins",
+  );
+  const progress = targetFinancialInteger(
+    progressCoins,
+    "achievement_progress_coins",
+  );
+  if (progress < previousProgress) {
+    throw new Error("invalid_agency_target_achievement_progress");
+  }
+  const normalizedTargets = normalizeAgencyTargets(targets);
+  let previousSalaryDiamonds = 0;
+  const achieved = [];
+  for (const target of normalizedTargets) {
+    const salaryDeltaDiamonds = Math.max(
+      0,
+      target.salaryDiamonds - previousSalaryDiamonds,
+    );
+    if (
+      target.thresholdCoins > previousProgress &&
+      target.thresholdCoins <= progress
+    ) {
+      achieved.push({
+        id: target.id,
+        tierId: target.tierId,
+        rank: target.rank,
+        thresholdCoins: target.thresholdCoins,
+        salaryDiamonds: target.salaryDiamonds,
+        salaryDeltaDiamonds,
+      });
+    }
+    previousSalaryDiamonds = target.salaryDiamonds;
+  }
+  return achieved;
+}
+
 export function resolveAgencySurplusPolicy(override = {}) {
   if (!Object.prototype.hasOwnProperty.call(override, "surplusToShadow")) {
     return {
