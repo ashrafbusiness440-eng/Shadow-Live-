@@ -514,6 +514,117 @@ function statementSummary(agencyId, month, snap, bonusSnap) {
   };
 }
 
+function previousOwnerRankingMonths(currentMonth, count = 6) {
+  const [yearText, monthText] = currentMonth.split("-");
+  const year = Number(yearText);
+  const monthIndex = Number(monthText) - 1;
+  return Array.from({ length: count }, (_, index) => {
+    const date = new Date(Date.UTC(year, monthIndex - index - 1, 1));
+    return date.toISOString().slice(0, 7);
+  });
+}
+
+function ownerRankingCountryToken(value) {
+  return encodeURIComponent(
+    clean(value || "unknown").normalize("NFKC").toLowerCase(),
+  );
+}
+
+function ownerRankingEntry(row, index) {
+  const data = row?.data || {};
+  return {
+    rank: index + 1,
+    agencyId: clean(data.agencyId || row?.id),
+    publicId: clean(data.publicId || data.agencyId || row?.id),
+    name: clean(data.agencyName) || "Shadow Live Agency",
+    country: clean(data.country) || null,
+    logoUrl: clean(data.logoUrl) || null,
+    supportCoins: nonNegativeInteger(
+      data.supportCoins,
+      "agency_ranking_state_corrupt",
+    ),
+  };
+}
+
+function ownerRankingScope(rows, agencyId) {
+  const normalized = rows.map(ownerRankingEntry);
+  const mine = normalized.find((item) => item.agencyId === agencyId) || null;
+  return {
+    rank: mine?.rank || null,
+    supportCoins: mine?.supportCoins || 0,
+    outsideTop100: mine == null,
+    top10: normalized.slice(0, 10),
+    scanned: normalized.length,
+    scanLimit: 100,
+  };
+}
+
+export async function loadAgencyOwnerRanking(
+  db,
+  uidInput,
+  monthInput = null,
+  now = new Date(),
+) {
+  const owner = await assertAgencyOwner(db, uidInput);
+  const currentMonth = currentAgencyMonthKey(now);
+  const availableMonths = previousOwnerRankingMonths(currentMonth, 6);
+  const month = clean(monthInput) || availableMonths[0];
+  if (!validMonth(month) || !availableMonths.includes(month)) {
+    throw new ApiError("agency_ranking_month_out_of_range", 400);
+  }
+
+  const country = clean(owner.agency.country) || "unknown";
+  const countryToken = ownerRankingCountryToken(country);
+  const globalPrefix = month + "__";
+  const countryPrefix = month + "__" + countryToken + "__";
+
+  const [globalRows, countryRows] = await Promise.all([
+    db.runQuery("agency_ranking_entries", {
+      filters: [
+        {
+          field: "globalRankingKey",
+          op: ">=",
+          value: globalPrefix,
+        },
+        {
+          field: "globalRankingKey",
+          op: "<",
+          value: globalPrefix + "\uf8ff",
+        },
+      ],
+      orderBy: [{ field: "globalRankingKey", direction: "asc" }],
+      limit: 100,
+    }),
+    db.runQuery("agency_ranking_entries", {
+      filters: [
+        {
+          field: "countryRankingKey",
+          op: ">=",
+          value: countryPrefix,
+        },
+        {
+          field: "countryRankingKey",
+          op: "<",
+          value: countryPrefix + "\uf8ff",
+        },
+      ],
+      orderBy: [{ field: "countryRankingKey", direction: "asc" }],
+      limit: 100,
+    }),
+  ]);
+
+  return {
+    ok: true,
+    agencyId: owner.agencyId,
+    month,
+    currentMonth,
+    country,
+    availableMonths,
+    global: ownerRankingScope(globalRows, owner.agencyId),
+    countryRanking: ownerRankingScope(countryRows, owner.agencyId),
+  };
+}
+
 export async function loadAgencyOwnerStatement(
   db,
   uidInput,
@@ -564,6 +675,15 @@ export async function agencyOwner(request, env) {
         request,
         env,
         await loadAgencyOwnerStatement(db, token.sub, body.month),
+      );
+    }
+
+    if (action === "ranking") {
+      annotatePressureRequest(request, { action: "agencyOwner:ranking" });
+      return json(
+        request,
+        env,
+        await loadAgencyOwnerRanking(db, token.sub, body.month),
       );
     }
 
