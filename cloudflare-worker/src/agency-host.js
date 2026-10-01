@@ -8,6 +8,7 @@ import {
   calculateAgencyTargetProgress,
   currentAgencyMonthKey,
   DEFAULT_AGENCY_TARGETS,
+  hostActivityBonusForTarget,
 } from "./agency-policy.js";
 import { agencyMemberPermissions } from "./agency-permissions.js";
 import {
@@ -86,7 +87,6 @@ function targetSummary(target) {
 function targetDisplaySummary(
   target,
   revenueTierById,
-  activityBonusBps,
 ) {
   const summary = targetSummary(target);
   if (!summary) return null;
@@ -103,7 +103,7 @@ function targetDisplaySummary(
     ...summary,
     hostShareBps,
     grossSupportCoins,
-    activityBonusBps,
+    activityBonus: hostActivityBonusForTarget(summary),
   };
 }
 
@@ -200,24 +200,16 @@ export async function loadAgencyHostCore(
   const revenueTierById = new Map(
     revenueTiers(effectiveEconomy).map((tier) => [clean(tier.id), tier]),
   );
-  const activityBonusBps = boundedInteger(
-    economy.hostPerformanceBonusBps,
-    200,
-    0,
-    3000,
-  );
   const requiredQualifiedDays = 14;
   const requiredMinutesPerDay = 120;
 
   const reachedTarget = targetDisplaySummary(
     targetProgress.reachedTarget,
     revenueTierById,
-    activityBonusBps,
   );
   const nextTarget = targetDisplaySummary(
     targetProgress.nextTarget,
     revenueTierById,
-    activityBonusBps,
   );
   const membershipPermissions = agencyMemberPermissions({
     membership,
@@ -263,7 +255,6 @@ export async function loadAgencyHostCore(
               targetDisplaySummary(
                 target,
                 revenueTierById,
-                activityBonusBps,
               )
             )
             .filter(Boolean)
@@ -279,7 +270,7 @@ export async function loadAgencyHostCore(
       micSecondsMonth,
       requiredQualifiedDays,
       requiredMinutesPerDay,
-      activityBonusBps,
+      bonusMode: "highest_target_month_end",
       requiredMicSecondsMonth:
         requiredQualifiedDays * requiredMinutesPerDay * 60,
     },
