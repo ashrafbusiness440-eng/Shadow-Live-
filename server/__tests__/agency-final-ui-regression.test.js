@@ -235,3 +235,24 @@ test("Approved bonuses are month-end only and legacy +2 percent is absent", () =
     false,
   );
 });
+
+
+test("Agency legacy economy migration fallback cannot restore UTC or +2 percent", () => {
+  const config = source(
+    "cloudflare-worker/src/legacy-economy/gift-economy-config.js",
+  );
+  assert.equal(config.includes("function safePolicyFallback(data={})"), true);
+  assert.equal(config.includes('periodTimeZone:"Asia/Riyadh"'), true);
+  assert.equal(config.includes("hostPerformanceBonusBps:0"), true);
+  assert.equal(
+    config.includes('agencyPerformanceBonusMode:"per_host_target_month_end"'),
+    true,
+  );
+  assert.equal(
+    config.includes(
+      'clean(data.agencyPerformanceBonusMode)==="per_host_target_month_end"',
+    ),
+    true,
+  );
+  assert.equal(config.includes(":100;"), true);
+});
