@@ -10,9 +10,13 @@ class PublicAgencyPage extends StatefulWidget {
   const PublicAgencyPage({
     super.key,
     required this.agencyId,
+    this.joinEnabled = true,
+    this.joinBlockedReason,
   });
 
   final String agencyId;
+  final bool joinEnabled;
+  final String? joinBlockedReason;
 
   @override
   State<PublicAgencyPage> createState() => _PublicAgencyPageState();
@@ -216,7 +220,7 @@ class _PublicAgencyPageState extends State<PublicAgencyPage> {
   }
 
   Future<void> _requestJoin() async {
-    if (_joinSubmitting || _joinSubmitted) return;
+    if (!widget.joinEnabled || _joinSubmitting || _joinSubmitted) return;
     setState(() => _joinSubmitting = true);
     try {
       await _membershipService.requestJoin(
@@ -299,8 +303,11 @@ class _PublicAgencyPageState extends State<PublicAgencyPage> {
           const SizedBox(height: 12),
           FilledButton.icon(
             key: const Key('agency-public-request-join'),
-            onPressed:
-                _joinSubmitting || _joinSubmitted ? null : _requestJoin,
+            onPressed: !widget.joinEnabled ||
+                    _joinSubmitting ||
+                    _joinSubmitted
+                ? null
+                : _requestJoin,
             icon: _joinSubmitting
                 ? const SizedBox.square(
                     dimension: 18,
@@ -309,16 +316,32 @@ class _PublicAgencyPageState extends State<PublicAgencyPage> {
                 : Icon(
                     _joinSubmitted
                         ? Icons.check_circle_rounded
-                        : Icons.person_add_alt_1_rounded,
+                        : widget.joinEnabled
+                            ? Icons.person_add_alt_1_rounded
+                            : Icons.lock_outline_rounded,
                   ),
             label: Text(
               _joinSubmitted
                   ? 'تم إرسال طلب الانضمام'
                   : _joinSubmitting
                       ? 'جاري الإرسال…'
-                      : 'طلب الانضمام كمضيف',
+                      : widget.joinEnabled
+                          ? 'طلب الانضمام كمضيف'
+                          : 'طلب الانضمام غير متاح حاليًا',
             ),
           ),
+          if (!widget.joinEnabled &&
+              (widget.joinBlockedReason?.trim().isNotEmpty ?? false)) ...[
+            const SizedBox(height: 8),
+            Text(
+              widget.joinBlockedReason!,
+              style: const TextStyle(
+                color: Colors.amberAccent,
+                fontSize: 12,
+                height: 1.4,
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           const _SectionTitle(
             icon: Icons.workspace_premium_rounded,
