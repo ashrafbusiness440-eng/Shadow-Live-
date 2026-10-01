@@ -509,26 +509,7 @@ class HostMyAgencyService {
     required String newOwnerPublicId,
   }) async {
     final publicId = newOwnerPublicId.trim();
-    if (!RegExp(r'^\d{3,8}
-    if (_ownsClient) _client.close();
-  }
-}
-
-HostAgencyLevel? _level(dynamic value) {
-  if (value is! Map) return null;
-  return HostAgencyLevel.fromJson(Map<String, dynamic>.from(value));
-}
-
-String? _nullableString(dynamic value) {
-  final normalized = (value ?? '').toString().trim();
-  return normalized.isEmpty ? null : normalized;
-}
-
-int _nonNegativeInt(dynamic value) {
-  final number = value is num ? value.toInt() : int.tryParse('$value') ?? 0;
-  return number < 0 ? 0 : number;
-}
-).hasMatch(publicId)) {
+    if (!RegExp(r'^\d{3,8}$').hasMatch(publicId)) {
       throw StateError('invalid_owner_public_id');
     }
     final token = await _idToken();
@@ -543,7 +524,8 @@ int _nonNegativeInt(dynamic value) {
             'action': 'requestOwnershipTransfer',
             'newOwnerPublicId': publicId,
             'idempotencyKey':
-                'owner_transfer_' + DateTime.now().microsecondsSinceEpoch.toString(),
+                'owner_transfer_' +
+                DateTime.now().microsecondsSinceEpoch.toString(),
           }),
         )
         .timeout(_requestTimeout);
