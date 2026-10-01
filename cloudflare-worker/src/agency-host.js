@@ -407,6 +407,191 @@ export async function updateAgencyOwnerProfile(
   throw new ApiError("transaction_failed", 500);
 }
 
+export async function requestAgencyIdentityChange(
+  db,
+  uidInput,
+  body = {},
+  { now = new Date(), sessionPayload = null } = {},
+) {
+  const uid = clean(uidInput);
+  const requestedName = clean(body.name);
+  const requestedCountry = clean(body.country) || null;
+  const key = clean(body.idempotencyKey);
+  if (!uid) throw new ApiError("unauthorized", 401);
+  if (!requestedName || requestedName.length > 80) {
+    throw new ApiError("invalid_agency_name", 400);
+  }
+  if (
+    requestedCountry != null &&
+    (requestedCountry.length < 2 || requestedCountry.length > 64)
+  ) {
+    throw new ApiError("invalid_agency_country", 400);
+  }
+  if (!validIdempotencyKey(key)) {
+    throw new ApiError("invalid_idempotency_key", 400);
+  }
+
+  const opPath = `agency_owner_operations/${uid}__${key}`;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const tx = await db.beginTransaction();
+    try {
+      const [opSnap, userSnap, membershipSnap] = await Promise.all([
+        db.get(opPath, tx),
+        db.get(`users/${uid}`, tx),
+        db.get(`agency_user_memberships/${uid}`, tx),
+      ]);
+      if (opSnap.exists) {
+        const existing = opSnap.data || {};
+        if (clean(existing.action) !== "requestAgencyIdentityChange") {
+          throw new ApiError("idempotency_conflict", 409);
+        }
+        await db.rollback(tx);
+        return { ok: true, code: "duplicate", ...(existing.result || {}) };
+      }
+      if (!userSnap.exists || !membershipSnap.exists) {
+        throw new ApiError("agency_owner_required", 403);
+      }
+      const user = userSnap.data || {};
+      if (sessionPayload) {
+        assertUserDocumentSessionState(sessionPayload, user);
+      }
+      const membership = membershipSnap.data || {};
+      const agencyId = clean(membership.agencyId);
+      if (
+        !validAgencyId(agencyId) ||
+        clean(membership.role) !== "owner" ||
+        clean(membership.status) !== "active" ||
+        clean(user.agencyId) !== agencyId
+      ) {
+        throw new ApiError("agency_owner_required", 403);
+      }
+      const lockPath = `agency_identity_change_locks/${agencyId}`;
+      const [agencySnap, lockSnap] = await Promise.all([
+        db.get(`agencies/${agencyId}`, tx),
+        db.get(lockPath, tx),
+      ]);
+      if (
+        !agencySnap.exists ||
+        clean(agencySnap.data?.ownerUid) !== uid ||
+        clean(agencySnap.data?.status) === "closed"
+      ) {
+        throw new ApiError("agency_owner_required", 403);
+      }
+      if (lockSnap.exists && clean(lockSnap.data?.status) === "pending") {
+        throw new ApiError("agency_identity_change_pending", 409, {
+          requestId: clean(lockSnap.data?.requestId) || null,
+        });
+      }
+      const agency = agencySnap.data || {};
+      const currentName = clean(agency.name);
+      const currentCountry = clean(agency.country) || null;
+      if (
+        requestedName === currentName &&
+        requestedCountry === currentCountry
+      ) {
+        throw new ApiError("agency_identity_unchanged", 409);
+      }
+
+      const requestId = `${agencyId}__${key}`;
+      const requestPath = `agency_identity_change_requests/${requestId}`;
+      const result = {
+        requestId,
+        agencyId,
+        ownerUid: uid,
+        status: "pending",
+        currentName,
+        currentCountry,
+        requestedName,
+        requestedCountry,
+        createdAt: now,
+      };
+      await db.commit(tx, [
+        db.writeCreate(requestPath, {
+          ...result,
+          type: "identity_change",
+          updatedAt: now,
+        }),
+        lockSnap.exists
+          ? db.writeUpdate(
+              lockPath,
+              {
+                requestId,
+                agencyId,
+                ownerUid: uid,
+                status: "pending",
+                updatedAt: now,
+              },
+              ["requestId", "agencyId", "ownerUid", "status", "updatedAt"],
+            )
+          : db.writeCreate(lockPath, {
+              requestId,
+              agencyId,
+              ownerUid: uid,
+              status: "pending",
+              createdAt: now,
+              updatedAt: now,
+            }),
+        db.writeCreate(opPath, {
+          actorUid: uid,
+          action: "requestAgencyIdentityChange",
+          agencyId,
+          status: "completed",
+          result,
+          createdAt: now,
+        }),
+        db.writeCreate(
+          `admin_audit_logs/agency_identity_change_request_${requestId}`,
+          {
+            actorUid: uid,
+            action: "requestAgencyIdentityChange",
+            targetType: "agency",
+            targetId: agencyId,
+            before: {
+              name: currentName,
+              country: currentCountry,
+            },
+            after: {
+              name: requestedName,
+              country: requestedCountry,
+            },
+            idempotencyKey: key,
+            createdAt: now,
+          },
+        ),
+        db.writeCreate(
+          `notifications/agency_identity_change_requested_${requestId}`,
+          {
+            userId: uid,
+            type: "agency_identity_change_requested",
+            category: "system",
+            title: "تم إرسال طلب تغيير اسم/دولة الوكالة",
+            body:
+              requestedName +
+              (requestedCountry ? " — " + requestedCountry : ""),
+            read: false,
+            mandatory: true,
+            agencyId,
+            requestId,
+            createdAt: now,
+          },
+        ),
+      ]);
+      return { ok: true, code: "ok", ...result };
+    } catch (error) {
+      await db.rollback(tx);
+      if (error instanceof ApiError) throw error;
+      if (isTransientFirestoreError(error) && attempt < 2) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, firestoreErrorRetryDelayMs(attempt))
+        );
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new ApiError("transaction_failed", 500);
+}
+
 export async function requestAgencyOwnershipTransfer(
   db,
   uidInput,
@@ -671,6 +856,18 @@ export async function agencyHost(request, env) {
         request,
         env,
         await updateAgencyOwnerProfile(db, token.sub, body, {
+          sessionPayload: token,
+        }),
+      );
+    }
+    if (action === "requestIdentityChange") {
+      annotatePressureRequest(request, {
+        action: "agencyHost:requestIdentityChange",
+      });
+      return json(
+        request,
+        env,
+        await requestAgencyIdentityChange(db, token.sub, body, {
           sessionPayload: token,
         }),
       );
