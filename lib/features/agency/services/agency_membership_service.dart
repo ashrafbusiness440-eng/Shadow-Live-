@@ -79,6 +79,37 @@ class AgencyMembershipRequestDetail {
   }
 }
 
+class AgencyMembershipRequestSummary {
+  const AgencyMembershipRequestSummary({
+    required this.requestId,
+    required this.agencyId,
+    required this.agencyName,
+    required this.type,
+    required this.status,
+    required this.createdAt,
+  });
+
+  final String requestId;
+  final String agencyId;
+  final String? agencyName;
+  final String type;
+  final String status;
+  final DateTime? createdAt;
+
+  bool get isPending => status == 'pending';
+
+  factory AgencyMembershipRequestSummary.fromJson(Map<String, dynamic> json) {
+    return AgencyMembershipRequestSummary(
+      requestId: (json['requestId'] ?? '').toString().trim(),
+      agencyId: (json['agencyId'] ?? '').toString().trim(),
+      agencyName: _nullable(json['agencyName']),
+      type: (json['type'] ?? '').toString().trim(),
+      status: (json['status'] ?? '').toString().trim(),
+      createdAt: DateTime.tryParse((json['createdAt'] ?? '').toString()),
+    );
+  }
+}
+
 class AgencyMembershipService {
   AgencyMembershipService({
     http.Client? client,
@@ -149,6 +180,24 @@ class AgencyMembershipService {
       'requestId': requestId.trim(),
     });
     return AgencyMembershipRequestDetail.fromJson(body);
+  }
+
+  Future<List<AgencyMembershipRequestSummary>> loadMyRequests() async {
+    final body = await _post({
+      'action': 'listMy',
+      'limit': 20,
+    });
+    final requests = body['requests'];
+    if (requests is! List) return const <AgencyMembershipRequestSummary>[];
+    return requests
+        .whereType<Map>()
+        .map(
+          (item) => AgencyMembershipRequestSummary.fromJson(
+            Map<String, dynamic>.from(item),
+          ),
+        )
+        .where((item) => item.requestId.isNotEmpty)
+        .toList(growable: false);
   }
 
   Future<void> respond({
