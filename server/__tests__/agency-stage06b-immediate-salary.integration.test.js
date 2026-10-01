@@ -40,11 +40,11 @@ const approvedPolicy={
   policyMode:"tiered_host_agency",
   coinsPerUsd:10000,
   coinsPerDiamond:10000,
-  hostPerformanceBonusBps:200,
-  agencyPerformanceBonusBps:200,
-  hostBonusQualifiedDays:9,
+  hostPerformanceBonusBps:0,
+  agencyPerformanceBonusBps:100,
+  agencyPerformanceBonusMode:"per_host_target_month_end",
+  hostBonusQualifiedDays:14,
   hostBonusMinutesPerQualifiedDay:120,
-  agencyBonusActiveHosts:10,
   activityPayoutBpsByQualifiedDays:{
     "0":0,"1":0,"2":0,"3":2500,"4":4000,
     "5":5500,"6":7000,"7":8000,"8":9000,"9":10000,
@@ -88,8 +88,27 @@ async function seedSharedConfig(){
 }
 
 async function seedAgencyMonth(agencyId,month){
-  await db.collection("agency_support_stats").doc(agencyId)
-    .collection("monthly").doc(month).set({activeHostIds:[]});
+  const ownerUid="owner_"+agencyId;
+  await Promise.all([
+    db.collection("agency_support_stats").doc(agencyId)
+      .collection("monthly").doc(month).set({activeHostIds:[]}),
+    db.collection("agencies").doc(agencyId).set({
+      agencyId,
+      publicId:agencyId.replace(/\D/g,"").slice(0,8) || "600001",
+      name:"Stage 06-B Agency",
+      ownerUid,
+      status:"active",
+    }),
+    db.collection("users").doc(ownerUid).set({
+      publicId:"7"+agencyId.replace(/\D/g,"").slice(-7),
+      accountStatus:"active",
+      agencyId,
+      agencyRole:"owner",
+      diamonds:0,
+      coins:0,
+    }),
+  ]);
+  return ownerUid;
 }
 
 test("06-B one room gift can jump multiple targets and pays only the reached salary delta",async()=>{
@@ -129,8 +148,22 @@ test("06-B one room gift can jump multiple targets and pays only the reached sal
   assert.equal(first.diamondsEarned,20);
   assert.equal(first.agencySalaryPaidDiamonds,20);
 
-  const [hostAfterFirst,ledger1,audit1,op1,notification1]=await Promise.all([
+  const ownerUid="owner_"+agencyId;
+  const [
+    hostAfterFirst,
+    ownerAfterFirst,
+    financialStateAfterFirst,
+    shareLedger1,
+    ledger1,
+    audit1,
+    op1,
+    notification1,
+  ]=await Promise.all([
     db.collection("users").doc(hostId).get(),
+    db.collection("users").doc(ownerUid).get(),
+    db.collection("agency_financial_state").doc(agencyId).get(),
+    db.collection("financial_ledger")
+      .doc("agency_target_share_"+key1).get(),
     db.collection("financial_ledger").doc("gift_earnings_"+key1).get(),
     db.collection("admin_audit_logs").doc("agency_target_salary_"+key1).get(),
     db.collection("gift_operations").doc(key1).get(),
@@ -138,6 +171,11 @@ test("06-B one room gift can jump multiple targets and pays only the reached sal
       .doc("agency_target_salary_"+key1+"_"+hostId).get(),
   ]);
   assert.equal(hostAfterFirst.data().diamonds,20);
+  assert.equal(ownerAfterFirst.data().diamonds,2);
+  assert.equal(financialStateAfterFirst.data().carryoverCoins,0);
+  assert.equal(shareLedger1.data().payableCoins,20000);
+  assert.equal(shareLedger1.data().delta,2);
+  assert.equal(shareLedger1.data().reason,"agency_target_share");
   assert.equal(hostAfterFirst.data().agencyTargetProgressCoins,200000);
   assert.equal(ledger1.data().delta,20);
   assert.equal(ledger1.data().reason,"agency_target_salary");
@@ -163,14 +201,27 @@ test("06-B one room gift can jump multiple targets and pays only the reached sal
   assert.equal(second.diamondsEarned,10);
   assert.equal(second.agencySalaryPaidDiamonds,30);
 
-  const [hostAfterSecond,ledger2,audit2,notification2]=await Promise.all([
+  const [
+    hostAfterSecond,
+    ownerAfterSecond,
+    shareLedger2,
+    ledger2,
+    audit2,
+    notification2,
+  ]=await Promise.all([
     db.collection("users").doc(hostId).get(),
+    db.collection("users").doc(ownerUid).get(),
+    db.collection("financial_ledger")
+      .doc("agency_target_share_"+key2).get(),
     db.collection("financial_ledger").doc("gift_earnings_"+key2).get(),
     db.collection("admin_audit_logs").doc("agency_target_salary_"+key2).get(),
     db.collection("notifications")
       .doc("agency_target_salary_"+key2+"_"+hostId).get(),
   ]);
   assert.equal(hostAfterSecond.data().diamonds,30);
+  assert.equal(ownerAfterSecond.data().diamonds,4);
+  assert.equal(shareLedger2.data().payableCoins,20000);
+  assert.equal(shareLedger2.data().delta,2);
   assert.equal(hostAfterSecond.data().agencyTargetProgressCoins,400000);
   assert.equal(hostAfterSecond.data().agencySalaryPaidDiamonds,30);
   assert.equal(ledger2.data().delta,10);
@@ -219,8 +270,23 @@ test("06-B concurrent room gifts serialize salary progress and never double-pay 
     [5,5],
   );
 
-  const [host,ledgerA,ledgerB,auditA,auditB,room]=await Promise.all([
+  const concurrentOwnerUid="owner_"+agencyId;
+  const [
+    host,
+    concurrentOwner,
+    financialState,
+    targetShareMonth,
+    ledgerA,
+    ledgerB,
+    auditA,
+    auditB,
+    room,
+  ]=await Promise.all([
     db.collection("users").doc(hostId).get(),
+    db.collection("users").doc(concurrentOwnerUid).get(),
+    db.collection("agency_financial_state").doc(agencyId).get(),
+    db.collection("agency_target_share_monthly")
+      .doc(agencyId+"__"+month).get(),
     db.collection("financial_ledger").doc("gift_earnings_"+keyA).get(),
     db.collection("financial_ledger").doc("gift_earnings_"+keyB).get(),
     db.collection("admin_audit_logs").doc("agency_target_salary_"+keyA).get(),
@@ -232,6 +298,11 @@ test("06-B concurrent room gifts serialize salary progress and never double-pay 
   assert.equal(host.data().agencyCurrentTargetId,"starter_f");
   assert.equal(host.data().agencySalaryPaidDiamonds,10);
   assert.equal(host.data().diamonds,10);
+  assert.equal(concurrentOwner.data().diamonds,1);
+  assert.equal(financialState.data().carryoverCoins,0);
+  assert.equal(targetShareMonth.data().shareCoins,10000);
+  assert.equal(targetShareMonth.data().diamondsPaid,1);
+  assert.equal(targetShareMonth.data().payoutCount,2);
   assert.equal(ledgerA.data().delta+ledgerB.data().delta,10);
   assert.equal(auditA.data().salaryDeltaDiamonds+auditB.data().salaryDeltaDiamonds,10);
   assert.equal(
@@ -276,7 +347,6 @@ test("06-B gift idempotency rejects a changed request using an existing operatio
 
   const [sender,host,ledger,audit]=await Promise.all([
     db.collection("users").doc(senderId).get(),
-    db.collection("users").doc(hostId).get(),
     db.collection("financial_ledger").doc("gift_earnings_"+key).get(),
     db.collection("admin_audit_logs").doc("agency_target_salary_"+key).get(),
   ]);
@@ -323,7 +393,12 @@ test("06-B chat gifts use the same immediate target salary ledger audit and fing
   assert.equal(result.salaryDeltaDiamonds,20);
   assert.equal(result.agencySalaryPaidDiamonds,20);
 
-  const [host,ledger,audit,op,notification]=await Promise.all([
+  const chatOwnerUid="owner_"+agencyId;
+  const [host,chatOwner,shareLedger,ledger,audit,op,notification]=await Promise.all([
+    db.collection("users").doc(hostId).get(),
+    db.collection("users").doc(chatOwnerUid).get(),
+    db.collection("financial_ledger")
+      .doc("agency_target_share_"+key).get(),
     db.collection("users").doc(hostId).get(),
     db.collection("financial_ledger").doc("gift_earnings_"+key).get(),
     db.collection("admin_audit_logs").doc("agency_target_salary_"+key).get(),
@@ -332,6 +407,9 @@ test("06-B chat gifts use the same immediate target salary ledger audit and fing
       .doc("agency_target_salary_"+key+"_"+hostId).get(),
   ]);
   assert.equal(host.data().diamonds,20);
+  assert.equal(chatOwner.data().diamonds,2);
+  assert.equal(shareLedger.data().payableCoins,20000);
+  assert.equal(shareLedger.data().delta,2);
   assert.equal(ledger.data().delta,20);
   assert.equal(audit.data().contextType,"chat");
   assert.equal(audit.data().salaryDeltaDiamonds,20);
