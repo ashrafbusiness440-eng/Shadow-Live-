@@ -1104,6 +1104,15 @@ class _MemberManagementTile extends StatelessWidget {
     final displayName =
         member.displayName ?? (publicId.isEmpty ? member.uid : publicId);
 
+    void openProfile() {
+      if (member.uid.isEmpty) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => PublicProfileScreen(userId: member.uid),
+        ),
+      );
+    }
+
     return Card(
       key: Key('owner-agency-member-${member.uid}'),
       color: const Color(0xFF11182A),
@@ -1116,28 +1125,36 @@ class _MemberManagementTile extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                CircleAvatar(
-                  key: Key('owner-member-avatar-${member.uid}'),
-                  radius: 24,
-                  backgroundColor: const Color(0xFF2A3150),
-                  backgroundImage: image.isEmpty ? null : NetworkImage(image),
-                  child: image.isEmpty
-                      ? const Icon(Icons.person_rounded)
-                      : null,
+                InkWell(
+                  onTap: openProfile,
+                  borderRadius: BorderRadius.circular(999),
+                  child: CircleAvatar(
+                    key: Key('owner-member-avatar-${member.uid}'),
+                    radius: 24,
+                    backgroundColor: const Color(0xFF2A3150),
+                    backgroundImage:
+                        image.isEmpty ? null : NetworkImage(image),
+                    child: image.isEmpty
+                        ? const Icon(Icons.person_rounded)
+                        : null,
+                  ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        displayName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 16,
+                      InkWell(
+                        onTap: openProfile,
+                        child: Text(
+                          displayName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 16,
+                          ),
                         ),
                       ),
                       if (publicId.isNotEmpty) ...[
