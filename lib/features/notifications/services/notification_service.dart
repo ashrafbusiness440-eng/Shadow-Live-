@@ -11,6 +11,8 @@ class AppNotification {
     required this.createdAt,
     required this.requestId,
     required this.agencyId,
+    required this.requestType,
+    required this.applicantUid,
     required this.actionState,
     required this.finalStatus,
     required this.finalDecision,
@@ -25,6 +27,8 @@ class AppNotification {
   final DateTime? createdAt;
   final String? requestId;
   final String? agencyId;
+  final String? requestType;
+  final String? applicantUid;
   final String? actionState;
   final String? finalStatus;
   final String? finalDecision;
@@ -53,6 +57,8 @@ class AppNotification {
       createdAt: createdAt,
       requestId: _nullable(data['requestId']),
       agencyId: _nullable(data['agencyId']),
+      requestType: _nullable(data['requestType']),
+      applicantUid: _nullable(data['applicantUid'] ?? data['memberUid']),
       actionState: _nullable(data['actionState']),
       finalStatus: _nullable(data['finalStatus']),
       finalDecision: _nullable(data['finalDecision']),
