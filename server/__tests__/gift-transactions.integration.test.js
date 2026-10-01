@@ -417,7 +417,7 @@ test("real unmuted mic time qualifies 120-minute days and accumulates 9 cycle da
   assert.deepEqual(agencyMonth.data().activeHostIds,[hostUid]);
 });
 
-test("Shadow Control policy save persists custom values and runtime calculations use them",async()=>{
+test("Shadow Control policy save keeps activity fixed while custom economics remain dynamic",async()=>{
   const custom={
     policyMode:"tiered_host_agency",
     enabled:true,
@@ -437,7 +437,10 @@ test("Shadow Control policy save persists custom values and runtime calculations
   };
   const saved=await saveGiftEconomyPolicy(db,"shadow_control_test",custom);
   const stored=await db.collection("system_config").doc("gift_economy").get();
-  assert.equal(saved.hostBonusMinutesPerQualifiedDay,90);
+  assert.equal(saved.hostBonusQualifiedDays,14);
+  assert.equal(saved.hostBonusMinutesPerQualifiedDay,120);
+  assert.equal(stored.data().hostBonusQualifiedDays,14);
+  assert.equal(stored.data().hostBonusMinutesPerQualifiedDay,120);
   assert.equal(stored.data().hostPerformanceBonusBps,300);
   assert.equal(stored.data().agencyBonusActiveHosts,3);
   assert.equal(stored.data().tiers[1].minGiftCoins,200000);
@@ -445,7 +448,7 @@ test("Shadow Control policy save persists custom values and runtime calculations
   const result=calculateAgencyCycleSettlement(stored.data(),{
     monthlyGrossCoins:250000,
     supportCoins:250000,
-    qualifiedDays:9,
+    qualifiedDays:14,
     activeHostCount:3,
     hasAgency:true,
   });
