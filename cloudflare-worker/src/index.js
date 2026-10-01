@@ -25,6 +25,7 @@ import { agencyMembership } from "./agency-membership.js";
 import { agencyPublic } from "./agency-public.js";
 import { agencyHost } from "./agency-host.js";
 import { agencyOwner } from "./agency-owner.js";
+import { agencyPackages } from "./agency-packages.js";
 import { configureLegacyEnv, getFirestore } from "./legacy-firebase-admin-shim.js";
 import { settleDueGameOperations } from "./legacy-games/game-runtime.js";
 import {
@@ -145,6 +146,10 @@ async function dispatchRequest(request, env, ctx) {
   if (url.pathname === "/api/agency-owner") {
     annotatePressureRequest(request, { action: "agencyOwner" });
     return agencyOwner(request, env);
+  }
+  if (url.pathname === "/api/agency-packages") {
+    annotatePressureRequest(request, { action: "agencyPackages" });
+    return agencyPackages(request, env);
   }
   if (url.pathname === "/api/economy-router") {
     return economyRouter(request, env);
