@@ -12,6 +12,10 @@ import {
   calculateAgencyTargetProgress,
 } from "./agency-policy.js";
 import {
+  buildAgencyTargetSharePayoutWrites,
+  prepareAgencyTargetSharePayout,
+} from "./agency-target-share.js";
+import {
   legacyPresenceFresh,
   realtimeUserPresentFromNamespace,
 } from "./room-presence-authority.js";
@@ -534,7 +538,40 @@ export async function sendGift(db, uid, body, options = {}) {
         ? accumulated % 10000
         : previousPending;
     const openingDiamonds = Math.max(0, Number(receiverData.diamonds || 0));
-    const closingDiamonds = openingDiamonds + diamondsEarned;
+    const hostSalaryClosingDiamonds = openingDiamonds + diamondsEarned;
+    const agencyTargetSharePlan = agencyTarget
+      ? await prepareAgencyTargetSharePayout(
+          db,
+          transaction,
+          {
+            agencyId,
+            hostUid: receiverId,
+            hostUser: receiverData,
+            agencyTarget,
+            effectiveEconomy,
+            month: agencyPeriods.month,
+          },
+        )
+      : null;
+    const agencyTargetSharePayout = agencyTargetSharePlan
+      ? buildAgencyTargetSharePayoutWrites(
+          db,
+          agencyTargetSharePlan,
+          {
+            operationId: key,
+            now,
+            ownerOpeningDiamonds: agencyTargetSharePlan.ownerIsHost
+              ? hostSalaryClosingDiamonds
+              : agencyTargetSharePlan.ownerOpeningDiamonds,
+            contextType: "chat",
+            conversationId,
+          },
+        )
+      : null;
+    const closingDiamonds =
+      agencyTargetSharePlan?.ownerIsHost === true
+        ? agencyTargetSharePayout.ownerClosingDiamonds
+        : hostSalaryClosingDiamonds;
     const after = before - totalCost;
 
     const giftName = clean(giftData.nameAr || "هدية");
@@ -617,6 +654,18 @@ export async function sendGift(db, uid, body, options = {}) {
           "agencyNextTargetCoins",
           "agencyTargetUpdatedAt",
         );
+        if (agencyTargetSharePlan) {
+          receiverFields.agencySharePayoutMonth = agencyPeriods.month;
+          receiverFields.agencySharePaidCoinsMonth =
+            agencyTargetSharePlan.paidCoins;
+          receiverFields.agencySharePaidTargetIdMonth =
+            agencyTargetSharePlan.targetId;
+          receiverMask.push(
+            "agencySharePayoutMonth",
+            "agencySharePaidCoinsMonth",
+            "agencySharePaidTargetIdMonth",
+          );
+        }
       }
     }
     writes.push(
@@ -627,6 +676,9 @@ export async function sendGift(db, uid, body, options = {}) {
         receiverTransforms,
       ),
     );
+    if (agencyTargetSharePayout) {
+      writes.push(...agencyTargetSharePayout.writes);
+    }
 
     const receiverStatsTransforms = [
       db.increment("receivedCoins", totalCost),
@@ -746,7 +798,7 @@ export async function sendGift(db, uid, body, options = {}) {
           asset: "diamonds",
           delta: diamondsEarned,
           openingBalance: openingDiamonds,
-          closingBalance: closingDiamonds,
+          closingBalance: hostSalaryClosingDiamonds,
           reason: "agency_target_salary",
           sourceType: "gift",
           sourceId: key,
@@ -776,7 +828,7 @@ export async function sendGift(db, uid, body, options = {}) {
           salaryDeltaDiamonds: diamondsEarned,
           salaryPaidDiamonds: agencyTarget.paidDiamonds,
           openingBalance: openingDiamonds,
-          closingBalance: closingDiamonds,
+          closingBalance: hostSalaryClosingDiamonds,
           createdAt: now,
         }),
         db.writeCreate(
@@ -880,6 +932,13 @@ export async function sendGift(db, uid, body, options = {}) {
         agencyBonusDeferredToMonthEnd: revenue.agencyBonusDeferredToMonthEnd,
         agencyShareBps: revenue.agencyShareBps,
         agencyShareCoins,
+        agencyShareSettlementMode: agencyId ? "target_close" : "none",
+        agencyTargetShareDeltaCoins: agencyTargetSharePlan?.deltaCoins || 0,
+        agencyTargetShareDiamonds:
+          agencyTargetSharePlan?.shareDiamondsEarned || 0,
+        agencyTargetShareCarryoverCoins:
+          agencyTargetSharePlan?.remainderCoins || 0,
+        agencyOwnerUid: agencyTargetSharePlan?.ownerUid || null,
         agencyActiveHostCount: revenue.activeHostCount,
         agencyRequiredActiveHosts: revenue.requiredActiveHosts,
         platformShareBps: revenue.platformShareBps,
@@ -942,6 +1001,13 @@ export async function sendGift(db, uid, body, options = {}) {
       revenueTierId: revenue.tierId,
       recipientShareCoins,
       agencyShareCoins,
+      agencyShareSettlementMode: agencyId ? "target_close" : "none",
+      agencyTargetShareDeltaCoins: agencyTargetSharePlan?.deltaCoins || 0,
+      agencyTargetShareDiamonds:
+        agencyTargetSharePlan?.shareDiamondsEarned || 0,
+      agencyTargetShareCarryoverCoins:
+        agencyTargetSharePlan?.remainderCoins || 0,
+      agencyOwnerUid: agencyTargetSharePlan?.ownerUid || null,
       platformShareCoins,
       diamondsEarned,
       earningsApplied: earningsEnabled,
