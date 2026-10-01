@@ -110,6 +110,73 @@ class AgencyMembershipRequestSummary {
   }
 }
 
+class AgencyReviewRequestDetail {
+  const AgencyReviewRequestDetail({
+    required this.requestId,
+    required this.agencyId,
+    required this.uid,
+    required this.userPublicId,
+    required this.displayName,
+    required this.profileImageUrl,
+    required this.type,
+    required this.targetRole,
+    required this.status,
+    required this.createdAt,
+    required this.accountStatus,
+    required this.conflictStatus,
+    required this.reason,
+    required this.resolvedBy,
+    required this.actionable,
+  });
+
+  final String requestId;
+  final String agencyId;
+  final String uid;
+  final String? userPublicId;
+  final String? displayName;
+  final String? profileImageUrl;
+  final String type;
+  final String targetRole;
+  final String status;
+  final DateTime? createdAt;
+  final String accountStatus;
+  final String conflictStatus;
+  final String? reason;
+  final String? resolvedBy;
+  final bool actionable;
+
+  bool get canAccept =>
+      actionable &&
+      status == 'pending' &&
+      conflictStatus == 'none' &&
+      accountStatus == 'active';
+
+  factory AgencyReviewRequestDetail.fromJson(Map<String, dynamic> json) {
+    final raw = json['request'];
+    if (raw is! Map) {
+      throw const FormatException('invalid_agency_review_request');
+    }
+    final request = Map<String, dynamic>.from(raw);
+    return AgencyReviewRequestDetail(
+      requestId: (request['requestId'] ?? '').toString().trim(),
+      agencyId: (request['agencyId'] ?? '').toString().trim(),
+      uid: (request['uid'] ?? '').toString().trim(),
+      userPublicId: _nullable(request['userPublicId']),
+      displayName: _nullable(request['displayName']),
+      profileImageUrl: _nullable(request['profileImageUrl']),
+      type: (request['type'] ?? '').toString().trim(),
+      targetRole: (request['targetRole'] ?? 'host').toString().trim(),
+      status: (request['status'] ?? '').toString().trim(),
+      createdAt: _dateTime(request['createdAt']),
+      accountStatus: (request['accountStatus'] ?? 'active').toString().trim(),
+      conflictStatus: (request['conflictStatus'] ?? 'none').toString().trim(),
+      reason: _nullable(request['reason']),
+      resolvedBy: _nullable(request['resolvedBy']),
+      actionable: json['actionable'] == true,
+    );
+  }
+}
+
 class AgencyJoinReservation {
   const AgencyJoinReservation({
     required this.requestId,
@@ -251,6 +318,16 @@ class AgencyMembershipService {
     });
   }
 
+  Future<AgencyReviewRequestDetail> getReviewRequest(
+    String requestId,
+  ) async {
+    final body = await _post({
+      'action': 'reviewRequest',
+      'requestId': requestId.trim(),
+    });
+    return AgencyReviewRequestDetail.fromJson(body);
+  }
+
   Future<AgencyMembershipRequestDetail> getMyRequest(
     String requestId,
   ) async {
@@ -286,6 +363,24 @@ class AgencyMembershipService {
         .toList(growable: false);
   }
 
+  Future<String> respondReview({
+    required String requestId,
+    required String requestType,
+    required String decision,
+    required String idempotencyKey,
+    String? reason,
+  }) async {
+    final body = await _post({
+      'action': requestType.trim() == 'leave' ? 'respondLeave' : 'respond',
+      'requestId': requestId.trim(),
+      'decision': decision.trim(),
+      'idempotencyKey': idempotencyKey,
+      if (reason != null && reason.trim().isNotEmpty)
+        'reason': reason.trim(),
+    });
+    return (body['code'] ?? 'ok').toString();
+  }
+
   Future<void> respond({
     required String requestId,
     required String decision,
@@ -302,6 +397,13 @@ class AgencyMembershipService {
   void close() {
     if (_ownsClient) _client.close();
   }
+}
+
+DateTime? _dateTime(dynamic value) {
+  if (value is DateTime) return value;
+  final text = (value ?? '').toString().trim();
+  if (text.isEmpty) return null;
+  return DateTime.tryParse(text);
 }
 
 String? _nullable(dynamic value) {
