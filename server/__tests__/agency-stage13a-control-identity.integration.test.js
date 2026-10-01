@@ -10,6 +10,9 @@ import {
   transferAgencyOwnership,
   updateAgencyIdentity,
 } from "../../cloudflare-worker/src/agency-control.js";
+import {
+  executePublicIdChange,
+} from "../../cloudflare-worker/src/change-public-id.js";
 import { listAgencyMembers } from "../../cloudflare-worker/src/agency-membership.js";
 import { searchPublicAgencies } from "../../cloudflare-worker/src/agency-public.js";
 import { cloudflareFirestoreAdapter } from "./helpers/cloudflare-firestore-adapter.js";
@@ -195,8 +198,7 @@ test("13-A Agency / Room public ID can change from 6 digits to 3-8 without movin
   assert.equal(agency.data().publicId, "731");
   assert.equal(nextRegistry.data().agencyId, agencyId);
   assert.equal(nextRegistry.data().reserved, false);
-  assert.equal(oldRegistry.data().reserved, true);
-  assert.equal(oldRegistry.data().currentPublicId, "731");
+  assert.equal(oldRegistry.exists, false);
 
   const controlLookup = await getAgencyControlDetails(db, "731");
   assert.equal(controlLookup.agencyId, agencyId);
@@ -248,6 +250,176 @@ test("13-A Agency / Room public ID can change from 6 digits to 3-8 without movin
     ),
     /invalid_agency_public_id/,
   );
+});
+
+test("13-A released Agency public ID can be reused even when it equals an old immutable Agency key", async () => {
+  const firstAgencyId = "813104";
+  const secondAgencyId = "813105";
+  await seedAgency({
+    agencyId: firstAgencyId,
+    oldOwnerUid: "stage13a_reuse_owner_1",
+    newOwnerUid: "stage13a_reuse_manager_1",
+    oldOwnerPublicId: "713104",
+    newOwnerPublicId: "713105",
+  });
+  await seedAgency({
+    agencyId: secondAgencyId,
+    oldOwnerUid: "stage13a_reuse_owner_2",
+    newOwnerUid: "stage13a_reuse_manager_2",
+    oldOwnerPublicId: "713106",
+    newOwnerPublicId: "713107",
+  });
+
+  await updateAgencyIdentity(
+    db,
+    "shadow_owner",
+    {
+      agencyId: firstAgencyId,
+      publicId: "73104",
+      name: "First Released Agency",
+      country: "UAE",
+      idempotencyKey: "stage13a_release_public_0001",
+    },
+    { now: new Date("2026-10-01T12:00:00.000Z") },
+  );
+
+  const reused = await updateAgencyIdentity(
+    db,
+    "shadow_owner",
+    {
+      agencyId: secondAgencyId,
+      publicId: firstAgencyId,
+      name: "Second Reuse Agency",
+      country: "Syria",
+      idempotencyKey: "stage13a_reuse_public_0001",
+    },
+    { now: new Date("2026-10-01T12:01:00.000Z") },
+  );
+  assert.equal(reused.publicId, firstAgencyId);
+
+  const [first, second, registry] = await Promise.all([
+    adminDb.collection("agencies").doc(firstAgencyId).get(),
+    adminDb.collection("agencies").doc(secondAgencyId).get(),
+    adminDb.collection("agency_ids").doc(firstAgencyId).get(),
+  ]);
+  assert.equal(first.data().publicId, "73104");
+  assert.equal(second.data().publicId, firstAgencyId);
+  assert.equal(registry.data().agencyId, secondAgencyId);
+  assert.equal(registry.data().reserved, false);
+
+  const lookup = await getAgencyControlDetails(db, firstAgencyId);
+  assert.equal(lookup.agencyId, secondAgencyId);
+
+  const publicSearch = await searchPublicAgencies(db, {
+    query: firstAgencyId,
+    mode: "id",
+  });
+  assert.equal(publicSearch.results.length, 1);
+  assert.equal(publicSearch.results[0].agencyId, secondAgencyId);
+
+  const members = await listAgencyMembers(db, "stage13a_reuse_owner_2", {
+    agencyId: firstAgencyId,
+    limit: 25,
+  });
+  assert.equal(members.agency.agencyId, secondAgencyId);
+});
+
+test("13-A legacy reserved Agency public ID is reclaimed without a scan", async () => {
+  const agencyId = "813106";
+  await seedAgency({
+    agencyId,
+    oldOwnerUid: "stage13a_legacy_owner",
+    newOwnerUid: "stage13a_legacy_manager",
+    oldOwnerPublicId: "713108",
+    newOwnerPublicId: "713109",
+  });
+  await adminDb.collection("agency_ids").doc("5555").set({
+    agencyId: null,
+    publicId: "5555",
+    reserved: true,
+    retiredAgencyId: "899999",
+    currentPublicId: "5444",
+    retiredAt: new Date("2026-09-30T00:00:00.000Z"),
+  });
+
+  const changed = await updateAgencyIdentity(
+    db,
+    "shadow_owner",
+    {
+      agencyId,
+      publicId: "5555",
+      name: "Legacy Reclaim Agency",
+      country: "UAE",
+      idempotencyKey: "stage13a_reclaim_legacy_0001",
+    },
+    { now: new Date("2026-10-01T12:02:00.000Z") },
+  );
+  assert.equal(changed.publicId, "5555");
+
+  const registry = await adminDb.collection("agency_ids").doc("5555").get();
+  assert.equal(registry.data().agencyId, agencyId);
+  assert.equal(registry.data().reserved, false);
+  assert.equal(registry.data().retiredAgencyId, null);
+});
+
+test("admin User Public ID change releases and reuses the previous live mapping atomically", async () => {
+  const actorUid = "shadow_owner";
+  await adminDb.collection("users").doc(actorUid).set({
+    role: "owner",
+    adminEnabled: true,
+    accountStatus: "active",
+  });
+
+  await Promise.all([
+    adminDb.collection("users").doc("public_reuse_user_1").set({
+      publicId: "4444",
+      displayName: "First",
+      accountStatus: "active",
+    }),
+    adminDb.collection("public_profiles").doc("public_reuse_user_1").set({
+      publicId: "4444",
+      displayName: "First",
+    }),
+    adminDb.collection("public_ids").doc("4444").set({
+      uid: "public_reuse_user_1",
+    }),
+    adminDb.collection("users").doc("public_reuse_user_2").set({
+      publicId: "5555",
+      displayName: "Second",
+      accountStatus: "active",
+    }),
+    adminDb.collection("public_profiles").doc("public_reuse_user_2").set({
+      publicId: "5555",
+      displayName: "Second",
+    }),
+    adminDb.collection("public_ids").doc("5555").set({
+      uid: "public_reuse_user_2",
+    }),
+  ]);
+
+  await executePublicIdChange(db, actorUid, {
+    currentId: "4444",
+    newId: "6666",
+    reason: "release old id",
+    idempotencyKey: "user_public_release_0001",
+  });
+
+  const released = await adminDb.collection("public_ids").doc("4444").get();
+  assert.equal(released.exists, false);
+
+  await executePublicIdChange(db, actorUid, {
+    currentId: "5555",
+    newId: "4444",
+    reason: "reuse released id",
+    idempotencyKey: "user_public_reuse_0001",
+  });
+
+  const reused = await adminDb.collection("public_ids").doc("4444").get();
+  assert.equal(reused.data().uid, "public_reuse_user_2");
+  assert.equal(reused.data().reserved, false);
+  const first = await adminDb.collection("users").doc("public_reuse_user_1").get();
+  assert.deepEqual(first.data().publicIdHistory, ["4444"]);
+  assert.equal(first.data().publicId, "6666");
 });
 
 test("13-A ownership transfer swaps the incoming member role and preserves counters", async () => {
