@@ -1078,8 +1078,7 @@ class _TargetTableSheet extends StatelessWidget {
                           'Gross Support ≈ ${level.grossSupportCoins > 0 ? _formatCoins(level.grossSupportCoins) : '—'} Coins',
                         ),
                         Text(
-                          'Host Share: ${_formatCoins(level.thresholdCoins)} Coins'
-                          ' • ${_formatBps(level.hostShareBps)}',
+                          'Target المحتسب للمضيف: ${_formatCoins(level.thresholdCoins)} Coins',
                         ),
                         Text(
                           'راتب المضيف: ${level.salaryDiamonds} Diamonds'
