@@ -319,6 +319,7 @@ async function resolvedReviewerNotificationWrites(
     status,
     decision,
     actorUid,
+    actorName,
     now,
   },
 ) {
@@ -341,6 +342,7 @@ async function resolvedReviewerNotificationWrites(
               finalStatus: status,
               finalDecision: decision,
               resolvedBy: actorUid,
+              resolvedByName: clean(actorName) || clean(actorUid),
               resolvedAt: now,
             },
             [
@@ -348,6 +350,7 @@ async function resolvedReviewerNotificationWrites(
               "finalStatus",
               "finalDecision",
               "resolvedBy",
+              "resolvedByName",
               "resolvedAt",
             ],
           ),
@@ -1060,6 +1063,9 @@ export async function respondAgencyLeaveRequest(
           status,
           decision,
           actorUid,
+          actorName:
+            clean(actorUser.displayName || actorUser.username || actorUser.name) ||
+            actorUid,
           now,
         },
       );
@@ -1312,6 +1318,7 @@ export async function respondAgencyMembershipRequest(
       const pairPath = requestKeyPath(agencyId, uid);
       const queuePath = pendingPath(agencyId, uid);
       let notificationUserId;
+      let reviewerActorUser = null;
       if (type === "invite") {
         if (actorUid !== uid) throw new ApiError("forbidden", 403);
         notificationUserId = clean(request.actorUid);
@@ -1324,6 +1331,7 @@ export async function respondAgencyMembershipRequest(
           tx,
         );
         notificationUserId = uid;
+        reviewerActorUser = actor.actorUser || {};
         if (!actor.agency) throw new ApiError("forbidden", 403);
       }
 
@@ -1394,6 +1402,14 @@ export async function respondAgencyMembershipRequest(
         });
       }
 
+      const reviewerUser =
+        type === "invite" ? (userSnap.data || {}) : (reviewerActorUser || {});
+      const reviewerName =
+        clean(
+          reviewerUser.displayName ||
+          reviewerUser.username ||
+          reviewerUser.name,
+        ) || actorUid;
       const status = decision === "reject" ? "rejected" : accepted ? "accepted" : "pending";
       let notificationUpdates = [];
       if (status !== "pending") {
@@ -1419,6 +1435,7 @@ export async function respondAgencyMembershipRequest(
             status,
             decision,
             actorUid,
+            actorName: reviewerName,
             now,
           },
         );
