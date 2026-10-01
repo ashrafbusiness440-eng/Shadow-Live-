@@ -626,13 +626,13 @@ function roomResponse(roomId,data){
   };
 }
 
-async function openPersonalRoom(db,uid){
+async function openPersonalRoom(db,uid,{forceAgency=false}={}){
   const roomId="personal_"+uid;
   const roomRef=db.collection("rooms").doc(roomId);
   const userRef=db.collection("users").doc(uid);
 
   const existing=await roomRef.get();
-  if(existing.exists){
+  if(existing.exists&&!forceAgency){
     const data=existing.data()||{};
     if(clean(data.ownerUid||data.hostId)!==uid){
       throw new ApiError("room_owner_mismatch",409);
@@ -659,8 +659,12 @@ async function openPersonalRoom(db,uid){
   const displayName=clean(user.displayName||user.username||"مستخدم Shadow Live");
   const ownerLocation=clean(user.location);
   const linkedAgencyId=clean(user.agencyId);
-  const createAsAgency=
+  const isAgencyOwner=
     clean(user.agencyRole)==="owner"&&/^\d{3,8}$/.test(linkedAgencyId);
+  if(forceAgency&&!isAgencyOwner){
+    throw new ApiError("agency_owner_required",403);
+  }
+  const createAsAgency=isAgencyOwner;
 
   for(let attempt=0;attempt<40;attempt++){
     const publicId=String(randomInt(100000,1000000));
@@ -3476,6 +3480,14 @@ export default async function handler(req,res){
     if(decoded.firebase?.sign_in_provider==="anonymous")throw new ApiError("account_required",403);
     if(action==="personalRoom"){
       const room=await openPersonalRoom(getFirestore(),decoded.uid);
+      return out(res,200,{ok:true,room});
+    }
+    if(action==="agencyRoom"){
+      const room=await openPersonalRoom(
+        getFirestore(),
+        decoded.uid,
+        {forceAgency:true},
+      );
       return out(res,200,{ok:true,room});
     }
     if(action==="setRoomChatEnabled"){
