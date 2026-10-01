@@ -305,6 +305,25 @@ class _OwnerAgencyDashboardPageState extends State<OwnerAgencyDashboardPage> {
     );
   }
 
+  Future<void> _showHostPerformance(
+    OwnerAgencyMember member,
+  ) async {
+    if (member.role == 'owner' || member.uid.isEmpty) return;
+    final future = _ownerService.loadHostPerformance(member.uid);
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF0D1220),
+      builder: (_) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: _HostPerformanceSheet(
+          member: member,
+          future: future,
+        ),
+      ),
+    );
+  }
+
   Future<void> _respondPending(
     OwnerAgencyPendingRequest request,
     String decision,
@@ -413,6 +432,7 @@ class _OwnerAgencyDashboardPageState extends State<OwnerAgencyDashboardPage> {
                       onInvite: _inviteHost,
                       onSetRole: _setMemberRole,
                       onRemove: _removeMember,
+                      onPerformance: _showHostPerformance,
                       onRespond: _respondPending,
                       onCancelInvite: _cancelInvite,
                     ),
@@ -864,6 +884,7 @@ class _AgencyManagementCard extends StatelessWidget {
     required this.onInvite,
     required this.onSetRole,
     required this.onRemove,
+    required this.onPerformance,
     required this.onRespond,
     required this.onCancelInvite,
   });
@@ -881,6 +902,7 @@ class _AgencyManagementCard extends StatelessWidget {
   final Future<void> Function() onInvite;
   final Future<void> Function(OwnerAgencyMember, String) onSetRole;
   final Future<void> Function(OwnerAgencyMember) onRemove;
+  final Future<void> Function(OwnerAgencyMember) onPerformance;
   final Future<void> Function(OwnerAgencyPendingRequest, String) onRespond;
   final Future<void> Function(OwnerAgencyPendingRequest) onCancelInvite;
 
@@ -977,6 +999,7 @@ class _AgencyManagementCard extends StatelessWidget {
               busy: busy,
               onSetRole: onSetRole,
               onRemove: onRemove,
+              onPerformance: onPerformance,
             ),
           ),
           const Divider(color: Color(0x22FFFFFF), height: 26),
@@ -1068,55 +1091,403 @@ class _MemberManagementTile extends StatelessWidget {
     required this.busy,
     required this.onSetRole,
     required this.onRemove,
+    required this.onPerformance,
   });
 
   final OwnerAgencyMember member;
   final bool busy;
   final Future<void> Function(OwnerAgencyMember, String) onSetRole;
   final Future<void> Function(OwnerAgencyMember) onRemove;
+  final Future<void> Function(OwnerAgencyMember) onPerformance;
 
   @override
   Widget build(BuildContext context) {
     final owner = member.role == 'owner';
-    return ListTile(
-      dense: true,
-      contentPadding: EdgeInsets.zero,
-      title: Text(
-        member.displayName ?? member.publicId ?? member.uid,
-        style: const TextStyle(color: Colors.white),
-      ),
-      subtitle: Text(
-        '${member.publicId ?? '—'} • ${_roleLabel(member.role)}',
-        style: const TextStyle(color: Colors.white54),
-      ),
-      trailing: owner
-          ? const Icon(Icons.workspace_premium_rounded, color: Color(0xFFFFD875))
-          : Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                PopupMenuButton<String>(
-                  key: Key('owner-member-role-${member.uid}'),
-                  enabled: !busy,
-                  onSelected: (role) => onSetRole(member, role),
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'host', child: Text('Host')),
-                    PopupMenuItem(value: 'manager', child: Text('Manager')),
-                    PopupMenuItem(
-                      value: 'senior_manager',
-                      child: Text('Senior Manager'),
+    final image = member.profileImageUrl?.trim() ?? '';
+    final publicId = member.publicId?.trim() ?? '';
+    return Card(
+      color: const Color(0xFF11182A),
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        dense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        leading: CircleAvatar(
+          backgroundColor: const Color(0xFF2A3150),
+          backgroundImage: image.isEmpty ? null : NetworkImage(image),
+          child: image.isEmpty
+              ? const Icon(Icons.person_rounded)
+              : null,
+        ),
+        title: Text(
+          member.displayName ?? publicId.ifEmpty(member.uid),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (publicId.isNotEmpty)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      'ID: $publicId',
+                      textDirection: TextDirection.ltr,
+                      style: const TextStyle(color: Colors.white54),
                     ),
-                  ],
-                  icon: const Icon(Icons.admin_panel_settings_rounded),
-                ),
-                IconButton(
-                  key: Key('owner-member-remove-${member.uid}'),
-                  onPressed: busy ? null : () => onRemove(member),
-                  icon: const Icon(Icons.person_remove_alt_1_rounded),
-                ),
-              ],
+                  ),
+                  const SizedBox(width: 2),
+                  IconButton(
+                    key: Key('owner-member-copy-id-${member.uid}'),
+                    tooltip: 'نسخ Public ID',
+                    visualDensity: VisualDensity.compact,
+                    constraints:
+                        const BoxConstraints(minWidth: 28, minHeight: 28),
+                    padding: EdgeInsets.zero,
+                    onPressed: () async {
+                      await Clipboard.setData(
+                        ClipboardData(text: publicId),
+                      );
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('تم نسخ ID')),
+                      );
+                    },
+                    icon: const Icon(Icons.copy_rounded, size: 15),
+                  ),
+                ],
+              ),
+            Text(
+              '${_roleLabel(member.role)} • العضوية: ${member.status == 'active' ? 'نشطة' : member.status} • الحساب: ${_accountStatusLabel(member.accountStatus)}',
+              style: const TextStyle(
+                color: Colors.white54,
+                fontSize: 12,
+              ),
             ),
+          ],
+        ),
+        trailing: owner
+            ? const Icon(
+                Icons.workspace_premium_rounded,
+                color: Color(0xFFFFD875),
+              )
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    key: Key('owner-member-performance-${member.uid}'),
+                    tooltip: 'الأداء',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: busy ? null : () => onPerformance(member),
+                    icon: const Icon(
+                      Icons.query_stats_rounded,
+                      size: 20,
+                    ),
+                  ),
+                  PopupMenuButton<String>(
+                    key: Key('owner-member-role-${member.uid}'),
+                    enabled: !busy,
+                    onSelected: (role) => onSetRole(member, role),
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(value: 'host', child: Text('مضيف')),
+                      PopupMenuItem(value: 'manager', child: Text('مدير')),
+                      PopupMenuItem(
+                        value: 'senior_manager',
+                        child: Text('مدير أول'),
+                      ),
+                    ],
+                    icon: const Icon(
+                      Icons.admin_panel_settings_rounded,
+                      size: 20,
+                    ),
+                  ),
+                  IconButton(
+                    key: Key('owner-member-remove-${member.uid}'),
+                    tooltip: 'إزالة من الوكالة',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: busy ? null : () => onRemove(member),
+                    icon: const Icon(
+                      Icons.person_remove_alt_1_rounded,
+                      size: 20,
+                    ),
+                  ),
+                ],
+              ),
+      ),
     );
   }
+}
+
+class _HostPerformanceSheet extends StatelessWidget {
+  const _HostPerformanceSheet({
+    required this.member,
+    required this.future,
+  });
+
+  final OwnerAgencyMember member;
+  final Future<OwnerHostPerformanceData> future;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * .82,
+        child: FutureBuilder<OwnerHostPerformanceData>(
+          future: future,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError || snapshot.data == null) {
+              return const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Text(
+                    'تعذر تحميل أداء المضيف حاليًا.',
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                ),
+              );
+            }
+
+            final data = snapshot.data!;
+            final image = data.profileImageUrl?.trim() ?? '';
+            final denominator =
+                data.targetCoins <= 0 ? 1 : data.targetCoins;
+            final ratio =
+                (data.progressCoins / denominator).clamp(0.0, 1.0).toDouble();
+            final activityComplete =
+                data.qualifiedDays >= data.requiredQualifiedDays &&
+                data.micSecondsMonth >= data.requiredMicSecondsMonth;
+            final statusText = data.remainingCoins > 0
+                ? 'باقي ${_compact(data.remainingCoins)} Coins للـTarget التالي'
+                : data.currentLevel != null && !activityComplete
+                    ? 'الـTarget محقق والنشاط ناقص'
+                    : data.currentLevel != null
+                        ? 'الـTarget والنشاط مكتملان'
+                        : 'ابدأ التقدم نحو أول Target';
+
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 26),
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 30,
+                      backgroundColor: const Color(0xFF2A3150),
+                      backgroundImage:
+                          image.isEmpty ? null : NetworkImage(image),
+                      child: image.isEmpty
+                          ? const Icon(Icons.person_rounded)
+                          : null,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            data.displayName,
+                            style: const TextStyle(
+                              fontSize: 19,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          Text(
+                            'ID: ${data.publicId ?? '—'} • ${_roleLabel(data.role)}',
+                            style: const TextStyle(color: Colors.white54),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(
+                      Icons.query_stats_rounded,
+                      color: Colors.amberAccent,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: _cardDecoration(),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        statusText,
+                        style: const TextStyle(
+                          color: Colors.amberAccent,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      LinearProgressIndicator(
+                        value: ratio,
+                        minHeight: 9,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _PerformancePill(
+                            label: 'المحتسب',
+                            value: '${_compact(data.progressCoins)} Coins',
+                          ),
+                          _PerformancePill(
+                            label: 'المتبقي',
+                            value: '${_compact(data.remainingCoins)} Coins',
+                          ),
+                          _PerformancePill(
+                            label: 'الحالي',
+                            value: _ownerHostLevelLabel(data.currentLevel),
+                          ),
+                          _PerformancePill(
+                            label: 'التالي',
+                            value: _ownerHostLevelLabel(data.nextLevel),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: _cardDecoration(),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'النشاط هذا الشهر',
+                        style: TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'الأيام المحققة: ${data.qualifiedDays} / ${data.requiredQualifiedDays}',
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        'وقت المايك: ${(data.micSecondsMonth / 60).floor()} / ${(data.requiredMicSecondsMonth / 60).floor()} دقيقة',
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: _cardDecoration(),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Targets المحققة هذا الشهر',
+                        style: TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                      const SizedBox(height: 8),
+                      if (data.achievements.isEmpty)
+                        const Text(
+                          'لا يوجد Target محقق مسجل لهذا الشهر بعد.',
+                          style: TextStyle(color: Colors.white54),
+                        )
+                      else
+                        ...data.achievements.reversed.map(
+                          (item) => ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            leading: const Icon(
+                              Icons.check_circle_rounded,
+                              color: Colors.greenAccent,
+                            ),
+                            title: Text(
+                              '${item.tierId} ${item.rank}'.trim(),
+                            ),
+                            subtitle: Text(
+                              '${_compact(item.thresholdCoins)} Coins',
+                            ),
+                            trailing: Text(
+                              _achievementDateLabel(item.achievedAt),
+                              style: const TextStyle(
+                                color: Colors.white54,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'لا تعرض هذه الصفحة رصيد المضيف أو تحويلاته أو بيانات الشحن/السحب أو نسب التقسيم.',
+                  style: TextStyle(
+                    color: Colors.white38,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _PerformancePill extends StatelessWidget {
+  const _PerformancePill({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 128),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: .05),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(color: Colors.white54, fontSize: 11),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _ownerHostLevelLabel(OwnerHostPerformanceLevel? level) {
+  if (level == null) return '—';
+  final tier = level.tierId.trim();
+  final rank = level.rank.trim();
+  return [tier, rank].where((part) => part.isNotEmpty).join(' ');
+}
+
+String _achievementDateLabel(DateTime? value) {
+  if (value == null) return '—';
+  final local = value.toLocal();
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${local.year}/${two(local.month)}/${two(local.day)}';
 }
 
 class _PendingManagementTile extends StatelessWidget {
