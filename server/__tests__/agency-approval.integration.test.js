@@ -8,6 +8,7 @@ import {
   approveAgencyApplication,
   directCreateAgency,
   getAgencyApplicationSettings,
+  getAgencyReviewDetails,
   listAgencyReviewQueue,
   setAgencyApplicationHostCount,
   startAgencyReview,
@@ -291,6 +292,83 @@ test("approval creates the agency and auto-joins every reserved host", async () 
   }, { agencyIdCandidates: ["623001"] });
   assert.equal(duplicate.code, "duplicate");
   assert.equal(duplicate.agencyId, "623001");
+});
+
+test("approval converts the owner's existing personal room without changing its room/Public ID", async () => {
+  const seeded = await seedApplication(
+    "stage04_room_convert",
+    "333901",
+    ["333001","333002","333003","333004","333005"],
+  );
+  const roomId = "personal_" + seeded.ownerUid;
+  await adminDb.collection("rooms").doc(roomId).set({
+    ownerUid: seeded.ownerUid,
+    hostId: seeded.ownerUid,
+    roomType: "personal",
+    type: "personal",
+    publicId: "733001",
+    name: "Existing Room",
+    isActive: true,
+  });
+
+  const result = await approveAgencyApplication(
+    db,
+    "reviewer_stage04_room",
+    {
+      applicationId: seeded.applicationId,
+      idempotencyKey: "stage04_room_convert_0001",
+    },
+    {
+      now: new Date("2026-10-01T05:00:00.000Z"),
+      agencyIdCandidates: ["733101"],
+    },
+  );
+
+  const [agency, room] = await Promise.all([
+    adminDb.collection("agencies").doc("733101").get(),
+    adminDb.collection("rooms").doc(roomId).get(),
+  ]);
+  assert.equal(result.roomId, roomId);
+  assert.equal(agency.data().roomId, roomId);
+  assert.equal(room.data().publicId, "733001");
+  assert.equal(room.data().roomType, "agency");
+  assert.equal(room.data().type, "agency");
+  assert.equal(room.data().agencyId, "733101");
+});
+
+test("review details lazily return applicant and Host cards with availability", async () => {
+  const seeded = await seedApplication(
+    "stage04_review_details",
+    "334901",
+    ["334001","334002","334003","334004","334005"],
+  );
+  await adminDb.collection("users").doc(seeded.ownerUid).set({
+    displayName: "Review Owner",
+    profileImageUrl: "https://example.test/owner.webp",
+  }, { merge: true });
+  await adminDb.collection("users").doc(seeded.hostUids[0]).set({
+    displayName: "Review Host",
+    profileImageUrl: "https://example.test/host.webp",
+  }, { merge: true });
+
+  await startAgencyReview(
+    db,
+    "reviewer_stage04_details",
+    seeded.applicationId,
+    { now: new Date("2026-10-01T05:10:00.000Z") },
+  );
+  const details = await getAgencyReviewDetails(db, seeded.applicationId);
+
+  assert.equal(details.application.status, "under_review");
+  assert.equal(details.applicant.uid, seeded.ownerUid);
+  assert.equal(details.applicant.publicId, "334901");
+  assert.equal(details.applicant.displayName, "Review Owner");
+  assert.equal(details.applicant.availability, "available");
+  assert.equal(details.hosts.length, 5);
+  assert.equal(details.hosts[0].uid, seeded.hostUids[0]);
+  assert.equal(details.hosts[0].publicId, "334001");
+  assert.equal(details.hosts[0].displayName, "Review Host");
+  assert.equal(details.hosts[0].availability, "available");
 });
 
 test("auto id allocation skips occupied id registry and uses next bounded candidate", async () => {
