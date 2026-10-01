@@ -10,6 +10,10 @@ import {
   DEFAULT_AGENCY_TARGETS,
 } from "./agency-policy.js";
 import { agencyMemberPermissions } from "./agency-permissions.js";
+import {
+  economyWithAgencyPolicySnapshot,
+  revenueTiers,
+} from "./economy-policy.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 
 const clean = (value) => String(value ?? "").trim();
@@ -76,6 +80,30 @@ function targetSummary(target) {
       "agency_target_state_corrupt",
     ),
     openEnded: target.openEnded === true,
+  };
+}
+
+function targetDisplaySummary(
+  target,
+  revenueTierById,
+  activityBonusBps,
+) {
+  const summary = targetSummary(target);
+  if (!summary) return null;
+  const revenueTier = revenueTierById.get(summary.tierId);
+  const hostShareBps = Math.max(
+    0,
+    Math.min(10000, Number(revenueTier?.hostShareBps || 0)),
+  );
+  const grossSupportCoins =
+    hostShareBps > 0
+      ? Math.ceil((summary.thresholdCoins * 10000) / hostShareBps)
+      : 0;
+  return {
+    ...summary,
+    hostShareBps,
+    grossSupportCoins,
+    activityBonusBps,
   };
 }
 
@@ -164,6 +192,20 @@ export async function loadAgencyHostCore(
     : 0;
 
   const economy = economySnap?.exists ? economySnap.data || {} : {};
+  const effectiveEconomy = economyWithAgencyPolicySnapshot(
+    economy,
+    user,
+    agencyId,
+  );
+  const revenueTierById = new Map(
+    revenueTiers(effectiveEconomy).map((tier) => [clean(tier.id), tier]),
+  );
+  const activityBonusBps = boundedInteger(
+    economy.hostPerformanceBonusBps,
+    200,
+    0,
+    3000,
+  );
   const requiredQualifiedDays = boundedInteger(
     economy.hostBonusQualifiedDays,
     9,
@@ -177,8 +219,16 @@ export async function loadAgencyHostCore(
     1440,
   );
 
-  const reachedTarget = targetSummary(targetProgress.reachedTarget);
-  const nextTarget = targetSummary(targetProgress.nextTarget);
+  const reachedTarget = targetDisplaySummary(
+    targetProgress.reachedTarget,
+    revenueTierById,
+    activityBonusBps,
+  );
+  const nextTarget = targetDisplaySummary(
+    targetProgress.nextTarget,
+    revenueTierById,
+    activityBonusBps,
+  );
   const membershipPermissions = agencyMemberPermissions({
     membership,
     agencyStatus: clean(agency.status),
@@ -218,7 +268,15 @@ export async function loadAgencyHostCore(
       currentLevel: reachedTarget,
       nextLevel: nextTarget,
       levels: Array.isArray(targetPolicy)
-        ? targetPolicy.map(targetSummary).filter(Boolean)
+        ? targetPolicy
+            .map((target) =>
+              targetDisplaySummary(
+                target,
+                revenueTierById,
+                activityBonusBps,
+              )
+            )
+            .filter(Boolean)
         : [],
       targetCoins:
         nextTarget?.thresholdCoins ||
@@ -231,6 +289,9 @@ export async function loadAgencyHostCore(
       micSecondsMonth,
       requiredQualifiedDays,
       requiredMinutesPerDay,
+      activityBonusBps,
+      requiredMicSecondsMonth:
+        requiredQualifiedDays * requiredMinutesPerDay * 60,
     },
   };
 }
