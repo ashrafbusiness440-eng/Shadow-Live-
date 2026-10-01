@@ -100,14 +100,8 @@ export function normalizePolicy(raw={}){
     raw.agencyPerformanceBonusBps??defaults.agencyPerformanceBonusBps,
     "invalid_agency_bonus",0,3000
   );
-  const hostBonusQualifiedDays=integer(
-    raw.hostBonusQualifiedDays??defaults.hostBonusQualifiedDays,
-    "invalid_host_bonus_days",1,31
-  );
-  const hostBonusMinutesPerQualifiedDay=integer(
-    raw.hostBonusMinutesPerQualifiedDay??defaults.hostBonusMinutesPerQualifiedDay,
-    "invalid_host_bonus_minutes",1,1440
-  );
+  const hostBonusQualifiedDays=14;
+  const hostBonusMinutesPerQualifiedDay=120;
   const agencyBonusActiveHosts=integer(
     raw.agencyBonusActiveHosts??defaults.agencyBonusActiveHosts,
     "invalid_agency_bonus_hosts",1,100000
