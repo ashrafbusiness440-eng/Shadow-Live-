@@ -44,6 +44,7 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
   bool _leaveSubmitting = false;
   bool _logoUploading = false;
   bool _openingAgencyRoom = false;
+  bool _ownershipTransferSubmitting = false;
   String? _error;
   String? _rankingError;
   String? _leaveStatusError;
@@ -450,6 +451,101 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
     );
   }
 
+  Future<void> _requestOwnershipTransfer() async {
+    final data = _data;
+    if (data == null ||
+        data.membershipRole != 'owner' ||
+        _ownershipTransferSubmitting) {
+      return;
+    }
+
+    final controller = TextEditingController();
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          backgroundColor: const Color(0xFF101522),
+          title: const Text('طلب نقل ملكية الوكالة'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'أدخل Public ID لعضو نشط داخل نفس الوكالة. الطلب يذهب إلى Shadow Live للموافقة أو الرفض، ولا تتغير الملكية قبل الموافقة.',
+                style: TextStyle(color: Colors.white70, height: 1.45),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                key: const Key('owner-agency-transfer-public-id'),
+                controller: controller,
+                keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(8),
+                ],
+                decoration: const InputDecoration(
+                  labelText: 'Public ID — من 3 إلى 8 أرقام',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('إرسال الطلب'),
+            ),
+          ],
+        ),
+      ),
+    );
+    final publicId = controller.text.trim();
+    controller.dispose();
+    if (accepted != true ||
+        !RegExp(r'^\d{3,8}$').hasMatch(publicId) ||
+        !mounted) {
+      return;
+    }
+
+    setState(() => _ownershipTransferSubmitting = true);
+    try {
+      final result = await _service.requestOwnershipTransfer(
+        newOwnerPublicId: publicId,
+      );
+      if (!mounted) return;
+      final name = (result['newOwnerDisplayName'] ?? publicId).toString();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'تم إرسال طلب نقل الملكية إلى Shadow Live — المالك المقترح: $name.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      final code = error.toString().replaceFirst('Bad state: ', '');
+      final message = code.contains('ownership_transfer_pending')
+          ? 'يوجد طلب نقل ملكية معلّق لهذه الوكالة بالفعل.'
+          : code.contains('new_owner_must_be_active_member')
+              ? 'الحساب المحدد يجب أن يكون عضوًا نشطًا داخل نفس الوكالة.'
+              : code.contains('owner_not_found')
+                  ? 'لم يتم العثور على Public ID.'
+                  : 'تعذر إرسال طلب نقل الملكية حاليًا.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _ownershipTransferSubmitting = false);
+      }
+    }
+  }
+
+
   void _openMembershipReview() {
     final data = _data;
     if (data == null || !data.canReviewMembershipRequests) return;
@@ -536,6 +632,11 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
             _OwnerDashboardEntry(onTap: _openOwnerDashboard),
             const SizedBox(height: 10),
             _AgencyPackageInventoryEntry(onTap: _openPackageInventory),
+            const SizedBox(height: 10),
+            _OwnershipTransferRequestEntry(
+              busy: _ownershipTransferSubmitting,
+              onTap: _requestOwnershipTransfer,
+            ),
           ] else if (data.canReviewMembershipRequests) ...[
             const SizedBox(height: 12),
             _AgencyReviewEntry(onTap: _openMembershipReview),
@@ -839,6 +940,54 @@ class _AgencyPackageInventoryEntry extends StatelessWidget {
           Icons.chevron_left_rounded,
           color: Colors.white38,
         ),
+      ),
+    );
+  }
+}
+
+class _OwnershipTransferRequestEntry extends StatelessWidget {
+  const _OwnershipTransferRequestEntry({
+    required this.busy,
+    required this.onTap,
+  });
+
+  final bool busy;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('owner-agency-transfer-request-entry'),
+      decoration: _cardDecoration(),
+      child: ListTile(
+        onTap: busy ? null : onTap,
+        leading: const CircleAvatar(
+          backgroundColor: Color(0xFF3A2A20),
+          child: Icon(
+            Icons.manage_accounts_rounded,
+            color: Color(0xFFFFC47A),
+          ),
+        ),
+        title: const Text(
+          'طلب نقل ملكية الوكالة',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        subtitle: const Text(
+          'اختيار عضو نشط ثم إرسال الطلب إلى Shadow Live للمراجعة.',
+          style: TextStyle(color: Colors.white60),
+        ),
+        trailing: busy
+            ? const SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(
+                Icons.chevron_left_rounded,
+                color: Colors.white38,
+              ),
       ),
     );
   }
