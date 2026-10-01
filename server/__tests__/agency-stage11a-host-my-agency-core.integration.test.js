@@ -4,7 +4,10 @@ import { readFileSync } from "node:fs";
 import { deleteApp, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 
-import { loadAgencyHostCore } from "../../cloudflare-worker/src/agency-host.js";
+import {
+  loadAgencyHostCore,
+  loadAgencyHostTargetHistory,
+} from "../../cloudflare-worker/src/agency-host.js";
 import { cloudflareFirestoreAdapter } from "./helpers/cloudflare-firestore-adapter.js";
 
 const app = initializeApp(
@@ -260,6 +263,88 @@ test("11-A newly auto-joined Host loads with zeroed monthly state", async () => 
   assert.equal(result.activity.micSecondsMonth, 0);
 });
 
+test("11-B personal Target history preserves multi-target jump snapshots and Diamonds paid", async () => {
+  const agencyId = "741209";
+  const uid = "stage11b_history_host";
+
+  await Promise.all([
+    adminDb.collection("users").doc(uid).set({
+      agencyId,
+      agencyRole: "host",
+      accountStatus: "active",
+      publicId: "741299",
+    }),
+    adminDb.collection("agency_user_memberships").doc(uid).set({
+      agencyId,
+      uid,
+      role: "host",
+      status: "active",
+    }),
+    adminDb.collection("gift_transactions").doc("history_jump_01").set({
+      receiverId: uid,
+      agencyId,
+      agencyTargetMonth: "2026-10",
+      agencyTargetId: "starter_e",
+      earningsStatus: "target_paid",
+      salaryDeltaDiamonds: 20,
+      agencyTargetAchievements: [
+        {
+          id: "starter_g",
+          tierId: "starter",
+          rank: "G",
+          thresholdCoins: 50000,
+          salaryDiamonds: 5,
+          salaryDeltaDiamonds: 5,
+        },
+        {
+          id: "starter_f",
+          tierId: "starter",
+          rank: "F",
+          thresholdCoins: 100000,
+          salaryDiamonds: 10,
+          salaryDeltaDiamonds: 5,
+        },
+        {
+          id: "starter_e",
+          tierId: "starter",
+          rank: "E",
+          thresholdCoins: 200000,
+          salaryDiamonds: 20,
+          salaryDeltaDiamonds: 10,
+        },
+      ],
+      createdAt: new Date("2026-10-02T08:00:00.000Z"),
+    }),
+  ]);
+
+  const result = await loadAgencyHostTargetHistory(
+    db,
+    uid,
+    { month: "2026-10" },
+    new Date("2026-10-02T10:00:00.000Z"),
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.month, "2026-10");
+  assert.equal(result.transactionLimit, 30);
+  assert.deepEqual(
+    result.achievements.map((item) => item.targetId),
+    ["starter_g", "starter_f", "starter_e"],
+  );
+  assert.deepEqual(
+    result.achievements.map((item) => item.salaryDeltaDiamonds),
+    [5, 5, 10],
+  );
+  assert.equal(
+    result.achievements.reduce(
+      (sum, item) => sum + item.salaryDeltaDiamonds,
+      0,
+    ),
+    20,
+  );
+  assert.equal(result.achievements[2].rank, "E");
+});
+
 test("11-A pressure contract is five direct reads with zero query/write", async () => {
   const agencyId = "741203";
   const uid = "stage11a_pressure_host";
@@ -486,6 +571,9 @@ test("11-B Host UI reuses public ranking/archive and existing room/chat routes",
   assert.equal(page.includes("loadArchive("), true);
   assert.equal(page.includes("host-agency-ranking-card"), true);
   assert.equal(page.includes("host-agency-archive-button"), true);
+  assert.equal(page.includes("host-agency-target-history-entry"), true);
+  assert.equal(page.includes("سجل الـTargets والـDiamonds"), true);
+  assert.equal(hostService.includes("'action': 'targetHistory'"), true);
   assert.equal(page.includes("host-agency-room-button"), true);
   assert.equal(page.includes("ProfileActionService.openChat"), true);
   assert.equal(page.includes("AppRoutes.voiceChatRoom"), true);
