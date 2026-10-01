@@ -34,6 +34,7 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
   Map<String, dynamic>? managedAgency;
   List<Map<String, dynamic>> applications = [];
   List<Map<String, dynamic>> manualBlocks = [];
+  List<Map<String, dynamic>> ownershipTransferRequests = [];
 
   @override
   void initState() {
@@ -95,6 +96,12 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
               .map((e) => Map<String, dynamic>.from(e))
               .toList()
           : <Map<String, dynamic>>[];
+      final transfers = body['ownershipTransferRequests'] is List
+          ? (body['ownershipTransferRequests'] as List)
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList()
+          : <Map<String, dynamic>>[];
       final permissions = body['permissions'] is Map
           ? Map<String, dynamic>.from(body['permissions'] as Map)
           : <String, dynamic>{};
@@ -108,6 +115,7 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
       setState(() {
         applications = rows;
         manualBlocks = blocks;
+        ownershipTransferRequests = transfers;
         canDirectCreate = permissions['canDirectCreate'] == true;
         canManageExisting = permissions['canManageExisting'] == true;
         canTransferOwnership = permissions['canTransferOwnership'] == true;
@@ -784,67 +792,99 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
     }
   }
 
-  Future<void> transferManagedAgencyOwnership() async {
-    final agency = managedAgency;
-    if (agency == null || busy || !canTransferOwnership) return;
-    final publicId = TextEditingController();
-    final accepted = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('نقل ملكية الوكالة'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'المالك الجديد يجب أن يكون عضوًا نشطًا في نفس الوكالة. '
-              'المالك السابق يأخذ دور العضو الجديد السابق للمحافظة على العدادات.',
+
+  Future<void> reviewOwnershipTransfer(
+    Map<String, dynamic> request,
+    String decision,
+  ) async {
+    if (busy || !canTransferOwnership) return;
+    String? reason;
+    if (decision == 'reject') {
+      final controller = TextEditingController();
+      final accepted = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('رفض طلب نقل الملكية'),
+          content: TextField(
+            controller: controller,
+            minLines: 2,
+            maxLines: 4,
+            maxLength: 500,
+            decoration: const InputDecoration(
+              labelText: 'سبب الرفض *',
+              border: OutlineInputBorder(),
             ),
-            TextField(
-              controller: publicId,
-              keyboardType: TextInputType.number,
-              maxLength: 8,
-              decoration:
-                  const InputDecoration(labelText: 'Public ID للمالك الجديد'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (controller.text.trim().length >= 3) {
+                  Navigator.pop(dialogContext, true);
+                }
+              },
+              child: const Text('رفض'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('إلغاء'),
+      );
+      reason = controller.text.trim();
+      controller.dispose();
+      if (accepted != true || reason.length < 3) return;
+    } else {
+      final accepted = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('اعتماد نقل ملكية الوكالة'),
+          content: Text(
+            'سيتم نقل الملكية إلى Public ID ${(request['newOwnerPublicId'] ?? '').toString()} مع تبديل الأدوار والعدادات بشكل ذري.',
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('نقل الملكية'),
-          ),
-        ],
-      ),
-    );
-    final nextOwner = publicId.text.trim();
-    publicId.dispose();
-    if (accepted != true ||
-        !RegExp(r'^\d{3,8}$').hasMatch(nextOwner) ||
-        busy) {
-      return;
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('موافقة'),
+            ),
+          ],
+        ),
+      );
+      if (accepted != true) return;
     }
+
     setState(() => busy = true);
     try {
       await post({
-        'action': 'transferOwnership',
-        'agencyId': (agency['agencyId'] ?? '').toString(),
-        'newOwnerPublicId': nextOwner,
-        'idempotencyKey': operationKey('agency_owner_transfer'),
+        'action': 'reviewOwnershipTransfer',
+        'requestId': (request['requestId'] ?? '').toString(),
+        'decision': decision,
+        if (reason != null) 'reason': reason,
+        'idempotencyKey': operationKey(
+          decision == 'accept'
+              ? 'agency_owner_transfer_accept'
+              : 'agency_owner_transfer_reject',
+        ),
       });
-      await loadManagedAgency();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تم نقل ملكية الوكالة.')),
-        );
-      }
+      await load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            decision == 'accept'
+                ? 'تم اعتماد نقل ملكية الوكالة.'
+                : 'تم رفض طلب نقل ملكية الوكالة.',
+          ),
+        ),
+      );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذر نقل الملكية: $e')),
+          SnackBar(content: Text('تعذر معالجة طلب نقل الملكية: $e')),
         );
       }
     } finally {
@@ -1243,16 +1283,6 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
                                     icon: const Icon(Icons.edit_outlined),
                                     label: const Text('تعديل الاسم/الدولة'),
                                   ),
-                                  if (canTransferOwnership)
-                                    FilledButton.icon(
-                                      onPressed: busy
-                                          ? null
-                                          : transferManagedAgencyOwnership,
-                                      icon: const Icon(
-                                        Icons.manage_accounts_outlined,
-                                      ),
-                                      label: const Text('نقل الملكية'),
-                                    ),
                                   if (canManagePolicies ||
                                       canManageMemberships)
                                     OutlinedButton.icon(
@@ -1409,6 +1439,98 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
                       ),
                     );
                   }),
+                  if (canTransferOwnership) ...[
+                    const SizedBox(height: 20),
+                    const Text(
+                      'طلبات نقل ملكية الوكالات',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    if (ownershipTransferRequests.isEmpty)
+                      const Card(
+                        child: ListTile(
+                          leading: Icon(Icons.manage_accounts_outlined),
+                          title: Text('لا توجد طلبات نقل ملكية معلّقة'),
+                        ),
+                      ),
+                    ...ownershipTransferRequests.map(
+                      (request) => Card(
+                        key: ValueKey(
+                          'agency-ownership-transfer-' +
+                              (request['requestId'] ?? '').toString(),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Text(
+                                'Agency ID: ' +
+                                    (request['agencyId'] ?? '').toString(),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'المالك المقترح: ' +
+                                    (request['newOwnerDisplayName'] ??
+                                            request['newOwnerPublicId'] ??
+                                            '')
+                                        .toString(),
+                              ),
+                              Text(
+                                'Public ID: ' +
+                                    (request['newOwnerPublicId'] ?? '')
+                                        .toString(),
+                                textDirection: TextDirection.ltr,
+                              ),
+                              if ((request['previousNewOwnerRole'] ?? '')
+                                  .toString()
+                                  .isNotEmpty)
+                                Text(
+                                  'دوره الحالي: ' +
+                                      (request['previousNewOwnerRole'] ?? '')
+                                          .toString(),
+                                ),
+                              const SizedBox(height: 10),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  FilledButton.icon(
+                                    onPressed: busy
+                                        ? null
+                                        : () => reviewOwnershipTransfer(
+                                              request,
+                                              'accept',
+                                            ),
+                                    icon: const Icon(
+                                      Icons.check_circle_outline,
+                                    ),
+                                    label: const Text('موافقة'),
+                                  ),
+                                  OutlinedButton.icon(
+                                    onPressed: busy
+                                        ? null
+                                        : () => reviewOwnershipTransfer(
+                                              request,
+                                              'reject',
+                                            ),
+                                    icon: const Icon(Icons.cancel_outlined),
+                                    label: const Text('رفض'),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 20),
                   const Text(
                     'منع إعادة التقديم اليدوي',
