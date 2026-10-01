@@ -11,7 +11,7 @@ import {
 const policy={
   hostPerformanceBonusBps:200,
   agencyPerformanceBonusBps:200,
-  hostBonusQualifiedDays:9,
+  hostBonusQualifiedDays:14,
   agencyBonusActiveHosts:10,
   coinsPerDiamond:10000,
   activityPayoutBpsByQualifiedDays:{
@@ -50,7 +50,7 @@ test("approved activity multiplier table is exact",()=>{
 test("host and agency bonuses apply without exceeding 100 percent",()=>{
   const revenue=resolveRevenuePolicy(
     policy,
-    {giftHostActivityMonth:"2026-09",giftHostQualifiedDays:9},
+    {giftHostActivityMonth:"2026-09",giftHostQualifiedDays:14},
     50000000,
     "agency-a",
     "2026-09",
@@ -77,7 +77,7 @@ test("host and agency bonuses apply without exceeding 100 percent",()=>{
   };
   const clamped=resolveRevenuePolicy(
     extreme,
-    {giftHostActivityMonth:"2026-09",giftHostQualifiedDays:9},
+    {giftHostActivityMonth:"2026-09",giftHostQualifiedDays:14},
     1,
     "agency-a",
     "2026-09",
@@ -94,7 +94,7 @@ test("monthly settlement helper uses final monthly tier for the period",()=>{
   const result=calculateAgencyCycleSettlement(noBonus,{
     monthlyGrossCoins:1000000,
     supportCoins:1000000,
-    qualifiedDays:9,
+    qualifiedDays:14,
     activeHostCount:0,
     hasAgency:true,
   });
@@ -110,7 +110,7 @@ test("monthly settlement helper uses final monthly tier for the period",()=>{
   assert.ok(result.hostPayableCoins>approvedStarterAccrual);
 });
 
-test("activity multiplier applies to host and agency payable and remainder stays with platform",()=>{
+test("activity is bonus-only and never reduces base host or agency payable",()=>{
   const noBonus={...policy,hostPerformanceBonusBps:0,agencyPerformanceBonusBps:0};
   const result=calculateAgencyCycleSettlement(noBonus,{
     monthlyGrossCoins:1000000,
@@ -119,10 +119,11 @@ test("activity multiplier applies to host and agency payable and remainder stays
     activeHostCount:0,
     hasAgency:true,
   });
-  assert.equal(result.activityPayoutBps,9000);
-  assert.equal(result.hostPayableCoins,513000);
-  assert.equal(result.agencyPayableCoins,54000);
-  assert.equal(result.platformCoins,433000);
+  assert.equal(result.activityPayoutBps,10000);
+  assert.equal(result.hostBonusBps,0);
+  assert.equal(result.hostPayableCoins,570000);
+  assert.equal(result.agencyPayableCoins,60000);
+  assert.equal(result.platformCoins,370000);
   assert.equal(
     result.hostPayableCoins+result.agencyPayableCoins+result.platformCoins,
     result.supportCoins,
@@ -151,7 +152,7 @@ test("custom Shadow Control thresholds shares and bonuses change calculations wi
   const result=calculateAgencyCycleSettlement(custom,{
     monthlyGrossCoins:250000,
     supportCoins:250000,
-    qualifiedDays:9,
+    qualifiedDays:14,
     activeHostCount:3,
     hasAgency:true,
   });
