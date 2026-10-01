@@ -13,6 +13,8 @@ class PublicAgencyIdentity {
     required this.hostCount,
     required this.logoUrl,
     required this.coverUrl,
+    required this.description,
+    required this.publicContact,
     required this.topValue,
     required this.rank,
   });
@@ -25,6 +27,8 @@ class PublicAgencyIdentity {
   final int hostCount;
   final String? logoUrl;
   final String? coverUrl;
+  final String? description;
+  final String? publicContact;
   final int topValue;
   final int? rank;
 
@@ -38,6 +42,8 @@ class PublicAgencyIdentity {
       hostCount: _nonNegativeInt(json['hostCount']),
       logoUrl: _nullableString(json['logoUrl']),
       coverUrl: _nullableString(json['coverUrl']),
+      description: _nullableString(json['description']),
+      publicContact: _nullableString(json['publicContact']),
       topValue: _nonNegativeInt(json['topValue']),
       rank: _positiveIntOrNull(json['rank']),
     );
