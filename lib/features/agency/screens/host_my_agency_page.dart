@@ -558,7 +558,10 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
           const SizedBox(height: 16),
           _TargetCard(target: data.target),
           const SizedBox(height: 16),
-          _ActivityCard(activity: data.activity),
+          _ActivityCard(
+            activity: data.activity,
+            target: data.target,
+          ),
           const SizedBox(height: 16),
           _HostFinanceEntries(
             onWallet: _openWallet,
@@ -1080,7 +1083,7 @@ class _TargetTableSheet extends StatelessWidget {
                         ),
                         Text(
                           'راتب المضيف: ${level.salaryDiamonds} Diamonds'
-                          ' • Activity Bonus: +${_formatBps(level.activityBonusBps)}',
+                          ' • Activity Bonus: ${_activityBonusLabel(level)}',
                         ),
                         Text(
                           'شرط النشاط: ${activity.requiredQualifiedDays} يوم × ${activity.requiredMinutesPerDay} دقيقة',
@@ -1202,9 +1205,13 @@ class _TargetCard extends StatelessWidget {
 }
 
 class _ActivityCard extends StatelessWidget {
-  const _ActivityCard({required this.activity});
+  const _ActivityCard({
+    required this.activity,
+    required this.target,
+  });
 
   final HostAgencyActivity activity;
+  final HostAgencyTarget target;
 
   @override
   Widget build(BuildContext context) {
@@ -1216,7 +1223,7 @@ class _ActivityCard extends StatelessWidget {
     final remainingDays =
         (activity.requiredQualifiedDays - activity.qualifiedDays)
             .clamp(0, activity.requiredQualifiedDays);
-    final bonusLabel = '+${_formatBps(activity.activityBonusBps)}';
+    final bonusLabel = _activityBonusLabel(target.currentLevel);
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -1269,7 +1276,7 @@ class _ActivityCard extends StatelessWidget {
           ),
           const SizedBox(height: 5),
           Text(
-            'Activity Bonus المعتمد: $bonusLabel — يُحتسب عند استيفاء شروط النشاط حسب التسوية المعتمدة.',
+            'Activity Bonus الحالي: $bonusLabel — يُصرف مرة واحدة عند إغلاق الشهر حسب أعلى Target محقق بعد استيفاء شرط النشاط.',
             style: const TextStyle(
               color: Color(0xFFB99CFF),
               fontWeight: FontWeight.w700,
@@ -1698,6 +1705,17 @@ String _levelLabel(HostAgencyLevel level) {
   if (level.rank == 'DIAMOND') return 'Diamond';
   if (tier.isEmpty) return level.rank;
   return '$tier ${level.rank}';
+}
+
+String _activityBonusLabel(HostAgencyLevel? level) {
+  if (level == null || level.activityBonusAmount <= 0) return '—';
+  if (level.activityBonusAsset == 'coins') {
+    return '${_formatCoins(level.activityBonusAmount)} Coins';
+  }
+  if (level.activityBonusAsset == 'diamonds') {
+    return '${level.activityBonusAmount} Diamonds';
+  }
+  return '—';
 }
 
 String _formatBps(int value) {
