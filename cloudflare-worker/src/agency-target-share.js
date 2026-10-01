@@ -163,3 +163,228 @@ export function targetShareOwnerDiamondsToAdd(plan) {
   }
   return amount;
 }
+
+
+export function buildAgencyTargetSharePayoutWrites(
+  db,
+  plan,
+  {
+    operationId,
+    now,
+    ownerOpeningDiamonds,
+    contextType,
+    roomId = null,
+    conversationId = null,
+  } = {},
+) {
+  if (!plan) {
+    return {
+      writes: [],
+      ownerClosingDiamonds: financialInteger(
+        ownerOpeningDiamonds || 0,
+        "invalid_agency_owner_diamonds",
+      ),
+    };
+  }
+  const opId = clean(operationId);
+  if (!/^[A-Za-z0-9_-]{12,220}$/.test(opId)) {
+    throw new Error("invalid_agency_share_operation_id");
+  }
+  const openingDiamonds = financialInteger(
+    ownerOpeningDiamonds,
+    "invalid_agency_owner_diamonds",
+  );
+  const afterMigrationDiamonds = openingDiamonds + plan.legacyDiamonds;
+  const ownerClosingDiamonds =
+    afterMigrationDiamonds + plan.shareDiamondsEarned;
+  if (!Number.isSafeInteger(ownerClosingDiamonds)) {
+    throw new Error("invalid_agency_owner_diamonds");
+  }
+
+  const statePath = `agency_financial_state/${plan.agencyId}`;
+  const monthlyPath =
+    `agency_target_share_monthly/${plan.agencyId}__${plan.month}`;
+  const shareLedgerPath = `financial_ledger/agency_target_share_${opId}`;
+  const auditPath = `admin_audit_logs/agency_target_share_${opId}`;
+  const notificationPath =
+    `notifications/agency_target_share_${opId}_${plan.ownerUid}`;
+
+  const writes = [
+    db.writeUpdate(
+      statePath,
+      {
+        agencyId: plan.agencyId,
+        carryoverCoins: plan.remainderCoins,
+        lifetimeAgencyDiamonds: plan.lifetimeAgencyDiamonds,
+        legacyWalletMigrated: true,
+        lastTargetShareMonth: plan.month,
+        lastTargetId: plan.targetId,
+        lastTargetShareCoins: plan.deltaCoins,
+        updatedAt: now,
+      },
+      [
+        "agencyId",
+        "carryoverCoins",
+        "lifetimeAgencyDiamonds",
+        "legacyWalletMigrated",
+        "lastTargetShareMonth",
+        "lastTargetId",
+        "lastTargetShareCoins",
+        "updatedAt",
+      ],
+    ),
+    db.writeUpdate(
+      monthlyPath,
+      {
+        agencyId: plan.agencyId,
+        month: plan.month,
+        updatedAt: now,
+      },
+      ["agencyId", "month", "updatedAt"],
+      [
+        db.increment("shareCoins", plan.deltaCoins),
+        db.increment("diamondsPaid", plan.shareDiamondsEarned),
+        db.increment("payoutCount", 1),
+      ],
+    ),
+    db.writeCreate(shareLedgerPath, {
+      userId: plan.ownerUid,
+      agencyId: plan.agencyId,
+      hostUid: plan.hostUid,
+      asset: "diamonds",
+      delta: plan.shareDiamondsEarned,
+      openingBalance: afterMigrationDiamonds,
+      closingBalance: ownerClosingDiamonds,
+      payableCoins: plan.deltaCoins,
+      entitlementCoins: plan.entitlementCoins,
+      previousPaidCoins: plan.previousPaidCoins,
+      paidCoins: plan.paidCoins,
+      openingRemainderCoins: plan.openingCarryoverCoins,
+      remainderCoins: plan.remainderCoins,
+      coinsPerDiamond: plan.coinsPerDiamond,
+      reason: "agency_target_share",
+      sourceType: "agency_target_close",
+      sourceId: opId,
+      settlementMonth: plan.month,
+      targetId: plan.targetId,
+      targetTierId: plan.tierId,
+      targetThresholdCoins: plan.targetThresholdCoins,
+      hostShareBps: plan.hostShareBps,
+      agencyShareBps: plan.agencyShareBps,
+      contextType: clean(contextType) || null,
+      roomId: clean(roomId) || null,
+      conversationId: clean(conversationId) || null,
+      idempotencyKey: "agency_target_share_" + opId,
+      createdAt: now,
+    }),
+    db.writeCreate(auditPath, {
+      actorUid: "system",
+      action: "agencyTargetSharePaid",
+      targetType: "agency",
+      targetId: plan.agencyId,
+      hostUid: plan.hostUid,
+      ownerUid: plan.ownerUid,
+      month: plan.month,
+      targetIdReached: plan.targetId,
+      targetTierId: plan.tierId,
+      targetThresholdCoins: plan.targetThresholdCoins,
+      agencyShareDeltaCoins: plan.deltaCoins,
+      agencyShareDiamonds: plan.shareDiamondsEarned,
+      carryoverCoins: plan.remainderCoins,
+      sourceId: opId,
+      createdAt: now,
+    }),
+    db.writeCreate(notificationPath, {
+      userId: plan.ownerUid,
+      type: "agency_target_share_paid",
+      category: "system",
+      title: "تم استحقاق Agency Share",
+      body:
+        "Target " +
+        plan.targetId +
+        " • الاستحقاق " +
+        String(plan.deltaCoins) +
+        " Coins • المضاف " +
+        String(plan.shareDiamondsEarned) +
+        " Diamonds • Carryover " +
+        String(plan.remainderCoins) +
+        " Coins",
+      read: false,
+      mandatory: true,
+      financial: true,
+      agencyId: plan.agencyId,
+      hostUid: plan.hostUid,
+      month: plan.month,
+      targetId: plan.targetId,
+      agencyShareDeltaCoins: plan.deltaCoins,
+      agencyShareDiamonds: plan.shareDiamondsEarned,
+      carryoverCoins: plan.remainderCoins,
+      createdAt: now,
+    }),
+  ];
+
+  if (!plan.ownerIsHost) {
+    writes.push(
+      db.writeUpdate(
+        `users/${plan.ownerUid}`,
+        {
+          diamonds: ownerClosingDiamonds,
+          walletUpdatedAt: now,
+        },
+        ["diamonds", "walletUpdatedAt"],
+      ),
+    );
+  }
+
+  if (plan.legacyWalletExists && !plan.legacyAlreadyMigrated) {
+    writes.push(
+      db.writeUpdate(
+        `agency_wallets/${plan.agencyId}`,
+        {
+          diamonds: 0,
+          remainderCoins: 0,
+          migratedToUnifiedWallet: true,
+          migratedOwnerUid: plan.ownerUid,
+          migratedAt: now,
+          updatedAt: now,
+        },
+        [
+          "diamonds",
+          "remainderCoins",
+          "migratedToUnifiedWallet",
+          "migratedOwnerUid",
+          "migratedAt",
+          "updatedAt",
+        ],
+      ),
+    );
+    if (plan.legacyDiamonds > 0) {
+      writes.push(
+        db.writeCreate(
+          `financial_ledger/agency_wallet_migration_${plan.agencyId}_${opId}`,
+          {
+            userId: plan.ownerUid,
+            agencyId: plan.agencyId,
+            asset: "diamonds",
+            delta: plan.legacyDiamonds,
+            openingBalance: openingDiamonds,
+            closingBalance: afterMigrationDiamonds,
+            reason: "agency_wallet_unification_migration",
+            sourceType: "agency_wallet_migration",
+            sourceId: plan.agencyId,
+            idempotencyKey:
+              "agency_wallet_migration_" + plan.agencyId + "_" + opId,
+            createdAt: now,
+          },
+        ),
+      );
+    }
+  }
+
+  return {
+    writes,
+    ownerClosingDiamonds,
+    ownerDiamondsAdded:
+      plan.legacyDiamonds + plan.shareDiamondsEarned,
+  };
+}
