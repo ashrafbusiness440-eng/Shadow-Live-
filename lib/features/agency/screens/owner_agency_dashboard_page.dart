@@ -707,8 +707,7 @@ class _AgencyPerformanceCard extends StatelessWidget {
               Expanded(
                 child: _Metric(
                   label: 'Hosts نشطون',
-                  value:
-                      '${current.activeHostCount}/${bonus.requiredActiveHosts}',
+                  value: current.activeHostCount.toString(),
                 ),
               ),
               const SizedBox(width: 8),
@@ -721,17 +720,15 @@ class _AgencyPerformanceCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: _Metric(
-                  label: 'Bonus تقديري',
-                  value: _compact(bonus.estimatedCoins),
+                  label: 'Agency Bonus',
+                  value: '${_bps(bonus.bps)} / Host مؤهل',
                 ),
               ),
             ],
           ),
           const SizedBox(height: 12),
           Text(
-            bonus.eligible
-                ? 'Bonus الوكالة مؤهل حاليًا (${_bps(bonus.bps)}). يثبت نهائيًا عند إغلاق الشهر.'
-                : 'Bonus الوكالة غير مؤهل حاليًا. التقييم النهائي يتم عند إغلاق الشهر.',
+            'Agency Performance Bonus يُحسب مرة واحدة لكل Host مؤهل على أعلى Target محقق، بشرط 14 يوم × 120 دقيقة، ويُجمع للوكالة عند إغلاق الشهر.',
             style: const TextStyle(color: Colors.white70, height: 1.4),
           ),
           const SizedBox(height: 14),
