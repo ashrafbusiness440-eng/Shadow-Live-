@@ -44,6 +44,24 @@ void main() {
           'salaryDiamonds': 85,
           'openEnded': false,
         },
+        'levels': [
+          {
+            'id': 'starter_b',
+            'tierId': 'starter',
+            'rank': 'B',
+            'thresholdCoins': 650000,
+            'salaryDiamonds': 65,
+            'openEnded': false,
+          },
+          {
+            'id': 'starter_a',
+            'tierId': 'starter',
+            'rank': 'A',
+            'thresholdCoins': 850000,
+            'salaryDiamonds': 85,
+            'openEnded': false,
+          },
+        ],
       },
       'activity': {
         'month': '2026-09',
@@ -65,6 +83,8 @@ void main() {
     expect(data.target.remainingCoins, 200000);
     expect(data.target.currentLevel?.rank, 'B');
     expect(data.target.nextLevel?.rank, 'A');
+    expect(data.target.levels.length, 2);
+    expect(data.target.levels.last.salaryDiamonds, 85);
     expect(data.activity.qualifiedDays, 7);
     expect(data.activity.requiredQualifiedDays, 9);
     expect(data.activity.requiredMinutesPerDay, 120);
@@ -107,6 +127,7 @@ void main() {
     expect(data.agency.roomId, isNull);
     expect(data.target.currentLevel, isNull);
     expect(data.target.nextLevel, isNull);
+    expect(data.target.levels, isEmpty);
     expect(data.owner.publicId, isNull);
   });
 
