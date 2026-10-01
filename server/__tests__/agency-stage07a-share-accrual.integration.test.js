@@ -134,12 +134,7 @@ test("07-A room gifts accrue the approved base Agency Share by tier without muta
       }),
       db.collection("agency_support_stats").doc(agencyId)
         .collection("monthly").doc(month).set({activeHostIds:[]}),
-      db.collection("agency_wallets").doc(agencyId).set({
-        agencyId,
-        diamonds:7,
-        remainderCoins:4321,
-        lifetimeDiamonds:7,
-      }),
+
     ]);
 
     const result=await sendRoomGift(
@@ -207,9 +202,7 @@ test("07-A room gifts accrue the approved base Agency Share by tier without muta
       "public Agency support must stay separate from global monthly gift revenue",
     );
 
-    assert.equal(wallet.data().diamonds,7);
-    assert.equal(wallet.data().remainderCoins,4321);
-    assert.equal(wallet.data().lifetimeDiamonds,7);
+    assert.equal(wallet.exists,false);
     assert.equal(statement.exists,false);
   }
 });
@@ -261,9 +254,7 @@ test("07-A Room and Chat use the same separated Agency Share accrual contract",a
     }),
     db.collection("agency_support_stats").doc(agencyId)
       .collection("monthly").doc(month).set({activeHostIds:[]}),
-    db.collection("agency_wallets").doc(agencyId).set({
-      agencyId,diamonds:11,remainderCoins:2222,lifetimeDiamonds:11,
-    }),
+
   ]);
 
   const roomResult=await sendRoomGift(
@@ -355,8 +346,7 @@ test("07-A Room and Chat use the same separated Agency Share accrual contract",a
     assert.equal(snap.data().agencyShareCoins,expected);
   }
 
-  assert.equal(wallet.data().diamonds,11);
-  assert.equal(wallet.data().remainderCoins,2222);
+  assert.equal(wallet.exists,false);
 });
 
 test("07-A Agency Share is distributed across deterministic monthly shards and duplicate gifts do not accrue twice",async()=>{
