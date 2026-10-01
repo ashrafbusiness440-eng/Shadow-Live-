@@ -10,6 +10,7 @@ class PersonalRoomInfo {
     required this.publicId,
     required this.ownerUid,
     required this.roomType,
+    required this.agencyId,
     required this.category,
     required this.ownerName,
     required this.ownerLocation,
@@ -28,6 +29,7 @@ class PersonalRoomInfo {
   final String publicId;
   final String ownerUid;
   final String roomType;
+  final String agencyId;
   final String category;
   final String ownerName;
   final String ownerLocation;
@@ -47,6 +49,8 @@ class PersonalRoomInfo {
         'ownerUid': ownerUid,
         'hostId': ownerUid,
         'roomType': roomType,
+        'type': roomType,
+        if (agencyId.isNotEmpty) 'agencyId': agencyId,
         'category': category,
         'ownerName': ownerName,
         'ownerLocation': ownerLocation,
@@ -71,7 +75,8 @@ class PersonalRoomInfo {
       name: (json['name'] ?? 'غرفتي').toString(),
       publicId: (json['publicId'] ?? '').toString(),
       ownerUid: ownerUid,
-      roomType: (json['roomType'] ?? 'personal').toString(),
+      roomType: (json['roomType'] ?? json['type'] ?? 'personal').toString(),
+      agencyId: (json['agencyId'] ?? '').toString(),
       category: (json['category'] ?? 'دردشة').toString(),
       ownerName: (json['ownerName'] ?? '').toString(),
       ownerLocation: (json['ownerLocation'] ?? '').toString(),
