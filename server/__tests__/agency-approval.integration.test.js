@@ -357,6 +357,15 @@ test("review details lazily return applicant and Host cards with availability", 
     seeded.applicationId,
     { now: new Date("2026-10-01T05:10:00.000Z") },
   );
+  await Promise.all([
+    adminDb.collection("users").doc(seeded.hostUids[3]).set({
+      accountStatus: "suspended",
+    }, { merge: true }),
+    adminDb.collection("users").doc(seeded.hostUids[4]).set({
+      agencyId: "998877",
+      agencyRole: "host",
+    }, { merge: true }),
+  ]);
   const details = await getAgencyReviewDetails(db, seeded.applicationId);
 
   assert.equal(details.application.status, "under_review");
@@ -369,6 +378,9 @@ test("review details lazily return applicant and Host cards with availability", 
   assert.equal(details.hosts[0].publicId, "334001");
   assert.equal(details.hosts[0].displayName, "Review Host");
   assert.equal(details.hosts[0].availability, "available");
+  assert.equal(details.hosts[3].availability, "account_unavailable");
+  assert.equal(details.hosts[4].availability, "agency_conflict");
+  assert.equal(details.hosts[4].currentAgencyId, "998877");
 });
 
 test("auto id allocation skips occupied id registry and uses next bounded candidate", async () => {
