@@ -66,11 +66,11 @@ const approvedPolicy={
   policyMode:"tiered_host_agency",
   coinsPerUsd:10000,
   coinsPerDiamond:10000,
-  hostPerformanceBonusBps:200,
-  agencyPerformanceBonusBps:200,
-  hostBonusQualifiedDays:9,
+  hostPerformanceBonusBps:0,
+  agencyPerformanceBonusBps:100,
+  agencyPerformanceBonusMode:"per_host_target_month_end",
+  hostBonusQualifiedDays:14,
   hostBonusMinutesPerQualifiedDay:120,
-  agencyBonusActiveHosts:10,
   activityPayoutBpsByQualifiedDays:{
     "0":0,"1":0,"2":0,"3":2500,"4":4000,
     "5":5500,"6":7000,"7":8000,"8":9000,"9":10000,
@@ -422,10 +422,10 @@ test("Shadow Control policy save keeps activity fixed while custom economics rem
     policyMode:"tiered_host_agency",
     enabled:true,
     hostPerformanceBonusBps:300,
-    agencyPerformanceBonusBps:100,
+    agencyPerformanceBonusBps:150,
+    agencyPerformanceBonusMode:"per_host_target_month_end",
     hostBonusQualifiedDays:5,
     hostBonusMinutesPerQualifiedDay:90,
-    agencyBonusActiveHosts:3,
     activityPayoutBpsByQualifiedDays:{
       "0":0,"1":0,"2":0,"3":2500,"4":4000,
       "5":5500,"6":7000,"7":8000,"8":9000,"9":10000,
@@ -441,8 +441,12 @@ test("Shadow Control policy save keeps activity fixed while custom economics rem
   assert.equal(saved.hostBonusMinutesPerQualifiedDay,120);
   assert.equal(stored.data().hostBonusQualifiedDays,14);
   assert.equal(stored.data().hostBonusMinutesPerQualifiedDay,120);
-  assert.equal(stored.data().hostPerformanceBonusBps,300);
-  assert.equal(stored.data().agencyBonusActiveHosts,3);
+  assert.equal(stored.data().hostPerformanceBonusBps,0);
+  assert.equal(stored.data().agencyPerformanceBonusBps,150);
+  assert.equal(
+    stored.data().agencyPerformanceBonusMode,
+    "per_host_target_month_end",
+  );
   assert.equal(stored.data().tiers[1].minGiftCoins,200000);
 
   const result=calculateAgencyCycleSettlement(stored.data(),{
@@ -453,11 +457,13 @@ test("Shadow Control policy save keeps activity fixed while custom economics rem
     hasAgency:true,
   });
   assert.equal(result.tierId,"custom");
-  assert.equal(result.hostShareBps,6400);
-  assert.equal(result.agencyShareBps,800);
-  assert.equal(result.hostPayableCoins,160000);
-  assert.equal(result.agencyPayableCoins,20000);
-  assert.equal(result.platformCoins,70000);
+  assert.equal(result.hostBonusBps,0);
+  assert.equal(result.agencyBonusBps,0);
+  assert.equal(result.hostShareBps,6100);
+  assert.equal(result.agencyShareBps,700);
+  assert.equal(result.hostPayableCoins,152500);
+  assert.equal(result.agencyPayableCoins,17500);
+  assert.equal(result.platformCoins,80000);
 
   const audit=await db.collection("admin_audit_logs")
     .where("actorUid","==","shadow_control_test")
