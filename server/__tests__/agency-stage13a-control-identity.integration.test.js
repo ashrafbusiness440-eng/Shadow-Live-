@@ -825,16 +825,20 @@ test("13-A pressure guard: mutations stay direct-read and transfer review queue 
   );
 
   const identityStart = source.indexOf("export async function updateAgencyIdentity");
+  const listIdentityStart = source.indexOf(
+    "export async function listAgencyIdentityChangeRequests",
+  );
   const listTransferStart = source.indexOf(
     "export async function listAgencyOwnershipTransferRequests",
   );
   const transferStart = source.indexOf("export async function transferAgencyOwnership");
   const statusStart = source.indexOf("export async function changeAgencyStatus");
 
-  assert.ok(identityStart >= 0 && listTransferStart > identityStart);
+  assert.ok(identityStart >= 0 && listIdentityStart > identityStart);
+  assert.ok(listTransferStart > listIdentityStart);
   assert.ok(transferStart > listTransferStart && statusStart > transferStart);
   assert.equal(
-    source.slice(identityStart, listTransferStart).includes(".runQuery("),
+    source.slice(identityStart, listIdentityStart).includes(".runQuery("),
     false,
   );
   assert.equal(
