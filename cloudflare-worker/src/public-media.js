@@ -6,6 +6,7 @@ const PUBLIC_SCOPES = new Set([
   "profile_image",
   "profile_cover",
   "room_cover",
+  "agency_logo",
 ]);
 
 const FILE_PATTERN = /^([a-f0-9]{32})\.(jpg|png|webp)$/;
@@ -87,6 +88,8 @@ export function publicMediaStorageKey({ scope, targetId, filename }) {
       return `users/${encodedTarget}/covers/${canonicalFile}`;
     case "room_cover":
       return `rooms/${encodedTarget}/covers/${canonicalFile}`;
+    case "agency_logo":
+      return `agencies/${encodedTarget}/logo/${canonicalFile}`;
     default:
       throw new Error("invalid_public_media_scope");
   }
