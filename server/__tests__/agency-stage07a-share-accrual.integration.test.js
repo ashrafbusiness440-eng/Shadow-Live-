@@ -243,9 +243,21 @@ test("07-A Room and Chat use the same separated Agency Share accrual contract",a
       pendingGiftEarningCoins:0,pendingAgencyGiftEarningCoins:0,
     }),
     db.collection("rooms").doc(roomId).set({isActive:true,agencyId,totalSupport:0}),
+    db.collection("users").doc("owner_"+agencyId).set({
+      coins:0,diamonds:0,role:"user",accountStatus:"active",
+    }),
+    db.collection("agencies").doc(agencyId).set({
+      agencyId,ownerUid:"owner_"+agencyId,status:"active",
+    }),
     db.collection("conversations").doc(conversationId).set({
       participants:[chatSender,chatHost],
       unreadCounts:{[chatSender]:0,[chatHost]:0},
+    }),
+    db.collection("users").doc("owner_"+agencyId).set({
+      coins:0,diamonds:0,role:"user",accountStatus:"active",
+    }),
+    db.collection("agencies").doc(agencyId).set({
+      agencyId,ownerUid:"owner_"+agencyId,status:"active",
     }),
     db.collection("agency_support_stats").doc(agencyId)
       .collection("monthly").doc(month).set({activeHostIds:[]}),
@@ -375,6 +387,12 @@ test("07-A Agency Share is distributed across deterministic monthly shards and d
       pendingGiftEarningCoins:0,pendingAgencyGiftEarningCoins:0,
     }),
     db.collection("rooms").doc(roomId).set({isActive:true,agencyId,totalSupport:0}),
+    db.collection("users").doc("owner_"+agencyId).set({
+      coins:0,diamonds:0,role:"user",accountStatus:"active",
+    }),
+    db.collection("agencies").doc(agencyId).set({
+      agencyId,ownerUid:"owner_"+agencyId,status:"active",
+    }),
     db.collection("agency_support_stats").doc(agencyId)
       .collection("monthly").doc(month).set({activeHostIds:[]}),
   ]);
