@@ -48,30 +48,16 @@ export function resolveRevenuePolicy(
     ? Math.max(0, Number(receiverData?.giftHostQualifiedDays || 0))
     : 0;
   const requiredDays = 14;
-  const configuredHostBonus = Math.max(
-    0,
-    Math.min(3000, Number(economy?.hostPerformanceBonusBps ?? 200)),
-  );
-  const hostBonusBps = qualifiedDays >= requiredDays
-    ? configuredHostBonus
-    : 0;
-  const hostShareBps = clampBps(tier.hostShareBps + hostBonusBps);
-
-  const requiredActiveHosts = Math.max(
-    1,
-    Math.min(100000, Number(economy?.agencyBonusActiveHosts || 10)),
-  );
-  const configuredAgencyBonus = Math.max(
-    0,
-    Math.min(3000, Number(economy?.agencyPerformanceBonusBps ?? 200)),
-  );
-  const agencyBonusBps = agencyId && activeHostCount >= requiredActiveHosts
-    ? configuredAgencyBonus
-    : 0;
+  // Approved policy: activity/performance bonuses are month-end payouts.
+  // They must never inflate the base gift-time Host or Agency share.
+  const hostBonusBps = 0;
+  const agencyBonusBps = 0;
+  const hostShareBps = clampBps(tier.hostShareBps);
+  const requiredActiveHosts = 0;
   const agencyShareBps = agencyId
     ? Math.max(
         0,
-        Math.min(10000 - hostShareBps, tier.agencyShareBps + agencyBonusBps),
+        Math.min(10000 - hostShareBps, tier.agencyShareBps),
       )
     : 0;
   const platformShareBps = Math.max(
@@ -183,39 +169,25 @@ export function calculateAgencyMonthlyBonus(
     activeHostCount,
     "active_host_count",
   );
-  const requiredActiveHosts=Math.max(
-    1,
-    Math.min(100000,Number(economy?.agencyBonusActiveHosts||10)),
-  );
   const configuredBonusBps=Math.max(
     0,
-    Math.min(3000,Number(economy?.agencyPerformanceBonusBps??200)),
+    Math.min(3000,Number(economy?.agencyPerformanceBonusBps??100)),
   );
-  if(
-    !Number.isSafeInteger(requiredActiveHosts) ||
-    !Number.isSafeInteger(configuredBonusBps)
-  ){
+  if(!Number.isSafeInteger(configuredBonusBps)){
     throw new Error("invalid_agency_bonus_policy");
   }
-  const policyEnabled=economy?.enabled!==false;
-  const eligible=
-    policyEnabled &&
-    hasAgency===true &&
-    activeHosts>=requiredActiveHosts &&
-    configuredBonusBps>0;
-  const agencyBonusBps=eligible?configuredBonusBps:0;
-  const rawBonus=
-    (BigInt(support)*BigInt(agencyBonusBps))/10000n;
-  if(rawBonus>BigInt(Number.MAX_SAFE_INTEGER)){
-    throw new Error("invalid_agency_bonus_amount");
-  }
+  // Aggregate support/active-host bonus was superseded. The approved
+  // Agency Performance Bonus is calculated per eligible Host from that
+  // Host's highest closed Target during bounded month-end host settlement.
   return {
-    eligible,
+    eligible:false,
     supportCoins:support,
     activeHostCount:activeHosts,
-    requiredActiveHosts,
-    agencyBonusBps,
-    agencyBonusCoins:Number(rawBonus),
+    requiredActiveHosts:0,
+    configuredBonusBps,
+    agencyBonusBps:0,
+    agencyBonusCoins:0,
+    mode:hasAgency===true ? "per_host_target_month_end" : "none",
   };
 }
 
@@ -244,32 +216,15 @@ export function calculateAgencyCycleSettlement(
   } = {},
 ) {
   const tier = tierForMonthlyGross(economy, monthlyGrossCoins);
-  const fullDays = 14;
-  const hostBonusBps = qualifiedDays >= fullDays
-    ? Math.max(
-        0,
-        Math.min(3000, Number(economy?.hostPerformanceBonusBps || 0)),
-      )
-    : 0;
-  const agencyBonusThreshold = Math.max(
-    1,
-    Number(economy?.agencyBonusActiveHosts || 10),
-  );
-  const agencyBonusBps = hasAgency && activeHostCount >= agencyBonusThreshold
-    ? Math.max(
-        0,
-        Math.min(3000, Number(economy?.agencyPerformanceBonusBps || 0)),
-      )
-    : 0;
-
-  const hostShareBps = clampBps(tier.hostShareBps + hostBonusBps);
+  const hostBonusBps = 0;
+  const agencyBonusBps = 0;
+  const hostShareBps = clampBps(tier.hostShareBps);
   const agencyShareBps = hasAgency
     ? Math.max(
         0,
-        Math.min(10000 - hostShareBps, tier.agencyShareBps + agencyBonusBps),
+        Math.min(10000 - hostShareBps, tier.agencyShareBps),
       )
     : 0;
-  // Activity is bonus-only. It never reduces base Host or Agency shares.
   const payoutBps = 10000;
   const support = Math.max(0, Number(supportCoins || 0));
   const hostGrossCoins = Math.floor(support * hostShareBps / 10000);
