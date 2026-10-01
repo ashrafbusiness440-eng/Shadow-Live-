@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../services/navigation_service.dart';
 import '../../../shared/services/user_storage_service.dart';
+import '../../room/services/room_action_service.dart';
 import '../../profile/screens/public_profile_screen.dart';
 import '../../profile/services/profile_action_service.dart';
 import '../services/host_my_agency_service.dart';
@@ -27,6 +28,7 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
   final HostMyAgencyService _service = HostMyAgencyService();
   final PublicAgencyService _publicAgencyService = PublicAgencyService();
   final UserStorageService _storage = UserStorageService();
+  final RoomActionService _roomActions = RoomActionService();
   final ImagePicker _imagePicker = ImagePicker();
 
   HostMyAgencyCoreData? _data;
@@ -39,6 +41,7 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
   bool _leaveStatusLoading = false;
   bool _leaveSubmitting = false;
   bool _logoUploading = false;
+  bool _openingAgencyRoom = false;
   String? _error;
   String? _rankingError;
   String? _leaveStatusError;
@@ -66,6 +69,7 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
     _service.close();
     _publicAgencyService.close();
     _storage.close();
+    _roomActions.close();
     super.dispose();
   }
 
@@ -209,18 +213,42 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
     );
   }
 
-  void _openAgencyRoom() {
+  Future<void> _openAgencyRoom() async {
     final data = _data;
-    final roomId = data?.agency.roomId?.trim() ?? '';
     if (data == null ||
         data.agency.status != 'active' ||
-        roomId.isEmpty) {
+        _openingAgencyRoom) {
       return;
     }
-    NavigationService.navigateTo(
-      AppRoutes.voiceChatRoom,
-      arguments: {'roomId': roomId},
-    );
+
+    final roomId = data.agency.roomId?.trim() ?? '';
+    if (roomId.isNotEmpty) {
+      NavigationService.navigateTo(
+        AppRoutes.voiceChatRoom,
+        arguments: {'roomId': roomId},
+      );
+      return;
+    }
+    if (data.membershipRole != 'owner') return;
+
+    setState(() => _openingAgencyRoom = true);
+    try {
+      final room = await _roomActions.openAgencyOwnerRoom();
+      if (!mounted) return;
+      setState(() => _openingAgencyRoom = false);
+      NavigationService.navigateTo(
+        AppRoutes.voiceChatRoom,
+        arguments: room.toNavigationArguments(),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _openingAgencyRoom = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تعذر إنشاء أو ربط غرفة الوكالة حالياً.'),
+        ),
+      );
+    }
   }
 
   Future<void> _loadLeaveStatus(String agencyId) async {
@@ -501,7 +529,10 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
           _AgencyActionsCard(
             canEnterRoom:
                 data.agency.status == 'active' &&
-                (data.agency.roomId?.trim().isNotEmpty ?? false),
+                ((data.agency.roomId?.trim().isNotEmpty ?? false) ||
+                    data.membershipRole == 'owner'),
+            roomLinked: data.agency.roomId?.trim().isNotEmpty ?? false,
+            openingRoom: _openingAgencyRoom,
             canContactOwner:
                 data.owner.uid.isNotEmpty &&
                 data.owner.uid != (FirebaseAuth.instance.currentUser?.uid ?? ''),
@@ -787,14 +818,18 @@ class _OwnerCard extends StatelessWidget {
 class _AgencyActionsCard extends StatelessWidget {
   const _AgencyActionsCard({
     required this.canEnterRoom,
+    required this.roomLinked,
+    required this.openingRoom,
     required this.canContactOwner,
     required this.onEnterRoom,
     required this.onContactOwner,
   });
 
   final bool canEnterRoom;
+  final bool roomLinked;
+  final bool openingRoom;
   final bool canContactOwner;
-  final VoidCallback onEnterRoom;
+  final Future<void> Function() onEnterRoom;
   final Future<void> Function() onContactOwner;
 
   @override
@@ -807,9 +842,23 @@ class _AgencyActionsCard extends StatelessWidget {
           Expanded(
             child: FilledButton.icon(
               key: const Key('host-agency-room-button'),
-              onPressed: canEnterRoom ? onEnterRoom : null,
-              icon: const Icon(Icons.meeting_room_rounded),
-              label: Text(canEnterRoom ? 'دخول غرفة الوكالة' : 'لا توجد غرفة مرتبطة'),
+              onPressed: canEnterRoom && !openingRoom ? onEnterRoom : null,
+              icon: openingRoom
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.meeting_room_rounded),
+              label: Text(
+                openingRoom
+                    ? 'جاري ربط الغرفة...'
+                    : roomLinked
+                        ? 'دخول غرفة الوكالة'
+                        : canEnterRoom
+                            ? 'إنشاء/ربط غرفة الوكالة'
+                            : 'لا توجد غرفة مرتبطة',
+              ),
             ),
           ),
           const SizedBox(width: 10),

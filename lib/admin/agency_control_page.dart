@@ -7,6 +7,7 @@ import 'control_api_endpoints.dart';
 import 'control_firebase.dart';
 import 'agency_policy_control_page.dart';
 import '../shared/widgets/country_selector.dart';
+import '../features/profile/screens/public_profile_screen.dart';
 
 class AgencyControlPage extends StatefulWidget {
   const AgencyControlPage({super.key});
@@ -161,19 +162,247 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
     }
   }
 
+  String reviewAvailabilityLabel(String value) {
+    switch (value) {
+      case 'available':
+        return 'متاح للوكالة';
+      case 'agency_conflict':
+        return 'مرتبط/محجوز بوكالة أخرى';
+      case 'account_unavailable':
+        return 'الحساب غير متاح';
+      case 'not_found':
+        return 'الحساب غير موجود';
+      default:
+        return 'غير معروف';
+    }
+  }
+
+  Color reviewAvailabilityColor(String value) {
+    switch (value) {
+      case 'available':
+        return Colors.green;
+      case 'agency_conflict':
+        return Colors.orange;
+      case 'account_unavailable':
+      case 'not_found':
+        return Colors.redAccent;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  Widget reviewPersonCard(
+    Map<String, dynamic> person, {
+    required String title,
+  }) {
+    final uid = (person['uid'] ?? '').toString();
+    final name = (person['displayName'] ?? 'مستخدم Shadow Live').toString();
+    final publicId = (person['publicId'] ?? '—').toString();
+    final imageUrl = (person['profileImageUrl'] ?? '').toString().trim();
+    final accountStatus = (person['accountStatus'] ?? 'active').toString();
+    final availability = (person['availability'] ?? '').toString();
+    final availabilityText = reviewAvailabilityLabel(availability);
+    final availabilityColor = reviewAvailabilityColor(availability);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CircleAvatar(
+              radius: 26,
+              backgroundImage:
+                  imageUrl.isEmpty ? null : NetworkImage(imageUrl),
+              child: imageUrl.isEmpty
+                  ? const Icon(Icons.person_outline)
+                  : null,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.grey,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    name,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  Text(
+                    'Public ID: ' + publicId,
+                    textDirection: TextDirection.ltr,
+                  ),
+                  const SizedBox(height: 4),
+                  Text('حالة الحساب: ' + accountStatus),
+                  Text(
+                    availabilityText,
+                    style: TextStyle(
+                      color: availabilityColor,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              tooltip: 'فتح الملف الشخصي',
+              onPressed: uid.isEmpty
+                  ? null
+                  : () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => PublicProfileScreen(userId: uid),
+                        ),
+                      );
+                    },
+              icon: const Icon(Icons.open_in_new_rounded),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> showReviewDetails(Map<String, dynamic> details) async {
+    if (!mounted) return;
+    final application = details['application'] is Map
+        ? Map<String, dynamic>.from(details['application'] as Map)
+        : <String, dynamic>{};
+    final applicant = details['applicant'] is Map
+        ? Map<String, dynamic>.from(details['applicant'] as Map)
+        : <String, dynamic>{};
+    final hosts = details['hosts'] is List
+        ? (details['hosts'] as List)
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList(growable: false)
+        : <Map<String, dynamic>>[];
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => SafeArea(
+        child: FractionallySizedBox(
+          heightFactor: .88,
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'تفاصيل مراجعة طلب الوكالة',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(sheetContext),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                (application['name'] ?? '').toString(),
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              if ((application['country'] ?? '').toString().isNotEmpty)
+                Text(
+                  'الدولة: ' +
+                      (application['country'] ?? '').toString(),
+                ),
+              Text(
+                'الحالة: ' +
+                    (application['status'] ?? '').toString(),
+              ),
+              const SizedBox(height: 14),
+              reviewPersonCard(
+                applicant,
+                title: 'مقدم الطلب',
+              ),
+              if (hosts.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'المضيفون (' + hosts.length.toString() + ')',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                for (var index = 0; index < hosts.length; index += 1)
+                  reviewPersonCard(
+                    hosts[index],
+                    title: 'Host ' + (index + 1).toString(),
+                  ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> startReview(Map<String, dynamic> application) async {
     if (busy) return;
     setState(() => busy = true);
     try {
-      await post({
+      final body = await post({
         'action': 'startReview',
         'applicationId': (application['applicationId'] ?? '').toString(),
       });
-      await load();
+      final details = body['details'];
+      if (details is Map && mounted) {
+        await showReviewDetails(Map<String, dynamic>.from(details));
+      }
+      if (mounted) await load();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('تعذر بدء المراجعة: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> openReviewDetails(
+    Map<String, dynamic> application,
+  ) async {
+    if (busy) return;
+    setState(() => busy = true);
+    try {
+      final body = await post({
+        'action': 'reviewDetails',
+        'applicationId': (application['applicationId'] ?? '').toString(),
+      });
+      final details = body['details'];
+      if (details is Map && mounted) {
+        await showReviewDetails(Map<String, dynamic>.from(details));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر تحميل تفاصيل المراجعة: $e')),
         );
       }
     } finally {
@@ -1122,6 +1351,19 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
                                         : () => startReview(application),
                                     icon: const Icon(Icons.fact_check_outlined),
                                     label: const Text('بدء المراجعة'),
+                                  ),
+                                if (status == 'under_review')
+                                  OutlinedButton.icon(
+                                    key: ValueKey(
+                                      'agency-review-details-' +
+                                          (application['applicationId'] ?? '')
+                                              .toString(),
+                                    ),
+                                    onPressed: busy
+                                        ? null
+                                        : () => openReviewDetails(application),
+                                    icon: const Icon(Icons.badge_outlined),
+                                    label: const Text('تفاصيل المراجعة'),
                                   ),
                                 FilledButton.icon(
                                   onPressed: busy

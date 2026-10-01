@@ -8,6 +8,7 @@ import {
   approveAgencyApplication,
   directCreateAgency,
   getAgencyApplicationSettings,
+  getAgencyReviewDetails,
   listAgencyReviewQueue,
   setAgencyApplicationHostCount,
   startAgencyReview,
@@ -293,6 +294,95 @@ test("approval creates the agency and auto-joins every reserved host", async () 
   assert.equal(duplicate.agencyId, "623001");
 });
 
+test("approval converts the owner's existing personal room without changing its room/Public ID", async () => {
+  const seeded = await seedApplication(
+    "stage04_room_convert",
+    "333901",
+    ["333001","333002","333003","333004","333005"],
+  );
+  const roomId = "personal_" + seeded.ownerUid;
+  await adminDb.collection("rooms").doc(roomId).set({
+    ownerUid: seeded.ownerUid,
+    hostId: seeded.ownerUid,
+    roomType: "personal",
+    type: "personal",
+    publicId: "733001",
+    name: "Existing Room",
+    isActive: true,
+  });
+
+  const result = await approveAgencyApplication(
+    db,
+    "reviewer_stage04_room",
+    {
+      applicationId: seeded.applicationId,
+      idempotencyKey: "stage04_room_convert_0001",
+    },
+    {
+      now: new Date("2026-10-01T05:00:00.000Z"),
+      agencyIdCandidates: ["733101"],
+    },
+  );
+
+  const [agency, room] = await Promise.all([
+    adminDb.collection("agencies").doc("733101").get(),
+    adminDb.collection("rooms").doc(roomId).get(),
+  ]);
+  assert.equal(result.roomId, roomId);
+  assert.equal(agency.data().roomId, roomId);
+  assert.equal(room.data().publicId, "733001");
+  assert.equal(room.data().roomType, "agency");
+  assert.equal(room.data().type, "agency");
+  assert.equal(room.data().agencyId, "733101");
+});
+
+test("review details lazily return applicant and Host cards with availability", async () => {
+  const seeded = await seedApplication(
+    "stage04_review_details",
+    "334901",
+    ["334001","334002","334003","334004","334005"],
+  );
+  await adminDb.collection("users").doc(seeded.ownerUid).set({
+    displayName: "Review Owner",
+    profileImageUrl: "https://example.test/owner.webp",
+  }, { merge: true });
+  await adminDb.collection("users").doc(seeded.hostUids[0]).set({
+    displayName: "Review Host",
+    profileImageUrl: "https://example.test/host.webp",
+  }, { merge: true });
+
+  await startAgencyReview(
+    db,
+    "reviewer_stage04_details",
+    seeded.applicationId,
+    { now: new Date("2026-10-01T05:10:00.000Z") },
+  );
+  await Promise.all([
+    adminDb.collection("users").doc(seeded.hostUids[3]).set({
+      accountStatus: "suspended",
+    }, { merge: true }),
+    adminDb.collection("users").doc(seeded.hostUids[4]).set({
+      agencyId: "998877",
+      agencyRole: "host",
+    }, { merge: true }),
+  ]);
+  const details = await getAgencyReviewDetails(db, seeded.applicationId);
+
+  assert.equal(details.application.status, "under_review");
+  assert.equal(details.applicant.uid, seeded.ownerUid);
+  assert.equal(details.applicant.publicId, "334901");
+  assert.equal(details.applicant.displayName, "Review Owner");
+  assert.equal(details.applicant.availability, "available");
+  assert.equal(details.hosts.length, 5);
+  assert.equal(details.hosts[0].uid, seeded.hostUids[0]);
+  assert.equal(details.hosts[0].publicId, "334001");
+  assert.equal(details.hosts[0].displayName, "Review Host");
+  assert.equal(details.hosts[0].availability, "available");
+  assert.equal(details.hosts[3].availability, "account_unavailable");
+  assert.equal(details.hosts[4].availability, "agency_conflict");
+  assert.equal(details.hosts[4].currentAgencyId, "998877");
+});
+
 test("auto id allocation skips occupied id registry and uses next bounded candidate", async () => {
   const seeded = await seedApplication(
     "stage03b_collision",
@@ -371,6 +461,56 @@ test("direct create resolves owner public id and creates agency without applicat
   assert.equal(operation.data().status, "completed");
 });
 
+test("agency creation converts an existing personal room in place", async () => {
+  const ownerUid = "stage16_agency_room_owner";
+  await seedUser(ownerUid, "326991");
+  const roomId = "personal_" + ownerUid;
+  await adminDb.collection("rooms").doc(roomId).set({
+    name: "غرفتي القديمة",
+    title: "غرفتي القديمة",
+    ownerUid,
+    hostId: ownerUid,
+    roomType: "personal",
+    type: "personal",
+    publicId: "889911",
+    category: "دردشة",
+    isActive: true,
+    description: "يبقى المحتوى نفسه",
+    seats: [],
+  });
+
+  const result = await directCreateAgency(
+    db,
+    "control_owner_stage16_room",
+    {
+      ownerPublicId: "326991",
+      name: "Linked Agency",
+      country: "UAE",
+      agencyId: "626091",
+      idempotencyKey: "stage16_agency_room_convert_0001",
+    },
+    { now: new Date("2026-10-01T05:00:00.000Z") },
+  );
+
+  const [agencySnap, roomSnap, auditSnap] = await Promise.all([
+    adminDb.collection("agencies").doc("626091").get(),
+    adminDb.collection("rooms").doc(roomId).get(),
+    adminDb.collection("admin_audit_logs")
+      .doc("agency_room_link_626091_stage16_agency_room_convert_0001")
+      .get(),
+  ]);
+  const room = roomSnap.data();
+  assert.equal(result.roomId, roomId);
+  assert.equal(agencySnap.data().roomId, roomId);
+  assert.equal(room.roomType, "agency");
+  assert.equal(room.type, "agency");
+  assert.equal(room.agencyId, "626091");
+  assert.equal(room.publicId, "889911");
+  assert.equal(room.name, "غرفتي القديمة");
+  assert.equal(room.description, "يبقى المحتوى نفسه");
+  assert.equal(auditSnap.data().action, "convertExistingRoomToAgencyRoom");
+});
+
 test("direct create refuses owner with active agency application", async () => {
   const seeded = await seedApplication(
     "stage03b_direct_conflict",
@@ -385,5 +525,91 @@ test("direct create refuses owner with active agency application", async () => {
       idempotencyKey: "stage03b_direct_conflict_0001",
     }, { agencyIdCandidates: ["627001"] }),
     /owner_has_active_application/,
+  );
+});
+
+
+test("Full Agencies E2E: application review approval preserves room and activates all memberships", async () => {
+  const seeded = await seedApplication(
+    "stage04_full_e2e",
+    "335901",
+    ["335001","335002","335003","335004","335005"],
+  );
+  const roomId = "personal_" + seeded.ownerUid;
+  await adminDb.collection("rooms").doc(roomId).set({
+    ownerUid: seeded.ownerUid,
+    hostId: seeded.ownerUid,
+    roomType: "personal",
+    type: "personal",
+    publicId: "735001",
+    name: "Full E2E Existing Room",
+    isActive: true,
+    seats: [],
+    moderators: [],
+  });
+
+  const review = await startAgencyReview(
+    db,
+    "reviewer_stage04_full_e2e",
+    seeded.applicationId,
+    { now: new Date("2026-10-01T05:20:00.000Z") },
+  );
+  assert.equal(review.status, "under_review");
+
+  const details = await getAgencyReviewDetails(db, seeded.applicationId);
+  assert.equal(details.application.status, "under_review");
+  assert.equal(details.applicant.uid, seeded.ownerUid);
+  assert.equal(details.applicant.availability, "available");
+  assert.equal(details.hosts.length, 5);
+  assert.equal(
+    details.hosts.every((host) => host.availability === "available"),
+    true,
+  );
+
+  const approved = await approveAgencyApplication(
+    db,
+    "reviewer_stage04_full_e2e",
+    {
+      applicationId: seeded.applicationId,
+      agencyId: "7456",
+      idempotencyKey: "stage04_full_e2e_approve_0001",
+    },
+    { now: new Date("2026-10-01T05:21:00.000Z") },
+  );
+  assert.equal(approved.ok, true);
+  assert.equal(approved.agencyId, "7456");
+  assert.equal(approved.roomId, roomId);
+
+  const [agency, room, ownerMembership, application, ...hostMemberships] =
+    await Promise.all([
+      adminDb.collection("agencies").doc("7456").get(),
+      adminDb.collection("rooms").doc(roomId).get(),
+      adminDb.collection("agency_user_memberships").doc(seeded.ownerUid).get(),
+      adminDb.collection("agency_applications").doc(seeded.applicationId).get(),
+      ...seeded.hostUids.map((uid) =>
+        adminDb.collection("agency_user_memberships").doc(uid).get()
+      ),
+    ]);
+
+  assert.equal(agency.data().roomId, roomId);
+  assert.equal(agency.data().publicId, "7456");
+  assert.equal(room.data().publicId, "735001");
+  assert.equal(room.data().roomType, "agency");
+  assert.equal(room.data().type, "agency");
+  assert.equal(room.data().agencyId, "7456");
+  assert.equal(ownerMembership.data().role, "owner");
+  assert.equal(ownerMembership.data().status, "active");
+  assert.equal(application.data().status, "approved");
+  assert.equal(application.data().agencyId, "7456");
+  assert.equal(hostMemberships.length, 5);
+  assert.equal(
+    hostMemberships.every(
+      (snap) =>
+        snap.exists &&
+        snap.data().role === "host" &&
+        snap.data().status === "active" &&
+        snap.data().agencyId === "7456",
+    ),
+    true,
   );
 });

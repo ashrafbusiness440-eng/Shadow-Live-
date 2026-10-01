@@ -435,6 +435,28 @@ function roomHostUid(room){
   return clean(room.hostUid||room.hostId);
 }
 
+const AGENCY_MANAGER_ROOM_CAPABILITIES=[
+  "manageMic",
+  "moderateUsers",
+  "moderateChat",
+  "manageMusic",
+  "manageMusicPolicy",
+  "managePk",
+];
+
+function agencyRoomManagementCapabilities(room,actor,uid){
+  const roomType=clean(room.roomType||room.type||"personal");
+  const roomAgencyId=clean(room.agencyId);
+  if(roomType!=="agency"||!/^[0-9]{3,8}$/.test(roomAgencyId))return [];
+  if(clean(actor?.agencyId)!==roomAgencyId)return [];
+  const role=clean(actor?.agencyRole);
+  if(role==="owner"&&roomOwnerUid(room)===uid)return ROOM_MODERATOR_CAPABILITIES;
+  if(role==="manager"||role==="senior_manager"){
+    return AGENCY_MANAGER_ROOM_CAPABILITIES;
+  }
+  return [];
+}
+
 function hasRoomCapability(room,uid,capability){
   const ownerUid=roomOwnerUid(room);
   if(!isOfficialRoom(room)&&ownerUid===uid)return true;
@@ -447,8 +469,10 @@ function hasRoomCapability(room,uid,capability){
 
 function canManageRoomAction(room,actor,uid,capability){
   const global=roomPermissions(actor);
+  const agencyCapabilities=agencyRoomManagementCapabilities(room,actor,uid);
   return (!isOfficialRoom(room)&&roomOwnerUid(room)===uid)
     ||global.manageRooms
+    ||agencyCapabilities.includes(capability)
     ||hasRoomCapability(room,uid,capability);
 }
 
@@ -468,6 +492,7 @@ async function roomModeratorState(db,uid,roomId){
   const hostCapabilities=isOfficialRoom(room)&&hostUid===uid
     ? OFFICIAL_HOST_CAPABILITIES
     : [];
+  const agencyCapabilities=agencyRoomManagementCapabilities(room,actor,uid);
   return {
     ok:true,
     roomId,
@@ -475,12 +500,19 @@ async function roomModeratorState(db,uid,roomId){
     hostUid,
     isOwner:!isOfficialRoom(room)&&ownerUid===uid,
     isHost:isOfficialRoom(room)&&hostUid===uid,
-    canManage:(!isOfficialRoom(room)&&ownerUid===uid)||global.manageRooms||hostCapabilities.length>0,
+    canManage:(!isOfficialRoom(room)&&ownerUid===uid)
+      ||global.manageRooms
+      ||hostCapabilities.length>0
+      ||agencyCapabilities.length>0,
     limit:roomModeratorLimit(room),
     capabilities:ROOM_MODERATOR_CAPABILITIES,
     myCapabilities:!isOfficialRoom(room)&&ownerUid===uid
       ? ROOM_MODERATOR_CAPABILITIES
-      : [...new Set([...hostCapabilities,...(myModerator?.capabilities||[])])],
+      : [...new Set([
+          ...hostCapabilities,
+          ...agencyCapabilities,
+          ...(myModerator?.capabilities||[]),
+        ])],
     moderators:normalizeRoomModerators(room),
   };
 }
@@ -576,7 +608,7 @@ function roomResponse(roomId,data){
     ownerUid:clean(data.ownerUid||data.ownerId),
     hostUid:clean(data.hostUid||data.hostId),
     roomType,
-    agencyId:roomType==="agency"&&/^\d{6}$/.test(agencyId)?agencyId:"",
+    agencyId:roomType==="agency"&&/^\d{3,8}$/.test(agencyId)?agencyId:"",
     category:clean(data.category||"دردشة"),
     ownerName:clean(data.ownerName),
     ownerLocation:clean(data.ownerLocation),
@@ -594,13 +626,13 @@ function roomResponse(roomId,data){
   };
 }
 
-async function openPersonalRoom(db,uid){
+async function openPersonalRoom(db,uid,{forceAgency=false}={}){
   const roomId="personal_"+uid;
   const roomRef=db.collection("rooms").doc(roomId);
   const userRef=db.collection("users").doc(uid);
 
   const existing=await roomRef.get();
-  if(existing.exists){
+  if(existing.exists&&!forceAgency){
     const data=existing.data()||{};
     if(clean(data.ownerUid||data.hostId)!==uid){
       throw new ApiError("room_owner_mismatch",409);
@@ -626,6 +658,13 @@ async function openPersonalRoom(db,uid){
   const user=userSnap.data()||{};
   const displayName=clean(user.displayName||user.username||"مستخدم Shadow Live");
   const ownerLocation=clean(user.location);
+  const linkedAgencyId=clean(user.agencyId);
+  const isAgencyOwner=
+    clean(user.agencyRole)==="owner"&&/^\d{3,8}$/.test(linkedAgencyId);
+  if(forceAgency&&!isAgencyOwner){
+    throw new ApiError("agency_owner_required",403);
+  }
+  const createAsAgency=isAgencyOwner;
 
   for(let attempt=0;attempt<40;attempt++){
     const publicId=String(randomInt(100000,1000000));
@@ -633,20 +672,48 @@ async function openPersonalRoom(db,uid){
       const result=await db.runTransaction(async tx=>{
         const publicRef=db.collection("room_ids").doc(publicId);
         const userPublicRef=db.collection("public_ids").doc(publicId);
-        const [roomNow,roomIdCollision,userIdCollision]=await Promise.all([
-          tx.get(roomRef),tx.get(publicRef),tx.get(userPublicRef),
+        const agencyRef=createAsAgency
+          ?db.collection("agencies").doc(linkedAgencyId)
+          :null;
+        const snapshots=await Promise.all([
+          tx.get(roomRef),
+          tx.get(publicRef),
+          tx.get(userPublicRef),
+          ...(agencyRef?[tx.get(agencyRef)]:[]),
         ]);
+        const [roomNow,roomIdCollision,userIdCollision]=snapshots;
+        const agencySnap=agencyRef?snapshots[3]:null;
+        const agency=agencySnap?.exists?agencySnap.data()||{}:null;
+        if(createAsAgency&&(
+          !agencySnap?.exists||
+          clean(agency?.ownerUid)!==uid||
+          clean(agency?.status||"active")!=="active"
+        )){
+          throw new ApiError("agency_owner_state_corrupt",409);
+        }
 
         if(roomNow.exists){
           const data=roomNow.data()||{};
           if(clean(data.ownerUid||data.hostId)!==uid)throw new ApiError("room_owner_mismatch",409);
-          tx.set(roomRef,{
+          const roomPatch={
             isActive:true,
             closedAt:FieldValue.delete(),
             updatedAt:FieldValue.serverTimestamp(),
-          },{merge:true});
+            ...(createAsAgency?{
+              roomType:"agency",
+              type:"agency",
+              agencyId:linkedAgencyId,
+              agencyName:clean(agency?.name),
+              agencyLogoUrl:clean(agency?.logoUrl||agency?.imageUrl),
+              agencyCoverUrl:clean(agency?.coverUrl||agency?.coverImageUrl),
+            }:{})
+          };
+          tx.set(roomRef,roomPatch,{merge:true});
           tx.set(userRef,{personalRoomId:roomId},{merge:true});
-          return roomResponse(roomId,{...data,isActive:true});
+          if(agencyRef){
+            tx.set(agencyRef,{roomId,updatedAt:FieldValue.serverTimestamp()},{merge:true});
+          }
+          return roomResponse(roomId,{...data,...roomPatch});
         }
         if(roomIdCollision.exists||userIdCollision.exists){
           throw new ApiError("room_public_id_taken",409);
@@ -659,8 +726,14 @@ async function openPersonalRoom(db,uid){
           title:name,
           ownerUid:uid,
           hostId:uid,
-          roomType:"personal",
-          type:"personal",
+          roomType:createAsAgency?"agency":"personal",
+          type:createAsAgency?"agency":"personal",
+          ...(createAsAgency?{
+            agencyId:linkedAgencyId,
+            agencyName:clean(agency?.name),
+            agencyLogoUrl:clean(agency?.logoUrl||agency?.imageUrl),
+            agencyCoverUrl:clean(agency?.coverUrl||agency?.coverImageUrl),
+          }:{}),
           category:"دردشة",
           ownerName:displayName,
           ownerLocation,
@@ -676,7 +749,7 @@ async function openPersonalRoom(db,uid){
           levelTarget:1000,
           followerCount:0,
           dailySupport:0,
-          seats:Array.from({length:8},(_,index)=>({
+          seats:Array.from({length:createAsAgency?10:8},(_,index)=>({
             index,uid:"",displayName:"",profileImageUrl:"",muted:true,
           })),
           micInvites:[],
@@ -701,10 +774,13 @@ async function openPersonalRoom(db,uid){
         tx.create(publicRef,{
           roomId,
           ownerUid:uid,
-          source:"personalRoom",
+          source:createAsAgency?"agencyRoom":"personalRoom",
           createdAt:now,
         });
         tx.set(userRef,{personalRoomId:roomId},{merge:true});
+        if(agencyRef){
+          tx.set(agencyRef,{roomId,updatedAt:now},{merge:true});
+        }
         return roomResponse(roomId,data);
       });
       return result;
@@ -840,7 +916,11 @@ async function updateRoomSettings(db,uid,body){
     const user=userSnap.data()||{};
     const permissions=roomPermissions(user);
     const ownerUid=clean(room.ownerUid||room.ownerId||room.hostId);
-    if(ownerUid!==uid&&!permissions.manageRooms)throw new ApiError("forbidden",403);
+    const agencyManager=
+      agencyRoomManagementCapabilities(room,user,uid).length>0;
+    if(ownerUid!==uid&&!permissions.manageRooms&&!agencyManager){
+      throw new ApiError("forbidden",403);
+    }
     if(visibility==="hidden"&&!permissions.hidden)throw new ApiError("hidden_room_forbidden",403);
 
     if(coverImageObjectId){
@@ -3174,9 +3254,14 @@ async function roomBootstrap(db,decoded,body){
   const hostCapabilities=official&&hostUid===uid
     ? OFFICIAL_HOST_CAPABILITIES
     : [];
+  const agencyCapabilities=agencyRoomManagementCapabilities(room,actor,uid);
   const myCapabilities=!official&&ownerUid===uid
     ? ROOM_MODERATOR_CAPABILITIES
-    : [...new Set([...hostCapabilities,...(myModerator?.capabilities||[])])];
+    : [...new Set([
+        ...hostCapabilities,
+        ...agencyCapabilities,
+        ...(myModerator?.capabilities||[]),
+      ])];
   const onlineCount=liveRoomCount??Math.max(
     0,
     Number(room.onlineCount||room.participantsCount||0),
@@ -3284,7 +3369,10 @@ async function roomBootstrap(db,decoded,body){
       hostUid,
       isOwner:!official&&ownerUid===uid,
       isHost:official&&hostUid===uid,
-      canManage:(!official&&ownerUid===uid)||global.manageRooms||hostCapabilities.length>0,
+      canManage:(!official&&ownerUid===uid)
+        ||global.manageRooms
+        ||hostCapabilities.length>0
+        ||agencyCapabilities.length>0,
       limit:roomModeratorLimit(room),
       capabilities:ROOM_MODERATOR_CAPABILITIES,
       myCapabilities,
@@ -3392,6 +3480,14 @@ export default async function handler(req,res){
     if(decoded.firebase?.sign_in_provider==="anonymous")throw new ApiError("account_required",403);
     if(action==="personalRoom"){
       const room=await openPersonalRoom(getFirestore(),decoded.uid);
+      return out(res,200,{ok:true,room});
+    }
+    if(action==="agencyRoom"){
+      const room=await openPersonalRoom(
+        getFirestore(),
+        decoded.uid,
+        {forceAgency:true},
+      );
       return out(res,200,{ok:true,room});
     }
     if(action==="setRoomChatEnabled"){
