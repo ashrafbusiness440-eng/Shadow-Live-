@@ -39,7 +39,7 @@ test("monthly tier boundaries match approved USD thresholds",()=>{
   assert.equal(tierForMonthlyGross(policy,50000000).id,"diamond");
 });
 
-test("approved activity multiplier table is exact",()=>{
+test("legacy activity multiplier helper stays isolated from agency payable",()=>{
   const expected=[0,0,0,2500,4000,5500,7000,8000,9000,10000];
   for(let day=0;day<=9;day++){
     assert.equal(activityPayoutBps(policy,day),expected[day]);
@@ -87,6 +87,31 @@ test("host and agency bonuses apply without exceeding 100 percent",()=>{
     clamped.hostShareBps+clamped.agencyShareBps+clamped.platformShareBps,
     10000,
   );
+});
+
+test("approved host bonus requires 14 days even when stale config says 9",()=>{
+  const stale={...policy,hostBonusQualifiedDays:9};
+  const before=resolveRevenuePolicy(
+    stale,
+    {giftHostActivityMonth:"2026-09",giftHostQualifiedDays:9},
+    1000000,
+    "agency-a",
+    "2026-09",
+    0,
+  );
+  assert.equal(before.requiredDays,14);
+  assert.equal(before.hostBonusBps,0);
+
+  const qualified=resolveRevenuePolicy(
+    stale,
+    {giftHostActivityMonth:"2026-09",giftHostQualifiedDays:14},
+    1000000,
+    "agency-a",
+    "2026-09",
+    0,
+  );
+  assert.equal(qualified.requiredDays,14);
+  assert.equal(qualified.hostBonusBps,200);
 });
 
 test("monthly settlement helper uses final monthly tier for the period",()=>{
@@ -142,7 +167,6 @@ test("custom Shadow Control thresholds shares and bonuses change calculations wi
     ...policy,
     hostPerformanceBonusBps:300,
     agencyPerformanceBonusBps:100,
-    hostBonusQualifiedDays:5,
     agencyBonusActiveHosts:3,
     tiers:[
       {id:"starter",minGiftCoins:0,hostShareBps:5000,agencyShareBps:400},
