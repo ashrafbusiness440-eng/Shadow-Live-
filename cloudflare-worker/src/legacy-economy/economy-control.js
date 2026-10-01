@@ -8,6 +8,8 @@ import {
   calculateAgencyMonthEndSurplusFromSnapshot,
   resolveAgencySurplusPolicy,
   validateAgencySettlementTotals,
+  hostActivityBonusForTarget,
+  agencyPerformanceBonusForTarget,
 } from "../agency-policy.js";
 
 function clean(value){return String(value??"").trim();}
@@ -701,6 +703,13 @@ function validateFrozenAgencySurplusPolicy(data,agencyId,month){
     surplusToShadow:data.surplusToShadow,
     mode:expectedMode,
     snapshotId,
+    agencyPerformanceBonusMode:"per_host_target_month_end",
+    agencyPerformanceBonusBps:
+      clean(data.agencyPerformanceBonusMode)==="per_host_target_month_end"
+        ?Math.max(0,Math.min(3000,Number(data.agencyPerformanceBonusBps??100)))
+        :100,
+    coinsPerDiamond:Math.max(1,Number(data.coinsPerDiamond||10000)),
+    requiredQualifiedDays:14,
   };
 }
 
@@ -717,10 +726,24 @@ async function freezeAgencySurplusPolicy(db,actorUid,agencyId,month){
         month,
       );
     }
-    const overrideSnap=await tx.get(overrideRef);
-    const policy=resolveAgencySurplusPolicy(
-      overrideSnap.exists?(overrideSnap.data()||{}):{},
-    );
+    const economyRef=db.collection("system_config").doc("gift_economy");
+    const [overrideSnap,economySnap]=await Promise.all([
+      tx.get(overrideRef),
+      tx.get(economyRef),
+    ]);
+    const override=overrideSnap.exists?(overrideSnap.data()||{}):{};
+    const economy=economySnap.exists?(economySnap.data()||{}):{};
+    const policy=resolveAgencySurplusPolicy(override);
+    const overrideBonusIsNew=
+      clean(override.agencyPerformanceBonusMode)==="per_host_target_month_end";
+    const globalBonusIsNew=
+      clean(economy.agencyPerformanceBonusMode)==="per_host_target_month_end";
+    const agencyPerformanceBonusBps=overrideBonusIsNew
+      ?Math.max(0,Math.min(3000,Number(override.agencyPerformanceBonusBps??100)))
+      :globalBonusIsNew
+        ?Math.max(0,Math.min(3000,Number(economy.agencyPerformanceBonusBps??100)))
+        :100;
+    const coinsPerDiamond=Math.max(1,Number(economy.coinsPerDiamond||10000));
     if(!policy.configured){
       throw Error("agency_surplus_policy_unconfigured");
     }
@@ -730,6 +753,10 @@ async function freezeAgencySurplusPolicy(db,actorUid,agencyId,month){
       surplusToShadow:policy.surplusToShadow,
       mode:policy.mode,
       snapshotId,
+      agencyPerformanceBonusMode:"per_host_target_month_end",
+      agencyPerformanceBonusBps,
+      coinsPerDiamond,
+      requiredQualifiedDays:14,
     };
     tx.create(snapshotRef,{
       ...snapshot,
