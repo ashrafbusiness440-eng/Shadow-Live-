@@ -717,15 +717,15 @@ class _AgencyPerformanceCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: _Metric(
-                  label: 'حصة الوكالة',
+                  label: 'Agency Share المستحق',
                   value: _compact(current.agencyBaseShareCoins),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: _Metric(
-                  label: 'تقديري + Bonus',
-                  value: _compact(current.estimatedAgencyPayableCoins),
+                  label: 'Share مدفوع',
+                  value: _compact(current.agencyBaseShareCoins),
                 ),
               ),
             ],
@@ -767,7 +767,7 @@ class _AgencyPerformanceCard extends StatelessWidget {
             children: [
               Expanded(
                 child: _Metric(
-                  label: 'محفظة الوكالة',
+                  label: 'رصيد المالك',
                   value: '${current.wallet.diamonds} D',
                 ),
               ),
@@ -781,7 +781,7 @@ class _AgencyPerformanceCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: _Metric(
-                  label: 'Lifetime Diamonds',
+                  label: 'Agency Lifetime D',
                   value: current.wallet.lifetimeDiamonds.toString(),
                 ),
               ),
@@ -853,7 +853,7 @@ class _AgencyStatementCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: _Metric(
-                    label: 'Base Share',
+                    label: 'Target Share',
                     value: _compact(value.agencyBaseShareCoins),
                   ),
                 ),
