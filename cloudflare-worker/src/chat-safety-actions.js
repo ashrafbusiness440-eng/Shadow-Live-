@@ -779,6 +779,38 @@ export async function sendGift(db, uid, body, options = {}) {
           closingBalance: closingDiamonds,
           createdAt: now,
         }),
+        db.writeCreate(
+          `notifications/agency_target_salary_${key}_${receiverId}`,
+          {
+            userId: receiverId,
+            type: "agency_target_salary_paid",
+            category: "system",
+            title: "تم تحقيق Target جديد",
+            body:
+              "تم تحقيق " +
+              String(
+                agencyTarget.reachedTarget?.tierId ||
+                agencyTarget.reachedTarget?.id ||
+                "Target",
+              ) +
+              " " +
+              String(agencyTarget.reachedTarget?.rank || "") +
+              " وإضافة " +
+              String(diamondsEarned) +
+              " Diamonds إلى محفظتك.",
+            read: false,
+            mandatory: true,
+            financial: true,
+            agencyId,
+            month: agencyPeriods.month,
+            targetId: agencyTarget.reachedTarget?.id || null,
+            targetTierId: agencyTarget.reachedTarget?.tierId || null,
+            targetRank: agencyTarget.reachedTarget?.rank || null,
+            salaryDeltaDiamonds: diamondsEarned,
+            salaryPaidDiamonds: agencyTarget.paidDiamonds,
+            createdAt: now,
+          },
+        ),
       );
     } else if (earningsEnabled && !agencyTarget && diamondsEarned > 0) {
       writes.push(
