@@ -60,6 +60,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
   }
 
   String _roomCategory(DiscoveryRoom room) {
+    if (_isAgencyRoom(room)) return 'وكالة';
     final value = room.data['category'] ?? room.data['type'] ?? '';
     final category = value.toString().trim();
     return category.isEmpty ? 'أخرى' : category;
