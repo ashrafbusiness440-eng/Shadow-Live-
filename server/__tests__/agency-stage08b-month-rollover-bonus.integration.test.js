@@ -195,7 +195,7 @@ test("08-B month-end pays Base Agency Share then approved Host and per-host Agen
   assert.equal(shareNotification.data().financial,true);
   assert.equal(shareNotification.data().agencyBaseShareCoins,5000);
   assert.equal(shareNotification.data().agencyDiamondsAdded,1);
-  assert.equal(shareNotification.data().agencyCarryoverCoins,5000);
+  assert.equal(shareNotification.data().agencyCarryoverCoins,0);
   assert.equal(monthNotification.data().userId,actorUid);
   assert.equal(
     monthNotification.data().type,
