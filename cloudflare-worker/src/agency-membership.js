@@ -15,7 +15,11 @@ import {
   agencyMemberPermissions,
   canPerformAgencyAction,
 } from "./agency-permissions.js";
-import { currentAgencyMonthKey } from "./agency-policy.js";
+import {
+  calculateAgencyTargetProgress,
+  currentAgencyMonthKey,
+  DEFAULT_AGENCY_TARGETS,
+} from "./agency-policy.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 
 const clean = (value) => String(value ?? "").trim();
@@ -3028,6 +3032,180 @@ async function resolveAgencyMembershipLookupId(db, input) {
   throw new ApiError("agency_not_found", 404);
 }
 
+function managerSafeNonNegativeInteger(value, code) {
+  const parsed = Number(value ?? 0);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) {
+    throw new ApiError(code, 409);
+  }
+  return parsed;
+}
+
+function managerSafeTargetLevel(target) {
+  if (!target) return null;
+  return {
+    id: clean(target.id),
+    tierId: clean(target.tierId),
+    rank: clean(target.rank),
+    thresholdCoins: managerSafeNonNegativeInteger(
+      target.thresholdCoins,
+      "agency_target_state_corrupt",
+    ),
+    openEnded: target.openEnded === true,
+  };
+}
+
+export async function loadAgencyMemberPerformance(
+  db,
+  actorUid,
+  body = {},
+  now = new Date(),
+) {
+  const agencyId = await resolveAgencyMembershipLookupId(db, body.agencyId);
+  const targetUid = clean(body.targetUid);
+  if (!targetUid || targetUid.length > 180 || targetUid.includes("/")) {
+    throw new ApiError("invalid_target_uid", 400);
+  }
+
+  const [
+    agencySnap,
+    actorUserSnap,
+    actorMembershipSnap,
+    targetMembershipSnap,
+    targetUserSnap,
+  ] = await Promise.all([
+    db.get("agencies/" + agencyId),
+    db.get("users/" + actorUid),
+    db.get("agency_user_memberships/" + actorUid),
+    db.get("agency_user_memberships/" + targetUid),
+    db.get("users/" + targetUid),
+  ]);
+
+  if (!agencySnap.exists) throw new ApiError("agency_not_found", 404);
+  const agency = agencySnap.data || {};
+  const agencyStatus = clean(agency.status);
+  const actorUser = actorUserSnap.exists ? actorUserSnap.data || {} : {};
+  const actorMembership =
+    actorMembershipSnap.exists &&
+    clean(actorMembershipSnap.data?.agencyId) === agencyId
+      ? actorMembershipSnap.data || {}
+      : {};
+
+  const canView = canPerformAgencyAction({
+    action: "viewHosts",
+    user: actorUser,
+    membership: actorMembership,
+    agencyStatus,
+  });
+  if (!canView) throw new ApiError("forbidden", 403);
+
+  if (!targetMembershipSnap.exists || !targetUserSnap.exists) {
+    throw new ApiError("agency_member_not_found", 404);
+  }
+  const targetMembership = targetMembershipSnap.data || {};
+  const targetUser = targetUserSnap.data || {};
+  if (
+    clean(targetMembership.agencyId) !== agencyId ||
+    clean(targetMembership.status) !== "active" ||
+    clean(targetUser.agencyId) !== agencyId
+  ) {
+    throw new ApiError("agency_member_state_conflict", 409);
+  }
+
+  const month = currentAgencyMonthKey(now);
+  const targetPolicy =
+    Array.isArray(targetUser.agencyPolicySnapshot?.targets)
+      ? targetUser.agencyPolicySnapshot.targets
+      : DEFAULT_AGENCY_TARGETS;
+  let targetProgress;
+  try {
+    targetProgress = calculateAgencyTargetProgress({
+      monthKey: month,
+      storedMonth: targetUser.agencyTargetMonth,
+      storedProgressCoins: targetUser.agencyTargetProgressCoins,
+      addedHostShareCoins: 0,
+      storedPaidDiamonds: targetUser.agencySalaryPaidDiamonds,
+      targets: targetPolicy,
+    });
+  } catch (_) {
+    throw new ApiError("agency_target_state_corrupt", 409);
+  }
+
+  const currentLevel = managerSafeTargetLevel(targetProgress.reachedTarget);
+  const nextLevel = managerSafeTargetLevel(targetProgress.nextTarget);
+  const targetCoins =
+    nextLevel?.thresholdCoins || currentLevel?.thresholdCoins || 0;
+  const progressCoins = managerSafeNonNegativeInteger(
+    targetProgress.progressCoins,
+    "agency_target_state_corrupt",
+  );
+  const progressBps =
+    targetCoins > 0
+      ? Math.max(
+          0,
+          Math.min(10000, Math.floor(progressCoins * 10000 / targetCoins)),
+        )
+      : 0;
+  const activitySameMonth =
+    clean(targetUser.giftHostActivityMonth) === month;
+  const qualifiedDays = activitySameMonth
+    ? managerSafeNonNegativeInteger(
+        targetUser.giftHostQualifiedDays,
+        "agency_activity_state_corrupt",
+      )
+    : 0;
+  const micSecondsMonth = activitySameMonth
+    ? managerSafeNonNegativeInteger(
+        targetUser.giftHostMicSecondsMonth,
+        "agency_activity_state_corrupt",
+      )
+    : 0;
+
+  return {
+    ok: true,
+    agencyId,
+    privacyMode: "manager_performance_only",
+    host: {
+      uid: targetUid,
+      publicId: clean(targetUser.publicId) || null,
+      displayName:
+        clean(
+          targetUser.displayName ||
+          targetUser.name ||
+          targetUser.username,
+        ) || "Shadow Live",
+      profileImageUrl:
+        clean(
+          targetUser.profileImageUrl ||
+          targetUser.photoUrl ||
+          targetUser.avatarUrl,
+        ) || null,
+      role: clean(targetMembership.role),
+      status: clean(targetMembership.status),
+      accountStatus: clean(targetUser.accountStatus || "active"),
+    },
+    target: {
+      month,
+      progressCoins,
+      progressBps,
+      remainingCoins: managerSafeNonNegativeInteger(
+        targetProgress.remainingToNextTargetCoins,
+        "agency_target_state_corrupt",
+      ),
+      targetCoins,
+      currentLevel,
+      nextLevel,
+    },
+    activity: {
+      month,
+      qualifiedDays,
+      micSecondsMonth,
+      requiredQualifiedDays: 14,
+      requiredMinutesPerDay: 120,
+      requiredMicSecondsMonth: 14 * 120 * 60,
+    },
+  };
+}
+
 export async function listAgencyMembers(
   db,
   actorUid,
@@ -3492,6 +3670,13 @@ export async function agencyMembership(request, env) {
       result = await setAgencyManagerRole(db, decoded.sub, body);
     } else if (action === "listAgencyMembers") {
       result = await listAgencyMembers(db, decoded.sub, body);
+    } else if (action === "memberPerformance") {
+      result = await loadAgencyMemberPerformance(
+        db,
+        decoded.sub,
+        body,
+        new Date(),
+      );
     } else if (action === "listAgencyPending") {
       result = await listAgencyMembershipPending(db, decoded.sub, body);
     } else if (action === "reviewRequest") {
