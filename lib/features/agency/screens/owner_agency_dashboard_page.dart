@@ -500,10 +500,39 @@ class _AgencyIdentityCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 5),
-                Text(
-                  'Agency ID: ${data.agency.publicId}',
-                  textDirection: TextDirection.ltr,
-                  style: const TextStyle(color: Colors.white60),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        'Agency ID: ${data.agency.publicId}',
+                        key: const Key('owner-agency-public-id'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textDirection: TextDirection.ltr,
+                        style: const TextStyle(color: Colors.white60),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    IconButton(
+                      key: const Key('owner-agency-copy-id'),
+                      tooltip: 'نسخ Agency ID',
+                      visualDensity: VisualDensity.compact,
+                      constraints:
+                          const BoxConstraints(minWidth: 30, minHeight: 30),
+                      padding: EdgeInsets.zero,
+                      onPressed: () async {
+                        await Clipboard.setData(
+                          ClipboardData(text: data.agency.publicId),
+                        );
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('تم نسخ Agency ID')),
+                        );
+                      },
+                      icon: const Icon(Icons.copy_rounded, size: 16),
+                    ),
+                  ],
                 ),
               ],
             ),
