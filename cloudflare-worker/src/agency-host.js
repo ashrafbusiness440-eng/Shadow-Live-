@@ -206,18 +206,8 @@ export async function loadAgencyHostCore(
     0,
     3000,
   );
-  const requiredQualifiedDays = boundedInteger(
-    economy.hostBonusQualifiedDays,
-    14,
-    1,
-    31,
-  );
-  const requiredMinutesPerDay = boundedInteger(
-    economy.hostBonusMinutesPerQualifiedDay,
-    120,
-    1,
-    1440,
-  );
+  const requiredQualifiedDays = 14;
+  const requiredMinutesPerDay = 120;
 
   const reachedTarget = targetDisplaySummary(
     targetProgress.reachedTarget,
