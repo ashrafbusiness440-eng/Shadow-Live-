@@ -92,6 +92,12 @@ test("09-A room gift snapshots reached Target threshold in existing host-month d
       pendingGiftEarningCoins:0,pendingAgencyGiftEarningCoins:0,
     }),
     db.collection("rooms").doc(roomId).set({isActive:true,agencyId,totalSupport:0}),
+    db.collection("users").doc("owner_"+agencyId).set({
+      coins:0,diamonds:0,role:"user",accountStatus:"active",
+    }),
+    db.collection("agencies").doc(agencyId).set({
+      agencyId,ownerUid:"owner_"+agencyId,status:"active",
+    }),
   ]);
 
   await sendRoomGift(
@@ -138,6 +144,12 @@ test("09-A chat gift snapshots the same Target threshold contract",async()=>{
     db.collection("conversations").doc(conversationId).set({
       participants:[senderId,hostId],
       unreadCounts:{[senderId]:0,[hostId]:0},
+    }),
+    db.collection("users").doc("owner_"+agencyId).set({
+      coins:0,diamonds:0,role:"user",accountStatus:"active",
+    }),
+    db.collection("agencies").doc(agencyId).set({
+      agencyId,ownerUid:"owner_"+agencyId,status:"active",
     }),
   ]);
 
