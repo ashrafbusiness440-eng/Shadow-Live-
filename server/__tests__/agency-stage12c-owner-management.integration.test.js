@@ -218,7 +218,7 @@ test("12-C Owner rejects leave request without changing membership", async () =>
   assert.equal(pending.exists, false);
 });
 
-test("12-C leave response is Owner-only", async () => {
+test("12-C requester cannot review own leave request", async () => {
   const agencyId = "812303";
   const ownerUid = "stage12c_guard_owner";
   const memberUid = "stage12c_guard_host";
@@ -232,7 +232,7 @@ test("12-C leave response is Owner-only", async () => {
       decision: "accept",
       idempotencyKey: "stage12c_leave_guard_0001",
     }),
-    /agency_owner_required/,
+    /cannot_review_own_request/,
   );
   const membership = await adminDb.collection("agency_user_memberships")
     .doc(memberUid).get();
