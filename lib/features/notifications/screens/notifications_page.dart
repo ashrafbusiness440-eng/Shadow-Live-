@@ -106,6 +106,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
             finalDecision: item.finalDecision,
             resolvedBy: item.resolvedBy,
             resolvedByName: item.resolvedByName,
+            resolvedAt: item.resolvedAt,
           );
         });
       }
@@ -638,9 +639,17 @@ String _resolvedNotificationText(AppNotification item) {
       : item.resolvedBy?.trim().isNotEmpty == true
           ? item.resolvedBy!.trim()
           : 'مراجع مخوّل';
+  final resolvedAt = item.resolvedAt?.toLocal();
+  final time = resolvedAt == null
+      ? ''
+      : ' • ${resolvedAt.year.toString().padLeft(4, '0')}/'
+          '${resolvedAt.month.toString().padLeft(2, '0')}/'
+          '${resolvedAt.day.toString().padLeft(2, '0')} '
+          '${resolvedAt.hour.toString().padLeft(2, '0')}:'
+          '${resolvedAt.minute.toString().padLeft(2, '0')}';
   return accepted
-      ? 'تم قبول الطلب بواسطة $reviewer.'
-      : 'تم رفض الطلب بواسطة $reviewer.';
+      ? 'تم قبول الطلب بواسطة $reviewer$time.'
+      : 'تم رفض الطلب بواسطة $reviewer$time.';
 }
 
 class _ReviewInfoRow extends StatelessWidget {
