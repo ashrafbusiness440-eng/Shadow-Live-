@@ -763,6 +763,8 @@ export async function sendGift(db, uid, body, options = {}) {
             publicSupportCoins: agencyPublicSupportCoins,
             nextTargetCoins: agencyTarget?.remainingToNextTargetCoins || 0,
             salaryPaidDiamonds: agencyTarget?.paidDiamonds || 0,
+            agencyTargetSharePaidTargetId:
+              agencyTarget?.reachedTarget?.id || "",
             updatedAt: now,
           },
           [
@@ -778,12 +780,21 @@ export async function sendGift(db, uid, body, options = {}) {
             "publicSupportCoins",
             "nextTargetCoins",
             "salaryPaidDiamonds",
+            "agencyTargetSharePaidTargetId",
             "updatedAt",
           ],
           [
             db.increment("supportCoins", totalCost),
             db.increment("hostShareCoins", recipientShareCoins),
             db.increment("agencyShareCoins", agencyShareCoins),
+            db.increment(
+              "agencyTargetSharePaidCoins",
+              agencyTargetSharePlan?.deltaCoins || 0,
+            ),
+            db.increment(
+              "agencyTargetSharePaidDiamonds",
+              agencyTargetSharePlan?.shareDiamondsEarned || 0,
+            ),
             db.increment("giftCount", quantity),
           ],
         ),
