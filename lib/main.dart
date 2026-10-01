@@ -4051,20 +4051,16 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     if (agencyId.isEmpty) return;
     final viewerAgencyId =
         (_roomArguments['viewerAgencyId'] ?? '').toString().trim();
-    if (viewerAgencyId == agencyId) {
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => const MyAgencyEntryPage(),
-        ),
-      );
-      return;
-    }
+    final viewerAgencyRole =
+        (_roomArguments['viewerAgencyRole'] ?? '').toString().trim();
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => PublicAgencyPage(
           agencyId: agencyId,
+          viewerAgencyId: viewerAgencyId,
+          viewerAgencyRole: viewerAgencyRole,
           joinEnabled: viewerAgencyId.isEmpty,
-          joinBlockedReason: viewerAgencyId.isEmpty
+          joinBlockedReason: viewerAgencyId.isEmpty || viewerAgencyId == agencyId
               ? null
               : 'أنت عضو في وكالة أخرى؛ يمكنك مشاهدة معلومات هذه الوكالة فقط.',
         ),
