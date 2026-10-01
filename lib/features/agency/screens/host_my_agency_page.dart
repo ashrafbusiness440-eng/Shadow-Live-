@@ -54,7 +54,9 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
     _data = initial;
     _loading = false;
     Future.microtask(() async {
-      await _loadLeaveStatus(initial.agency.agencyId);
+      if (initial.membershipRole != 'owner') {
+        await _loadLeaveStatus(initial.agency.agencyId);
+      }
       await _loadRanking(initial.agency.agencyId);
     });
   }
@@ -79,7 +81,9 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
         _data = data;
         _loading = false;
       });
-      await _loadLeaveStatus(data.agency.agencyId);
+      if (data.membershipRole != 'owner') {
+        await _loadLeaveStatus(data.agency.agencyId);
+      }
       await _loadRanking(data.agency.agencyId);
     } catch (error) {
       if (!mounted) return;
