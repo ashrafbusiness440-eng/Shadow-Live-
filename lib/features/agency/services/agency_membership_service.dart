@@ -217,6 +217,53 @@ class AgencyApplicationReservation {
   }
 }
 
+class AgencyCooldownExceptionStatus {
+  const AgencyCooldownExceptionStatus({
+    required this.active,
+    required this.agencyId,
+    required this.status,
+    required this.cooldownUntil,
+    required this.remainingSeconds,
+    required this.exceptionStatus,
+    required this.exceptionReason,
+    required this.resolutionReason,
+  });
+
+  final bool active;
+  final String? agencyId;
+  final String? status;
+  final String? cooldownUntil;
+  final int remainingSeconds;
+  final String? exceptionStatus;
+  final String? exceptionReason;
+  final String? resolutionReason;
+
+  factory AgencyCooldownExceptionStatus.fromJson(
+    Map<String, dynamic> json,
+  ) {
+    final request = json['exceptionRequest'];
+    final requestMap = request is Map
+        ? Map<String, dynamic>.from(request)
+        : const <String, dynamic>{};
+    final remaining = json['remainingSeconds'];
+    return AgencyCooldownExceptionStatus(
+      active: json['active'] == true,
+      agencyId: _nullable(json['agencyId']),
+      status: _nullable(json['status']),
+      cooldownUntil: _nullable(json['cooldownUntil']),
+      remainingSeconds: remaining is num
+          ? remaining.toInt()
+          : int.tryParse('$remaining') ?? 0,
+      exceptionStatus: _nullable(requestMap['status']),
+      exceptionReason: _nullable(requestMap['reason']),
+      resolutionReason: _nullable(requestMap['resolutionReason']),
+    );
+  }
+
+  bool get canRequestException =>
+      active && exceptionStatus != 'pending' && exceptionStatus != 'accepted';
+}
+
 class AgencyJoinEligibility {
   const AgencyJoinEligibility({
     required this.canRequestJoin,
@@ -225,6 +272,7 @@ class AgencyJoinEligibility {
     required this.membershipStatus,
     required this.membershipReservation,
     required this.applicationReservation,
+    required this.cooldown,
   });
 
   final bool canRequestJoin;
@@ -233,10 +281,12 @@ class AgencyJoinEligibility {
   final String? membershipStatus;
   final AgencyJoinReservation? membershipReservation;
   final AgencyApplicationReservation? applicationReservation;
+  final AgencyCooldownExceptionStatus? cooldown;
 
   factory AgencyJoinEligibility.fromJson(Map<String, dynamic> json) {
     final membershipReservation = json['membershipReservation'];
     final applicationReservation = json['applicationReservation'];
+    final cooldown = json['cooldown'];
     return AgencyJoinEligibility(
       canRequestJoin: json['canRequestJoin'] == true,
       linkedAgencyId: _nullable(json['linkedAgencyId']),
@@ -250,6 +300,11 @@ class AgencyJoinEligibility {
       applicationReservation: applicationReservation is Map
           ? AgencyApplicationReservation.fromJson(
               Map<String, dynamic>.from(applicationReservation),
+            )
+          : null,
+      cooldown: cooldown is Map
+          ? AgencyCooldownExceptionStatus.fromJson(
+              Map<String, dynamic>.from(cooldown),
             )
           : null,
     );
@@ -343,6 +398,22 @@ class AgencyMembershipService {
       'action': 'eligibility',
     });
     return AgencyJoinEligibility.fromJson(body);
+  }
+
+  Future<void> requestCooldownException({
+    required String reason,
+  }) async {
+    final normalized = reason.trim();
+    if (normalized.length < 3) {
+      throw StateError('cooldown_exception_reason_required');
+    }
+    await _post({
+      'action': 'requestCooldownException',
+      'reason': normalized,
+      'idempotencyKey':
+          'cooldown_exception_' +
+          DateTime.now().microsecondsSinceEpoch.toString(),
+    });
   }
 
   Future<List<AgencyMembershipRequestSummary>> loadMyRequests() async {
