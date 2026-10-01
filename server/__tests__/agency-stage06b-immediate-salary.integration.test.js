@@ -63,6 +63,13 @@ async function seedSharedConfig(){
     db.collection("system_config").doc("gift_catalog").set({
       gifts:[
         {
+          id:"stage06b_incomplete",
+          nameAr:"هدية دون Target",
+          priceCoins:50000,
+          enabled:true,
+          assetKey:"gifts.placeholder.default",
+        },
+        {
           id:"stage06b_small",
           nameAr:"هدية صغيرة",
           priceCoins:100000,
@@ -110,6 +117,110 @@ async function seedAgencyMonth(agencyId,month){
   ]);
   return ownerUid;
 }
+
+test("06-B incomplete Target pays zero Agency Share and leaves no payout ledger",async()=>{
+  await seedSharedConfig();
+  const suffix=Date.now().toString()+"_incomplete";
+  const senderId="stage06b_incomplete_sender_"+suffix;
+  const hostId="stage06b_incomplete_host_"+suffix;
+  const agencyId="stage06b_incomplete_agency_"+suffix;
+  const roomId="stage06b_incomplete_room_"+suffix;
+  const key="stage06b_incomplete_key_"+suffix;
+  const month=monthKey();
+
+  await Promise.all([
+    db.collection("users").doc(senderId).set({
+      coins:500000,diamonds:0,role:"user",
+    }),
+    db.collection("users").doc(hostId).set({
+      coins:0,diamonds:0,role:"user",agencyId,agencyRole:"host",
+      pendingGiftEarningCoins:0,pendingAgencyGiftEarningCoins:0,
+    }),
+    db.collection("rooms").doc(roomId).set({
+      isActive:true,agencyId,totalSupport:0,
+    }),
+    seedAgencyMonth(agencyId,month),
+  ]);
+
+  const result=await sendRoomGift(cloudflareDb,senderId,{
+    roomId,
+    receiverId:hostId,
+    giftId:"stage06b_incomplete",
+    quantity:1,
+    idempotencyKey:key,
+  },{
+    realtimeNamespace:realtimeNamespaceWithPresentUids([senderId,hostId]),
+  });
+
+  const ownerUid="owner_"+agencyId;
+  const [owner,shareLedger,state]=await Promise.all([
+    db.collection("users").doc(ownerUid).get(),
+    db.collection("financial_ledger").doc("agency_target_share_"+key).get(),
+    db.collection("agency_financial_state").doc(agencyId).get(),
+  ]);
+  assert.equal(result.agencyTargetId,null);
+  assert.equal(result.agencyTargetShareDeltaCoins,0);
+  assert.equal(result.agencyTargetShareDiamonds,0);
+  assert.equal(owner.data().diamonds,0);
+  assert.equal(shareLedger.exists,false);
+  assert.equal(state.exists,false);
+});
+
+test("06-B Agency Owner who is also the Host receives salary and Share in one Diamond wallet with separate ledgers",async()=>{
+  await seedSharedConfig();
+  const suffix=Date.now().toString()+"_owner_host";
+  const senderId="stage06b_owner_host_sender_"+suffix;
+  const hostId="stage06b_owner_host_"+suffix;
+  const agencyId="stage06b_owner_host_agency_"+suffix;
+  const roomId="stage06b_owner_host_room_"+suffix;
+  const key="stage06b_owner_host_key_"+suffix;
+  const month=monthKey();
+
+  await Promise.all([
+    db.collection("users").doc(senderId).set({
+      coins:1000000,diamonds:0,role:"user",
+    }),
+    db.collection("users").doc(hostId).set({
+      coins:0,diamonds:0,role:"user",accountStatus:"active",
+      agencyId,agencyRole:"owner",
+      pendingGiftEarningCoins:0,pendingAgencyGiftEarningCoins:0,
+    }),
+    db.collection("agencies").doc(agencyId).set({
+      agencyId,publicId:"600111",name:"Owner Host Agency",
+      ownerUid:hostId,status:"active",
+    }),
+    db.collection("agency_support_stats").doc(agencyId)
+      .collection("monthly").doc(month).set({activeHostIds:[]}),
+    db.collection("rooms").doc(roomId).set({
+      isActive:true,agencyId,totalSupport:0,
+    }),
+  ]);
+
+  const result=await sendRoomGift(cloudflareDb,senderId,{
+    roomId,
+    receiverId:hostId,
+    giftId:"stage06b_jump",
+    quantity:1,
+    idempotencyKey:key,
+  },{
+    realtimeNamespace:realtimeNamespaceWithPresentUids([senderId,hostId]),
+  });
+
+  const [host,salaryLedger,shareLedger]=await Promise.all([
+    db.collection("users").doc(hostId).get(),
+    db.collection("financial_ledger").doc("gift_earnings_"+key).get(),
+    db.collection("financial_ledger").doc("agency_target_share_"+key).get(),
+  ]);
+  assert.equal(result.salaryDeltaDiamonds,20);
+  assert.equal(result.agencyTargetShareDiamonds,2);
+  assert.equal(host.data().diamonds,22);
+  assert.equal(salaryLedger.data().openingBalance,0);
+  assert.equal(salaryLedger.data().closingBalance,20);
+  assert.equal(salaryLedger.data().delta,20);
+  assert.equal(shareLedger.data().openingBalance,20);
+  assert.equal(shareLedger.data().closingBalance,22);
+  assert.equal(shareLedger.data().delta,2);
+});
 
 test("06-B one room gift can jump multiple targets and pays only the reached salary delta",async()=>{
   await seedSharedConfig();
@@ -400,7 +511,6 @@ test("06-B chat gifts use the same immediate target salary ledger audit and fing
     db.collection("users").doc(chatOwnerUid).get(),
     db.collection("financial_ledger")
       .doc("agency_target_share_"+key).get(),
-    db.collection("users").doc(hostId).get(),
     db.collection("financial_ledger").doc("gift_earnings_"+key).get(),
     db.collection("admin_audit_logs").doc("agency_target_salary_"+key).get(),
     db.collection("gift_operations").doc(key).get(),
