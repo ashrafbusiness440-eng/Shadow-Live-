@@ -1608,6 +1608,7 @@ export async function updateAgencyIdentity(
           title: "تم تحديث بيانات الوكالة",
           body: `${name} — ID ${nextPublicId}${country ? ` — ${country}` : ""}`,
           read: false,
+          mandatory: true,
           agencyId,
           createdAt: now,
         }));
@@ -2352,6 +2353,7 @@ export async function transferAgencyOwnership(
           title: "أصبحت مالك الوكالة",
           body: agencyId,
           read: false,
+          mandatory: true,
           agencyId,
           createdAt: now,
         }),
@@ -2362,6 +2364,7 @@ export async function transferAgencyOwnership(
           title: "تم نقل ملكية الوكالة",
           body: agencyId,
           read: false,
+          mandatory: true,
           agencyId,
           createdAt: now,
         }),
