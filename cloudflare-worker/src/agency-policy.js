@@ -331,7 +331,8 @@ export function currentAgencyMonthKey(now = new Date()) {
   if (!Number.isFinite(date.getTime())) {
     throw new Error("invalid_agency_now");
   }
-  return date.toISOString().slice(0, 7);
+  const riyadh = new Date(date.getTime() + 3 * 60 * 60 * 1000);
+  return riyadh.toISOString().slice(0, 7);
 }
 
 export function agencyPublicRankingPrefix(agencyIdInput, monthInput) {
