@@ -6,6 +6,7 @@ abstract final class ControlCapabilities {
   static const reviewAgencyApplications='reviewAgencyApplications', manageAgencyMemberships='manageAgencyMemberships';
   static const manageAgencyManagers='manageAgencyManagers', viewAgencyFinance='viewAgencyFinance';
   static const manageAgencyPolicies='manageAgencyPolicies', manageAgencySettlements='manageAgencySettlements';
+  static const manageAgencyPackages='manageAgencyPackages', grantAgencyPackage='grantAgencyPackage';
   static const suspendAgencies='suspendAgencies';
   static const manageVip='manageVip', manageSpecialIds='manageSpecialIds', manageIds='manageIds', manageStore='manageStore';
   static const manageGames='manageGames', manageEconomy='manageEconomy', adjustBalances='adjustBalances';
