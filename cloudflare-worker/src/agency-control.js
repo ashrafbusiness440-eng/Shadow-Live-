@@ -8,10 +8,8 @@ import {
 import {
   AGENCY_LIMITS,
   AGENCY_REAPPLY_MODE,
-  agencyNameSearchTokens,
   boundedAgencyPageSize,
   createAgencyDocument,
-  normalizeAgencySearchText,
   createAgencyManagerSlotsDocument,
   createAgencyMembershipDocument,
   createAgencyStatusEventDocument,
@@ -1355,22 +1353,8 @@ export async function updateAgencyIdentity(
       const writes = [
         db.writeUpdate(
           `agencies/${agencyId}`,
-          {
-            publicId: nextPublicId,
-            name,
-            searchNameNormalized: normalizeAgencySearchText(name),
-            searchNameTokens: agencyNameSearchTokens(name),
-            country,
-            updatedAt: now,
-          },
-          [
-            "publicId",
-            "name",
-            "searchNameNormalized",
-            "searchNameTokens",
-            "country",
-            "updatedAt",
-          ],
+          { publicId: nextPublicId, name, country, updatedAt: now },
+          ["publicId", "name", "country", "updatedAt"],
         ),
         db.writeCreate(operationPath, {
           actorUid,
