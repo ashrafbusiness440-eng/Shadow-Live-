@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
@@ -148,14 +147,10 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
       _replaceTiers(rawTiers);
       final newAgencyBonusMode =
           config['agencyPerformanceBonusMode'] == 'per_host_target_month_end';
-      agencyBonus.text =
-          (((newAgencyBonusMode
-                      ? config['agencyPerformanceBonusBps']
-                      : 100) as num?)
-                  ?.toDouble() ??
-              100) /
-          100)
-              .toStringAsFixed(1);
+      final rawAgencyBonusBps = newAgencyBonusMode
+          ? ((config['agencyPerformanceBonusBps'] as num?)?.toDouble() ?? 100.0)
+          : 100.0;
+      agencyBonus.text = (rawAgencyBonusBps / 100).toStringAsFixed(1);
       hostBonusDays.text = '14';
       hostMinutesPerDay.text = '120';
       setState(() {
