@@ -354,7 +354,7 @@ export async function loadAgencyOwnerHostPerformance(
   const economy = economySnap.exists ? economySnap.data || {} : {};
   const requiredQualifiedDays = boundedInteger(
     economy.hostBonusQualifiedDays,
-    9,
+    14,
     1,
     31,
     "agency_activity_state_corrupt",
