@@ -13,6 +13,7 @@ import {
   REPLACEMENT_DELETE_DELAY_MS,
   storageActivePointerId,
   runDeletedAccountStorageCleanup,
+  authorizeAgencyLogoManagement,
 } from "../../cloudflare-worker/src/user-storage.js";
 import {
   presignR2Put,
@@ -778,6 +779,50 @@ test("room settings validation is room-scoped rather than uploader-scoped", () =
   assert.doesNotMatch(settingsSource, /clean\(media\.ownerUid\)!==uid/);
 });
 
+
+test("agency logo management requires the current active Agency owner", async () => {
+  const activeDb = {
+    async get(path) {
+      assert.equal(path, "agencies/741201");
+      return {
+        exists: true,
+        data: {
+          agencyId: "741201",
+          ownerUid: "owner_1",
+          status: "active",
+        },
+      };
+    },
+  };
+  const allowed = await authorizeAgencyLogoManagement(
+    activeDb,
+    "owner_1",
+    "741201",
+  );
+  assert.equal(allowed.targetId, "741201");
+
+  await assert.rejects(
+    authorizeAgencyLogoManagement(activeDb, "other_user", "741201"),
+    /agency_owner_required/,
+  );
+
+  const closedDb = {
+    async get() {
+      return {
+        exists: true,
+        data: {
+          agencyId: "741201",
+          ownerUid: "owner_1",
+          status: "closed",
+        },
+      };
+    },
+  };
+  await assert.rejects(
+    authorizeAgencyLogoManagement(closedDb, "owner_1", "741201"),
+    /agency_closed/,
+  );
+});
 
 test("agency logo storage stays owner-authorized audited and delayed-replacement safe", () => {
   const source = fs.readFileSync(
