@@ -11,9 +11,13 @@ class AgencySearchPage extends StatefulWidget {
   const AgencySearchPage({
     super.key,
     this.embedded = false,
+    this.joinEnabled = true,
+    this.joinBlockedReason,
   });
 
   final bool embedded;
+  final bool joinEnabled;
+  final String? joinBlockedReason;
 
   @override
   State<AgencySearchPage> createState() => _AgencySearchPageState();
@@ -439,7 +443,11 @@ class _AgencySearchPageState extends State<AgencySearchPage> {
         trailing: const Icon(Icons.chevron_left_rounded),
         onTap: () => Navigator.of(context).push(
           MaterialPageRoute<void>(
-            builder: (_) => PublicAgencyPage(agencyId: agency.agencyId),
+            builder: (_) => PublicAgencyPage(
+              agencyId: agency.agencyId,
+              joinEnabled: widget.joinEnabled,
+              joinBlockedReason: widget.joinBlockedReason,
+            ),
           ),
         ),
       ),
