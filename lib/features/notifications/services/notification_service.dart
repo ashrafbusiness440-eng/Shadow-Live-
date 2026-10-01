@@ -17,6 +17,7 @@ class AppNotification {
     required this.finalStatus,
     required this.finalDecision,
     required this.resolvedBy,
+    required this.resolvedByName,
   });
 
   final String id;
@@ -33,6 +34,7 @@ class AppNotification {
   final String? finalStatus;
   final String? finalDecision;
   final String? resolvedBy;
+  final String? resolvedByName;
 
   bool get agencyReviewAction =>
       (type == 'agency_join_request' || type == 'agency_leave_request') &&
@@ -63,6 +65,7 @@ class AppNotification {
       finalStatus: _nullable(data['finalStatus']),
       finalDecision: _nullable(data['finalDecision']),
       resolvedBy: _nullable(data['resolvedBy']),
+      resolvedByName: _nullable(data['resolvedByName']),
     );
   }
 }
