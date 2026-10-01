@@ -157,7 +157,7 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
           (((config['agencyPerformanceBonusBps'] as num?)?.toDouble() ?? 200) / 100)
               .toStringAsFixed(1);
       hostBonusDays.text =
-          ((config['hostBonusQualifiedDays'] as num?)?.toInt() ?? 9).toString();
+          ((config['hostBonusQualifiedDays'] as num?)?.toInt() ?? 14).toString();
       hostMinutesPerDay.text =
           ((config['hostBonusMinutesPerQualifiedDay'] as num?)?.toInt() ?? 120)
               .toString();
