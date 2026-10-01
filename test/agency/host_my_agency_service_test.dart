@@ -52,6 +52,7 @@ void main() {
             'thresholdCoins': 650000,
             'salaryDiamonds': 65,
             'openEnded': false,
+            'activityBonus': {'asset': 'diamonds', 'amount': 3},
           },
           {
             'id': 'starter_a',
@@ -60,6 +61,7 @@ void main() {
             'thresholdCoins': 850000,
             'salaryDiamonds': 85,
             'openEnded': false,
+            'activityBonus': {'asset': 'diamonds', 'amount': 4},
           },
         ],
       },
@@ -67,7 +69,7 @@ void main() {
         'month': '2026-09',
         'qualifiedDays': 7,
         'micSecondsMonth': 54000,
-        'requiredQualifiedDays': 9,
+        'requiredQualifiedDays': 14,
         'requiredMinutesPerDay': 120,
       },
     });
@@ -85,8 +87,10 @@ void main() {
     expect(data.target.nextLevel?.rank, 'A');
     expect(data.target.levels.length, 2);
     expect(data.target.levels.last.salaryDiamonds, 85);
+    expect(data.target.levels.last.activityBonusAsset, 'diamonds');
+    expect(data.target.levels.last.activityBonusAmount, 4);
     expect(data.activity.qualifiedDays, 7);
-    expect(data.activity.requiredQualifiedDays, 9);
+    expect(data.activity.requiredQualifiedDays, 14);
     expect(data.activity.requiredMinutesPerDay, 120);
   });
 
@@ -116,7 +120,7 @@ void main() {
         'month': '2026-09',
         'qualifiedDays': 0,
         'micSecondsMonth': 0,
-        'requiredQualifiedDays': 9,
+        'requiredQualifiedDays': 14,
         'requiredMinutesPerDay': 120,
       },
     });
@@ -162,7 +166,7 @@ void main() {
         'month': '2026-10',
         'qualifiedDays': 0,
         'micSecondsMonth': 0,
-        'requiredQualifiedDays': 9,
+        'requiredQualifiedDays': 14,
         'requiredMinutesPerDay': 120,
       },
     });
