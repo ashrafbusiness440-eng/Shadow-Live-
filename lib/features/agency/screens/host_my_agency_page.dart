@@ -11,6 +11,7 @@ import '../services/host_my_agency_service.dart';
 import '../services/public_agency_service.dart';
 import 'agency_membership_review_page.dart';
 import 'owner_agency_dashboard_page.dart';
+import 'agency_package_inventory_page.dart';
 
 class HostMyAgencyPage extends StatefulWidget {
   const HostMyAgencyPage({
@@ -435,6 +436,16 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
     );
   }
 
+  void _openPackageInventory() {
+    final data = _data;
+    if (data == null || data.membershipRole != 'owner') return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const AgencyPackageInventoryPage(),
+      ),
+    );
+  }
+
   void _openMembershipReview() {
     final data = _data;
     if (data == null || !data.canReviewMembershipRequests) return;
@@ -519,6 +530,8 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
           if (data.membershipRole == 'owner') ...[
             const SizedBox(height: 12),
             _OwnerDashboardEntry(onTap: _openOwnerDashboard),
+            const SizedBox(height: 10),
+            _AgencyPackageInventoryEntry(onTap: _openPackageInventory),
           ] else if (data.canReviewMembershipRequests) ...[
             const SizedBox(height: 12),
             _AgencyReviewEntry(onTap: _openMembershipReview),
@@ -750,6 +763,45 @@ class _OwnerDashboardEntry extends StatelessWidget {
         ),
         subtitle: const Text(
           'أدائي كمضيف، ثم أرباح وأداء الوكالة وإدارتها ضمن Stage 12.',
+          style: TextStyle(color: Colors.white60),
+        ),
+        trailing: const Icon(
+          Icons.chevron_left_rounded,
+          color: Colors.white38,
+        ),
+      ),
+    );
+  }
+}
+
+class _AgencyPackageInventoryEntry extends StatelessWidget {
+  const _AgencyPackageInventoryEntry({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('owner-agency-package-inventory-entry'),
+      decoration: _cardDecoration(),
+      child: ListTile(
+        onTap: onTap,
+        leading: const CircleAvatar(
+          backgroundColor: Color(0xFF203A35),
+          child: Icon(
+            Icons.inventory_2_rounded,
+            color: Color(0xFF7FE0C1),
+          ),
+        ),
+        title: const Text(
+          'حقيبة الوكالة',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        subtitle: const Text(
+          'عرض الباكيجات والكميات المتبقية وتوزيعها عبر Public ID — للمالك فقط.',
           style: TextStyle(color: Colors.white60),
         ),
         trailing: const Icon(
