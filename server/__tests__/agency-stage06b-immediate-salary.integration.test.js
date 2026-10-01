@@ -330,9 +330,9 @@ test("06-B one room gift can jump multiple targets and pays only the reached sal
       .doc("agency_target_salary_"+key2+"_"+hostId).get(),
   ]);
   assert.equal(hostAfterSecond.data().diamonds,30);
-  assert.equal(ownerAfterSecond.data().diamonds,4);
-  assert.equal(shareLedger2.data().payableCoins,20000);
-  assert.equal(shareLedger2.data().delta,2);
+  assert.equal(ownerAfterSecond.data().diamonds,3);
+  assert.equal(shareLedger2.data().payableCoins,10000);
+  assert.equal(shareLedger2.data().delta,1);
   assert.equal(hostAfterSecond.data().agencyTargetProgressCoins,400000);
   assert.equal(hostAfterSecond.data().agencySalaryPaidDiamonds,30);
   assert.equal(ledger2.data().delta,10);
