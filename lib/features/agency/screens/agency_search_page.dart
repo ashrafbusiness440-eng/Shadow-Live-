@@ -296,7 +296,7 @@ class _AgencySearchPageState extends State<AgencySearchPage> {
                 keyboardType:
                     _mode == 'id' ? TextInputType.number : TextInputType.text,
                 inputFormatters: _mode == 'id'
-                    ? const <TextInputFormatter>[
+                    ? <TextInputFormatter>[
                         FilteringTextInputFormatter.digitsOnly,
                         LengthLimitingTextInputFormatter(8),
                       ]
