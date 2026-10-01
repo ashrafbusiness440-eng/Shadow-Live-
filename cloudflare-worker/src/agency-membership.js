@@ -309,6 +309,53 @@ function reviewerNotificationPath(baseId, recipientUid, primaryUid) {
   }`;
 }
 
+async function resolvedReviewerNotificationWrites(
+  db,
+  tx,
+  {
+    baseId,
+    reviewerUids,
+    primaryUid,
+    status,
+    decision,
+    actorUid,
+    now,
+  },
+) {
+  const paths = [...new Set(
+    reviewerUids
+      .map(clean)
+      .filter(Boolean)
+      .map((uid) => reviewerNotificationPath(baseId, uid, primaryUid)),
+  )];
+  const snapshots = await Promise.all(
+    paths.map((path) => db.get(path, tx)),
+  );
+  return paths.flatMap((path, index) =>
+    snapshots[index]?.exists
+      ? [
+          db.writeUpdate(
+            path,
+            {
+              actionState: "resolved",
+              finalStatus: status,
+              finalDecision: decision,
+              resolvedBy: actorUid,
+              resolvedAt: now,
+            },
+            [
+              "actionState",
+              "finalStatus",
+              "finalDecision",
+              "resolvedBy",
+              "resolvedAt",
+            ],
+          ),
+        ]
+      : [],
+  );
+}
+
 function resolvedRequestResult(request = {}) {
   return {
     ok: true,
