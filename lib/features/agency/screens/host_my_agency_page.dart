@@ -46,6 +46,7 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
   bool _openingAgencyRoom = false;
   bool _ownershipTransferSubmitting = false;
   bool _agencyProfileSaving = false;
+  bool _identityChangeSubmitting = false;
   String? _error;
   String? _rankingError;
   String? _leaveStatusError;
@@ -542,6 +543,102 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
     }
   }
 
+  Future<void> _requestIdentityChange() async {
+    final data = _data;
+    if (data == null ||
+        data.membershipRole != 'owner' ||
+        _identityChangeSubmitting) {
+      return;
+    }
+    final name = TextEditingController(text: data.agency.name);
+    final country = TextEditingController(text: data.agency.country ?? '');
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          backgroundColor: const Color(0xFF101522),
+          title: const Text('طلب تغيير اسم/دولة الوكالة'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'تبقى بيانات الوكالة الحالية فعالة حتى موافقة Shadow Live.',
+                  style: TextStyle(color: Colors.white70, height: 1.4),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  key: const Key('owner-agency-name-change-field'),
+                  controller: name,
+                  maxLength: 80,
+                  decoration: const InputDecoration(
+                    labelText: 'اسم الوكالة المقترح',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  key: const Key('owner-agency-country-change-field'),
+                  controller: country,
+                  maxLength: 64,
+                  decoration: const InputDecoration(
+                    labelText: 'الدولة المقترحة',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('إرسال الطلب'),
+            ),
+          ],
+        ),
+      ),
+    );
+    final nextName = name.text.trim();
+    final nextCountry = country.text.trim();
+    name.dispose();
+    country.dispose();
+    if (accepted != true || nextName.isEmpty || !mounted) return;
+
+    setState(() => _identityChangeSubmitting = true);
+    try {
+      await _service.requestIdentityChange(
+        name: nextName,
+        country: nextCountry.isEmpty ? null : nextCountry,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'تم إرسال طلب تغيير الاسم/الدولة إلى Shadow Live. تبقى البيانات الحالية فعالة حتى الموافقة.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      final code = error.toString().replaceFirst('Bad state: ', '');
+      final message = code.contains('agency_identity_change_pending')
+          ? 'يوجد طلب تغيير اسم/دولة معلّق بالفعل.'
+          : code.contains('agency_identity_unchanged')
+              ? 'لم يتم تغيير الاسم أو الدولة.'
+              : 'تعذر إرسال طلب تغيير بيانات الوكالة حاليًا.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } finally {
+      if (mounted) setState(() => _identityChangeSubmitting = false);
+    }
+  }
+
   Future<void> _requestOwnershipTransfer() async {
     final data = _data;
     if (data == null ||
@@ -732,6 +829,11 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
             _AgencyProfileEditEntry(
               busy: _agencyProfileSaving,
               onTap: _editAgencyProfile,
+            ),
+            const SizedBox(height: 10),
+            _AgencyIdentityChangeRequestEntry(
+              busy: _identityChangeSubmitting,
+              onTap: _requestIdentityChange,
             ),
           ] else if (data.canReviewMembershipRequests) ...[
             const SizedBox(height: 12),
@@ -1058,6 +1160,54 @@ class _AgencyPackageInventoryEntry extends StatelessWidget {
           Icons.chevron_left_rounded,
           color: Colors.white38,
         ),
+      ),
+    );
+  }
+}
+
+class _AgencyIdentityChangeRequestEntry extends StatelessWidget {
+  const _AgencyIdentityChangeRequestEntry({
+    required this.busy,
+    required this.onTap,
+  });
+
+  final bool busy;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('owner-agency-identity-change-entry'),
+      decoration: _cardDecoration(),
+      child: ListTile(
+        onTap: busy ? null : onTap,
+        leading: const CircleAvatar(
+          backgroundColor: Color(0xFF33274A),
+          child: Icon(
+            Icons.edit_location_alt_rounded,
+            color: Color(0xFFD4B5FF),
+          ),
+        ),
+        title: const Text(
+          'طلب تغيير الاسم/الدولة',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        subtitle: const Text(
+          'تُطبق البيانات الجديدة فقط بعد موافقة Shadow Live.',
+          style: TextStyle(color: Colors.white60),
+        ),
+        trailing: busy
+            ? const SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(
+                Icons.chevron_left_rounded,
+                color: Colors.white38,
+              ),
       ),
     );
   }
