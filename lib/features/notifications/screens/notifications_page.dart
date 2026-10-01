@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../agency/services/agency_membership_service.dart';
+import '../../profile/screens/public_profile_screen.dart';
 import '../services/notification_service.dart';
 
 class NotificationsPage extends StatefulWidget {
@@ -97,14 +99,270 @@ class _NotificationsPageState extends State<NotificationsPage> {
             createdAt: item.createdAt,
             requestId: item.requestId,
             agencyId: item.agencyId,
+            requestType: item.requestType,
+            applicantUid: item.applicantUid,
+            actionState: item.actionState,
+            finalStatus: item.finalStatus,
+            finalDecision: item.finalDecision,
+            resolvedBy: item.resolvedBy,
           );
         });
       }
     }
 
+    if (item.agencyReviewAction && (item.requestId?.isNotEmpty ?? false)) {
+      await _openAgencyReview(item.requestId!);
+      return;
+    }
+
     if (item.type == 'agency_membership_invite' &&
         (item.requestId?.isNotEmpty ?? false)) {
       await _openAgencyInvitation(item.requestId!);
+    }
+  }
+
+  Future<String?> _optionalRejectReason() async {
+    final controller = TextEditingController();
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('سبب الرفض — اختياري'),
+        content: TextField(
+          controller: controller,
+          maxLength: 500,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            hintText: 'يمكن تركه فارغًا.',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, controller.text.trim()),
+            child: const Text('متابعة'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return reason;
+  }
+
+  Future<void> _openAgencyReview(String requestId) async {
+    try {
+      final detail = await _membershipService.getReviewRequest(requestId);
+      if (!mounted) return;
+      final publicId = detail.userPublicId?.trim() ?? '';
+      final image = detail.profileImageUrl?.trim() ?? '';
+
+      final decision = await showModalBottomSheet<String>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: const Color(0xFF0D1220),
+        showDragHandle: true,
+        builder: (sheetContext) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(18, 4, 18, 22),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 30,
+                        backgroundColor: const Color(0xFF31204F),
+                        backgroundImage:
+                            image.isEmpty ? null : NetworkImage(image),
+                        child: image.isEmpty
+                            ? const Icon(Icons.person_rounded)
+                            : null,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              detail.displayName ??
+                                  (publicId.isEmpty
+                                      ? 'Shadow Live'
+                                      : publicId),
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            if (publicId.isNotEmpty)
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    'ID: ' + publicId,
+                                    textDirection: TextDirection.ltr,
+                                    style: const TextStyle(
+                                      color: Colors.white60,
+                                    ),
+                                  ),
+                                  IconButton(
+                                    tooltip: 'نسخ ID',
+                                    visualDensity: VisualDensity.compact,
+                                    onPressed: () async {
+                                      await Clipboard.setData(
+                                        ClipboardData(text: publicId),
+                                      );
+                                      if (!sheetContext.mounted) return;
+                                      ScaffoldMessenger.of(sheetContext)
+                                          .showSnackBar(
+                                        const SnackBar(
+                                          content: Text('تم نسخ ID المستخدم.'),
+                                        ),
+                                      );
+                                    },
+                                    icon: const Icon(
+                                      Icons.copy_rounded,
+                                      size: 17,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  _ReviewInfoRow(
+                    label: 'نوع الطلب',
+                    value: detail.type == 'leave'
+                        ? 'طلب مغادرة'
+                        : 'طلب انضمام',
+                  ),
+                  _ReviewInfoRow(
+                    label: 'الدور',
+                    value: _reviewRoleLabel(detail.targetRole),
+                  ),
+                  _ReviewInfoRow(
+                    label: 'الحساب',
+                    value: _reviewAccountLabel(detail.accountStatus),
+                  ),
+                  _ReviewInfoRow(
+                    label: 'حالة الطلب',
+                    value: _requestStatusLabel(detail.status),
+                  ),
+                  _ReviewInfoRow(
+                    label: 'وقت الطلب',
+                    value: _reviewDateLabel(detail.createdAt),
+                  ),
+                  if (detail.conflictStatus != 'none')
+                    _ReviewInfoRow(
+                      label: 'ملاحظة',
+                      value: _reviewConflictLabel(detail.conflictStatus),
+                    ),
+                  if ((detail.reason?.isNotEmpty ?? false))
+                    _ReviewInfoRow(
+                      label: 'السبب',
+                      value: detail.reason!,
+                    ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: detail.uid.isEmpty
+                        ? null
+                        : () => Navigator.of(sheetContext).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => PublicProfileScreen(
+                                  userId: detail.uid,
+                                ),
+                              ),
+                            ),
+                    icon: const Icon(Icons.person_search_rounded),
+                    label: const Text('فتح الملف الشخصي'),
+                  ),
+                  const SizedBox(height: 10),
+                  if (detail.actionable)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () =>
+                                Navigator.pop(sheetContext, 'reject'),
+                            child: const Text('رفض'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: detail.canAccept
+                                ? () => Navigator.pop(
+                                      sheetContext,
+                                      'accept',
+                                    )
+                                : null,
+                            child: const Text('قبول'),
+                          ),
+                        ),
+                      ],
+                    )
+                  else
+                    FilledButton(
+                      onPressed: () => Navigator.pop(sheetContext),
+                      child: const Text('إغلاق'),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      if (decision == null || !detail.actionable) return;
+      String? reason;
+      if (decision == 'reject') {
+        reason = await _optionalRejectReason();
+        if (!mounted || reason == null) return;
+      }
+      final code = await _membershipService.respondReview(
+        requestId: detail.requestId,
+        requestType: detail.type,
+        decision: decision,
+        idempotencyKey: 'review_' +
+            decision +
+            '_' +
+            DateTime.now().microsecondsSinceEpoch.toString(),
+        reason: reason,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            code == 'already_processed'
+                ? 'تم حسم الطلب مسبقًا من مراجع آخر.'
+                : decision == 'accept'
+                    ? 'تم قبول الطلب.'
+                    : 'تم رفض الطلب.',
+          ),
+        ),
+      );
+      await _reload();
+    } catch (error) {
+      if (!mounted) return;
+      final code = error.toString().replaceFirst('Bad state: ', '');
+      final message = switch (code) {
+        'membership_request_not_found' => 'لم يعد الطلب متاحًا.',
+        'forbidden' => 'لم تعد لديك صلاحية مراجعة هذا الطلب.',
+        'cannot_review_own_request' => 'لا يمكن مراجعة طلبك الشخصي.',
+        _ => 'تعذر فتح طلب الوكالة: ' + code,
+      };
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
     }
   }
 
@@ -341,10 +599,18 @@ class _NotificationsPageState extends State<NotificationsPage> {
                             style:
                                 const TextStyle(fontWeight: FontWeight.w700)),
                         subtitle: item.body.isEmpty ? null : Text(item.body),
-                        trailing: item.read
-                            ? null
-                            : const Icon(Icons.circle,
-                                size: 9, color: Color(0xFFFFD54F)),
+                        trailing: item.agencyReviewResolved
+                            ? const Icon(
+                                Icons.check_circle_outline_rounded,
+                                color: Colors.greenAccent,
+                              )
+                            : item.read
+                                ? null
+                                : const Icon(
+                                    Icons.circle,
+                                    size: 9,
+                                    color: Color(0xFFFFD54F),
+                                  ),
                       ),
                     );
                   },
@@ -356,6 +622,78 @@ class _NotificationsPageState extends State<NotificationsPage> {
       );
 }
 
+
+class _ReviewInfoRow extends StatelessWidget {
+  const _ReviewInfoRow({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 92,
+              child: Text(
+                label,
+                style: const TextStyle(color: Colors.white54),
+              ),
+            ),
+            Expanded(
+              child: Text(
+                value,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
+String _reviewRoleLabel(String role) {
+  if (role == 'owner') return 'مالك الوكالة';
+  if (role == 'senior_manager') return 'مدير أول';
+  if (role == 'manager') return 'مدير';
+  return 'مضيف';
+}
+
+String _reviewAccountLabel(String status) {
+  if (status == 'active') return 'نشط';
+  if (status == 'suspended') return 'موقوف';
+  if (status == 'disabled') return 'معطّل';
+  if (status == 'banned') return 'محظور';
+  return status.isEmpty ? 'غير متاح' : status;
+}
+
+String _reviewConflictLabel(String status) {
+  if (status == 'already_in_agency') return 'مرتبط بوكالة أخرى';
+  if (status == 'reserved_other_request') return 'محجوز بطلب وكالة آخر';
+  if (status == 'membership_changed') return 'تغيّرت العضوية منذ الطلب';
+  if (status == 'account_inactive') return 'الحساب غير نشط';
+  if (status == 'user_missing') return 'الحساب غير متاح';
+  return status;
+}
+
+String _reviewDateLabel(DateTime? value) {
+  if (value == null) return '—';
+  final local = value.toLocal();
+  String two(int n) => n.toString().padLeft(2, '0');
+  return two(local.day) +
+      '/' +
+      two(local.month) +
+      '/' +
+      local.year.toString() +
+      ' ' +
+      two(local.hour) +
+      ':' +
+      two(local.minute);
+}
 
 String _countryLabel(String? country) {
   final value = country?.trim() ?? '';
