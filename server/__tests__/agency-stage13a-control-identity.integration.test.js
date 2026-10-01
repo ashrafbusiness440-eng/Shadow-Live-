@@ -6,8 +6,10 @@ import { getFirestore } from "firebase-admin/firestore";
 
 import {
   getAgencyControlDetails,
+  listAgencyIdentityChangeRequests,
   listAgencyOwnershipTransferRequests,
   randomAgencyId,
+  reviewAgencyIdentityChange,
   reviewAgencyOwnershipTransfer,
   transferAgencyOwnership,
   updateAgencyIdentity,
@@ -17,7 +19,9 @@ import {
 } from "../../cloudflare-worker/src/change-public-id.js";
 import { listAgencyMembers } from "../../cloudflare-worker/src/agency-membership.js";
 import {
+  requestAgencyIdentityChange,
   requestAgencyOwnershipTransfer,
+  updateAgencyOwnerProfile,
 } from "../../cloudflare-worker/src/agency-host.js";
 import { searchPublicAgencies } from "../../cloudflare-worker/src/agency-public.js";
 import { cloudflareFirestoreAdapter } from "./helpers/cloudflare-firestore-adapter.js";
@@ -425,6 +429,152 @@ test("admin User Public ID change releases and reuses the previous live mapping 
   const first = await adminDb.collection("users").doc("public_reuse_user_1").get();
   assert.deepEqual(first.data().publicIdHistory, ["4444"]);
   assert.equal(first.data().publicId, "6666");
+});
+
+test("13-A Agency Owner edits description/contact directly with Audit", async () => {
+  const agencyId = "813010";
+  const ownerUid = "stage13a_profile_owner";
+  const memberUid = "stage13a_profile_member";
+  await seedAgency({
+    agencyId,
+    oldOwnerUid: ownerUid,
+    newOwnerUid: memberUid,
+    oldOwnerPublicId: "713101",
+    newOwnerPublicId: "713102",
+    newOwnerRole: "host",
+  });
+
+  const result = await updateAgencyOwnerProfile(
+    db,
+    ownerUid,
+    {
+      description: "وكالة للموسيقى والدردشة",
+      publicContact: "خدمة العملاء: 713101",
+      idempotencyKey: "stage13a_profile_edit_0001",
+    },
+    { now: new Date("2026-09-29T20:05:00.000Z") },
+  );
+  assert.equal(result.code, "ok");
+  assert.equal(result.description, "وكالة للموسيقى والدردشة");
+  assert.equal(result.publicContact, "خدمة العملاء: 713101");
+
+  const [agency, audit] = await Promise.all([
+    adminDb.collection("agencies").doc(agencyId).get(),
+    adminDb.collection("admin_audit_logs")
+      .doc("agency_owner_profile_" + agencyId + "_stage13a_profile_edit_0001")
+      .get(),
+  ]);
+  assert.equal(agency.data().description, "وكالة للموسيقى والدردشة");
+  assert.equal(agency.data().publicContact, "خدمة العملاء: 713101");
+  assert.equal(audit.data().action, "updateAgencyOwnerProfile");
+});
+
+test("13-A Agency Owner name-country request keeps current identity until Shadow approval", async () => {
+  const agencyId = "813011";
+  const ownerUid = "stage13a_identity_owner";
+  const memberUid = "stage13a_identity_member";
+  await seedAgency({
+    agencyId,
+    oldOwnerUid: ownerUid,
+    newOwnerUid: memberUid,
+    oldOwnerPublicId: "713105",
+    newOwnerPublicId: "713106",
+    newOwnerRole: "host",
+  });
+
+  const request = await requestAgencyIdentityChange(
+    db,
+    ownerUid,
+    {
+      name: "Agency New Name",
+      country: "Saudi Arabia",
+      idempotencyKey: "stage13a_identity_request_0001",
+    },
+    { now: new Date("2026-09-29T20:06:00.000Z") },
+  );
+  assert.equal(request.status, "pending");
+
+  const before = await adminDb.collection("agencies").doc(agencyId).get();
+  assert.equal(before.data().name, "Stage 13-A Agency");
+  assert.equal(before.data().country, "UAE");
+
+  const pending = await listAgencyIdentityChangeRequests(db, 25);
+  assert.equal(
+    pending.some((item) => item.requestId === request.requestId),
+    true,
+  );
+
+  const reviewed = await reviewAgencyIdentityChange(
+    db,
+    "shadow_owner",
+    {
+      requestId: request.requestId,
+      decision: "accept",
+      idempotencyKey: "stage13a_identity_review_0001",
+    },
+    { now: new Date("2026-09-29T20:07:00.000Z") },
+  );
+  assert.equal(reviewed.status, "accepted");
+
+  const [agency, requestDoc, lock, notification] = await Promise.all([
+    adminDb.collection("agencies").doc(agencyId).get(),
+    adminDb.collection("agency_identity_change_requests")
+      .doc(request.requestId).get(),
+    adminDb.collection("agency_identity_change_locks").doc(agencyId).get(),
+    adminDb.collection("notifications")
+      .doc("agency_identity_change_review_" + request.requestId).get(),
+  ]);
+  assert.equal(agency.data().name, "Agency New Name");
+  assert.equal(agency.data().country, "Saudi Arabia");
+  assert.equal(requestDoc.data().status, "accepted");
+  assert.equal(lock.exists, false);
+  assert.equal(notification.data().type, "agency_identity_change_approved");
+  assert.equal(notification.data().mandatory, true);
+});
+
+test("13-A rejected Agency identity request preserves current name/country", async () => {
+  const agencyId = "813014";
+  const ownerUid = "stage13a_identity_reject_owner";
+  const memberUid = "stage13a_identity_reject_member";
+  await seedAgency({
+    agencyId,
+    oldOwnerUid: ownerUid,
+    newOwnerUid: memberUid,
+    oldOwnerPublicId: "713131",
+    newOwnerPublicId: "713132",
+    newOwnerRole: "host",
+  });
+
+  const request = await requestAgencyIdentityChange(
+    db,
+    ownerUid,
+    {
+      name: "Rejected Name",
+      country: "Jordan",
+      idempotencyKey: "stage13a_identity_reject_0001",
+    },
+    { now: new Date("2026-09-29T20:15:00.000Z") },
+  );
+
+  const reviewed = await reviewAgencyIdentityChange(
+    db,
+    "shadow_owner",
+    {
+      requestId: request.requestId,
+      decision: "reject",
+      reason: "الاسم غير مطابق",
+      idempotencyKey: "stage13a_identity_reject_review_0001",
+    },
+    { now: new Date("2026-09-29T20:16:00.000Z") },
+  );
+  assert.equal(reviewed.status, "rejected");
+
+  const agency = await adminDb.collection("agencies").doc(agencyId).get();
+  const requestDoc = await adminDb.collection("agency_identity_change_requests")
+    .doc(request.requestId).get();
+  assert.equal(agency.data().name, "Stage 13-A Agency");
+  assert.equal(agency.data().country, "UAE");
+  assert.equal(requestDoc.data().status, "rejected");
 });
 
 test("13-A Agency Owner submits ownership request and Shadow Owner approves it", async () => {
