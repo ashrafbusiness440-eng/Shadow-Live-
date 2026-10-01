@@ -13,6 +13,7 @@ import {
   currentAgencyMonthKey,
   DEFAULT_AGENCY_TARGETS,
   hostActivityBonusForTarget,
+  normalizeAgencyMonthKey,
 } from "./agency-policy.js";
 import { agencyMemberPermissions } from "./agency-permissions.js";
 import {
@@ -286,6 +287,147 @@ export async function loadAgencyHostCore(
       requiredMicSecondsMonth:
         requiredQualifiedDays * requiredMinutesPerDay * 60,
     },
+  };
+}
+
+function hostHistoryTimestampMs(value) {
+  if (value instanceof Date) return value.getTime();
+  if (value && typeof value.toMillis === "function") {
+    const ms = Number(value.toMillis());
+    return Number.isFinite(ms) ? ms : 0;
+  }
+  if (value && typeof value.toDate === "function") {
+    const date = value.toDate();
+    return date instanceof Date ? date.getTime() : 0;
+  }
+  const parsed = Date.parse(String(value || ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function hostTargetHistoryAchievement(raw = {}, fallback = {}) {
+  const salaryDeltaDiamonds = nonNegativeInteger(
+    raw.salaryDeltaDiamonds ?? fallback.salaryDeltaDiamonds ?? 0,
+    "agency_target_history_corrupt",
+  );
+  return {
+    targetId: clean(raw.id || raw.targetId || fallback.targetId),
+    tierId: clean(raw.tierId || fallback.tierId) || null,
+    rank: clean(raw.rank || fallback.rank) || null,
+    thresholdCoins: nonNegativeInteger(
+      raw.thresholdCoins ?? fallback.thresholdCoins ?? 0,
+      "agency_target_history_corrupt",
+    ),
+    salaryDeltaDiamonds,
+    salaryDiamonds: nonNegativeInteger(
+      raw.salaryDiamonds ?? fallback.salaryDiamonds ?? 0,
+      "agency_target_history_corrupt",
+    ),
+    achievedAt: fallback.achievedAt || null,
+    sourceId: clean(fallback.sourceId) || null,
+  };
+}
+
+export async function loadAgencyHostTargetHistory(
+  db,
+  uidInput,
+  body = {},
+  now = new Date(),
+  { sessionPayload = null } = {},
+) {
+  const uid = clean(uidInput);
+  if (!uid) throw new ApiError("unauthorized", 401);
+  const currentMonth = currentAgencyMonthKey(now);
+  let month;
+  try {
+    month = normalizeAgencyMonthKey(body.month || currentMonth);
+  } catch (_) {
+    throw new ApiError("invalid_agency_month", 400);
+  }
+  if (month > currentMonth) {
+    throw new ApiError("agency_month_in_future", 400);
+  }
+
+  const [userSnap, membershipSnap] = await Promise.all([
+    db.get("users/" + uid),
+    db.get("agency_user_memberships/" + uid),
+  ]);
+  if (!userSnap.exists || !membershipSnap.exists) {
+    throw new ApiError("agency_host_not_found", 404);
+  }
+  const user = userSnap.data || {};
+  if (sessionPayload) {
+    assertUserDocumentSessionState(sessionPayload, user);
+  }
+  const membership = membershipSnap.data || {};
+  const agencyId = clean(membership.agencyId);
+  if (
+    !validAgencyId(agencyId) ||
+    clean(user.agencyId) !== agencyId ||
+    clean(membership.status) !== "active" ||
+    !["host", "manager", "senior_manager", "owner"].includes(
+      clean(membership.role),
+    )
+  ) {
+    throw new ApiError("agency_host_not_active", 403);
+  }
+
+  const rows = await db.runQuery("gift_transactions", {
+    filters: [
+      { field: "receiverId", op: "==", value: uid },
+      { field: "agencyId", op: "==", value: agencyId },
+      { field: "agencyTargetMonth", op: "==", value: month },
+      { field: "earningsStatus", op: "==", value: "target_paid" },
+    ],
+    limit: 30,
+  });
+  const sorted = rows.slice().sort(
+    (left, right) =>
+      hostHistoryTimestampMs(left?.data?.createdAt) -
+      hostHistoryTimestampMs(right?.data?.createdAt),
+  );
+  const achievements = [];
+  for (const row of sorted) {
+    const tx = row?.data || {};
+    const snapshot = Array.isArray(tx.agencyTargetAchievements)
+      ? tx.agencyTargetAchievements
+      : [];
+    if (snapshot.length) {
+      for (const item of snapshot.slice(0, 30)) {
+        if (!item || typeof item !== "object") continue;
+        const achievement = hostTargetHistoryAchievement(item, {
+          achievedAt: tx.createdAt || null,
+          sourceId: row?.id || tx.sourceId || null,
+        });
+        if (achievement.targetId) achievements.push(achievement);
+      }
+      continue;
+    }
+
+    const fallbackTargetId = clean(tx.agencyTargetId);
+    const fallbackDelta = nonNegativeInteger(
+      tx.salaryDeltaDiamonds || 0,
+      "agency_target_history_corrupt",
+    );
+    if (fallbackTargetId && fallbackDelta > 0) {
+      achievements.push(
+        hostTargetHistoryAchievement({}, {
+          targetId: fallbackTargetId,
+          salaryDeltaDiamonds: fallbackDelta,
+          achievedAt: tx.createdAt || null,
+          sourceId: row?.id || null,
+        }),
+      );
+    }
+  }
+
+  return {
+    ok: true,
+    agencyId,
+    month,
+    currentMonth,
+    achievements: achievements.slice(0, 60),
+    source: "bounded_target_paid_transactions",
+    transactionLimit: 30,
   };
 }
 
@@ -882,6 +1024,22 @@ export async function agencyHost(request, env) {
         await requestAgencyOwnershipTransfer(db, token.sub, body, {
           sessionPayload: token,
         }),
+      );
+    }
+    if (action === "targetHistory") {
+      annotatePressureRequest(request, {
+        action: "agencyHost:targetHistory",
+      });
+      return json(
+        request,
+        env,
+        await loadAgencyHostTargetHistory(
+          db,
+          token.sub,
+          body,
+          new Date(),
+          { sessionPayload: token },
+        ),
       );
     }
     throw new ApiError("invalid_agency_host_action", 400);
