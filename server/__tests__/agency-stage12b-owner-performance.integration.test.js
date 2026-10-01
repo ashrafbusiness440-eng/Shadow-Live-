@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   loadAgencyOwnerPerformance,
   loadAgencyOwnerStatement,
+  loadAgencyOwnerHostPerformance,
 } from "../../cloudflare-worker/src/agency-owner.js";
 
 function snapshot(data = null) {
@@ -174,6 +175,166 @@ test("12-B closed-month statement is lazy and uses three direct reads only", asy
   assert.equal(calls.writes, 0);
 });
 
+test("Batch 3 Host performance is owner-only lazy bounded and excludes personal wallet data", async () => {
+  const calls = { gets: [], queries: [], writes: 0 };
+  const records = new Map([
+    [
+      "agency_user_memberships/stage12b_hostperf_owner",
+      {
+        agencyId: "812009",
+        uid: "stage12b_hostperf_owner",
+        role: "owner",
+        status: "active",
+      },
+    ],
+    [
+      "agencies/812009",
+      {
+        agencyId: "812009",
+        ownerUid: "stage12b_hostperf_owner",
+        status: "active",
+      },
+    ],
+    [
+      "users/stage12b_hostperf_host",
+      {
+        agencyId: "812009",
+        publicId: "912909",
+        displayName: "Host Performance",
+        profileImageUrl: "https://example.invalid/host.webp",
+        accountStatus: "active",
+        agencyTargetMonth: "2026-09",
+        agencyTargetProgressCoins: 150000,
+        agencySalaryPaidDiamonds: 10,
+        agencyPolicySnapshot: {
+          targets: [
+            {
+              id: "t1",
+              tierId: "starter",
+              rank: "C",
+              thresholdCoins: 50000,
+              salaryDiamonds: 5,
+            },
+            {
+              id: "t2",
+              tierId: "starter",
+              rank: "B",
+              thresholdCoins: 100000,
+              salaryDiamonds: 10,
+            },
+            {
+              id: "t3",
+              tierId: "starter",
+              rank: "A",
+              thresholdCoins: 200000,
+              salaryDiamonds: 20,
+            },
+          ],
+        },
+        giftHostActivityMonth: "2026-09",
+        giftHostQualifiedDays: 7,
+        giftHostMicSecondsMonth: 54000,
+        diamonds: 999999,
+        coins: 777777,
+      },
+    ],
+    [
+      "agency_user_memberships/stage12b_hostperf_host",
+      {
+        agencyId: "812009",
+        uid: "stage12b_hostperf_host",
+        role: "host",
+        status: "active",
+      },
+    ],
+    [
+      "system_config/gift_economy",
+      {
+        hostBonusQualifiedDays: 9,
+        hostBonusMinutesPerQualifiedDay: 120,
+      },
+    ],
+  ]);
+
+  const db = {
+    async get(path) {
+      calls.gets.push(path);
+      return snapshot(records.get(path));
+    },
+    async runQuery(collection, options) {
+      calls.queries.push({ collection, options });
+      assert.equal(collection, "gift_transactions");
+      assert.equal(options.limit, 20);
+      return [
+        {
+          id: "gift_target_1",
+          data: {
+            receiverId: "stage12b_hostperf_host",
+            agencyId: "812009",
+            agencyTargetMonth: "2026-09",
+            earningsStatus: "target_paid",
+            agencyTargetProgressCoins: 50000,
+            createdAt: new Date("2026-09-04T12:00:00.000Z"),
+          },
+        },
+        {
+          id: "gift_target_2",
+          data: {
+            receiverId: "stage12b_hostperf_host",
+            agencyId: "812009",
+            agencyTargetMonth: "2026-09",
+            earningsStatus: "target_paid",
+            agencyTargetProgressCoins: 150000,
+            createdAt: new Date("2026-09-12T12:00:00.000Z"),
+          },
+        },
+      ];
+    },
+    async commit() {
+      calls.writes += 1;
+      throw new Error("unexpected_write");
+    },
+  };
+
+  const result = await loadAgencyOwnerHostPerformance(
+    db,
+    "stage12b_hostperf_owner",
+    "stage12b_hostperf_host",
+    new Date("2026-09-29T18:30:00.000Z"),
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.host.publicId, "912909");
+  assert.equal(result.target.progressCoins, 150000);
+  assert.equal(result.target.currentLevel.id, "t2");
+  assert.equal(result.target.nextLevel.id, "t3");
+  assert.equal(result.target.remainingCoins, 50000);
+  assert.equal(result.activity.qualifiedDays, 7);
+  assert.equal(result.activity.requiredQualifiedDays, 9);
+  assert.equal(result.activity.requiredMicSecondsMonth, 64800);
+  assert.deepEqual(
+    result.achievements.map((item) => item.targetId),
+    ["t1", "t2"],
+  );
+  assert.deepEqual(calls.gets, [
+    "agency_user_memberships/stage12b_hostperf_owner",
+    "agencies/812009",
+    "users/stage12b_hostperf_host",
+    "agency_user_memberships/stage12b_hostperf_host",
+    "system_config/gift_economy",
+  ]);
+  assert.equal(calls.queries.length, 1);
+  assert.equal(calls.writes, 0);
+
+  const serialized = JSON.stringify(result);
+  assert.equal(serialized.includes('"wallet"'), false);
+  assert.equal(serialized.includes('"balance"'), false);
+  assert.equal(serialized.includes("platformShare"), false);
+  assert.equal(serialized.includes("agencyShare"), false);
+  assert.equal(serialized.includes('"coins":777777'), false);
+  assert.equal(serialized.includes('"diamonds":999999'), false);
+});
+
 test("12-B owner finance read model denies non-owner membership", async () => {
   const calls = { gets: [], queries: 0, writes: 0 };
   const db = {
@@ -250,4 +411,9 @@ test("12-B Flutter owner dashboard remains pressure-safe and lazy for statements
   assert.equal(service.includes("/agency-owner"), true);
   assert.equal(service.includes("'action': 'performance'"), true);
   assert.equal(service.includes("'action': 'statement'"), true);
+  assert.equal(service.includes("'action': 'hostPerformance'"), true);
+  assert.equal(page.includes("owner-member-performance-"), true);
+  assert.equal(page.includes("owner-member-copy-id-"), true);
+  assert.equal(page.includes("Timer.periodic"), false);
 });
+

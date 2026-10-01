@@ -260,8 +260,12 @@ test("11-C UI/route guards keep My Agency on explicit navigation only", () => {
     "utf8",
   );
 
-  assert.equal(page.includes("host-agency-leave-card"), true);
+  assert.equal(page.includes("host-agency-leave-card"), false);
   assert.equal(page.includes("host-agency-leave-request-button"), true);
+  assert.equal(page.includes("host-agency-finance-entries"), true);
+  assert.equal(page.includes("host-agency-wallet-entry"), true);
+  assert.equal(page.includes("host-agency-target-table-entry"), true);
+  assert.equal(page.includes("AppRoutes.recharge"), true);
   assert.equal(page.includes("loadLeaveStatus"), true);
   assert.equal(page.includes("requestLeave"), true);
   assert.equal(page.includes("FirebaseFirestore"), false);

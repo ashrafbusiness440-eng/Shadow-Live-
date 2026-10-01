@@ -80,6 +80,81 @@ void main() {
     expect(missing.agencyPayableCoins, 0);
     expect(missing.agencyDiamonds, 0);
   });
+  test('Batch 3 parses lazy Host performance without wallet fields', () {
+    final data = OwnerHostPerformanceData.fromJson({
+      'host': {
+        'uid': 'host_1',
+        'publicId': '812399',
+        'displayName': 'Host One',
+        'profileImageUrl': 'https://example.invalid/host.webp',
+        'role': 'host',
+        'status': 'active',
+        'accountStatus': 'active',
+      },
+      'target': {
+        'month': '2026-10',
+        'progressCoins': 150000,
+        'remainingCoins': 50000,
+        'targetCoins': 200000,
+        'currentLevel': {
+          'id': 't2',
+          'tierId': 'starter',
+          'rank': 'B',
+          'thresholdCoins': 100000,
+          'salaryDiamonds': 10,
+        },
+        'nextLevel': {
+          'id': 't3',
+          'tierId': 'starter',
+          'rank': 'A',
+          'thresholdCoins': 200000,
+          'salaryDiamonds': 20,
+        },
+        'levels': [
+          {
+            'id': 't2',
+            'tierId': 'starter',
+            'rank': 'B',
+            'thresholdCoins': 100000,
+            'salaryDiamonds': 10,
+          },
+          {
+            'id': 't3',
+            'tierId': 'starter',
+            'rank': 'A',
+            'thresholdCoins': 200000,
+            'salaryDiamonds': 20,
+          },
+        ],
+      },
+      'activity': {
+        'month': '2026-10',
+        'qualifiedDays': 7,
+        'micSecondsMonth': 54000,
+        'requiredQualifiedDays': 9,
+        'requiredMinutesPerDay': 120,
+        'requiredMicSecondsMonth': 64800,
+      },
+      'achievements': [
+        {
+          'targetId': 't1',
+          'tierId': 'starter',
+          'rank': 'C',
+          'thresholdCoins': 50000,
+          'achievedAt': '2026-10-04T12:00:00.000Z',
+        },
+      ],
+    });
+
+    expect(data.uid, 'host_1');
+    expect(data.progressCoins, 150000);
+    expect(data.remainingCoins, 50000);
+    expect(data.currentLevel?.id, 't2');
+    expect(data.nextLevel?.id, 't3');
+    expect(data.requiredMicSecondsMonth, 64800);
+    expect(data.achievements.single.targetId, 't1');
+  });
+
   test('12-C parses bounded Owner management payloads', () {
     final members = OwnerAgencyMembersData.fromJson({
       'agency': {
@@ -103,6 +178,8 @@ void main() {
           'status': 'active',
           'publicId': '812302',
           'displayName': 'Manager',
+          'profileImageUrl': 'https://example.invalid/manager.webp',
+          'accountStatus': 'active',
         },
       ],
     });
@@ -112,6 +189,11 @@ void main() {
     expect(members.managerCount, 2);
     expect(members.members.length, 2);
     expect(members.members[1].role, 'manager');
+    expect(
+      members.members[1].profileImageUrl,
+      'https://example.invalid/manager.webp',
+    );
+    expect(members.members[1].accountStatus, 'active');
 
     final pending = OwnerAgencyPendingRequest.fromJson({
       'requestId': 'leave_1',

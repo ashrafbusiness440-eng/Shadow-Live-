@@ -1,7 +1,9 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../services/navigation_service.dart';
+import '../../../shared/services/user_storage_service.dart';
 import '../../profile/screens/public_profile_screen.dart';
 import '../../profile/services/profile_action_service.dart';
 import '../services/host_my_agency_service.dart';
@@ -24,6 +26,8 @@ class HostMyAgencyPage extends StatefulWidget {
 class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
   final HostMyAgencyService _service = HostMyAgencyService();
   final PublicAgencyService _publicAgencyService = PublicAgencyService();
+  final UserStorageService _storage = UserStorageService();
+  final ImagePicker _imagePicker = ImagePicker();
 
   HostMyAgencyCoreData? _data;
   PublicAgencyRankingData? _ranking;
@@ -34,6 +38,7 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
   bool _archiveLoading = false;
   bool _leaveStatusLoading = false;
   bool _leaveSubmitting = false;
+  bool _logoUploading = false;
   String? _error;
   String? _rankingError;
   String? _leaveStatusError;
@@ -49,7 +54,9 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
     _data = initial;
     _loading = false;
     Future.microtask(() async {
-      await _loadLeaveStatus(initial.agency.agencyId);
+      if (initial.membershipRole != 'owner') {
+        await _loadLeaveStatus(initial.agency.agencyId);
+      }
       await _loadRanking(initial.agency.agencyId);
     });
   }
@@ -58,6 +65,7 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
   void dispose() {
     _service.close();
     _publicAgencyService.close();
+    _storage.close();
     super.dispose();
   }
 
@@ -73,7 +81,9 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
         _data = data;
         _loading = false;
       });
-      await _loadLeaveStatus(data.agency.agencyId);
+      if (data.membershipRole != 'owner') {
+        await _loadLeaveStatus(data.agency.agencyId);
+      }
       await _loadRanking(data.agency.agencyId);
     } catch (error) {
       if (!mounted) return;
@@ -297,6 +307,96 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
     }
   }
 
+  Future<void> _pickAgencyLogo() async {
+    final data = _data;
+    if (data == null ||
+        data.membershipRole != 'owner' ||
+        _logoUploading) {
+      return;
+    }
+
+    final picked = await _imagePicker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 82,
+      maxWidth: 1200,
+      maxHeight: 1200,
+    );
+    if (picked == null || !mounted) return;
+
+    final bytes = await picked.readAsBytes();
+    if (!mounted) return;
+
+    setState(() => _logoUploading = true);
+    try {
+      await _storage.upload(
+        scope: 'agency_logo',
+        targetId: data.agency.agencyId,
+        bytes: bytes,
+        mimeType: detectSupportedImageMime(bytes),
+      );
+      final refreshed = await _service.loadCore();
+      if (!mounted) return;
+      setState(() {
+        _data = refreshed;
+        _logoUploading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم تحديث شعار الوكالة.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _logoUploading = false);
+      final code = error.toString().replaceFirst('Bad state: ', '');
+      final message = code.contains('agency_owner_required')
+          ? 'تعديل شعار الوكالة متاح للمالك فقط.'
+          : code.contains('invalid_file_size')
+              ? 'حجم شعار الوكالة أكبر من المسموح.'
+              : code.contains('invalid_file_type') ||
+                      code.contains('unsupported_image_format')
+                  ? 'صيغة الصورة غير مدعومة.'
+                  : 'تعذر تحديث شعار الوكالة حاليًا.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    }
+  }
+
+  void _openWallet() {
+    NavigationService.navigateTo(AppRoutes.recharge);
+  }
+
+  Future<void> _showTargetTable() async {
+    final data = _data;
+    if (data == null) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF0D1220),
+      builder: (sheetContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: _TargetTableSheet(target: data.target),
+      ),
+    );
+  }
+
+  Future<void> _handleLeaveAction() async {
+    final data = _data;
+    if (data == null ||
+        data.membershipRole == 'owner' ||
+        _leaveSubmitting ||
+        _leaveStatusLoading) {
+      return;
+    }
+    if (_leaveStatusError != null || _leaveStatus == null) {
+      await _loadLeaveStatus(data.agency.agencyId);
+      return;
+    }
+    if (_leaveStatus?.request?.status == 'pending') return;
+    if (_leaveStatus?.canRequestLeave == true) {
+      await _requestLeave();
+    }
+  }
+
   void _openOwnerDashboard() {
     final data = _data;
     if (data == null || data.membershipRole != 'owner') return;
@@ -319,6 +419,17 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
 
   @override
   Widget build(BuildContext context) {
+    final data = _data;
+    final showLeave = data != null && data.membershipRole != 'owner';
+    final leavePending = _leaveStatus?.request?.status == 'pending';
+    final canTapLeave = showLeave &&
+        !_leaveStatusLoading &&
+        !_leaveSubmitting &&
+        !leavePending &&
+        (_leaveStatus?.canRequestLeave == true ||
+            _leaveStatusError != null ||
+            _leaveStatus == null);
+
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
@@ -326,6 +437,28 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
         appBar: AppBar(
           title: const Text('معلومات وكالتي'),
           backgroundColor: const Color(0xFF0B1020),
+          actions: [
+            if (showLeave)
+              IconButton(
+                key: const Key('host-agency-leave-request-button'),
+                tooltip: leavePending
+                    ? 'طلب المغادرة قيد المراجعة'
+                    : _leaveStatusError != null
+                        ? 'إعادة تحميل حالة المغادرة'
+                        : 'طلب مغادرة الوكالة',
+                onPressed: canTapLeave ? _handleLeaveAction : null,
+                icon: _leaveSubmitting || _leaveStatusLoading
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(
+                        leavePending
+                            ? Icons.schedule_rounded
+                            : Icons.logout_rounded,
+                      ),
+              ),
+          ],
         ),
         body: _body(),
       ),
@@ -349,7 +482,12 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 18, 16, 28),
         children: [
-          _AgencyHeader(data: data),
+          _AgencyHeader(
+            data: data,
+            canEditLogo: data.membershipRole == 'owner',
+            logoUploading: _logoUploading,
+            onEditLogo: _pickAgencyLogo,
+          ),
           if (data.membershipRole == 'owner') ...[
             const SizedBox(height: 12),
             _OwnerDashboardEntry(onTap: _openOwnerDashboard),
@@ -375,14 +513,9 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
           const SizedBox(height: 16),
           _ActivityCard(activity: data.activity),
           const SizedBox(height: 16),
-          _LeaveRequestCard(
-            role: data.membershipRole,
-            status: _leaveStatus,
-            loading: _leaveStatusLoading,
-            submitting: _leaveSubmitting,
-            error: _leaveStatusError,
-            onRetry: () => _loadLeaveStatus(data.agency.agencyId),
-            onRequestLeave: _requestLeave,
+          _HostFinanceEntries(
+            onWallet: _openWallet,
+            onTargetTable: _showTargetTable,
           ),
           const SizedBox(height: 16),
           _HostRankingCard(
@@ -405,9 +538,17 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
 }
 
 class _AgencyHeader extends StatelessWidget {
-  const _AgencyHeader({required this.data});
+  const _AgencyHeader({
+    required this.data,
+    required this.canEditLogo,
+    required this.logoUploading,
+    required this.onEditLogo,
+  });
 
   final HostMyAgencyCoreData data;
+  final bool canEditLogo;
+  final bool logoUploading;
+  final Future<void> Function() onEditLogo;
 
   @override
   Widget build(BuildContext context) {
@@ -420,17 +561,47 @@ class _AgencyHeader extends StatelessWidget {
       decoration: _cardDecoration(),
       child: Column(
         children: [
-          CircleAvatar(
-            radius: 38,
-            backgroundColor: const Color(0xFF6E49D8),
-            backgroundImage: logo.isEmpty ? null : NetworkImage(logo),
-            child: logo.isEmpty
-                ? const Icon(
-                    Icons.apartment_rounded,
-                    size: 40,
-                    color: Colors.white,
-                  )
-                : null,
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              CircleAvatar(
+                key: const Key('host-agency-logo'),
+                radius: 38,
+                backgroundColor: const Color(0xFF6E49D8),
+                backgroundImage: logo.isEmpty ? null : NetworkImage(logo),
+                child: logo.isEmpty
+                    ? const Icon(
+                        Icons.apartment_rounded,
+                        size: 40,
+                        color: Colors.white,
+                      )
+                    : null,
+              ),
+              if (canEditLogo)
+                Positioned(
+                  left: -4,
+                  bottom: -4,
+                  child: Material(
+                    color: const Color(0xFF171D31),
+                    shape: const CircleBorder(),
+                    child: IconButton(
+                      key: const Key('host-agency-logo-edit'),
+                      tooltip: 'تعديل شعار الوكالة',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: logoUploading ? null : onEditLogo,
+                      icon: logoUploading
+                          ? const SizedBox.square(
+                              dimension: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(
+                              Icons.camera_alt_rounded,
+                              size: 18,
+                            ),
+                    ),
+                  ),
+                ),
+            ],
           ),
           const SizedBox(height: 12),
           Text(
@@ -657,108 +828,159 @@ class _AgencyActionsCard extends StatelessWidget {
 }
 
 
-class _LeaveRequestCard extends StatelessWidget {
-  const _LeaveRequestCard({
-    required this.role,
-    required this.status,
-    required this.loading,
-    required this.submitting,
-    required this.error,
-    required this.onRetry,
-    required this.onRequestLeave,
+class _HostFinanceEntries extends StatelessWidget {
+  const _HostFinanceEntries({
+    required this.onWallet,
+    required this.onTargetTable,
   });
 
-  final String role;
-  final HostAgencyLeaveStatus? status;
-  final bool loading;
-  final bool submitting;
-  final String? error;
-  final Future<void> Function() onRetry;
-  final Future<void> Function() onRequestLeave;
+  final VoidCallback onWallet;
+  final Future<void> Function() onTargetTable;
 
   @override
   Widget build(BuildContext context) {
-    final request = status?.request;
-    final owner = role == 'owner';
-    final pending = request?.status == 'pending';
-    final canRequest =
-        !owner && status?.canRequestLeave == true && !pending && !submitting;
-
     return Container(
-      key: const Key('host-agency-leave-card'),
-      padding: const EdgeInsets.all(18),
+      key: const Key('host-agency-finance-entries'),
+      padding: const EdgeInsets.all(12),
       decoration: _cardDecoration(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Row(
         children: [
-          const _SectionHeader(
-            icon: Icons.exit_to_app_rounded,
-            title: 'مغادرة الوكالة',
-          ),
-          const SizedBox(height: 12),
-          if (loading)
-            const LinearProgressIndicator(minHeight: 3)
-          else if (error != null)
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'تعذر تحميل حالة طلب المغادرة.',
-                    style: TextStyle(color: Colors.white70),
-                  ),
-                ),
-                TextButton(
-                  key: const Key('host-agency-leave-retry'),
-                  onPressed: onRetry,
-                  child: const Text('إعادة المحاولة'),
-                ),
-              ],
-            )
-          else if (owner)
-            const Text(
-              'مالك الوكالة لا يستخدم مسار مغادرة الأعضاء.',
-              style: TextStyle(color: Colors.white70),
-            )
-          else if (pending)
-            const Row(
-              children: [
-                Icon(Icons.schedule_rounded, color: Color(0xFFFFD875)),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'طلب المغادرة قيد المراجعة. عضويتك ما زالت نشطة.',
-                    style: TextStyle(color: Colors.white),
-                  ),
-                ),
-              ],
-            )
-          else
-            const Text(
-              'يمكنك إرسال طلب مغادرة. لن تتغير عضويتك أو Target أو نشاطك عند إرسال الطلب.',
-              style: TextStyle(color: Colors.white70, height: 1.5),
+          Expanded(
+            child: OutlinedButton.icon(
+              key: const Key('host-agency-wallet-entry'),
+              onPressed: onWallet,
+              icon: const Icon(Icons.account_balance_wallet_rounded),
+              label: const Text('المحفظة/الألماس'),
             ),
-          const SizedBox(height: 12),
-          FilledButton.icon(
-            key: const Key('host-agency-leave-request-button'),
-            onPressed: canRequest ? onRequestLeave : null,
-            icon: submitting
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.logout_rounded),
-            label: Text(
-              pending
-                  ? 'طلب المغادرة قيد المراجعة'
-                  : owner
-                      ? 'غير متاح للمالك'
-                      : submitting
-                          ? 'جارٍ إرسال الطلب...'
-                          : 'طلب مغادرة الوكالة',
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: FilledButton.icon(
+              key: const Key('host-agency-target-table-entry'),
+              onPressed: onTargetTable,
+              icon: const Icon(Icons.table_chart_rounded),
+              label: const Text('جدول الـTarget'),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _TargetTableSheet extends StatelessWidget {
+  const _TargetTableSheet({required this.target});
+
+  final HostAgencyTarget target;
+
+  @override
+  Widget build(BuildContext context) {
+    final levels = target.levels;
+    return SafeArea(
+      child: DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: .72,
+        minChildSize: .45,
+        maxChildSize: .92,
+        builder: (context, controller) => ListView(
+          controller: controller,
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
+          children: [
+            const ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.table_chart_rounded),
+              title: Text(
+                'جدول الـTarget',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
+              subtitle: Text(
+                'القيم تخص المضيف فقط وتأتي من إعدادات الوكالات المعتمدة.',
+              ),
+            ),
+            Card(
+              color: const Color(0xFF11182A),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Text(
+                  'المحتسب هذا الشهر: ${_formatCoins(target.progressCoins)} Coins'
+                  '${target.remainingCoins > 0 ? ' • المتبقي: ${_formatCoins(target.remainingCoins)}' : ''}',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            if (levels.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(18),
+                child: Text(
+                  'لا توجد مستويات Target متاحة حاليًا.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white60),
+                ),
+              )
+            else
+              ...levels.map((level) {
+                final achieved =
+                    target.progressCoins >= level.thresholdCoins;
+                final current = target.currentLevel?.id == level.id;
+                final next = target.nextLevel?.id == level.id;
+                final status = current
+                    ? 'الحالي / محقق'
+                    : next
+                        ? 'التالي'
+                        : achieved
+                            ? 'محقق'
+                            : 'لاحق';
+                return Card(
+                  color: const Color(0xFF11182A),
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: current
+                          ? Colors.green.withValues(alpha: .18)
+                          : next
+                              ? Colors.amber.withValues(alpha: .18)
+                              : Colors.white10,
+                      child: Icon(
+                        achieved
+                            ? Icons.check_rounded
+                            : Icons.flag_outlined,
+                        color: achieved
+                            ? Colors.greenAccent
+                            : next
+                                ? Colors.amberAccent
+                                : Colors.white54,
+                      ),
+                    ),
+                    title: Text(
+                      _levelLabel(level),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    subtitle: Text(
+                      'Target: ${_formatCoins(level.thresholdCoins)} Coins'
+                      ' • راتب المضيف: ${level.salaryDiamonds} Diamonds',
+                    ),
+                    trailing: Text(
+                      status,
+                      style: TextStyle(
+                        color: current
+                            ? Colors.greenAccent
+                            : next
+                                ? Colors.amberAccent
+                                : Colors.white54,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                );
+              }),
+          ],
+        ),
       ),
     );
   }

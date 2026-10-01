@@ -1,7 +1,11 @@
 import { json, readJson, firestoreQuotaResponse } from "./http.js";
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
-import { currentAgencyMonthKey } from "./agency-policy.js";
+import {
+  calculateAgencyTargetProgress,
+  currentAgencyMonthKey,
+  DEFAULT_AGENCY_TARGETS,
+} from "./agency-policy.js";
 import { calculateAgencyMonthlyBonus } from "./economy-policy.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 
@@ -229,6 +233,193 @@ export async function loadAgencyOwnerPerformance(
   };
 }
 
+function hostTargetLevelSummary(target) {
+  if (!target) return null;
+  return {
+    id: clean(target.id),
+    tierId: clean(target.tierId),
+    rank: clean(target.rank),
+    thresholdCoins: nonNegativeInteger(
+      target.thresholdCoins,
+      "agency_target_state_corrupt",
+    ),
+    salaryDiamonds: nonNegativeInteger(
+      target.salaryDiamonds,
+      "agency_target_state_corrupt",
+    ),
+    openEnded: target.openEnded === true,
+  };
+}
+
+function achievementTimestampMs(value) {
+  if (value instanceof Date) return value.getTime();
+  const ms = Date.parse(clean(value));
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function hostPerformanceAchievements(levels, rows) {
+  const sortedRows = rows.slice().sort(
+    (a, b) =>
+      achievementTimestampMs(a?.data?.createdAt) -
+      achievementTimestampMs(b?.data?.createdAt),
+  );
+  const achieved = new Map();
+  for (const row of sortedRows) {
+    const data = row?.data || {};
+    const progress = nonNegativeInteger(
+      data.agencyTargetProgressCoins,
+      "agency_target_history_corrupt",
+    );
+    for (const level of levels) {
+      if (
+        !achieved.has(level.id) &&
+        progress >= level.thresholdCoins
+      ) {
+        achieved.set(level.id, {
+          targetId: level.id,
+          tierId: level.tierId,
+          rank: level.rank,
+          thresholdCoins: level.thresholdCoins,
+          achievedAt: data.createdAt || null,
+        });
+      }
+    }
+  }
+  return [...achieved.values()].slice(-12);
+}
+
+export async function loadAgencyOwnerHostPerformance(
+  db,
+  uidInput,
+  targetUidInput,
+  now = new Date(),
+) {
+  const owner = await assertAgencyOwner(db, uidInput);
+  const targetUid = clean(targetUidInput);
+  if (!targetUid) throw new ApiError("invalid_target_uid", 400);
+
+  const [userSnap, membershipSnap, economySnap] = await Promise.all([
+    db.get(`users/${targetUid}`),
+    db.get(`agency_user_memberships/${targetUid}`),
+    db.get("system_config/gift_economy"),
+  ]);
+  if (!userSnap.exists || !membershipSnap.exists) {
+    throw new ApiError("agency_host_not_found", 404);
+  }
+
+  const user = userSnap.data || {};
+  const membership = membershipSnap.data || {};
+  if (
+    clean(membership.agencyId) !== owner.agencyId ||
+    clean(membership.status) !== "active" ||
+    clean(user.agencyId) !== owner.agencyId
+  ) {
+    throw new ApiError("agency_host_not_active", 409);
+  }
+
+  const month = currentAgencyMonthKey(now);
+  const targetPolicy =
+    user.agencyPolicySnapshot?.targets ||
+    DEFAULT_AGENCY_TARGETS;
+  let targetProgress;
+  try {
+    targetProgress = calculateAgencyTargetProgress({
+      monthKey: month,
+      storedMonth: user.agencyTargetMonth,
+      storedProgressCoins: user.agencyTargetProgressCoins,
+      addedHostShareCoins: 0,
+      storedPaidDiamonds: user.agencySalaryPaidDiamonds,
+      targets: targetPolicy,
+    });
+  } catch (_) {
+    throw new ApiError("agency_target_state_corrupt", 409);
+  }
+
+  const levels = Array.isArray(targetPolicy)
+    ? targetPolicy.map(hostTargetLevelSummary).filter(Boolean)
+    : [];
+  const activitySameMonth = clean(user.giftHostActivityMonth) === month;
+  const qualifiedDays = activitySameMonth
+    ? nonNegativeInteger(
+        user.giftHostQualifiedDays,
+        "agency_activity_state_corrupt",
+      )
+    : 0;
+  const micSecondsMonth = activitySameMonth
+    ? nonNegativeInteger(
+        user.giftHostMicSecondsMonth,
+        "agency_activity_state_corrupt",
+      )
+    : 0;
+  const economy = economySnap.exists ? economySnap.data || {} : {};
+  const requiredQualifiedDays = boundedInteger(
+    economy.hostBonusQualifiedDays,
+    9,
+    1,
+    31,
+    "agency_activity_state_corrupt",
+  );
+  const requiredMinutesPerDay = boundedInteger(
+    economy.hostBonusMinutesPerQualifiedDay,
+    120,
+    1,
+    1440,
+    "agency_activity_state_corrupt",
+  );
+
+  const historyRows = await db.runQuery("gift_transactions", {
+    filters: [
+      { field: "receiverId", op: "==", value: targetUid },
+      { field: "agencyId", op: "==", value: owner.agencyId },
+      { field: "agencyTargetMonth", op: "==", value: month },
+      { field: "earningsStatus", op: "==", value: "target_paid" },
+    ],
+    limit: 20,
+  });
+
+  const currentLevel = hostTargetLevelSummary(targetProgress.reachedTarget);
+  const nextLevel = hostTargetLevelSummary(targetProgress.nextTarget);
+  return {
+    ok: true,
+    agencyId: owner.agencyId,
+    host: {
+      uid: targetUid,
+      publicId: clean(user.publicId) || null,
+      displayName:
+        clean(user.displayName || user.name || user.username) ||
+        "Shadow Live",
+      profileImageUrl:
+        clean(user.profileImageUrl || user.photoUrl || user.avatarUrl) ||
+        null,
+      role: clean(membership.role),
+      status: clean(membership.status),
+      accountStatus: clean(user.accountStatus || "active"),
+    },
+    target: {
+      month,
+      progressCoins: targetProgress.progressCoins,
+      remainingCoins: targetProgress.remainingToNextTargetCoins,
+      currentLevel,
+      nextLevel,
+      targetCoins:
+        nextLevel?.thresholdCoins ||
+        currentLevel?.thresholdCoins ||
+        0,
+      levels,
+    },
+    activity: {
+      month,
+      qualifiedDays,
+      micSecondsMonth,
+      requiredQualifiedDays,
+      requiredMinutesPerDay,
+      requiredMicSecondsMonth:
+        requiredQualifiedDays * requiredMinutesPerDay * 60,
+    },
+    achievements: hostPerformanceAchievements(levels, historyRows),
+  };
+}
+
 function statementSummary(agencyId, month, snap) {
   if (!snap.exists) {
     return {
@@ -345,6 +536,21 @@ export async function agencyOwner(request, env) {
         request,
         env,
         await loadAgencyOwnerStatement(db, token.sub, body.month),
+      );
+    }
+
+    if (action === "hostPerformance") {
+      annotatePressureRequest(request, {
+        action: "agencyOwner:hostPerformance",
+      });
+      return json(
+        request,
+        env,
+        await loadAgencyOwnerHostPerformance(
+          db,
+          token.sub,
+          body.targetUid,
+        ),
       );
     }
 

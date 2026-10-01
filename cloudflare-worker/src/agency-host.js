@@ -132,6 +132,9 @@ export async function loadAgencyHostCore(
   if (!ownerSnap.exists) throw new ApiError("agency_owner_missing", 409);
 
   const month = currentAgencyMonthKey(now);
+  const targetPolicy =
+    user.agencyPolicySnapshot?.targets ||
+    DEFAULT_AGENCY_TARGETS;
   let targetProgress;
   try {
     targetProgress = calculateAgencyTargetProgress({
@@ -140,9 +143,7 @@ export async function loadAgencyHostCore(
       storedProgressCoins: user.agencyTargetProgressCoins,
       addedHostShareCoins: 0,
       storedPaidDiamonds: user.agencySalaryPaidDiamonds,
-      targets:
-        user.agencyPolicySnapshot?.targets ||
-        DEFAULT_AGENCY_TARGETS,
+      targets: targetPolicy,
     });
   } catch (_) {
     throw new ApiError("agency_target_state_corrupt", 409);
@@ -216,6 +217,9 @@ export async function loadAgencyHostCore(
       remainingCoins: targetProgress.remainingToNextTargetCoins,
       currentLevel: reachedTarget,
       nextLevel: nextTarget,
+      levels: Array.isArray(targetPolicy)
+        ? targetPolicy.map(targetSummary).filter(Boolean)
+        : [],
       targetCoins:
         nextTarget?.thresholdCoins ||
         reachedTarget?.thresholdCoins ||

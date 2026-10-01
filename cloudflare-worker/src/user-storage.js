@@ -24,12 +24,14 @@ const REPLACEABLE_SCOPES = new Set([
   "profile_image",
   "profile_cover",
   "room_cover",
+  "agency_logo",
 ]);
 
 export const STORAGE_SCOPE_CONFIG = Object.freeze({
   profile_image: Object.freeze({ maxBytes: MAX_PROFILE_BYTES }),
   profile_cover: Object.freeze({ maxBytes: MAX_COVER_BYTES }),
   room_cover: Object.freeze({ maxBytes: MAX_COVER_BYTES }),
+  agency_logo: Object.freeze({ maxBytes: MAX_PROFILE_BYTES }),
   chat_image: Object.freeze({ maxBytes: MAX_CHAT_BYTES }),
 });
 
@@ -109,6 +111,8 @@ export function buildStorageObjectKey({
       return `users/${safeUid}/covers/${safeObject}.${safeExt}`;
     case "room_cover":
       return `rooms/${safeTarget}/covers/${safeObject}.${safeExt}`;
+    case "agency_logo":
+      return `agencies/${safeTarget}/logo/${safeObject}.${safeExt}`;
     case "chat_image":
       return `chat/${safeTarget}/${safeUid}/${safeObject}.${safeExt}`;
     default:
@@ -239,6 +243,23 @@ async function authorizeRoomCoverManagement(db, uid, targetId) {
   return { targetId, room: room.data || {} };
 }
 
+export async function authorizeAgencyLogoManagement(
+  db,
+  uid,
+  targetId,
+  transaction = null,
+) {
+  const agency = await db.get(`agencies/${targetId}`, transaction);
+  if (!agency.exists) throw new StorageApiError("agency_not_found", 404);
+  if (clean(agency.data?.ownerUid) !== uid) {
+    throw new StorageApiError("agency_owner_required", 403);
+  }
+  if (clean(agency.data?.status) === "closed") {
+    throw new StorageApiError("agency_closed", 409);
+  }
+  return { targetId, agency: agency.data || {} };
+}
+
 async function authorizeUpload(db, uid, scope, rawTargetId) {
   if (scope === "profile_image" || scope === "profile_cover") {
     return { targetId: uid };
@@ -251,6 +272,11 @@ async function authorizeUpload(db, uid, scope, rawTargetId) {
 
   if (scope === "room_cover") {
     await authorizeRoomCoverManagement(db, uid, targetId);
+    return { targetId };
+  }
+
+  if (scope === "agency_logo") {
+    await authorizeAgencyLogoManagement(db, uid, targetId);
     return { targetId };
   }
 
@@ -312,7 +338,8 @@ async function authorizeRead(db, uid, metadata) {
   if (
     scope === "profile_image" ||
     scope === "profile_cover" ||
-    scope === "room_cover"
+    scope === "room_cover" ||
+    scope === "agency_logo"
   ) {
     return true;
   }
@@ -335,6 +362,10 @@ async function authorizeRead(db, uid, metadata) {
 async function authorizeDelete(db, uid, metadata) {
   if (clean(metadata.scope) === "room_cover") {
     await authorizeRoomCoverManagement(db, uid, clean(metadata.targetId));
+    return true;
+  }
+  if (clean(metadata.scope) === "agency_logo") {
+    await authorizeAgencyLogoManagement(db, uid, clean(metadata.targetId));
     return true;
   }
   if (clean(metadata.ownerUid) !== uid) {
@@ -480,6 +511,13 @@ async function confirmUpload(request, env, auth, body) {
       clean(ticket.targetId),
     );
   }
+  if (clean(ticket.scope) === "agency_logo") {
+    await authorizeAgencyLogoManagement(
+      auth.db,
+      auth.uid,
+      clean(ticket.targetId),
+    );
+  }
 
   const bucket = bucketFromEnv(env);
   if (timestampMs(ticket.expiresAt) < Date.now()) {
@@ -519,6 +557,14 @@ async function confirmUpload(request, env, auth, body) {
   if (replaceable) {
     pointerPath = storageActivePointerPath(ticket.scope, ticket.targetId);
     transaction = await auth.db.beginTransaction();
+    if (clean(ticket.scope) === "agency_logo") {
+      await authorizeAgencyLogoManagement(
+        auth.db,
+        auth.uid,
+        clean(ticket.targetId),
+        transaction,
+      );
+    }
     const pointer = await auth.db.get(pointerPath, transaction);
     const currentActiveObjectId = pointer.exists
       ? clean(pointer.data?.objectId)
@@ -541,7 +587,7 @@ async function confirmUpload(request, env, auth, body) {
       if (
         !snap.exists ||
         (
-          clean(ticket.scope) !== "room_cover" &&
+          !["room_cover", "agency_logo"].includes(clean(ticket.scope)) &&
           clean(snap.data?.ownerUid) !== auth.uid
         ) ||
         clean(snap.data?.scope) !== clean(ticket.scope) ||
@@ -592,6 +638,36 @@ async function confirmUpload(request, env, auth, body) {
       createdAt: now,
     }),
   ];
+  if (metadata.scope === "agency_logo") {
+    if (!stablePublicUrl) {
+      if (transaction) await auth.db.rollback(transaction);
+      throw new StorageApiError("public_media_url_missing", 500);
+    }
+    writes.push(
+      auth.db.writeUpdate(
+        `agencies/${metadata.targetId}`,
+        {
+          logoUrl: stablePublicUrl,
+          logoObjectId: objectId,
+          updatedAt: now,
+        },
+        ["logoUrl", "logoObjectId", "updatedAt"],
+      ),
+      auth.db.writeCreate(
+        `admin_audit_logs/agency_logo_${metadata.targetId}_${objectId}`,
+        {
+          actorUid: auth.uid,
+          action: previous ? "replaceAgencyLogo" : "uploadAgencyLogo",
+          targetType: "agency",
+          targetId: metadata.targetId,
+          objectId,
+          replacedObjectId: previous?.objectId || null,
+          createdAt: now,
+        },
+      ),
+    );
+  }
+
   let previousDeleteAt = null;
   if (previous) {
     previousDeleteAt = replacementDeleteAt(now.getTime());
@@ -674,6 +750,10 @@ async function replacementObjectStillReferenced(
       documentPath = `rooms/${targetId}`;
       field = "coverImageObjectId";
       break;
+    case "agency_logo":
+      documentPath = `agencies/${targetId}`;
+      field = "logoObjectId";
+      break;
     default:
       return false;
   }
@@ -755,6 +835,66 @@ async function transferSharedRoomCoverOnAccountDeletion({
 
   await db.commit(null, writes);
   return roomOwnerUid;
+}
+
+async function transferAgencyLogoOnAccountDeletion({
+  db,
+  deletedUid,
+  item,
+  objectId,
+  nowMs,
+}) {
+  if (clean(item?.data?.scope) !== "agency_logo") return "";
+
+  const targetId = clean(item?.data?.targetId);
+  if (!targetId) return "";
+
+  const agency = await db.get(`agencies/${targetId}`);
+  if (
+    !agency.exists ||
+    clean(agency.data?.logoObjectId) !== objectId
+  ) {
+    return "";
+  }
+
+  const syntheticOwner = `agency:${targetId}`;
+  const now = new Date(nowMs);
+  const writes = [
+    db.writeUpdate(
+      `storage_objects/${objectId}`,
+      { ownerUid: syntheticOwner, updatedAt: now },
+      ["ownerUid", "updatedAt"],
+    ),
+    db.writeCreate(`storage_audit_logs/${auditId()}`, {
+      actorUid: "system",
+      subjectUid: deletedUid,
+      action: "transferDeletedAccountAgencyLogoOwnership",
+      objectId,
+      scope: "agency_logo",
+      targetId,
+      transferredToUid: syntheticOwner,
+      reason: "agency_logo_still_active",
+      createdAt: now,
+    }),
+  ];
+
+  const pointerPath = storageActivePointerPath("agency_logo", targetId);
+  const pointer = await db.get(pointerPath);
+  if (
+    pointer.exists &&
+    clean(pointer.data?.objectId) === objectId
+  ) {
+    writes.push(
+      db.writeUpdate(
+        pointerPath,
+        { ownerUid: syntheticOwner, updatedAt: now },
+        ["ownerUid", "updatedAt"],
+      ),
+    );
+  }
+
+  await db.commit(null, writes);
+  return syntheticOwner;
 }
 
 async function accountDeletionReferenceWrites({
@@ -881,6 +1021,21 @@ async function deleteAccountOwnedStorageObject({
   });
   if (transferredToUid) {
     return { objectId, deleted: false, transferredToUid };
+  }
+
+  const agencyTransferredToUid = await transferAgencyLogoOnAccountDeletion({
+    db,
+    deletedUid: ownerUid,
+    item,
+    objectId,
+    nowMs,
+  });
+  if (agencyTransferredToUid) {
+    return {
+      objectId,
+      deleted: false,
+      transferredToUid: agencyTransferredToUid,
+    };
   }
 
   const referenceWrites = await accountDeletionReferenceWrites({

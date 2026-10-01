@@ -13,6 +13,7 @@ import {
   REPLACEMENT_DELETE_DELAY_MS,
   storageActivePointerId,
   runDeletedAccountStorageCleanup,
+  authorizeAgencyLogoManagement,
 } from "../../cloudflare-worker/src/user-storage.js";
 import {
   presignR2Put,
@@ -36,6 +37,7 @@ test("storage size limits stay scope-specific", () => {
   assert.equal(storageMaxBytes("profile_image"), 2 * 1024 * 1024);
   assert.equal(storageMaxBytes("profile_cover"), 4 * 1024 * 1024);
   assert.equal(storageMaxBytes("room_cover"), 4 * 1024 * 1024);
+  assert.equal(storageMaxBytes("agency_logo"), 2 * 1024 * 1024);
   assert.equal(storageMaxBytes("chat_image"), 8 * 1024 * 1024);
 });
 
@@ -98,6 +100,17 @@ test("storage object keys follow canonical private prefixes", () => {
 
   assert.equal(
     buildStorageObjectKey({
+      scope: "agency_logo",
+      uid: "owner_1",
+      targetId: "741201",
+      objectId: "d".repeat(32),
+      extension: "png",
+    }),
+    `agencies/741201/logo/${"d".repeat(32)}.png`,
+  );
+
+  assert.equal(
+    buildStorageObjectKey({
       scope: "chat_image",
       uid: "user_1",
       targetId: "conversation_9",
@@ -112,6 +125,7 @@ test("replaced profile and room media wait 24 hours before cleanup", () => {
   assert.equal(isReplaceableStorageScope("profile_image"), true);
   assert.equal(isReplaceableStorageScope("profile_cover"), true);
   assert.equal(isReplaceableStorageScope("room_cover"), true);
+  assert.equal(isReplaceableStorageScope("agency_logo"), true);
   assert.equal(isReplaceableStorageScope("chat_image"), false);
 
   const nowMs = 1_758_975_200_000;
@@ -142,6 +156,7 @@ test("public media redirects only expose public R2 scopes", () => {
   assert.equal(isPublicMediaScope("profile_image"), true);
   assert.equal(isPublicMediaScope("profile_cover"), true);
   assert.equal(isPublicMediaScope("room_cover"), true);
+  assert.equal(isPublicMediaScope("agency_logo"), true);
   assert.equal(isPublicMediaScope("chat_image"), false);
 
   assert.equal(
@@ -160,6 +175,15 @@ test("public media redirects only expose public R2 scopes", () => {
     }),
     `users/user_1/covers/${"f".repeat(32)}.webp`,
   );
+  assert.equal(
+    publicMediaStorageKey({
+      scope: "agency_logo",
+      targetId: "741201",
+      filename: `${"9".repeat(32)}.webp`,
+    }),
+    `agencies/741201/logo/${"9".repeat(32)}.webp`,
+  );
+
   assert.throws(
     () =>
       publicMediaStorageKey({
@@ -753,4 +777,63 @@ test("room settings validation is room-scoped rather than uploader-scoped", () =
   );
   assert.match(settingsSource, /permissions\.manageRooms/);
   assert.doesNotMatch(settingsSource, /clean\(media\.ownerUid\)!==uid/);
+});
+
+
+test("agency logo management requires the current active Agency owner", async () => {
+  const activeDb = {
+    async get(path) {
+      assert.equal(path, "agencies/741201");
+      return {
+        exists: true,
+        data: {
+          agencyId: "741201",
+          ownerUid: "owner_1",
+          status: "active",
+        },
+      };
+    },
+  };
+  const allowed = await authorizeAgencyLogoManagement(
+    activeDb,
+    "owner_1",
+    "741201",
+  );
+  assert.equal(allowed.targetId, "741201");
+
+  await assert.rejects(
+    authorizeAgencyLogoManagement(activeDb, "other_user", "741201"),
+    /agency_owner_required/,
+  );
+
+  const closedDb = {
+    async get() {
+      return {
+        exists: true,
+        data: {
+          agencyId: "741201",
+          ownerUid: "owner_1",
+          status: "closed",
+        },
+      };
+    },
+  };
+  await assert.rejects(
+    authorizeAgencyLogoManagement(closedDb, "owner_1", "741201"),
+    /agency_closed/,
+  );
+});
+
+test("agency logo storage stays owner-authorized audited and delayed-replacement safe", () => {
+  const source = fs.readFileSync(
+    new URL("../../cloudflare-worker/src/user-storage.js", import.meta.url),
+    "utf8",
+  );
+  assert.equal(source.includes("authorizeAgencyLogoManagement"), true);
+  assert.equal(source.includes('"agency_logo"'), true);
+  assert.equal(source.includes("agency_owner_required"), true);
+  assert.equal(source.includes("replaceAgencyLogo"), true);
+  assert.equal(source.includes("logoObjectId"), true);
+  assert.equal(source.includes("transferDeletedAccountAgencyLogoOwnership"), true);
+  assert.equal(source.includes("REPLACEMENT_DELETE_DELAY_MS"), true);
 });

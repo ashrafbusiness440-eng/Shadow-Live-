@@ -97,6 +97,7 @@ class HostAgencyTarget {
     required this.targetCoins,
     required this.currentLevel,
     required this.nextLevel,
+    this.levels = const <HostAgencyLevel>[],
   });
 
   final String month;
@@ -106,6 +107,7 @@ class HostAgencyTarget {
   final int targetCoins;
   final HostAgencyLevel? currentLevel;
   final HostAgencyLevel? nextLevel;
+  final List<HostAgencyLevel> levels;
 
   factory HostAgencyTarget.fromJson(Map<String, dynamic> json) {
     return HostAgencyTarget(
@@ -116,6 +118,14 @@ class HostAgencyTarget {
       targetCoins: _nonNegativeInt(json['targetCoins']),
       currentLevel: _level(json['currentLevel']),
       nextLevel: _level(json['nextLevel']),
+      levels: json['levels'] is List
+          ? (json['levels'] as List)
+              .whereType<Map>()
+              .map((item) => HostAgencyLevel.fromJson(
+                    Map<String, dynamic>.from(item),
+                  ))
+              .toList(growable: false)
+          : const <HostAgencyLevel>[],
     );
   }
 }
