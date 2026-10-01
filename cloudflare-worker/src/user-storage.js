@@ -243,7 +243,7 @@ async function authorizeRoomCoverManagement(db, uid, targetId) {
   return { targetId, room: room.data || {} };
 }
 
-async function authorizeAgencyLogoManagement(
+export async function authorizeAgencyLogoManagement(
   db,
   uid,
   targetId,
