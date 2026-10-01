@@ -63,11 +63,9 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
   bool enabled = false;
   String? error;
   List<_TierDraft> tiers = [];
-  final hostBonus = TextEditingController(text: '0');
   final agencyBonus = TextEditingController(text: '1');
   final hostBonusDays = TextEditingController(text: '14');
   final hostMinutesPerDay = TextEditingController(text: '120');
-  final agencyBonusActiveHosts = TextEditingController(text: '10');
 
   Uri get apiUri => shadowEconomyEndpoint('gift-economy-config');
 
@@ -82,11 +80,9 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
     for (final tier in tiers) {
       tier.dispose();
     }
-    hostBonus.dispose();
     agencyBonus.dispose();
     hostBonusDays.dispose();
     hostMinutesPerDay.dispose();
-    agencyBonusActiveHosts.dispose();
     super.dispose();
   }
 
@@ -150,7 +146,6 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
       final rawTiers = config['tiers'] is List ? config['tiers'] as List : const [];
       if (!mounted) return;
       _replaceTiers(rawTiers);
-      hostBonus.text = '0.0';
       final newAgencyBonusMode =
           config['agencyPerformanceBonusMode'] == 'per_host_target_month_end';
       agencyBonus.text =
@@ -163,8 +158,6 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
               .toStringAsFixed(1);
       hostBonusDays.text = '14';
       hostMinutesPerDay.text = '120';
-      agencyBonusActiveHosts.text =
-          ((config['agencyBonusActiveHosts'] as num?)?.toInt() ?? 10).toString();
       setState(() {
         enabled = config['enabled'] == true;
         loading = false;
