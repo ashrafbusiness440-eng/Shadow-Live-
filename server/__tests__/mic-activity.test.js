@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   activeMicSegments,
+  splitRiyadhIntervalByDay,
   splitUtcIntervalByDay,
   totalMicSeconds,
 } from "../economy/mic-activity.js";
@@ -38,4 +39,21 @@ test("missing or invalid active start does not create activity",()=>{
   const end=Date.UTC(2026,8,22,12,0,0);
   assert.deepEqual(activeMicSegments({muted:false,micStartedAtMs:0},end),[]);
   assert.deepEqual(activeMicSegments({muted:false},end),[]);
+});
+
+
+test("Agency mic interval crossing Riyadh midnight splits at UTC+3 boundary",()=>{
+  const start=Date.UTC(2026,8,22,20,30,0);
+  const end=Date.UTC(2026,8,22,21,30,0);
+  assert.deepEqual(splitRiyadhIntervalByDay(start,end),[
+    {day:"2026-09-22",month:"2026-09",seconds:1800},
+    {day:"2026-09-23",month:"2026-09",seconds:1800},
+  ]);
+  assert.deepEqual(
+    activeMicSegments({muted:false,micStartedAtMs:start},end),
+    [
+      {day:"2026-09-22",month:"2026-09",seconds:1800},
+      {day:"2026-09-23",month:"2026-09",seconds:1800},
+    ],
+  );
 });
