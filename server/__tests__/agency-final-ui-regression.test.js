@@ -256,3 +256,29 @@ test("Agency legacy economy migration fallback cannot restore UTC or +2 percent"
   );
   assert.equal(config.includes(":100;"), true);
 });
+
+
+test("Agency permission and status notifications are mandatory", () => {
+  const membership = source("cloudflare-worker/src/agency-membership.js");
+  const control = source("cloudflare-worker/src/agency-control.js");
+
+  const roleStart = membership.indexOf(
+    'type: "agency_membership_role_changed"',
+  );
+  const roleEnd = membership.indexOf("createdAt: now", roleStart);
+  assert.ok(roleStart >= 0 && roleEnd > roleStart);
+  assert.equal(
+    membership.slice(roleStart, roleEnd).includes("mandatory: true"),
+    true,
+  );
+
+  const statusStart = control.indexOf(
+    'db.writeCreate(\`notifications/agency_status_\${eventId}\`',
+  );
+  const statusEnd = control.indexOf("createdAt: now", statusStart);
+  assert.ok(statusStart >= 0 && statusEnd > statusStart);
+  assert.equal(
+    control.slice(statusStart, statusEnd).includes("mandatory: true"),
+    true,
+  );
+});
