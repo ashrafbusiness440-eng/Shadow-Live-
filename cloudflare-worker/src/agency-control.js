@@ -319,7 +319,8 @@ function agencyReviewPerson({
     uid: clean(uid),
     publicId: clean(user.publicId || fallbackPublicId) || null,
     displayName: clean(user.displayName || user.username || "مستخدم Shadow Live"),
-    profileImageUrl: clean(user.profileImageUrl || user.photoUrl) || null,
+    profileImageUrl:
+      clean(user.profileImageUrl || user.photoUrl || user.avatarUrl) || null,
     accountStatus,
     availability,
     currentAgencyId: currentAgencyId || null,
