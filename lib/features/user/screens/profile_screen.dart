@@ -15,6 +15,7 @@ import '../../wallet/screens/recharge_screen.dart';
 import '../../profile/screens/my_items_screen.dart';
 import '../../profile/services/reward_inventory_service.dart';
 import '../../room/widgets/cosmetic_effect_widgets.dart';
+import '../../agency/screens/agency_package_grant_page.dart';
 import '../bloc/user_bloc.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -722,6 +723,15 @@ class _ProfileScreenState extends State<ProfileScreen>
     final following = _num(profile, ['followingCount', 'following']);
     final rooms = _num(profile, ['roomsCount']);
     final gifts = _num(profile, ['giftsCount', 'totalGiftsReceived']);
+    final capabilities = profile['capabilities'] is List
+        ? (profile['capabilities'] as List)
+            .map((item) => item.toString())
+            .toSet()
+        : const <String>{};
+    final canGrantAgencyPackage =
+        profile['role'] == 'owner' ||
+        (profile['adminEnabled'] == true &&
+            capabilities.contains('grantAgencyPackage'));
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
@@ -787,6 +797,18 @@ class _ProfileScreenState extends State<ProfileScreen>
             if (mounted) _load();
           }),
         ),
+        if (canGrantAgencyPackage) ...[
+          const SizedBox(height: 10),
+          _action(
+            Icons.card_giftcard_rounded,
+            'منح باكيج وكالة',
+            () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const AgencyPackageGrantPage(),
+              ),
+            ),
+          ),
+        ],
         const SizedBox(height: 16),
         _card(
           'الملف الشخصي',
