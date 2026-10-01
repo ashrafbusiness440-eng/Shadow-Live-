@@ -2499,12 +2499,16 @@ export async function agencyControl(request, env) {
     const actor = await loadActor(db, decoded.sub);
 
     if (action === "listReviewQueue") {
-      if (!actor.permissions.canReviewApplications) throw new ApiError("forbidden", 403);
-      const [applications, manualBlocks, applicationSettings] = await Promise.all([
-        listAgencyReviewQueue(db, body.limit),
-        listAgencyManualReapplyBlocks(db, 25),
-        getAgencyApplicationSettings(db),
-      ]);
+      const canReview = actor.permissions.canReviewApplications;
+      const canManagePackages = actor.permissions.canManageAgencyPackages;
+      if (!canReview && !canManagePackages) throw new ApiError("forbidden", 403);
+      const [applications, manualBlocks, applicationSettings] = canReview
+        ? await Promise.all([
+            listAgencyReviewQueue(db, body.limit),
+            listAgencyManualReapplyBlocks(db, 25),
+            getAgencyApplicationSettings(db),
+          ])
+        : [[], [], { requiredHostCount: 5 }];
       return json(request, env, {
         ok: true,
         applications,
@@ -2512,7 +2516,7 @@ export async function agencyControl(request, env) {
         applicationSettings,
         limit: Math.min(50, boundedAgencyPageSize(body.limit, 50)),
         permissions: {
-          canReviewApplications: actor.permissions.canReviewApplications,
+          canReviewApplications: canReview,
           canDirectCreate: actor.permissions.canManageAgencies,
           canManageExisting: actor.permissions.canManageAgencies,
           canTransferOwnership: actor.permissions.isOwner,
@@ -2521,6 +2525,7 @@ export async function agencyControl(request, env) {
           canSuspendAgencies: actor.permissions.canSuspendAgencies,
           canCloseAgencies: actor.permissions.canCloseAgencies,
           canSetApplicationHostCount: actor.permissions.isOwner,
+          canManageAgencyPackages: canManagePackages,
         },
       });
     }
