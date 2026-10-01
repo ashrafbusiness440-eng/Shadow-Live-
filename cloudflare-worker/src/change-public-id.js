@@ -63,7 +63,7 @@ function buildSearchTokens(values, maxSubstringLength = 8, maxTokens = 512) {
   return [...tokens];
 }
 
-async function execute(db, actorUid, body) {
+export async function executePublicIdChange(db, actorUid, body) {
   const currentId = normalizeId(body.currentId);
   const newId = normalizeId(body.newId);
   const reason = clean(body.reason);
@@ -106,7 +106,10 @@ async function execute(db, actorUid, body) {
         await db.rollback(transaction);
         throw new ApiError("old_id_retired", 409);
       }
-      if (newSnap.exists || roomCollision.exists) {
+      if (
+        (newSnap.exists && newSnap.data?.reserved !== true) ||
+        roomCollision.exists
+      ) {
         await db.rollback(transaction);
         throw new ApiError("id_taken", 409);
       }
@@ -153,19 +156,43 @@ async function execute(db, actorUid, body) {
           searchTokens,
           updatedAt: createdAt,
         }, ["publicId", "searchTokens", "updatedAt"]),
-        db.writeCreate(`public_ids/${newId}`, {
-          uid: targetUid,
-          createdAt,
-          source: "adminOverride",
-          createdBy: actorUid,
-        }),
-        db.writeUpdate(`public_ids/${currentId}`, {
-          reserved: true,
-          retiredFromUid: targetUid,
-          retiredAt: createdAt,
-          retiredBy: actorUid,
-          currentPublicId: newId,
-        }, ["reserved", "retiredFromUid", "retiredAt", "retiredBy", "currentPublicId"]),
+        newSnap.exists
+          ? db.writeUpdate(
+              `public_ids/${newId}`,
+              {
+                uid: targetUid,
+                reserved: false,
+                createdAt,
+                source: "adminOverride",
+                createdBy: actorUid,
+                retiredFromUid: null,
+                retiredAt: null,
+                retiredBy: null,
+                currentPublicId: null,
+              },
+              [
+                "uid",
+                "reserved",
+                "createdAt",
+                "source",
+                "createdBy",
+                "retiredFromUid",
+                "retiredAt",
+                "retiredBy",
+                "currentPublicId",
+              ],
+            )
+          : db.writeCreate(`public_ids/${newId}`, {
+              uid: targetUid,
+              reserved: false,
+              createdAt,
+              source: "adminOverride",
+              createdBy: actorUid,
+            }),
+        // The historical ID remains in publicIdHistory/Audit only.
+        // Its live registry mapping is removed atomically so the ID can be
+        // allocated again without leaving a ghost reservation.
+        db.writeDelete(`public_ids/${currentId}`),
         db.writeCreate(`admin_audit_logs/${randomId("admin")}`, {
           actorUid,
           action: "changePublicId",
@@ -228,7 +255,7 @@ export async function changePublicId(request, env) {
       throw new ApiError("invalid_request", 400);
     }
 
-    const result = await execute(firestoreClient(env), decoded.sub, body);
+    const result = await executePublicIdChange(firestoreClient(env), decoded.sub, body);
     return json(request, env, result, 200);
   } catch (error) {
     if (error instanceof ApiError) return json(request, env, { ok: false, code: error.code }, error.status);

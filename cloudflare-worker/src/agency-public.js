@@ -161,15 +161,21 @@ export async function searchPublicAgencies(db, body = {}) {
   if (mode === "id") {
     if (!validAgencyId(query)) throw new ApiError("invalid_agency_id", 400);
 
-    const directSnap = await db.get(`agencies/${query}`);
-    if (directSnap.exists) {
-      const directPublicId = clean(directSnap.data?.publicId || query);
+    const registrySnap = await db.get(`agency_ids/${query}`);
+    const resolvedAgencyId =
+      registrySnap.exists && registrySnap.data?.reserved !== true
+        ? clean(registrySnap.data?.agencyId)
+        : "";
+
+    if (validAgencyId(resolvedAgencyId)) {
+      const snap = await db.get(`agencies/${resolvedAgencyId}`);
       const active =
-        clean(directSnap.data?.status) === "active" &&
-        directPublicId === query;
+        snap.exists &&
+        clean(snap.data?.status) === "active" &&
+        clean(snap.data?.publicId || resolvedAgencyId) === query;
       return {
         ok: true,
-        results: active ? [publicAgencySummary(directSnap, 1)] : [],
+        results: active ? [publicAgencySummary(snap, 1)] : [],
         page: {
           limit: 1,
           hasMore: false,
@@ -179,31 +185,18 @@ export async function searchPublicAgencies(db, body = {}) {
       };
     }
 
-    const registrySnap = await db.get(`agency_ids/${query}`);
-    const resolvedAgencyId =
-      registrySnap.exists && registrySnap.data?.reserved !== true
-        ? clean(registrySnap.data?.agencyId)
-        : "";
-    if (!validAgencyId(resolvedAgencyId)) {
-      return {
-        ok: true,
-        results: [],
-        page: {
-          limit: 1,
-          hasMore: false,
-          nextCursor: null,
-          truncated: false,
-        },
-      };
-    }
-    const snap = await db.get(`agencies/${resolvedAgencyId}`);
+    // Legacy fallback is valid only while the immutable Agency document key
+    // is still the Agency's current public ID. A changed key must not shadow
+    // a public ID that can now be reused by another Agency.
+    const directSnap = await db.get(`agencies/${query}`);
+    const directPublicId = clean(directSnap.data?.publicId || query);
     const active =
-      snap.exists &&
-      clean(snap.data?.status) === "active" &&
-      clean(snap.data?.publicId || resolvedAgencyId) === query;
+      directSnap.exists &&
+      clean(directSnap.data?.status) === "active" &&
+      directPublicId === query;
     return {
       ok: true,
-      results: active ? [publicAgencySummary(snap, 1)] : [],
+      results: active ? [publicAgencySummary(directSnap, 1)] : [],
       page: {
         limit: 1,
         hasMore: false,

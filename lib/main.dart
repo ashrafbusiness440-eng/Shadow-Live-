@@ -2746,8 +2746,10 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             'غرفة صوتية')
         .toString();
     final publicId = (_roomArguments['publicId'] ?? '—').toString();
-    final category =
-        (_roomArguments['category'] ?? 'دردشة').toString();
+    final isAgencyRoom = _roomAgencyId.isNotEmpty;
+    final category = isAgencyRoom
+        ? 'وكالة'
+        : (_roomArguments['category'] ?? 'دردشة').toString();
     final description =
         (_roomArguments['description'] ?? '').toString().trim();
     final visibility =
@@ -2966,6 +2968,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   Future<void> _showRoomSettingsSheet() async {
     final roomId = (_roomArguments['roomId'] ?? '').toString().trim();
     if (roomId.isEmpty || !_voiceSession.isOwner) return;
+    final isAgencyRoom = _roomAgencyId.isNotEmpty;
 
     final nameController = TextEditingController(
       text: (_roomArguments['name'] ??
@@ -2986,7 +2989,9 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     Uint8List? pendingCoverBytes;
     var removeCover = false;
     final categoryController = TextEditingController(
-      text: (_roomArguments['category'] ?? 'دردشة').toString(),
+      text: isAgencyRoom
+          ? 'وكالة'
+          : (_roomArguments['category'] ?? 'دردشة').toString(),
     );
     final tagsController = TextEditingController(
       text: _roomArguments['tags'] is List
@@ -3188,11 +3193,16 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                     const SizedBox(height: 10),
                     TextField(
                       controller: categoryController,
+                      enabled: !isAgencyRoom,
                       maxLength: 30,
                       style: const TextStyle(color: Colors.white),
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'التصنيف',
-                        labelStyle: TextStyle(color: Colors.white60),
+                        labelStyle: const TextStyle(color: Colors.white60),
+                        helperText: isAgencyRoom
+                            ? 'تصنيف غرفة الوكالة ثابت: وكالة'
+                            : null,
+                        helperStyle: const TextStyle(color: Colors.white38),
                       ),
                     ),
                     TextField(
@@ -3376,9 +3386,11 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                     roomId: roomId,
                                     name: name,
                                     description: description,
-                                    category: category.isEmpty
-                                        ? 'دردشة'
-                                        : category,
+                                    category: isAgencyRoom
+                                        ? 'وكالة'
+                                        : (category.isEmpty
+                                            ? 'دردشة'
+                                            : category),
                                     tags: tags,
                                     visibility: visibility,
                                     chatEnabled: chatEnabled,
@@ -4037,9 +4049,80 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   void _openAgencyPage() {
     final agencyId = _roomAgencyId;
     if (agencyId.isEmpty) return;
+    final viewerAgencyId =
+        (_roomArguments['viewerAgencyId'] ?? '').toString().trim();
+    final viewerAgencyRole =
+        (_roomArguments['viewerAgencyRole'] ?? '').toString().trim();
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => PublicAgencyPage(agencyId: agencyId),
+      MaterialPageRoute<void>(
+        builder: (_) => PublicAgencyPage(
+          agencyId: agencyId,
+          viewerAgencyId: viewerAgencyId,
+          viewerAgencyRole: viewerAgencyRole,
+          joinEnabled: viewerAgencyId.isEmpty,
+          joinBlockedReason: viewerAgencyId.isEmpty || viewerAgencyId == agencyId
+              ? null
+              : 'أنت عضو في وكالة أخرى؛ يمكنك مشاهدة معلومات هذه الوكالة فقط.',
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAgencyLogoButton() {
+    if (_roomAgencyId.isEmpty) return const SizedBox.shrink();
+    final logo =
+        (_roomArguments['agencyLogoUrl'] ?? '').toString().trim();
+    final name = (_roomArguments['agencyName'] ?? 'الوكالة').toString().trim();
+    return Tooltip(
+      message: name.isEmpty ? 'صفحة الوكالة' : name,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          key: const Key('agency-room-logo-button'),
+          borderRadius: BorderRadius.circular(16),
+          onTap: _openAgencyPage,
+          child: Container(
+            width: 48,
+            height: 48,
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: const Color(0xFF25183F).withValues(alpha: .94),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0x66B99CFF)),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x33000000),
+                  blurRadius: 12,
+                  offset: Offset(0, 5),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: logo.isEmpty
+                  ? const ColoredBox(
+                      color: Color(0xFF31204F),
+                      child: Icon(
+                        Icons.apartment_rounded,
+                        color: Color(0xFFB99CFF),
+                        size: 25,
+                      ),
+                    )
+                  : Image.network(
+                      logo,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const ColoredBox(
+                        color: Color(0xFF31204F),
+                        child: Icon(
+                          Icons.apartment_rounded,
+                          color: Color(0xFFB99CFF),
+                          size: 25,
+                        ),
+                      ),
+                    ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -5054,17 +5137,6 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                       size: 20,
                                     ),
                                   ),
-                                  if (_roomAgencyId.isNotEmpty)
-                                    IconButton(
-                                      key: const Key('agency-room-house-button'),
-                                      visualDensity: VisualDensity.compact,
-                                      tooltip: 'صفحة الوكالة',
-                                      onPressed: _openAgencyPage,
-                                      icon: const Icon(
-                                        Icons.home_rounded,
-                                        size: 21,
-                                      ),
-                                    ),
                                   InkWell(
                                     onTap: _showRoomParticipantsSheet,
                                     borderRadius: BorderRadius.circular(999),
@@ -5193,7 +5265,16 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                 Positioned(
                                   left: 12,
                                   top: 22,
-                                  child: _buildRoomRocketButton(),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (_roomAgencyId.isNotEmpty) ...[
+                                        _buildAgencyLogoButton(),
+                                        const SizedBox(height: 8),
+                                      ],
+                                      _buildRoomRocketButton(),
+                                    ],
+                                  ),
                                 ),
                               ],
                             ),

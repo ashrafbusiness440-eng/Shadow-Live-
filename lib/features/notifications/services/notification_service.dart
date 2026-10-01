@@ -11,6 +11,14 @@ class AppNotification {
     required this.createdAt,
     required this.requestId,
     required this.agencyId,
+    required this.requestType,
+    required this.applicantUid,
+    required this.actionState,
+    required this.finalStatus,
+    required this.finalDecision,
+    required this.resolvedBy,
+    required this.resolvedByName,
+    required this.resolvedAt,
   });
 
   final String id;
@@ -21,12 +29,33 @@ class AppNotification {
   final DateTime? createdAt;
   final String? requestId;
   final String? agencyId;
+  final String? requestType;
+  final String? applicantUid;
+  final String? actionState;
+  final String? finalStatus;
+  final String? finalDecision;
+  final String? resolvedBy;
+  final String? resolvedByName;
+  final DateTime? resolvedAt;
+
+  bool get agencyReviewAction =>
+      (type == 'agency_join_request' || type == 'agency_leave_request') &&
+      (requestId?.isNotEmpty ?? false);
+
+  bool get agencyReviewResolved =>
+      actionState == 'resolved' ||
+      finalStatus == 'accepted' ||
+      finalStatus == 'rejected';
 
   factory AppNotification.fromMap(String id, Map<String, dynamic> data) {
     final rawCreatedAt = data['createdAt'];
     DateTime? createdAt;
     if (rawCreatedAt is Timestamp) createdAt = rawCreatedAt.toDate();
     if (rawCreatedAt is DateTime) createdAt = rawCreatedAt;
+    final rawResolvedAt = data['resolvedAt'];
+    DateTime? resolvedAt;
+    if (rawResolvedAt is Timestamp) resolvedAt = rawResolvedAt.toDate();
+    if (rawResolvedAt is DateTime) resolvedAt = rawResolvedAt;
     return AppNotification(
       id: id,
       title: (data['title'] ?? 'إشعار من النظام').toString().trim(),
@@ -36,6 +65,14 @@ class AppNotification {
       createdAt: createdAt,
       requestId: _nullable(data['requestId']),
       agencyId: _nullable(data['agencyId']),
+      requestType: _nullable(data['requestType']),
+      applicantUid: _nullable(data['applicantUid'] ?? data['memberUid']),
+      actionState: _nullable(data['actionState']),
+      finalStatus: _nullable(data['finalStatus']),
+      finalDecision: _nullable(data['finalDecision']),
+      resolvedBy: _nullable(data['resolvedBy']),
+      resolvedByName: _nullable(data['resolvedByName']),
+      resolvedAt: resolvedAt,
     );
   }
 }

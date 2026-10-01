@@ -300,6 +300,81 @@ async function joinReviewerNotificationUids(
   return [...recipients];
 }
 
+function reviewerNotificationPath(baseId, recipientUid, primaryUid) {
+  const safeRecipient = clean(recipientUid)
+    .replace(/[^A-Za-z0-9_-]/g, "_")
+    .slice(0, 80);
+  return `notifications/${baseId}${
+    clean(recipientUid) === clean(primaryUid) ? "" : "_" + safeRecipient
+  }`;
+}
+
+async function resolvedReviewerNotificationWrites(
+  db,
+  tx,
+  {
+    baseId,
+    reviewerUids,
+    primaryUid,
+    status,
+    decision,
+    actorUid,
+    actorName,
+    now,
+  },
+) {
+  const paths = [...new Set(
+    reviewerUids
+      .map(clean)
+      .filter(Boolean)
+      .map((uid) => reviewerNotificationPath(baseId, uid, primaryUid)),
+  )];
+  const snapshots = await Promise.all(
+    paths.map((path) => db.get(path, tx)),
+  );
+  return paths.flatMap((path, index) =>
+    snapshots[index]?.exists
+      ? [
+          db.writeUpdate(
+            path,
+            {
+              actionState: "resolved",
+              finalStatus: status,
+              finalDecision: decision,
+              resolvedBy: actorUid,
+              resolvedByName: clean(actorName) || clean(actorUid),
+              resolvedAt: now,
+            },
+            [
+              "actionState",
+              "finalStatus",
+              "finalDecision",
+              "resolvedBy",
+              "resolvedByName",
+              "resolvedAt",
+            ],
+          ),
+        ]
+      : [],
+  );
+}
+
+function resolvedRequestResult(request = {}) {
+  return {
+    ok: true,
+    code: "already_processed",
+    ...requestSummary(request),
+    actionable: false,
+    reviewerUid: clean(request.resolvedBy) || null,
+    decision:
+      clean(request.status) === "accepted"
+        ? "accept"
+        : clean(request.status) === "rejected"
+          ? "reject"
+          : null,
+  };
+}
+
 async function createRequest({
   db,
   actorUid,
@@ -419,6 +494,9 @@ async function createRequest({
           read: false,
           requestId,
           agencyId,
+          requestType: type,
+          applicantUid: uid,
+          actionState: "pending",
           createdAt: now,
         });
       });
@@ -678,6 +756,36 @@ export async function requestAgencyLeave(
       if (!ownerUid) {
         throw new ApiError("agency_owner_missing", 409);
       }
+      const reviewerUids = await joinReviewerNotificationUids(
+        db,
+        tx,
+        agencyId,
+        agencySnap.data || {},
+      );
+      const leaveNotificationBase = `agency_leave_request_${requestId}`;
+      const leaveNotificationWrites = reviewerUids.map((reviewerUid) =>
+        db.writeCreate(
+          reviewerNotificationPath(
+            leaveNotificationBase,
+            reviewerUid,
+            ownerUid,
+          ),
+          {
+            userId: reviewerUid,
+            type: "agency_leave_request",
+            category: "system",
+            title: "طلب مغادرة وكالة",
+            body: "يوجد عضو بانتظار مراجعة طلب مغادرة الوكالة.",
+            read: false,
+            requestId,
+            agencyId,
+            requestType: "leave",
+            applicantUid: actorUid,
+            actionState: "pending",
+            createdAt: now,
+          },
+        ),
+      );
 
       const writes = [
         db.writeCreate(requestPath, fullRequest),
@@ -715,21 +823,7 @@ export async function requestAgencyLeave(
             createdAt: now,
           },
         ),
-        db.writeCreate(
-          `notifications/agency_leave_request_${requestId}`,
-          {
-            userId: ownerUid,
-            type: "agency_leave_request",
-            category: "system",
-            title: "طلب مغادرة وكالة",
-            body: "يوجد مضيف بانتظار مراجعة طلب مغادرة الوكالة.",
-            read: false,
-            requestId,
-            agencyId,
-            memberUid: actorUid,
-            createdAt: now,
-          },
-        ),
+        ...leaveNotificationWrites,
       ];
 
       await db.commit(tx, writes);
@@ -860,17 +954,22 @@ export async function respondAgencyLeaveRequest(
         throw new ApiError("membership_request_not_found", 404);
       }
       const request = requestSnap.data || {};
-      if (
-        clean(request.status) !== "pending" ||
-        clean(request.type) !== "leave"
-      ) {
-        throw new ApiError("agency_leave_request_not_pending", 409);
-      }
-
       const agencyId = clean(request.agencyId);
       const uid = clean(request.uid);
-      if (!/^\d{3,8}$/.test(agencyId) || !uid) {
+      if (
+        clean(request.type) !== "leave" ||
+        !/^\d{3,8}$/.test(agencyId) ||
+        !uid
+      ) {
         throw new ApiError("agency_leave_request_invalid", 409);
+      }
+      if (actorUid === uid) {
+        throw new ApiError("cannot_review_own_request", 403);
+      }
+      if (clean(request.status) !== "pending") {
+        await loadAgencyActor(db, actorUid, agencyId, "review", tx);
+        await db.rollback(tx);
+        return resolvedRequestResult(request);
       }
 
       const [
@@ -903,15 +1002,13 @@ export async function respondAgencyLeaveRequest(
         actorMembershipSnap.exists ? actorMembershipSnap.data || {} : {};
       const actorUser = actorUserSnap.exists ? actorUserSnap.data || {} : {};
       if (
-        clean(agency.status) !== "active" ||
-        clean(agency.ownerUid) !== actorUid ||
-        clean(actorMembership.agencyId) !== agencyId ||
-        clean(actorMembership.uid) !== actorUid ||
-        clean(actorMembership.status) !== "active" ||
-        clean(actorMembership.role) !== "owner" ||
-        clean(actorUser.agencyId) !== agencyId
+        !memberCanReview({
+          actorUser,
+          actorMembership,
+          agency,
+        })
       ) {
-        throw new ApiError("agency_owner_required", 403);
+        throw new ApiError("forbidden", 403);
       }
 
       if (!membershipSnap.exists || !agencyMembershipSnap.exists || !userSnap.exists) {
@@ -950,6 +1047,28 @@ export async function respondAgencyLeaveRequest(
       }
 
       const status = decision === "accept" ? "accepted" : "rejected";
+      const reviewerUids = await joinReviewerNotificationUids(
+        db,
+        tx,
+        agencyId,
+        agency,
+      );
+      const notificationUpdates = await resolvedReviewerNotificationWrites(
+        db,
+        tx,
+        {
+          baseId: "agency_leave_request_" + requestId,
+          reviewerUids,
+          primaryUid: clean(agency.ownerUid),
+          status,
+          decision,
+          actorUid,
+          actorName:
+            clean(actorUser.displayName || actorUser.username || actorUser.name) ||
+            actorUid,
+          now,
+        },
+      );
       const result = {
         requestId,
         agencyId,
@@ -994,6 +1113,10 @@ export async function respondAgencyLeaveRequest(
           "admin_audit_logs/agency_leave_response_" + requestId + "_" + key,
           {
             actorUid,
+            reviewerUid: actorUid,
+            decision,
+            decidedAt: now,
+            requestId,
             action:
               decision === "accept"
                 ? "acceptAgencyLeaveRequest"
@@ -1014,6 +1137,7 @@ export async function respondAgencyLeaveRequest(
             createdAt: now,
           },
         ),
+        ...notificationUpdates,
         db.writeCreate(
           "notifications/agency_leave_response_" + requestId + "_" + key,
           {
@@ -1175,20 +1299,26 @@ export async function respondAgencyMembershipRequest(
       }
       if (!requestSnap.exists) throw new ApiError("membership_request_not_found", 404);
       const request = requestSnap.data || {};
-      if (clean(request.status) !== "pending") {
-        throw new ApiError("membership_request_not_pending", 409);
-      }
-
       const agencyId = clean(request.agencyId);
       const uid = clean(request.uid);
       const type = clean(request.type);
       if (!agencyId || !uid || !["join", "invite"].includes(type)) {
         throw new ApiError("membership_request_invalid", 409);
       }
+      if (clean(request.status) !== "pending") {
+        if (type === "invite") {
+          if (actorUid !== uid) throw new ApiError("forbidden", 403);
+        } else {
+          await loadAgencyActor(db, actorUid, agencyId, "review", tx);
+        }
+        await db.rollback(tx);
+        return resolvedRequestResult(request);
+      }
 
       const pairPath = requestKeyPath(agencyId, uid);
       const queuePath = pendingPath(agencyId, uid);
       let notificationUserId;
+      let reviewerActorUser = null;
       if (type === "invite") {
         if (actorUid !== uid) throw new ApiError("forbidden", 403);
         notificationUserId = clean(request.actorUid);
@@ -1201,6 +1331,7 @@ export async function respondAgencyMembershipRequest(
           tx,
         );
         notificationUserId = uid;
+        reviewerActorUser = actor.actorUser || {};
         if (!actor.agency) throw new ApiError("forbidden", 403);
       }
 
@@ -1271,7 +1402,44 @@ export async function respondAgencyMembershipRequest(
         });
       }
 
+      const reviewerUser =
+        type === "invite" ? (userSnap.data || {}) : (reviewerActorUser || {});
+      const reviewerName =
+        clean(
+          reviewerUser.displayName ||
+          reviewerUser.username ||
+          reviewerUser.name,
+        ) || actorUid;
       const status = decision === "reject" ? "rejected" : accepted ? "accepted" : "pending";
+      let notificationUpdates = [];
+      if (status !== "pending") {
+        const reviewerUids =
+          type === "join"
+            ? await joinReviewerNotificationUids(
+                db,
+                tx,
+                agencyId,
+                agencySnap.data || {},
+              )
+            : [uid];
+        notificationUpdates = await resolvedReviewerNotificationWrites(
+          db,
+          tx,
+          {
+            baseId: "agency_membership_" + type + "_" + requestId,
+            reviewerUids,
+            primaryUid:
+              type === "join"
+                ? clean(agencySnap.data?.ownerUid)
+                : uid,
+            status,
+            decision,
+            actorUid,
+            actorName: reviewerName,
+            now,
+          },
+        );
+      }
       const membership = accepted
         ? createAgencyMembershipDocument({
             agencyId,
@@ -1315,6 +1483,7 @@ export async function respondAgencyMembershipRequest(
           "resolvedBy",
           "reason",
         ]),
+        ...notificationUpdates,
         db.writeCreate(opPath, {
           actorUid,
           action: "respondAgencyMembershipRequest",
@@ -1326,6 +1495,10 @@ export async function respondAgencyMembershipRequest(
         }),
         db.writeCreate(`admin_audit_logs/agency_membership_response_${requestId}_${key}`, {
           actorUid,
+          reviewerUid: actorUid,
+          decision,
+          decidedAt: now,
+          requestId,
           action: decision === "accept" ? "acceptAgencyMembershipRequest" : "rejectAgencyMembershipRequest",
           targetType: "agency_membership_request",
           targetId: requestId,
@@ -2837,19 +3010,21 @@ async function resolveAgencyMembershipLookupId(db, input) {
     throw new ApiError("invalid_agency_id", 400);
   }
 
-  const directSnap = await db.get("agencies/" + lookupId);
-  if (directSnap.exists) return lookupId;
-
   const registrySnap = await db.get("agency_ids/" + lookupId);
   const resolved = clean(registrySnap.data?.agencyId);
   if (
-    !registrySnap.exists ||
-    registrySnap.data?.reserved === true ||
-    !/^\d{3,8}$/.test(resolved)
+    registrySnap.exists &&
+    registrySnap.data?.reserved !== true &&
+    /^\d{3,8}$/.test(resolved)
   ) {
-    throw new ApiError("agency_not_found", 404);
+    return resolved;
   }
-  return resolved;
+
+  const directSnap = await db.get("agencies/" + lookupId);
+  const directPublicId = clean(directSnap.data?.publicId || lookupId);
+  if (directSnap.exists && directPublicId === lookupId) return lookupId;
+
+  throw new ApiError("agency_not_found", 404);
 }
 
 export async function listAgencyMembers(
@@ -3089,6 +3264,56 @@ export async function listAgencyMembershipPending(
   };
 }
 
+export async function getAgencyMembershipReviewRequest(
+  db,
+  actorUid,
+  body = {},
+) {
+  const requestId = clean(body.requestId);
+  if (!requestId || requestId.includes("/")) {
+    throw new ApiError("invalid_request_id", 400);
+  }
+  const requestSnap = await db.get(
+    `agency_membership_requests/${requestId}`,
+  );
+  if (!requestSnap.exists) {
+    throw new ApiError("membership_request_not_found", 404);
+  }
+  const request = requestSnap.data || {};
+  const agencyId = clean(request.agencyId);
+  const uid = clean(request.uid);
+  const type = clean(request.type);
+  if (
+    !/^\d{3,8}$/.test(agencyId) ||
+    !uid ||
+    !["join", "leave"].includes(type)
+  ) {
+    throw new ApiError("membership_request_invalid", 409);
+  }
+
+  await loadAgencyActor(db, actorUid, agencyId, "review");
+  if (actorUid === uid) {
+    throw new ApiError("cannot_review_own_request", 403);
+  }
+
+  const [userSnap, lockSnap] = await Promise.all([
+    db.get(`users/${uid}`),
+    db.get(acceptanceLockPath(uid)),
+  ]);
+  const detail = pendingRequestView({
+    agencyId,
+    row: { data: request },
+    userSnap,
+    lockSnap,
+  });
+  return {
+    ok: true,
+    request: detail,
+    actionable: clean(request.status) === "pending",
+    permissions: { canReview: true },
+  };
+}
+
 export async function getMyAgencyMembershipRequest(
   db,
   actorUid,
@@ -3268,6 +3493,12 @@ export async function agencyMembership(request, env) {
       result = await listAgencyMembers(db, decoded.sub, body);
     } else if (action === "listAgencyPending") {
       result = await listAgencyMembershipPending(db, decoded.sub, body);
+    } else if (action === "reviewRequest") {
+      result = await getAgencyMembershipReviewRequest(
+        db,
+        decoded.sub,
+        body,
+      );
     } else if (action === "getMyRequest") {
       result = await getMyAgencyMembershipRequest(db, decoded.sub, body);
     } else if (action === "eligibility") {

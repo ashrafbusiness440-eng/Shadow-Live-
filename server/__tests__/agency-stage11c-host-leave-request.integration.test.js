@@ -5,8 +5,10 @@ import { deleteApp, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 
 import {
+  getAgencyMembershipReviewRequest,
   getMyAgencyLeaveRequestStatus,
   requestAgencyLeave,
+  respondAgencyLeaveRequest,
 } from "../../cloudflare-worker/src/agency-membership.js";
 import { cloudflareFirestoreAdapter } from "./helpers/cloudflare-firestore-adapter.js";
 
@@ -301,4 +303,110 @@ test("11-C UI/route guards keep My Agency on explicit navigation only", () => {
   const leaveSource = membershipSource.slice(leaveStart, leaveEnd);
   assert.equal(leaveSource.includes(".runQuery("), false);
   assert.equal(leaveSource.includes(".list("), false);
+});
+
+
+test("11-C authorized manager receives and can atomically review leave requests", async () => {
+  const agencyId = "781105";
+  const ownerUid = "stage11c_multi_owner";
+  const hostUid = "stage11c_multi_host";
+  const managerUid = "stage11c_multi_manager";
+  await seedAgencyHost({ agencyId, ownerUid, hostUid });
+
+  const managerMembership = {
+    agencyId,
+    uid: managerUid,
+    role: "manager",
+    status: "active",
+    capabilities: ["reviewMembershipRequest"],
+    joinedAt: new Date("2026-09-29T16:00:00.000Z"),
+    updatedAt: new Date("2026-09-29T16:00:00.000Z"),
+  };
+  await Promise.all([
+    adminDb.collection("users").doc(managerUid).set({
+      accountStatus: "active",
+      publicId: "981003",
+      displayName: "Leave Manager",
+      agencyId,
+      agencyRole: "manager",
+    }),
+    adminDb.collection("agency_user_memberships").doc(managerUid).set(
+      managerMembership,
+    ),
+    adminDb.collection("agency_memberships")
+      .doc(agencyId + "__" + managerUid).set(managerMembership),
+    adminDb.collection("agency_manager_slots").doc(agencyId).set({
+      agencyId,
+      seniorManagerUid: null,
+      managerUids: [managerUid],
+    }),
+    adminDb.collection("agencies").doc(agencyId).set({
+      memberCount: 3,
+      managerCount: 1,
+    }, { merge: true }),
+  ]);
+
+  const leave = await requestAgencyLeave(db, hostUid, {
+    agencyId,
+    idempotencyKey: "stage11c_multi_leave_0001",
+  }, { now: new Date("2026-10-01T11:00:00.000Z") });
+
+  const base = "agency_leave_request_" + leave.requestId;
+  const [ownerNotice, managerNotice] = await Promise.all([
+    adminDb.collection("notifications").doc(base).get(),
+    adminDb.collection("notifications").doc(base + "_" + managerUid).get(),
+  ]);
+  assert.equal(ownerNotice.data().userId, ownerUid);
+  assert.equal(managerNotice.data().userId, managerUid);
+  assert.equal(managerNotice.data().requestType, "leave");
+  assert.equal(managerNotice.data().applicantUid, hostUid);
+
+  const detail = await getAgencyMembershipReviewRequest(
+    db,
+    managerUid,
+    { requestId: leave.requestId },
+  );
+  assert.equal(detail.actionable, true);
+  assert.equal(detail.request.type, "leave");
+  assert.equal(detail.request.uid, hostUid);
+
+  const first = await respondAgencyLeaveRequest(
+    db,
+    managerUid,
+    {
+      requestId: leave.requestId,
+      decision: "accept",
+      idempotencyKey: "stage11c_multi_manager_accept_0001",
+    },
+    { now: new Date("2026-10-01T11:01:00.000Z") },
+  );
+  assert.equal(first.code, "ok");
+  assert.equal(first.status, "accepted");
+
+  const second = await respondAgencyLeaveRequest(
+    db,
+    ownerUid,
+    {
+      requestId: leave.requestId,
+      decision: "reject",
+      reason: "late owner decision",
+      idempotencyKey: "stage11c_multi_owner_reject_0001",
+    },
+    { now: new Date("2026-10-01T11:01:01.000Z") },
+  );
+  assert.equal(second.code, "already_processed");
+  assert.equal(second.status, "accepted");
+
+  const [ownerFinal, managerFinal, membership] = await Promise.all([
+    adminDb.collection("notifications").doc(base).get(),
+    adminDb.collection("notifications").doc(base + "_" + managerUid).get(),
+    adminDb.collection("agency_user_memberships").doc(hostUid).get(),
+  ]);
+  assert.equal(ownerFinal.data().actionState, "resolved");
+  assert.equal(managerFinal.data().actionState, "resolved");
+  assert.equal(ownerFinal.data().finalDecision, "accept");
+  assert.equal(managerFinal.data().finalDecision, "accept");
+  assert.equal(ownerFinal.data().resolvedByName, "Leave Manager");
+  assert.equal(managerFinal.data().resolvedByName, "Leave Manager");
+  assert.equal(membership.data().status, "left");
 });

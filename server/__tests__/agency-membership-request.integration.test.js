@@ -5,6 +5,7 @@ import { getFirestore } from "firebase-admin/firestore";
 
 import {
   cancelAgencyMembershipRequest,
+  getAgencyMembershipReviewRequest,
   getMyAgencyJoinEligibility,
   inviteAgencyHost,
   listAgencyMembershipPending,
@@ -513,4 +514,102 @@ test("suspended agency blocks new join and invite requests", async () => {
     }),
     /agency_not_accepting_members/,
   );
+});
+
+
+test("authorized reviewer deep-link is bounded and concurrent decisions have one final state", async () => {
+  const agencyId = "649001";
+  const ownerUid = "stage04a_race_owner";
+  const managerUid = "stage04a_race_manager";
+  const applicantUid = "stage04a_race_applicant";
+  await seedAgency(agencyId, ownerUid, "649901", "Race Agency");
+  await adminDb.collection("users").doc(ownerUid).set({
+    displayName: "Race Owner",
+  }, { merge: true });
+  await Promise.all([
+    seedUser(managerUid, "649902", {
+      agencyId,
+      agencyRole: "manager",
+      displayName: "Race Manager",
+    }),
+    seedUser(applicantUid, "649101", {
+      displayName: "Race Applicant",
+      profileImageUrl: "https://example.invalid/race.webp",
+    }),
+    adminDb.collection("agency_user_memberships").doc(managerUid).set({
+      agencyId,
+      uid: managerUid,
+      role: "manager",
+      status: "active",
+      capabilities: ["reviewMembershipRequest"],
+    }),
+    adminDb.collection("agency_manager_slots").doc(agencyId).set({
+      agencyId,
+      seniorManagerUid: null,
+      managerUids: [managerUid],
+    }),
+  ]);
+
+  const join = await requestAgencyJoin(db, applicantUid, {
+    agencyId,
+    idempotencyKey: "stage04a_race_join_0001",
+  }, { now: new Date("2026-10-01T10:00:00.000Z") });
+
+  const detail = await getAgencyMembershipReviewRequest(
+    db,
+    managerUid,
+    { requestId: join.requestId },
+  );
+  assert.equal(detail.actionable, true);
+  assert.equal(detail.request.displayName, "Race Applicant");
+  assert.equal(detail.request.profileImageUrl, "https://example.invalid/race.webp");
+  assert.equal(detail.request.userPublicId, "649101");
+
+  const settled = await Promise.allSettled([
+    respondAgencyMembershipRequest(db, ownerUid, {
+      requestId: join.requestId,
+      decision: "accept",
+      idempotencyKey: "stage04a_race_owner_accept_0001",
+    }, { now: new Date("2026-10-01T10:01:00.000Z") }),
+    respondAgencyMembershipRequest(db, managerUid, {
+      requestId: join.requestId,
+      decision: "reject",
+      reason: "manager race",
+      idempotencyKey: "stage04a_race_manager_reject_0001",
+    }, { now: new Date("2026-10-01T10:01:00.000Z") }),
+  ]);
+
+  const fulfilled = settled
+    .filter((entry) => entry.status === "fulfilled")
+    .map((entry) => entry.value);
+  assert.equal(fulfilled.length, 2);
+  assert.ok(fulfilled.some((value) => value.code === "ok"));
+  assert.ok(fulfilled.some((value) => value.code === "already_processed"));
+
+  const request = await adminDb.collection("agency_membership_requests")
+    .doc(join.requestId).get();
+  assert.ok(["accepted", "rejected"].includes(request.data().status));
+  assert.ok(request.data().resolvedBy === ownerUid || request.data().resolvedBy === managerUid);
+
+  const base = "agency_membership_join_" + join.requestId;
+  const [ownerNotice, managerNotice] = await Promise.all([
+    adminDb.collection("notifications").doc(base).get(),
+    adminDb.collection("notifications").doc(base + "_" + managerUid).get(),
+  ]);
+  assert.equal(ownerNotice.data().actionState, "resolved");
+  assert.equal(managerNotice.data().actionState, "resolved");
+  assert.equal(ownerNotice.data().finalStatus, request.data().status);
+  assert.equal(managerNotice.data().finalStatus, request.data().status);
+  const expectedReviewerName =
+    request.data().resolvedBy === ownerUid ? "Race Owner" : "Race Manager";
+  assert.equal(ownerNotice.data().resolvedByName, expectedReviewerName);
+  assert.equal(managerNotice.data().resolvedByName, expectedReviewerName);
+
+  const resolvedDetail = await getAgencyMembershipReviewRequest(
+    db,
+    managerUid,
+    { requestId: join.requestId },
+  );
+  assert.equal(resolvedDetail.actionable, false);
+  assert.equal(resolvedDetail.request.status, request.data().status);
 });

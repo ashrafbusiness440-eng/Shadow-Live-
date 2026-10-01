@@ -250,7 +250,7 @@ test("Batch 3 Host performance is owner-only lazy bounded and excludes personal 
     [
       "system_config/gift_economy",
       {
-        hostBonusQualifiedDays: 9,
+        hostBonusQualifiedDays: 14,
         hostBonusMinutesPerQualifiedDay: 120,
       },
     ],
@@ -310,8 +310,8 @@ test("Batch 3 Host performance is owner-only lazy bounded and excludes personal 
   assert.equal(result.target.nextLevel.id, "t3");
   assert.equal(result.target.remainingCoins, 50000);
   assert.equal(result.activity.qualifiedDays, 7);
-  assert.equal(result.activity.requiredQualifiedDays, 9);
-  assert.equal(result.activity.requiredMicSecondsMonth, 64800);
+  assert.equal(result.activity.requiredQualifiedDays, 14);
+  assert.equal(result.activity.requiredMicSecondsMonth, 100800);
   assert.deepEqual(
     result.achievements.map((item) => item.targetId),
     ["t1", "t2"],

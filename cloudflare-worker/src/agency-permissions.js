@@ -9,6 +9,8 @@ export const PLATFORM_AGENCY_CAPABILITIES = Object.freeze([
   "manageAgencyPolicies",
   "manageAgencySettlements",
   "suspendAgencies",
+  "manageAgencyPackages",
+  "grantAgencyPackage",
 ]);
 
 export const AGENCY_MEMBER_ACTIONS = Object.freeze([
@@ -57,6 +59,8 @@ export function platformAgencyPermissions(user = {}) {
     canManagePolicies: isOwner || has("manageAgencyPolicies"),
     canManageAgencySettlements: isOwner || has("manageAgencySettlements"),
     canSuspendAgencies: broad || has("suspendAgencies"),
+    canManageAgencyPackages: isOwner || has("manageAgencyPackages"),
+    canGrantAgencyPackages: isOwner || has("grantAgencyPackage"),
     // Permanent agency closure is intentionally non-delegable.
     canCloseAgencies: isOwner,
   };

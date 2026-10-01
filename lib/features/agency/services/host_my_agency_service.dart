@@ -67,6 +67,9 @@ class HostAgencyLevel {
     required this.thresholdCoins,
     required this.salaryDiamonds,
     required this.openEnded,
+    required this.hostShareBps,
+    required this.grossSupportCoins,
+    required this.activityBonusBps,
   });
 
   final String id;
@@ -75,6 +78,9 @@ class HostAgencyLevel {
   final int thresholdCoins;
   final int salaryDiamonds;
   final bool openEnded;
+  final int hostShareBps;
+  final int grossSupportCoins;
+  final int activityBonusBps;
 
   factory HostAgencyLevel.fromJson(Map<String, dynamic> json) {
     return HostAgencyLevel(
@@ -84,6 +90,9 @@ class HostAgencyLevel {
       thresholdCoins: _nonNegativeInt(json['thresholdCoins']),
       salaryDiamonds: _nonNegativeInt(json['salaryDiamonds']),
       openEnded: json['openEnded'] == true,
+      hostShareBps: _nonNegativeInt(json['hostShareBps']),
+      grossSupportCoins: _nonNegativeInt(json['grossSupportCoins']),
+      activityBonusBps: _nonNegativeInt(json['activityBonusBps']),
     );
   }
 }
@@ -137,6 +146,8 @@ class HostAgencyActivity {
     required this.micSecondsMonth,
     required this.requiredQualifiedDays,
     required this.requiredMinutesPerDay,
+    required this.activityBonusBps,
+    required this.requiredMicSecondsMonth,
   });
 
   final String month;
@@ -144,6 +155,8 @@ class HostAgencyActivity {
   final int micSecondsMonth;
   final int requiredQualifiedDays;
   final int requiredMinutesPerDay;
+  final int activityBonusBps;
+  final int requiredMicSecondsMonth;
 
   factory HostAgencyActivity.fromJson(Map<String, dynamic> json) {
     return HostAgencyActivity(
@@ -152,6 +165,8 @@ class HostAgencyActivity {
       micSecondsMonth: _nonNegativeInt(json['micSecondsMonth']),
       requiredQualifiedDays: _nonNegativeInt(json['requiredQualifiedDays']),
       requiredMinutesPerDay: _nonNegativeInt(json['requiredMinutesPerDay']),
+      activityBonusBps: _nonNegativeInt(json['activityBonusBps']),
+      requiredMicSecondsMonth: _nonNegativeInt(json['requiredMicSecondsMonth']),
     );
   }
 }

@@ -352,20 +352,8 @@ export async function loadAgencyOwnerHostPerformance(
       )
     : 0;
   const economy = economySnap.exists ? economySnap.data || {} : {};
-  const requiredQualifiedDays = boundedInteger(
-    economy.hostBonusQualifiedDays,
-    9,
-    1,
-    31,
-    "agency_activity_state_corrupt",
-  );
-  const requiredMinutesPerDay = boundedInteger(
-    economy.hostBonusMinutesPerQualifiedDay,
-    120,
-    1,
-    1440,
-    "agency_activity_state_corrupt",
-  );
+  const requiredQualifiedDays = 14;
+  const requiredMinutesPerDay = 120;
 
   const historyRows = await db.runQuery("gift_transactions", {
     filters: [

@@ -40,6 +40,34 @@ test("11-A Host My Agency returns only the signed-in Host core data", async () =
             salaryDiamonds: 5,
           },
           {
+            id: "starter_f",
+            tierId: "starter",
+            rank: "F",
+            thresholdCoins: 100000,
+            salaryDiamonds: 10,
+          },
+          {
+            id: "starter_e",
+            tierId: "starter",
+            rank: "E",
+            thresholdCoins: 200000,
+            salaryDiamonds: 20,
+          },
+          {
+            id: "starter_d",
+            tierId: "starter",
+            rank: "D",
+            thresholdCoins: 300000,
+            salaryDiamonds: 30,
+          },
+          {
+            id: "starter_c",
+            tierId: "starter",
+            rank: "C",
+            thresholdCoins: 450000,
+            salaryDiamonds: 45,
+          },
+          {
             id: "starter_b",
             tierId: "starter",
             rank: "B",
@@ -82,7 +110,7 @@ test("11-A Host My Agency returns only the signed-in Host core data", async () =
       diamonds: 999999,
     }),
     adminDb.collection("system_config").doc("gift_economy").set({
-      hostBonusQualifiedDays: 9,
+      hostBonusQualifiedDays: 14,
       hostBonusMinutesPerQualifiedDay: 120,
     }),
   ]);
@@ -109,13 +137,19 @@ test("11-A Host My Agency returns only the signed-in Host core data", async () =
   assert.equal(result.target.targetCoins, 850000);
   assert.deepEqual(
     result.target.levels.map((level) => level.id),
-    ["starter_g", "starter_b", "starter_a"],
+    ["starter_g", "starter_f", "starter_e", "starter_d", "starter_c", "starter_b", "starter_a"],
   );
-  assert.equal(result.target.levels[2].salaryDiamonds, 85);
+  const topLevel = result.target.levels.find((level) => level.id === "starter_a");
+  assert.equal(topLevel.salaryDiamonds, 85);
+  assert.equal(topLevel.hostShareBps, 5000);
+  assert.equal(topLevel.grossSupportCoins, 1700000);
+  assert.equal(topLevel.activityBonusBps, 200);
   assert.equal(result.activity.qualifiedDays, 7);
   assert.equal(result.activity.micSecondsMonth, 54000);
-  assert.equal(result.activity.requiredQualifiedDays, 9);
+  assert.equal(result.activity.requiredQualifiedDays, 14);
   assert.equal(result.activity.requiredMinutesPerDay, 120);
+  assert.equal(result.activity.activityBonusBps, 200);
+  assert.equal(result.activity.requiredMicSecondsMonth, 100800);
 
   const serialized = JSON.stringify(result);
   assert.equal(serialized.includes("agencyProfitDiamonds"), false);
@@ -270,7 +304,7 @@ test("11-A pressure contract is five direct reads with zero query/write", async 
         return {
           exists: true,
           data: {
-            hostBonusQualifiedDays: 9,
+            hostBonusQualifiedDays: 14,
             hostBonusMinutesPerQualifiedDay: 120,
           },
         };

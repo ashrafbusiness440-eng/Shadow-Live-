@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'control_api_endpoints.dart';
 import 'control_firebase.dart';
 import 'agency_policy_control_page.dart';
+import 'agency_package_builder_page.dart';
 import '../shared/widgets/country_selector.dart';
 import '../features/profile/screens/public_profile_screen.dart';
 
@@ -27,6 +28,7 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
   bool canSuspendAgencies = false;
   bool canCloseAgencies = false;
   bool canSetApplicationHostCount = false;
+  bool canManageAgencyPackages = false;
   int applicationHostCount = 5;
   final TextEditingController agencyLookup = TextEditingController();
   Map<String, dynamic>? managedAgency;
@@ -115,6 +117,8 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
         canCloseAgencies = permissions['canCloseAgencies'] == true;
         canSetApplicationHostCount =
             permissions['canSetApplicationHostCount'] == true;
+        canManageAgencyPackages =
+            permissions['canManageAgencyPackages'] == true;
         applicationHostCount = parsedHostCount.clamp(0, 30).toInt();
         loading = false;
       });
@@ -1084,10 +1088,29 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
-                  const Card(
-                    child: ListTile(
-                      leading: Icon(Icons.security),
-                      title: Text('طلبات إنشاء الوكالات'),
+                  if (canManageAgencyPackages) ...[
+                    Card(
+                      child: ListTile(
+                        leading: const Icon(Icons.inventory_2_outlined),
+                        title: const Text('Agency Package Builder'),
+                        subtitle: const Text(
+                          'إنشاء، تعديل، نسخ، معاينة وأرشفة حتى 100 باكيج من أصول Shadow Live الحالية.',
+                        ),
+                        trailing: const Icon(Icons.chevron_left_rounded),
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const AgencyPackageBuilderPage(),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  if (canManageExisting || canDirectCreate || applications.isNotEmpty)
+                    const Card(
+                      child: ListTile(
+                        leading: Icon(Icons.security),
+                        title: Text('طلبات إنشاء الوكالات'),
                       subtitle: Text(
                         'القائمة محدودة Server-side. عند الموافقة تُنشأ الوكالة ويُضاف كل Host محجوز تلقائيًا كعضو Host.',
                       ),

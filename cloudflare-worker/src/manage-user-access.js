@@ -38,6 +38,8 @@ const ALLOWED_CAPABILITIES = new Set([
   "manageAgencyPolicies",
   "manageAgencySettlements",
   "suspendAgencies",
+  "manageAgencyPackages",
+  "grantAgencyPackage",
   "manageVip",
   "manageSpecialIds",
   "manageIds",

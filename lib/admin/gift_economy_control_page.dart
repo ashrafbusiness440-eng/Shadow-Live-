@@ -65,7 +65,7 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
   List<_TierDraft> tiers = [];
   final hostBonus = TextEditingController(text: '2');
   final agencyBonus = TextEditingController(text: '2');
-  final hostBonusDays = TextEditingController(text: '9');
+  final hostBonusDays = TextEditingController(text: '14');
   final hostMinutesPerDay = TextEditingController(text: '120');
   final agencyBonusActiveHosts = TextEditingController(text: '10');
 
@@ -156,11 +156,8 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
       agencyBonus.text =
           (((config['agencyPerformanceBonusBps'] as num?)?.toDouble() ?? 200) / 100)
               .toStringAsFixed(1);
-      hostBonusDays.text =
-          ((config['hostBonusQualifiedDays'] as num?)?.toInt() ?? 9).toString();
-      hostMinutesPerDay.text =
-          ((config['hostBonusMinutesPerQualifiedDay'] as num?)?.toInt() ?? 120)
-              .toString();
+      hostBonusDays.text = '14';
+      hostMinutesPerDay.text = '120';
       agencyBonusActiveHosts.text =
           ((config['agencyBonusActiveHosts'] as num?)?.toInt() ?? 10).toString();
       setState(() {
@@ -188,10 +185,8 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
         'tiers': tiers.map((e) => e.toPayload()).toList(),
         'hostPerformanceBonusBps': _bps(hostBonus),
         'agencyPerformanceBonusBps': _bps(agencyBonus),
-        'hostBonusQualifiedDays':
-            int.tryParse(hostBonusDays.text.trim()) ?? -1,
-        'hostBonusMinutesPerQualifiedDay':
-            int.tryParse(hostMinutesPerDay.text.trim()) ?? -1,
+        'hostBonusQualifiedDays': 14,
+        'hostBonusMinutesPerQualifiedDay': 120,
         'agencyBonusActiveHosts':
             int.tryParse(agencyBonusActiveHosts.text.trim()) ?? -1,
       });
@@ -215,12 +210,14 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
     TextEditingController controller, {
     Key? fieldKey,
     String? suffix,
+    bool enabled = true,
   }) {
     return SizedBox(
       width: 150,
       child: TextField(
         key: fieldKey,
         controller: controller,
+        enabled: enabled,
         keyboardType: const TextInputType.numberWithOptions(decimal: true),
         decoration: InputDecoration(
           labelText: label,
@@ -377,6 +374,7 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
                               fieldKey: const ValueKey(
                                 'gift-economy-host-bonus-days',
                               ),
+                              enabled: false,
                             ),
                             _numberField(
                               'دقائق المايك/اليوم',
@@ -384,6 +382,7 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
                               fieldKey: const ValueKey(
                                 'gift-economy-host-minutes-day',
                               ),
+                              enabled: false,
                             ),
                             _numberField(
                               'مضيفون نشطون للوكالة',

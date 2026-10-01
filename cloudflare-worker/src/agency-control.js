@@ -319,7 +319,8 @@ function agencyReviewPerson({
     uid: clean(uid),
     publicId: clean(user.publicId || fallbackPublicId) || null,
     displayName: clean(user.displayName || user.username || "مستخدم Shadow Live"),
-    profileImageUrl: clean(user.profileImageUrl || user.photoUrl) || null,
+    profileImageUrl:
+      clean(user.profileImageUrl || user.photoUrl || user.avatarUrl) || null,
     accountStatus,
     availability,
     currentAgencyId: currentAgencyId || null,
@@ -1403,19 +1404,26 @@ async function resolveAgencyControlId(db, agencyIdInput) {
   const lookupId = clean(agencyIdInput);
   if (!validAgencyId(lookupId)) throw new ApiError("invalid_agency_id", 400);
 
-  const directSnap = await db.get(`agencies/${lookupId}`);
-  if (directSnap.exists) return lookupId;
-
+  // Public-ID registry is authoritative. This lets a released public ID be
+  // reused even when its digits happen to equal another Agency's immutable
+  // internal document key.
   const registrySnap = await db.get(`agency_ids/${lookupId}`);
   const resolvedAgencyId = clean(registrySnap.data?.agencyId);
   if (
-    !registrySnap.exists ||
-    registrySnap.data?.reserved === true ||
-    !validAgencyId(resolvedAgencyId)
+    registrySnap.exists &&
+    registrySnap.data?.reserved !== true &&
+    validAgencyId(resolvedAgencyId)
   ) {
-    throw new ApiError("agency_not_found", 404);
+    return resolvedAgencyId;
   }
-  return resolvedAgencyId;
+
+  // Legacy fallback: only treat the immutable document key as a public ID
+  // while that Agency still advertises the same ID.
+  const directSnap = await db.get(`agencies/${lookupId}`);
+  const directPublicId = clean(directSnap.data?.publicId || lookupId);
+  if (directSnap.exists && directPublicId === lookupId) return lookupId;
+
+  throw new ApiError("agency_not_found", 404);
 }
 
 export async function getAgencyControlDetails(db, agencyIdInput) {
@@ -1496,9 +1504,17 @@ export async function updateAgencyIdentity(
           ]);
         nextRegistrySnap = nextRegistry;
         currentRegistrySnap = currentRegistry;
+        const directPublicId = nextAgencySnap.exists
+          ? clean(nextAgencySnap.data?.publicId || nextPublicId)
+          : "";
         if (
-          nextRegistrySnap.exists ||
-          (nextAgencySnap.exists && nextPublicId !== agencyId)
+          (nextRegistrySnap.exists &&
+            nextRegistrySnap.data?.reserved !== true) ||
+          (
+            nextAgencySnap.exists &&
+            directPublicId === nextPublicId &&
+            nextPublicId !== agencyId
+          )
         ) {
           throw new ApiError("agency_id_taken", 409);
         }
@@ -1544,45 +1560,43 @@ export async function updateAgencyIdentity(
       ];
 
       if (publicIdChanged) {
-        writes.push(
-          db.writeCreate(`agency_ids/${nextPublicId}`, {
-            agencyId,
-            ownerUid,
-            publicId: nextPublicId,
-            source: "control_change",
-            allocatedAt: now,
-            reserved: false,
-          }),
-        );
-        const retiredRegistry = {
-          agencyId: null,
-          publicId: currentPublicId,
-          reserved: true,
-          retiredAgencyId: agencyId,
-          currentPublicId: nextPublicId,
-          retiredAt: now,
-          retiredBy: actorUid,
+        const activeRegistry = {
+          agencyId,
+          ownerUid,
+          publicId: nextPublicId,
+          source: "control_change",
+          allocatedAt: now,
+          reserved: false,
+          retiredAgencyId: null,
+          currentPublicId: null,
+          retiredAt: null,
+          retiredBy: null,
         };
+        writes.push(
+          nextRegistrySnap?.exists
+            ? db.writeUpdate(
+                `agency_ids/${nextPublicId}`,
+                activeRegistry,
+                [
+                  "agencyId",
+                  "ownerUid",
+                  "publicId",
+                  "source",
+                  "allocatedAt",
+                  "reserved",
+                  "retiredAgencyId",
+                  "currentPublicId",
+                  "retiredAt",
+                  "retiredBy",
+                ],
+              )
+            : db.writeCreate(`agency_ids/${nextPublicId}`, activeRegistry),
+        );
+        // Keep the immutable Agency key and Audit history, but release the
+        // previous *public* ID immediately. No retired registry document is
+        // kept because that would reserve the digits and block reuse.
         if (currentRegistrySnap?.exists) {
-          writes.push(
-            db.writeUpdate(
-              `agency_ids/${currentPublicId}`,
-              retiredRegistry,
-              [
-                "agencyId",
-                "publicId",
-                "reserved",
-                "retiredAgencyId",
-                "currentPublicId",
-                "retiredAt",
-                "retiredBy",
-              ],
-            ),
-          );
-        } else {
-          writes.push(
-            db.writeCreate(`agency_ids/${currentPublicId}`, retiredRegistry),
-          );
+          writes.push(db.writeDelete(`agency_ids/${currentPublicId}`));
         }
       }
 
@@ -2486,12 +2500,16 @@ export async function agencyControl(request, env) {
     const actor = await loadActor(db, decoded.sub);
 
     if (action === "listReviewQueue") {
-      if (!actor.permissions.canReviewApplications) throw new ApiError("forbidden", 403);
-      const [applications, manualBlocks, applicationSettings] = await Promise.all([
-        listAgencyReviewQueue(db, body.limit),
-        listAgencyManualReapplyBlocks(db, 25),
-        getAgencyApplicationSettings(db),
-      ]);
+      const canReview = actor.permissions.canReviewApplications;
+      const canManagePackages = actor.permissions.canManageAgencyPackages;
+      if (!canReview && !canManagePackages) throw new ApiError("forbidden", 403);
+      const [applications, manualBlocks, applicationSettings] = canReview
+        ? await Promise.all([
+            listAgencyReviewQueue(db, body.limit),
+            listAgencyManualReapplyBlocks(db, 25),
+            getAgencyApplicationSettings(db),
+          ])
+        : [[], [], { requiredHostCount: 5 }];
       return json(request, env, {
         ok: true,
         applications,
@@ -2499,7 +2517,7 @@ export async function agencyControl(request, env) {
         applicationSettings,
         limit: Math.min(50, boundedAgencyPageSize(body.limit, 50)),
         permissions: {
-          canReviewApplications: actor.permissions.canReviewApplications,
+          canReviewApplications: canReview,
           canDirectCreate: actor.permissions.canManageAgencies,
           canManageExisting: actor.permissions.canManageAgencies,
           canTransferOwnership: actor.permissions.isOwner,
@@ -2508,6 +2526,7 @@ export async function agencyControl(request, env) {
           canSuspendAgencies: actor.permissions.canSuspendAgencies,
           canCloseAgencies: actor.permissions.canCloseAgencies,
           canSetApplicationHostCount: actor.permissions.isOwner,
+          canManageAgencyPackages: canManagePackages,
         },
       });
     }

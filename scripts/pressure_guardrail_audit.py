@@ -287,8 +287,15 @@ def main() -> int:
         failures.append("Step 8 financial-authority regression: Google Play purchase path imports config cache")
 
     mic_activity = function_body(worker, "recordMicActivity")
-    if mic_activity is None or "tx.get(economyRef)" not in mic_activity:
-        failures.append("Step 8 financial-authority regression: mic activity payout policy is no longer read transactionally")
+    if mic_activity is None:
+        failures.append("Step 8 regression: mic activity authority function is missing")
+    else:
+        if "const requiredMinutes=120" not in mic_activity:
+            failures.append("Step 8 regression: approved 120-minute qualified-day threshold changed")
+        if "!wasQualified&&qualified" not in mic_activity:
+            failures.append("Step 8 regression: mic activity can no longer qualify each day exactly once")
+        if "gift_economy" in mic_activity or "economyRef" in mic_activity:
+            failures.append("Step 8 pressure regression: fixed mic qualification rule regained a config read")
 
     # Room level/capacity policy is code-resident today; do not add a Firestore
     # config dependency merely to satisfy the cache step.

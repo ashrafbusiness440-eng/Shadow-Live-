@@ -11,6 +11,7 @@ import '../services/host_my_agency_service.dart';
 import '../services/public_agency_service.dart';
 import 'agency_membership_review_page.dart';
 import 'owner_agency_dashboard_page.dart';
+import 'agency_package_inventory_page.dart';
 
 class HostMyAgencyPage extends StatefulWidget {
   const HostMyAgencyPage({
@@ -402,7 +403,10 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
       backgroundColor: const Color(0xFF0D1220),
       builder: (sheetContext) => Directionality(
         textDirection: TextDirection.rtl,
-        child: _TargetTableSheet(target: data.target),
+        child: _TargetTableSheet(
+          target: data.target,
+          activity: data.activity,
+        ),
       ),
     );
   }
@@ -431,6 +435,16 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => OwnerAgencyDashboardPage(initialCore: data),
+      ),
+    );
+  }
+
+  void _openPackageInventory() {
+    final data = _data;
+    if (data == null || data.membershipRole != 'owner') return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const AgencyPackageInventoryPage(),
       ),
     );
   }
@@ -519,6 +533,8 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
           if (data.membershipRole == 'owner') ...[
             const SizedBox(height: 12),
             _OwnerDashboardEntry(onTap: _openOwnerDashboard),
+            const SizedBox(height: 10),
+            _AgencyPackageInventoryEntry(onTap: _openPackageInventory),
           ] else if (data.canReviewMembershipRequests) ...[
             const SizedBox(height: 12),
             _AgencyReviewEntry(onTap: _openMembershipReview),
@@ -761,6 +777,45 @@ class _OwnerDashboardEntry extends StatelessWidget {
   }
 }
 
+class _AgencyPackageInventoryEntry extends StatelessWidget {
+  const _AgencyPackageInventoryEntry({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('owner-agency-package-inventory-entry'),
+      decoration: _cardDecoration(),
+      child: ListTile(
+        onTap: onTap,
+        leading: const CircleAvatar(
+          backgroundColor: Color(0xFF203A35),
+          child: Icon(
+            Icons.inventory_2_rounded,
+            color: Color(0xFF7FE0C1),
+          ),
+        ),
+        title: const Text(
+          'حقيبة الوكالة',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        subtitle: const Text(
+          'عرض الباكيجات والكميات المتبقية وتوزيعها عبر Public ID — للمالك فقط.',
+          style: TextStyle(color: Colors.white60),
+        ),
+        trailing: const Icon(
+          Icons.chevron_left_rounded,
+          color: Colors.white38,
+        ),
+      ),
+    );
+  }
+}
+
 class _OwnerCard extends StatelessWidget {
   const _OwnerCard({
     required this.owner,
@@ -918,9 +973,13 @@ class _HostFinanceEntries extends StatelessWidget {
 }
 
 class _TargetTableSheet extends StatelessWidget {
-  const _TargetTableSheet({required this.target});
+  const _TargetTableSheet({
+    required this.target,
+    required this.activity,
+  });
 
   final HostAgencyTarget target;
+  final HostAgencyActivity activity;
 
   @override
   Widget build(BuildContext context) {
@@ -943,7 +1002,7 @@ class _TargetTableSheet extends StatelessWidget {
                 style: TextStyle(fontWeight: FontWeight.w900),
               ),
               subtitle: Text(
-                'القيم تخص المضيف فقط وتأتي من إعدادات الوكالات المعتمدة.',
+                'Gross Support للعرض فقط؛ إغلاق الـTarget يعتمد Host Share Coins.',
               ),
             ),
             Card(
@@ -1009,9 +1068,28 @@ class _TargetTableSheet extends StatelessWidget {
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    subtitle: Text(
-                      'Target: ${_formatCoins(level.thresholdCoins)} Coins'
-                      ' • راتب المضيف: ${level.salaryDiamonds} Diamonds',
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Gross Support ≈ ${level.grossSupportCoins > 0 ? _formatCoins(level.grossSupportCoins) : '—'} Coins',
+                        ),
+                        Text(
+                          'Host Share: ${_formatCoins(level.thresholdCoins)} Coins'
+                          ' • ${_formatBps(level.hostShareBps)}',
+                        ),
+                        Text(
+                          'راتب المضيف: ${level.salaryDiamonds} Diamonds'
+                          ' • Activity Bonus: +${_formatBps(level.activityBonusBps)}',
+                        ),
+                        Text(
+                          'شرط النشاط: ${activity.requiredQualifiedDays} يوم × ${activity.requiredMinutesPerDay} دقيقة',
+                          style: const TextStyle(
+                            color: Colors.white54,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
                     ),
                     trailing: Text(
                       status,
@@ -1047,6 +1125,7 @@ class _TargetCard extends StatelessWidget {
         (target.progressCoins / denominator).clamp(0.0, 1.0).toDouble();
     final current = target.currentLevel;
     final next = target.nextLevel;
+    final nextPercent = (ratio * 100).floor();
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -1088,7 +1167,7 @@ class _TargetCard extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             target.remainingCoins > 0
-                ? 'باقي للمستوى التالي: ${_formatCoins(target.remainingCoins)} Coins'
+                ? 'تقدم المستوى التالي: $nextPercent% • باقي ${_formatCoins(target.remainingCoins)} Coins'
                 : 'وصلت لأعلى Target متاح حاليًا.',
             style: const TextStyle(color: Colors.white70),
           ),
@@ -1134,6 +1213,10 @@ class _ActivityCard extends StatelessWidget {
         : activity.requiredQualifiedDays;
     final ratio =
         (activity.qualifiedDays / requiredDays).clamp(0.0, 1.0).toDouble();
+    final remainingDays =
+        (activity.requiredQualifiedDays - activity.qualifiedDays)
+            .clamp(0, activity.requiredQualifiedDays);
+    final bonusLabel = '+${_formatBps(activity.activityBonusBps)}';
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -1158,8 +1241,8 @@ class _ActivityCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: _ValueTile(
-                  label: 'شرط اليوم',
-                  value: '${activity.requiredMinutesPerDay} دقيقة',
+                  label: 'المتبقي من الأيام',
+                  value: remainingDays.toString(),
                 ),
               ),
             ],
@@ -1175,8 +1258,22 @@ class _ActivityCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            'إجمالي وقت المايك هذا الشهر: ${_formatDuration(activity.micSecondsMonth)}',
+            'شرط اليوم المؤهل: ${activity.requiredMinutesPerDay} دقيقة على المايك.',
             style: const TextStyle(color: Colors.white70),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            'إجمالي وقت المايك هذا الشهر: ${_formatDuration(activity.micSecondsMonth)}'
+            ' • المطلوب للنشاط الكامل: ${_formatDuration(activity.requiredMicSecondsMonth)}',
+            style: const TextStyle(color: Colors.white70),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            'Activity Bonus المعتمد: $bonusLabel — يُحتسب عند استيفاء شروط النشاط حسب التسوية المعتمدة.',
+            style: const TextStyle(
+              color: Color(0xFFB99CFF),
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ],
       ),
@@ -1601,6 +1698,14 @@ String _levelLabel(HostAgencyLevel level) {
   if (level.rank == 'DIAMOND') return 'Diamond';
   if (tier.isEmpty) return level.rank;
   return '$tier ${level.rank}';
+}
+
+String _formatBps(int value) {
+  if (value <= 0) return '0%';
+  final percent = value / 100;
+  return percent == percent.roundToDouble()
+      ? '${percent.toInt()}%'
+      : '${percent.toStringAsFixed(1)}%';
 }
 
 String _formatCoins(int value) {

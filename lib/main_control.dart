@@ -2558,7 +2558,9 @@ class MorePage extends StatelessWidget {
         final canOpenAgencies=isOwner||
             (adminEnabled&&(
               capabilities.contains('manageAgencies')||
-              capabilities.contains('reviewAgencyApplications')));
+              capabilities.contains('reviewAgencyApplications')||
+              capabilities.contains('manageAgencyPackages')||
+              capabilities.contains('grantAgencyPackage')));
         final canManageAgencyMembers=isOwner||
             (adminEnabled&&(
               capabilities.contains('manageAgencies')||

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../profile/screens/public_profile_screen.dart';
 import '../services/agency_membership_service.dart';
 import '../services/public_agency_service.dart';
+import 'my_agency_entry_page.dart';
 
 class PublicAgencyPage extends StatefulWidget {
   const PublicAgencyPage({
@@ -12,11 +13,15 @@ class PublicAgencyPage extends StatefulWidget {
     required this.agencyId,
     this.joinEnabled = true,
     this.joinBlockedReason,
+    this.viewerAgencyId,
+    this.viewerAgencyRole,
   });
 
   final String agencyId;
   final bool joinEnabled;
   final String? joinBlockedReason;
+  final String? viewerAgencyId;
+  final String? viewerAgencyRole;
 
   @override
   State<PublicAgencyPage> createState() => _PublicAgencyPageState();
@@ -285,6 +290,103 @@ class _PublicAgencyPageState extends State<PublicAgencyPage> {
     );
   }
 
+  bool get _viewerInSameAgency =>
+      (widget.viewerAgencyId?.trim().isNotEmpty ?? false) &&
+      widget.viewerAgencyId!.trim() == widget.agencyId.trim();
+
+  String get _viewerAgencyRole =>
+      (widget.viewerAgencyRole ?? '').trim().toLowerCase();
+
+  void _openMyAgency() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const MyAgencyEntryPage(),
+      ),
+    );
+  }
+
+  Widget _agencyMembershipAction() {
+    if (_viewerInSameAgency) {
+      final role = _viewerAgencyRole;
+      final isOwner = role == 'owner';
+      final isManager = role == 'manager' || role == 'senior_manager';
+      final statusText = isOwner
+          ? 'أنت مالك هذه الوكالة'
+          : role == 'senior_manager'
+              ? 'أنت مدير أول في هذه الوكالة'
+              : role == 'manager'
+                  ? 'أنت مدير في هذه الوكالة'
+                  : 'أنت عضو في هذه الوكالة';
+      final actionText = isOwner
+          ? 'لوحة مالك الوكالة / إدارة الوكالة'
+          : isManager
+              ? 'إدارة الوكالة'
+              : 'معلومات وكالتي';
+      return Container(
+        key: const Key('agency-public-membership-action'),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFF171326),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0x334F46E5)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              statusText,
+              style: const TextStyle(
+                color: Color(0xFFB99CFF),
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            FilledButton.icon(
+              key: const Key('agency-public-open-my-agency'),
+              onPressed: _openMyAgency,
+              icon: Icon(
+                isOwner
+                    ? Icons.admin_panel_settings_rounded
+                    : isManager
+                        ? Icons.manage_accounts_rounded
+                        : Icons.apartment_rounded,
+              ),
+              label: Text(actionText),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return FilledButton.icon(
+      key: const Key('agency-public-request-join'),
+      onPressed: !widget.joinEnabled || _joinSubmitting || _joinSubmitted
+          ? null
+          : _requestJoin,
+      icon: _joinSubmitting
+          ? const SizedBox.square(
+              dimension: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : Icon(
+              _joinSubmitted
+                  ? Icons.check_circle_rounded
+                  : widget.joinEnabled
+                      ? Icons.person_add_alt_1_rounded
+                      : Icons.lock_outline_rounded,
+            ),
+      label: Text(
+        _joinSubmitted
+            ? 'تم إرسال طلب الانضمام'
+            : _joinSubmitting
+                ? 'جاري الإرسال…'
+                : widget.joinEnabled
+                    ? 'طلب الانضمام كمضيف'
+                    : 'طلب الانضمام غير متاح حاليًا',
+      ),
+    );
+  }
+
   Widget _body() {
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
@@ -301,36 +403,9 @@ class _PublicAgencyPageState extends State<PublicAgencyPage> {
         children: [
           _AgencyIdentityCard(agency: data.agency),
           const SizedBox(height: 12),
-          FilledButton.icon(
-            key: const Key('agency-public-request-join'),
-            onPressed: !widget.joinEnabled ||
-                    _joinSubmitting ||
-                    _joinSubmitted
-                ? null
-                : _requestJoin,
-            icon: _joinSubmitting
-                ? const SizedBox.square(
-                    dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : Icon(
-                    _joinSubmitted
-                        ? Icons.check_circle_rounded
-                        : widget.joinEnabled
-                            ? Icons.person_add_alt_1_rounded
-                            : Icons.lock_outline_rounded,
-                  ),
-            label: Text(
-              _joinSubmitted
-                  ? 'تم إرسال طلب الانضمام'
-                  : _joinSubmitting
-                      ? 'جاري الإرسال…'
-                      : widget.joinEnabled
-                          ? 'طلب الانضمام كمضيف'
-                          : 'طلب الانضمام غير متاح حاليًا',
-            ),
-          ),
-          if (!widget.joinEnabled &&
+          _agencyMembershipAction(),
+          if (!_viewerInSameAgency &&
+              !widget.joinEnabled &&
               (widget.joinBlockedReason?.trim().isNotEmpty ?? false)) ...[
             const SizedBox(height: 8),
             Text(

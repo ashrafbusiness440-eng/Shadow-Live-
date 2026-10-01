@@ -128,7 +128,9 @@ class _AgencyMembershipReviewPageState
           content: TextField(
             controller: controller,
             maxLength: 500,
-            decoration: const InputDecoration(hintText: 'سبب الرفض'),
+            decoration: const InputDecoration(
+              hintText: 'سبب الرفض — اختياري',
+            ),
           ),
           actions: [
             TextButton(
@@ -364,79 +366,147 @@ class _ReviewRequestCard extends StatelessWidget {
       _ => 'دعوة معلّقة',
     };
     final conflict = _conflictLabel(request);
+    final displayName =
+        request.displayName ?? (publicId.isEmpty ? request.uid : publicId);
+
+    void openProfile() {
+      if (request.uid.isEmpty) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => PublicProfileScreen(userId: request.uid),
+        ),
+      );
+    }
 
     return Card(
+      key: Key('agency-review-pending-${request.requestId}'),
       color: const Color(0xFF11182A),
-      margin: const EdgeInsets.only(bottom: 9),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        onTap: request.uid.isEmpty
-            ? null
-            : () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => PublicProfileScreen(userId: request.uid),
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                InkWell(
+                  onTap: request.uid.isEmpty ? null : openProfile,
+                  borderRadius: BorderRadius.circular(999),
+                  child: CircleAvatar(
+                    radius: 24,
+                    backgroundColor: const Color(0xFF31204F),
+                    backgroundImage:
+                        image.isEmpty ? null : NetworkImage(image),
+                    child: image.isEmpty
+                        ? const Icon(
+                            Icons.person_rounded,
+                            color: Colors.white70,
+                          )
+                        : null,
                   ),
                 ),
-        leading: CircleAvatar(
-          backgroundColor: const Color(0xFF31204F),
-          backgroundImage: image.isEmpty ? null : NetworkImage(image),
-          child: image.isEmpty
-              ? const Icon(Icons.person_rounded, color: Colors.white70)
-              : null,
-        ),
-        title: Row(
-          children: [
-            Expanded(
-              child: Text(
-                request.displayName ??
-                    (publicId.isEmpty ? request.uid : publicId),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
+                const SizedBox(width: 10),
+                Expanded(
+                  child: InkWell(
+                    onTap: request.uid.isEmpty ? null : openProfile,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          displayName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        if (publicId.isNotEmpty)
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  'ID: $publicId',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textDirection: TextDirection.ltr,
+                                  style: const TextStyle(
+                                    color: Colors.white54,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 2),
+                              IconButton(
+                                key: Key(
+                                  'agency-review-copy-id-${request.requestId}',
+                                ),
+                                tooltip: 'نسخ ID',
+                                visualDensity: VisualDensity.compact,
+                                constraints: const BoxConstraints(
+                                  minWidth: 28,
+                                  minHeight: 28,
+                                ),
+                                padding: EdgeInsets.zero,
+                                onPressed: () async {
+                                  await Clipboard.setData(
+                                    ClipboardData(text: publicId),
+                                  );
+                                  if (!context.mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('تم نسخ ID المستخدم.'),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(
+                                  Icons.copy_rounded,
+                                  size: 16,
+                                ),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
+                const SizedBox(width: 6),
+                _ReviewTypeChip(label: typeLabel),
+              ],
             ),
-            if (publicId.isNotEmpty)
-              IconButton(
-                tooltip: 'نسخ ID',
-                onPressed: () async {
-                  await Clipboard.setData(ClipboardData(text: publicId));
-                  if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('تم نسخ ID المستخدم.')),
-                  );
-                },
-                icon: const Icon(Icons.copy_rounded, size: 18),
-              ),
-          ],
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (publicId.isNotEmpty)
-              Text(
-                'ID: $publicId',
-                textDirection: TextDirection.ltr,
-                style: const TextStyle(color: Colors.white54),
-              ),
-            Text(
-              '$typeLabel • ${_roleLabel(request.targetRole)} • ${_waitLabel(request.createdAt)}',
-              style: const TextStyle(color: Colors.white54),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                _ReviewMetaChip(
+                  icon: Icons.badge_outlined,
+                  text: _roleLabel(request.targetRole),
+                ),
+                _ReviewMetaChip(
+                  icon: Icons.schedule_rounded,
+                  text: _waitLabel(request.createdAt),
+                ),
+                _ReviewMetaChip(
+                  icon: Icons.person_outline_rounded,
+                  text: _accountStatusLabel(request.accountStatus),
+                ),
+                _ReviewMetaChip(
+                  icon: Icons.apartment_rounded,
+                  text: _agencyLinkStatusLabel(request),
+                ),
+              ],
             ),
+            const SizedBox(height: 7),
             Text(
               'وقت الطلب: ${_createdAtLabel(request.createdAt)}',
-              style: const TextStyle(color: Colors.white38, fontSize: 12),
-            ),
-            Text(
-              'الحساب: ${_accountStatusLabel(request.accountStatus)} • الوكالة: ${_agencyLinkStatusLabel(request)}',
-              style: TextStyle(
-                color: conflict == null
-                    ? Colors.white54
-                    : Colors.amberAccent,
+              style: const TextStyle(
+                color: Colors.white38,
                 fontSize: 12,
               ),
             ),
-            if (conflict != null)
+            if (conflict != null) ...[
+              const SizedBox(height: 4),
               Text(
                 conflict,
                 style: const TextStyle(
@@ -444,31 +514,105 @@ class _ReviewRequestCard extends StatelessWidget {
                   fontSize: 12,
                 ),
               ),
-          ],
-        ),
-        trailing: request.type == 'invite'
-            ? TextButton(
-                onPressed: busy ? null : () => onCancelInvite(request),
-                child: const Text('إلغاء'),
+            ],
+            const SizedBox(height: 10),
+            const Divider(color: Color(0x22FFFFFF), height: 1),
+            const SizedBox(height: 8),
+            if (request.type == 'invite')
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  onPressed:
+                      busy ? null : () => onCancelInvite(request),
+                  icon: const Icon(Icons.close_rounded, size: 18),
+                  label: const Text('إلغاء الدعوة'),
+                ),
               )
-            : Wrap(
-                spacing: 4,
+            else
+              Row(
                 children: [
-                  TextButton(
-                    onPressed: busy ? null : () => onRespond(request, 'reject'),
-                    child: const Text('رفض'),
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed:
+                          busy ? null : () => onRespond(request, 'reject'),
+                      child: const Text('رفض'),
+                    ),
                   ),
-                  FilledButton(
-                    onPressed: busy || !request.canAccept
-                        ? null
-                        : () => onRespond(request, 'accept'),
-                    child: const Text('قبول'),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: busy || !request.canAccept
+                          ? null
+                          : () => onRespond(request, 'accept'),
+                      child: const Text('قبول'),
+                    ),
                   ),
                 ],
               ),
+          ],
+        ),
       ),
     );
   }
+}
+
+class _ReviewTypeChip extends StatelessWidget {
+  const _ReviewTypeChip({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          color: const Color(0xFF2A2142),
+          borderRadius: BorderRadius.circular(99),
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          style: const TextStyle(
+            color: Color(0xFFB99CFF),
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      );
+}
+
+class _ReviewMetaChip extends StatelessWidget {
+  const _ReviewMetaChip({
+    required this.icon,
+    required this.text,
+  });
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: .05),
+          borderRadius: BorderRadius.circular(9),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: Colors.white54),
+            const SizedBox(width: 4),
+            Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white60,
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ),
+      );
 }
 
 String _roleLabel(String role) {
