@@ -2290,6 +2290,7 @@ export async function setAgencyManagerRole(
                   ? "تم تعيينك مديرًا للوكالة."
                   : "تم تحويل دورك في الوكالة إلى مضيف.",
             read: false,
+            mandatory: true,
             agencyId,
             previousRole: currentRole,
             role: targetRole,
