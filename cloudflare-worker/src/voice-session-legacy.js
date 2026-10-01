@@ -247,11 +247,23 @@ export async function recordMicActivity(tx,db,userId,seat,endedAtMs=Date.now()){
   if(agencyId){
     for(const [month,count] of newlyQualifiedByMonth.entries()){
       if(count<=0)continue;
+      const hostMonthId=agencyId+"__"+month+"__"+userId;
       const agencyMonthRef=db
         .collection("agency_support_stats")
         .doc(agencyId)
         .collection("monthly")
         .doc(month);
+      const hostMonthRef=db.collection("agency_host_monthly").doc(hostMonthId);
+      tx.set(hostMonthRef,{
+        agencyId,
+        hostUid:userId,
+        month,
+        surplusPageKey:hostMonthId,
+        activityQualifiedDays:FieldValue.increment(count),
+        activityRequiredQualifiedDays:14,
+        activityRequiredMinutesPerDay:requiredMinutes,
+        activityUpdatedAt:FieldValue.serverTimestamp(),
+      },{merge:true});
       tx.set(agencyMonthRef,{
         activeHostIds:FieldValue.arrayUnion(userId),
         updatedAt:FieldValue.serverTimestamp(),
