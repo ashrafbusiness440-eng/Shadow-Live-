@@ -142,8 +142,7 @@ class _AgencyPolicyControlPageState extends State<AgencyPolicyControlPage> {
         surplusToShadow = effective['surplusToShadow'] == true;
         bonusPercent.text =
             bpsToPercent(effective['agencyPerformanceBonusBps']).toString();
-        activeHosts.text =
-            NumberHelper.intValue(effective['agencyBonusActiveHosts']).toString();
+        activeHosts.text = '0';
         propagationHasMore =
             body['overrideExists'] == true && propagation['complete'] != true;
       });
@@ -360,8 +359,7 @@ class _AgencyPolicyControlPageState extends State<AgencyPolicyControlPage> {
         bonusPercent.text,
         'agency_bonus_percent',
       );
-      final requiredHosts = parseInt(activeHosts.text, 'active_hosts');
-      if (bonusBps > 3000 || requiredHosts < 1 || requiredHosts > 100000) {
+      if (bonusBps > 3000) {
         throw StateError('invalid_bonus');
       }
       setState(() => busy = true);
@@ -374,7 +372,7 @@ class _AgencyPolicyControlPageState extends State<AgencyPolicyControlPage> {
         'targets': targets,
         'overrideBonus': overrideBonus,
         'agencyPerformanceBonusBps': bonusBps,
-        'agencyBonusActiveHosts': requiredHosts,
+        'agencyPerformanceBonusMode': 'per_host_target_month_end',
         'surplusToShadow': surplusToShadow,
         'idempotencyKey': operationKey('agency_policy'),
       });
@@ -593,15 +591,14 @@ class _AgencyPolicyControlPageState extends State<AgencyPolicyControlPage> {
                               decimal: true,
                             ),
                             decoration: const InputDecoration(
-                              labelText: 'Agency Bonus % — أقصى 30%',
+                              labelText: 'Agency Performance Bonus % — الافتراضي 1%',
                             ),
                           ),
-                          TextField(
-                            controller: activeHosts,
-                            enabled: !busy,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'عدد Hosts النشطين المطلوب',
+                          const Padding(
+                            padding: EdgeInsets.only(top: 10),
+                            child: Text(
+                              'الأهلية ليست بعدد Hosts نشطين. يُحسب البونص لكل Host مؤهل منفردًا: 14 يوم × 120 دقيقة، على أعلى Target محقق.',
+                              style: TextStyle(color: Colors.white60),
                             ),
                           ),
                         ],
