@@ -187,6 +187,8 @@ class OwnerAgencyMember {
     required this.status,
     required this.publicId,
     required this.displayName,
+    required this.profileImageUrl,
+    required this.accountStatus,
   });
 
   final String uid;
@@ -194,6 +196,8 @@ class OwnerAgencyMember {
   final String status;
   final String? publicId;
   final String? displayName;
+  final String? profileImageUrl;
+  final String accountStatus;
 
   factory OwnerAgencyMember.fromJson(Map<String, dynamic> json) {
     return OwnerAgencyMember(
@@ -202,6 +206,8 @@ class OwnerAgencyMember {
       status: (json['status'] ?? '').toString(),
       publicId: _nullable(json['publicId']),
       displayName: _nullable(json['displayName']),
+      profileImageUrl: _nullable(json['profileImageUrl']),
+      accountStatus: (json['accountStatus'] ?? 'active').toString(),
     );
   }
 }
@@ -242,6 +248,167 @@ class OwnerAgencyMembersData {
                 Map<String, dynamic>.from(item),
               ))
           .toList(growable: false),
+    );
+  }
+}
+
+class OwnerHostPerformanceLevel {
+  const OwnerHostPerformanceLevel({
+    required this.id,
+    required this.tierId,
+    required this.rank,
+    required this.thresholdCoins,
+    required this.salaryDiamonds,
+    required this.openEnded,
+  });
+
+  final String id;
+  final String tierId;
+  final String rank;
+  final int thresholdCoins;
+  final int salaryDiamonds;
+  final bool openEnded;
+
+  factory OwnerHostPerformanceLevel.fromJson(Map<String, dynamic> json) {
+    return OwnerHostPerformanceLevel(
+      id: (json['id'] ?? '').toString(),
+      tierId: (json['tierId'] ?? '').toString(),
+      rank: (json['rank'] ?? '').toString(),
+      thresholdCoins: _int(json['thresholdCoins']),
+      salaryDiamonds: _int(json['salaryDiamonds']),
+      openEnded: json['openEnded'] == true,
+    );
+  }
+}
+
+class OwnerHostAchievement {
+  const OwnerHostAchievement({
+    required this.targetId,
+    required this.tierId,
+    required this.rank,
+    required this.thresholdCoins,
+    required this.achievedAt,
+  });
+
+  final String targetId;
+  final String tierId;
+  final String rank;
+  final int thresholdCoins;
+  final DateTime? achievedAt;
+
+  factory OwnerHostAchievement.fromJson(Map<String, dynamic> json) {
+    return OwnerHostAchievement(
+      targetId: (json['targetId'] ?? '').toString(),
+      tierId: (json['tierId'] ?? '').toString(),
+      rank: (json['rank'] ?? '').toString(),
+      thresholdCoins: _int(json['thresholdCoins']),
+      achievedAt: _dateTime(json['achievedAt']),
+    );
+  }
+}
+
+class OwnerHostPerformanceData {
+  const OwnerHostPerformanceData({
+    required this.uid,
+    required this.publicId,
+    required this.displayName,
+    required this.profileImageUrl,
+    required this.role,
+    required this.status,
+    required this.accountStatus,
+    required this.month,
+    required this.progressCoins,
+    required this.remainingCoins,
+    required this.targetCoins,
+    required this.currentLevel,
+    required this.nextLevel,
+    required this.levels,
+    required this.qualifiedDays,
+    required this.micSecondsMonth,
+    required this.requiredQualifiedDays,
+    required this.requiredMinutesPerDay,
+    required this.requiredMicSecondsMonth,
+    required this.achievements,
+  });
+
+  final String uid;
+  final String? publicId;
+  final String displayName;
+  final String? profileImageUrl;
+  final String role;
+  final String status;
+  final String accountStatus;
+  final String month;
+  final int progressCoins;
+  final int remainingCoins;
+  final int targetCoins;
+  final OwnerHostPerformanceLevel? currentLevel;
+  final OwnerHostPerformanceLevel? nextLevel;
+  final List<OwnerHostPerformanceLevel> levels;
+  final int qualifiedDays;
+  final int micSecondsMonth;
+  final int requiredQualifiedDays;
+  final int requiredMinutesPerDay;
+  final int requiredMicSecondsMonth;
+  final List<OwnerHostAchievement> achievements;
+
+  factory OwnerHostPerformanceData.fromJson(Map<String, dynamic> json) {
+    final host = json['host'];
+    final target = json['target'];
+    final activity = json['activity'];
+    if (host is! Map || target is! Map || activity is! Map) {
+      throw const FormatException('invalid_owner_host_performance');
+    }
+    final hostMap = Map<String, dynamic>.from(host);
+    final targetMap = Map<String, dynamic>.from(target);
+    final activityMap = Map<String, dynamic>.from(activity);
+    final rawLevels = targetMap['levels'];
+    final rawAchievements = json['achievements'];
+    OwnerHostPerformanceLevel? parseLevel(dynamic raw) {
+      if (raw is! Map) return null;
+      return OwnerHostPerformanceLevel.fromJson(
+        Map<String, dynamic>.from(raw),
+      );
+    }
+
+    return OwnerHostPerformanceData(
+      uid: (hostMap['uid'] ?? '').toString(),
+      publicId: _nullable(hostMap['publicId']),
+      displayName:
+          (hostMap['displayName'] ?? 'Shadow Live').toString(),
+      profileImageUrl: _nullable(hostMap['profileImageUrl']),
+      role: (hostMap['role'] ?? '').toString(),
+      status: (hostMap['status'] ?? '').toString(),
+      accountStatus: (hostMap['accountStatus'] ?? 'active').toString(),
+      month: (targetMap['month'] ?? '').toString(),
+      progressCoins: _int(targetMap['progressCoins']),
+      remainingCoins: _int(targetMap['remainingCoins']),
+      targetCoins: _int(targetMap['targetCoins']),
+      currentLevel: parseLevel(targetMap['currentLevel']),
+      nextLevel: parseLevel(targetMap['nextLevel']),
+      levels: rawLevels is List
+          ? rawLevels
+              .whereType<Map>()
+              .map((item) => OwnerHostPerformanceLevel.fromJson(
+                    Map<String, dynamic>.from(item),
+                  ))
+              .toList(growable: false)
+          : const <OwnerHostPerformanceLevel>[],
+      qualifiedDays: _int(activityMap['qualifiedDays']),
+      micSecondsMonth: _int(activityMap['micSecondsMonth']),
+      requiredQualifiedDays: _int(activityMap['requiredQualifiedDays']),
+      requiredMinutesPerDay: _int(activityMap['requiredMinutesPerDay']),
+      requiredMicSecondsMonth: _int(
+        activityMap['requiredMicSecondsMonth'],
+      ),
+      achievements: rawAchievements is List
+          ? rawAchievements
+              .whereType<Map>()
+              .map((item) => OwnerHostAchievement.fromJson(
+                    Map<String, dynamic>.from(item),
+                  ))
+              .toList(growable: false)
+          : const <OwnerHostAchievement>[],
     );
   }
 }
@@ -408,6 +575,16 @@ class OwnerAgencyService {
   Future<OwnerAgencyPerformanceData> loadPerformance() async {
     final body = await _post(const {'action': 'performance'});
     return OwnerAgencyPerformanceData.fromJson(body);
+  }
+
+  Future<OwnerHostPerformanceData> loadHostPerformance(
+    String targetUid,
+  ) async {
+    final body = await _post({
+      'action': 'hostPerformance',
+      'targetUid': targetUid.trim(),
+    });
+    return OwnerHostPerformanceData.fromJson(body);
   }
 
   Future<OwnerAgencyStatement> loadStatement(String month) async {
