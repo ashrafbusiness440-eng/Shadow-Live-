@@ -45,6 +45,7 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
   bool _logoUploading = false;
   bool _openingAgencyRoom = false;
   bool _ownershipTransferSubmitting = false;
+  bool _agencyProfileSaving = false;
   String? _error;
   String? _rankingError;
   String? _leaveStatusError;
@@ -451,6 +452,96 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
     );
   }
 
+  Future<void> _editAgencyProfile() async {
+    final data = _data;
+    if (data == null ||
+        data.membershipRole != 'owner' ||
+        _agencyProfileSaving) {
+      return;
+    }
+    final description = TextEditingController(
+      text: data.agency.description ?? '',
+    );
+    final contact = TextEditingController(
+      text: data.agency.publicContact ?? '',
+    );
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          backgroundColor: const Color(0xFF101522),
+          title: const Text('تعديل بيانات الوكالة العامة'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  key: const Key('owner-agency-description-field'),
+                  controller: description,
+                  minLines: 3,
+                  maxLines: 5,
+                  maxLength: 500,
+                  decoration: const InputDecoration(
+                    labelText: 'وصف الوكالة',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  key: const Key('owner-agency-contact-field'),
+                  controller: contact,
+                  maxLength: 160,
+                  decoration: const InputDecoration(
+                    labelText: 'طريقة التواصل العامة',
+                    hintText: 'مثال: حساب خدمة العملاء أو وسيلة التواصل',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('حفظ'),
+            ),
+          ],
+        ),
+      ),
+    );
+    final nextDescription = description.text.trim();
+    final nextContact = contact.text.trim();
+    description.dispose();
+    contact.dispose();
+    if (accepted != true || !mounted) return;
+
+    setState(() => _agencyProfileSaving = true);
+    try {
+      await _service.updateAgencyProfile(
+        description: nextDescription,
+        publicContact: nextContact,
+      );
+      final refreshed = await _service.loadCore();
+      if (!mounted) return;
+      setState(() => _data = refreshed);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم تحديث وصف وتواصل الوكالة.')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر تحديث بيانات الوكالة حاليًا.')),
+      );
+    } finally {
+      if (mounted) setState(() => _agencyProfileSaving = false);
+    }
+  }
+
   Future<void> _requestOwnershipTransfer() async {
     final data = _data;
     if (data == null ||
@@ -637,6 +728,11 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
               busy: _ownershipTransferSubmitting,
               onTap: _requestOwnershipTransfer,
             ),
+            const SizedBox(height: 10),
+            _AgencyProfileEditEntry(
+              busy: _agencyProfileSaving,
+              onTap: _editAgencyProfile,
+            ),
           ] else if (data.canReviewMembershipRequests) ...[
             const SizedBox(height: 12),
             _AgencyReviewEntry(onTap: _openMembershipReview),
@@ -802,6 +898,28 @@ class _AgencyHeader extends StatelessWidget {
               style: const TextStyle(color: Colors.white70),
             ),
           ],
+          if (agency.description != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              agency.description!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white70,
+                height: 1.4,
+              ),
+            ),
+          ],
+          if (agency.publicContact != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              'التواصل: ${agency.publicContact}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFFB99CFF),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
           const SizedBox(height: 14),
           Wrap(
             spacing: 8,
@@ -940,6 +1058,54 @@ class _AgencyPackageInventoryEntry extends StatelessWidget {
           Icons.chevron_left_rounded,
           color: Colors.white38,
         ),
+      ),
+    );
+  }
+}
+
+class _AgencyProfileEditEntry extends StatelessWidget {
+  const _AgencyProfileEditEntry({
+    required this.busy,
+    required this.onTap,
+  });
+
+  final bool busy;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('owner-agency-profile-edit-entry'),
+      decoration: _cardDecoration(),
+      child: ListTile(
+        onTap: busy ? null : onTap,
+        leading: const CircleAvatar(
+          backgroundColor: Color(0xFF24304A),
+          child: Icon(
+            Icons.edit_note_rounded,
+            color: Color(0xFF9FC5FF),
+          ),
+        ),
+        title: const Text(
+          'تعديل وصف وتواصل الوكالة',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        subtitle: const Text(
+          'تعديل مباشر للمالك؛ الاسم والدولة لهما طلب موافقة منفصل.',
+          style: TextStyle(color: Colors.white60),
+        ),
+        trailing: busy
+            ? const SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(
+                Icons.chevron_left_rounded,
+                color: Colors.white38,
+              ),
       ),
     );
   }
