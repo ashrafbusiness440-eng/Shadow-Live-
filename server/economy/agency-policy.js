@@ -17,6 +17,81 @@ export const DEFAULT_AGENCY_TARGETS = Object.freeze([
   { id: "diamond", tierId: "diamond", rank: "DIAMOND", thresholdCoins: 50000000, salaryDiamonds: 5000, openEnded: true },
 ]);
 
+export const HOST_ACTIVITY_BONUS_BY_LEVEL = Object.freeze({
+  starter_g: Object.freeze({ asset: "coins", amount: 5000 }),
+  starter_f: Object.freeze({ asset: "coins", amount: 10000 }),
+  starter_e: Object.freeze({ asset: "diamonds", amount: 1 }),
+  starter_d: Object.freeze({ asset: "diamonds", amount: 1 }),
+  starter_c: Object.freeze({ asset: "diamonds", amount: 2 }),
+  starter_b: Object.freeze({ asset: "diamonds", amount: 3 }),
+  starter_a: Object.freeze({ asset: "diamonds", amount: 4 }),
+  bronze_f: Object.freeze({ asset: "diamonds", amount: 5 }),
+  bronze_e: Object.freeze({ asset: "diamonds", amount: 7 }),
+  bronze_d: Object.freeze({ asset: "diamonds", amount: 11 }),
+  bronze_c: Object.freeze({ asset: "diamonds", amount: 15 }),
+  bronze_b: Object.freeze({ asset: "diamonds", amount: 18 }),
+  bronze_a: Object.freeze({ asset: "diamonds", amount: 22 }),
+  silver_f: Object.freeze({ asset: "diamonds", amount: 25 }),
+  silver_e: Object.freeze({ asset: "diamonds", amount: 35 }),
+  silver_d: Object.freeze({ asset: "diamonds", amount: 45 }),
+  silver_c: Object.freeze({ asset: "diamonds", amount: 57 }),
+  silver_b: Object.freeze({ asset: "diamonds", amount: 72 }),
+  silver_a: Object.freeze({ asset: "diamonds", amount: 90 }),
+  gold_f: Object.freeze({ asset: "diamonds", amount: 100 }),
+  gold_e: Object.freeze({ asset: "diamonds", amount: 120 }),
+  gold_d: Object.freeze({ asset: "diamonds", amount: 145 }),
+  gold_c: Object.freeze({ asset: "diamonds", amount: 175 }),
+  gold_b: Object.freeze({ asset: "diamonds", amount: 207 }),
+  gold_a: Object.freeze({ asset: "diamonds", amount: 240 }),
+  diamond: Object.freeze({ asset: "diamonds", amount: 250 }),
+});
+
+export function hostActivityBonusForTarget(target = {}) {
+  const targetId = clean(target?.id || target?.targetId).toLowerCase();
+  const tierId = clean(target?.tierId || target?.targetTierId).toLowerCase();
+  const rank = clean(target?.rank || target?.targetRank).toLowerCase();
+  const fallbackKey = tierId === "diamond"
+    ? "diamond"
+    : (tierId && rank ? `${tierId}_${rank}` : "");
+  const key = Object.prototype.hasOwnProperty.call(
+    HOST_ACTIVITY_BONUS_BY_LEVEL,
+    targetId,
+  )
+    ? targetId
+    : fallbackKey;
+  const bonus = HOST_ACTIVITY_BONUS_BY_LEVEL[key];
+  return bonus
+    ? { asset: bonus.asset, amount: bonus.amount }
+    : { asset: "none", amount: 0 };
+}
+
+export function agencyPerformanceBonusForTarget({
+  targetThresholdCoins = 0,
+  qualifiedDays = 0,
+  bonusBps = 100,
+  requiredQualifiedDays = 14,
+} = {}) {
+  const threshold = targetFinancialInteger(
+    targetThresholdCoins,
+    "agency_bonus_target_threshold_coins",
+  );
+  const days = Math.max(0, integer(qualifiedDays));
+  const requiredDays = Math.max(1, integer(requiredQualifiedDays, 14));
+  const bps = Math.max(0, Math.min(3000, integer(bonusBps, 100)));
+  const eligible = threshold > 0 && days >= requiredDays && bps > 0;
+  const bonusCoins = eligible
+    ? Number((BigInt(threshold) * BigInt(bps)) / 10000n)
+    : 0;
+  return {
+    eligible,
+    targetThresholdCoins: threshold,
+    qualifiedDays: days,
+    requiredQualifiedDays: requiredDays,
+    bonusBps: eligible ? bps : 0,
+    bonusCoins,
+  };
+}
+
 function integer(value, fallback = 0) {
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) ? parsed : fallback;
