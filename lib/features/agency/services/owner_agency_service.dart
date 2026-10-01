@@ -251,23 +251,82 @@ class OwnerAgencyPendingRequest {
     required this.requestId,
     required this.uid,
     required this.userPublicId,
+    required this.displayName,
+    required this.profileImageUrl,
     required this.type,
+    required this.targetRole,
     required this.status,
+    required this.createdAt,
+    required this.accountStatus,
+    required this.conflictStatus,
   });
 
   final String requestId;
   final String uid;
   final String? userPublicId;
+  final String? displayName;
+  final String? profileImageUrl;
   final String type;
+  final String targetRole;
   final String status;
+  final DateTime? createdAt;
+  final String accountStatus;
+  final String conflictStatus;
+
+  bool get canAccept =>
+      status == 'pending' &&
+      conflictStatus == 'none' &&
+      accountStatus == 'active';
 
   factory OwnerAgencyPendingRequest.fromJson(Map<String, dynamic> json) {
     return OwnerAgencyPendingRequest(
       requestId: (json['requestId'] ?? '').toString(),
       uid: (json['uid'] ?? '').toString(),
       userPublicId: _nullable(json['userPublicId']),
+      displayName: _nullable(json['displayName']),
+      profileImageUrl: _nullable(json['profileImageUrl']),
       type: (json['type'] ?? '').toString(),
+      targetRole: (json['targetRole'] ?? 'host').toString(),
       status: (json['status'] ?? '').toString(),
+      createdAt: _dateTime(json['createdAt']),
+      accountStatus: (json['accountStatus'] ?? 'active').toString(),
+      conflictStatus: (json['conflictStatus'] ?? 'none').toString(),
+    );
+  }
+}
+
+class OwnerAgencyPendingPage {
+  const OwnerAgencyPendingPage({
+    required this.requests,
+    required this.hasMore,
+    required this.nextOffset,
+    required this.truncated,
+  });
+
+  final List<OwnerAgencyPendingRequest> requests;
+  final bool hasMore;
+  final int? nextOffset;
+  final bool truncated;
+
+  factory OwnerAgencyPendingPage.fromJson(Map<String, dynamic> json) {
+    final requests = json['requests'];
+    if (requests is! List) {
+      throw const FormatException('invalid_owner_agency_pending');
+    }
+    return OwnerAgencyPendingPage(
+      requests: requests
+          .whereType<Map>()
+          .map(
+            (item) => OwnerAgencyPendingRequest.fromJson(
+              Map<String, dynamic>.from(item),
+            ),
+          )
+          .toList(growable: false),
+      hasMore: json['hasMore'] == true,
+      nextOffset: json['nextOffset'] is num
+          ? (json['nextOffset'] as num).toInt()
+          : int.tryParse('${json['nextOffset'] ?? ''}'),
+      truncated: json['truncated'] == true,
     );
   }
 }
@@ -368,22 +427,21 @@ class OwnerAgencyService {
     return OwnerAgencyMembersData.fromJson(body);
   }
 
-  Future<List<OwnerAgencyPendingRequest>> loadPending(String agencyId) async {
+  Future<OwnerAgencyPendingPage> loadPendingPage(
+    String agencyId, {
+    int offset = 0,
+  }) async {
     final body = await _postMembership({
       'action': 'listAgencyPending',
       'agencyId': agencyId.trim(),
       'limit': 25,
+      'offset': offset < 0 ? 0 : offset,
     });
-    final requests = body['requests'];
-    if (requests is! List) {
-      throw const FormatException('invalid_owner_agency_pending');
-    }
-    return requests
-        .whereType<Map>()
-        .map((item) => OwnerAgencyPendingRequest.fromJson(
-              Map<String, dynamic>.from(item),
-            ))
-        .toList(growable: false);
+    return OwnerAgencyPendingPage.fromJson(body);
+  }
+
+  Future<List<OwnerAgencyPendingRequest>> loadPending(String agencyId) async {
+    return (await loadPendingPage(agencyId)).requests;
   }
 
   Future<void> inviteHost({
@@ -475,6 +533,13 @@ class OwnerAgencyService {
   void close() {
     if (_ownsClient) _client.close();
   }
+}
+
+DateTime? _dateTime(dynamic value) {
+  if (value is DateTime) return value;
+  final text = (value ?? '').toString().trim();
+  if (text.isEmpty) return null;
+  return DateTime.tryParse(text);
 }
 
 String? _nullable(dynamic value) {

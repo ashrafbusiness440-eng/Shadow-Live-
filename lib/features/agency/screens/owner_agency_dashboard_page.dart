@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../../profile/screens/public_profile_screen.dart';
 import '../services/host_my_agency_service.dart';
 import '../services/owner_agency_service.dart';
 
@@ -25,6 +27,10 @@ class _OwnerAgencyDashboardPageState extends State<OwnerAgencyDashboardPage> {
   OwnerAgencyStatement? _statement;
   OwnerAgencyMembersData? _membersData;
   List<OwnerAgencyPendingRequest>? _pendingRequests;
+  int? _pendingNextOffset;
+  bool _pendingHasMore = false;
+  bool _pendingTruncated = false;
+  bool _pendingLoadingMore = false;
   bool _refreshing = false;
   bool _performanceLoading = false;
   bool _statementLoading = false;
@@ -134,11 +140,14 @@ class _OwnerAgencyDashboardPageState extends State<OwnerAgencyDashboardPage> {
     try {
       final agencyId = _data.agency.agencyId;
       final members = await _ownerService.loadMembers(agencyId);
-      final pending = await _ownerService.loadPending(agencyId);
+      final pending = await _ownerService.loadPendingPage(agencyId);
       if (!mounted) return;
       setState(() {
         _membersData = members;
-        _pendingRequests = pending;
+        _pendingRequests = pending.requests;
+        _pendingNextOffset = pending.nextOffset;
+        _pendingHasMore = pending.hasMore;
+        _pendingTruncated = pending.truncated;
         _managementLoading = false;
       });
     } catch (error) {
@@ -146,6 +155,48 @@ class _OwnerAgencyDashboardPageState extends State<OwnerAgencyDashboardPage> {
       setState(() {
         _managementError = error.toString();
         _managementLoading = false;
+      });
+    }
+  }
+
+  Future<void> _loadMorePending() async {
+    final offset = _pendingNextOffset;
+    if (_pendingLoadingMore || !_pendingHasMore || offset == null) return;
+    setState(() {
+      _pendingLoadingMore = true;
+      _managementError = null;
+    });
+    try {
+      final page = await _ownerService.loadPendingPage(
+        _data.agency.agencyId,
+        offset: offset,
+      );
+      if (!mounted) return;
+      final existing = {
+        for (final item in _pendingRequests ?? const <OwnerAgencyPendingRequest>[])
+          item.requestId: item,
+      };
+      for (final item in page.requests) {
+        existing[item.requestId] = item;
+      }
+      final merged = existing.values.toList()
+        ..sort((a, b) {
+          final left = a.createdAt?.millisecondsSinceEpoch ?? 0;
+          final right = b.createdAt?.millisecondsSinceEpoch ?? 0;
+          return right.compareTo(left);
+        });
+      setState(() {
+        _pendingRequests = merged;
+        _pendingNextOffset = page.nextOffset;
+        _pendingHasMore = page.hasMore;
+        _pendingTruncated = page.truncated;
+        _pendingLoadingMore = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _managementError = error.toString();
+        _pendingLoadingMore = false;
       });
     }
   }
@@ -351,10 +402,14 @@ class _OwnerAgencyDashboardPageState extends State<OwnerAgencyDashboardPage> {
                     _AgencyManagementCard(
                       data: _membersData,
                       pending: _pendingRequests,
+                      pendingHasMore: _pendingHasMore,
+                      pendingLoadingMore: _pendingLoadingMore,
+                      pendingTruncated: _pendingTruncated,
                       loading: _managementLoading,
                       busy: _managementBusy,
                       error: _managementError,
                       onLoad: _loadManagement,
+                      onLoadMorePending: _loadMorePending,
                       onInvite: _inviteHost,
                       onSetRole: _setMemberRole,
                       onRemove: _removeMember,
@@ -798,10 +853,14 @@ class _AgencyManagementCard extends StatelessWidget {
   const _AgencyManagementCard({
     required this.data,
     required this.pending,
+    required this.pendingHasMore,
+    required this.pendingLoadingMore,
+    required this.pendingTruncated,
     required this.loading,
     required this.busy,
     required this.error,
     required this.onLoad,
+    required this.onLoadMorePending,
     required this.onInvite,
     required this.onSetRole,
     required this.onRemove,
@@ -811,10 +870,14 @@ class _AgencyManagementCard extends StatelessWidget {
 
   final OwnerAgencyMembersData? data;
   final List<OwnerAgencyPendingRequest>? pending;
+  final bool pendingHasMore;
+  final bool pendingLoadingMore;
+  final bool pendingTruncated;
   final bool loading;
   final bool busy;
   final String? error;
   final Future<void> Function() onLoad;
+  final Future<void> Function() onLoadMorePending;
   final Future<void> Function() onInvite;
   final Future<void> Function(OwnerAgencyMember, String) onSetRole;
   final Future<void> Function(OwnerAgencyMember) onRemove;
@@ -917,12 +980,35 @@ class _AgencyManagementCard extends StatelessWidget {
             ),
           ),
           const Divider(color: Color(0x22FFFFFF), height: 26),
-          Text(
-            'الطلبات المعلّقة (${requests.length})',
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w800,
-            ),
+          Row(
+            children: [
+              const Text(
+                'الطلبات المعلّقة',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (requests.isNotEmpty)
+                Container(
+                  key: const Key('owner-agency-pending-badge'),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${requests.length}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+            ],
           ),
           const SizedBox(height: 6),
           if (requests.isEmpty)
@@ -939,6 +1025,30 @@ class _AgencyManagementCard extends StatelessWidget {
                 onCancelInvite: onCancelInvite,
               ),
             ),
+          if (pendingHasMore) ...[
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              key: const Key('owner-agency-pending-load-more'),
+              onPressed:
+                  pendingLoadingMore || busy ? null : onLoadMorePending,
+              icon: pendingLoadingMore
+                  ? const SizedBox.square(
+                      dimension: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.expand_more_rounded),
+              label: Text(
+                pendingLoadingMore ? 'جارٍ التحميل…' : 'تحميل المزيد',
+              ),
+            ),
+          ],
+          if (pendingTruncated) ...[
+            const SizedBox(height: 8),
+            const Text(
+              'تم الوصول إلى حد نافذة الطلبات الآمنة. حدّث القائمة بعد حسم الطلبات الحالية.',
+              style: TextStyle(color: Colors.amberAccent, fontSize: 12),
+            ),
+          ],
           if (error != null) ...[
             const SizedBox(height: 8),
             const Text(
@@ -1029,32 +1139,112 @@ class _PendingManagementTile extends StatelessWidget {
         : request.type == 'join'
             ? 'طلب انضمام'
             : 'دعوة معلّقة';
-    return ListTile(
-      dense: true,
-      contentPadding: EdgeInsets.zero,
-      title: Text(
-        request.userPublicId ?? request.uid,
-        style: const TextStyle(color: Colors.white),
-      ),
-      subtitle: Text(label, style: const TextStyle(color: Colors.white54)),
-      trailing: request.type == 'invite'
-          ? TextButton(
-              onPressed: busy ? null : () => onCancelInvite(request),
-              child: const Text('إلغاء'),
-            )
-          : Wrap(
-              spacing: 4,
-              children: [
-                TextButton(
-                  onPressed: busy ? null : () => onRespond(request, 'reject'),
-                  child: const Text('رفض'),
+    final publicId = request.userPublicId?.trim() ?? '';
+    final image = request.profileImageUrl?.trim() ?? '';
+    final statusLabel = _pendingConflictLabel(request);
+    return Card(
+      color: const Color(0xFF11182A),
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        onTap: request.uid.isEmpty
+            ? null
+            : () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => PublicProfileScreen(userId: request.uid),
+                  ),
                 ),
-                FilledButton(
-                  onPressed: busy ? null : () => onRespond(request, 'accept'),
-                  child: const Text('قبول'),
+        leading: CircleAvatar(
+          backgroundColor: const Color(0xFF31204F),
+          backgroundImage: image.isEmpty ? null : NetworkImage(image),
+          child: image.isEmpty
+              ? const Icon(Icons.person_rounded, color: Colors.white70)
+              : null,
+        ),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                request.displayName ?? (publicId.isEmpty ? request.uid : publicId),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
                 ),
-              ],
+              ),
             ),
+            if (publicId.isNotEmpty)
+              IconButton(
+                tooltip: 'نسخ ID',
+                visualDensity: VisualDensity.compact,
+                onPressed: () async {
+                  await Clipboard.setData(ClipboardData(text: publicId));
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('تم نسخ ID المستخدم.')),
+                  );
+                },
+                icon: const Icon(Icons.copy_rounded, size: 18),
+              ),
+          ],
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (publicId.isNotEmpty)
+              Text(
+                'ID: $publicId',
+                textDirection: TextDirection.ltr,
+                style: const TextStyle(color: Colors.white54),
+              ),
+            Text(
+              '$label • ${_roleLabel(request.targetRole)} • ${_relativeWait(request.createdAt)}',
+              style: const TextStyle(color: Colors.white54),
+            ),
+            Text(
+              'وقت الطلب: ${_createdAtLabel(request.createdAt)}',
+              style: const TextStyle(color: Colors.white38, fontSize: 12),
+            ),
+            Text(
+              'الحساب: ${_accountStatusLabel(request.accountStatus)} • الوكالة: ${_agencyLinkStatusLabel(request)}',
+              style: TextStyle(
+                color: statusLabel == null
+                    ? Colors.white54
+                    : Colors.amberAccent,
+                fontSize: 12,
+              ),
+            ),
+            if (statusLabel != null)
+              Text(
+                statusLabel,
+                style: const TextStyle(
+                  color: Colors.amberAccent,
+                  fontSize: 12,
+                ),
+              ),
+          ],
+        ),
+        trailing: request.type == 'invite'
+            ? TextButton(
+                onPressed: busy ? null : () => onCancelInvite(request),
+                child: const Text('إلغاء'),
+              )
+            : Wrap(
+                spacing: 4,
+                children: [
+                  TextButton(
+                    onPressed: busy ? null : () => onRespond(request, 'reject'),
+                    child: const Text('رفض'),
+                  ),
+                  FilledButton(
+                    onPressed:
+                        busy || !request.canAccept
+                            ? null
+                            : () => onRespond(request, 'accept'),
+                    child: const Text('قبول'),
+                  ),
+                ],
+              ),
+      ),
     );
   }
 }
@@ -1062,13 +1252,82 @@ class _PendingManagementTile extends StatelessWidget {
 String _roleLabel(String role) {
   switch (role) {
     case 'owner':
-      return 'Owner';
+      return 'مالك الوكالة';
     case 'senior_manager':
-      return 'Senior Manager';
+      return 'مدير أول';
     case 'manager':
-      return 'Manager';
+      return 'مدير';
     default:
-      return 'Host';
+      return 'مضيف';
+  }
+}
+
+String _relativeWait(DateTime? createdAt) {
+  if (createdAt == null) return 'وقت الإرسال غير متاح';
+  final diff = DateTime.now().difference(createdAt.toLocal());
+  if (diff.isNegative) return 'الآن';
+  if (diff.inMinutes < 1) return 'الآن';
+  if (diff.inHours < 1) return 'منذ ${diff.inMinutes} د';
+  if (diff.inDays < 1) return 'منذ ${diff.inHours} س';
+  return 'منذ ${diff.inDays} ي';
+}
+
+String _createdAtLabel(DateTime? createdAt) {
+  if (createdAt == null) return '—';
+  final value = createdAt.toLocal();
+  String two(int number) => number.toString().padLeft(2, '0');
+  return '${two(value.day)}/${two(value.month)}/${value.year} '
+      '${two(value.hour)}:${two(value.minute)}';
+}
+
+String _accountStatusLabel(String status) {
+  switch (status) {
+    case 'active':
+      return 'نشط';
+    case 'suspended':
+      return 'موقوف';
+    case 'disabled':
+      return 'معطّل';
+    case 'banned':
+      return 'محظور';
+    default:
+      return status.isEmpty ? 'غير متاح' : status;
+  }
+}
+
+String _agencyLinkStatusLabel(OwnerAgencyPendingRequest request) {
+  switch (request.conflictStatus) {
+    case 'none':
+      return request.type == 'leave' ? 'عضو حالي' : 'غير مرتبط';
+    case 'already_in_agency':
+      return 'عضو بوكالة أخرى';
+    case 'reserved_other_request':
+      return 'محجوز بطلب آخر';
+    case 'membership_changed':
+      return 'تغيّرت العضوية';
+    case 'user_missing':
+      return 'غير متاح';
+    case 'account_inactive':
+      return 'يلزم التحقق';
+    default:
+      return request.conflictStatus;
+  }
+}
+
+String? _pendingConflictLabel(OwnerAgencyPendingRequest request) {
+  switch (request.conflictStatus) {
+    case 'account_inactive':
+      return 'الحساب غير نشط — يلزم التحقق قبل القبول.';
+    case 'user_missing':
+      return 'الحساب غير متاح.';
+    case 'already_in_agency':
+      return 'المستخدم مرتبط بوكالة حاليًا.';
+    case 'reserved_other_request':
+      return 'لدى المستخدم طلب/دعوة وكالة أخرى محجوزة.';
+    case 'membership_changed':
+      return 'حالة العضوية تغيّرت منذ إرسال الطلب.';
+    default:
+      return request.accountStatus == 'active' ? null : 'حالة الحساب: ${request.accountStatus}';
   }
 }
 

@@ -7,6 +7,7 @@ import {
   listAgencyMembers,
   setAgencyManagerRole,
 } from "../../cloudflare-worker/src/agency-membership.js";
+import { loadAgencyHostCore } from "../../cloudflare-worker/src/agency-host.js";
 import { cloudflareFirestoreAdapter } from "./helpers/cloudflare-firestore-adapter.js";
 
 const app = getApps()[0] || initializeApp({ projectId: "shadow-live-economy-test" });
@@ -275,6 +276,56 @@ test("owner can move manager to senior and later demote to host without counter 
   assert.deepEqual(slots.data().managerUids, []);
   assert.equal(slots.data().seniorManagerUid, null);
   assert.equal(pointer.data().role, "host");
+});
+
+
+test("role transitions keep My Agency core readable for manager and senior manager", async () => {
+  const agencyId = "710001";
+  const ownerUid = "stage05a_role_core_owner";
+  const memberUid = "stage05a_role_core_member";
+  await seedAgency(agencyId, ownerUid, "710901");
+  await addMember(agencyId, memberUid, "710101", "host");
+
+  await setAgencyManagerRole(db, ownerUid, {
+    agencyId,
+    targetUid: memberUid,
+    targetRole: "manager",
+    idempotencyKey: "stage05a_role_core_to_manager",
+  });
+  let core = await loadAgencyHostCore(
+    db,
+    memberUid,
+    new Date("2026-09-30T18:00:00.000Z"),
+  );
+  assert.equal(core.membership.role, "manager");
+
+  await setAgencyManagerRole(db, ownerUid, {
+    agencyId,
+    targetUid: memberUid,
+    targetRole: "senior_manager",
+    idempotencyKey: "stage05a_role_core_to_senior",
+  });
+  core = await loadAgencyHostCore(
+    db,
+    memberUid,
+    new Date("2026-09-30T18:01:00.000Z"),
+  );
+  assert.equal(core.membership.role, "senior_manager");
+  assert.equal(core.membership.permissions.canReviewMembershipRequests, true);
+
+  await setAgencyManagerRole(db, ownerUid, {
+    agencyId,
+    targetUid: memberUid,
+    targetRole: "manager",
+    idempotencyKey: "stage05a_role_core_back_manager",
+  });
+  core = await loadAgencyHostCore(
+    db,
+    memberUid,
+    new Date("2026-09-30T18:02:00.000Z"),
+  );
+  assert.equal(core.membership.role, "manager");
+  assert.equal(core.ok, true);
 });
 
 test("manager and senior manager cannot manage manager roles", async () => {

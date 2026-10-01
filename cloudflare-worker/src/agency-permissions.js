@@ -30,6 +30,14 @@ function capabilitySet(user = {}) {
   );
 }
 
+function membershipCapabilitySet(membership = {}) {
+  return new Set(
+    Array.isArray(membership.capabilities)
+      ? membership.capabilities.map(clean).filter(Boolean)
+      : [],
+  );
+}
+
 export function platformAgencyPermissions(user = {}) {
   const capabilities = capabilitySet(user);
   const isOwner = clean(user.role) === "owner";
@@ -68,6 +76,11 @@ export function agencyMemberPermissions({
   const isManager = membershipActive && role === "manager";
   const isHost = membershipActive && role === "host";
   const isManagement = isOwner || isSeniorManager || isManager;
+  const capabilities = membershipCapabilitySet(membership);
+  const managerCanReview =
+    isManager &&
+    (capabilities.has("reviewMembershipRequest") ||
+      capabilities.has("reviewMembershipRequests"));
 
   return {
     role,
@@ -76,7 +89,8 @@ export function agencyMemberPermissions({
     canViewAgency: membershipActive,
     canViewOwnProgress: membershipActive,
     canViewHosts: isManagement,
-    canReviewMembershipRequests: active && isManagement,
+    canReviewMembershipRequests:
+      active && (isOwner || isSeniorManager || managerCanReview),
     canManageInvites: active && isManagement,
     canManageRooms: active && isManagement,
     // Senior managers intentionally inherit the approved manager baseline.

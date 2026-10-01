@@ -253,6 +253,53 @@ async function loadAgencyActor(
   };
 }
 
+async function joinReviewerNotificationUids(
+  db,
+  tx,
+  agencyId,
+  agency = {},
+) {
+  const ownerUid = clean(agency.ownerUid);
+  if (!ownerUid) throw new ApiError("agency_owner_missing", 409);
+
+  const recipients = new Set([ownerUid]);
+  const slotsSnap = await db.get(`agency_manager_slots/${agencyId}`, tx);
+  if (!slotsSnap.exists) return [...recipients];
+
+  const slots = slotsSnap.data || {};
+  const seniorManagerUid = clean(slots.seniorManagerUid);
+  const managerUids = Array.isArray(slots.managerUids)
+    ? slots.managerUids.map(clean).filter(Boolean).slice(0, AGENCY_LIMITS.agencyManagers)
+    : [];
+  const reviewerUids = [
+    ...(seniorManagerUid ? [seniorManagerUid] : []),
+    ...managerUids,
+  ];
+
+  const membershipSnaps = await Promise.all(
+    reviewerUids.map((reviewerUid) =>
+      db.get(`agency_user_memberships/${reviewerUid}`, tx)
+    ),
+  );
+  reviewerUids.forEach((reviewerUid, index) => {
+    const membershipSnap = membershipSnaps[index];
+    const membership =
+      membershipSnap?.exists &&
+      clean(membershipSnap.data?.agencyId) === agencyId
+        ? membershipSnap.data || {}
+        : {};
+    if (canPerformAgencyAction({
+      action: "reviewMembershipRequest",
+      membership,
+      agencyStatus: clean(agency.status),
+    })) {
+      recipients.add(reviewerUid);
+    }
+  });
+
+  return [...recipients];
+}
+
 async function createRequest({
   db,
   actorUid,
@@ -261,7 +308,7 @@ async function createRequest({
   type,
   idempotencyKey,
   userPublicId,
-  notificationUserId,
+  notificationUserId = null,
   now,
 }) {
   const key = clean(idempotencyKey);
@@ -336,6 +383,45 @@ async function createRequest({
       };
       const result = requestSummary(fullRequest);
       const notificationId = `agency_membership_${type}_${requestId}`;
+      const notificationUserIds =
+        type === "join"
+          ? await joinReviewerNotificationUids(
+              db,
+              tx,
+              agencyId,
+              agencySnap.data || {},
+            )
+          : [clean(notificationUserId || uid)].filter(Boolean);
+      const primaryNotificationUid =
+        type === "join"
+          ? clean(agencySnap.data?.ownerUid)
+          : clean(notificationUserId || uid);
+      const notificationWrites = notificationUserIds.map((recipientUid) => {
+        const suffix =
+          recipientUid === primaryNotificationUid
+            ? ""
+            : "_" + recipientUid.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80);
+        return db.writeCreate(`notifications/${notificationId}${suffix}`, {
+          userId: recipientUid,
+          type:
+            type === "join"
+              ? "agency_join_request"
+              : "agency_membership_invite",
+          category: "system",
+          title:
+            type === "join"
+              ? "طلب انضمام جديد للوكالة"
+              : "دعوة للانضمام إلى وكالة",
+          body:
+            type === "join"
+              ? "يوجد مستخدم بانتظار مراجعة طلب الانضمام."
+              : "لديك دعوة للانضمام إلى وكالة.",
+          read: false,
+          requestId,
+          agencyId,
+          createdAt: now,
+        });
+      });
 
       const writes = [
         db.writeCreate(requestPath, fullRequest),
@@ -370,26 +456,16 @@ async function createRequest({
           idempotencyKey: key,
           createdAt: now,
         }),
-        db.writeCreate(`notifications/${notificationId}`, {
-          userId: notificationUserId,
-          type:
-            type === "join"
-              ? "agency_join_request"
-              : "agency_membership_invite",
-          category: "system",
-          title:
-            type === "join"
-              ? "طلب انضمام جديد للوكالة"
-              : "دعوة للانضمام إلى وكالة",
-          body:
-            type === "join"
-              ? "يوجد مستخدم بانتظار مراجعة طلب الانضمام."
-              : "لديك دعوة للانضمام إلى وكالة.",
-          read: false,
+        db.writeCreate(acceptanceLockPath(uid), {
           requestId,
           agencyId,
+          uid,
+          type,
+          status: "pending",
           createdAt: now,
+          updatedAt: now,
         }),
+        ...notificationWrites,
       ];
 
       await db.commit(tx, writes);
@@ -417,10 +493,6 @@ export async function requestAgencyJoin(
 ) {
   const agencyId = clean(body.agencyId);
   if (!/^\d{3,8}$/.test(agencyId)) throw new ApiError("invalid_agency_id", 400);
-  const agencySnap = await db.get(`agencies/${agencyId}`);
-  ensureAgencyActive(agencySnap);
-  const ownerUid = clean(agencySnap.data?.ownerUid);
-  if (!ownerUid) throw new ApiError("agency_owner_missing", 409);
   return createRequest({
     db,
     actorUid,
@@ -429,7 +501,6 @@ export async function requestAgencyJoin(
     type: "join",
     idempotencyKey: body.idempotencyKey,
     userPublicId: null,
-    notificationUserId: ownerUid,
     now,
   });
 }
@@ -1182,9 +1253,21 @@ export async function respondAgencyMembershipRequest(
       const agencyConsent =
         request.agencyConsent === true || (type === "join" && decision === "accept");
       const accepted = decision === "accept" && userConsent && agencyConsent;
-      if (accepted && acceptanceSnap.exists) {
+      const acceptanceLockMatches =
+        acceptanceSnap.exists &&
+        clean(acceptanceSnap.data?.requestId) === requestId &&
+        clean(acceptanceSnap.data?.agencyId) === agencyId;
+      if (acceptanceSnap.exists && !acceptanceLockMatches) {
         throw new ApiError("membership_acceptance_conflict", 409, {
           requestId: clean(acceptanceSnap.data?.requestId) || null,
+        });
+      }
+      if (
+        acceptanceLockMatches &&
+        clean(acceptanceSnap.data?.status) !== "pending"
+      ) {
+        throw new ApiError("membership_acceptance_conflict", 409, {
+          requestId,
         });
       }
 
@@ -1331,16 +1414,32 @@ export async function respondAgencyMembershipRequest(
           ),
           db.writeDelete(pairPath),
           db.writeDelete(queuePath),
-          db.writeCreate(acceptanceLockPath(uid), {
-            requestId,
-            agencyId,
-            uid,
-            status: "committed",
-            membershipRole: "host",
-            membershipCommittedAt: now,
-            createdAt: now,
-            updatedAt: now,
-          }),
+          acceptanceLockMatches
+            ? db.writeUpdate(
+                acceptanceLockPath(uid),
+                {
+                  status: "committed",
+                  membershipRole: "host",
+                  membershipCommittedAt: now,
+                  updatedAt: now,
+                },
+                [
+                  "status",
+                  "membershipRole",
+                  "membershipCommittedAt",
+                  "updatedAt",
+                ],
+              )
+            : db.writeCreate(acceptanceLockPath(uid), {
+                requestId,
+                agencyId,
+                uid,
+                status: "committed",
+                membershipRole: "host",
+                membershipCommittedAt: now,
+                createdAt: now,
+                updatedAt: now,
+              }),
           db.writeCreate(
             `admin_audit_logs/agency_membership_commit_${requestId}`,
             {
@@ -1381,6 +1480,9 @@ export async function respondAgencyMembershipRequest(
         }
       } else if (decision === "reject") {
         writes.push(db.writeDelete(pairPath), db.writeDelete(queuePath));
+        if (acceptanceLockMatches) {
+          writes.push(db.writeDelete(acceptanceLockPath(uid)));
+        }
       }
 
       await db.commit(tx, writes);
@@ -2613,6 +2715,11 @@ export async function cancelAgencyMembershipRequest(
       const agencyId = clean(request.agencyId);
       const uid = clean(request.uid);
       const type = clean(request.type);
+      const acceptanceSnap = await db.get(acceptanceLockPath(uid), tx);
+      const acceptanceLockMatches =
+        acceptanceSnap.exists &&
+        clean(acceptanceSnap.data?.requestId) === requestId &&
+        clean(acceptanceSnap.data?.agencyId) === agencyId;
 
       if (type === "join") {
         if (actorUid !== uid) throw new ApiError("forbidden", 403);
@@ -2640,6 +2747,9 @@ export async function cancelAgencyMembershipRequest(
         }, ["status", "updatedAt", "resolvedAt", "resolvedBy", "reason"]),
         db.writeDelete(requestKeyPath(agencyId, uid)),
         db.writeDelete(pendingPath(agencyId, uid)),
+        ...(acceptanceLockMatches
+          ? [db.writeDelete(acceptanceLockPath(uid))]
+          : []),
         db.writeCreate(opPath, {
           actorUid,
           action: "cancelAgencyMembershipRequest",
@@ -2862,6 +2972,57 @@ export async function listAgencyMembers(
   };
 }
 
+function pendingConflictStatus({
+  agencyId,
+  request,
+  userSnap,
+  lockSnap,
+}) {
+  const user = userSnap?.exists ? userSnap.data || {} : {};
+  const accountStatus = clean(user.accountStatus || "active");
+  if (!userSnap?.exists) return "user_missing";
+  if (accountStatus !== "active") return "account_inactive";
+
+  const type = clean(request.type);
+  const linkedAgencyId = clean(user.agencyId);
+  if (type === "leave") {
+    return linkedAgencyId === agencyId ? "none" : "membership_changed";
+  }
+  if (linkedAgencyId) return "already_in_agency";
+
+  if (
+    lockSnap?.exists &&
+    clean(lockSnap.data?.requestId) !== clean(request.requestId)
+  ) {
+    return "reserved_other_request";
+  }
+  return "none";
+}
+
+function pendingRequestView({
+  agencyId,
+  row,
+  userSnap,
+  lockSnap,
+}) {
+  const request = row?.data || {};
+  const user = userSnap?.exists ? userSnap.data || {} : {};
+  return {
+    ...requestSummary(request),
+    displayName:
+      clean(user.displayName || user.name || user.username) || null,
+    profileImageUrl:
+      clean(user.profileImageUrl || user.photoUrl || user.avatarUrl) || null,
+    accountStatus: clean(user.accountStatus || "active"),
+    conflictStatus: pendingConflictStatus({
+      agencyId,
+      request,
+      userSnap,
+      lockSnap,
+    }),
+  };
+}
+
 export async function listAgencyMembershipPending(
   db,
   actorUid,
@@ -2870,15 +3031,108 @@ export async function listAgencyMembershipPending(
   const agencyId = clean(body.agencyId);
   if (!/^\d{3,8}$/.test(agencyId)) throw new ApiError("invalid_agency_id", 400);
   await loadAgencyActor(db, actorUid, agencyId, "review");
-  const limit = Math.min(50, boundedAgencyPageSize(body.limit, 50));
+
+  const limit = Math.min(25, boundedAgencyPageSize(body.limit, 25));
+  const offsetRaw = Number(body.offset || 0);
+  const offset =
+    Number.isInteger(offsetRaw) && offsetRaw >= 0
+      ? Math.min(75, offsetRaw)
+      : 0;
+  const windowLimit = 100;
   const rows = await db.runQuery("agency_membership_pending", {
     filters: [{ field: "agencyId", op: "==", value: agencyId }],
-    limit,
+    limit: windowLimit,
   });
+  const sorted = rows.slice().sort((left, right) => {
+    const leftTime = timestampMs(left?.data?.createdAt);
+    const rightTime = timestampMs(right?.data?.createdAt);
+    if (leftTime !== rightTime) return rightTime - leftTime;
+    return clean(right?.data?.requestId).localeCompare(
+      clean(left?.data?.requestId),
+    );
+  });
+  const pageRows = sorted.slice(offset, offset + limit);
+
+  const userSnaps = await Promise.all(
+    pageRows.map((row) => {
+      const uid = clean(row?.data?.uid);
+      return uid ? db.get("users/" + uid) : Promise.resolve({ exists: false });
+    }),
+  );
+  const lockSnaps = await Promise.all(
+    pageRows.map((row) => {
+      const uid = clean(row?.data?.uid);
+      return uid
+        ? db.get(acceptanceLockPath(uid))
+        : Promise.resolve({ exists: false });
+    }),
+  );
+
+  const consumed = offset + pageRows.length;
+  const hasMore = consumed < sorted.length;
   return {
     ok: true,
     limit,
-    requests: rows.map((row) => requestSummary(row.data || {})),
+    offset,
+    nextOffset: hasMore ? consumed : null,
+    hasMore,
+    truncated: sorted.length === windowLimit && !hasMore,
+    requests: pageRows.map((row, index) =>
+      pendingRequestView({
+        agencyId,
+        row,
+        userSnap: userSnaps[index],
+        lockSnap: lockSnaps[index],
+      })
+    ),
+  };
+}
+
+export async function getMyAgencyMembershipRequest(
+  db,
+  actorUid,
+  body = {},
+) {
+  const requestId = clean(body.requestId);
+  if (!requestId || requestId.includes("/")) {
+    throw new ApiError("invalid_request_id", 400);
+  }
+
+  const requestSnap = await db.get(
+    `agency_membership_requests/${requestId}`,
+  );
+  if (!requestSnap.exists) {
+    throw new ApiError("membership_request_not_found", 404);
+  }
+  const request = requestSnap.data || {};
+  if (clean(request.uid) !== actorUid) {
+    throw new ApiError("forbidden", 403);
+  }
+
+  const agencyId = clean(request.agencyId);
+  if (!/^\d{3,8}$/.test(agencyId)) {
+    throw new ApiError("membership_request_invalid", 409);
+  }
+  const agencySnap = await db.get(`agencies/${agencyId}`);
+  if (!agencySnap.exists) {
+    throw new ApiError("agency_not_found", 404);
+  }
+  const agency = agencySnap.data || {};
+  return {
+    ok: true,
+    request: requestSummary(request),
+    agency: {
+      agencyId,
+      publicId: clean(agency.publicId || agencyId),
+      name: clean(agency.name) || "Shadow Live Agency",
+      country: clean(agency.country) || null,
+      logoUrl:
+        clean(agency.logoUrl || agency.imageUrl || agency.profileImageUrl) ||
+        null,
+      memberCount: Math.max(0, Number(agency.memberCount || 0)),
+      hostCount: Math.max(0, Number(agency.hostCount || 0)),
+      status: clean(agency.status) || "active",
+    },
   };
 }
 
@@ -2953,6 +3207,8 @@ export async function agencyMembership(request, env) {
       result = await listAgencyMembers(db, decoded.sub, body);
     } else if (action === "listAgencyPending") {
       result = await listAgencyMembershipPending(db, decoded.sub, body);
+    } else if (action === "getMyRequest") {
+      result = await getMyAgencyMembershipRequest(db, decoded.sub, body);
     } else if (action === "listMy") {
       result = await listMyAgencyMembershipRequests(db, decoded.sub, body);
     } else {

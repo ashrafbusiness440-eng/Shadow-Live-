@@ -9,6 +9,8 @@ class AppNotification {
     required this.type,
     required this.read,
     required this.createdAt,
+    required this.requestId,
+    required this.agencyId,
   });
 
   final String id;
@@ -17,6 +19,8 @@ class AppNotification {
   final String type;
   final bool read;
   final DateTime? createdAt;
+  final String? requestId;
+  final String? agencyId;
 
   factory AppNotification.fromMap(String id, Map<String, dynamic> data) {
     final rawCreatedAt = data['createdAt'];
@@ -30,6 +34,8 @@ class AppNotification {
       type: (data['type'] ?? 'system').toString().trim(),
       read: data['read'] == true,
       createdAt: createdAt,
+      requestId: _nullable(data['requestId']),
+      agencyId: _nullable(data['agencyId']),
     );
   }
 }
@@ -86,4 +92,10 @@ class NotificationPage {
   final List<AppNotification> items;
   final DocumentSnapshot<Map<String, dynamic>>? cursor;
   final bool hasMore;
+}
+
+
+String? _nullable(dynamic value) {
+  final normalized = (value ?? '').toString().trim();
+  return normalized.isEmpty ? null : normalized;
 }

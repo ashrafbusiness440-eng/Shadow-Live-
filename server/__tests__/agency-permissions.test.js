@@ -53,19 +53,36 @@ test("manageAgencies is operational only and never delegates finance policy sett
   assert.equal(p.canCloseAgencies,false);
 });
 
-test("manager and senior manager share only approved baseline",()=>{
-  for(const role of ["manager","senior_manager"]){
-    const p=agencyMemberPermissions({
-      membership:{role,status:"active"},
-      agencyStatus:"active",
-    });
-    assert.equal(p.canReviewMembershipRequests,true);
-    assert.equal(p.canManageInvites,true);
-    assert.equal(p.canViewHosts,true);
-    assert.equal(p.canManageRooms,true);
-    assert.equal(p.canManageManagers,false);
-    assert.equal(p.canViewAgencyFinance,false);
-  }
+test("senior manager can review while manager requires explicit review capability",()=>{
+  const senior=agencyMemberPermissions({
+    membership:{role:"senior_manager",status:"active"},
+    agencyStatus:"active",
+  });
+  assert.equal(senior.canReviewMembershipRequests,true);
+  assert.equal(senior.canManageInvites,true);
+  assert.equal(senior.canViewHosts,true);
+  assert.equal(senior.canManageRooms,true);
+  assert.equal(senior.canManageManagers,false);
+  assert.equal(senior.canViewAgencyFinance,false);
+
+  const managerWithoutCapability=agencyMemberPermissions({
+    membership:{role:"manager",status:"active",capabilities:[]},
+    agencyStatus:"active",
+  });
+  assert.equal(managerWithoutCapability.canReviewMembershipRequests,false);
+  assert.equal(managerWithoutCapability.canManageInvites,true);
+
+  const managerWithCapability=agencyMemberPermissions({
+    membership:{
+      role:"manager",
+      status:"active",
+      capabilities:["reviewMembershipRequest"],
+    },
+    agencyStatus:"active",
+  });
+  assert.equal(managerWithCapability.canReviewMembershipRequests,true);
+  assert.equal(managerWithCapability.canManageManagers,false);
+  assert.equal(managerWithCapability.canViewAgencyFinance,false);
 });
 
 test("agency owner can manage managers and view finance",()=>{

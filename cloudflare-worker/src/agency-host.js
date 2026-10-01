@@ -9,6 +9,7 @@ import {
   currentAgencyMonthKey,
   DEFAULT_AGENCY_TARGETS,
 } from "./agency-policy.js";
+import { agencyMemberPermissions } from "./agency-permissions.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 
 const clean = (value) => String(value ?? "").trim();
@@ -109,7 +110,7 @@ export async function loadAgencyHostCore(
     !validAgencyId(agencyId) ||
     clean(user.agencyId) !== agencyId ||
     membershipStatus !== "active" ||
-    !["host", "owner"].includes(role)
+    !["host", "manager", "senior_manager", "owner"].includes(role)
   ) {
     throw new ApiError("agency_host_not_active", 403);
   }
@@ -177,6 +178,10 @@ export async function loadAgencyHostCore(
 
   const reachedTarget = targetSummary(targetProgress.reachedTarget);
   const nextTarget = targetSummary(targetProgress.nextTarget);
+  const membershipPermissions = agencyMemberPermissions({
+    membership,
+    agencyStatus: clean(agency.status),
+  });
 
   return {
     ok: true,
@@ -195,6 +200,14 @@ export async function loadAgencyHostCore(
     membership: {
       role,
       status: membershipStatus,
+      capabilities: Array.isArray(membership.capabilities)
+        ? membership.capabilities.map(clean).filter(Boolean)
+        : [],
+      permissions: {
+        canReviewMembershipRequests:
+          membershipPermissions.canReviewMembershipRequests,
+        canManageInvites: membershipPermissions.canManageInvites,
+      },
     },
     target: {
       month,

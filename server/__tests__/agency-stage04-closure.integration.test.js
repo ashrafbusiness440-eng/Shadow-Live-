@@ -93,12 +93,28 @@ test("Stage 04 full lifecycle closes without double membership or double counter
     adminEnabled: true,
   });
 
-  // 04-A: multiple pending requests/invites are allowed across agencies.
+  // 04-A: one global pending membership request is allowed per user.
   const staleInvite = await inviteAgencyHost(db, staleOwnerUid, {
     agencyId: staleAgencyId,
     targetPublicId: "691101",
     idempotencyKey: "stage04closure_stale_invite",
   }, { now: new Date("2026-09-28T18:00:00.000Z") });
+
+  await assert.rejects(
+    requestAgencyJoin(db, userUid, {
+      agencyId: firstAgencyId,
+      idempotencyKey: "stage04closure_first_join_blocked",
+    }, { now: new Date("2026-09-28T18:00:30.000Z") }),
+    /membership_acceptance_conflict/,
+  );
+
+  const staleReject = await respondAgencyMembershipRequest(db, userUid, {
+    requestId: staleInvite.requestId,
+    decision: "reject",
+    idempotencyKey: "stage04closure_stale_reject",
+    reason: "release_pending_membership_lock",
+  }, { now: new Date("2026-09-28T18:00:45.000Z") });
+  assert.equal(staleReject.status, "rejected");
 
   const firstJoin = await requestAgencyJoin(db, userUid, {
     agencyId: firstAgencyId,
@@ -134,15 +150,6 @@ test("Stage 04 full lifecycle closes without double membership or double counter
   assert.equal(firstAgency.data().hostCount, 1);
   assert.equal(pointer.data().agencyId, firstAgencyId);
   assert.equal(pointer.data().status, "active");
-
-  // A user already in another agency can still reject a stale invite for cleanup.
-  const staleReject = await respondAgencyMembershipRequest(db, userUid, {
-    requestId: staleInvite.requestId,
-    decision: "reject",
-    idempotencyKey: "stage04closure_stale_reject",
-    reason: "cleanup_after_join",
-  }, { now: new Date("2026-09-28T18:03:00.000Z") });
-  assert.equal(staleReject.status, "rejected");
 
   // 04-C1/C2: leave is idempotent, decrements once, and starts exact 7-day wait.
   const leaveBody = {

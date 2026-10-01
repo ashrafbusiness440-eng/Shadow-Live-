@@ -110,6 +110,92 @@ test("join request records user consent and appears in bounded agency queue", as
   assert.equal(duplicate.requestId, first.requestId);
 });
 
+test("join request notifies only authorized agency reviewers and manager review requires capability", async () => {
+  const agencyId = "641002";
+  const ownerUid = "stage04a_review_owner";
+  const seniorUid = "stage04a_review_senior";
+  const managerUid = "stage04a_review_manager";
+  const managerNoCapUid = "stage04a_review_manager_no_cap";
+  const applicantUid = "stage04a_review_applicant";
+
+  await seedAgency(agencyId, ownerUid, "641902", "Review Agency");
+  await Promise.all([
+    seedUser(seniorUid, "641202", { agencyId, agencyRole: "senior_manager" }),
+    seedUser(managerUid, "641203", { agencyId, agencyRole: "manager" }),
+    seedUser(managerNoCapUid, "641204", { agencyId, agencyRole: "manager" }),
+    seedUser(applicantUid, "641205", {
+      displayName: "Applicant User",
+      profileImageUrl: "https://example.invalid/applicant.webp",
+    }),
+  ]);
+
+  await Promise.all([
+    adminDb.collection("agency_user_memberships").doc(seniorUid).set({
+      agencyId,
+      uid: seniorUid,
+      role: "senior_manager",
+      status: "active",
+      capabilities: [],
+    }),
+    adminDb.collection("agency_user_memberships").doc(managerUid).set({
+      agencyId,
+      uid: managerUid,
+      role: "manager",
+      status: "active",
+      capabilities: ["reviewMembershipRequest"],
+    }),
+    adminDb.collection("agency_user_memberships").doc(managerNoCapUid).set({
+      agencyId,
+      uid: managerNoCapUid,
+      role: "manager",
+      status: "active",
+      capabilities: [],
+    }),
+    adminDb.collection("agency_manager_slots").doc(agencyId).set({
+      agencyId,
+      seniorManagerUid: seniorUid,
+      managerUids: [managerUid, managerNoCapUid],
+    }),
+  ]);
+
+  const join = await requestAgencyJoin(db, applicantUid, {
+    agencyId,
+    idempotencyKey: "stage04a_authorized_review_join_0001",
+  }, { now: new Date("2026-09-28T18:05:00.000Z") });
+
+  const notificationBase = "agency_membership_join_" + join.requestId;
+  const [ownerNotice, seniorNotice, managerNotice, blockedNotice] =
+    await Promise.all([
+      adminDb.collection("notifications").doc(notificationBase).get(),
+      adminDb.collection("notifications")
+        .doc(notificationBase + "_" + seniorUid).get(),
+      adminDb.collection("notifications")
+        .doc(notificationBase + "_" + managerUid).get(),
+      adminDb.collection("notifications")
+        .doc(notificationBase + "_" + managerNoCapUid).get(),
+    ]);
+  assert.equal(ownerNotice.data().userId, ownerUid);
+  assert.equal(seniorNotice.data().userId, seniorUid);
+  assert.equal(managerNotice.data().userId, managerUid);
+  assert.equal(blockedNotice.exists, false);
+
+  const managerQueue = await listAgencyMembershipPending(db, managerUid, {
+    agencyId,
+  });
+  const row = managerQueue.requests.find(
+    (request) => request.requestId === join.requestId,
+  );
+  assert.equal(row.displayName, "Applicant User");
+  assert.equal(row.profileImageUrl, "https://example.invalid/applicant.webp");
+  assert.equal(row.accountStatus, "active");
+  assert.equal(row.conflictStatus, "none");
+
+  await assert.rejects(
+    listAgencyMembershipPending(db, managerNoCapUid, { agencyId }),
+    /forbidden/,
+  );
+});
+
 test("agency invite records agency consent and target user can see it", async () => {
   const agencyId = "642001";
   const ownerUid = "stage04a_invite_owner";
@@ -219,7 +305,7 @@ test("user accepts agency invite and commits membership", async () => {
   assert.equal(agency.data().hostCount, 1);
 });
 
-test("acceptance lock prevents accepting two different agencies", async () => {
+test("pending membership lock prevents concurrent requests across agencies and releases on resolution", async () => {
   const userUid = "stage04a_double_accept_user";
   await seedUser(userUid, "645101");
   await seedAgency("645001", "stage04a_double_owner_a", "645901", "Agency A");
@@ -230,44 +316,43 @@ test("acceptance lock prevents accepting two different agencies", async () => {
     targetPublicId: "645101",
     idempotencyKey: "stage04a_double_invite_a_0001",
   });
-  const second = await inviteAgencyHost(db, "stage04a_double_owner_b", {
-    agencyId: "645002",
-    targetPublicId: "645101",
-    idempotencyKey: "stage04a_double_invite_b_0001",
-  });
 
-  await respondAgencyMembershipRequest(db, userUid, {
-    requestId: first.requestId,
-    decision: "accept",
-    idempotencyKey: "stage04a_double_accept_a_0001",
-  });
+  const pendingLock = await adminDb
+    .collection("agency_membership_acceptance_locks")
+    .doc(userUid)
+    .get();
+  assert.equal(pendingLock.data().requestId, first.requestId);
+  assert.equal(pendingLock.data().agencyId, "645001");
+  assert.equal(pendingLock.data().status, "pending");
 
   await assert.rejects(
-    respondAgencyMembershipRequest(db, userUid, {
-      requestId: second.requestId,
-      decision: "accept",
-      idempotencyKey: "stage04a_double_accept_b_0001",
+    inviteAgencyHost(db, "stage04a_double_owner_b", {
+      agencyId: "645002",
+      targetPublicId: "645101",
+      idempotencyKey: "stage04a_double_invite_b_0001",
     }),
-    /user_already_in_agency|membership_acceptance_conflict/,
+    /membership_acceptance_conflict/,
   );
 
   const rejected = await respondAgencyMembershipRequest(db, userUid, {
-    requestId: second.requestId,
+    requestId: first.requestId,
     decision: "reject",
-    reason: "انضممت لوكالة أخرى",
-    idempotencyKey: "stage04a_double_reject_b_0001",
+    reason: "رفض الدعوة الأولى",
+    idempotencyKey: "stage04a_double_reject_a_0001",
   });
   assert.equal(rejected.status, "rejected");
   assert.equal(
-    (await adminDb.collection("agency_membership_request_keys")
-      .doc("645002__" + userUid).get()).exists,
+    (await adminDb.collection("agency_membership_acceptance_locks")
+      .doc(userUid).get()).exists,
     false,
   );
-  assert.equal(
-    (await adminDb.collection("agency_membership_pending")
-      .doc("645002__" + userUid).get()).exists,
-    false,
-  );
+
+  const second = await inviteAgencyHost(db, "stage04a_double_owner_b", {
+    agencyId: "645002",
+    targetPublicId: "645101",
+    idempotencyKey: "stage04a_double_invite_b_after_release_0001",
+  });
+  assert.equal(second.status, "pending");
 });
 
 test("reject and cancel release pair and pending request keys", async () => {
@@ -296,6 +381,11 @@ test("reject and cancel release pair and pending request keys", async () => {
       .doc(agencyId + "__" + rejectUid).get()).exists,
     false,
   );
+  assert.equal(
+    (await adminDb.collection("agency_membership_acceptance_locks")
+      .doc(rejectUid).get()).exists,
+    false,
+  );
 
   const join = await requestAgencyJoin(db, cancelUid, {
     agencyId,
@@ -310,6 +400,11 @@ test("reject and cancel release pair and pending request keys", async () => {
   assert.equal(
     (await adminDb.collection("agency_membership_pending")
       .doc(agencyId + "__" + cancelUid).get()).exists,
+    false,
+  );
+  assert.equal(
+    (await adminDb.collection("agency_membership_acceptance_locks")
+      .doc(cancelUid).get()).exists,
     false,
   );
 });
