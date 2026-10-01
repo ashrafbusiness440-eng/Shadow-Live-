@@ -567,7 +567,6 @@ test("manager and senior manager see Host performance without salary or Agency f
       "salaryDiamonds",
       "paidDiamonds",
       "diamonds",
-      "coins",
       "agencyShare",
       "agencyBonus",
       "wallet",
@@ -581,6 +580,8 @@ test("manager and senior manager see Host performance without salary or Agency f
         "manager-safe performance leaked " + forbidden,
       );
     }
+    assert.equal(Object.prototype.hasOwnProperty.call(result.host, "coins"), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(result.host, "balance"), false);
   }
 
   await assert.rejects(
