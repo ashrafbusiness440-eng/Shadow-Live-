@@ -205,7 +205,7 @@ test("Batch 3 Host performance is owner-only lazy bounded and excludes personal 
         accountStatus: "active",
         agencyTargetMonth: "2026-09",
         agencyTargetProgressCoins: 150000,
-        agencySalaryPaidDiamonds: 15,
+        agencySalaryPaidDiamonds: 10,
         agencyPolicySnapshot: {
           targets: [
             {
