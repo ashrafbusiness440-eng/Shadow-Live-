@@ -107,6 +107,11 @@ test("11-A Host My Agency returns only the signed-in Host core data", async () =
   assert.equal(result.target.currentLevel.rank, "B");
   assert.equal(result.target.nextLevel.id, "starter_a");
   assert.equal(result.target.targetCoins, 850000);
+  assert.deepEqual(
+    result.target.levels.map((level) => level.id),
+    ["starter_g", "starter_b", "starter_a"],
+  );
+  assert.equal(result.target.levels[2].salaryDiamonds, 85);
   assert.equal(result.activity.qualifiedDays, 7);
   assert.equal(result.activity.micSecondsMonth, 54000);
   assert.equal(result.activity.requiredQualifiedDays, 9);
