@@ -65,7 +65,7 @@ class _GiftEconomyControlPageState extends State<GiftEconomyControlPage> {
   List<_TierDraft> tiers = [];
   final hostBonus = TextEditingController(text: '2');
   final agencyBonus = TextEditingController(text: '2');
-  final hostBonusDays = TextEditingController(text: '9');
+  final hostBonusDays = TextEditingController(text: '14');
   final hostMinutesPerDay = TextEditingController(text: '120');
   final agencyBonusActiveHosts = TextEditingController(text: '10');
 
