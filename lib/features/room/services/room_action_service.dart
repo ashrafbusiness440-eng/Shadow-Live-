@@ -146,6 +146,17 @@ class RoomActionService {
     return PersonalRoomInfo.fromJson(Map<String, dynamic>.from(room));
   }
 
+  Future<PersonalRoomInfo> openAgencyOwnerRoom() async {
+    final body = await _post({'action': 'agencyRoom'});
+    final room = body['room'];
+    if (room is! Map) throw const FormatException('invalid_agency_room');
+    final parsed = PersonalRoomInfo.fromJson(Map<String, dynamic>.from(room));
+    if (parsed.roomType != 'agency' || parsed.agencyId.isEmpty) {
+      throw const FormatException('invalid_agency_room');
+    }
+    return parsed;
+  }
+
   Future<void> recordRoomVisit(String roomId) async {
     await _post({
       'action': 'recordRoomVisit',
