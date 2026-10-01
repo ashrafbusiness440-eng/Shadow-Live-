@@ -49,7 +49,7 @@ export function resolveRevenuePolicy(
     : 0;
   const requiredDays = Math.max(
     1,
-    Math.min(31, Number(economy?.hostBonusQualifiedDays || 9)),
+    Math.min(31, Number(economy?.hostBonusQualifiedDays || 14)),
   );
   const configuredHostBonus = Math.max(
     0,
@@ -249,7 +249,7 @@ export function calculateAgencyCycleSettlement(
   const tier = tierForMonthlyGross(economy, monthlyGrossCoins);
   const fullDays = Math.max(
     1,
-    Math.min(31, Number(economy?.hostBonusQualifiedDays || 9)),
+    Math.min(31, Number(economy?.hostBonusQualifiedDays || 14)),
   );
   const hostBonusBps = qualifiedDays >= fullDays
     ? Math.max(
