@@ -435,6 +435,28 @@ function roomHostUid(room){
   return clean(room.hostUid||room.hostId);
 }
 
+const AGENCY_MANAGER_ROOM_CAPABILITIES=[
+  "manageMic",
+  "moderateUsers",
+  "moderateChat",
+  "manageMusic",
+  "manageMusicPolicy",
+  "managePk",
+];
+
+function agencyRoomManagementCapabilities(room,actor,uid){
+  const roomType=clean(room.roomType||room.type||"personal");
+  const roomAgencyId=clean(room.agencyId);
+  if(roomType!=="agency"||!/^[0-9]{3,8}$/.test(roomAgencyId))return [];
+  if(clean(actor?.agencyId)!==roomAgencyId)return [];
+  const role=clean(actor?.agencyRole);
+  if(role==="owner"&&roomOwnerUid(room)===uid)return ROOM_MODERATOR_CAPABILITIES;
+  if(role==="manager"||role==="senior_manager"){
+    return AGENCY_MANAGER_ROOM_CAPABILITIES;
+  }
+  return [];
+}
+
 function hasRoomCapability(room,uid,capability){
   const ownerUid=roomOwnerUid(room);
   if(!isOfficialRoom(room)&&ownerUid===uid)return true;
@@ -447,8 +469,10 @@ function hasRoomCapability(room,uid,capability){
 
 function canManageRoomAction(room,actor,uid,capability){
   const global=roomPermissions(actor);
+  const agencyCapabilities=agencyRoomManagementCapabilities(room,actor,uid);
   return (!isOfficialRoom(room)&&roomOwnerUid(room)===uid)
     ||global.manageRooms
+    ||agencyCapabilities.includes(capability)
     ||hasRoomCapability(room,uid,capability);
 }
 
@@ -468,6 +492,7 @@ async function roomModeratorState(db,uid,roomId){
   const hostCapabilities=isOfficialRoom(room)&&hostUid===uid
     ? OFFICIAL_HOST_CAPABILITIES
     : [];
+  const agencyCapabilities=agencyRoomManagementCapabilities(room,actor,uid);
   return {
     ok:true,
     roomId,
@@ -475,12 +500,19 @@ async function roomModeratorState(db,uid,roomId){
     hostUid,
     isOwner:!isOfficialRoom(room)&&ownerUid===uid,
     isHost:isOfficialRoom(room)&&hostUid===uid,
-    canManage:(!isOfficialRoom(room)&&ownerUid===uid)||global.manageRooms||hostCapabilities.length>0,
+    canManage:(!isOfficialRoom(room)&&ownerUid===uid)
+      ||global.manageRooms
+      ||hostCapabilities.length>0
+      ||agencyCapabilities.length>0,
     limit:roomModeratorLimit(room),
     capabilities:ROOM_MODERATOR_CAPABILITIES,
     myCapabilities:!isOfficialRoom(room)&&ownerUid===uid
       ? ROOM_MODERATOR_CAPABILITIES
-      : [...new Set([...hostCapabilities,...(myModerator?.capabilities||[])])],
+      : [...new Set([
+          ...hostCapabilities,
+          ...agencyCapabilities,
+          ...(myModerator?.capabilities||[]),
+        ])],
     moderators:normalizeRoomModerators(room),
   };
 }
@@ -880,7 +912,11 @@ async function updateRoomSettings(db,uid,body){
     const user=userSnap.data()||{};
     const permissions=roomPermissions(user);
     const ownerUid=clean(room.ownerUid||room.ownerId||room.hostId);
-    if(ownerUid!==uid&&!permissions.manageRooms)throw new ApiError("forbidden",403);
+    const agencyManager=
+      agencyRoomManagementCapabilities(room,user,uid).length>0;
+    if(ownerUid!==uid&&!permissions.manageRooms&&!agencyManager){
+      throw new ApiError("forbidden",403);
+    }
     if(visibility==="hidden"&&!permissions.hidden)throw new ApiError("hidden_room_forbidden",403);
 
     if(coverImageObjectId){
@@ -3214,9 +3250,14 @@ async function roomBootstrap(db,decoded,body){
   const hostCapabilities=official&&hostUid===uid
     ? OFFICIAL_HOST_CAPABILITIES
     : [];
+  const agencyCapabilities=agencyRoomManagementCapabilities(room,actor,uid);
   const myCapabilities=!official&&ownerUid===uid
     ? ROOM_MODERATOR_CAPABILITIES
-    : [...new Set([...hostCapabilities,...(myModerator?.capabilities||[])])];
+    : [...new Set([
+        ...hostCapabilities,
+        ...agencyCapabilities,
+        ...(myModerator?.capabilities||[]),
+      ])];
   const onlineCount=liveRoomCount??Math.max(
     0,
     Number(room.onlineCount||room.participantsCount||0),
@@ -3324,7 +3365,10 @@ async function roomBootstrap(db,decoded,body){
       hostUid,
       isOwner:!official&&ownerUid===uid,
       isHost:official&&hostUid===uid,
-      canManage:(!official&&ownerUid===uid)||global.manageRooms||hostCapabilities.length>0,
+      canManage:(!official&&ownerUid===uid)
+        ||global.manageRooms
+        ||hostCapabilities.length>0
+        ||agencyCapabilities.length>0,
       limit:roomModeratorLimit(room),
       capabilities:ROOM_MODERATOR_CAPABILITIES,
       myCapabilities,
