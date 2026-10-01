@@ -609,7 +609,9 @@ function roomResponse(roomId,data){
     hostUid:clean(data.hostUid||data.hostId),
     roomType,
     agencyId:roomType==="agency"&&/^\d{3,8}$/.test(agencyId)?agencyId:"",
-    category:clean(data.category||"دردشة"),
+    agencyName:roomType==="agency"?clean(data.agencyName):"",
+    agencyLogoUrl:roomType==="agency"?clean(data.agencyLogoUrl):"",
+    category:roomType==="agency"?"وكالة":clean(data.category||"دردشة"),
     ownerName:clean(data.ownerName),
     ownerLocation:clean(data.ownerLocation),
     chatEnabled:data.chatEnabled!==false,
@@ -706,6 +708,7 @@ async function openPersonalRoom(db,uid,{forceAgency=false}={}){
               agencyName:clean(agency?.name),
               agencyLogoUrl:clean(agency?.logoUrl||agency?.imageUrl),
               agencyCoverUrl:clean(agency?.coverUrl||agency?.coverImageUrl),
+              category:"وكالة",
             }:{})
           };
           tx.set(roomRef,roomPatch,{merge:true});
@@ -734,7 +737,7 @@ async function openPersonalRoom(db,uid,{forceAgency=false}={}){
             agencyLogoUrl:clean(agency?.logoUrl||agency?.imageUrl),
             agencyCoverUrl:clean(agency?.coverUrl||agency?.coverImageUrl),
           }:{}),
-          category:"دردشة",
+          category:createAsAgency?"وكالة":"دردشة",
           ownerName:displayName,
           ownerLocation,
           chatEnabled:true,
@@ -3336,6 +3339,8 @@ async function roomBootstrap(db,decoded,body){
 
   const roomData={
     ...roomResponse(roomId,room),
+    viewerAgencyId:clean(actor.agencyId),
+    viewerAgencyRole:clean(actor.agencyRole),
     onlineCount,
     participantsCount:onlineCount,
     activeRoomBackgroundRewardId:clean(room.activeRoomBackgroundRewardId),
