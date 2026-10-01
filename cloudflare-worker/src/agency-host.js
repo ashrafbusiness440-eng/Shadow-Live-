@@ -208,7 +208,7 @@ export async function loadAgencyHostCore(
   );
   const requiredQualifiedDays = boundedInteger(
     economy.hostBonusQualifiedDays,
-    9,
+    14,
     1,
     31,
   );
