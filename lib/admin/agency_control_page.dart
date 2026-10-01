@@ -36,6 +36,7 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
   List<Map<String, dynamic>> manualBlocks = [];
   List<Map<String, dynamic>> ownershipTransferRequests = [];
   List<Map<String, dynamic>> identityChangeRequests = [];
+  List<Map<String, dynamic>> cooldownExceptionRequests = [];
 
   @override
   void initState() {
@@ -109,6 +110,12 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
               .map((e) => Map<String, dynamic>.from(e))
               .toList()
           : <Map<String, dynamic>>[];
+      final cooldownExceptions = body['cooldownExceptionRequests'] is List
+          ? (body['cooldownExceptionRequests'] as List)
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList()
+          : <Map<String, dynamic>>[];
       final permissions = body['permissions'] is Map
           ? Map<String, dynamic>.from(body['permissions'] as Map)
           : <String, dynamic>{};
@@ -124,6 +131,7 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
         manualBlocks = blocks;
         ownershipTransferRequests = transfers;
         identityChangeRequests = identityChanges;
+        cooldownExceptionRequests = cooldownExceptions;
         canDirectCreate = permissions['canDirectCreate'] == true;
         canManageExisting = permissions['canManageExisting'] == true;
         canTransferOwnership = permissions['canTransferOwnership'] == true;
@@ -1001,6 +1009,105 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
     }
   }
 
+  Future<void> reviewCooldownException(
+    Map<String, dynamic> request,
+    String decision,
+  ) async {
+    if (busy || !canManageMemberships) return;
+    String? reason;
+    if (decision == 'reject') {
+      final controller = TextEditingController();
+      final accepted = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('رفض طلب استثناء فترة الانتظار'),
+          content: TextField(
+            controller: controller,
+            minLines: 2,
+            maxLines: 4,
+            maxLength: 500,
+            decoration: const InputDecoration(
+              labelText: 'سبب الرفض *',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (controller.text.trim().length >= 3) {
+                  Navigator.pop(dialogContext, true);
+                }
+              },
+              child: const Text('رفض'),
+            ),
+          ],
+        ),
+      );
+      reason = controller.text.trim();
+      controller.dispose();
+      if (accepted != true || reason.length < 3) return;
+    } else {
+      final accepted = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('الموافقة على استثناء الانتظار'),
+          content: const Text(
+            'سيتم رفع انتظار 7 أيام فورًا لهذا المستخدم، ويمكنه بعدها الانضمام إلى وكالة حسب الشروط العادية.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('موافقة'),
+            ),
+          ],
+        ),
+      );
+      if (accepted != true) return;
+    }
+
+    setState(() => busy = true);
+    try {
+      await post({
+        'action': 'reviewCooldownException',
+        'requestId': (request['requestId'] ?? '').toString(),
+        'decision': decision,
+        if (reason != null) 'reason': reason,
+        'idempotencyKey': operationKey(
+          decision == 'accept'
+              ? 'agency_cooldown_exception_accept'
+              : 'agency_cooldown_exception_reject',
+        ),
+      });
+      await load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            decision == 'accept'
+                ? 'تم رفع فترة الانتظار.'
+                : 'تم رفض طلب الاستثناء.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر معالجة طلب الاستثناء: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
   Future<void> changeManagedAgencyStatus(String status) async {
     final agency = managedAgency;
     if (agency == null || busy) return;
@@ -1619,6 +1726,92 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
                                     onPressed: busy
                                         ? null
                                         : () => reviewIdentityChange(
+                                              request,
+                                              'reject',
+                                            ),
+                                    icon: const Icon(Icons.cancel_outlined),
+                                    label: const Text('رفض'),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                  if (canManageMemberships) ...[
+                    const SizedBox(height: 20),
+                    const Text(
+                      'طلبات استثناء انتظار 7 أيام',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    if (cooldownExceptionRequests.isEmpty)
+                      const Card(
+                        child: ListTile(
+                          leading: Icon(Icons.hourglass_disabled_rounded),
+                          title: Text('لا توجد طلبات استثناء معلّقة'),
+                        ),
+                      ),
+                    ...cooldownExceptionRequests.map(
+                      (request) => Card(
+                        key: ValueKey(
+                          'agency-cooldown-exception-' +
+                              (request['requestId'] ?? '').toString(),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Text(
+                                'User: ' +
+                                    (request['uid'] ?? '').toString(),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              if ((request['agencyId'] ?? '')
+                                  .toString()
+                                  .isNotEmpty)
+                                Text(
+                                  'الوكالة السابقة: ' +
+                                      (request['agencyId'] ?? '').toString(),
+                                ),
+                              Text(
+                                'السبب: ' +
+                                    (request['reason'] ?? '—').toString(),
+                              ),
+                              Text(
+                                'الانتظار حتى: ' +
+                                    (request['cooldownUntil'] ?? '—')
+                                        .toString(),
+                              ),
+                              const SizedBox(height: 10),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  FilledButton.icon(
+                                    onPressed: busy
+                                        ? null
+                                        : () => reviewCooldownException(
+                                              request,
+                                              'accept',
+                                            ),
+                                    icon: const Icon(
+                                      Icons.check_circle_outline,
+                                    ),
+                                    label: const Text('موافقة'),
+                                  ),
+                                  OutlinedButton.icon(
+                                    onPressed: busy
+                                        ? null
+                                        : () => reviewCooldownException(
                                               request,
                                               'reject',
                                             ),
