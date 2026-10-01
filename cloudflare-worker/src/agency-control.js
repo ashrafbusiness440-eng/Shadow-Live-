@@ -2115,6 +2115,9 @@ function sanitizeAgencyPolicyOverride(data = {}) {
   if (Object.prototype.hasOwnProperty.call(data, "agencyPerformanceBonusBps")) {
     result.agencyPerformanceBonusBps = Number(data.agencyPerformanceBonusBps);
   }
+  if (Object.prototype.hasOwnProperty.call(data, "agencyPerformanceBonusMode")) {
+    result.agencyPerformanceBonusMode = clean(data.agencyPerformanceBonusMode);
+  }
   if (Object.prototype.hasOwnProperty.call(data, "agencyBonusActiveHosts")) {
     result.agencyBonusActiveHosts = Number(data.agencyBonusActiveHosts);
   }
@@ -2143,19 +2146,27 @@ function effectiveAgencyPolicy(economy = {}, override = {}) {
   return {
     tiers,
     targets,
-    agencyPerformanceBonusBps: has("agencyPerformanceBonusBps")
-      ? Number(override.agencyPerformanceBonusBps)
-      : Math.max(0, Math.min(3000, Number(economy.agencyPerformanceBonusBps ?? 200))),
-    agencyBonusActiveHosts: has("agencyBonusActiveHosts")
-      ? Number(override.agencyBonusActiveHosts)
-      : Math.max(1, Math.min(100000, Number(economy.agencyBonusActiveHosts || 10))),
+    agencyPerformanceBonusBps:
+      has("agencyPerformanceBonusMode") &&
+      clean(override.agencyPerformanceBonusMode) === "per_host_target_month_end" &&
+      has("agencyPerformanceBonusBps")
+        ? Math.max(0, Math.min(3000, Number(override.agencyPerformanceBonusBps)))
+        : (
+            clean(economy.agencyPerformanceBonusMode) === "per_host_target_month_end"
+              ? Math.max(0, Math.min(3000, Number(economy.agencyPerformanceBonusBps ?? 100)))
+              : 100
+          ),
+    agencyPerformanceBonusMode: "per_host_target_month_end",
+    agencyBonusActiveHosts: 0,
     surplusToShadow: has("surplusToShadow") ? override.surplusToShadow : null,
     inherited: {
       tiers: !has("tiers"),
       targets: !has("targets"),
-      bonus:
-        !has("agencyPerformanceBonusBps") &&
-        !has("agencyBonusActiveHosts"),
+      bonus: !(
+        has("agencyPerformanceBonusMode") &&
+        clean(override.agencyPerformanceBonusMode) === "per_host_target_month_end" &&
+        has("agencyPerformanceBonusBps")
+      ),
       surplus: !has("surplusToShadow"),
     },
   };
@@ -2172,8 +2183,8 @@ function agencyPolicyFingerprint(body = {}) {
     overrideBonus: body.overrideBonus === true,
     agencyPerformanceBonusBps:
       body.overrideBonus === true ? Number(body.agencyPerformanceBonusBps) : null,
-    agencyBonusActiveHosts:
-      body.overrideBonus === true ? Number(body.agencyBonusActiveHosts) : null,
+    agencyPerformanceBonusMode:
+      body.overrideBonus === true ? "per_host_target_month_end" : null,
     surplusToShadow: body.surplusToShadow,
   });
 }
@@ -2237,11 +2248,7 @@ export async function updateAgencyPolicyOverride(
       "agency_bonus_bps",
       { min: 0, max: 3000 },
     );
-    next.agencyBonusActiveHosts = policyInteger(
-      body.agencyBonusActiveHosts,
-      "agency_bonus_active_hosts",
-      { min: 1, max: 100000 },
-    );
+    next.agencyPerformanceBonusMode = "per_host_target_month_end";
   }
 
   const opPath = controlOperationPath(actorUid, key);
@@ -2281,6 +2288,7 @@ export async function updateAgencyPolicyOverride(
         "tiers",
         "targets",
         "agencyPerformanceBonusBps",
+        "agencyPerformanceBonusMode",
         "agencyBonusActiveHosts",
       ];
       const policyWrite = beforeSnap.exists
