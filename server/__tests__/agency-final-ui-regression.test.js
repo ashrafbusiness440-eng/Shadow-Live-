@@ -42,6 +42,7 @@ test("Agencies final UI keeps account images and pending request layout stable",
   assert.equal(ownerPage.includes("owner-member-copy-id-"), true);
   assert.equal(ownerPage.includes("owner-member-performance-"), true);
   assert.equal(ownerPage.includes("trailing: owner"), false);
+  assert.equal(ownerPage.includes("owner-agency-copy-id"), true);
   assert.equal(ownerPage.includes("إلغاء الدعوة"), true);
   assert.equal(managerPage.includes("agency-review-pending-"), true);
   assert.equal(managerPage.includes("maxLines: 1"), true);
@@ -104,6 +105,25 @@ test("Agencies target table renders every configured level and display-only econ
   assert.equal(hostSource.includes(".map((target) =>"), true);
   assert.equal(hostSource.includes("revenueTiers(effectiveEconomy)"), true);
   assert.equal(hostSource.includes("grossSupportCoins"), true);
+});
+
+test("Agency ID copy actions stay available across member-facing Agency screens", () => {
+  const hostPage = source(
+    "lib/features/agency/screens/host_my_agency_page.dart",
+  );
+  const publicAgency = source(
+    "lib/features/agency/screens/public_agency_page.dart",
+  );
+  const ownerPage = source(
+    "lib/features/agency/screens/owner_agency_dashboard_page.dart",
+  );
+
+  assert.equal(hostPage.includes("host-agency-copy-id"), true);
+  assert.equal(publicAgency.includes("public-agency-copy-id"), true);
+  assert.equal(ownerPage.includes("owner-agency-copy-id"), true);
+  assert.equal(hostPage.includes("Clipboard.setData"), true);
+  assert.equal(publicAgency.includes("Clipboard.setData"), true);
+  assert.equal(ownerPage.includes("Clipboard.setData"), true);
 });
 
 test("Agency Room category and logo reuse bootstrap data without agency hot-path reads", () => {
