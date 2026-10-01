@@ -3247,6 +3247,56 @@ export async function listAgencyMembershipPending(
   };
 }
 
+export async function getAgencyMembershipReviewRequest(
+  db,
+  actorUid,
+  body = {},
+) {
+  const requestId = clean(body.requestId);
+  if (!requestId || requestId.includes("/")) {
+    throw new ApiError("invalid_request_id", 400);
+  }
+  const requestSnap = await db.get(
+    `agency_membership_requests/${requestId}`,
+  );
+  if (!requestSnap.exists) {
+    throw new ApiError("membership_request_not_found", 404);
+  }
+  const request = requestSnap.data || {};
+  const agencyId = clean(request.agencyId);
+  const uid = clean(request.uid);
+  const type = clean(request.type);
+  if (
+    !/^\d{3,8}$/.test(agencyId) ||
+    !uid ||
+    !["join", "leave"].includes(type)
+  ) {
+    throw new ApiError("membership_request_invalid", 409);
+  }
+
+  await loadAgencyActor(db, actorUid, agencyId, "review");
+  if (actorUid === uid) {
+    throw new ApiError("cannot_review_own_request", 403);
+  }
+
+  const [userSnap, lockSnap] = await Promise.all([
+    db.get(`users/${uid}`),
+    db.get(acceptanceLockPath(uid)),
+  ]);
+  const detail = pendingRequestView({
+    agencyId,
+    row: { data: request },
+    userSnap,
+    lockSnap,
+  });
+  return {
+    ok: true,
+    request: detail,
+    actionable: clean(request.status) === "pending",
+    permissions: { canReview: true },
+  };
+}
+
 export async function getMyAgencyMembershipRequest(
   db,
   actorUid,
@@ -3426,6 +3476,12 @@ export async function agencyMembership(request, env) {
       result = await listAgencyMembers(db, decoded.sub, body);
     } else if (action === "listAgencyPending") {
       result = await listAgencyMembershipPending(db, decoded.sub, body);
+    } else if (action === "reviewRequest") {
+      result = await getAgencyMembershipReviewRequest(
+        db,
+        decoded.sub,
+        body,
+      );
     } else if (action === "getMyRequest") {
       result = await getMyAgencyMembershipRequest(db, decoded.sub, body);
     } else if (action === "eligibility") {
