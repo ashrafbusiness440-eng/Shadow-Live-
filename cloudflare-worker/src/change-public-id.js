@@ -106,7 +106,10 @@ async function execute(db, actorUid, body) {
         await db.rollback(transaction);
         throw new ApiError("old_id_retired", 409);
       }
-      if (newSnap.exists || roomCollision.exists) {
+      if (
+        (newSnap.exists && newSnap.data?.reserved !== true) ||
+        roomCollision.exists
+      ) {
         await db.rollback(transaction);
         throw new ApiError("id_taken", 409);
       }
@@ -153,12 +156,39 @@ async function execute(db, actorUid, body) {
           searchTokens,
           updatedAt: createdAt,
         }, ["publicId", "searchTokens", "updatedAt"]),
-        db.writeCreate(`public_ids/${newId}`, {
-          uid: targetUid,
-          createdAt,
-          source: "adminOverride",
-          createdBy: actorUid,
-        }),
+        newSnap.exists
+          ? db.writeUpdate(
+              `public_ids/${newId}`,
+              {
+                uid: targetUid,
+                reserved: false,
+                createdAt,
+                source: "adminOverride",
+                createdBy: actorUid,
+                retiredFromUid: null,
+                retiredAt: null,
+                retiredBy: null,
+                currentPublicId: null,
+              },
+              [
+                "uid",
+                "reserved",
+                "createdAt",
+                "source",
+                "createdBy",
+                "retiredFromUid",
+                "retiredAt",
+                "retiredBy",
+                "currentPublicId",
+              ],
+            )
+          : db.writeCreate(`public_ids/${newId}`, {
+              uid: targetUid,
+              reserved: false,
+              createdAt,
+              source: "adminOverride",
+              createdBy: actorUid,
+            }),
         // The historical ID remains in publicIdHistory/Audit only.
         // Its live registry mapping is removed atomically so the ID can be
         // allocated again without leaving a ghost reservation.
