@@ -2993,6 +2993,206 @@ export async function propagateAgencyPolicyPage(
   throw new ApiError("transaction_failed", 500);
 }
 
+export async function listAgencyCooldownExceptionRequests(
+  db,
+  limitInput = 25,
+) {
+  const limit = Math.min(25, boundedAgencyPageSize(limitInput, 25));
+  const rows = await db.runQuery("agency_cooldown_exception_requests", {
+    filters: [{ field: "status", op: "==", value: "pending" }],
+    limit,
+  });
+  return rows
+    .map((row) => {
+      const data = row?.data || {};
+      return {
+        requestId: clean(data.requestId || row?.id),
+        uid: clean(data.uid || row?.id),
+        agencyId: clean(data.agencyId) || null,
+        status: clean(data.status),
+        reason: clean(data.reason) || null,
+        cooldownUntil: data.cooldownUntil || null,
+        requestedAt: data.requestedAt || null,
+      };
+    })
+    .filter((item) => item.requestId && item.uid)
+    .sort(
+      (left, right) =>
+        timestampMs(left.requestedAt) - timestampMs(right.requestedAt),
+    );
+}
+
+async function finalizeAgencyCooldownExceptionReview(
+  db,
+  actorUid,
+  requestId,
+  decision,
+  reason,
+  now,
+) {
+  const requestPath = "agency_cooldown_exception_requests/" + requestId;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const tx = await db.beginTransaction();
+    try {
+      const snap = await db.get(requestPath, tx);
+      if (!snap.exists) {
+        throw new ApiError("cooldown_exception_not_found", 404);
+      }
+      const current = snap.data || {};
+      const currentStatus = clean(current.status);
+      const finalStatus = decision === "accept" ? "accepted" : "rejected";
+      if (currentStatus === finalStatus) {
+        await db.rollback(tx);
+        return { ok: true, code: "already_processed", status: finalStatus };
+      }
+      if (currentStatus !== "pending") {
+        throw new ApiError("cooldown_exception_already_processed", 409);
+      }
+      const uid = clean(current.uid || requestId);
+      const agencyId = clean(current.agencyId);
+      const writes = [
+        db.writeUpdate(
+          requestPath,
+          {
+            status: finalStatus,
+            resolutionReason: reason || null,
+            resolvedBy: actorUid,
+            resolvedAt: now,
+            updatedAt: now,
+          },
+          [
+            "status",
+            "resolutionReason",
+            "resolvedBy",
+            "resolvedAt",
+            "updatedAt",
+          ],
+        ),
+        db.writeCreate(
+          "admin_audit_logs/agency_cooldown_exception_review_" +
+            requestId + "_" + decision,
+          {
+            actorUid,
+            action:
+              decision === "accept"
+                ? "approveAgencyCooldownException"
+                : "rejectAgencyCooldownException",
+            targetType: "agency_membership",
+            targetId: agencyId + "__" + uid,
+            before: {
+              status: "pending",
+              cooldownUntil: current.cooldownUntil || null,
+            },
+            after: {
+              status: finalStatus,
+              reason: reason || null,
+            },
+            createdAt: now,
+          },
+        ),
+      ];
+      if (decision === "reject") {
+        writes.push(
+          db.writeCreate(
+            "notifications/agency_cooldown_exception_rejected_" + requestId,
+            {
+              userId: uid,
+              type: "agency_rejoin_cooldown_exception_rejected",
+              category: "system",
+              title: "تم رفض طلب استثناء فترة الانتظار",
+              body: reason || "يستمر انتظار 7 أيام حسب النظام.",
+              read: false,
+              mandatory: true,
+              agencyId: agencyId || null,
+              createdAt: now,
+            },
+          ),
+        );
+      }
+      await db.commit(tx, writes);
+      return { ok: true, code: "ok", status: finalStatus, uid, agencyId };
+    } catch (error) {
+      await db.rollback(tx);
+      if (error instanceof ApiError) throw error;
+      if (isTransientFirestoreError(error) && attempt < 2) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, firestoreErrorRetryDelayMs(attempt))
+        );
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new ApiError("transaction_failed", 500);
+}
+
+export async function reviewAgencyCooldownException(
+  db,
+  actorUid,
+  body = {},
+  { now = new Date() } = {},
+) {
+  const requestId = clean(body.requestId);
+  const decision = clean(body.decision);
+  const reason = clean(body.reason).slice(0, 500);
+  const key = clean(body.idempotencyKey);
+  if (!requestId || requestId.includes("/")) {
+    throw new ApiError("invalid_cooldown_exception_request", 400);
+  }
+  if (!["accept", "reject"].includes(decision)) {
+    throw new ApiError("invalid_decision", 400);
+  }
+  if (decision === "reject" && reason.length < 3) {
+    throw new ApiError("cooldown_exception_rejection_reason_required", 400);
+  }
+  if (!validIdempotencyKey(key)) {
+    throw new ApiError("invalid_idempotency_key", 400);
+  }
+
+  const requestSnap = await db.get(
+    "agency_cooldown_exception_requests/" + requestId,
+  );
+  if (!requestSnap.exists) {
+    throw new ApiError("cooldown_exception_not_found", 404);
+  }
+  const request = requestSnap.data || {};
+  const status = clean(request.status);
+  if (status !== "pending") {
+    return { ok: true, code: "already_processed", status };
+  }
+
+  if (decision === "accept") {
+    const targetUid = clean(request.uid || requestId);
+    try {
+      await overrideAgencyRejoinCooldown(
+        db,
+        actorUid,
+        {
+          targetUid,
+          reason:
+            reason ||
+            "تمت الموافقة على طلب استثناء فترة انتظار الوكالة.",
+          idempotencyKey: key,
+        },
+        { now },
+      );
+    } catch (error) {
+      if (clean(error?.message) !== "agency_rejoin_cooldown_not_active") {
+        throw error;
+      }
+    }
+  }
+
+  return finalizeAgencyCooldownExceptionReview(
+    db,
+    actorUid,
+    requestId,
+    decision,
+    reason,
+    now,
+  );
+}
+
 export async function overrideAgencyCooldownByPublicId(
   db,
   actorUid,
@@ -3035,13 +3235,18 @@ export async function agencyControl(request, env) {
     if (action === "listReviewQueue") {
       const canReview = actor.permissions.canReviewApplications;
       const canManagePackages = actor.permissions.canManageAgencyPackages;
-      if (!canReview && !canManagePackages) throw new ApiError("forbidden", 403);
+      if (
+        !canReview &&
+        !canManagePackages &&
+        !actor.permissions.canManageMemberships
+      ) throw new ApiError("forbidden", 403);
       const [
         applications,
         manualBlocks,
         applicationSettings,
         ownershipTransferRequests,
         identityChangeRequests,
+        cooldownExceptionRequests,
       ] = canReview
         ? await Promise.all([
             listAgencyReviewQueue(db, body.limit),
@@ -3052,6 +3257,9 @@ export async function agencyControl(request, env) {
               : Promise.resolve([]),
             actor.permissions.canManageAgencies
               ? listAgencyIdentityChangeRequests(db, 25)
+              : Promise.resolve([]),
+            actor.permissions.canManageMemberships
+              ? listAgencyCooldownExceptionRequests(db, 25)
               : Promise.resolve([]),
           ])
         : [
@@ -3064,6 +3272,9 @@ export async function agencyControl(request, env) {
             actor.permissions.canManageAgencies
               ? await listAgencyIdentityChangeRequests(db, 25)
               : [],
+            actor.permissions.canManageMemberships
+              ? await listAgencyCooldownExceptionRequests(db, 25)
+              : [],
           ];
       return json(request, env, {
         ok: true,
@@ -3071,6 +3282,7 @@ export async function agencyControl(request, env) {
         manualBlocks,
         ownershipTransferRequests,
         identityChangeRequests,
+        cooldownExceptionRequests,
         applicationSettings,
         limit: Math.min(50, boundedAgencyPageSize(body.limit, 50)),
         permissions: {
@@ -3207,6 +3419,16 @@ export async function agencyControl(request, env) {
         request,
         env,
         await overrideAgencyCooldownByPublicId(db, decoded.sub, body),
+      );
+    }
+    if (action === "reviewCooldownException") {
+      if (!actor.permissions.canManageMemberships) {
+        throw new ApiError("forbidden", 403);
+      }
+      return json(
+        request,
+        env,
+        await reviewAgencyCooldownException(db, decoded.sub, body),
       );
     }
     throw new ApiError("invalid_action", 400);
