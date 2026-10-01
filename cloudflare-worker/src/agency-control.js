@@ -1507,7 +1507,8 @@ export async function updateAgencyIdentity(
           ? clean(nextAgencySnap.data?.publicId || nextPublicId)
           : "";
         if (
-          nextRegistrySnap.exists ||
+          (nextRegistrySnap.exists &&
+            nextRegistrySnap.data?.reserved !== true) ||
           (
             nextAgencySnap.exists &&
             directPublicId === nextPublicId &&
@@ -1558,15 +1559,37 @@ export async function updateAgencyIdentity(
       ];
 
       if (publicIdChanged) {
+        const activeRegistry = {
+          agencyId,
+          ownerUid,
+          publicId: nextPublicId,
+          source: "control_change",
+          allocatedAt: now,
+          reserved: false,
+          retiredAgencyId: null,
+          currentPublicId: null,
+          retiredAt: null,
+          retiredBy: null,
+        };
         writes.push(
-          db.writeCreate(`agency_ids/${nextPublicId}`, {
-            agencyId,
-            ownerUid,
-            publicId: nextPublicId,
-            source: "control_change",
-            allocatedAt: now,
-            reserved: false,
-          }),
+          nextRegistrySnap?.exists
+            ? db.writeUpdate(
+                `agency_ids/${nextPublicId}`,
+                activeRegistry,
+                [
+                  "agencyId",
+                  "ownerUid",
+                  "publicId",
+                  "source",
+                  "allocatedAt",
+                  "reserved",
+                  "retiredAgencyId",
+                  "currentPublicId",
+                  "retiredAt",
+                  "retiredBy",
+                ],
+              )
+            : db.writeCreate(`agency_ids/${nextPublicId}`, activeRegistry),
         );
         // Keep the immutable Agency key and Audit history, but release the
         // previous *public* ID immediately. No retired registry document is
