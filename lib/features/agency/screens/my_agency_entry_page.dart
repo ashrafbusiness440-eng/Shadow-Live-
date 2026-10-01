@@ -86,25 +86,6 @@ class _MyAgencyEntryPageState extends State<MyAgencyEntryPage> {
     }
   }
 
-  String _eligibilityMessage(AgencyJoinEligibility eligibility) {
-    final linked = eligibility.linkedAgencyId;
-    if (linked != null && linked.isNotEmpty) {
-      return 'الحساب مرتبط حاليًا بالوكالة $linked. حدّث الصفحة لفتح معلومات الوكالة.';
-    }
-    final membership = eligibility.membershipReservation;
-    if (membership != null) {
-      final agencyId = membership.agencyId;
-      return agencyId == null || agencyId.isEmpty
-          ? 'لديك طلب أو دعوة وكالة قيد الانتظار.'
-          : 'لديك طلب أو دعوة وكالة قيد الانتظار للوكالة $agencyId.';
-    }
-    final application = eligibility.applicationReservation;
-    if (application != null) {
-      return 'حسابك مرتبط بطلب إنشاء وكالة حاليًا. لا يمكن إرسال طلب انضمام جديد حتى حسمه.';
-    }
-    return 'تعذر إرسال طلب انضمام جديد في الحالة الحالية.';
-  }
-
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -186,7 +167,7 @@ class _MyAgencyEntryPageState extends State<MyAgencyEntryPage> {
                       joinEnabled: _eligibility?.canRequestJoin ?? true,
                       joinBlockedReason: _eligibility != null &&
                               !_eligibility!.canRequestJoin
-                          ? _eligibilityMessage(_eligibility!)
+                          ? _agencyEligibilityMessage(_eligibility!)
                           : null,
                     ),
                   ),
@@ -201,31 +182,30 @@ class _MyAgencyEntryPageState extends State<MyAgencyEntryPage> {
   }
 }
 
+String _agencyEligibilityMessage(AgencyJoinEligibility eligibility) {
+  final linked = eligibility.linkedAgencyId;
+  if (linked != null && linked.isNotEmpty) {
+    return 'الحساب مرتبط حاليًا بالوكالة $linked. حدّث الصفحة لفتح معلومات الوكالة.';
+  }
+  final membership = eligibility.membershipReservation;
+  if (membership != null) {
+    final agencyId = membership.agencyId;
+    return agencyId == null || agencyId.isEmpty
+        ? 'لديك طلب أو دعوة وكالة قيد الانتظار.'
+        : 'لديك طلب أو دعوة وكالة قيد الانتظار للوكالة $agencyId.';
+  }
+  if (eligibility.applicationReservation != null) {
+    return 'حسابك مرتبط بطلب إنشاء وكالة حاليًا. لا يمكن إرسال طلب انضمام جديد حتى حسمه.';
+  }
+  return 'تعذر إرسال طلب انضمام جديد في الحالة الحالية.';
+}
+
 class _EligibilityBanner extends StatelessWidget {
   const _EligibilityBanner({
     required this.eligibility,
   });
 
   final AgencyJoinEligibility eligibility;
-
-  String get _message {
-    final linked = eligibility.linkedAgencyId;
-    if (linked != null && linked.isNotEmpty) {
-      return 'الحساب مرتبط حاليًا بالوكالة $linked. حدّث الصفحة لفتح معلومات الوكالة.';
-    }
-    final membership = eligibility.membershipReservation;
-    if (membership != null) {
-      final agencyId = membership.agencyId;
-      return agencyId == null || agencyId.isEmpty
-          ? 'لديك طلب أو دعوة وكالة قيد الانتظار.'
-          : 'لديك طلب أو دعوة وكالة قيد الانتظار للوكالة $agencyId.';
-    }
-    final application = eligibility.applicationReservation;
-    if (application != null) {
-      return 'حسابك مرتبط بطلب إنشاء وكالة حاليًا. لا يمكن إرسال طلب انضمام جديد حتى حسمه.';
-    }
-    return 'تعذر إرسال طلب انضمام جديد في الحالة الحالية.';
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -245,7 +225,7 @@ class _EligibilityBanner extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              _message,
+              _agencyEligibilityMessage(eligibility),
               style: const TextStyle(color: Colors.white70, height: 1.4),
             ),
           ),
