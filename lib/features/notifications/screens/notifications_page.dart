@@ -105,6 +105,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
             finalStatus: item.finalStatus,
             finalDecision: item.finalDecision,
             resolvedBy: item.resolvedBy,
+            resolvedByName: item.resolvedByName,
           );
         });
       }
@@ -598,7 +599,13 @@ class _NotificationsPageState extends State<NotificationsPage> {
                         title: Text(item.title,
                             style:
                                 const TextStyle(fontWeight: FontWeight.w700)),
-                        subtitle: item.body.isEmpty ? null : Text(item.body),
+                        subtitle: item.agencyReviewResolved
+                            ? Text(
+                                _resolvedNotificationText(item),
+                              )
+                            : item.body.isEmpty
+                                ? null
+                                : Text(item.body),
                         trailing: item.agencyReviewResolved
                             ? const Icon(
                                 Icons.check_circle_outline_rounded,
@@ -622,6 +629,19 @@ class _NotificationsPageState extends State<NotificationsPage> {
       );
 }
 
+
+String _resolvedNotificationText(AppNotification item) {
+  final accepted =
+      item.finalDecision == 'accept' || item.finalStatus == 'accepted';
+  final reviewer = item.resolvedByName?.trim().isNotEmpty == true
+      ? item.resolvedByName!.trim()
+      : item.resolvedBy?.trim().isNotEmpty == true
+          ? item.resolvedBy!.trim()
+          : 'مراجع مخوّل';
+  return accepted
+      ? 'تم قبول الطلب بواسطة $reviewer.'
+      : 'تم رفض الطلب بواسطة $reviewer.';
+}
 
 class _ReviewInfoRow extends StatelessWidget {
   const _ReviewInfoRow({
