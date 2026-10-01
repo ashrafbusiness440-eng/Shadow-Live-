@@ -34,7 +34,6 @@ class _AgencyPolicyControlPageState extends State<AgencyPolicyControlPage> {
   bool propagationHasMore = false;
 
   final bonusPercent = TextEditingController();
-  final activeHosts = TextEditingController();
   final exceptionPublicId = TextEditingController();
   final exceptionReason = TextEditingController();
 
@@ -54,7 +53,6 @@ class _AgencyPolicyControlPageState extends State<AgencyPolicyControlPage> {
   @override
   void dispose() {
     bonusPercent.dispose();
-    activeHosts.dispose();
     exceptionPublicId.dispose();
     exceptionReason.dispose();
     super.dispose();
@@ -142,7 +140,6 @@ class _AgencyPolicyControlPageState extends State<AgencyPolicyControlPage> {
         surplusToShadow = effective['surplusToShadow'] == true;
         bonusPercent.text =
             bpsToPercent(effective['agencyPerformanceBonusBps']).toString();
-        activeHosts.text = '0';
         propagationHasMore =
             body['overrideExists'] == true && propagation['complete'] != true;
       });
