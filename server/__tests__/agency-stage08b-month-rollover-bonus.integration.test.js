@@ -156,6 +156,7 @@ test("08-B month-end pays Base Agency Share then approved Host and per-host Agen
     bonusAccrual,
     hostBonusLedger,
     agencyBonusLedger,
+    shareNotification,
     monthNotification,
     completion,
   ]=await Promise.all([
@@ -166,6 +167,8 @@ test("08-B month-end pays Base Agency Share then approved Host and per-host Agen
       .doc("agency_host_activity_bonus_"+hostMonthId).get(),
     db.collection("financial_ledger")
       .doc("agency_performance_bonus_"+hostMonthId).get(),
+    db.collection("notifications")
+      .doc("agency_share_settlement_"+statementId).get(),
     db.collection("notifications")
       .doc("agency_monthly_settlement_"+statementId).get(),
     db.collection("agency_host_settlement_completions")
@@ -183,6 +186,16 @@ test("08-B month-end pays Base Agency Share then approved Host and per-host Agen
   assert.equal(bonusAccrual.data().perHostEligibleHostCount,1);
   assert.equal(bonusAccrual.data().perHostBonusCoins,500);
   assert.equal(completion.data().status,"complete");
+  assert.equal(shareNotification.data().userId,actorUid);
+  assert.equal(
+    shareNotification.data().type,
+    "agency_share_settlement_paid",
+  );
+  assert.equal(shareNotification.data().mandatory,true);
+  assert.equal(shareNotification.data().financial,true);
+  assert.equal(shareNotification.data().agencyBaseShareCoins,5000);
+  assert.equal(shareNotification.data().agencyDiamondsAdded,1);
+  assert.equal(shareNotification.data().agencyCarryoverCoins,5000);
   assert.equal(monthNotification.data().userId,actorUid);
   assert.equal(
     monthNotification.data().type,
