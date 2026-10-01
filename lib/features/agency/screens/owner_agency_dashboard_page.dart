@@ -1261,10 +1261,13 @@ class _HostPerformanceSheet extends StatelessWidget {
             final activityComplete =
                 data.qualifiedDays >= data.requiredQualifiedDays &&
                 data.micSecondsMonth >= data.requiredMicSecondsMonth;
-            final statusText = data.remainingCoins > 0
-                ? 'باقي ${_compact(data.remainingCoins)} Coins للـTarget التالي'
-                : data.currentLevel != null && !activityComplete
-                    ? 'الـTarget محقق والنشاط ناقص'
+            final progressPercent = (ratio * 100).round();
+            final statusText = data.currentLevel != null && !activityComplete
+                ? data.remainingCoins > 0
+                    ? 'الـTarget الحالي محقق والنشاط ناقص • باقي ${_compact(data.remainingCoins)} Coins للـTarget التالي'
+                    : 'الـTarget محقق والنشاط ناقص'
+                : data.remainingCoins > 0
+                    ? 'باقي ${_compact(data.remainingCoins)} Coins للـTarget التالي'
                     : data.currentLevel != null
                         ? 'الـTarget والنشاط مكتملان'
                         : 'ابدأ التقدم نحو أول Target';
@@ -1333,6 +1336,10 @@ class _HostPerformanceSheet extends StatelessWidget {
                         spacing: 8,
                         runSpacing: 8,
                         children: [
+                          _PerformancePill(
+                            label: 'نسبة التقدم',
+                            value: '$progressPercent%',
+                          ),
                           _PerformancePill(
                             label: 'المحتسب',
                             value: '${_compact(data.progressCoins)} Coins',
