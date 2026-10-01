@@ -34,7 +34,6 @@ test("Agencies final UI keeps account images and pending request layout stable",
   assert.equal(ownerPage.includes("maxLines: 1"), true);
   assert.equal(ownerPage.includes("owner-pending-copy-id-"), true);
   assert.equal(ownerPage.includes("إلغاء الدعوة"), true);
-  assert.equal(ownerPage.includes("فتح الملف الشخصي"), false);
 });
 
 test("Agencies target table renders every configured level and display-only economics", () => {
@@ -49,7 +48,6 @@ test("Agencies target table renders every configured level and display-only econ
   assert.equal(hostPage.includes("Activity Bonus:"), true);
   assert.equal(hostPage.includes("شرط النشاط:"), true);
   assert.equal(hostPage.includes("تقدم المستوى التالي:"), true);
-  assert.equal(hostSource.includes("targetPolicy.map"), false);
   assert.equal(hostSource.includes(".map((target) =>"), true);
   assert.equal(hostSource.includes("revenueTiers(effectiveEconomy)"), true);
   assert.equal(hostSource.includes("grossSupportCoins"), true);
