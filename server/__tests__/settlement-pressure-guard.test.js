@@ -95,10 +95,12 @@ test("agency rejection and manual unblock remain direct and bounded", () => {
   const rejectStart = sourceText.indexOf("export async function rejectAgencyApplication");
   const manualListStart = sourceText.indexOf("export async function listAgencyManualReapplyBlocks");
   const unblockStart = sourceText.indexOf("export async function allowAgencyReapply");
-  const directStart = sourceText.indexOf("export async function directCreateAgency");
+  const controlDetailsStart = sourceText.indexOf(
+    "export async function getAgencyControlDetails",
+  );
   const rejectSource = sourceText.slice(rejectStart, manualListStart);
   const manualListSource = sourceText.slice(manualListStart, unblockStart);
-  const unblockSource = sourceText.slice(unblockStart, directStart);
+  const unblockSource = sourceText.slice(unblockStart, controlDetailsStart);
   assert.equal(rejectSource.includes(".runQuery("), false);
   assert.equal(unblockSource.includes(".runQuery("), false);
   assert.equal(manualListSource.includes('db.runQuery("agency_manual_reapply_blocks"'), true);
