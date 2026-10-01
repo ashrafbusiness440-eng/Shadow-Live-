@@ -374,6 +374,119 @@ function assertSettledAgencyStatementConsistency({
   }
 }
 
+
+async function maybeNotifyAgencyMonthSettlement(
+  db,
+  agencyId,
+  month,
+  now=new Date(),
+){
+  const statementId=agencyId+"__"+month;
+  const notificationRef=db.collection("notifications")
+    .doc("agency_monthly_settlement_"+statementId);
+  const agencyRef=db.collection("agencies").doc(agencyId);
+  const statementRef=db.collection("agency_monthly_statements").doc(statementId);
+  const bonusRef=db.collection("agency_bonus_accruals").doc(statementId);
+  const walletRef=db.collection("agency_wallets").doc(agencyId);
+  const completionRef=db.collection("agency_host_settlement_completions")
+    .doc(statementId);
+
+  return db.runTransaction(async tx=>{
+    const [
+      notificationSnap,
+      agencySnap,
+      statementSnap,
+      bonusSnap,
+      walletSnap,
+      completionSnap,
+    ]=await Promise.all([
+      tx.get(notificationRef),
+      tx.get(agencyRef),
+      tx.get(statementRef),
+      tx.get(bonusRef),
+      tx.get(walletRef),
+      tx.get(completionRef),
+    ]);
+    if(notificationSnap.exists){
+      return {notified:false,duplicate:true};
+    }
+    if(
+      !agencySnap.exists ||
+      !statementSnap.exists ||
+      clean(statementSnap.data()?.status)!=="settled" ||
+      !completionSnap.exists ||
+      clean(completionSnap.data()?.status)!=="complete"
+    ){
+      return {notified:false,pending:true};
+    }
+    const ownerUid=clean(agencySnap.data()?.ownerUid);
+    if(!ownerUid)return {notified:false,pending:true};
+
+    const statement=statementSnap.data()||{};
+    const bonus=bonusSnap.exists?(bonusSnap.data()||{}):{};
+    const wallet=walletSnap.exists?(walletSnap.data()||{}):{};
+    const baseShareCoins=agencyFinancialInteger(
+      statement.agencyBaseShareCoins??statement.agencyShareCoins??0,
+      "notification_base_share_coins",
+    );
+    const performanceBonusCoins=agencyFinancialInteger(
+      bonus.perHostBonusCoins||0,
+      "notification_performance_bonus_coins",
+    );
+    const carryoverCoins=agencyFinancialInteger(
+      wallet.remainderCoins||0,
+      "notification_carryover_coins",
+    );
+    const eligibleHostCount=agencyFinancialInteger(
+      bonus.perHostEligibleHostCount||0,
+      "notification_eligible_host_count",
+    );
+
+    tx.create(notificationRef,{
+      userId:ownerUid,
+      type:"agency_monthly_settlement_summary",
+      category:"system",
+      title:"تم إغلاق تسوية الوكالة الشهرية",
+      body:
+        "الشهر "+month+
+        " • Agency Share: "+String(baseShareCoins)+" Coins"+
+        " • Agency Bonus: "+String(performanceBonusCoins)+" Coins"+
+        " • Carryover: "+String(carryoverCoins)+" Coins",
+      read:false,
+      mandatory:true,
+      financial:true,
+      agencyId,
+      month,
+      agencyBaseShareCoins:baseShareCoins,
+      agencyPerformanceBonusCoins:performanceBonusCoins,
+      agencyPerformanceEligibleHostCount:eligibleHostCount,
+      agencyCarryoverCoins:carryoverCoins,
+      createdAt:now,
+    });
+    return {notified:true,ownerUid};
+  });
+}
+
+async function markAgencyHostSettlementsComplete(
+  db,
+  actorUid,
+  agencyId,
+  month,
+  now=new Date(),
+){
+  const statementId=agencyId+"__"+month;
+  await db.collection("agency_host_settlement_completions")
+    .doc(statementId)
+    .set({
+      agencyId,
+      month,
+      status:"complete",
+      completedBy:actorUid,
+      completedAt:now,
+    },{merge:true});
+  return maybeNotifyAgencyMonthSettlement(db,agencyId,month,now);
+}
+
 export async function settleAgencyMonth(db,actorUid,agencyIdInput,monthInput,options={}){
   const agencyId=clean(agencyIdInput);
   if(!/^[A-Za-z0-9_-]{3,180}$/.test(agencyId)){
@@ -399,7 +512,7 @@ export async function settleAgencyMonth(db,actorUid,agencyIdInput,monthInput,opt
     .doc(month);
   const shardRefs=agencyMonthlyShardRefs(db,agencyId,month);
 
-  return db.runTransaction(async tx=>{
+  const settlementResult=await db.runTransaction(async tx=>{
     const [existing,existingLedger,existingBonusAccrual]=await Promise.all([
       tx.get(settlementRef),
       tx.get(ledgerRef),
@@ -671,6 +784,13 @@ export async function settleAgencyMonth(db,actorUid,agencyIdInput,monthInput,opt
     });
     return {alreadySettled:false,settlement:statement};
   });
+  await maybeNotifyAgencyMonthSettlement(
+    db,
+    agencyId,
+    month,
+    options.now??new Date(),
+  );
+  return settlementResult;
 }
 
 
@@ -1420,6 +1540,16 @@ export async function settleAgencyHostSurplusPage(
   const nextCursor=hasMore&&lastProcessed
     ? clean(lastProcessed.data()?.surplusPageKey)
     : null;
+  const done=!hasMore;
+  if(done){
+    await markAgencyHostSettlementsComplete(
+      db,
+      actorUid,
+      agencyId,
+      month,
+      options.now??new Date(),
+    );
+  }
   return {
     agencyId,
     month,
@@ -1428,7 +1558,7 @@ export async function settleAgencyHostSurplusPage(
     processedCount:results.length,
     settledCount:results.filter(item=>!item.alreadySettled).length,
     duplicateCount:results.filter(item=>item.alreadySettled).length,
-    done:!hasMore,
+    done,
     nextCursor,
     results,
   };
