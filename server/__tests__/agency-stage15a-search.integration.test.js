@@ -57,7 +57,7 @@ test("15-A name search supports substring, case, spaces and Arabic normalization
     seed("815011", "Stage15A Alpha Agency", "Stage15A-Syria"),
     seed("815012", "stage15a alpha CLUB", "Stage15A-Syria"),
     seed("815013", "Stage15A Alpha Closed", "Stage15A-Syria", "suspended"),
-    seed("815014", "وكالة أكاديمية شادو", "الباشان"),
+    seed("815010", "وكالة أكاديمية شادو", "الباشان"),
   ]);
 
   const substring = await searchPublicAgencies(db, {
@@ -77,7 +77,7 @@ test("15-A name search supports substring, case, spaces and Arabic normalization
   });
   assert.deepEqual(
     arabic.results.map((row) => row.agencyId),
-    ["815014"],
+    ["815010"],
   );
 });
 
