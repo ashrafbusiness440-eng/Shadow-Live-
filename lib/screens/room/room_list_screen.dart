@@ -65,13 +65,48 @@ class _RoomListScreenState extends State<RoomListScreen> {
     return category.isEmpty ? 'أخرى' : category;
   }
 
+  String _roomType(DiscoveryRoom room) =>
+      (room.data['roomType'] ?? room.data['type'] ?? 'personal')
+          .toString()
+          .trim();
+
+  bool _isAgencyRoom(DiscoveryRoom room) => _roomType(room) == 'agency';
+
+  bool _isOfficialRoom(DiscoveryRoom room) {
+    final type = _roomType(room);
+    return room.data['systemOwned'] == true ||
+        room.data['officialRoom'] == true ||
+        const {'official', 'administrative', 'customer_service'}.contains(type);
+  }
+
+  bool _matchesRoomFilter(DiscoveryRoom room, String filter) {
+    switch (filter) {
+      case 'الكل':
+        return true;
+      case 'وكالات':
+        return _isAgencyRoom(room);
+      case 'رسمية':
+        return _isOfficialRoom(room);
+      case 'دردشة':
+        return !_isAgencyRoom(room) &&
+            !_isOfficialRoom(room) &&
+            _roomCategory(room) == 'دردشة';
+      default:
+        return !_isAgencyRoom(room) &&
+            !_isOfficialRoom(room) &&
+            _roomCategory(room) == filter;
+    }
+  }
+
   List<String> get _categories {
     final values = <String>{};
     for (final room in _sourceRooms) {
-      values.add(_roomCategory(room));
+      if (_isAgencyRoom(room) || _isOfficialRoom(room)) continue;
+      final category = _roomCategory(room);
+      if (category != 'دردشة') values.add(category);
     }
     final result = values.toList()..sort();
-    return ['الكل', ...result];
+    return ['الكل', 'دردشة', 'رسمية', 'وكالات', ...result];
   }
 
   List<DiscoveryRoom> get _sourceRooms {
@@ -87,8 +122,9 @@ class _RoomListScreenState extends State<RoomListScreen> {
 
   List<DiscoveryRoom> get _visibleRooms {
     final source = _sourceRooms;
-    if (_category == 'الكل') return source;
-    return source.where((room) => _roomCategory(room) == _category).toList();
+    return source
+        .where((room) => _matchesRoomFilter(room, _category))
+        .toList(growable: false);
   }
 
   Future<void> _loadRoomLibrary() async {
