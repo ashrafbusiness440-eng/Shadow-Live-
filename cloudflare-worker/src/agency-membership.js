@@ -2827,6 +2827,7 @@ function activeMemberSummary(row, userSnap) {
       clean(user.displayName || user.name || user.username) || null,
     profileImageUrl:
       clean(user.profileImageUrl || user.photoUrl || user.avatarUrl) || null,
+    accountStatus: clean(user.accountStatus || "active"),
   };
 }
 
