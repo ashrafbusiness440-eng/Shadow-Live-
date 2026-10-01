@@ -159,13 +159,10 @@ async function execute(db, actorUid, body) {
           source: "adminOverride",
           createdBy: actorUid,
         }),
-        db.writeUpdate(`public_ids/${currentId}`, {
-          reserved: true,
-          retiredFromUid: targetUid,
-          retiredAt: createdAt,
-          retiredBy: actorUid,
-          currentPublicId: newId,
-        }, ["reserved", "retiredFromUid", "retiredAt", "retiredBy", "currentPublicId"]),
+        // The historical ID remains in publicIdHistory/Audit only.
+        // Its live registry mapping is removed atomically so the ID can be
+        // allocated again without leaving a ghost reservation.
+        db.writeDelete(`public_ids/${currentId}`),
         db.writeCreate(`admin_audit_logs/${randomId("admin")}`, {
           actorUid,
           action: "changePublicId",
