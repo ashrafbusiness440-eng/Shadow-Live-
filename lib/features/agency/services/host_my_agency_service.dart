@@ -69,7 +69,8 @@ class HostAgencyLevel {
     required this.openEnded,
     required this.hostShareBps,
     required this.grossSupportCoins,
-    required this.activityBonusBps,
+    required this.activityBonusAsset,
+    required this.activityBonusAmount,
   });
 
   final String id;
@@ -80,7 +81,8 @@ class HostAgencyLevel {
   final bool openEnded;
   final int hostShareBps;
   final int grossSupportCoins;
-  final int activityBonusBps;
+  final String activityBonusAsset;
+  final int activityBonusAmount;
 
   factory HostAgencyLevel.fromJson(Map<String, dynamic> json) {
     return HostAgencyLevel(
@@ -92,7 +94,12 @@ class HostAgencyLevel {
       openEnded: json['openEnded'] == true,
       hostShareBps: _nonNegativeInt(json['hostShareBps']),
       grossSupportCoins: _nonNegativeInt(json['grossSupportCoins']),
-      activityBonusBps: _nonNegativeInt(json['activityBonusBps']),
+      activityBonusAsset: json['activityBonus'] is Map
+          ? ((json['activityBonus'] as Map)['asset'] ?? 'none').toString().trim()
+          : 'none',
+      activityBonusAmount: json['activityBonus'] is Map
+          ? _nonNegativeInt((json['activityBonus'] as Map)['amount'])
+          : 0,
     );
   }
 }
@@ -146,7 +153,7 @@ class HostAgencyActivity {
     required this.micSecondsMonth,
     required this.requiredQualifiedDays,
     required this.requiredMinutesPerDay,
-    required this.activityBonusBps,
+    required this.bonusMode,
     required this.requiredMicSecondsMonth,
   });
 
@@ -155,7 +162,7 @@ class HostAgencyActivity {
   final int micSecondsMonth;
   final int requiredQualifiedDays;
   final int requiredMinutesPerDay;
-  final int activityBonusBps;
+  final String bonusMode;
   final int requiredMicSecondsMonth;
 
   factory HostAgencyActivity.fromJson(Map<String, dynamic> json) {
@@ -165,7 +172,7 @@ class HostAgencyActivity {
       micSecondsMonth: _nonNegativeInt(json['micSecondsMonth']),
       requiredQualifiedDays: _nonNegativeInt(json['requiredQualifiedDays']),
       requiredMinutesPerDay: _nonNegativeInt(json['requiredMinutesPerDay']),
-      activityBonusBps: _nonNegativeInt(json['activityBonusBps']),
+      bonusMode: (json['bonusMode'] ?? 'highest_target_month_end').toString().trim(),
       requiredMicSecondsMonth: _nonNegativeInt(json['requiredMicSecondsMonth']),
     );
   }
