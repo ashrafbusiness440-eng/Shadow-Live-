@@ -326,6 +326,7 @@ test("11-C authorized manager receives and can atomically review leave requests"
     adminDb.collection("users").doc(managerUid).set({
       accountStatus: "active",
       publicId: "981003",
+      displayName: "Leave Manager",
       agencyId,
       agencyRole: "manager",
     }),
@@ -405,5 +406,7 @@ test("11-C authorized manager receives and can atomically review leave requests"
   assert.equal(managerFinal.data().actionState, "resolved");
   assert.equal(ownerFinal.data().finalDecision, "accept");
   assert.equal(managerFinal.data().finalDecision, "accept");
+  assert.equal(ownerFinal.data().resolvedByName, "Leave Manager");
+  assert.equal(managerFinal.data().resolvedByName, "Leave Manager");
   assert.equal(membership.data().status, "left");
 });
