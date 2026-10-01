@@ -103,6 +103,11 @@ test("08-B month-end pays Base Agency Share then approved Host and per-host Agen
   await Promise.all([
     seedAgencyPolicy(agencyId),
     seedShard({agencyId,month}),
+    db.collection("agencies").doc(agencyId).set({
+      agencyId,
+      ownerUid:actorUid,
+      status:"active",
+    }),
     seedHostMonth({agencyId,month,hostUid}),
     db.collection("agency_wallets").doc(agencyId).set({
       agencyId,
@@ -145,16 +150,27 @@ test("08-B month-end pays Base Agency Share then approved Host and per-host Agen
 
   const statementId=agencyId+"__"+month;
   const hostMonthId=statementId+"__"+hostUid;
-  const [wallet,host,bonusAccrual,hostBonusLedger,agencyBonusLedger]=
-    await Promise.all([
-      db.collection("agency_wallets").doc(agencyId).get(),
-      db.collection("users").doc(hostUid).get(),
-      db.collection("agency_bonus_accruals").doc(statementId).get(),
-      db.collection("financial_ledger")
-        .doc("agency_host_activity_bonus_"+hostMonthId).get(),
-      db.collection("financial_ledger")
-        .doc("agency_performance_bonus_"+hostMonthId).get(),
-    ]);
+  const [
+    wallet,
+    host,
+    bonusAccrual,
+    hostBonusLedger,
+    agencyBonusLedger,
+    monthNotification,
+    completion,
+  ]=await Promise.all([
+    db.collection("agency_wallets").doc(agencyId).get(),
+    db.collection("users").doc(hostUid).get(),
+    db.collection("agency_bonus_accruals").doc(statementId).get(),
+    db.collection("financial_ledger")
+      .doc("agency_host_activity_bonus_"+hostMonthId).get(),
+    db.collection("financial_ledger")
+      .doc("agency_performance_bonus_"+hostMonthId).get(),
+    db.collection("notifications")
+      .doc("agency_monthly_settlement_"+statementId).get(),
+    db.collection("agency_host_settlement_completions")
+      .doc(statementId).get(),
+  ]);
 
   assert.equal(wallet.data().diamonds,3);
   assert.equal(wallet.data().remainderCoins,500);
@@ -166,6 +182,17 @@ test("08-B month-end pays Base Agency Share then approved Host and per-host Agen
   assert.equal(agencyBonusLedger.data().delta,0);
   assert.equal(bonusAccrual.data().perHostEligibleHostCount,1);
   assert.equal(bonusAccrual.data().perHostBonusCoins,500);
+  assert.equal(completion.data().status,"complete");
+  assert.equal(monthNotification.data().userId,actorUid);
+  assert.equal(
+    monthNotification.data().type,
+    "agency_monthly_settlement_summary",
+  );
+  assert.equal(monthNotification.data().mandatory,true);
+  assert.equal(monthNotification.data().financial,true);
+  assert.equal(monthNotification.data().agencyBaseShareCoins,5000);
+  assert.equal(monthNotification.data().agencyPerformanceBonusCoins,500);
+  assert.equal(monthNotification.data().agencyCarryoverCoins,500);
 
   const replay=await settleAgencyHostSurplusPage(
     db,
