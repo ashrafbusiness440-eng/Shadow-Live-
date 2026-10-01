@@ -523,8 +523,15 @@ test("authorized reviewer deep-link is bounded and concurrent decisions have one
   const managerUid = "stage04a_race_manager";
   const applicantUid = "stage04a_race_applicant";
   await seedAgency(agencyId, ownerUid, "649901", "Race Agency");
+  await adminDb.collection("users").doc(ownerUid).set({
+    displayName: "Race Owner",
+  }, { merge: true });
   await Promise.all([
-    seedUser(managerUid, "649902", { agencyId, agencyRole: "manager" }),
+    seedUser(managerUid, "649902", {
+      agencyId,
+      agencyRole: "manager",
+      displayName: "Race Manager",
+    }),
     seedUser(applicantUid, "649101", {
       displayName: "Race Applicant",
       profileImageUrl: "https://example.invalid/race.webp",
@@ -593,6 +600,10 @@ test("authorized reviewer deep-link is bounded and concurrent decisions have one
   assert.equal(managerNotice.data().actionState, "resolved");
   assert.equal(ownerNotice.data().finalStatus, request.data().status);
   assert.equal(managerNotice.data().finalStatus, request.data().status);
+  const expectedReviewerName =
+    request.data().resolvedBy === ownerUid ? "Race Owner" : "Race Manager";
+  assert.equal(ownerNotice.data().resolvedByName, expectedReviewerName);
+  assert.equal(managerNotice.data().resolvedByName, expectedReviewerName);
 
   const resolvedDetail = await getAgencyMembershipReviewRequest(
     db,
