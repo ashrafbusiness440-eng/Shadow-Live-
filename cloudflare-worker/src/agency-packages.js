@@ -183,6 +183,25 @@ function serializeTemplate(row) {
   };
 }
 
+export async function listAgencyPackageAssets(db, actorUid) {
+  const actor = await loadActor(db, actorUid);
+  if (!actor.permissions.canManageAgencyPackages) {
+    throw new AgencyPackageError("forbidden", 403);
+  }
+  const rows = await db.list("app_asset_registry", 200);
+  return {
+    ok: true,
+    assets: rows
+      .filter((row) => row.data?.published === true)
+      .map((row) => ({
+        assetKey: clean(row.data?.assetKey || row.id),
+        rawUrl: clean(row.data?.rawUrl) || null,
+        mode: clean(row.data?.mode || "remote"),
+      })),
+    limit: 200,
+  };
+}
+
 export async function listAgencyPackageTemplates(db, actorUid) {
   const actor = await loadActor(db, actorUid);
   if (
@@ -750,7 +769,9 @@ export async function agencyPackages(request, env) {
     const db = firestoreClient(env);
 
     let result;
-    if (action === "listTemplates") {
+    if (action === "listAssets") {
+      result = await listAgencyPackageAssets(db, decoded.sub);
+    } else if (action === "listTemplates") {
       result = await listAgencyPackageTemplates(db, decoded.sub);
     } else if (action === "saveTemplate") {
       result = await saveAgencyPackageTemplate(db, decoded.sub, body);
