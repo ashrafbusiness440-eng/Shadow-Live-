@@ -2503,6 +2503,7 @@ export async function changeAgencyStatus(
               "تم إغلاق الوكالة نهائيًا",
           body: reason,
           read: false,
+          mandatory: true,
           agencyId,
           createdAt: now,
         }));
