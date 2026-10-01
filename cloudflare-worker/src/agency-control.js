@@ -291,6 +291,108 @@ export async function listAgencyReviewQueue(db, limitInput = 50) {
     .slice(0, totalLimit);
 }
 
+function agencyReviewPerson({
+  uid,
+  fallbackPublicId = null,
+  userSnap,
+  membershipSnap,
+} = {}) {
+  const user = userSnap?.data || {};
+  const membership = membershipSnap?.data || {};
+  const accountStatus = clean(user.accountStatus || "active");
+  const membershipStatus = clean(membership.status);
+  const currentAgencyId = clean(user.agencyId || membership.agencyId);
+  let availability = "available";
+  if (!userSnap?.exists) {
+    availability = "not_found";
+  } else if (accountStatus !== "active") {
+    availability = "account_unavailable";
+  } else if (
+    currentAgencyId ||
+    membershipStatus === "active" ||
+    membershipStatus === "pending"
+  ) {
+    availability = "agency_conflict";
+  }
+
+  return {
+    uid: clean(uid),
+    publicId: clean(user.publicId || fallbackPublicId) || null,
+    displayName: clean(user.displayName || user.username || "مستخدم Shadow Live"),
+    profileImageUrl: clean(user.profileImageUrl || user.photoUrl) || null,
+    accountStatus,
+    availability,
+    currentAgencyId: currentAgencyId || null,
+  };
+}
+
+export async function getAgencyReviewDetails(db, applicationIdInput) {
+  const applicationId = clean(applicationIdInput);
+  if (!applicationId || applicationId.includes("/")) {
+    throw new ApiError("invalid_application_id", 400);
+  }
+  const applicationSnap = await db.get(`agency_applications/${applicationId}`);
+  if (!applicationSnap.exists) throw new ApiError("application_not_found", 404);
+  const application = applicationSnap.data || {};
+  const status = clean(application.status);
+  if (!["pending", "under_review"].includes(status)) {
+    throw new ApiError("application_not_reviewable", 409);
+  }
+
+  const hostUids = Array.isArray(application.hostUids)
+    ? application.hostUids.map(clean).filter(Boolean).slice(0, AGENCY_LIMITS.maxApplicationHostIds)
+    : [];
+  const hostIds = Array.isArray(application.hostIds)
+    ? application.hostIds.map(clean).slice(0, hostUids.length)
+    : [];
+  const participants = [
+    {
+      uid: clean(application.applicantUid),
+      publicId: clean(application.applicantPublicId),
+      kind: "applicant",
+    },
+    ...hostUids.map((uid, index) => ({
+      uid,
+      publicId: hostIds[index] || "",
+      kind: "host",
+    })),
+  ].filter((item) => item.uid);
+
+  // Review details are deliberately lazy. Each participant uses exactly two
+  // direct reads and the participant count is bounded by Agency limits.
+  const snapshots = await Promise.all(
+    participants.map(async (person) => {
+      const [userSnap, membershipSnap] = await Promise.all([
+        db.get(`users/${person.uid}`),
+        db.get(`agency_user_memberships/${person.uid}`),
+      ]);
+      return {
+        kind: person.kind,
+        person: agencyReviewPerson({
+          uid: person.uid,
+          fallbackPublicId: person.publicId,
+          userSnap,
+          membershipSnap,
+        }),
+      };
+    }),
+  );
+
+  const applicant = snapshots.find((item) => item.kind === "applicant")?.person || null;
+  const hosts = snapshots
+    .filter((item) => item.kind === "host")
+    .map((item) => item.person);
+
+  return {
+    application: sanitizeApplication({
+      id: applicationId,
+      data: application,
+    }),
+    applicant,
+    hosts,
+  };
+}
+
 export async function startAgencyReview(
   db,
   actorUid,
@@ -2419,7 +2521,18 @@ export async function agencyControl(request, env) {
     }
     if (action === "startReview") {
       if (!actor.permissions.canReviewApplications) throw new ApiError("forbidden", 403);
-      return json(request, env, await startAgencyReview(db, decoded.sub, body.applicationId));
+      const review = await startAgencyReview(db, decoded.sub, body.applicationId);
+      return json(request, env, {
+        ...review,
+        details: await getAgencyReviewDetails(db, body.applicationId),
+      });
+    }
+    if (action === "reviewDetails") {
+      if (!actor.permissions.canReviewApplications) throw new ApiError("forbidden", 403);
+      return json(request, env, {
+        ok: true,
+        details: await getAgencyReviewDetails(db, body.applicationId),
+      });
     }
     if (action === "approve") {
       if (!actor.permissions.canReviewApplications) throw new ApiError("forbidden", 403);
