@@ -6,7 +6,11 @@ import { getFirestore } from "firebase-admin/firestore";
 
 import {
   getAgencyControlDetails,
+  listAgencyIdentityChangeRequests,
+  listAgencyOwnershipTransferRequests,
   randomAgencyId,
+  reviewAgencyIdentityChange,
+  reviewAgencyOwnershipTransfer,
   transferAgencyOwnership,
   updateAgencyIdentity,
 } from "../../cloudflare-worker/src/agency-control.js";
@@ -14,6 +18,11 @@ import {
   executePublicIdChange,
 } from "../../cloudflare-worker/src/change-public-id.js";
 import { listAgencyMembers } from "../../cloudflare-worker/src/agency-membership.js";
+import {
+  requestAgencyIdentityChange,
+  requestAgencyOwnershipTransfer,
+  updateAgencyOwnerProfile,
+} from "../../cloudflare-worker/src/agency-host.js";
 import { searchPublicAgencies } from "../../cloudflare-worker/src/agency-public.js";
 import { cloudflareFirestoreAdapter } from "./helpers/cloudflare-firestore-adapter.js";
 
@@ -422,6 +431,282 @@ test("admin User Public ID change releases and reuses the previous live mapping 
   assert.equal(first.data().publicId, "6666");
 });
 
+test("13-A Agency Owner edits description/contact directly with Audit", async () => {
+  const agencyId = "813010";
+  const ownerUid = "stage13a_profile_owner";
+  const memberUid = "stage13a_profile_member";
+  await seedAgency({
+    agencyId,
+    oldOwnerUid: ownerUid,
+    newOwnerUid: memberUid,
+    oldOwnerPublicId: "713101",
+    newOwnerPublicId: "713102",
+    newOwnerRole: "host",
+  });
+
+  const result = await updateAgencyOwnerProfile(
+    db,
+    ownerUid,
+    {
+      description: "وكالة للموسيقى والدردشة",
+      publicContact: "خدمة العملاء: 713101",
+      idempotencyKey: "stage13a_profile_edit_0001",
+    },
+    { now: new Date("2026-09-29T20:05:00.000Z") },
+  );
+  assert.equal(result.code, "ok");
+  assert.equal(result.description, "وكالة للموسيقى والدردشة");
+  assert.equal(result.publicContact, "خدمة العملاء: 713101");
+
+  const [agency, audit] = await Promise.all([
+    adminDb.collection("agencies").doc(agencyId).get(),
+    adminDb.collection("admin_audit_logs")
+      .doc("agency_owner_profile_" + agencyId + "_stage13a_profile_edit_0001")
+      .get(),
+  ]);
+  assert.equal(agency.data().description, "وكالة للموسيقى والدردشة");
+  assert.equal(agency.data().publicContact, "خدمة العملاء: 713101");
+  assert.equal(audit.data().action, "updateAgencyOwnerProfile");
+});
+
+test("13-A Agency Owner name-country request keeps current identity until Shadow approval", async () => {
+  const agencyId = "813011";
+  const ownerUid = "stage13a_identity_owner";
+  const memberUid = "stage13a_identity_member";
+  await seedAgency({
+    agencyId,
+    oldOwnerUid: ownerUid,
+    newOwnerUid: memberUid,
+    oldOwnerPublicId: "713105",
+    newOwnerPublicId: "713106",
+    newOwnerRole: "host",
+  });
+
+  const request = await requestAgencyIdentityChange(
+    db,
+    ownerUid,
+    {
+      name: "Agency New Name",
+      country: "Saudi Arabia",
+      idempotencyKey: "stage13a_identity_request_0001",
+    },
+    { now: new Date("2026-09-29T20:06:00.000Z") },
+  );
+  assert.equal(request.status, "pending");
+
+  const before = await adminDb.collection("agencies").doc(agencyId).get();
+  assert.equal(before.data().name, "Stage 13-A Agency");
+  assert.equal(before.data().country, "UAE");
+
+  const pending = await listAgencyIdentityChangeRequests(db, 25);
+  assert.equal(
+    pending.some((item) => item.requestId === request.requestId),
+    true,
+  );
+
+  const reviewed = await reviewAgencyIdentityChange(
+    db,
+    "shadow_owner",
+    {
+      requestId: request.requestId,
+      decision: "accept",
+      idempotencyKey: "stage13a_identity_review_0001",
+    },
+    { now: new Date("2026-09-29T20:07:00.000Z") },
+  );
+  assert.equal(reviewed.status, "accepted");
+
+  const [agency, requestDoc, lock, notification] = await Promise.all([
+    adminDb.collection("agencies").doc(agencyId).get(),
+    adminDb.collection("agency_identity_change_requests")
+      .doc(request.requestId).get(),
+    adminDb.collection("agency_identity_change_locks").doc(agencyId).get(),
+    adminDb.collection("notifications")
+      .doc("agency_identity_change_review_" + request.requestId).get(),
+  ]);
+  assert.equal(agency.data().name, "Agency New Name");
+  assert.equal(agency.data().country, "Saudi Arabia");
+  assert.equal(requestDoc.data().status, "accepted");
+  assert.equal(lock.exists, false);
+  assert.equal(notification.data().type, "agency_identity_change_approved");
+  assert.equal(notification.data().mandatory, true);
+});
+
+test("13-A rejected Agency identity request preserves current name/country", async () => {
+  const agencyId = "813014";
+  const ownerUid = "stage13a_identity_reject_owner";
+  const memberUid = "stage13a_identity_reject_member";
+  await seedAgency({
+    agencyId,
+    oldOwnerUid: ownerUid,
+    newOwnerUid: memberUid,
+    oldOwnerPublicId: "713131",
+    newOwnerPublicId: "713132",
+    newOwnerRole: "host",
+  });
+
+  const request = await requestAgencyIdentityChange(
+    db,
+    ownerUid,
+    {
+      name: "Rejected Name",
+      country: "Jordan",
+      idempotencyKey: "stage13a_identity_reject_0001",
+    },
+    { now: new Date("2026-09-29T20:15:00.000Z") },
+  );
+
+  const reviewed = await reviewAgencyIdentityChange(
+    db,
+    "shadow_owner",
+    {
+      requestId: request.requestId,
+      decision: "reject",
+      reason: "الاسم غير مطابق",
+      idempotencyKey: "stage13a_identity_reject_review_0001",
+    },
+    { now: new Date("2026-09-29T20:16:00.000Z") },
+  );
+  assert.equal(reviewed.status, "rejected");
+
+  const agency = await adminDb.collection("agencies").doc(agencyId).get();
+  const requestDoc = await adminDb.collection("agency_identity_change_requests")
+    .doc(request.requestId).get();
+  assert.equal(agency.data().name, "Stage 13-A Agency");
+  assert.equal(agency.data().country, "UAE");
+  assert.equal(requestDoc.data().status, "rejected");
+});
+
+test("13-A Agency Owner submits ownership request and Shadow Owner approves it", async () => {
+  const agencyId = "813012";
+  const oldOwnerUid = "stage13a_request_owner";
+  const newOwnerUid = "stage13a_request_manager";
+  await seedAgency({
+    agencyId,
+    oldOwnerUid,
+    newOwnerUid,
+    oldOwnerPublicId: "713111",
+    newOwnerPublicId: "713112",
+    newOwnerRole: "manager",
+  });
+
+  const request = await requestAgencyOwnershipTransfer(
+    db,
+    oldOwnerUid,
+    {
+      newOwnerPublicId: "713112",
+      idempotencyKey: "stage13a_owner_request_0001",
+    },
+    { now: new Date("2026-09-29T20:10:00.000Z") },
+  );
+  assert.equal(request.status, "pending");
+  assert.equal(request.agencyId, agencyId);
+  assert.equal(request.newOwnerUid, newOwnerUid);
+
+  const pending = await listAgencyOwnershipTransferRequests(db, 25);
+  assert.equal(
+    pending.some((item) => item.requestId === request.requestId),
+    true,
+  );
+
+  await assert.rejects(
+    requestAgencyOwnershipTransfer(
+      db,
+      oldOwnerUid,
+      {
+        newOwnerPublicId: "713112",
+        idempotencyKey: "stage13a_owner_request_0002",
+      },
+      { now: new Date("2026-09-29T20:11:00.000Z") },
+    ),
+    /ownership_transfer_pending/,
+  );
+
+  const reviewed = await reviewAgencyOwnershipTransfer(
+    db,
+    "shadow_owner",
+    {
+      requestId: request.requestId,
+      decision: "accept",
+      idempotencyKey: "stage13a_owner_review_0001",
+    },
+    { now: new Date("2026-09-29T20:12:00.000Z") },
+  );
+  assert.equal(reviewed.status, "accepted");
+
+  const [agency, requestDoc, lock, oldMember, newMember, ownerNotice] =
+    await Promise.all([
+      adminDb.collection("agencies").doc(agencyId).get(),
+      adminDb.collection("agency_ownership_transfer_requests")
+        .doc(request.requestId).get(),
+      adminDb.collection("agency_ownership_transfer_locks").doc(agencyId).get(),
+      adminDb.collection("agency_user_memberships").doc(oldOwnerUid).get(),
+      adminDb.collection("agency_user_memberships").doc(newOwnerUid).get(),
+      adminDb.collection("notifications")
+        .doc("agency_owner_transfer_review_owner_" + request.requestId).get(),
+    ]);
+
+  assert.equal(agency.data().ownerUid, newOwnerUid);
+  assert.equal(requestDoc.data().status, "accepted");
+  assert.equal(lock.exists, false);
+  assert.equal(oldMember.data().role, "manager");
+  assert.equal(newMember.data().role, "owner");
+  assert.equal(ownerNotice.data().type, "agency_ownership_transfer_approved");
+  assert.equal(ownerNotice.data().mandatory, true);
+});
+
+test("13-A Shadow Owner can reject ownership request without changing Agency roles", async () => {
+  const agencyId = "813013";
+  const oldOwnerUid = "stage13a_reject_owner";
+  const newOwnerUid = "stage13a_reject_host";
+  await seedAgency({
+    agencyId,
+    oldOwnerUid,
+    newOwnerUid,
+    oldOwnerPublicId: "713121",
+    newOwnerPublicId: "713122",
+    newOwnerRole: "host",
+  });
+
+  const request = await requestAgencyOwnershipTransfer(
+    db,
+    oldOwnerUid,
+    {
+      newOwnerPublicId: "713122",
+      idempotencyKey: "stage13a_owner_reject_0001",
+    },
+    { now: new Date("2026-09-29T20:13:00.000Z") },
+  );
+
+  const reviewed = await reviewAgencyOwnershipTransfer(
+    db,
+    "shadow_owner",
+    {
+      requestId: request.requestId,
+      decision: "reject",
+      reason: "بيانات النقل غير مكتملة",
+      idempotencyKey: "stage13a_owner_reject_review_0001",
+    },
+    { now: new Date("2026-09-29T20:14:00.000Z") },
+  );
+  assert.equal(reviewed.status, "rejected");
+
+  const [agency, requestDoc, lock, oldMember, newMember] = await Promise.all([
+    adminDb.collection("agencies").doc(agencyId).get(),
+    adminDb.collection("agency_ownership_transfer_requests")
+      .doc(request.requestId).get(),
+    adminDb.collection("agency_ownership_transfer_locks").doc(agencyId).get(),
+    adminDb.collection("agency_user_memberships").doc(oldOwnerUid).get(),
+    adminDb.collection("agency_user_memberships").doc(newOwnerUid).get(),
+  ]);
+  assert.equal(agency.data().ownerUid, oldOwnerUid);
+  assert.equal(requestDoc.data().status, "rejected");
+  assert.equal(requestDoc.data().reason, "بيانات النقل غير مكتملة");
+  assert.equal(lock.exists, false);
+  assert.equal(oldMember.data().role, "owner");
+  assert.equal(newMember.data().role, "host");
+});
+
 test("13-A ownership transfer swaps the incoming member role and preserves counters", async () => {
   const agencyId = "813002";
   const oldOwnerUid = "stage13a_owner_2";
@@ -529,44 +814,69 @@ test("13-A ownership requires the incoming owner to already be active in the age
   assert.equal(agency.data().ownerUid, oldOwnerUid);
 });
 
-test("13-A pressure guard: identity/ownership control is direct-read and scan-free", () => {
+test("13-A pressure guard: mutations stay direct-read and transfer review queue is bounded", () => {
   const source = readFileSync(
     new URL("../../cloudflare-worker/src/agency-control.js", import.meta.url),
     "utf8",
   );
+  const hostSource = readFileSync(
+    new URL("../../cloudflare-worker/src/agency-host.js", import.meta.url),
+    "utf8",
+  );
 
-  const lookupStart = source.indexOf("export async function getAgencyControlDetails");
   const identityStart = source.indexOf("export async function updateAgencyIdentity");
+  const listIdentityStart = source.indexOf(
+    "export async function listAgencyIdentityChangeRequests",
+  );
+  const listTransferStart = source.indexOf(
+    "export async function listAgencyOwnershipTransferRequests",
+  );
   const transferStart = source.indexOf("export async function transferAgencyOwnership");
-  const directCreateStart = source.indexOf("export async function directCreateAgency");
+  const statusStart = source.indexOf("export async function changeAgencyStatus");
 
-  assert.ok(lookupStart >= 0 && identityStart > lookupStart);
-  assert.ok(identityStart >= 0 && transferStart > identityStart);
-  assert.ok(transferStart >= 0 && directCreateStart > transferStart);
+  assert.ok(identityStart >= 0 && listIdentityStart > identityStart);
+  assert.ok(listTransferStart > listIdentityStart);
+  assert.ok(transferStart > listTransferStart && statusStart > transferStart);
+  assert.equal(
+    source.slice(identityStart, listIdentityStart).includes(".runQuery("),
+    false,
+  );
+  assert.equal(
+    source.slice(transferStart, statusStart).includes(".runQuery("),
+    false,
+  );
+  const transferList = source.slice(listTransferStart, transferStart);
+  assert.equal(transferList.includes(".runQuery("), true);
+  assert.equal(transferList.includes("Math.min(25"), true);
 
-  for (const segment of [
-    source.slice(lookupStart, identityStart),
-    source.slice(identityStart, transferStart),
-    source.slice(transferStart, directCreateStart),
-  ]) {
-    assert.equal(segment.includes(".runQuery("), false);
-    assert.equal(segment.includes(".list("), false);
-  }
+  const requestStart = hostSource.indexOf(
+    "export async function requestAgencyOwnershipTransfer",
+  );
+  const hostRouteStart = hostSource.indexOf("export async function agencyHost");
+  assert.ok(requestStart >= 0 && hostRouteStart > requestStart);
+  assert.equal(
+    hostSource.slice(requestStart, hostRouteStart).includes(".runQuery("),
+    false,
+  );
 
   const route = source.slice(source.indexOf("export async function agencyControl"));
-  assert.equal(route.includes('if (action === "transferOwnership")'), true);
-  assert.equal(
-    route.includes('if (!actor.permissions.isOwner) throw new ApiError("forbidden", 403);'),
-    true,
-  );
+  assert.equal(route.includes('if (action === "reviewOwnershipTransfer")'), true);
+  assert.equal(route.includes('if (action === "transferOwnership")'), false);
 
   const controlPage = readFileSync(
     new URL("../../lib/admin/agency_control_page.dart", import.meta.url),
     "utf8",
   );
+  const hostPage = readFileSync(
+    new URL("../../lib/features/agency/screens/host_my_agency_page.dart", import.meta.url),
+    "utf8",
+  );
   assert.equal(controlPage.includes("'action': 'getAgency'"), true);
   assert.equal(controlPage.includes("'action': 'updateIdentity'"), true);
-  assert.equal(controlPage.includes("'action': 'transferOwnership'"), true);
+  assert.equal(controlPage.includes("'action': 'reviewOwnershipTransfer'"), true);
+  assert.equal(controlPage.includes("'action': 'transferOwnership'"), false);
+  assert.equal(hostPage.includes("owner-agency-transfer-request-entry"), true);
+  assert.equal(hostPage.includes("requestOwnershipTransfer"), true);
   assert.equal(controlPage.includes("Timer.periodic"), false);
   assert.equal(controlPage.includes(".snapshots()"), false);
   assert.equal(controlPage.includes("StreamBuilder"), false);

@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../services/navigation_service.dart';
@@ -39,10 +40,15 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
   bool _loading = true;
   bool _rankingLoading = false;
   bool _archiveLoading = false;
+  bool _targetHistoryLoading = false;
   bool _leaveStatusLoading = false;
   bool _leaveSubmitting = false;
   bool _logoUploading = false;
+  bool _backgroundUploading = false;
   bool _openingAgencyRoom = false;
+  bool _ownershipTransferSubmitting = false;
+  bool _agencyProfileSaving = false;
+  bool _identityChangeSubmitting = false;
   String? _error;
   String? _rankingError;
   String? _leaveStatusError;
@@ -179,6 +185,79 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
       setState(() => _archiveLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تعذر تحميل السجل الشهري.')),
+      );
+    }
+  }
+
+  Future<void> _showTargetHistory() async {
+    final data = _data;
+    if (data == null || _targetHistoryLoading) return;
+    setState(() => _targetHistoryLoading = true);
+    try {
+      final archive = _archive ??
+          await _publicAgencyService.loadArchive(
+            agencyId: data.agency.agencyId,
+          );
+      if (!mounted) return;
+      _archive = archive;
+      final months = <String>[
+        data.target.month,
+        ...archive.months,
+      ].where((value) => value.trim().isNotEmpty).toSet().toList();
+
+      setState(() => _targetHistoryLoading = false);
+      final selected = await showModalBottomSheet<String>(
+        context: context,
+        backgroundColor: const Color(0xFF0D1220),
+        builder: (sheetContext) => SafeArea(
+          child: Directionality(
+            textDirection: TextDirection.rtl,
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
+              children: [
+                const ListTile(
+                  leading: Icon(Icons.fact_check_rounded),
+                  title: Text('سجل الـTargets'),
+                  subtitle: Text(
+                    'اختر الشهر لعرض Targets المحققة والـDiamonds المدفوعة',
+                  ),
+                ),
+                ...months.map(
+                  (month) => ListTile(
+                    title: Text(_monthLabel(month)),
+                    subtitle: month == data.target.month
+                        ? const Text('الشهر الحالي')
+                        : const Text('شهر مغلق'),
+                    trailing: const Icon(Icons.chevron_left_rounded),
+                    onTap: () => Navigator.pop(sheetContext, month),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      if (selected == null || !mounted) return;
+
+      setState(() => _targetHistoryLoading = true);
+      final history = await _service.loadTargetHistory(month: selected);
+      if (!mounted) return;
+      setState(() => _targetHistoryLoading = false);
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: const Color(0xFF0D1220),
+        builder: (_) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: _TargetHistorySheet(history: history),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _targetHistoryLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر تحميل سجل الـTargets حاليًا.')),
       );
     }
   }
@@ -390,6 +469,62 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
     }
   }
 
+  Future<void> _pickAgencyBackground() async {
+    final data = _data;
+    if (data == null ||
+        data.membershipRole != 'owner' ||
+        _backgroundUploading) {
+      return;
+    }
+
+    final picked = await _imagePicker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 84,
+      maxWidth: 1920,
+      maxHeight: 1920,
+    );
+    if (picked == null || !mounted) return;
+
+    final bytes = await picked.readAsBytes();
+    if (!mounted) return;
+
+    setState(() => _backgroundUploading = true);
+    try {
+      await _storage.upload(
+        scope: 'agency_background',
+        targetId: data.agency.agencyId,
+        bytes: bytes,
+        mimeType: detectSupportedImageMime(bytes),
+      );
+      final refreshed = await _service.loadCore();
+      if (!mounted) return;
+      setState(() {
+        _data = refreshed;
+        _backgroundUploading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تم تحديث خلفية الوكالة وغرفة الوكالة.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _backgroundUploading = false);
+      final code = error.toString().replaceFirst('Bad state: ', '');
+      final message = code.contains('agency_owner_required')
+          ? 'تعديل خلفية الوكالة متاح للمالك فقط.'
+          : code.contains('invalid_file_size')
+              ? 'حجم الخلفية أكبر من المسموح.'
+              : code.contains('invalid_file_type') ||
+                      code.contains('unsupported_image_format')
+                  ? 'صيغة الصورة غير مدعومة.'
+                  : 'تعذر تحديث خلفية الوكالة حاليًا.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    }
+  }
+
   void _openWallet() {
     NavigationService.navigateTo(AppRoutes.recharge);
   }
@@ -448,6 +583,287 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
       ),
     );
   }
+
+  Future<void> _editAgencyProfile() async {
+    final data = _data;
+    if (data == null ||
+        data.membershipRole != 'owner' ||
+        _agencyProfileSaving) {
+      return;
+    }
+    final description = TextEditingController(
+      text: data.agency.description ?? '',
+    );
+    final contact = TextEditingController(
+      text: data.agency.publicContact ?? '',
+    );
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          backgroundColor: const Color(0xFF101522),
+          title: const Text('تعديل بيانات الوكالة العامة'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  key: const Key('owner-agency-description-field'),
+                  controller: description,
+                  minLines: 3,
+                  maxLines: 5,
+                  maxLength: 500,
+                  decoration: const InputDecoration(
+                    labelText: 'وصف الوكالة',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  key: const Key('owner-agency-contact-field'),
+                  controller: contact,
+                  maxLength: 160,
+                  decoration: const InputDecoration(
+                    labelText: 'طريقة التواصل العامة',
+                    hintText: 'مثال: حساب خدمة العملاء أو وسيلة التواصل',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('حفظ'),
+            ),
+          ],
+        ),
+      ),
+    );
+    final nextDescription = description.text.trim();
+    final nextContact = contact.text.trim();
+    description.dispose();
+    contact.dispose();
+    if (accepted != true || !mounted) return;
+
+    setState(() => _agencyProfileSaving = true);
+    try {
+      await _service.updateAgencyProfile(
+        description: nextDescription,
+        publicContact: nextContact,
+      );
+      final refreshed = await _service.loadCore();
+      if (!mounted) return;
+      setState(() => _data = refreshed);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم تحديث وصف وتواصل الوكالة.')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر تحديث بيانات الوكالة حاليًا.')),
+      );
+    } finally {
+      if (mounted) setState(() => _agencyProfileSaving = false);
+    }
+  }
+
+  Future<void> _requestIdentityChange() async {
+    final data = _data;
+    if (data == null ||
+        data.membershipRole != 'owner' ||
+        _identityChangeSubmitting) {
+      return;
+    }
+    final name = TextEditingController(text: data.agency.name);
+    final country = TextEditingController(text: data.agency.country ?? '');
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          backgroundColor: const Color(0xFF101522),
+          title: const Text('طلب تغيير اسم/دولة الوكالة'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'تبقى بيانات الوكالة الحالية فعالة حتى موافقة Shadow Live.',
+                  style: TextStyle(color: Colors.white70, height: 1.4),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  key: const Key('owner-agency-name-change-field'),
+                  controller: name,
+                  maxLength: 80,
+                  decoration: const InputDecoration(
+                    labelText: 'اسم الوكالة المقترح',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  key: const Key('owner-agency-country-change-field'),
+                  controller: country,
+                  maxLength: 64,
+                  decoration: const InputDecoration(
+                    labelText: 'الدولة المقترحة',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('إرسال الطلب'),
+            ),
+          ],
+        ),
+      ),
+    );
+    final nextName = name.text.trim();
+    final nextCountry = country.text.trim();
+    name.dispose();
+    country.dispose();
+    if (accepted != true || nextName.isEmpty || !mounted) return;
+
+    setState(() => _identityChangeSubmitting = true);
+    try {
+      await _service.requestIdentityChange(
+        name: nextName,
+        country: nextCountry.isEmpty ? null : nextCountry,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'تم إرسال طلب تغيير الاسم/الدولة إلى Shadow Live. تبقى البيانات الحالية فعالة حتى الموافقة.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      final code = error.toString().replaceFirst('Bad state: ', '');
+      final message = code.contains('agency_identity_change_pending')
+          ? 'يوجد طلب تغيير اسم/دولة معلّق بالفعل.'
+          : code.contains('agency_identity_unchanged')
+              ? 'لم يتم تغيير الاسم أو الدولة.'
+              : 'تعذر إرسال طلب تغيير بيانات الوكالة حاليًا.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } finally {
+      if (mounted) setState(() => _identityChangeSubmitting = false);
+    }
+  }
+
+  Future<void> _requestOwnershipTransfer() async {
+    final data = _data;
+    if (data == null ||
+        data.membershipRole != 'owner' ||
+        _ownershipTransferSubmitting) {
+      return;
+    }
+
+    final controller = TextEditingController();
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          backgroundColor: const Color(0xFF101522),
+          title: const Text('طلب نقل ملكية الوكالة'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'أدخل Public ID لعضو نشط داخل نفس الوكالة. الطلب يذهب إلى Shadow Live للموافقة أو الرفض، ولا تتغير الملكية قبل الموافقة.',
+                style: TextStyle(color: Colors.white70, height: 1.45),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                key: const Key('owner-agency-transfer-public-id'),
+                controller: controller,
+                keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(8),
+                ],
+                decoration: const InputDecoration(
+                  labelText: 'Public ID — من 3 إلى 8 أرقام',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('إرسال الطلب'),
+            ),
+          ],
+        ),
+      ),
+    );
+    final publicId = controller.text.trim();
+    controller.dispose();
+    if (accepted != true ||
+        !RegExp(r'^\d{3,8}$').hasMatch(publicId) ||
+        !mounted) {
+      return;
+    }
+
+    setState(() => _ownershipTransferSubmitting = true);
+    try {
+      final result = await _service.requestOwnershipTransfer(
+        newOwnerPublicId: publicId,
+      );
+      if (!mounted) return;
+      final name = (result['newOwnerDisplayName'] ?? publicId).toString();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'تم إرسال طلب نقل الملكية إلى Shadow Live — المالك المقترح: $name.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      final code = error.toString().replaceFirst('Bad state: ', '');
+      final message = code.contains('ownership_transfer_pending')
+          ? 'يوجد طلب نقل ملكية معلّق لهذه الوكالة بالفعل.'
+          : code.contains('new_owner_must_be_active_member')
+              ? 'الحساب المحدد يجب أن يكون عضوًا نشطًا داخل نفس الوكالة.'
+              : code.contains('owner_not_found')
+                  ? 'لم يتم العثور على Public ID.'
+                  : 'تعذر إرسال طلب نقل الملكية حاليًا.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _ownershipTransferSubmitting = false);
+      }
+    }
+  }
+
 
   void _openMembershipReview() {
     final data = _data;
@@ -535,6 +951,26 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
             _OwnerDashboardEntry(onTap: _openOwnerDashboard),
             const SizedBox(height: 10),
             _AgencyPackageInventoryEntry(onTap: _openPackageInventory),
+            const SizedBox(height: 10),
+            _AgencyBackgroundEditEntry(
+              busy: _backgroundUploading,
+              onTap: _pickAgencyBackground,
+            ),
+            const SizedBox(height: 10),
+            _OwnershipTransferRequestEntry(
+              busy: _ownershipTransferSubmitting,
+              onTap: _requestOwnershipTransfer,
+            ),
+            const SizedBox(height: 10),
+            _AgencyProfileEditEntry(
+              busy: _agencyProfileSaving,
+              onTap: _editAgencyProfile,
+            ),
+            const SizedBox(height: 10),
+            _AgencyIdentityChangeRequestEntry(
+              busy: _identityChangeSubmitting,
+              onTap: _requestIdentityChange,
+            ),
           ] else if (data.canReviewMembershipRequests) ...[
             const SizedBox(height: 12),
             _AgencyReviewEntry(onTap: _openMembershipReview),
@@ -558,11 +994,16 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
           const SizedBox(height: 16),
           _TargetCard(target: data.target),
           const SizedBox(height: 16),
-          _ActivityCard(activity: data.activity),
+          _ActivityCard(
+            activity: data.activity,
+            target: data.target,
+          ),
           const SizedBox(height: 16),
           _HostFinanceEntries(
             onWallet: _openWallet,
             onTargetTable: _showTargetTable,
+            onTargetHistory: _showTargetHistory,
+            targetHistoryLoading: _targetHistoryLoading,
           ),
           const SizedBox(height: 16),
           _HostRankingCard(
@@ -602,10 +1043,25 @@ class _AgencyHeader extends StatelessWidget {
     final agency = data.agency;
     final active = data.membershipStatus == 'active';
     final logo = agency.logoUrl?.trim() ?? '';
+    final background = agency.backgroundUrl?.trim() ?? '';
 
     return Container(
       padding: const EdgeInsets.all(18),
-      decoration: _cardDecoration(),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111526),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white12),
+        image: background.isEmpty
+            ? null
+            : DecorationImage(
+                image: NetworkImage(background),
+                fit: BoxFit.cover,
+                colorFilter: const ColorFilter.mode(
+                  Color(0xAA000000),
+                  BlendMode.darken,
+                ),
+              ),
+      ),
       child: Column(
         children: [
           Stack(
@@ -661,16 +1117,62 @@ class _AgencyHeader extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 5),
-          Text(
-            'Agency ID: ${agency.publicId}',
-            textDirection: TextDirection.ltr,
-            style: const TextStyle(color: Colors.white60),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Agency ID: ${agency.publicId}',
+                key: const Key('host-agency-public-id'),
+                textDirection: TextDirection.ltr,
+                style: const TextStyle(color: Colors.white60),
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                key: const Key('host-agency-copy-id'),
+                tooltip: 'نسخ Agency ID',
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                padding: EdgeInsets.zero,
+                onPressed: () async {
+                  await Clipboard.setData(
+                    ClipboardData(text: agency.publicId),
+                  );
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('تم نسخ Agency ID')),
+                  );
+                },
+                icon: const Icon(Icons.copy_rounded, size: 16),
+              ),
+            ],
           ),
           if (agency.country != null) ...[
             const SizedBox(height: 5),
             Text(
               agency.country!,
               style: const TextStyle(color: Colors.white70),
+            ),
+          ],
+          if (agency.description != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              agency.description!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white70,
+                height: 1.4,
+              ),
+            ),
+          ],
+          if (agency.publicContact != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              'التواصل: ${agency.publicContact}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFFB99CFF),
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ],
           const SizedBox(height: 14),
@@ -816,6 +1318,198 @@ class _AgencyPackageInventoryEntry extends StatelessWidget {
   }
 }
 
+class _AgencyBackgroundEditEntry extends StatelessWidget {
+  const _AgencyBackgroundEditEntry({
+    required this.busy,
+    required this.onTap,
+  });
+
+  final bool busy;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('owner-agency-background-edit-entry'),
+      decoration: _cardDecoration(),
+      child: ListTile(
+        onTap: busy ? null : onTap,
+        leading: const CircleAvatar(
+          backgroundColor: Color(0xFF1B3440),
+          child: Icon(
+            Icons.wallpaper_rounded,
+            color: Color(0xFF7ED8FF),
+          ),
+        ),
+        title: const Text(
+          'تعديل خلفية الوكالة',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        subtitle: const Text(
+          'تُستخدم كخلفية الوكالة وغطاء غرفة الوكالة المرتبطة.',
+          style: TextStyle(color: Colors.white60),
+        ),
+        trailing: busy
+            ? const SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(
+                Icons.chevron_left_rounded,
+                color: Colors.white38,
+              ),
+      ),
+    );
+  }
+}
+
+class _AgencyIdentityChangeRequestEntry extends StatelessWidget {
+  const _AgencyIdentityChangeRequestEntry({
+    required this.busy,
+    required this.onTap,
+  });
+
+  final bool busy;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('owner-agency-identity-change-entry'),
+      decoration: _cardDecoration(),
+      child: ListTile(
+        onTap: busy ? null : onTap,
+        leading: const CircleAvatar(
+          backgroundColor: Color(0xFF33274A),
+          child: Icon(
+            Icons.edit_location_alt_rounded,
+            color: Color(0xFFD4B5FF),
+          ),
+        ),
+        title: const Text(
+          'طلب تغيير الاسم/الدولة',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        subtitle: const Text(
+          'تُطبق البيانات الجديدة فقط بعد موافقة Shadow Live.',
+          style: TextStyle(color: Colors.white60),
+        ),
+        trailing: busy
+            ? const SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(
+                Icons.chevron_left_rounded,
+                color: Colors.white38,
+              ),
+      ),
+    );
+  }
+}
+
+class _AgencyProfileEditEntry extends StatelessWidget {
+  const _AgencyProfileEditEntry({
+    required this.busy,
+    required this.onTap,
+  });
+
+  final bool busy;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('owner-agency-profile-edit-entry'),
+      decoration: _cardDecoration(),
+      child: ListTile(
+        onTap: busy ? null : onTap,
+        leading: const CircleAvatar(
+          backgroundColor: Color(0xFF24304A),
+          child: Icon(
+            Icons.edit_note_rounded,
+            color: Color(0xFF9FC5FF),
+          ),
+        ),
+        title: const Text(
+          'تعديل وصف وتواصل الوكالة',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        subtitle: const Text(
+          'تعديل مباشر للمالك؛ الاسم والدولة لهما طلب موافقة منفصل.',
+          style: TextStyle(color: Colors.white60),
+        ),
+        trailing: busy
+            ? const SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(
+                Icons.chevron_left_rounded,
+                color: Colors.white38,
+              ),
+      ),
+    );
+  }
+}
+
+class _OwnershipTransferRequestEntry extends StatelessWidget {
+  const _OwnershipTransferRequestEntry({
+    required this.busy,
+    required this.onTap,
+  });
+
+  final bool busy;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('owner-agency-transfer-request-entry'),
+      decoration: _cardDecoration(),
+      child: ListTile(
+        onTap: busy ? null : onTap,
+        leading: const CircleAvatar(
+          backgroundColor: Color(0xFF3A2A20),
+          child: Icon(
+            Icons.manage_accounts_rounded,
+            color: Color(0xFFFFC47A),
+          ),
+        ),
+        title: const Text(
+          'طلب نقل ملكية الوكالة',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        subtitle: const Text(
+          'اختيار عضو نشط ثم إرسال الطلب إلى Shadow Live للمراجعة.',
+          style: TextStyle(color: Colors.white60),
+        ),
+        trailing: busy
+            ? const SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(
+                Icons.chevron_left_rounded,
+                color: Colors.white38,
+              ),
+      ),
+    );
+  }
+}
+
 class _OwnerCard extends StatelessWidget {
   const _OwnerCard({
     required this.owner,
@@ -936,10 +1630,14 @@ class _HostFinanceEntries extends StatelessWidget {
   const _HostFinanceEntries({
     required this.onWallet,
     required this.onTargetTable,
+    required this.onTargetHistory,
+    required this.targetHistoryLoading,
   });
 
   final VoidCallback onWallet;
   final Future<void> Function() onTargetTable;
+  final Future<void> Function() onTargetHistory;
+  final bool targetHistoryLoading;
 
   @override
   Widget build(BuildContext context) {
@@ -947,26 +1645,145 @@ class _HostFinanceEntries extends StatelessWidget {
       key: const Key('host-agency-finance-entries'),
       padding: const EdgeInsets.all(12),
       decoration: _cardDecoration(),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: OutlinedButton.icon(
-              key: const Key('host-agency-wallet-entry'),
-              onPressed: onWallet,
-              icon: const Icon(Icons.account_balance_wallet_rounded),
-              label: const Text('المحفظة/الألماس'),
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  key: const Key('host-agency-wallet-entry'),
+                  onPressed: onWallet,
+                  icon: const Icon(Icons.account_balance_wallet_rounded),
+                  label: const Text('المحفظة/الألماس'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FilledButton.icon(
+                  key: const Key('host-agency-target-table-entry'),
+                  onPressed: onTargetTable,
+                  icon: const Icon(Icons.table_chart_rounded),
+                  label: const Text('جدول الـTarget'),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: FilledButton.icon(
-              key: const Key('host-agency-target-table-entry'),
-              onPressed: onTargetTable,
-              icon: const Icon(Icons.table_chart_rounded),
-              label: const Text('جدول الـTarget'),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            key: const Key('host-agency-target-history-entry'),
+            onPressed: targetHistoryLoading ? null : onTargetHistory,
+            icon: targetHistoryLoading
+                ? const SizedBox.square(
+                    dimension: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.fact_check_rounded),
+            label: Text(
+              targetHistoryLoading
+                  ? 'جارٍ تحميل السجل…'
+                  : 'سجل الـTargets والـDiamonds',
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _TargetHistorySheet extends StatelessWidget {
+  const _TargetHistorySheet({required this.history});
+
+  final HostTargetHistoryData history;
+
+  String _achievementLabel(HostTargetHistoryAchievement item) {
+    final tier = item.tierId?.trim() ?? '';
+    final rank = item.rank?.trim() ?? '';
+    if (tier.isNotEmpty) {
+      return rank.isEmpty ? tier : '$tier $rank';
+    }
+    return item.targetId;
+  }
+
+  String _dateLabel(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return 'التاريخ غير متاح';
+    final parsed = DateTime.tryParse(raw)?.toLocal();
+    if (parsed == null) return raw;
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${parsed.year}/${two(parsed.month)}/${two(parsed.day)} '
+        '${two(parsed.hour)}:${two(parsed.minute)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: .72,
+        minChildSize: .45,
+        maxChildSize: .92,
+        builder: (_, controller) => ListView(
+          controller: controller,
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
+          children: [
+            ListTile(
+              leading: const Icon(Icons.fact_check_rounded),
+              title: const Text(
+                'سجل الـTargets الشخصي',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
+              subtitle: Text(_monthLabel(history.month)),
+              trailing: IconButton(
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close_rounded),
+              ),
+            ),
+            const SizedBox(height: 6),
+            if (history.achievements.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 34),
+                child: Center(
+                  child: Text(
+                    'لا توجد Targets مدفوعة في هذا الشهر.',
+                    style: TextStyle(color: Colors.white54),
+                  ),
+                ),
+              )
+            else
+              ...history.achievements.map(
+                (item) => Card(
+                  color: const Color(0xFF11182A),
+                  child: ListTile(
+                    leading: const CircleAvatar(
+                      backgroundColor: Color(0xFF2A3150),
+                      child: Icon(Icons.flag_rounded),
+                    ),
+                    title: Text(
+                      _achievementLabel(item),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    subtitle: Text(
+                      '${_dateLabel(item.achievedAt)}'
+                      '\nTarget: ${_formatCoins(item.thresholdCoins)} Coins',
+                    ),
+                    isThreeLine: true,
+                    trailing: Text(
+                      '+${item.salaryDeltaDiamonds} D',
+                      key: Key(
+                        'host-target-history-diamonds-${item.targetId}',
+                      ),
+                      style: const TextStyle(
+                        color: Colors.lightBlueAccent,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -1075,12 +1892,11 @@ class _TargetTableSheet extends StatelessWidget {
                           'Gross Support ≈ ${level.grossSupportCoins > 0 ? _formatCoins(level.grossSupportCoins) : '—'} Coins',
                         ),
                         Text(
-                          'Host Share: ${_formatCoins(level.thresholdCoins)} Coins'
-                          ' • ${_formatBps(level.hostShareBps)}',
+                          'Target المحتسب للمضيف: ${_formatCoins(level.thresholdCoins)} Coins',
                         ),
                         Text(
                           'راتب المضيف: ${level.salaryDiamonds} Diamonds'
-                          ' • Activity Bonus: +${_formatBps(level.activityBonusBps)}',
+                          ' • Activity Bonus: ${_activityBonusLabel(level)}',
                         ),
                         Text(
                           'شرط النشاط: ${activity.requiredQualifiedDays} يوم × ${activity.requiredMinutesPerDay} دقيقة',
@@ -1202,9 +2018,13 @@ class _TargetCard extends StatelessWidget {
 }
 
 class _ActivityCard extends StatelessWidget {
-  const _ActivityCard({required this.activity});
+  const _ActivityCard({
+    required this.activity,
+    required this.target,
+  });
 
   final HostAgencyActivity activity;
+  final HostAgencyTarget target;
 
   @override
   Widget build(BuildContext context) {
@@ -1216,7 +2036,7 @@ class _ActivityCard extends StatelessWidget {
     final remainingDays =
         (activity.requiredQualifiedDays - activity.qualifiedDays)
             .clamp(0, activity.requiredQualifiedDays);
-    final bonusLabel = '+${_formatBps(activity.activityBonusBps)}';
+    final bonusLabel = _activityBonusLabel(target.currentLevel);
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -1269,7 +2089,7 @@ class _ActivityCard extends StatelessWidget {
           ),
           const SizedBox(height: 5),
           Text(
-            'Activity Bonus المعتمد: $bonusLabel — يُحتسب عند استيفاء شروط النشاط حسب التسوية المعتمدة.',
+            'Activity Bonus الحالي: $bonusLabel — يُصرف مرة واحدة عند إغلاق الشهر حسب أعلى Target محقق بعد استيفاء شرط النشاط.',
             style: const TextStyle(
               color: Color(0xFFB99CFF),
               fontWeight: FontWeight.w700,
@@ -1698,6 +2518,17 @@ String _levelLabel(HostAgencyLevel level) {
   if (level.rank == 'DIAMOND') return 'Diamond';
   if (tier.isEmpty) return level.rank;
   return '$tier ${level.rank}';
+}
+
+String _activityBonusLabel(HostAgencyLevel? level) {
+  if (level == null || level.activityBonusAmount <= 0) return '—';
+  if (level.activityBonusAsset == 'coins') {
+    return '${_formatCoins(level.activityBonusAmount)} Coins';
+  }
+  if (level.activityBonusAsset == 'diamonds') {
+    return '${level.activityBonusAmount} Diamonds';
+  }
+  return '—';
 }
 
 String _formatBps(int value) {

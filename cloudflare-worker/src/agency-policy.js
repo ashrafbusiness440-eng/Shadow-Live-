@@ -17,6 +17,184 @@ export const DEFAULT_AGENCY_TARGETS = Object.freeze([
   { id: "diamond", tierId: "diamond", rank: "DIAMOND", thresholdCoins: 50000000, salaryDiamonds: 5000, openEnded: true },
 ]);
 
+export const HOST_ACTIVITY_BONUS_BY_LEVEL = Object.freeze({
+  starter_g: Object.freeze({ asset: "coins", amount: 5000 }),
+  starter_f: Object.freeze({ asset: "coins", amount: 10000 }),
+  starter_e: Object.freeze({ asset: "diamonds", amount: 1 }),
+  starter_d: Object.freeze({ asset: "diamonds", amount: 1 }),
+  starter_c: Object.freeze({ asset: "diamonds", amount: 2 }),
+  starter_b: Object.freeze({ asset: "diamonds", amount: 3 }),
+  starter_a: Object.freeze({ asset: "diamonds", amount: 4 }),
+  bronze_f: Object.freeze({ asset: "diamonds", amount: 5 }),
+  bronze_e: Object.freeze({ asset: "diamonds", amount: 7 }),
+  bronze_d: Object.freeze({ asset: "diamonds", amount: 11 }),
+  bronze_c: Object.freeze({ asset: "diamonds", amount: 15 }),
+  bronze_b: Object.freeze({ asset: "diamonds", amount: 18 }),
+  bronze_a: Object.freeze({ asset: "diamonds", amount: 22 }),
+  silver_f: Object.freeze({ asset: "diamonds", amount: 25 }),
+  silver_e: Object.freeze({ asset: "diamonds", amount: 35 }),
+  silver_d: Object.freeze({ asset: "diamonds", amount: 45 }),
+  silver_c: Object.freeze({ asset: "diamonds", amount: 57 }),
+  silver_b: Object.freeze({ asset: "diamonds", amount: 72 }),
+  silver_a: Object.freeze({ asset: "diamonds", amount: 90 }),
+  gold_f: Object.freeze({ asset: "diamonds", amount: 100 }),
+  gold_e: Object.freeze({ asset: "diamonds", amount: 120 }),
+  gold_d: Object.freeze({ asset: "diamonds", amount: 145 }),
+  gold_c: Object.freeze({ asset: "diamonds", amount: 175 }),
+  gold_b: Object.freeze({ asset: "diamonds", amount: 207 }),
+  gold_a: Object.freeze({ asset: "diamonds", amount: 240 }),
+  diamond: Object.freeze({ asset: "diamonds", amount: 250 }),
+});
+
+export function hostActivityBonusForTarget(target = {}) {
+  const targetId = clean(target?.id || target?.targetId).toLowerCase();
+  const tierId = clean(target?.tierId || target?.targetTierId).toLowerCase();
+  const rank = clean(target?.rank || target?.targetRank).toLowerCase();
+  const fallbackKey = tierId === "diamond"
+    ? "diamond"
+    : (tierId && rank ? `${tierId}_${rank}` : "");
+  const key = Object.prototype.hasOwnProperty.call(
+    HOST_ACTIVITY_BONUS_BY_LEVEL,
+    targetId,
+  )
+    ? targetId
+    : fallbackKey;
+  const bonus = HOST_ACTIVITY_BONUS_BY_LEVEL[key];
+  return bonus
+    ? { asset: bonus.asset, amount: bonus.amount }
+    : { asset: "none", amount: 0 };
+}
+
+export function agencyTargetShareEntitlement({
+  target = null,
+  tiers = [],
+} = {}) {
+  if (!target) {
+    return {
+      targetId: "",
+      tierId: "",
+      hostShareBps: 0,
+      agencyShareBps: 0,
+      targetThresholdCoins: 0,
+      entitlementCoins: 0,
+    };
+  }
+  const targetId = clean(target.id || target.targetId);
+  const tierId = clean(target.tierId || target.targetTierId).toLowerCase();
+  const threshold = targetFinancialInteger(
+    target.thresholdCoins ?? target.targetThresholdCoins ?? 0,
+    "agency_share_target_threshold_coins",
+  );
+  const tier = Array.isArray(tiers)
+    ? tiers.find((item) => clean(item?.id).toLowerCase() === tierId)
+    : null;
+  if (!tier) {
+    throw new Error("agency_share_target_tier_missing");
+  }
+  const hostShareBps = targetFinancialInteger(
+    tier.hostShareBps || 0,
+    "agency_share_host_bps",
+  );
+  const agencyShareBps = targetFinancialInteger(
+    tier.agencyShareBps || 0,
+    "agency_share_agency_bps",
+  );
+  if (hostShareBps <= 0 || hostShareBps > 10000 || agencyShareBps > 10000) {
+    throw new Error("invalid_agency_share_tier");
+  }
+  const entitlementBig =
+    (BigInt(threshold) * BigInt(agencyShareBps)) / BigInt(hostShareBps);
+  const entitlementCoins = Number(entitlementBig);
+  if (!Number.isSafeInteger(entitlementCoins) || entitlementCoins < 0) {
+    throw new Error("invalid_agency_share_entitlement");
+  }
+  return {
+    targetId,
+    tierId,
+    hostShareBps,
+    agencyShareBps,
+    targetThresholdCoins: threshold,
+    entitlementCoins,
+  };
+}
+
+export function agencyTargetShareDelta({
+  target = null,
+  tiers = [],
+  previousPaidCoins = 0,
+} = {}) {
+  const entitlement = agencyTargetShareEntitlement({ target, tiers });
+  const previous = targetFinancialInteger(
+    previousPaidCoins,
+    "agency_share_previous_paid_coins",
+  );
+  const deltaCoins = Math.max(0, entitlement.entitlementCoins - previous);
+  return {
+    ...entitlement,
+    previousPaidCoins: previous,
+    deltaCoins,
+    paidCoins: previous + deltaCoins,
+  };
+}
+
+export function convertAgencyCoinsWithCarryover({
+  carryoverCoins = 0,
+  payableCoins = 0,
+  coinsPerDiamond = 10000,
+} = {}) {
+  const carryover = targetFinancialInteger(
+    carryoverCoins,
+    "agency_carryover_coins",
+  );
+  const payable = targetFinancialInteger(
+    payableCoins,
+    "agency_payable_coins",
+  );
+  const rate = targetFinancialInteger(
+    coinsPerDiamond,
+    "agency_coins_per_diamond",
+  );
+  if (rate <= 0) throw new Error("invalid_agency_coins_per_diamond");
+  const total = carryover + payable;
+  if (!Number.isSafeInteger(total)) {
+    throw new Error("invalid_agency_carryover_total");
+  }
+  return {
+    openingCarryoverCoins: carryover,
+    payableCoins: payable,
+    diamondsEarned: Math.floor(total / rate),
+    remainderCoins: total % rate,
+    coinsPerDiamond: rate,
+  };
+}
+
+export function agencyPerformanceBonusForTarget({
+  targetThresholdCoins = 0,
+  qualifiedDays = 0,
+  bonusBps = 100,
+  requiredQualifiedDays = 14,
+} = {}) {
+  const threshold = targetFinancialInteger(
+    targetThresholdCoins,
+    "agency_bonus_target_threshold_coins",
+  );
+  const days = Math.max(0, integer(qualifiedDays));
+  const requiredDays = Math.max(1, integer(requiredQualifiedDays, 14));
+  const bps = Math.max(0, Math.min(3000, integer(bonusBps, 100)));
+  const eligible = threshold > 0 && days >= requiredDays && bps > 0;
+  const bonusCoins = eligible
+    ? Number((BigInt(threshold) * BigInt(bps)) / 10000n)
+    : 0;
+  return {
+    eligible,
+    targetThresholdCoins: threshold,
+    qualifiedDays: days,
+    requiredQualifiedDays: requiredDays,
+    bonusBps: eligible ? bps : 0,
+    bonusCoins,
+  };
+}
+
 function integer(value, fallback = 0) {
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) ? parsed : fallback;
@@ -129,6 +307,48 @@ export function calculateAgencyTargetProgress({
     nextTarget,
     remainingToNextTargetCoins,
   };
+}
+
+export function agencyTargetAchievementDeltas({
+  previousProgressCoins = 0,
+  progressCoins = 0,
+  targets,
+} = {}) {
+  const previousProgress = targetFinancialInteger(
+    previousProgressCoins,
+    "achievement_previous_progress_coins",
+  );
+  const progress = targetFinancialInteger(
+    progressCoins,
+    "achievement_progress_coins",
+  );
+  if (progress < previousProgress) {
+    throw new Error("invalid_agency_target_achievement_progress");
+  }
+  const normalizedTargets = normalizeAgencyTargets(targets);
+  let previousSalaryDiamonds = 0;
+  const achieved = [];
+  for (const target of normalizedTargets) {
+    const salaryDeltaDiamonds = Math.max(
+      0,
+      target.salaryDiamonds - previousSalaryDiamonds,
+    );
+    if (
+      target.thresholdCoins > previousProgress &&
+      target.thresholdCoins <= progress
+    ) {
+      achieved.push({
+        id: target.id,
+        tierId: target.tierId,
+        rank: target.rank,
+        thresholdCoins: target.thresholdCoins,
+        salaryDiamonds: target.salaryDiamonds,
+        salaryDeltaDiamonds,
+      });
+    }
+    previousSalaryDiamonds = target.salaryDiamonds;
+  }
+  return achieved;
 }
 
 export function resolveAgencySurplusPolicy(override = {}) {
@@ -256,7 +476,8 @@ export function currentAgencyMonthKey(now = new Date()) {
   if (!Number.isFinite(date.getTime())) {
     throw new Error("invalid_agency_now");
   }
-  return date.toISOString().slice(0, 7);
+  const riyadh = new Date(date.getTime() + 3 * 60 * 60 * 1000);
+  return riyadh.toISOString().slice(0, 7);
 }
 
 export function agencyPublicRankingPrefix(agencyIdInput, monthInput) {

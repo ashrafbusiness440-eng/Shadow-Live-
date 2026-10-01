@@ -1608,6 +1608,7 @@ export async function updateAgencyIdentity(
           title: "تم تحديث بيانات الوكالة",
           body: `${name} — ID ${nextPublicId}${country ? ` — ${country}` : ""}`,
           read: false,
+          mandatory: true,
           agencyId,
           createdAt: now,
         }));
@@ -1627,6 +1628,527 @@ export async function updateAgencyIdentity(
     }
   }
   throw new ApiError("transaction_failed", 500);
+}
+
+export async function listAgencyIdentityChangeRequests(
+  db,
+  limitInput = 25,
+) {
+  const limit = Math.min(25, boundedAgencyPageSize(limitInput, 25));
+  const rows = await db.runQuery("agency_identity_change_requests", {
+    filters: [{ field: "status", op: "==", value: "pending" }],
+    limit,
+  });
+  return rows
+    .map((row) => {
+      const data = row?.data || {};
+      return {
+        requestId: clean(data.requestId || row?.id),
+        agencyId: clean(data.agencyId),
+        ownerUid: clean(data.ownerUid),
+        currentName: clean(data.currentName),
+        currentCountry: clean(data.currentCountry) || null,
+        requestedName: clean(data.requestedName),
+        requestedCountry: clean(data.requestedCountry) || null,
+        status: clean(data.status),
+        createdAt: data.createdAt || null,
+      };
+    })
+    .filter((item) => item.requestId && validAgencyId(item.agencyId))
+    .sort((left, right) =>
+      timestampMs(left.createdAt) - timestampMs(right.createdAt)
+    );
+}
+
+async function finalizeAgencyIdentityChangeRequest(
+  db,
+  actorUid,
+  request,
+  decision,
+  reason,
+  now,
+) {
+  const requestId = clean(request.requestId);
+  const agencyId = clean(request.agencyId);
+  const requestPath = `agency_identity_change_requests/${requestId}`;
+  const lockPath = `agency_identity_change_locks/${agencyId}`;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const tx = await db.beginTransaction();
+    try {
+      const [requestSnap, lockSnap] = await Promise.all([
+        db.get(requestPath, tx),
+        db.get(lockPath, tx),
+      ]);
+      if (!requestSnap.exists) {
+        throw new ApiError("agency_identity_change_request_not_found", 404);
+      }
+      const current = requestSnap.data || {};
+      const currentStatus = clean(current.status);
+      const finalStatus = decision === "accept" ? "accepted" : "rejected";
+      if (currentStatus === finalStatus) {
+        await db.rollback(tx);
+        return { ok: true, code: "already_processed", status: finalStatus };
+      }
+      if (currentStatus !== "pending") {
+        throw new ApiError("agency_identity_change_already_processed", 409);
+      }
+      if (
+        lockSnap.exists &&
+        clean(lockSnap.data?.requestId) !== requestId
+      ) {
+        throw new ApiError("agency_identity_change_lock_conflict", 409);
+      }
+      const ownerUid = clean(current.ownerUid);
+      const writes = [
+        db.writeUpdate(
+          requestPath,
+          {
+            status: finalStatus,
+            decision,
+            reason: reason || null,
+            resolvedBy: actorUid,
+            resolvedAt: now,
+            updatedAt: now,
+          },
+          [
+            "status",
+            "decision",
+            "reason",
+            "resolvedBy",
+            "resolvedAt",
+            "updatedAt",
+          ],
+        ),
+        ...(lockSnap.exists ? [db.writeDelete(lockPath)] : []),
+        db.writeCreate(
+          `admin_audit_logs/agency_identity_change_review_${requestId}`,
+          {
+            actorUid,
+            action:
+              decision === "accept"
+                ? "approveAgencyIdentityChange"
+                : "rejectAgencyIdentityChange",
+            targetType: "agency_identity_change_request",
+            targetId: requestId,
+            after: {
+              status: finalStatus,
+              reason: reason || null,
+            },
+            createdAt: now,
+          },
+        ),
+      ];
+      if (ownerUid) {
+        writes.push(
+          db.writeCreate(
+            `notifications/agency_identity_change_review_${requestId}`,
+            {
+              userId: ownerUid,
+              type:
+                decision === "accept"
+                  ? "agency_identity_change_approved"
+                  : "agency_identity_change_rejected",
+              category: "system",
+              title:
+                decision === "accept"
+                  ? "تمت الموافقة على تغيير بيانات الوكالة"
+                  : "تم رفض طلب تغيير بيانات الوكالة",
+              body:
+                decision === "accept"
+                  ? clean(current.requestedName) +
+                    (clean(current.requestedCountry)
+                      ? " — " + clean(current.requestedCountry)
+                      : "")
+                  : reason,
+              read: false,
+              mandatory: true,
+              agencyId,
+              requestId,
+              createdAt: now,
+            },
+          ),
+        );
+      }
+      await db.commit(tx, writes);
+      return { ok: true, code: "ok", status: finalStatus };
+    } catch (error) {
+      await db.rollback(tx);
+      if (error instanceof ApiError) throw error;
+      if (isTransientFirestoreError(error) && attempt < 2) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, firestoreErrorRetryDelayMs(attempt))
+        );
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new ApiError("transaction_failed", 500);
+}
+
+export async function reviewAgencyIdentityChange(
+  db,
+  actorUid,
+  body = {},
+  { now = new Date() } = {},
+) {
+  const requestId = clean(body.requestId);
+  const decision = clean(body.decision);
+  const reason = clean(body.reason).slice(0, 500);
+  const key = clean(body.idempotencyKey);
+  if (!requestId || requestId.includes("/")) {
+    throw new ApiError("invalid_agency_identity_change_request", 400);
+  }
+  if (!["accept", "reject"].includes(decision)) {
+    throw new ApiError("invalid_decision", 400);
+  }
+  if (decision === "reject" && reason.length < 3) {
+    throw new ApiError("agency_identity_change_rejection_reason_required", 400);
+  }
+  if (!validIdempotencyKey(key)) {
+    throw new ApiError("invalid_idempotency_key", 400);
+  }
+
+  const requestSnap = await db.get(
+    `agency_identity_change_requests/${requestId}`,
+  );
+  if (!requestSnap.exists) {
+    throw new ApiError("agency_identity_change_request_not_found", 404);
+  }
+  const request = requestSnap.data || {};
+  const status = clean(request.status);
+  if (status !== "pending") {
+    return {
+      ok: true,
+      code: "already_processed",
+      requestId,
+      status,
+    };
+  }
+
+  if (decision === "reject") {
+    const finalized = await finalizeAgencyIdentityChangeRequest(
+      db,
+      actorUid,
+      { ...request, requestId },
+      decision,
+      reason,
+      now,
+    );
+    return { ...finalized, requestId };
+  }
+
+  const agencyId = clean(request.agencyId);
+  const agencySnap = await db.get(`agencies/${agencyId}`);
+  if (!agencySnap.exists) throw new ApiError("agency_not_found", 404);
+  const agency = agencySnap.data || {};
+  if (
+    clean(agency.name) !== clean(request.currentName) ||
+    (clean(agency.country) || null) !==
+      (clean(request.currentCountry) || null)
+  ) {
+    throw new ApiError("agency_identity_changed_since_request", 409);
+  }
+
+  await updateAgencyIdentity(
+    db,
+    actorUid,
+    {
+      agencyId,
+      publicId: clean(agency.publicId || agencyId),
+      name: clean(request.requestedName),
+      country: clean(request.requestedCountry) || null,
+      idempotencyKey: key,
+    },
+    { now },
+  );
+  const finalized = await finalizeAgencyIdentityChangeRequest(
+    db,
+    actorUid,
+    { ...request, requestId },
+    decision,
+    null,
+    now,
+  );
+  return {
+    ...finalized,
+    requestId,
+    agencyId,
+    name: clean(request.requestedName),
+    country: clean(request.requestedCountry) || null,
+  };
+}
+
+export async function listAgencyOwnershipTransferRequests(
+  db,
+  limitInput = 25,
+) {
+  const limit = Math.min(25, boundedAgencyPageSize(limitInput, 25));
+  const rows = await db.runQuery("agency_ownership_transfer_requests", {
+    filters: [{ field: "status", op: "==", value: "pending" }],
+    limit,
+  });
+  return rows
+    .map((row) => {
+      const data = row?.data || {};
+      return {
+        requestId: clean(data.requestId || row?.id),
+        agencyId: clean(data.agencyId),
+        ownerUid: clean(data.ownerUid),
+        newOwnerUid: clean(data.newOwnerUid),
+        newOwnerPublicId: clean(data.newOwnerPublicId),
+        newOwnerDisplayName: clean(data.newOwnerDisplayName) || null,
+        previousNewOwnerRole: clean(data.previousNewOwnerRole) || null,
+        status: clean(data.status),
+        createdAt: data.createdAt || null,
+        updatedAt: data.updatedAt || null,
+      };
+    })
+    .filter((item) => item.requestId && validAgencyId(item.agencyId))
+    .sort((left, right) =>
+      timestampMs(left.createdAt) - timestampMs(right.createdAt)
+    );
+}
+
+async function finalizeOwnershipTransferRequest(
+  db,
+  actorUid,
+  request,
+  decision,
+  reason,
+  now,
+) {
+  const requestId = clean(request.requestId);
+  const agencyId = clean(request.agencyId);
+  const requestPath = `agency_ownership_transfer_requests/${requestId}`;
+  const lockPath = `agency_ownership_transfer_locks/${agencyId}`;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const tx = await db.beginTransaction();
+    try {
+      const [requestSnap, lockSnap] = await Promise.all([
+        db.get(requestPath, tx),
+        db.get(lockPath, tx),
+      ]);
+      if (!requestSnap.exists) {
+        throw new ApiError("ownership_transfer_request_not_found", 404);
+      }
+      const current = requestSnap.data || {};
+      const currentStatus = clean(current.status);
+      const finalStatus = decision === "accept" ? "accepted" : "rejected";
+      if (currentStatus === finalStatus) {
+        await db.rollback(tx);
+        return { ok: true, code: "already_processed", status: finalStatus };
+      }
+      if (currentStatus !== "pending") {
+        throw new ApiError("ownership_transfer_already_processed", 409);
+      }
+      if (
+        lockSnap.exists &&
+        clean(lockSnap.data?.requestId) !== requestId
+      ) {
+        throw new ApiError("ownership_transfer_lock_conflict", 409);
+      }
+
+      const ownerUid = clean(current.ownerUid);
+      const newOwnerUid = clean(current.newOwnerUid);
+      const writes = [
+        db.writeUpdate(
+          requestPath,
+          {
+            status: finalStatus,
+            decision,
+            reason: reason || null,
+            resolvedBy: actorUid,
+            resolvedAt: now,
+            updatedAt: now,
+          },
+          [
+            "status",
+            "decision",
+            "reason",
+            "resolvedBy",
+            "resolvedAt",
+            "updatedAt",
+          ],
+        ),
+        ...(lockSnap.exists ? [db.writeDelete(lockPath)] : []),
+        db.writeCreate(
+          `admin_audit_logs/agency_owner_transfer_review_${requestId}`,
+          {
+            actorUid,
+            action:
+              decision === "accept"
+                ? "approveAgencyOwnershipTransfer"
+                : "rejectAgencyOwnershipTransfer",
+            targetType: "agency_ownership_transfer_request",
+            targetId: requestId,
+            before: {
+              status: "pending",
+              ownerUid,
+              newOwnerUid,
+            },
+            after: {
+              status: finalStatus,
+              reason: reason || null,
+            },
+            createdAt: now,
+          },
+        ),
+      ];
+
+      if (ownerUid) {
+        writes.push(
+          db.writeCreate(
+            `notifications/agency_owner_transfer_review_owner_${requestId}`,
+            {
+              userId: ownerUid,
+              type:
+                decision === "accept"
+                  ? "agency_ownership_transfer_approved"
+                  : "agency_ownership_transfer_rejected",
+              category: "system",
+              title:
+                decision === "accept"
+                  ? "تمت الموافقة على نقل ملكية الوكالة"
+                  : "تم رفض طلب نقل ملكية الوكالة",
+              body: reason || agencyId,
+              read: false,
+              mandatory: true,
+              agencyId,
+              requestId,
+              createdAt: now,
+            },
+          ),
+        );
+      }
+      if (newOwnerUid && newOwnerUid !== ownerUid) {
+        writes.push(
+          db.writeCreate(
+            `notifications/agency_owner_transfer_review_candidate_${requestId}`,
+            {
+              userId: newOwnerUid,
+              type:
+                decision === "accept"
+                  ? "agency_ownership_transfer_approved"
+                  : "agency_ownership_transfer_rejected",
+              category: "system",
+              title:
+                decision === "accept"
+                  ? "تمت الموافقة على نقل ملكية الوكالة إليك"
+                  : "تم رفض طلب نقل ملكية الوكالة",
+              body: reason || agencyId,
+              read: false,
+              mandatory: true,
+              agencyId,
+              requestId,
+              createdAt: now,
+            },
+          ),
+        );
+      }
+
+      await db.commit(tx, writes);
+      return { ok: true, code: "ok", status: finalStatus };
+    } catch (error) {
+      await db.rollback(tx);
+      if (error instanceof ApiError) throw error;
+      if (isTransientFirestoreError(error) && attempt < 2) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, firestoreErrorRetryDelayMs(attempt))
+        );
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new ApiError("transaction_failed", 500);
+}
+
+export async function reviewAgencyOwnershipTransfer(
+  db,
+  actorUid,
+  body = {},
+  { now = new Date() } = {},
+) {
+  const requestId = clean(body.requestId);
+  const decision = clean(body.decision);
+  const reason = clean(body.reason).slice(0, 500);
+  const key = clean(body.idempotencyKey);
+  if (!requestId || requestId.includes("/")) {
+    throw new ApiError("invalid_ownership_transfer_request", 400);
+  }
+  if (!["accept", "reject"].includes(decision)) {
+    throw new ApiError("invalid_decision", 400);
+  }
+  if (decision === "reject" && reason.length < 3) {
+    throw new ApiError("ownership_transfer_rejection_reason_required", 400);
+  }
+  if (!validIdempotencyKey(key)) {
+    throw new ApiError("invalid_idempotency_key", 400);
+  }
+
+  const requestSnap = await db.get(
+    `agency_ownership_transfer_requests/${requestId}`,
+  );
+  if (!requestSnap.exists) {
+    throw new ApiError("ownership_transfer_request_not_found", 404);
+  }
+  const request = requestSnap.data || {};
+  const status = clean(request.status);
+  if (status !== "pending") {
+    return {
+      ok: true,
+      code: "already_processed",
+      requestId,
+      status,
+    };
+  }
+
+  if (decision === "reject") {
+    const finalized = await finalizeOwnershipTransferRequest(
+      db,
+      actorUid,
+      { ...request, requestId },
+      decision,
+      reason,
+      now,
+    );
+    return { ...finalized, requestId };
+  }
+
+  const agencyId = clean(request.agencyId);
+  const newOwnerUid = clean(request.newOwnerUid);
+  const newOwnerPublicId = clean(request.newOwnerPublicId);
+  const agencySnap = await db.get(`agencies/${agencyId}`);
+  if (!agencySnap.exists) throw new ApiError("agency_not_found", 404);
+
+  if (clean(agencySnap.data?.ownerUid) !== newOwnerUid) {
+    await transferAgencyOwnership(
+      db,
+      actorUid,
+      {
+        agencyId,
+        newOwnerPublicId,
+        idempotencyKey: key,
+      },
+      { now },
+    );
+  }
+  const finalized = await finalizeOwnershipTransferRequest(
+    db,
+    actorUid,
+    { ...request, requestId },
+    decision,
+    null,
+    now,
+  );
+  return {
+    ...finalized,
+    requestId,
+    agencyId,
+    newOwnerUid,
+    newOwnerPublicId,
+  };
 }
 
 export async function transferAgencyOwnership(
@@ -1831,6 +2353,7 @@ export async function transferAgencyOwnership(
           title: "أصبحت مالك الوكالة",
           body: agencyId,
           read: false,
+          mandatory: true,
           agencyId,
           createdAt: now,
         }),
@@ -1841,6 +2364,7 @@ export async function transferAgencyOwnership(
           title: "تم نقل ملكية الوكالة",
           body: agencyId,
           read: false,
+          mandatory: true,
           agencyId,
           createdAt: now,
         }),
@@ -1979,6 +2503,7 @@ export async function changeAgencyStatus(
               "تم إغلاق الوكالة نهائيًا",
           body: reason,
           read: false,
+          mandatory: true,
           agencyId,
           createdAt: now,
         }));
@@ -2115,6 +2640,9 @@ function sanitizeAgencyPolicyOverride(data = {}) {
   if (Object.prototype.hasOwnProperty.call(data, "agencyPerformanceBonusBps")) {
     result.agencyPerformanceBonusBps = Number(data.agencyPerformanceBonusBps);
   }
+  if (Object.prototype.hasOwnProperty.call(data, "agencyPerformanceBonusMode")) {
+    result.agencyPerformanceBonusMode = clean(data.agencyPerformanceBonusMode);
+  }
   if (Object.prototype.hasOwnProperty.call(data, "agencyBonusActiveHosts")) {
     result.agencyBonusActiveHosts = Number(data.agencyBonusActiveHosts);
   }
@@ -2143,19 +2671,27 @@ function effectiveAgencyPolicy(economy = {}, override = {}) {
   return {
     tiers,
     targets,
-    agencyPerformanceBonusBps: has("agencyPerformanceBonusBps")
-      ? Number(override.agencyPerformanceBonusBps)
-      : Math.max(0, Math.min(3000, Number(economy.agencyPerformanceBonusBps ?? 200))),
-    agencyBonusActiveHosts: has("agencyBonusActiveHosts")
-      ? Number(override.agencyBonusActiveHosts)
-      : Math.max(1, Math.min(100000, Number(economy.agencyBonusActiveHosts || 10))),
+    agencyPerformanceBonusBps:
+      has("agencyPerformanceBonusMode") &&
+      clean(override.agencyPerformanceBonusMode) === "per_host_target_month_end" &&
+      has("agencyPerformanceBonusBps")
+        ? Math.max(0, Math.min(3000, Number(override.agencyPerformanceBonusBps)))
+        : (
+            clean(economy.agencyPerformanceBonusMode) === "per_host_target_month_end"
+              ? Math.max(0, Math.min(3000, Number(economy.agencyPerformanceBonusBps ?? 100)))
+              : 100
+          ),
+    agencyPerformanceBonusMode: "per_host_target_month_end",
+    agencyBonusActiveHosts: 0,
     surplusToShadow: has("surplusToShadow") ? override.surplusToShadow : null,
     inherited: {
       tiers: !has("tiers"),
       targets: !has("targets"),
-      bonus:
-        !has("agencyPerformanceBonusBps") &&
-        !has("agencyBonusActiveHosts"),
+      bonus: !(
+        has("agencyPerformanceBonusMode") &&
+        clean(override.agencyPerformanceBonusMode) === "per_host_target_month_end" &&
+        has("agencyPerformanceBonusBps")
+      ),
       surplus: !has("surplusToShadow"),
     },
   };
@@ -2172,8 +2708,8 @@ function agencyPolicyFingerprint(body = {}) {
     overrideBonus: body.overrideBonus === true,
     agencyPerformanceBonusBps:
       body.overrideBonus === true ? Number(body.agencyPerformanceBonusBps) : null,
-    agencyBonusActiveHosts:
-      body.overrideBonus === true ? Number(body.agencyBonusActiveHosts) : null,
+    agencyPerformanceBonusMode:
+      body.overrideBonus === true ? "per_host_target_month_end" : null,
     surplusToShadow: body.surplusToShadow,
   });
 }
@@ -2237,11 +2773,7 @@ export async function updateAgencyPolicyOverride(
       "agency_bonus_bps",
       { min: 0, max: 3000 },
     );
-    next.agencyBonusActiveHosts = policyInteger(
-      body.agencyBonusActiveHosts,
-      "agency_bonus_active_hosts",
-      { min: 1, max: 100000 },
-    );
+    next.agencyPerformanceBonusMode = "per_host_target_month_end";
   }
 
   const opPath = controlOperationPath(actorUid, key);
@@ -2281,6 +2813,7 @@ export async function updateAgencyPolicyOverride(
         "tiers",
         "targets",
         "agencyPerformanceBonusBps",
+        "agencyPerformanceBonusMode",
         "agencyBonusActiveHosts",
       ];
       const policyWrite = beforeSnap.exists
@@ -2460,6 +2993,206 @@ export async function propagateAgencyPolicyPage(
   throw new ApiError("transaction_failed", 500);
 }
 
+export async function listAgencyCooldownExceptionRequests(
+  db,
+  limitInput = 25,
+) {
+  const limit = Math.min(25, boundedAgencyPageSize(limitInput, 25));
+  const rows = await db.runQuery("agency_cooldown_exception_requests", {
+    filters: [{ field: "status", op: "==", value: "pending" }],
+    limit,
+  });
+  return rows
+    .map((row) => {
+      const data = row?.data || {};
+      return {
+        requestId: clean(data.requestId || row?.id),
+        uid: clean(data.uid || row?.id),
+        agencyId: clean(data.agencyId) || null,
+        status: clean(data.status),
+        reason: clean(data.reason) || null,
+        cooldownUntil: data.cooldownUntil || null,
+        requestedAt: data.requestedAt || null,
+      };
+    })
+    .filter((item) => item.requestId && item.uid)
+    .sort(
+      (left, right) =>
+        timestampMs(left.requestedAt) - timestampMs(right.requestedAt),
+    );
+}
+
+async function finalizeAgencyCooldownExceptionReview(
+  db,
+  actorUid,
+  requestId,
+  decision,
+  reason,
+  now,
+) {
+  const requestPath = "agency_cooldown_exception_requests/" + requestId;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const tx = await db.beginTransaction();
+    try {
+      const snap = await db.get(requestPath, tx);
+      if (!snap.exists) {
+        throw new ApiError("cooldown_exception_not_found", 404);
+      }
+      const current = snap.data || {};
+      const currentStatus = clean(current.status);
+      const finalStatus = decision === "accept" ? "accepted" : "rejected";
+      if (currentStatus === finalStatus) {
+        await db.rollback(tx);
+        return { ok: true, code: "already_processed", status: finalStatus };
+      }
+      if (currentStatus !== "pending") {
+        throw new ApiError("cooldown_exception_already_processed", 409);
+      }
+      const uid = clean(current.uid || requestId);
+      const agencyId = clean(current.agencyId);
+      const writes = [
+        db.writeUpdate(
+          requestPath,
+          {
+            status: finalStatus,
+            resolutionReason: reason || null,
+            resolvedBy: actorUid,
+            resolvedAt: now,
+            updatedAt: now,
+          },
+          [
+            "status",
+            "resolutionReason",
+            "resolvedBy",
+            "resolvedAt",
+            "updatedAt",
+          ],
+        ),
+        db.writeCreate(
+          "admin_audit_logs/agency_cooldown_exception_review_" +
+            requestId + "_" + decision,
+          {
+            actorUid,
+            action:
+              decision === "accept"
+                ? "approveAgencyCooldownException"
+                : "rejectAgencyCooldownException",
+            targetType: "agency_membership",
+            targetId: agencyId + "__" + uid,
+            before: {
+              status: "pending",
+              cooldownUntil: current.cooldownUntil || null,
+            },
+            after: {
+              status: finalStatus,
+              reason: reason || null,
+            },
+            createdAt: now,
+          },
+        ),
+      ];
+      if (decision === "reject") {
+        writes.push(
+          db.writeCreate(
+            "notifications/agency_cooldown_exception_rejected_" + requestId,
+            {
+              userId: uid,
+              type: "agency_rejoin_cooldown_exception_rejected",
+              category: "system",
+              title: "تم رفض طلب استثناء فترة الانتظار",
+              body: reason || "يستمر انتظار 7 أيام حسب النظام.",
+              read: false,
+              mandatory: true,
+              agencyId: agencyId || null,
+              createdAt: now,
+            },
+          ),
+        );
+      }
+      await db.commit(tx, writes);
+      return { ok: true, code: "ok", status: finalStatus, uid, agencyId };
+    } catch (error) {
+      await db.rollback(tx);
+      if (error instanceof ApiError) throw error;
+      if (isTransientFirestoreError(error) && attempt < 2) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, firestoreErrorRetryDelayMs(attempt))
+        );
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new ApiError("transaction_failed", 500);
+}
+
+export async function reviewAgencyCooldownException(
+  db,
+  actorUid,
+  body = {},
+  { now = new Date() } = {},
+) {
+  const requestId = clean(body.requestId);
+  const decision = clean(body.decision);
+  const reason = clean(body.reason).slice(0, 500);
+  const key = clean(body.idempotencyKey);
+  if (!requestId || requestId.includes("/")) {
+    throw new ApiError("invalid_cooldown_exception_request", 400);
+  }
+  if (!["accept", "reject"].includes(decision)) {
+    throw new ApiError("invalid_decision", 400);
+  }
+  if (decision === "reject" && reason.length < 3) {
+    throw new ApiError("cooldown_exception_rejection_reason_required", 400);
+  }
+  if (!validIdempotencyKey(key)) {
+    throw new ApiError("invalid_idempotency_key", 400);
+  }
+
+  const requestSnap = await db.get(
+    "agency_cooldown_exception_requests/" + requestId,
+  );
+  if (!requestSnap.exists) {
+    throw new ApiError("cooldown_exception_not_found", 404);
+  }
+  const request = requestSnap.data || {};
+  const status = clean(request.status);
+  if (status !== "pending") {
+    return { ok: true, code: "already_processed", status };
+  }
+
+  if (decision === "accept") {
+    const targetUid = clean(request.uid || requestId);
+    try {
+      await overrideAgencyRejoinCooldown(
+        db,
+        actorUid,
+        {
+          targetUid,
+          reason:
+            reason ||
+            "تمت الموافقة على طلب استثناء فترة انتظار الوكالة.",
+          idempotencyKey: key,
+        },
+        { now },
+      );
+    } catch (error) {
+      if (clean(error?.message) !== "agency_rejoin_cooldown_not_active") {
+        throw error;
+      }
+    }
+  }
+
+  return finalizeAgencyCooldownExceptionReview(
+    db,
+    actorUid,
+    requestId,
+    decision,
+    reason,
+    now,
+  );
+}
+
 export async function overrideAgencyCooldownByPublicId(
   db,
   actorUid,
@@ -2502,18 +3235,54 @@ export async function agencyControl(request, env) {
     if (action === "listReviewQueue") {
       const canReview = actor.permissions.canReviewApplications;
       const canManagePackages = actor.permissions.canManageAgencyPackages;
-      if (!canReview && !canManagePackages) throw new ApiError("forbidden", 403);
-      const [applications, manualBlocks, applicationSettings] = canReview
+      if (
+        !canReview &&
+        !canManagePackages &&
+        !actor.permissions.canManageMemberships
+      ) throw new ApiError("forbidden", 403);
+      const [
+        applications,
+        manualBlocks,
+        applicationSettings,
+        ownershipTransferRequests,
+        identityChangeRequests,
+        cooldownExceptionRequests,
+      ] = canReview
         ? await Promise.all([
             listAgencyReviewQueue(db, body.limit),
             listAgencyManualReapplyBlocks(db, 25),
             getAgencyApplicationSettings(db),
+            actor.permissions.isOwner
+              ? listAgencyOwnershipTransferRequests(db, 25)
+              : Promise.resolve([]),
+            actor.permissions.canManageAgencies
+              ? listAgencyIdentityChangeRequests(db, 25)
+              : Promise.resolve([]),
+            actor.permissions.canManageMemberships
+              ? listAgencyCooldownExceptionRequests(db, 25)
+              : Promise.resolve([]),
           ])
-        : [[], [], { requiredHostCount: 5 }];
+        : [
+            [],
+            [],
+            { requiredHostCount: 5 },
+            actor.permissions.isOwner
+              ? await listAgencyOwnershipTransferRequests(db, 25)
+              : [],
+            actor.permissions.canManageAgencies
+              ? await listAgencyIdentityChangeRequests(db, 25)
+              : [],
+            actor.permissions.canManageMemberships
+              ? await listAgencyCooldownExceptionRequests(db, 25)
+              : [],
+          ];
       return json(request, env, {
         ok: true,
         applications,
         manualBlocks,
+        ownershipTransferRequests,
+        identityChangeRequests,
+        cooldownExceptionRequests,
         applicationSettings,
         limit: Math.min(50, boundedAgencyPageSize(body.limit, 50)),
         permissions: {
@@ -2588,9 +3357,23 @@ export async function agencyControl(request, env) {
       if (!actor.permissions.canManageAgencies) throw new ApiError("forbidden", 403);
       return json(request, env, await updateAgencyIdentity(db, decoded.sub, body));
     }
-    if (action === "transferOwnership") {
+    if (action === "reviewIdentityChange") {
+      if (!actor.permissions.canManageAgencies) {
+        throw new ApiError("forbidden", 403);
+      }
+      return json(
+        request,
+        env,
+        await reviewAgencyIdentityChange(db, decoded.sub, body),
+      );
+    }
+    if (action === "reviewOwnershipTransfer") {
       if (!actor.permissions.isOwner) throw new ApiError("forbidden", 403);
-      return json(request, env, await transferAgencyOwnership(db, decoded.sub, body));
+      return json(
+        request,
+        env,
+        await reviewAgencyOwnershipTransfer(db, decoded.sub, body),
+      );
     }
     if (action === "changeStatus") {
       const requestedStatus = clean(body.status);
@@ -2636,6 +3419,16 @@ export async function agencyControl(request, env) {
         request,
         env,
         await overrideAgencyCooldownByPublicId(db, decoded.sub, body),
+      );
+    }
+    if (action === "reviewCooldownException") {
+      if (!actor.permissions.canManageMemberships) {
+        throw new ApiError("forbidden", 403);
+      }
+      return json(
+        request,
+        env,
+        await reviewAgencyCooldownException(db, decoded.sub, body),
       );
     }
     throw new ApiError("invalid_action", 400);

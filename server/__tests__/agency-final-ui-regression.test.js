@@ -38,6 +38,11 @@ test("Agencies final UI keeps account images and pending request layout stable",
   );
   assert.equal(ownerPage.includes("maxLines: 1"), true);
   assert.equal(ownerPage.includes("owner-pending-copy-id-"), true);
+  assert.equal(ownerPage.includes("owner-agency-member-${member.uid}"), true);
+  assert.equal(ownerPage.includes("owner-member-copy-id-"), true);
+  assert.equal(ownerPage.includes("owner-member-performance-"), true);
+  assert.equal(ownerPage.includes("trailing: owner"), false);
+  assert.equal(ownerPage.includes("owner-agency-copy-id"), true);
   assert.equal(ownerPage.includes("إلغاء الدعوة"), true);
   assert.equal(managerPage.includes("agency-review-pending-"), true);
   assert.equal(managerPage.includes("maxLines: 1"), true);
@@ -78,7 +83,7 @@ test("Agency activity rule is fixed at 14 days x 120 minutes and removes one mic
   assert.equal(config.includes("const hostBonusMinutesPerQualifiedDay=120;"), true);
   assert.equal(policy.includes("const requiredDays = 14;"), true);
   assert.equal(
-    policy.includes("Activity is bonus-only. It never reduces base Host or Agency shares."),
+    policy.includes("They must never inflate the base gift-time Host or Agency share."),
     true,
   );
 });
@@ -91,13 +96,34 @@ test("Agencies target table renders every configured level and display-only econ
 
   assert.equal(hostPage.includes("...levels.map((level)"), true);
   assert.equal(hostPage.includes("Gross Support ≈"), true);
-  assert.equal(hostPage.includes("Host Share:"), true);
+  assert.equal(hostPage.includes("Target المحتسب للمضيف:"), true);
+  assert.equal(hostPage.includes("Host Share:"), false);
   assert.equal(hostPage.includes("Activity Bonus:"), true);
+  assert.equal(hostPage.includes("activityBonusBps"), false);
   assert.equal(hostPage.includes("شرط النشاط:"), true);
   assert.equal(hostPage.includes("تقدم المستوى التالي:"), true);
   assert.equal(hostSource.includes(".map((target) =>"), true);
   assert.equal(hostSource.includes("revenueTiers(effectiveEconomy)"), true);
   assert.equal(hostSource.includes("grossSupportCoins"), true);
+});
+
+test("Agency ID copy actions stay available across member-facing Agency screens", () => {
+  const hostPage = source(
+    "lib/features/agency/screens/host_my_agency_page.dart",
+  );
+  const publicAgency = source(
+    "lib/features/agency/screens/public_agency_page.dart",
+  );
+  const ownerPage = source(
+    "lib/features/agency/screens/owner_agency_dashboard_page.dart",
+  );
+
+  assert.equal(hostPage.includes("host-agency-copy-id"), true);
+  assert.equal(publicAgency.includes("public-agency-copy-id"), true);
+  assert.equal(ownerPage.includes("owner-agency-copy-id"), true);
+  assert.equal(hostPage.includes("Clipboard.setData"), true);
+  assert.equal(publicAgency.includes("Clipboard.setData"), true);
+  assert.equal(ownerPage.includes("Clipboard.setData"), true);
 });
 
 test("Agency Room category and logo reuse bootstrap data without agency hot-path reads", () => {
@@ -166,4 +192,221 @@ test("Agency reviewer notifications remain actionable once and resolved afterwar
   assert.equal(membership.includes("resolvedReviewerNotificationWrites"), true);
   assert.equal(membership.includes("resolvedByName"), true);
   assert.equal(membership.includes('code: "already_processed"'), true);
+});
+
+
+test("Agency business periods use Riyadh boundaries and daily activity cap", () => {
+  const agencyPolicy = source("cloudflare-worker/src/agency-policy.js");
+  const mic = source("cloudflare-worker/src/mic-activity.js");
+  const voice = source("cloudflare-worker/src/voice-session-legacy.js");
+  const roomGift = source("cloudflare-worker/src/room-gift.js");
+  const chatGift = source("cloudflare-worker/src/chat-safety-actions.js");
+  const config = source(
+    "cloudflare-worker/src/legacy-economy/gift-economy-config.js",
+  );
+
+  assert.equal(agencyPolicy.includes("3 * 60 * 60 * 1000"), true);
+  assert.equal(mic.includes("RIYADH_OFFSET_MS"), true);
+  assert.equal(mic.includes("splitRiyadhIntervalByDay"), true);
+  assert.equal(voice.includes("nextEligibleSeconds-previousEligibleSeconds"), true);
+  assert.equal(roomGift.includes("const agencyPeriods = riyadhPeriodKeys(now);"), true);
+  assert.equal(chatGift.includes("const agencyPeriods = riyadhPeriodKeys(now);"), true);
+  assert.equal(config.includes('periodTimeZone:"Asia/Riyadh"'), true);
+});
+
+test("Approved bonuses are month-end only and legacy +2 percent is absent", () => {
+  const policy = source("cloudflare-worker/src/economy-policy.js");
+  const hostSource = source("cloudflare-worker/src/agency-host.js");
+  const hostPage = source(
+    "lib/features/agency/screens/host_my_agency_page.dart",
+  );
+  const giftControl = source("lib/admin/gift_economy_control_page.dart");
+
+  assert.equal(policy.includes("const hostBonusBps = 0;"), true);
+  assert.equal(policy.includes("const agencyBonusBps = 0;"), true);
+  assert.equal(hostSource.includes("hostActivityBonusForTarget(summary)"), true);
+  assert.equal(hostPage.includes("Activity Bonus: +"), false);
+  assert.equal(
+    giftControl.includes("per_host_target_month_end"),
+    true,
+  );
+  assert.equal(
+    giftControl.includes("gift-economy-host-bonus-pct"),
+    false,
+  );
+});
+
+
+test("Agency legacy economy migration fallback cannot restore UTC or +2 percent", () => {
+  const config = source(
+    "cloudflare-worker/src/legacy-economy/gift-economy-config.js",
+  );
+  assert.equal(config.includes("function safePolicyFallback(data={})"), true);
+  assert.equal(config.includes('periodTimeZone:"Asia/Riyadh"'), true);
+  assert.equal(config.includes("hostPerformanceBonusBps:0"), true);
+  assert.equal(
+    config.includes('agencyPerformanceBonusMode:"per_host_target_month_end"'),
+    true,
+  );
+  assert.equal(
+    config.includes(
+      'clean(data.agencyPerformanceBonusMode)==="per_host_target_month_end"',
+    ),
+    true,
+  );
+  assert.equal(config.includes(":100;"), true);
+});
+
+
+test("Agency permission and status notifications are mandatory", () => {
+  const membership = source("cloudflare-worker/src/agency-membership.js");
+  const control = source("cloudflare-worker/src/agency-control.js");
+
+  const roleStart = membership.indexOf(
+    'type: "agency_membership_role_changed"',
+  );
+  const roleEnd = membership.indexOf("createdAt: now", roleStart);
+  assert.ok(roleStart >= 0 && roleEnd > roleStart);
+  assert.equal(
+    membership.slice(roleStart, roleEnd).includes("mandatory: true"),
+    true,
+  );
+
+  const statusStart = control.indexOf(
+    'db.writeCreate(\`notifications/agency_status_\${eventId}\`',
+  );
+  const statusEnd = control.indexOf("createdAt: now", statusStart);
+  assert.ok(statusStart >= 0 && statusEnd > statusStart);
+  assert.equal(
+    control.slice(statusStart, statusEnd).includes("mandatory: true"),
+    true,
+  );
+});
+
+
+test("Agency manager Host performance stays privacy-safe and lazy", () => {
+  const managerPage = source(
+    "lib/features/agency/screens/agency_membership_review_page.dart",
+  );
+  const service = source(
+    "lib/features/agency/services/owner_agency_service.dart",
+  );
+  const membership = source("cloudflare-worker/src/agency-membership.js");
+
+  assert.equal(managerPage.includes("agency-manager-load-members"), true);
+  assert.equal(managerPage.includes("agency-manager-member-"), true);
+  assert.equal(managerPage.includes("_membersData == null"), true);
+  assert.equal(managerPage.includes("loadManagerHostPerformance"), true);
+  assert.equal(
+    managerPage.includes("الرواتب وAgency Share وBonus وبيانات المحفظة مخفية"),
+    true,
+  );
+
+  assert.equal(service.includes("'action': 'memberPerformance'"), true);
+  assert.equal(
+    service.includes("class ManagerHostPerformanceData"),
+    true,
+  );
+
+  const start = membership.indexOf(
+    "export async function loadAgencyMemberPerformance",
+  );
+  const end = membership.indexOf(
+    "export async function listAgencyMembers",
+    start,
+  );
+  const segment = membership.slice(start, end);
+  assert.ok(start >= 0 && end > start);
+  assert.equal(segment.includes(".runQuery("), false);
+  assert.equal(segment.includes('collection("agency_wallets")'), false);
+  assert.equal(segment.includes("financial_ledger"), false);
+  assert.equal(segment.includes("salaryDiamonds"), false);
+  assert.equal(segment.includes("paidDiamonds"), false);
+  assert.equal(segment.includes("agencyShare"), false);
+  assert.equal(segment.includes("agencyBonus"), false);
+  assert.equal(
+    segment.includes('privacyMode: "manager_performance_only"'),
+    true,
+  );
+});
+
+
+test("Agency personal Target history stays bounded and immutable", () => {
+  const host = source("cloudflare-worker/src/agency-host.js");
+  const policy = source("cloudflare-worker/src/agency-policy.js");
+  const roomGift = source("cloudflare-worker/src/room-gift.js");
+  const chatGift = source("cloudflare-worker/src/chat-safety-actions.js");
+  const page = source(
+    "lib/features/agency/screens/host_my_agency_page.dart",
+  );
+
+  const start = host.indexOf(
+    "export async function loadAgencyHostTargetHistory",
+  );
+  const end = host.indexOf(
+    "export async function updateAgencyOwnerProfile",
+    start,
+  );
+  const history = host.slice(start, end);
+  assert.ok(start >= 0 && end > start);
+  assert.equal(history.includes('db.runQuery("gift_transactions"'), true);
+  assert.equal(history.includes("limit: 30"), true);
+  assert.equal(history.includes(".snapshots()"), false);
+  assert.equal(history.includes("Timer.periodic"), false);
+  assert.equal(history.includes('collection("agency_wallets")'), false);
+  assert.equal(
+    policy.includes("export function agencyTargetAchievementDeltas"),
+    true,
+  );
+  assert.equal(roomGift.includes("agencyTargetAchievements"), true);
+  assert.equal(chatGift.includes("agencyTargetAchievements"), true);
+  assert.equal(page.includes("host-agency-target-history-entry"), true);
+  assert.equal(page.includes("سجل الـTargets الشخصي"), true);
+});
+
+
+test("Agency 7-day cooldown exception stays explicit and bounded", () => {
+  const membership = source("cloudflare-worker/src/agency-membership.js");
+  const control = source("cloudflare-worker/src/agency-control.js");
+  const entry = source(
+    "lib/features/agency/screens/my_agency_entry_page.dart",
+  );
+  const service = source(
+    "lib/features/agency/services/agency_membership_service.dart",
+  );
+  const controlPage = source("lib/admin/agency_control_page.dart");
+
+  assert.equal(
+    membership.includes("export async function requestAgencyCooldownException"),
+    true,
+  );
+  assert.equal(
+    membership.includes("agency_cooldown_exception_requests/"),
+    true,
+  );
+  assert.equal(
+    membership.includes("cooldownActive"),
+    true,
+  );
+  assert.equal(
+    control.includes("export async function listAgencyCooldownExceptionRequests"),
+    true,
+  );
+  const listStart = control.indexOf(
+    "export async function listAgencyCooldownExceptionRequests",
+  );
+  const listEnd = control.indexOf(
+    "async function finalizeAgencyCooldownExceptionReview",
+    listStart,
+  );
+  const listSegment = control.slice(listStart, listEnd);
+  assert.equal(listSegment.includes("limit = Math.min(25"), true);
+  assert.equal(listSegment.includes(".runQuery("), true);
+  assert.equal(control.includes('action === "reviewCooldownException"'), true);
+  assert.equal(service.includes("'action': 'requestCooldownException'"), true);
+  assert.equal(entry.includes("agency-cooldown-exception-request"), true);
+  assert.equal(
+    controlPage.includes("طلبات استثناء انتظار 7 أيام"),
+    true,
+  );
 });

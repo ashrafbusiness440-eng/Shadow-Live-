@@ -95,10 +95,12 @@ test("agency rejection and manual unblock remain direct and bounded", () => {
   const rejectStart = sourceText.indexOf("export async function rejectAgencyApplication");
   const manualListStart = sourceText.indexOf("export async function listAgencyManualReapplyBlocks");
   const unblockStart = sourceText.indexOf("export async function allowAgencyReapply");
-  const directStart = sourceText.indexOf("export async function directCreateAgency");
+  const controlDetailsStart = sourceText.indexOf(
+    "export async function getAgencyControlDetails",
+  );
   const rejectSource = sourceText.slice(rejectStart, manualListStart);
   const manualListSource = sourceText.slice(manualListStart, unblockStart);
-  const unblockSource = sourceText.slice(unblockStart, directStart);
+  const unblockSource = sourceText.slice(unblockStart, controlDetailsStart);
   assert.equal(rejectSource.includes(".runQuery("), false);
   assert.equal(unblockSource.includes(".runQuery("), false);
   assert.equal(manualListSource.includes('db.runQuery("agency_manual_reapply_blocks"'), true);
@@ -247,7 +249,7 @@ test("Stage 07-A gift hot paths accrue Agency Share on shards and never mutate A
 });
 
 
-test("Stage 07-B Agency Wallet settlement stays bounded and never replays Host salary", () => {
+test("Stage 07-B Agency month-close stays bounded and never replays Host salary", () => {
   for (const relativePath of [
     "../economy/economy-control.js",
     "../../cloudflare-worker/src/legacy-economy/economy-control.js",
@@ -260,10 +262,15 @@ test("Stage 07-B Agency Wallet settlement stays bounded and never replays Host s
     assert.equal(settlement.includes(".where("), false);
     assert.equal(settlement.includes(".list("), false);
     assert.equal(settlement.includes('collection("users")'), false);
-    assert.equal(settlement.includes('collection("agency_wallets").doc(agencyId)'), true);
+    assert.equal(settlement.includes('collection("agency_wallets").doc(agencyId)'), false);
+    assert.equal(settlement.includes('collection("users")'), false);
+    assert.equal(
+      settlement.includes('collection("agency_target_share_monthly").doc(statementId)'),
+      true,
+    );
     assert.equal(settlement.includes('collection("agency_monthly_statements").doc(statementId)'), true);
     assert.equal(settlement.includes('collection("financial_ledger").doc(ledgerId)'), true);
-    assert.equal(settlement.includes("AGENCY_MONTHLY_ACCRUAL_SHARDS"), true);
+    assert.equal(settlement.includes("agencyMonthlyShardRefs(db,agencyId,month)"), true);
     assert.equal(settlement.includes('hostSalaryRepaidAtMonthEnd:false'), true);
   }
 });
@@ -312,13 +319,17 @@ test("Stage 08-B monthly Bonus settlement stays bounded and query-free", () => {
     const end = sourceText.indexOf("const AGENCY_SURPLUS_PAGE_MAX=25", start);
     const settlement = sourceText.slice(start, end);
     assert.equal(start >= 0, true);
-    assert.equal(settlement.includes("AGENCY_MONTHLY_ACCRUAL_SHARDS"), true);
-    assert.equal(settlement.includes('collection("agency_policy_overrides").doc(agencyId)'), true);
+    assert.equal(settlement.includes("agencyMonthlyShardRefs(db,agencyId,month)"), true);
     assert.equal(settlement.includes('collection("agency_support_stats")'), true);
+    assert.equal(
+      settlement.includes('collection("agency_target_share_monthly").doc(statementId)'),
+      true,
+    );
     assert.equal(settlement.includes('collection("agency_bonus_accruals").doc(statementId)'), true);
     assert.equal(settlement.includes(".where("), false);
     assert.equal(settlement.includes(".list("), false);
-    assert.equal(settlement.includes("calculateAgencyMonthlyBonus"), true);
+    assert.equal(settlement.includes('bonusPolicySource:"per_host_target_month_end"'), true);
+    assert.equal(settlement.includes('agencyBonusCoins:0'), true);
     assert.equal(settlement.includes('hostSalaryRepaidAtMonthEnd:false'), true);
   }
 });
@@ -330,15 +341,25 @@ test("Stage 08-C replay and policy snapshot stay bounded and direct", () => {
     "../../cloudflare-worker/src/legacy-economy/economy-control.js",
   ]) {
     const sourceText = source(relativePath);
-    const start = sourceText.indexOf("export async function settleAgencyMonth");
-    const end = sourceText.indexOf("const AGENCY_SURPLUS_PAGE_MAX=25", start);
-    const settlement = sourceText.slice(start, end);
-    assert.equal(settlement.includes("tx.get(bonusAccrualRef)"), true);
-    assert.equal(settlement.includes("tx.get(economyRef)"), true);
-    assert.equal(settlement.includes("tx.get(overrideRef)"), true);
-    assert.equal(settlement.includes(".where("), false);
-    assert.equal(settlement.includes(".list("), false);
-    assert.equal(settlement.includes("AGENCY_MONTHLY_ACCRUAL_SHARDS"), true);
+    const start = sourceText.indexOf(
+      "async function freezeAgencySurplusPolicy",
+    );
+    const end = sourceText.indexOf(
+      "function assertAgencyHostSurplusReplay",
+      start,
+    );
+    const snapshot = sourceText.slice(start, end);
+    assert.equal(start >= 0, true);
+    assert.equal(snapshot.includes("tx.get(snapshotRef)"), true);
+    assert.equal(snapshot.includes("tx.get(economyRef)"), true);
+    assert.equal(snapshot.includes("tx.get(overrideRef)"), true);
+    assert.equal(snapshot.includes(".where("), false);
+    assert.equal(snapshot.includes(".list("), false);
+    assert.equal(
+      snapshot.includes('agencyPerformanceBonusMode:"per_host_target_month_end"'),
+      true,
+    );
+    assert.equal(snapshot.includes("requiredQualifiedDays:14"), true);
   }
 });
 

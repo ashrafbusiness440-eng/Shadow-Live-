@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../profile/screens/public_profile_screen.dart';
 import '../services/agency_membership_service.dart';
@@ -699,6 +700,8 @@ class _AgencyIdentityCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cover = agency.coverUrl?.trim() ?? '';
+    final logo = agency.logoUrl?.trim() ?? '';
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -712,17 +715,30 @@ class _AgencyIdentityCard extends StatelessWidget {
           ],
         ),
         border: Border.all(color: Colors.white12),
+        image: cover.isEmpty
+            ? null
+            : DecorationImage(
+                image: NetworkImage(cover),
+                fit: BoxFit.cover,
+                colorFilter: const ColorFilter.mode(
+                  Color(0xAA000000),
+                  BlendMode.darken,
+                ),
+              ),
       ),
       child: Column(
         children: [
-          const CircleAvatar(
+          CircleAvatar(
             radius: 34,
-            backgroundColor: Color(0xFF6E49D8),
-            child: Icon(
-              Icons.apartment_rounded,
-              size: 36,
-              color: Colors.white,
-            ),
+            backgroundColor: const Color(0xFF6E49D8),
+            backgroundImage: logo.isEmpty ? null : NetworkImage(logo),
+            child: logo.isEmpty
+                ? const Icon(
+                    Icons.apartment_rounded,
+                    size: 36,
+                    color: Colors.white,
+                  )
+                : null,
           ),
           const SizedBox(height: 12),
           Text(
@@ -735,16 +751,62 @@ class _AgencyIdentityCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 5),
-          Text(
-            'Agency ID: ' + agency.publicId,
-            textDirection: TextDirection.ltr,
-            style: const TextStyle(color: Colors.white60),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Agency ID: ' + agency.publicId,
+                key: const Key('public-agency-id'),
+                textDirection: TextDirection.ltr,
+                style: const TextStyle(color: Colors.white60),
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                key: const Key('public-agency-copy-id'),
+                tooltip: 'نسخ Agency ID',
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                padding: EdgeInsets.zero,
+                onPressed: () async {
+                  await Clipboard.setData(
+                    ClipboardData(text: agency.publicId),
+                  );
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('تم نسخ Agency ID')),
+                  );
+                },
+                icon: const Icon(Icons.copy_rounded, size: 16),
+              ),
+            ],
           ),
           if (agency.country != null) ...[
             const SizedBox(height: 5),
             Text(
               agency.country!,
               style: const TextStyle(color: Colors.white70),
+            ),
+          ],
+          if (agency.description != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              agency.description!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white70,
+                height: 1.4,
+              ),
+            ),
+          ],
+          if (agency.publicContact != null) ...[
+            const SizedBox(height: 6),
+            SelectableText(
+              'التواصل: ${agency.publicContact}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFFB99CFF),
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ],
           const SizedBox(height: 16),

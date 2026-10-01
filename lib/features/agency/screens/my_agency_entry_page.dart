@@ -24,6 +24,7 @@ class _MyAgencyEntryPageState extends State<MyAgencyEntryPage> {
   AgencyJoinEligibility? _eligibility;
   bool _loading = true;
   bool _unjoined = false;
+  bool _cooldownExceptionSubmitting = false;
   String? _error;
 
   @override
@@ -83,6 +84,75 @@ class _MyAgencyEntryPageState extends State<MyAgencyEntryPage> {
         _error = _code(error);
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _requestCooldownException() async {
+    final cooldown = _eligibility?.cooldown;
+    if (cooldown == null ||
+        !cooldown.canRequestException ||
+        _cooldownExceptionSubmitting) {
+      return;
+    }
+    final controller = TextEditingController();
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('طلب استثناء فترة الانتظار'),
+          content: TextField(
+            controller: controller,
+            minLines: 2,
+            maxLines: 4,
+            maxLength: 500,
+            decoration: const InputDecoration(
+              labelText: 'سبب طلب الاستثناء',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (controller.text.trim().length >= 3) {
+                  Navigator.pop(dialogContext, true);
+                }
+              },
+              child: const Text('إرسال الطلب'),
+            ),
+          ],
+        ),
+      ),
+    );
+    final reason = controller.text.trim();
+    controller.dispose();
+    if (accepted != true || reason.length < 3 || !mounted) return;
+
+    setState(() => _cooldownExceptionSubmitting = true);
+    try {
+      await _membershipService.requestCooldownException(reason: reason);
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تم إرسال طلب الاستثناء إلى Shadow Live.'),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تعذر إرسال طلب الاستثناء حاليًا.'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _cooldownExceptionSubmitting = false);
+      }
     }
   }
 
@@ -160,6 +230,10 @@ class _MyAgencyEntryPageState extends State<MyAgencyEntryPage> {
                       !_eligibility!.canRequestJoin)
                     _EligibilityBanner(
                       eligibility: _eligibility!,
+                      cooldownExceptionSubmitting:
+                          _cooldownExceptionSubmitting,
+                      onRequestCooldownException:
+                          _requestCooldownException,
                     ),
                   Expanded(
                     child: AgencySearchPage(
@@ -200,12 +274,31 @@ String _agencyEligibilityMessage(AgencyJoinEligibility eligibility) {
   return 'تعذر إرسال طلب انضمام جديد في الحالة الحالية.';
 }
 
+String _cooldownStatusText(AgencyCooldownExceptionStatus cooldown) {
+  final seconds = cooldown.remainingSeconds < 0
+      ? 0
+      : cooldown.remainingSeconds;
+  final days = seconds ~/ 86400;
+  final hours = (seconds % 86400) ~/ 3600;
+  final minutes = (seconds % 3600) ~/ 60;
+  final parts = <String>[];
+  if (days > 0) parts.add('$days يوم');
+  if (hours > 0) parts.add('$hours ساعة');
+  if (days == 0 && minutes > 0) parts.add('$minutes دقيقة');
+  final remaining = parts.isEmpty ? 'أقل من دقيقة' : parts.join(' و');
+  return 'فترة الانتظار المتبقية: $remaining.';
+}
+
 class _EligibilityBanner extends StatelessWidget {
   const _EligibilityBanner({
     required this.eligibility,
+    required this.cooldownExceptionSubmitting,
+    required this.onRequestCooldownException,
   });
 
   final AgencyJoinEligibility eligibility;
+  final bool cooldownExceptionSubmitting;
+  final VoidCallback onRequestCooldownException;
 
   @override
   Widget build(BuildContext context) {
@@ -218,17 +311,67 @@ class _EligibilityBanner extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: Colors.amberAccent.withValues(alpha: .35)),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Icon(Icons.info_outline_rounded, color: Colors.amberAccent),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              _agencyEligibilityMessage(eligibility),
-              style: const TextStyle(color: Colors.white70, height: 1.4),
-            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.info_outline_rounded,
+                color: Colors.amberAccent,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  _agencyEligibilityMessage(eligibility),
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ],
           ),
+          if (eligibility.cooldown?.active == true) ...[
+            const SizedBox(height: 10),
+            Text(
+              _cooldownStatusText(eligibility.cooldown!),
+              style: const TextStyle(
+                color: Colors.white60,
+                fontSize: 12,
+              ),
+            ),
+            if (eligibility.cooldown!.exceptionStatus == 'pending') ...[
+              const SizedBox(height: 8),
+              const Text(
+                'طلب الاستثناء قيد مراجعة Shadow Live.',
+                style: TextStyle(
+                  color: Colors.amberAccent,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ] else if (eligibility.cooldown!.canRequestException) ...[
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                key: const Key('agency-cooldown-exception-request'),
+                onPressed: cooldownExceptionSubmitting
+                    ? null
+                    : onRequestCooldownException,
+                icon: cooldownExceptionSubmitting
+                    ? const SizedBox.square(
+                        dimension: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.hourglass_disabled_rounded),
+                label: Text(
+                  cooldownExceptionSubmitting
+                      ? 'جارٍ إرسال الطلب…'
+                      : 'طلب استثناء فترة الانتظار',
+                ),
+              ),
+            ],
+          ],
         ],
       ),
     );

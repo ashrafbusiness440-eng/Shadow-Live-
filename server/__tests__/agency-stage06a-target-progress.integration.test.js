@@ -49,11 +49,11 @@ const approvedPolicy={
   policyMode:"tiered_host_agency",
   coinsPerUsd:10000,
   coinsPerDiamond:10000,
-  hostPerformanceBonusBps:200,
-  agencyPerformanceBonusBps:200,
-  hostBonusQualifiedDays:9,
+  hostPerformanceBonusBps:0,
+  agencyPerformanceBonusBps:100,
+  agencyPerformanceBonusMode:"per_host_target_month_end",
+  hostBonusQualifiedDays:14,
   hostBonusMinutesPerQualifiedDay:120,
-  agencyBonusActiveHosts:10,
   activityPayoutBpsByQualifiedDays:{
     "0":0,"1":0,"2":0,"3":2500,"4":4000,
     "5":5500,"6":7000,"7":8000,"8":9000,"9":10000,
@@ -121,6 +121,11 @@ test("06-A Agency Owner as Host uses Host Share target progress with sharded ide
       isActive:true,
       agencyId,
       totalSupport:0,
+    }),
+    db.collection("agencies").doc(agencyId).set({
+      agencyId,
+      ownerUid:ownerId,
+      status:"active",
     }),
     db.collection("agency_support_stats").doc(agencyId)
       .collection("monthly").doc(month).set({activeHostIds:[]}),

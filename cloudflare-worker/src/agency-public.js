@@ -63,6 +63,8 @@ function publicAgencySummary(row, rank = null) {
     coverUrl:
       clean(agency.coverUrl || agency.backgroundUrl || agency.roomCoverUrl) ||
       null,
+    description: clean(agency.description) || null,
+    publicContact: clean(agency.publicContact) || null,
     memberCount: Math.max(0, Number(agency.memberCount || 0)),
     hostCount: Math.max(0, Number(agency.hostCount || 0)),
     topValue: publicAgencyTopValue(agency),
@@ -394,6 +396,14 @@ export async function loadPublicAgencyPage(db, body = {}) {
       publicId: clean(agency.publicId) || agencyId,
       name: clean(agency.name) || "Shadow Live Agency",
       country: clean(agency.country) || null,
+      logoUrl:
+        clean(agency.logoUrl || agency.imageUrl || agency.profileImageUrl) ||
+        null,
+      coverUrl:
+        clean(agency.coverUrl || agency.backgroundUrl || agency.roomCoverUrl) ||
+        null,
+      description: clean(agency.description) || null,
+      publicContact: clean(agency.publicContact) || null,
       memberCount: Math.max(0, Number(agency.memberCount || 0)),
       hostCount: Math.max(0, Number(agency.hostCount || 0)),
     },

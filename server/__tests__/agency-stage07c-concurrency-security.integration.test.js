@@ -18,6 +18,9 @@ async function seedEconomy(){
     enabled:true,
     policyMode:"tiered_host_agency",
     coinsPerDiamond:10000,
+    agencyPerformanceBonusMode:"per_host_target_month_end",
+    agencyPerformanceBonusBps:100,
+    hostPerformanceBonusBps:0,
   });
 }
 
@@ -45,7 +48,7 @@ async function seedShard({
     });
 }
 
-test("07-C concurrent same-month settlements credit Agency Wallet exactly once",async()=>{
+test("07-C concurrent month close creates one no-share-payout statement",async()=>{
   await seedEconomy();
   const suffix=Date.now().toString()+"_race";
   const agencyId="stage07c_race_agency_"+suffix;
@@ -84,22 +87,29 @@ test("07-C concurrent same-month settlements credit Agency Wallet exactly once",
   const [wallet,statement,ledger,audits]=await Promise.all([
     db.collection("agency_wallets").doc(agencyId).get(),
     db.collection("agency_monthly_statements").doc(statementId).get(),
-    db.collection("financial_ledger").doc("agency_monthly_share_"+statementId).get(),
+    db.collection("financial_ledger")
+      .doc("agency_month_close_"+statementId).get(),
     db.collection("admin_audit_logs")
       .where("action","==","settleAgencyMonth")
       .where("targetId","==",statementId)
       .get(),
   ]);
 
-  assert.equal(wallet.data().diamonds,12);
+  assert.equal(wallet.data().diamonds,7);
   assert.equal(wallet.data().remainderCoins,2500);
-  assert.equal(wallet.data().lifetimeDiamonds,12);
-  assert.equal(statement.data().agencyDiamonds,5);
-  assert.equal(ledger.data().delta,5);
+  assert.equal(wallet.data().lifetimeDiamonds,7);
+  assert.equal(statement.data().potentialAgencyShareCoins,50000);
+  assert.equal(statement.data().agencyTargetShareCoins,0);
+  assert.equal(statement.data().agencyMonthEndSharePayableCoins,0);
+  assert.equal(statement.data().unearnedPotentialAgencyShareCoins,50000);
+  assert.equal(ledger.data().asset,"coins");
+  assert.equal(ledger.data().delta,0);
+  assert.equal(ledger.data().payableCoins,0);
+  assert.equal(ledger.data().reason,"agency_month_close_no_share_payout");
   assert.equal(audits.size,1);
 });
 
-test("07-C replay fails closed when settled Statement and Ledger disagree",async()=>{
+test("07-C replay fails closed when month-close Ledger is missing",async()=>{
   await seedEconomy();
   const suffix=Date.now().toString()+"_ledger";
   const agencyId="stage07c_ledger_agency_"+suffix;
@@ -107,26 +117,19 @@ test("07-C replay fails closed when settled Statement and Ledger disagree",async
   const month="2026-09";
   const now=new Date("2026-11-15T00:00:00.000Z");
   const statementId=agencyId+"__"+month;
-  const ledgerId="agency_monthly_share_"+statementId;
+  const ledgerId="agency_month_close_"+statementId;
 
   await seedShard({agencyId,month});
   await settleAgencyMonth(db,actorUid,agencyId,month,{now});
-
-  await db.collection("financial_ledger").doc(ledgerId).update({
-    delta:999,
-  });
+  await db.collection("financial_ledger").doc(ledgerId).delete();
 
   await assert.rejects(
     settleAgencyMonth(db,actorUid,agencyId,month,{now}),
-    /settlement_ledger_conflict/,
+    /settlement_ledger_missing/,
   );
-
-  const wallet=await db.collection("agency_wallets").doc(agencyId).get();
-  assert.equal(wallet.data().diamonds,0);
-  assert.equal(wallet.data().remainderCoins,5000);
 });
 
-test("07-C replay fails closed when settled Statement financial totals are corrupted",async()=>{
+test("07-C replay fails closed when settled Statement reverts to legacy payout mode",async()=>{
   await seedEconomy();
   const suffix=Date.now().toString()+"_statement";
   const agencyId="stage07c_statement_agency_"+suffix;
@@ -139,33 +142,25 @@ test("07-C replay fails closed when settled Statement financial totals are corru
   await settleAgencyMonth(db,actorUid,agencyId,month,{now});
 
   await db.collection("agency_monthly_statements").doc(statementId).update({
-    platformShareCoins:44000,
+    agencySharePayoutMode:"legacy_monthly",
   });
 
   await assert.rejects(
     settleAgencyMonth(db,actorUid,agencyId,month,{now}),
-    /agency_settlement_invariant_failed/,
+    /settlement_statement_conflict/,
   );
 });
 
-test("07-C corrupted Agency Wallet lifetime or remainder blocks settlement before credit",async()=>{
+test("07-C legacy Agency Wallet state is quarantined from month-close accounting",async()=>{
   await seedEconomy();
   const now=new Date("2026-11-15T00:00:00.000Z");
 
-  for(const [label,walletPatch,expected] of [
-    [
-      "lifetime",
-      {diamonds:5,lifetimeDiamonds:4,remainderCoins:0},
-      /agency_remainder_invariant_failed/,
-    ],
-    [
-      "remainder",
-      {diamonds:5,lifetimeDiamonds:5,remainderCoins:10000},
-      /agency_remainder_invariant_failed/,
-    ],
+  for(const [label,walletPatch] of [
+    ["lifetime",{diamonds:5,lifetimeDiamonds:4,remainderCoins:0}],
+    ["remainder",{diamonds:5,lifetimeDiamonds:5,remainderCoins:10000}],
   ]){
     const suffix=Date.now().toString()+"_"+label+"_"+Math.random().toString(36).slice(2,8);
-    const agencyId="stage07c_corrupt_agency_"+suffix;
+    const agencyId="stage07c_legacy_agency_"+suffix;
     const actorUid="stage07c_owner_"+suffix;
     const month="2026-09";
 
@@ -174,19 +169,12 @@ test("07-C corrupted Agency Wallet lifetime or remainder blocks settlement befor
       seedShard({agencyId,month}),
     ]);
 
-    await assert.rejects(
-      settleAgencyMonth(db,actorUid,agencyId,month,{now}),
-      expected,
-    );
+    const result=await settleAgencyMonth(db,actorUid,agencyId,month,{now});
+    assert.equal(result.alreadySettled,false);
+    assert.equal(result.settlement.agencyMonthEndSharePayableCoins,0);
 
-    const [wallet,statement,ledger]=await Promise.all([
-      db.collection("agency_wallets").doc(agencyId).get(),
-      db.collection("agency_monthly_statements").doc(agencyId+"__"+month).get(),
-      db.collection("financial_ledger")
-        .doc("agency_monthly_share_"+agencyId+"__"+month).get(),
-    ]);
+    const wallet=await db.collection("agency_wallets").doc(agencyId).get();
     assert.equal(wallet.data().diamonds,5);
-    assert.equal(statement.exists,false);
-    assert.equal(ledger.exists,false);
+    assert.equal(wallet.data().remainderCoins,walletPatch.remainderCoins);
   }
 });

@@ -71,9 +71,9 @@ void main() {
       await edit('gift-economy-tier-bronze-min-usd', '125');
       await edit('gift-economy-tier-bronze-host-pct', '58.5');
       await edit('gift-economy-tier-bronze-agency-pct', '6.5');
-      await edit('gift-economy-host-bonus-pct', '2.5');
+      expect(find.byKey(const ValueKey('gift-economy-host-bonus-pct')), findsNothing);
+      expect(find.byKey(const ValueKey('gift-economy-agency-active-hosts')), findsNothing);
       await edit('gift-economy-agency-bonus-pct', '1.5');
-      await edit('gift-economy-agency-active-hosts', '7');
 
       final fixedDays = tester.widget<TextField>(
         find.byKey(const ValueKey('gift-economy-host-bonus-days')),
@@ -94,11 +94,15 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(saved, isNotNull);
-      expect(saved!['hostPerformanceBonusBps'], 250);
+      expect(saved!['hostPerformanceBonusBps'], 0);
       expect(saved!['agencyPerformanceBonusBps'], 150);
+      expect(
+        saved!['agencyPerformanceBonusMode'],
+        'per_host_target_month_end',
+      );
       expect(saved!['hostBonusQualifiedDays'], 14);
       expect(saved!['hostBonusMinutesPerQualifiedDay'], 120);
-      expect(saved!['agencyBonusActiveHosts'], 7);
+      expect(saved!.containsKey('agencyBonusActiveHosts'), false);
 
       final savedTiers = (saved!['tiers'] as List<dynamic>).cast<Map>();
       final bronze = Map<String, dynamic>.from(

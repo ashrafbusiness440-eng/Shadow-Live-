@@ -38,6 +38,7 @@ test("storage size limits stay scope-specific", () => {
   assert.equal(storageMaxBytes("profile_cover"), 4 * 1024 * 1024);
   assert.equal(storageMaxBytes("room_cover"), 4 * 1024 * 1024);
   assert.equal(storageMaxBytes("agency_logo"), 2 * 1024 * 1024);
+  assert.equal(storageMaxBytes("agency_background"), 4 * 1024 * 1024);
   assert.equal(storageMaxBytes("chat_image"), 8 * 1024 * 1024);
 });
 
@@ -111,6 +112,17 @@ test("storage object keys follow canonical private prefixes", () => {
 
   assert.equal(
     buildStorageObjectKey({
+      scope: "agency_background",
+      uid: "owner_1",
+      targetId: "741201",
+      objectId: "8".repeat(32),
+      extension: "webp",
+    }),
+    `agencies/741201/background/${"8".repeat(32)}.webp`,
+  );
+
+  assert.equal(
+    buildStorageObjectKey({
       scope: "chat_image",
       uid: "user_1",
       targetId: "conversation_9",
@@ -126,6 +138,7 @@ test("replaced profile and room media wait 24 hours before cleanup", () => {
   assert.equal(isReplaceableStorageScope("profile_cover"), true);
   assert.equal(isReplaceableStorageScope("room_cover"), true);
   assert.equal(isReplaceableStorageScope("agency_logo"), true);
+  assert.equal(isReplaceableStorageScope("agency_background"), true);
   assert.equal(isReplaceableStorageScope("chat_image"), false);
 
   const nowMs = 1_758_975_200_000;
@@ -157,6 +170,7 @@ test("public media redirects only expose public R2 scopes", () => {
   assert.equal(isPublicMediaScope("profile_cover"), true);
   assert.equal(isPublicMediaScope("room_cover"), true);
   assert.equal(isPublicMediaScope("agency_logo"), true);
+  assert.equal(isPublicMediaScope("agency_background"), true);
   assert.equal(isPublicMediaScope("chat_image"), false);
 
   assert.equal(
@@ -182,6 +196,15 @@ test("public media redirects only expose public R2 scopes", () => {
       filename: `${"9".repeat(32)}.webp`,
     }),
     `agencies/741201/logo/${"9".repeat(32)}.webp`,
+  );
+
+  assert.equal(
+    publicMediaStorageKey({
+      scope: "agency_background",
+      targetId: "741201",
+      filename: `${"8".repeat(32)}.webp`,
+    }),
+    `agencies/741201/background/${"8".repeat(32)}.webp`,
   );
 
   assert.throws(
@@ -822,6 +845,29 @@ test("agency logo management requires the current active Agency owner", async ()
     authorizeAgencyLogoManagement(closedDb, "owner_1", "741201"),
     /agency_closed/,
   );
+});
+
+test("agency background storage reuses owner authorization and propagates to linked room", () => {
+  const source = fs.readFileSync(
+    new URL("../../cloudflare-worker/src/user-storage.js", import.meta.url),
+    "utf8",
+  );
+  const publicMedia = fs.readFileSync(
+    new URL("../../cloudflare-worker/src/public-media.js", import.meta.url),
+    "utf8",
+  );
+
+  assert.equal(source.includes('"agency_background"'), true);
+  assert.equal(source.includes("backgroundObjectId"), true);
+  assert.equal(source.includes("replaceAgencyBackground"), true);
+  assert.equal(
+    source.includes("transferDeletedAccountAgencyBackgroundOwnership"),
+    true,
+  );
+  assert.equal(source.includes("agencyCoverUrl: stablePublicUrl"), true);
+  assert.equal(source.includes("coverImageUrl: stablePublicUrl"), true);
+  assert.equal(source.includes("coverImageObjectId: objectId"), true);
+  assert.equal(publicMedia.includes('"agency_background"'), true);
 });
 
 test("agency logo storage stays owner-authorized audited and delayed-replacement safe", () => {

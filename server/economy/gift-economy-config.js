@@ -51,9 +51,10 @@ export function defaultPolicy(){
     tierPeriod:"monthly",
     settlementMode:"target_immediate_monthly_statement",
     agencySupportTracking:true,
-    periodTimeZone:"UTC",
-    hostPerformanceBonusBps:200,
-    agencyPerformanceBonusBps:200,
+    periodTimeZone:"Asia/Riyadh",
+    hostPerformanceBonusBps:0,
+    agencyPerformanceBonusBps:100,
+    agencyPerformanceBonusMode:"per_host_target_month_end",
     hostBonusQualifiedDays:14,
     hostBonusMinutesPerQualifiedDay:120,
     agencyBonusActiveHosts:10,
@@ -92,14 +93,22 @@ function normalizeTier(item,index){
 export function normalizePolicy(raw={}){
   const defaults=defaultPolicy();
   const enabled=raw.policyMode==="tiered_host_agency" ? raw.enabled!==false : true;
-  const hostPerformanceBonusBps=integer(
-    raw.hostPerformanceBonusBps??defaults.hostPerformanceBonusBps,
-    "invalid_host_bonus",0,3000
-  );
-  const agencyPerformanceBonusBps=integer(
-    raw.agencyPerformanceBonusBps??defaults.agencyPerformanceBonusBps,
-    "invalid_agency_bonus",0,3000
-  );
+  // Legacy percentage Host bonus is retired; Host Activity Bonus now uses
+  // the approved fixed per-Target month-end table.
+  const hostPerformanceBonusBps=0;
+  const agencyPerformanceBonusMode=
+    clean(raw.agencyPerformanceBonusMode)==="per_host_target_month_end"
+      ?"per_host_target_month_end"
+      :"per_host_target_month_end";
+  // Old stored 200 (=2%) values without the new mode are legacy and must not
+  // silently survive migration. New policy defaults to 1% and remains editable.
+  const agencyPerformanceBonusBps=
+    clean(raw.agencyPerformanceBonusMode)==="per_host_target_month_end"
+      ?integer(
+          raw.agencyPerformanceBonusBps??defaults.agencyPerformanceBonusBps,
+          "invalid_agency_bonus",0,3000
+        )
+      :100;
   const hostBonusQualifiedDays=14;
   const hostBonusMinutesPerQualifiedDay=120;
   const agencyBonusActiveHosts=integer(
@@ -128,8 +137,8 @@ export function normalizePolicy(raw={}){
     if(tiers[i].minGiftCoins<=tiers[i-1].minGiftCoins) throw Error("invalid_tier_order");
   }
   for(const tier of tiers){
-    if(tier.hostShareBps+tier.agencyShareBps+hostPerformanceBonusBps+agencyPerformanceBonusBps>10000){
-      throw Error("bonus_exceeds_platform_share");
+    if(tier.hostShareBps+tier.agencyShareBps>10000){
+      throw Error("invalid_split_total");
     }
   }
   const legacyRecipientShareBps=tiers[0].hostShareBps;
@@ -141,16 +150,39 @@ export function normalizePolicy(raw={}){
     tierPeriod:"monthly",
     settlementMode:"target_immediate_monthly_statement",
     agencySupportTracking:true,
-    periodTimeZone:"UTC",
+    periodTimeZone:"Asia/Riyadh",
     recipientShareBps:legacyRecipientShareBps,
     hostPerformanceBonusBps,
     agencyPerformanceBonusBps,
+    agencyPerformanceBonusMode,
     hostBonusQualifiedDays,
     hostBonusMinutesPerQualifiedDay,
     agencyBonusActiveHosts,
     activityRuleMode:"monthly_multiplier",
     activityPayoutBpsByQualifiedDays,
     tiers
+  };
+}
+
+function safePolicyFallback(data={}){
+  const defaults=defaultPolicy();
+  const parsedAgencyBonus=Number(data.agencyPerformanceBonusBps);
+  const agencyPerformanceBonusBps=
+    clean(data.agencyPerformanceBonusMode)==="per_host_target_month_end" &&
+    Number.isSafeInteger(parsedAgencyBonus) &&
+    parsedAgencyBonus>=0 &&
+    parsedAgencyBonus<=3000
+      ?parsedAgencyBonus
+      :100;
+  return {
+    ...defaults,
+    ...data,
+    periodTimeZone:"Asia/Riyadh",
+    hostPerformanceBonusBps:0,
+    agencyPerformanceBonusBps,
+    agencyPerformanceBonusMode:"per_host_target_month_end",
+    hostBonusQualifiedDays:14,
+    hostBonusMinutesPerQualifiedDay:120,
   };
 }
 
@@ -193,7 +225,7 @@ export async function handler(req,res){
       if(snap.exists){
         const data=snap.data()||{};
         try{config=normalizePolicy(data);}
-        catch(_){config={...defaultPolicy(),...data};}
+        catch(_){config=safePolicyFallback(data);}
       }
       return out(res,200,{ok:true,config});
     }

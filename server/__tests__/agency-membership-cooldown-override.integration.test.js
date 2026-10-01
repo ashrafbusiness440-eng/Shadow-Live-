@@ -4,10 +4,16 @@ import { deleteApp, getApps, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 
 import {
+  getMyAgencyJoinEligibility,
   overrideAgencyRejoinCooldown,
+  requestAgencyCooldownException,
   requestAgencyJoin,
   respondAgencyMembershipRequest,
 } from "../../cloudflare-worker/src/agency-membership.js";
+import {
+  listAgencyCooldownExceptionRequests,
+  reviewAgencyCooldownException,
+} from "../../cloudflare-worker/src/agency-control.js";
 import { cloudflareFirestoreAdapter } from "./helpers/cloudflare-firestore-adapter.js";
 
 const app = getApps()[0] || initializeApp({ projectId: "shadow-live-economy-test" });
@@ -161,6 +167,132 @@ test("platform owner can override active rejoin cooldown exactly once with audit
     .doc(targetUid).get();
   assert.equal(activePointer.data().agencyId, newAgencyId);
   assert.equal(activePointer.data().status, "active");
+});
+
+test("user requests 7-day exception and Shadow Owner approves it through review queue", async () => {
+  const agencyId = "681011";
+  const targetUid = "stage04c3_exception_target";
+  const platformOwnerUid = "stage04c3_exception_owner";
+  const now = new Date("2026-09-29T02:00:00.000Z");
+  await seedAgency(agencyId, "stage04c3_exception_old_owner");
+  await seedUser(platformOwnerUid, {
+    role: "owner",
+    adminEnabled: true,
+    publicId: "681998",
+  });
+  await seedHistoricalMembership(
+    targetUid,
+    agencyId,
+    new Date("2026-10-05T22:00:00.000Z"),
+  );
+
+  const before = await getMyAgencyJoinEligibility(db, targetUid);
+  assert.equal(before.canRequestJoin, false);
+  assert.equal(before.cooldown.active, true);
+  assert.equal(before.cooldown.exceptionRequest, null);
+
+  const request = await requestAgencyCooldownException(
+    db,
+    targetUid,
+    {
+      reason: "احتاج الانضمام إلى وكالة جديدة",
+      idempotencyKey: "stage04c3_exception_request_0001",
+    },
+    { now },
+  );
+  assert.equal(request.status, "pending");
+
+  const pending = await listAgencyCooldownExceptionRequests(db, 25);
+  assert.equal(
+    pending.some((item) => item.uid === targetUid),
+    true,
+  );
+
+  const eligibility = await getMyAgencyJoinEligibility(db, targetUid);
+  assert.equal(eligibility.cooldown.exceptionRequest.status, "pending");
+
+  const reviewed = await reviewAgencyCooldownException(
+    db,
+    platformOwnerUid,
+    {
+      requestId: targetUid,
+      decision: "accept",
+      idempotencyKey: "stage04c3_exception_accept_0001",
+    },
+    { now: new Date("2026-09-29T02:05:00.000Z") },
+  );
+  assert.equal(reviewed.status, "accepted");
+
+  const [pointer, requestDoc, notification] = await Promise.all([
+    adminDb.collection("agency_user_memberships").doc(targetUid).get(),
+    adminDb.collection("agency_cooldown_exception_requests").doc(targetUid).get(),
+    adminDb.collection("notifications")
+      .doc(
+        "agency_cooldown_override_" +
+          platformOwnerUid +
+          "__stage04c3_exception_accept_0001",
+      )
+      .get(),
+  ]);
+  assert.equal(
+    pointer.data().cooldownUntil.toDate().toISOString(),
+    "2026-09-29T02:05:00.000Z",
+  );
+  assert.equal(requestDoc.data().status, "accepted");
+  assert.equal(notification.data().mandatory, true);
+
+  const after = await getMyAgencyJoinEligibility(db, targetUid);
+  assert.equal(after.cooldown.active, false);
+  assert.equal(after.canRequestJoin, true);
+});
+
+test("Shadow Control rejects cooldown exception without lifting wait", async () => {
+  const agencyId = "681012";
+  const targetUid = "stage04c3_exception_reject_target";
+  const platformOwnerUid = "stage04c3_exception_reject_owner";
+  const cooldownUntil = new Date("2026-10-05T22:00:00.000Z");
+  await seedAgency(agencyId, "stage04c3_exception_reject_old_owner");
+  await seedUser(platformOwnerUid, {
+    role: "owner",
+    adminEnabled: true,
+    publicId: "681997",
+  });
+  await seedHistoricalMembership(targetUid, agencyId, cooldownUntil);
+
+  await requestAgencyCooldownException(
+    db,
+    targetUid,
+    {
+      reason: "طلب استثناء للاختبار",
+      idempotencyKey: "stage04c3_exception_reject_req",
+    },
+    { now: new Date("2026-09-29T03:00:00.000Z") },
+  );
+  const reviewed = await reviewAgencyCooldownException(
+    db,
+    platformOwnerUid,
+    {
+      requestId: targetUid,
+      decision: "reject",
+      reason: "الطلب غير مؤهل للاستثناء",
+      idempotencyKey: "stage04c3_exception_reject_review",
+    },
+    { now: new Date("2026-09-29T03:05:00.000Z") },
+  );
+  assert.equal(reviewed.status, "rejected");
+
+  const [pointer, requestDoc, notification] = await Promise.all([
+    adminDb.collection("agency_user_memberships").doc(targetUid).get(),
+    adminDb.collection("agency_cooldown_exception_requests").doc(targetUid).get(),
+    adminDb.collection("notifications")
+      .doc("agency_cooldown_exception_rejected_" + targetUid).get(),
+  ]);
+  assert.equal(
+    pointer.data().cooldownUntil.toDate().toISOString(),
+    cooldownUntil.toISOString(),
+  );
+  assert.equal(requestDoc.data().status, "rejected");
+  assert.equal(notification.data().mandatory, true);
 });
 
 test("delegated admin with manageAgencyMemberships can override cooldown", async () => {

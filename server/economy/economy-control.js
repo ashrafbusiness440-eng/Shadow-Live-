@@ -9,6 +9,9 @@ import {
   calculateAgencyMonthEndSurplusFromSnapshot,
   resolveAgencySurplusPolicy,
   validateAgencySettlementTotals,
+  hostActivityBonusForTarget,
+  agencyPerformanceBonusForTarget,
+  convertAgencyCoinsWithCarryover,
 } from "./agency-policy.js";
 
 function clean(value){return String(value??"").trim();}
@@ -372,101 +375,539 @@ function assertSettledAgencyStatementConsistency({
   }
 }
 
+
+
+function agencyRankingCountryToken(value) {
+  return encodeURIComponent(
+    clean(value || "unknown").normalize("NFKC").toLowerCase(),
+  );
+}
+
+async function maybeNotifyAgencyMonthSettlement(
+  db,
+  agencyId,
+  month,
+  now=new Date(),
+){
+  const statementId=agencyId+"__"+month;
+  const notificationRef=db.collection("notifications")
+    .doc("agency_monthly_settlement_"+statementId);
+  const agencyRef=db.collection("agencies").doc(agencyId);
+  const statementRef=db.collection("agency_monthly_statements").doc(statementId);
+  const bonusRef=db.collection("agency_bonus_accruals").doc(statementId);
+  const stateRef=db.collection("agency_financial_state").doc(agencyId);
+  const completionRef=db.collection("agency_host_settlement_completions")
+    .doc(statementId);
+  const rankingRef=db.collection("agency_ranking_entries").doc(statementId);
+
+  return db.runTransaction(async tx=>{
+    const [
+      notificationSnap,
+      agencySnap,
+      statementSnap,
+      bonusSnap,
+      stateSnap,
+      completionSnap,
+      rankingSnap,
+    ]=await Promise.all([
+      tx.get(notificationRef),
+      tx.get(agencyRef),
+      tx.get(statementRef),
+      tx.get(bonusRef),
+      tx.get(stateRef),
+      tx.get(completionRef),
+      tx.get(rankingRef),
+    ]);
+    if(
+      !agencySnap.exists ||
+      !statementSnap.exists ||
+      clean(statementSnap.data()?.status)!=="settled" ||
+      !completionSnap.exists ||
+      clean(completionSnap.data()?.status)!=="complete" ||
+      !bonusSnap.exists ||
+      clean(bonusSnap.data()?.status)!=="settled"
+    ){
+      return {notified:false,pending:true};
+    }
+    if(notificationSnap.exists&&rankingSnap.exists){
+      return {notified:false,duplicate:true};
+    }
+
+    const agency=agencySnap.data()||{};
+    const ownerUid=clean(agency.ownerUid);
+    if(!ownerUid)return {notified:false,pending:true};
+
+    const statement=statementSnap.data()||{};
+    const bonus=bonusSnap.data()||{};
+    const state=stateSnap.exists?(stateSnap.data()||{}):{};
+    const supportCoins=agencyFinancialInteger(
+      statement.supportCoins||0,
+      "notification_support_coins",
+    );
+    const targetShareCoins=agencyFinancialInteger(
+      statement.agencyTargetShareCoins||
+        statement.agencyBaseShareCoins||
+        0,
+      "notification_target_share_coins",
+    );
+    const performanceBonusCoins=agencyFinancialInteger(
+      bonus.perHostBonusCoins||0,
+      "notification_performance_bonus_coins",
+    );
+    const carryoverCoins=agencyFinancialInteger(
+      state.carryoverCoins||0,
+      "notification_carryover_coins",
+    );
+    const eligibleHostCount=agencyFinancialInteger(
+      bonus.perHostEligibleHostCount||0,
+      "notification_eligible_host_count",
+    );
+
+    if(!rankingSnap.exists){
+      const country=clean(agency.country)||"unknown";
+      const countryToken=agencyRankingCountryToken(country);
+      const inverted=Number.MAX_SAFE_INTEGER-supportCoins;
+      const score=String(inverted).padStart(16,"0");
+      tx.create(rankingRef,{
+        agencyId,
+        month,
+        country,
+        countryToken,
+        supportCoins,
+        agencyName:clean(agency.name)||"Shadow Live Agency",
+        publicId:clean(agency.publicId)||agencyId,
+        logoUrl:
+          clean(agency.logoUrl||agency.imageUrl||agency.profileImageUrl)||null,
+        globalRankingKey:month+"__"+score+"__"+agencyId,
+        countryRankingKey:
+          month+"__"+countryToken+"__"+score+"__"+agencyId,
+        sourceStatementId:statementId,
+        createdAt:now,
+        updatedAt:now,
+      });
+    }
+
+    if(!notificationSnap.exists){
+      tx.create(notificationRef,{
+        userId:ownerUid,
+        type:"agency_monthly_settlement_summary",
+        category:"system",
+        title:"تم إغلاق تسوية الوكالة الشهرية",
+        body:
+          "الشهر "+month+
+          " • Agency Share المستحق من Targets: "+
+          String(targetShareCoins)+" Coins"+
+          " • Agency Bonus: "+String(performanceBonusCoins)+" Coins"+
+          " • Carryover: "+String(carryoverCoins)+" Coins",
+        read:false,
+        mandatory:true,
+        financial:true,
+        agencyId,
+        month,
+        agencyTargetShareCoins:targetShareCoins,
+        agencyPerformanceBonusCoins:performanceBonusCoins,
+        agencyPerformanceEligibleHostCount:eligibleHostCount,
+        agencyCarryoverCoins:carryoverCoins,
+        createdAt:now,
+      });
+    }
+    return {
+      notified:!notificationSnap.exists,
+      rankingCreated:!rankingSnap.exists,
+      ownerUid,
+    };
+  });
+}
+
+
+async function finalizeAgencyPerformanceBonus(
+  db,
+  actorUid,
+  agencyId,
+  month,
+  now=new Date(),
+){
+  const statementId=agencyId+"__"+month;
+  const statementRef=db.collection("agency_monthly_statements").doc(statementId);
+  const completionRef=db.collection("agency_host_settlement_completions")
+    .doc(statementId);
+  const bonusRef=db.collection("agency_bonus_accruals").doc(statementId);
+  const agencyRef=db.collection("agencies").doc(agencyId);
+  const stateRef=db.collection("agency_financial_state").doc(agencyId);
+  const legacyWalletRef=db.collection("agency_wallets").doc(agencyId);
+  const ledgerId="agency_performance_bonus_"+statementId;
+  const ledgerRef=db.collection("financial_ledger").doc(ledgerId);
+  const auditRef=db.collection("admin_audit_logs")
+    .doc("agency_performance_bonus_"+statementId);
+
+  return db.runTransaction(async tx=>{
+    const [
+      statementSnap,
+      completionSnap,
+      bonusSnap,
+      agencySnap,
+      stateSnap,
+      legacyWalletSnap,
+      existingLedger,
+    ]=await Promise.all([
+      tx.get(statementRef),
+      tx.get(completionRef),
+      tx.get(bonusRef),
+      tx.get(agencyRef),
+      tx.get(stateRef),
+      tx.get(legacyWalletRef),
+      tx.get(ledgerRef),
+    ]);
+    if(
+      !statementSnap.exists ||
+      clean(statementSnap.data()?.status)!=="settled" ||
+      !completionSnap.exists ||
+      clean(completionSnap.data()?.status)!=="complete"
+    ){
+      return {finalized:false,pending:true};
+    }
+    if(!agencySnap.exists){
+      throw Error("agency_not_found");
+    }
+
+    const bonus=bonusSnap.exists?(bonusSnap.data()||{}):{};
+    if(clean(bonus.status)==="settled"){
+      if(!existingLedger.exists){
+        throw Error("agency_performance_bonus_ledger_missing");
+      }
+      return {
+        finalized:false,
+        duplicate:true,
+        bonusCoins:agencyFinancialInteger(
+          bonus.perHostBonusCoins||0,
+          "agency_performance_bonus_coins",
+        ),
+        bonusDiamonds:agencyFinancialInteger(
+          bonus.bonusDiamonds||0,
+          "agency_performance_bonus_diamonds",
+        ),
+      };
+    }
+    if(existingLedger.exists){
+      throw Error("agency_performance_bonus_ledger_conflict");
+    }
+
+    const ownerUid=clean(agencySnap.data()?.ownerUid);
+    if(!ownerUid)throw Error("agency_owner_missing");
+    const ownerRef=db.collection("users").doc(ownerUid);
+    const ownerSnap=await tx.get(ownerRef);
+    if(!ownerSnap.exists)throw Error("agency_owner_missing");
+    const owner=ownerSnap.data()||{};
+    if(clean(owner.accountStatus||"active")!=="active"){
+      throw Error("agency_owner_unavailable");
+    }
+
+    const statement=statementSnap.data()||{};
+    const coinsPerDiamond=Math.max(
+      1,
+      agencyFinancialInteger(
+        statement.coinsPerDiamond||10000,
+        "agency_bonus_coins_per_diamond",
+      ),
+    );
+    const bonusCoins=agencyFinancialInteger(
+      bonus.perHostBonusCoins||0,
+      "agency_performance_bonus_coins",
+    );
+    const eligibleHostCount=agencyFinancialInteger(
+      bonus.perHostEligibleHostCount||0,
+      "agency_performance_bonus_hosts",
+    );
+
+    const state=stateSnap.exists?(stateSnap.data()||{}):{};
+    const legacy=legacyWalletSnap.exists?(legacyWalletSnap.data()||{}):{};
+    const legacyAlreadyMigrated=
+      state.legacyWalletMigrated===true ||
+      legacy.migratedToUnifiedWallet===true;
+    const legacyDiamonds=legacyAlreadyMigrated
+      ?0
+      :agencyFinancialInteger(
+          legacy.diamonds||0,
+          "legacy_agency_wallet_diamonds",
+        );
+    const legacyRemainderCoins=legacyAlreadyMigrated
+      ?0
+      :agencyFinancialInteger(
+          legacy.remainderCoins||0,
+          "legacy_agency_wallet_remainder",
+        );
+    const stateCarryoverCoins=agencyFinancialInteger(
+      state.carryoverCoins||0,
+      "agency_financial_carryover",
+    );
+    const openingCarryoverCoins=stateCarryoverCoins+legacyRemainderCoins;
+    if(!Number.isSafeInteger(openingCarryoverCoins)){
+      throw Error("invalid_agency_financial_carryover");
+    }
+
+    const conversion=convertAgencyCoinsWithCarryover({
+      carryoverCoins:openingCarryoverCoins,
+      payableCoins:bonusCoins,
+      coinsPerDiamond,
+    });
+    const openingDiamonds=agencyFinancialInteger(
+      owner.diamonds||0,
+      "agency_owner_wallet_diamonds",
+    );
+    const afterMigrationDiamonds=openingDiamonds+legacyDiamonds;
+    const closingDiamonds=
+      afterMigrationDiamonds+conversion.diamondsEarned;
+    if(!Number.isSafeInteger(closingDiamonds)){
+      throw Error("invalid_agency_owner_wallet_diamonds");
+    }
+    const priorLifetimeDiamonds=agencyFinancialInteger(
+      state.lifetimeAgencyDiamonds ??
+        legacy.lifetimeDiamonds ??
+        legacy.diamonds ??
+        0,
+      "agency_lifetime_diamonds",
+    );
+    const lifetimeAgencyDiamonds=
+      priorLifetimeDiamonds+conversion.diamondsEarned;
+
+    if(legacyDiamonds>0||conversion.diamondsEarned>0){
+      tx.update(ownerRef,{
+        diamonds:closingDiamonds,
+        walletUpdatedAt:FieldValue.serverTimestamp(),
+      });
+    }
+    tx.set(stateRef,{
+      agencyId,
+      carryoverCoins:conversion.remainderCoins,
+      lifetimeAgencyDiamonds,
+      legacyWalletMigrated:true,
+      lastBonusMonth:month,
+      lastBonusCoins:bonusCoins,
+      lastBonusDiamonds:conversion.diamondsEarned,
+      updatedAt:FieldValue.serverTimestamp(),
+    },{merge:true});
+
+    if(legacyWalletSnap.exists&&!legacyAlreadyMigrated){
+      tx.set(legacyWalletRef,{
+        diamonds:0,
+        remainderCoins:0,
+        migratedToUnifiedWallet:true,
+        migratedOwnerUid:ownerUid,
+        migratedAt:FieldValue.serverTimestamp(),
+        updatedAt:FieldValue.serverTimestamp(),
+      },{merge:true});
+      if(legacyDiamonds>0){
+        tx.create(
+          db.collection("financial_ledger")
+            .doc("agency_wallet_migration_"+statementId),
+          {
+            userId:ownerUid,
+            agencyId,
+            asset:"diamonds",
+            delta:legacyDiamonds,
+            openingBalance:openingDiamonds,
+            closingBalance:afterMigrationDiamonds,
+            reason:"agency_wallet_unification_migration",
+            sourceType:"agency_wallet_migration",
+            sourceId:agencyId,
+            settlementMonth:month,
+            idempotencyKey:"agency_wallet_migration_"+statementId,
+            createdAt:FieldValue.serverTimestamp(),
+          },
+        );
+      }
+    }
+
+    tx.create(ledgerRef,{
+      userId:ownerUid,
+      agencyId,
+      asset:"diamonds",
+      delta:conversion.diamondsEarned,
+      openingBalance:afterMigrationDiamonds,
+      closingBalance:closingDiamonds,
+      payableCoins:bonusCoins,
+      openingRemainderCoins:openingCarryoverCoins,
+      remainderCoins:conversion.remainderCoins,
+      coinsPerDiamond,
+      reason:"agency_performance_bonus",
+      sourceType:"agency_monthly_bonus",
+      sourceId:statementId,
+      settlementMonth:month,
+      idempotencyKey:ledgerId,
+      eligibleHostCount,
+      createdAt:FieldValue.serverTimestamp(),
+    });
+    tx.set(bonusRef,{
+      agencyId,
+      month,
+      mode:"per_host_target_month_end",
+      status:"settled",
+      perHostEligibleHostCount:eligibleHostCount,
+      perHostBonusCoins:bonusCoins,
+      bonusDiamonds:conversion.diamondsEarned,
+      openingRemainderCoins:openingCarryoverCoins,
+      remainderCoins:conversion.remainderCoins,
+      ledgerId,
+      settledBy:actorUid,
+      settledAt:FieldValue.serverTimestamp(),
+      updatedAt:FieldValue.serverTimestamp(),
+    },{merge:true});
+    tx.update(statementRef,{
+      agencyBonusEligible:eligibleHostCount>0&&bonusCoins>0,
+      agencyBonusCoins:bonusCoins,
+      agencyBonusDiamonds:conversion.diamondsEarned,
+      agencyRemainderCoins:conversion.remainderCoins,
+      agencyPerformanceEligibleHostCount:eligibleHostCount,
+      bonusPayoutStatus:"settled",
+      bonusLedgerId:ledgerId,
+      updatedAt:FieldValue.serverTimestamp(),
+    });
+    tx.create(auditRef,{
+      actorUid,
+      action:"settleAgencyPerformanceBonus",
+      targetType:"agency_monthly_statement",
+      targetId:statementId,
+      agencyId,
+      month,
+      ownerUid,
+      bonusCoins,
+      bonusDiamonds:conversion.diamondsEarned,
+      carryoverCoins:conversion.remainderCoins,
+      eligibleHostCount,
+      createdAt:FieldValue.serverTimestamp(),
+    });
+    if(bonusCoins>0){
+      tx.create(
+        db.collection("notifications")
+          .doc("agency_performance_bonus_"+statementId),
+        {
+          userId:ownerUid,
+          type:"agency_performance_bonus_paid",
+          category:"system",
+          title:"تمت تسوية Agency Bonus",
+          body:
+            "الشهر "+month+
+            " • Bonus: "+String(bonusCoins)+" Coins"+
+            " • المضاف: "+String(conversion.diamondsEarned)+" Diamonds"+
+            " • Carryover: "+String(conversion.remainderCoins)+" Coins",
+          read:false,
+          mandatory:true,
+          financial:true,
+          agencyId,
+          month,
+          bonusCoins,
+          bonusDiamonds:conversion.diamondsEarned,
+          carryoverCoins:conversion.remainderCoins,
+          eligibleHostCount,
+          createdAt:FieldValue.serverTimestamp(),
+        },
+      );
+    }
+
+    return {
+      finalized:true,
+      ownerUid,
+      bonusCoins,
+      bonusDiamonds:conversion.diamondsEarned,
+      carryoverCoins:conversion.remainderCoins,
+    };
+  });
+}
+
+async function markAgencyHostSettlementsComplete(
+  db,
+  actorUid,
+  agencyId,
+  month,
+  now=new Date(),
+){
+  const statementId=agencyId+"__"+month;
+  await db.collection("agency_host_settlement_completions")
+    .doc(statementId)
+    .set({
+      agencyId,
+      month,
+      status:"complete",
+      completedBy:actorUid,
+      completedAt:now,
+    },{merge:true});
+  const finalized=await finalizeAgencyPerformanceBonus(
+    db,
+    actorUid,
+    agencyId,
+    month,
+    now,
+  );
+  await maybeNotifyAgencyMonthSettlement(db,agencyId,month,now);
+  return finalized;
+}
+
 export async function settleAgencyMonth(db,actorUid,agencyIdInput,monthInput,options={}){
   const agencyId=clean(agencyIdInput);
   if(!/^[A-Za-z0-9_-]{3,180}$/.test(agencyId)){
     throw Error("invalid_settlement");
   }
-  const month=assertAgencySettlementMonthClosed(
-    monthInput,
-    options.now ?? new Date(),
-  );
-
+  const now=options.now??new Date();
+  const month=assertAgencySettlementMonthClosed(monthInput,now);
   const statementId=agencyId+"__"+month;
   const settlementRef=db.collection("agency_monthly_statements").doc(statementId);
-  const economyRef=db.collection("system_config").doc("gift_economy");
-  const overrideRef=db.collection("agency_policy_overrides").doc(agencyId);
-  const walletRef=db.collection("agency_wallets").doc(agencyId);
-  const auditRef=db.collection("admin_audit_logs").doc();
-  const ledgerId="agency_monthly_share_"+statementId;
+  const ledgerId="agency_month_close_"+statementId;
   const ledgerRef=db.collection("financial_ledger").doc(ledgerId);
   const bonusAccrualRef=db.collection("agency_bonus_accruals").doc(statementId);
   const activityRef=db.collection("agency_support_stats")
     .doc(agencyId)
     .collection("monthly")
     .doc(month);
+  const targetShareRef=db.collection("agency_target_share_monthly").doc(statementId);
+  const economyRef=db.collection("system_config").doc("gift_economy");
+  const auditRef=db.collection("admin_audit_logs")
+    .doc("agency_month_close_"+statementId);
   const shardRefs=agencyMonthlyShardRefs(db,agencyId,month);
 
-  return db.runTransaction(async tx=>{
+  const settlementResult=await db.runTransaction(async tx=>{
     const [existing,existingLedger,existingBonusAccrual]=await Promise.all([
       tx.get(settlementRef),
       tx.get(ledgerRef),
       tx.get(bonusAccrualRef),
     ]);
     if(existing.exists){
-      const statement=existing.data()||{};
       if(!existingLedger.exists){
         throw Error("settlement_ledger_missing");
       }
-      if(!existingBonusAccrual.exists){
-        throw Error("settlement_bonus_accrual_missing");
+      const statement=existing.data()||{};
+      if(
+        clean(statement.agencyId)!==agencyId ||
+        clean(statement.month)!==month ||
+        clean(statement.status)!=="settled" ||
+        clean(statement.ledgerId)!==ledgerId ||
+        clean(statement.agencySharePayoutMode)!=="target_close" ||
+        agencyFinancialInteger(
+          statement.agencyMonthEndSharePayableCoins||0,
+          "month_end_share_payable",
+        )!==0
+      ){
+        throw Error("settlement_statement_conflict");
       }
-      const historicalCoinsPerDiamond=agencyFinancialInteger(
-        statement.coinsPerDiamond,
-        "statement_coins_per_diamond",
-      );
-      if(historicalCoinsPerDiamond<=0){
-        throw Error("invalid_agency_financial_coins_per_diamond");
-      }
-      assertSettledAgencyStatementConsistency({
-        statement,
-        ledger:existingLedger.data()||{},
-        bonusAccrual:existingBonusAccrual.data()||{},
-        agencyId,
-        month,
-        statementId,
-        ledgerId,
-        coinsPerDiamond:historicalCoinsPerDiamond,
-      });
       return {alreadySettled:true,settlement:statement};
     }
     if(existingLedger.exists){
       throw Error("settlement_ledger_conflict");
     }
-    if(existingBonusAccrual.exists){
-      throw Error("settlement_bonus_accrual_conflict");
-    }
 
     const [
       economySnap,
-      overrideSnap,
-      walletSnap,
       activitySnap,
+      targetShareSnap,
       ...shardSnaps
     ]=await Promise.all([
       tx.get(economyRef),
-      tx.get(overrideRef),
-      tx.get(walletRef),
       tx.get(activityRef),
+      tx.get(targetShareRef),
       ...shardRefs.map(ref=>tx.get(ref)),
     ]);
     const economy=economySnap.exists?(economySnap.data()||{}):{};
-    const agencyOverride=overrideSnap.exists?(overrideSnap.data()||{}):{};
-    const bonusOverrideApplied=
-      Object.prototype.hasOwnProperty.call(
-        agencyOverride,
-        "agencyPerformanceBonusBps",
-      ) ||
-      Object.prototype.hasOwnProperty.call(
-        agencyOverride,
-        "agencyBonusActiveHosts",
-      );
-    const bonusPolicy=effectiveAgencyBonusPolicy(
-      economy,
-      agencyOverride,
-    );
     const coinsPerDiamond=agencyFinancialInteger(
-      economy.coinsPerDiamond ?? 10000,
+      economy.coinsPerDiamond??10000,
       "coins_per_diamond",
     );
     if(coinsPerDiamond<=0){
@@ -477,175 +918,134 @@ export async function settleAgencyMonth(db,actorUid,agencyIdInput,monthInput,opt
       if(!snap.exists)return sum;
       const data=snap.data()||{};
       sum.supportCoins+=agencyFinancialInteger(
-        data.supportCoins || 0,
+        data.supportCoins||0,
         "support_coins",
       );
       sum.hostShareCoins+=agencyFinancialInteger(
-        data.hostShareCoins || 0,
+        data.hostShareCoins||0,
         "host_share_coins",
       );
       sum.agencyShareCoins+=agencyFinancialInteger(
-        data.agencyShareCoins || 0,
+        data.agencyShareCoins||0,
         "agency_share_coins",
       );
       sum.platformShareCoins+=agencyFinancialInteger(
-        data.platformShareCoins || 0,
+        data.platformShareCoins||0,
         "platform_share_coins",
       );
       sum.giftCount+=agencyFinancialInteger(
-        data.giftCount || 0,
+        data.giftCount||0,
         "gift_count",
       );
       return sum;
-    },{supportCoins:0,hostShareCoins:0,agencyShareCoins:0,platformShareCoins:0,giftCount:0});
+    },{
+      supportCoins:0,
+      hostShareCoins:0,
+      agencyShareCoins:0,
+      platformShareCoins:0,
+      giftCount:0,
+    });
     const totals=validateAgencySettlementTotals(rawTotals);
     if(totals.giftCount<=0&&totals.supportCoins<=0){
       throw Error("settlement_not_found");
     }
 
+    const targetShare=targetShareSnap.exists?(targetShareSnap.data()||{}):{};
+    const actualTargetShareCoins=agencyFinancialInteger(
+      targetShare.shareCoins||0,
+      "target_share_coins",
+    );
+    const targetShareDiamonds=agencyFinancialInteger(
+      targetShare.diamondsPaid||0,
+      "target_share_diamonds",
+    );
+    const targetSharePayoutCount=agencyFinancialInteger(
+      targetShare.payoutCount||0,
+      "target_share_payout_count",
+    );
+    const shadowRetainedCoins=
+      totals.supportCoins-totals.hostShareCoins-actualTargetShareCoins;
+    if(!Number.isSafeInteger(shadowRetainedCoins)||shadowRetainedCoins<0){
+      throw Error("agency_target_share_settlement_invariant_failed");
+    }
+    const unearnedPotentialAgencyShareCoins=Math.max(
+      0,
+      totals.agencyShareCoins-actualTargetShareCoins,
+    );
+    const agencyShareAdjustmentCoins=
+      actualTargetShareCoins-totals.agencyShareCoins;
     const activity=activitySnap.exists?(activitySnap.data()||{}):{};
     const activeHostCount=agencyMonthlyActiveHostCount(activity);
-    const bonus=calculateAgencyMonthlyBonus(
-      bonusPolicy,
-      {
-        supportCoins:totals.supportCoins,
-        activeHostCount,
-        hasAgency:true,
-      },
-    );
-    const agencyBonusCoins=agencyFinancialInteger(
-      bonus.agencyBonusCoins,
-      "bonus_coins",
-    );
-    const agencyPayableCoins=totals.agencyShareCoins+agencyBonusCoins;
-    if(!Number.isSafeInteger(agencyPayableCoins)){
-      throw Error("invalid_agency_financial_payable_coins");
-    }
-    const platformAfterAgencyBonusCoins=
-      totals.platformShareCoins-agencyBonusCoins;
-    if(
-      platformAfterAgencyBonusCoins<0 ||
-      totals.hostShareCoins+
-        agencyPayableCoins+
-        platformAfterAgencyBonusCoins!==totals.supportCoins
-    ){
-      throw Error("agency_bonus_settlement_invariant_failed");
-    }
-
-    const wallet=walletSnap.exists?(walletSnap.data()||{}):{};
-    const currentDiamonds=agencyFinancialInteger(
-      wallet.diamonds || 0,
-      "wallet_diamonds",
-    );
-    const previousRemainderCoins=agencyFinancialInteger(
-      wallet.remainderCoins || 0,
-      "wallet_remainder_coins",
-    );
-    const currentLifetimeDiamonds=agencyFinancialInteger(
-      wallet.lifetimeDiamonds ?? currentDiamonds,
-      "wallet_lifetime_diamonds",
-    );
-    if(
-      previousRemainderCoins>=coinsPerDiamond ||
-      currentLifetimeDiamonds<currentDiamonds
-    ){
-      throw Error("agency_remainder_invariant_failed");
-    }
-
-    const conversion=convertPayableCoinsToDiamonds(
-      previousRemainderCoins,
-      agencyPayableCoins,
-      coinsPerDiamond,
-    );
-    const diamondsEarned=agencyFinancialInteger(
-      conversion.diamondsEarned,
-      "diamonds_earned",
-    );
-    const remainderCoins=agencyFinancialInteger(
-      conversion.remainderCoins,
-      "remainder_coins",
-    );
-    if(remainderCoins>=coinsPerDiamond){
-      throw Error("agency_remainder_invariant_failed");
-    }
-    const closingDiamonds=currentDiamonds+diamondsEarned;
-    const closingLifetimeDiamonds=currentLifetimeDiamonds+diamondsEarned;
-    if(
-      !Number.isSafeInteger(closingDiamonds) ||
-      !Number.isSafeInteger(closingLifetimeDiamonds)
-    ){
-      throw Error("invalid_agency_financial_closing_diamonds");
-    }
+    const existingBonusData=existingBonusAccrual.exists
+      ?(existingBonusAccrual.data()||{})
+      :{};
+    const bonusStatus=clean(existingBonusData.status)||"collecting";
 
     const statement={
       agencyId,
       month,
-      ...totals,
-      agencyBaseShareCoins:totals.agencyShareCoins,
-      agencyBonusEligible:bonus.eligible,
-      agencyBonusBps:bonus.agencyBonusBps,
-      agencyBonusCoins,
-      agencyPayableCoins,
+      supportCoins:totals.supportCoins,
+      hostShareCoins:totals.hostShareCoins,
+      potentialAgencyShareCoins:totals.agencyShareCoins,
+      agencyShareCoins:actualTargetShareCoins,
+      agencyBaseShareCoins:actualTargetShareCoins,
+      agencyTargetShareCoins:actualTargetShareCoins,
+      agencyTargetShareDiamonds:targetShareDiamonds,
+      agencyTargetSharePayoutCount:targetSharePayoutCount,
+      agencySharePayoutMode:"target_close",
+      agencyMonthEndSharePayableCoins:0,
+      agencyMonthEndShareDiamonds:0,
+      unearnedPotentialAgencyShareCoins,
+      agencyShareAdjustmentCoins,
+      platformShareCoins:totals.platformShareCoins,
+      shadowRetainedCoins,
+      giftCount:totals.giftCount,
       agencyActiveHostCount:activeHostCount,
-      agencyRequiredActiveHosts:bonus.requiredActiveHosts,
-      platformAfterAgencyBonusCoins,
-      bonusPolicySource:bonusOverrideApplied?"agency_override":"global",
+      agencyBonusEligible:false,
+      agencyBonusBps:0,
+      agencyBonusCoins:0,
+      agencyBonusDiamonds:0,
+      agencyPayableCoins:0,
+      platformAfterAgencyBonusCoins:shadowRetainedCoins,
+      bonusPolicySource:"per_host_target_month_end",
       bonusAccrualId:statementId,
-      shardCount:AGENCY_MONTHLY_ACCRUAL_SHARDS,
       coinsPerDiamond,
-      openingRemainderCoins:previousRemainderCoins,
-      agencyDiamonds:diamondsEarned,
-      agencyRemainderCoins:remainderCoins,
       ledgerId,
       hostSalaryMode:"target_immediate",
       hostSalaryRepaidAtMonthEnd:false,
+      bonusPayoutStatus:
+        bonusStatus==="settled"?"settled":"pending",
       status:"settled",
       settledBy:actorUid,
     };
 
-    tx.set(walletRef,{
-      agencyId,
-      diamonds:closingDiamonds,
-      remainderCoins,
-      lifetimeDiamonds:closingLifetimeDiamonds,
-      updatedAt:FieldValue.serverTimestamp(),
-    },{merge:true});
-    tx.create(bonusAccrualRef,{
+    tx.set(bonusAccrualRef,{
       agencyId,
       month,
-      supportCoins:totals.supportCoins,
-      agencyBaseShareCoins:totals.agencyShareCoins,
-      activeHostCount,
-      requiredActiveHosts:bonus.requiredActiveHosts,
-      eligible:bonus.eligible,
-      bonusBps:bonus.agencyBonusBps,
-      bonusCoins:agencyBonusCoins,
-      agencyPayableCoins,
-      platformAfterAgencyBonusCoins,
-      policySource:bonusOverrideApplied?"agency_override":"global",
-      status:"settled",
-      statementId,
-      ledgerId,
-      createdAt:FieldValue.serverTimestamp(),
-    });
+      mode:"per_host_target_month_end",
+      status:bonusStatus,
+      targetSharePayoutMode:"target_close",
+      targetShareCoins:actualTargetShareCoins,
+      updatedAt:FieldValue.serverTimestamp(),
+    },{merge:true});
     tx.create(settlementRef,{
       ...statement,
       settledAt:FieldValue.serverTimestamp(),
+      updatedAt:FieldValue.serverTimestamp(),
     });
     tx.create(ledgerRef,{
       agencyId,
-      asset:"diamonds",
-      delta:diamondsEarned,
-      openingBalance:currentDiamonds,
-      closingBalance:closingDiamonds,
-      payableCoins:agencyPayableCoins,
-      baseAgencyShareCoins:totals.agencyShareCoins,
-      agencyBonusCoins,
-      platformAfterAgencyBonusCoins,
-      openingRemainderCoins:previousRemainderCoins,
-      remainderCoins,
-      coinsPerDiamond,
-      reason:"agency_monthly_share",
+      userId:null,
+      asset:"coins",
+      delta:0,
+      openingBalance:null,
+      closingBalance:null,
+      payableCoins:0,
+      potentialAgencyShareCoins:totals.agencyShareCoins,
+      agencyTargetShareCoins:actualTargetShareCoins,
+      unearnedPotentialAgencyShareCoins,
+      shadowRetainedCoins,
+      reason:"agency_month_close_no_share_payout",
       sourceType:"agency_monthly_statement",
       sourceId:statementId,
       settlementMonth:month,
@@ -662,6 +1062,16 @@ export async function settleAgencyMonth(db,actorUid,agencyIdInput,monthInput,opt
     });
     return {alreadySettled:false,settlement:statement};
   });
+
+  await finalizeAgencyPerformanceBonus(
+    db,
+    actorUid,
+    agencyId,
+    month,
+    now,
+  );
+  await maybeNotifyAgencyMonthSettlement(db,agencyId,month,now);
+  return settlementResult;
 }
 
 
@@ -701,6 +1111,13 @@ function validateFrozenAgencySurplusPolicy(data,agencyId,month){
     surplusToShadow:data.surplusToShadow,
     mode:expectedMode,
     snapshotId,
+    agencyPerformanceBonusMode:"per_host_target_month_end",
+    agencyPerformanceBonusBps:
+      clean(data.agencyPerformanceBonusMode)==="per_host_target_month_end"
+        ?Math.max(0,Math.min(3000,Number(data.agencyPerformanceBonusBps??100)))
+        :100,
+    coinsPerDiamond:Math.max(1,Number(data.coinsPerDiamond||10000)),
+    requiredQualifiedDays:14,
   };
 }
 
@@ -717,10 +1134,24 @@ async function freezeAgencySurplusPolicy(db,actorUid,agencyId,month){
         month,
       );
     }
-    const overrideSnap=await tx.get(overrideRef);
-    const policy=resolveAgencySurplusPolicy(
-      overrideSnap.exists?(overrideSnap.data()||{}):{},
-    );
+    const economyRef=db.collection("system_config").doc("gift_economy");
+    const [overrideSnap,economySnap]=await Promise.all([
+      tx.get(overrideRef),
+      tx.get(economyRef),
+    ]);
+    const override=overrideSnap.exists?(overrideSnap.data()||{}):{};
+    const economy=economySnap.exists?(economySnap.data()||{}):{};
+    const policy=resolveAgencySurplusPolicy(override);
+    const overrideBonusIsNew=
+      clean(override.agencyPerformanceBonusMode)==="per_host_target_month_end";
+    const globalBonusIsNew=
+      clean(economy.agencyPerformanceBonusMode)==="per_host_target_month_end";
+    const agencyPerformanceBonusBps=overrideBonusIsNew
+      ?Math.max(0,Math.min(3000,Number(override.agencyPerformanceBonusBps??100)))
+      :globalBonusIsNew
+        ?Math.max(0,Math.min(3000,Number(economy.agencyPerformanceBonusBps??100)))
+        :100;
+    const coinsPerDiamond=Math.max(1,Number(economy.coinsPerDiamond||10000));
     if(!policy.configured){
       throw Error("agency_surplus_policy_unconfigured");
     }
@@ -730,6 +1161,10 @@ async function freezeAgencySurplusPolicy(db,actorUid,agencyId,month){
       surplusToShadow:policy.surplusToShadow,
       mode:policy.mode,
       snapshotId,
+      agencyPerformanceBonusMode:"per_host_target_month_end",
+      agencyPerformanceBonusBps,
+      coinsPerDiamond,
+      requiredQualifiedDays:14,
     };
     tx.create(snapshotRef,{
       ...snapshot,
@@ -886,14 +1321,24 @@ async function settleAgencyHostSurplus(
   const settlementRef=db.collection("agency_surplus_settlements").doc(settlementId);
   const ledgerId="agency_host_surplus_"+settlementId;
   const ledgerRef=db.collection("financial_ledger").doc(ledgerId);
+  const hostBonusLedgerId="agency_host_activity_bonus_"+settlementId;
+  const hostBonusLedgerRef=db.collection("financial_ledger").doc(hostBonusLedgerId);
+  const bonusAccrualRef=db.collection("agency_bonus_accruals")
+    .doc(agencyId+"__"+month);
   const auditRef=db.collection("admin_audit_logs").doc(
     "agency_host_surplus_"+settlementId,
   );
 
   return db.runTransaction(async tx=>{
-    const [existing,existingLedger,monthlySnap]=await Promise.all([
+    const [
+      existing,
+      existingLedger,
+      existingHostBonusLedger,
+      monthlySnap,
+    ]=await Promise.all([
       tx.get(settlementRef),
       tx.get(ledgerRef),
+      tx.get(hostBonusLedgerRef),
       tx.get(monthlyRef),
     ]);
     if(!monthlySnap.exists){
@@ -927,13 +1372,20 @@ async function settleAgencyHostSurplus(
         ledgerId,
         policySnapshot,
       });
+      const hostBonusAmount=agencyFinancialInteger(
+        settlement.hostActivityBonusAmount||0,
+        "host_activity_bonus_amount",
+      );
+      if(hostBonusAmount>0&&!existingHostBonusLedger.exists){
+        throw Error("agency_host_bonus_ledger_missing");
+      }
       return {
         alreadySettled:true,
         hostUid,
         settlement,
       };
     }
-    if(existingLedger.exists){
+    if(existingLedger.exists||existingHostBonusLedger.exists){
       throw Error("agency_surplus_ledger_conflict");
     }
 
@@ -955,10 +1407,58 @@ async function settleAgencyHostSurplus(
       surplusToShadow:policySnapshot.surplusToShadow,
     });
 
-    let openingCoins=0;
-    let closingCoins=0;
+    const qualifiedDays=agencyFinancialInteger(
+      monthly.activityQualifiedDays||0,
+      "activity_qualified_days",
+    );
+    const requiredQualifiedDays=14;
+    const rawHostBonus=qualifiedDays>=requiredQualifiedDays
+      ?hostActivityBonusForTarget(monthly)
+      :{asset:"none",amount:0};
+    const hostActivityBonusAmount=agencyFinancialInteger(
+      rawHostBonus.amount||0,
+      "host_activity_bonus_amount",
+    );
+    const hostActivityBonusAsset=
+      hostActivityBonusAmount>0?clean(rawHostBonus.asset):"none";
+    if(
+      hostActivityBonusAmount>0 &&
+      !["coins","diamonds"].includes(hostActivityBonusAsset)
+    ){
+      throw Error("invalid_host_activity_bonus_asset");
+    }
+
+    const agencyPerformanceBonus=agencyPerformanceBonusForTarget({
+      targetThresholdCoins,
+      qualifiedDays,
+      bonusBps:policySnapshot.agencyPerformanceBonusBps,
+      requiredQualifiedDays,
+    });
+    const agencyPerformanceBonusCoins=agencyFinancialInteger(
+      agencyPerformanceBonus.bonusCoins||0,
+      "agency_performance_bonus_coins",
+    );
+
+    const hostWalletCoins=
+      surplus.destination==="host_wallet_coins"
+        ?surplus.surplusCoins
+        :0;
+    const shadowProfitCoins=
+      surplus.destination==="shadow_profit"
+        ?surplus.surplusCoins
+        :0;
+    const hostBonusCoins=
+      hostActivityBonusAsset==="coins"?hostActivityBonusAmount:0;
+    const hostBonusDiamonds=
+      hostActivityBonusAsset==="diamonds"?hostActivityBonusAmount:0;
+
     let userRef=null;
-    if(surplus.destination==="host_wallet_coins"&&surplus.surplusCoins>0){
+    let openingCoins=0;
+    let surplusClosingCoins=0;
+    let closingCoins=0;
+    let openingDiamonds=0;
+    let closingDiamonds=0;
+    if(hostWalletCoins>0||hostActivityBonusAmount>0){
       userRef=db.collection("users").doc(hostUid);
       const userSnap=await tx.get(userRef);
       if(!userSnap.exists){
@@ -969,20 +1469,21 @@ async function settleAgencyHostSurplus(
         user.coins??user.balance??0,
         "surplus_host_wallet_coins",
       );
-      closingCoins=openingCoins+surplus.surplusCoins;
-      if(!Number.isSafeInteger(closingCoins)){
-        throw Error("invalid_agency_financial_surplus_closing_coins");
+      openingDiamonds=agencyFinancialInteger(
+        user.diamonds||0,
+        "host_bonus_wallet_diamonds",
+      );
+      surplusClosingCoins=openingCoins+hostWalletCoins;
+      closingCoins=surplusClosingCoins+hostBonusCoins;
+      closingDiamonds=openingDiamonds+hostBonusDiamonds;
+      if(
+        !Number.isSafeInteger(closingCoins) ||
+        !Number.isSafeInteger(closingDiamonds)
+      ){
+        throw Error("invalid_agency_host_bonus_closing_balance");
       }
     }
 
-    const hostWalletCoins=
-      surplus.destination==="host_wallet_coins"
-        ? surplus.surplusCoins
-        : 0;
-    const shadowProfitCoins=
-      surplus.destination==="shadow_profit"
-        ? surplus.surplusCoins
-        : 0;
     const settlement={
       agencyId,
       month,
@@ -992,6 +1493,9 @@ async function settleAgencyHostSurplus(
       surplusToShadow:policySnapshot.surplusToShadow,
       destination:surplus.destination,
       progressCoins:surplus.progressCoins,
+      targetId:clean(monthly.targetId),
+      targetTierId:clean(monthly.targetTierId),
+      targetRank:clean(monthly.targetRank),
       targetThresholdCoins:surplus.completedTargetCoins,
       surplusCoins:surplus.surplusCoins,
       hostWalletCoins,
@@ -999,17 +1503,41 @@ async function settleAgencyHostSurplus(
       salaryPaidDiamondsSnapshot:salaryPaidDiamonds,
       hostSalaryMode:"target_immediate",
       hostSalaryRepaidAtMonthEnd:false,
+      activityQualifiedDays:qualifiedDays,
+      activityRequiredQualifiedDays:requiredQualifiedDays,
+      hostActivityBonusEligible:
+        qualifiedDays>=requiredQualifiedDays&&hostActivityBonusAmount>0,
+      hostActivityBonusAsset,
+      hostActivityBonusAmount,
+      hostActivityBonusLedgerId:
+        hostActivityBonusAmount>0?hostBonusLedgerId:null,
+      agencyPerformanceBonusEligible:agencyPerformanceBonus.eligible===true,
+      agencyPerformanceBonusBps:agencyPerformanceBonus.bonusBps,
+      agencyPerformanceBonusCoins,
+      agencyPerformanceBonusDiamonds:0,
+      agencyPerformanceBonusLedgerId:null,
+      agencyPerformanceBonusPayoutMode:"aggregate_month_end",
       ledgerId,
       status:"settled",
       settledBy:actorUid,
     };
 
     if(userRef){
-      tx.update(userRef,{
-        coins:closingCoins,
+      const userUpdate={
+        agencyActivityBonusLastMonth:month,
+        agencyActivityBonusAsset:hostActivityBonusAsset,
+        agencyActivityBonusAmount:hostActivityBonusAmount,
         walletUpdatedAt:FieldValue.serverTimestamp(),
-      });
+      };
+      if(hostWalletCoins>0||hostBonusCoins>0){
+        userUpdate.coins=closingCoins;
+      }
+      if(hostBonusDiamonds>0){
+        userUpdate.diamonds=closingDiamonds;
+      }
+      tx.update(userRef,userUpdate);
     }
+
     tx.update(monthlyRef,{
       surplusSettlementId:settlementId,
       surplusPolicySnapshotId:policySnapshot.snapshotId,
@@ -1018,6 +1546,14 @@ async function settleAgencyHostSurplus(
       surplusCoins:surplus.surplusCoins,
       surplusHostWalletCoins:hostWalletCoins,
       surplusShadowProfitCoins:shadowProfitCoins,
+      hostActivityBonusAsset,
+      hostActivityBonusAmount,
+      hostActivityBonusEligible:settlement.hostActivityBonusEligible,
+      agencyPerformanceBonusBps:settlement.agencyPerformanceBonusBps,
+      agencyPerformanceBonusCoins,
+      agencyPerformanceBonusDiamonds:0,
+      agencyPerformanceBonusPayoutMode:"aggregate_month_end",
+      bonusAccruedAt:FieldValue.serverTimestamp(),
       surplusSettledAt:FieldValue.serverTimestamp(),
     });
     tx.create(settlementRef,{
@@ -1042,7 +1578,7 @@ async function settleAgencyHostSurplus(
           :null,
       closingBalance:
         surplus.destination==="host_wallet_coins"
-          ?closingCoins
+          ?surplusClosingCoins
           :null,
       reason:
         surplus.destination==="shadow_profit"
@@ -1060,6 +1596,53 @@ async function settleAgencyHostSurplus(
       hostSalaryRepaidAtMonthEnd:false,
       createdAt:FieldValue.serverTimestamp(),
     });
+
+    if(hostActivityBonusAmount>0){
+      const bonusOpeningBalance=
+        hostActivityBonusAsset==="coins"
+          ?surplusClosingCoins
+          :openingDiamonds;
+      const bonusClosingBalance=
+        hostActivityBonusAsset==="coins"
+          ?closingCoins
+          :closingDiamonds;
+      tx.create(hostBonusLedgerRef,{
+        agencyId,
+        hostUid,
+        userId:hostUid,
+        accountType:"host_wallet",
+        asset:hostActivityBonusAsset,
+        delta:hostActivityBonusAmount,
+        openingBalance:bonusOpeningBalance,
+        closingBalance:bonusClosingBalance,
+        reason:"agency_host_activity_bonus",
+        sourceType:"agency_host_monthly",
+        sourceId:settlementId,
+        settlementMonth:month,
+        idempotencyKey:hostBonusLedgerId,
+        targetId:clean(monthly.targetId),
+        targetThresholdCoins,
+        qualifiedDays,
+        requiredQualifiedDays,
+        createdAt:FieldValue.serverTimestamp(),
+      });
+    }
+
+    if(agencyPerformanceBonusCoins>0){
+      tx.set(bonusAccrualRef,{
+        agencyId,
+        month,
+        mode:"per_host_target_month_end",
+        status:"collecting",
+        configuredBonusBps:policySnapshot.agencyPerformanceBonusBps,
+        perHostEligibleHostCount:FieldValue.increment(
+          agencyPerformanceBonus.eligible===true?1:0,
+        ),
+        perHostBonusCoins:FieldValue.increment(agencyPerformanceBonusCoins),
+        updatedAt:FieldValue.serverTimestamp(),
+      },{merge:true});
+    }
+
     tx.create(auditRef,{
       actorUid,
       action:"settleAgencyHostSurplus",
@@ -1140,6 +1723,16 @@ export async function settleAgencyHostSurplusPage(
   const nextCursor=hasMore&&lastProcessed
     ? clean(lastProcessed.data()?.surplusPageKey)
     : null;
+  const done=!hasMore;
+  if(done){
+    await markAgencyHostSettlementsComplete(
+      db,
+      actorUid,
+      agencyId,
+      month,
+      options.now??new Date(),
+    );
+  }
   return {
     agencyId,
     month,
@@ -1148,7 +1741,7 @@ export async function settleAgencyHostSurplusPage(
     processedCount:results.length,
     settledCount:results.filter(item=>!item.alreadySettled).length,
     duplicateCount:results.filter(item=>item.alreadySettled).length,
-    done:!hasMore,
+    done,
     nextCursor,
     results,
   };

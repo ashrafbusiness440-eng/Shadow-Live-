@@ -66,11 +66,11 @@ const approvedPolicy={
   policyMode:"tiered_host_agency",
   coinsPerUsd:10000,
   coinsPerDiamond:10000,
-  hostPerformanceBonusBps:200,
-  agencyPerformanceBonusBps:200,
-  hostBonusQualifiedDays:9,
+  hostPerformanceBonusBps:0,
+  agencyPerformanceBonusBps:100,
+  agencyPerformanceBonusMode:"per_host_target_month_end",
+  hostBonusQualifiedDays:14,
   hostBonusMinutesPerQualifiedDay:120,
-  agencyBonusActiveHosts:10,
   activityPayoutBpsByQualifiedDays:{
     "0":0,"1":0,"2":0,"3":2500,"4":4000,
     "5":5500,"6":7000,"7":8000,"8":9000,"9":10000,
@@ -127,6 +127,12 @@ test("room gift pays agency target salary immediately and records sharded monthl
     }),
     db.collection("rooms").doc(roomId).set({
       isActive:true,agencyId:roomAgencyId,totalSupport:0,
+    }),
+    db.collection("users").doc("owner_"+agencyId).set({
+      coins:0,diamonds:0,role:"user",accountStatus:"active",
+    }),
+    db.collection("agencies").doc(agencyId).set({
+      agencyId,ownerUid:"owner_"+agencyId,status:"active",
     }),
     db.collection("agency_support_stats").doc(agencyId).collection("monthly").doc(periods.month).set({
       activeHostIds:[],
@@ -248,6 +254,12 @@ test("chat gift uses the same monthly target salary and sharded accrual as room 
     db.collection("conversations").doc(conversationId).set({
       participants:[senderId,receiverId],
       unreadCounts:{[senderId]:0,[receiverId]:0},
+    }),
+    db.collection("users").doc("owner_"+agencyId).set({
+      coins:0,diamonds:0,role:"user",accountStatus:"active",
+    }),
+    db.collection("agencies").doc(agencyId).set({
+      agencyId,ownerUid:"owner_"+agencyId,status:"active",
     }),
     db.collection("agency_support_stats").doc(agencyId).collection("monthly").doc(periods.month).set({
       activeHostIds:[],
@@ -422,10 +434,10 @@ test("Shadow Control policy save keeps activity fixed while custom economics rem
     policyMode:"tiered_host_agency",
     enabled:true,
     hostPerformanceBonusBps:300,
-    agencyPerformanceBonusBps:100,
+    agencyPerformanceBonusBps:150,
+    agencyPerformanceBonusMode:"per_host_target_month_end",
     hostBonusQualifiedDays:5,
     hostBonusMinutesPerQualifiedDay:90,
-    agencyBonusActiveHosts:3,
     activityPayoutBpsByQualifiedDays:{
       "0":0,"1":0,"2":0,"3":2500,"4":4000,
       "5":5500,"6":7000,"7":8000,"8":9000,"9":10000,
@@ -441,8 +453,12 @@ test("Shadow Control policy save keeps activity fixed while custom economics rem
   assert.equal(saved.hostBonusMinutesPerQualifiedDay,120);
   assert.equal(stored.data().hostBonusQualifiedDays,14);
   assert.equal(stored.data().hostBonusMinutesPerQualifiedDay,120);
-  assert.equal(stored.data().hostPerformanceBonusBps,300);
-  assert.equal(stored.data().agencyBonusActiveHosts,3);
+  assert.equal(stored.data().hostPerformanceBonusBps,0);
+  assert.equal(stored.data().agencyPerformanceBonusBps,150);
+  assert.equal(
+    stored.data().agencyPerformanceBonusMode,
+    "per_host_target_month_end",
+  );
   assert.equal(stored.data().tiers[1].minGiftCoins,200000);
 
   const result=calculateAgencyCycleSettlement(stored.data(),{
@@ -453,11 +469,13 @@ test("Shadow Control policy save keeps activity fixed while custom economics rem
     hasAgency:true,
   });
   assert.equal(result.tierId,"custom");
-  assert.equal(result.hostShareBps,6400);
-  assert.equal(result.agencyShareBps,800);
-  assert.equal(result.hostPayableCoins,160000);
-  assert.equal(result.agencyPayableCoins,20000);
-  assert.equal(result.platformCoins,70000);
+  assert.equal(result.hostBonusBps,0);
+  assert.equal(result.agencyBonusBps,0);
+  assert.equal(result.hostShareBps,6100);
+  assert.equal(result.agencyShareBps,700);
+  assert.equal(result.hostPayableCoins,152500);
+  assert.equal(result.agencyPayableCoins,17500);
+  assert.equal(result.platformCoins,80000);
 
   const audit=await db.collection("admin_audit_logs")
     .where("actorUid","==","shadow_control_test")
@@ -506,31 +524,36 @@ test("closed-month agency settlement aggregates bounded shards and stays idempot
   const settlement=first.settlement;
   assert.equal(settlement.supportCoins,1000000);
   assert.equal(settlement.hostShareCoins,500000);
-  assert.equal(settlement.agencyShareCoins,50000);
+  assert.equal(settlement.potentialAgencyShareCoins,50000);
+  assert.equal(settlement.agencyTargetShareCoins,0);
+  assert.equal(settlement.agencyShareCoins,0);
+  assert.equal(settlement.agencyMonthEndSharePayableCoins,0);
+  assert.equal(settlement.unearnedPotentialAgencyShareCoins,50000);
   assert.equal(settlement.platformShareCoins,450000);
+  assert.equal(settlement.shadowRetainedCoins,500000);
   assert.equal(settlement.giftCount,10);
-  assert.equal(settlement.shardCount,32);
-  assert.equal(settlement.agencyDiamonds,5);
-  assert.equal(settlement.agencyRemainderCoins,2500);
   assert.equal(settlement.hostSalaryMode,"target_immediate");
   assert.equal(settlement.hostSalaryRepaidAtMonthEnd,false);
 
   const [wallet,stored,ledger]=await Promise.all([
     db.collection("agency_wallets").doc(agencyId).get(),
     db.collection("agency_monthly_statements").doc(statementId).get(),
-    db.collection("financial_ledger").doc("agency_monthly_share_"+statementId).get(),
+    db.collection("financial_ledger").doc("agency_month_close_"+statementId).get(),
   ]);
-  assert.equal(wallet.data().diamonds,12);
+  assert.equal(wallet.data().diamonds,7);
   assert.equal(wallet.data().remainderCoins,2500);
-  assert.equal(stored.data().agencyShareCoins,50000);
-  assert.equal(stored.data().agencyDiamonds,5);
-  assert.equal(ledger.data().delta,5);
-  assert.equal(ledger.data().payableCoins,50000);
+  assert.equal(stored.data().potentialAgencyShareCoins,50000);
+  assert.equal(stored.data().agencyTargetShareCoins,0);
+  assert.equal(stored.data().agencyMonthEndSharePayableCoins,0);
+  assert.equal(ledger.data().asset,"coins");
+  assert.equal(ledger.data().delta,0);
+  assert.equal(ledger.data().payableCoins,0);
+  assert.equal(ledger.data().reason,"agency_month_close_no_share_payout");
 
   const second=await settleAgencyMonth(db,actorUid,agencyId,month);
   assert.equal(second.alreadySettled,true);
   const walletAfter=await db.collection("agency_wallets").doc(agencyId).get();
-  assert.equal(walletAfter.data().diamonds,12);
+  assert.equal(walletAfter.data().diamonds,7);
   assert.equal(walletAfter.data().remainderCoins,2500);
 });
 
@@ -559,7 +582,7 @@ test("agency settlement rejects the current month before any payout",async()=>{
     db.collection("agency_wallets").doc(agencyId).get(),
     db.collection("agency_monthly_statements").doc(agencyId+"__"+month).get(),
     db.collection("financial_ledger").doc(
-      "agency_monthly_share_"+agencyId+"__"+month,
+      "agency_month_close_"+agencyId+"__"+month,
     ).get(),
   ]);
   assert.equal(wallet.exists,false);
@@ -567,7 +590,7 @@ test("agency settlement rejects the current month before any payout",async()=>{
   assert.equal(ledger.exists,false);
 });
 
-test("agency settlement records carryover in ledger even when payout is zero diamonds",async()=>{
+test("agency month close leaves Target-close carryover untouched",async()=>{
   await seedSharedConfig();
   const month=previousMonthKey();
   const suffix=Date.now().toString()+"_carryover";
@@ -591,20 +614,23 @@ test("agency settlement records carryover in ledger even when payout is zero dia
   ]);
 
   const result=await settleAgencyMonth(db,actorUid,agencyId,month);
-  assert.equal(result.settlement.agencyDiamonds,0);
-  assert.equal(result.settlement.openingRemainderCoins,1000);
-  assert.equal(result.settlement.agencyRemainderCoins,5000);
+  assert.equal(result.settlement.potentialAgencyShareCoins,4000);
+  assert.equal(result.settlement.agencyTargetShareCoins,0);
+  assert.equal(result.settlement.agencyMonthEndSharePayableCoins,0);
+  assert.equal(result.settlement.unearnedPotentialAgencyShareCoins,4000);
 
   const [wallet,ledger]=await Promise.all([
     db.collection("agency_wallets").doc(agencyId).get(),
-    db.collection("financial_ledger").doc("agency_monthly_share_"+statementId).get(),
+    db.collection("financial_ledger").doc("agency_month_close_"+statementId).get(),
   ]);
   assert.equal(wallet.data().diamonds,3);
-  assert.equal(wallet.data().remainderCoins,5000);
+  assert.equal(wallet.data().remainderCoins,1000);
   assert.equal(ledger.exists,true);
+  assert.equal(ledger.data().asset,"coins");
   assert.equal(ledger.data().delta,0);
-  assert.equal(ledger.data().openingRemainderCoins,1000);
-  assert.equal(ledger.data().remainderCoins,5000);
+  assert.equal(ledger.data().payableCoins,0);
+  assert.equal(ledger.data().potentialAgencyShareCoins,4000);
+  assert.equal(ledger.data().agencyTargetShareCoins,0);
 });
 
 test("agency settlement rejects corrupted financial shard totals",async()=>{

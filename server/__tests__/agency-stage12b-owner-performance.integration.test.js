@@ -17,6 +17,7 @@ function fakeDbForOwner({
   uid = "stage12b_owner",
   agencyId = "812002",
   statement = null,
+  bonusAccrual = null,
 } = {}) {
   const calls = { gets: [], queries: 0, writes: 0 };
   const records = new Map([
@@ -50,11 +51,32 @@ function fakeDbForOwner({
       },
     ],
     [
-      "agency_wallets/" + agencyId,
+      "agency_target_share_monthly/" + agencyId + "__2026-09",
       {
+        agencyId,
+        month: "2026-09",
+        shareCoins: 60000,
+        diamondsPaid: 6,
+        payoutCount: 2,
+      },
+    ],
+    [
+      "agency_financial_state/" + agencyId,
+      {
+        agencyId,
+        carryoverCoins: 3500,
+        lifetimeAgencyDiamonds: 90,
+        legacyWalletMigrated: true,
+      },
+    ],
+    [
+      "users/" + uid,
+      {
+        uid,
+        agencyId,
+        agencyRole: "owner",
+        accountStatus: "active",
         diamonds: 42,
-        remainderCoins: 3500,
-        lifetimeDiamonds: 90,
       },
     ],
     [
@@ -62,16 +84,16 @@ function fakeDbForOwner({
       {
         enabled: true,
         coinsPerDiamond: 10000,
-        agencyPerformanceBonusBps: 200,
-        agencyBonusActiveHosts: 10,
+        agencyPerformanceBonusMode: "per_host_target_month_end",
+        agencyPerformanceBonusBps: 100,
       },
     ],
     [
       "agency_policy_overrides/" + agencyId,
       {
         agencyId,
+        agencyPerformanceBonusMode: "per_host_target_month_end",
         agencyPerformanceBonusBps: 150,
-        agencyBonusActiveHosts: 8,
       },
     ],
   ]);
@@ -79,6 +101,12 @@ function fakeDbForOwner({
     records.set(
       "agency_monthly_statements/" + agencyId + "__2026-08",
       statement,
+    );
+  }
+  if (bonusAccrual) {
+    records.set(
+      "agency_bonus_accruals/" + agencyId + "__2026-08",
+      bonusAccrual,
     );
   }
 
@@ -101,7 +129,7 @@ function fakeDbForOwner({
   };
 }
 
-test("12-B owner performance uses exactly six direct reads and no query/write", async () => {
+test("12-B owner performance uses exactly eight direct reads and no query/write", async () => {
   const { db, calls } = fakeDbForOwner();
   const result = await loadAgencyOwnerPerformance(
     db,
@@ -115,10 +143,10 @@ test("12-B owner performance uses exactly six direct reads and no query/write", 
   assert.equal(result.current.supportCoins, 1000000);
   assert.equal(result.current.agencyBaseShareCoins, 60000);
   assert.equal(result.current.activeHostCount, 10);
-  assert.equal(result.current.bonus.eligible, true);
-  assert.equal(result.current.bonus.requiredActiveHosts, 8);
+  assert.equal(result.current.bonus.eligible, false);
+  assert.equal(result.current.bonus.requiredActiveHosts, 0);
   assert.equal(result.current.bonus.bps, 150);
-  assert.equal(result.current.bonus.estimatedCoins, 15000);
+  assert.equal(result.current.bonus.estimatedCoins, 0);
   assert.equal(result.current.wallet.diamonds, 42);
   assert.equal(result.current.wallet.remainderCoins, 3500);
   assert.equal(result.policy.source, "agency_override");
@@ -127,7 +155,9 @@ test("12-B owner performance uses exactly six direct reads and no query/write", 
     "agency_user_memberships/stage12b_owner",
     "agencies/812002",
     "agency_support_stats/812002/monthly/2026-09",
-    "agency_wallets/812002",
+    "agency_target_share_monthly/812002__2026-09",
+    "agency_financial_state/812002",
+    "users/stage12b_owner",
     "system_config/gift_economy",
     "agency_policy_overrides/812002",
   ]);
@@ -135,23 +165,30 @@ test("12-B owner performance uses exactly six direct reads and no query/write", 
   assert.equal(calls.writes, 0);
 });
 
-test("12-B closed-month statement is lazy and uses three direct reads only", async () => {
+test("12-B closed-month statement merges bounded per-host Bonus accrual with four direct reads", async () => {
   const { db, calls } = fakeDbForOwner({
     statement: {
       agencyId: "812002",
       month: "2026-08",
       status: "settled",
       supportCoins: 2000000,
-      agencyBaseShareCoins: 120000,
-      agencyBonusCoins: 40000,
-      agencyPayableCoins: 160000,
-      agencyDiamonds: 16,
+      agencyTargetShareCoins: 120000,
+      agencyTargetShareDiamonds: 12,
+      agencyBonusCoins: 5000,
+      agencyBonusDiamonds: 1,
       agencyRemainderCoins: 3500,
-      agencyActiveHostCount: 12,
-      agencyRequiredActiveHosts: 10,
+      agencyPerformanceEligibleHostCount: 2,
       agencyBonusEligible: true,
-      agencyBonusBps: 200,
       giftCount: 80,
+    },
+    bonusAccrual: {
+      agencyId: "812002",
+      month: "2026-08",
+      mode: "per_host_target_month_end",
+      configuredBonusBps: 150,
+      perHostEligibleHostCount: 2,
+      perHostBonusCoins: 5000,
+      perHostBonusDiamonds: 1,
     },
   });
 
@@ -164,12 +201,16 @@ test("12-B closed-month statement is lazy and uses three direct reads only", asy
 
   assert.equal(result.ok, true);
   assert.equal(result.settled, true);
-  assert.equal(result.statement.agencyPayableCoins, 160000);
-  assert.equal(result.statement.agencyDiamonds, 16);
+  assert.equal(result.statement.agencyPayableCoins, 125000);
+  assert.equal(result.statement.agencyBonusCoins, 5000);
+  assert.equal(result.statement.agencyDiamonds, 13);
+  assert.equal(result.statement.activeHostCount, 2);
+  assert.equal(result.statement.bonusBps, 150);
   assert.deepEqual(calls.gets, [
     "agency_user_memberships/stage12b_owner",
     "agencies/812002",
     "agency_monthly_statements/812002__2026-08",
+    "agency_bonus_accruals/812002__2026-08",
   ]);
   assert.equal(calls.queries, 0);
   assert.equal(calls.writes, 0);

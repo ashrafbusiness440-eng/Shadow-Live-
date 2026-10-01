@@ -45,9 +45,15 @@ export async function recordMicActivity(tx, db, userId, seat, endedAtMs = Date.n
         (newlyQualifiedByMonth.get(segment.month) || 0) + 1,
       );
     }
+    const previousEligibleSeconds = Math.min(previousSeconds, thresholdSeconds);
+    const nextEligibleSeconds = Math.min(nextSeconds, thresholdSeconds);
+    const eligibleDeltaSeconds = Math.max(
+      0,
+      nextEligibleSeconds - previousEligibleSeconds,
+    );
     addedSecondsByMonth.set(
       segment.month,
-      (addedSecondsByMonth.get(segment.month) || 0) + segment.seconds,
+      (addedSecondsByMonth.get(segment.month) || 0) + eligibleDeltaSeconds,
     );
 
     tx.set(dayRefs[index], {
@@ -81,6 +87,19 @@ export async function recordMicActivity(tx, db, userId, seat, endedAtMs = Date.n
   if (agencyId) {
     for (const [month, count] of newlyQualifiedByMonth.entries()) {
       if (count <= 0) continue;
+      const hostMonthId = agencyId + "__" + month + "__" + userId;
+      const hostMonthRef = db.collection("agency_host_monthly").doc(hostMonthId);
+      tx.set(hostMonthRef, {
+        agencyId,
+        hostUid: userId,
+        month,
+        surplusPageKey: hostMonthId,
+        activityQualifiedDays: FieldValue.increment(count),
+        activityRequiredQualifiedDays: 14,
+        activityRequiredMinutesPerDay: 120,
+        activityUpdatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+
       if (month === currentMonth && previousQualifiedDays > 0) continue;
       const agencyMonthRef = db
         .collection("agency_support_stats")

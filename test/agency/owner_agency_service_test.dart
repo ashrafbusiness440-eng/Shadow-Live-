@@ -14,10 +14,10 @@ void main() {
         'giftCount': 25,
         'activeHostCount': 10,
         'bonus': {
-          'eligible': true,
-          'requiredActiveHosts': 8,
+          'eligible': false,
+          'requiredActiveHosts': 0,
           'bps': 150,
-          'estimatedCoins': 15000,
+          'estimatedCoins': 0,
           'deferredToMonthEnd': true,
         },
         'wallet': {
@@ -36,10 +36,10 @@ void main() {
     expect(data.current.month, '2026-09');
     expect(data.current.supportCoins, 1000000);
     expect(data.current.agencyBaseShareCoins, 60000);
-    expect(data.current.bonus.eligible, isTrue);
-    expect(data.current.bonus.requiredActiveHosts, 8);
-    expect(data.current.bonus.estimatedCoins, 15000);
-    expect(data.current.estimatedAgencyPayableCoins, 75000);
+    expect(data.current.bonus.eligible, isFalse);
+    expect(data.current.bonus.requiredActiveHosts, 0);
+    expect(data.current.bonus.estimatedCoins, 0);
+    expect(data.current.estimatedAgencyPayableCoins, 60000);
     expect(data.current.wallet.diamonds, 42);
     expect(data.current.wallet.remainderCoins, 3500);
     expect(data.coinsPerDiamond, 10000);
@@ -131,9 +131,9 @@ void main() {
         'month': '2026-10',
         'qualifiedDays': 7,
         'micSecondsMonth': 54000,
-        'requiredQualifiedDays': 9,
+        'requiredQualifiedDays': 14,
         'requiredMinutesPerDay': 120,
-        'requiredMicSecondsMonth': 64800,
+        'requiredMicSecondsMonth': 100800,
       },
       'achievements': [
         {
@@ -151,7 +151,7 @@ void main() {
     expect(data.remainingCoins, 50000);
     expect(data.currentLevel?.id, 't2');
     expect(data.nextLevel?.id, 't3');
-    expect(data.requiredMicSecondsMonth, 64800);
+    expect(data.requiredMicSecondsMonth, 100800);
     expect(data.achievements.single.targetId, 't1');
   });
 

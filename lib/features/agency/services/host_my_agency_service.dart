@@ -13,6 +13,9 @@ class HostAgencyIdentity {
     required this.status,
     required this.logoUrl,
     required this.roomId,
+    required this.description,
+    required this.publicContact,
+    required this.backgroundUrl,
   });
 
   final String agencyId;
@@ -22,6 +25,9 @@ class HostAgencyIdentity {
   final String status;
   final String? logoUrl;
   final String? roomId;
+  final String? description;
+  final String? publicContact;
+  final String? backgroundUrl;
 
   factory HostAgencyIdentity.fromJson(Map<String, dynamic> json) {
     return HostAgencyIdentity(
@@ -32,6 +38,9 @@ class HostAgencyIdentity {
       status: (json['status'] ?? 'active').toString().trim(),
       logoUrl: _nullableString(json['logoUrl']),
       roomId: _nullableString(json['roomId']),
+      description: _nullableString(json['description']),
+      publicContact: _nullableString(json['publicContact']),
+      backgroundUrl: _nullableString(json['backgroundUrl']),
     );
   }
 }
@@ -69,7 +78,8 @@ class HostAgencyLevel {
     required this.openEnded,
     required this.hostShareBps,
     required this.grossSupportCoins,
-    required this.activityBonusBps,
+    required this.activityBonusAsset,
+    required this.activityBonusAmount,
   });
 
   final String id;
@@ -80,7 +90,8 @@ class HostAgencyLevel {
   final bool openEnded;
   final int hostShareBps;
   final int grossSupportCoins;
-  final int activityBonusBps;
+  final String activityBonusAsset;
+  final int activityBonusAmount;
 
   factory HostAgencyLevel.fromJson(Map<String, dynamic> json) {
     return HostAgencyLevel(
@@ -92,7 +103,12 @@ class HostAgencyLevel {
       openEnded: json['openEnded'] == true,
       hostShareBps: _nonNegativeInt(json['hostShareBps']),
       grossSupportCoins: _nonNegativeInt(json['grossSupportCoins']),
-      activityBonusBps: _nonNegativeInt(json['activityBonusBps']),
+      activityBonusAsset: json['activityBonus'] is Map
+          ? ((json['activityBonus'] as Map)['asset'] ?? 'none').toString().trim()
+          : 'none',
+      activityBonusAmount: json['activityBonus'] is Map
+          ? _nonNegativeInt((json['activityBonus'] as Map)['amount'])
+          : 0,
     );
   }
 }
@@ -146,7 +162,7 @@ class HostAgencyActivity {
     required this.micSecondsMonth,
     required this.requiredQualifiedDays,
     required this.requiredMinutesPerDay,
-    required this.activityBonusBps,
+    required this.bonusMode,
     required this.requiredMicSecondsMonth,
   });
 
@@ -155,7 +171,7 @@ class HostAgencyActivity {
   final int micSecondsMonth;
   final int requiredQualifiedDays;
   final int requiredMinutesPerDay;
-  final int activityBonusBps;
+  final String bonusMode;
   final int requiredMicSecondsMonth;
 
   factory HostAgencyActivity.fromJson(Map<String, dynamic> json) {
@@ -165,7 +181,7 @@ class HostAgencyActivity {
       micSecondsMonth: _nonNegativeInt(json['micSecondsMonth']),
       requiredQualifiedDays: _nonNegativeInt(json['requiredQualifiedDays']),
       requiredMinutesPerDay: _nonNegativeInt(json['requiredMinutesPerDay']),
-      activityBonusBps: _nonNegativeInt(json['activityBonusBps']),
+      bonusMode: (json['bonusMode'] ?? 'highest_target_month_end').toString().trim(),
       requiredMicSecondsMonth: _nonNegativeInt(json['requiredMicSecondsMonth']),
     );
   }
@@ -232,6 +248,68 @@ class HostMyAgencyCoreData {
   }
 }
 
+
+class HostTargetHistoryAchievement {
+  const HostTargetHistoryAchievement({
+    required this.targetId,
+    required this.tierId,
+    required this.rank,
+    required this.thresholdCoins,
+    required this.salaryDeltaDiamonds,
+    required this.salaryDiamonds,
+    required this.achievedAt,
+  });
+
+  final String targetId;
+  final String? tierId;
+  final String? rank;
+  final int thresholdCoins;
+  final int salaryDeltaDiamonds;
+  final int salaryDiamonds;
+  final String? achievedAt;
+
+  factory HostTargetHistoryAchievement.fromJson(Map<String, dynamic> json) {
+    return HostTargetHistoryAchievement(
+      targetId: (json['targetId'] ?? '').toString().trim(),
+      tierId: _nullableString(json['tierId']),
+      rank: _nullableString(json['rank']),
+      thresholdCoins: _nonNegativeInt(json['thresholdCoins']),
+      salaryDeltaDiamonds: _nonNegativeInt(json['salaryDeltaDiamonds']),
+      salaryDiamonds: _nonNegativeInt(json['salaryDiamonds']),
+      achievedAt: _nullableString(json['achievedAt']),
+    );
+  }
+}
+
+class HostTargetHistoryData {
+  const HostTargetHistoryData({
+    required this.month,
+    required this.currentMonth,
+    required this.achievements,
+  });
+
+  final String month;
+  final String currentMonth;
+  final List<HostTargetHistoryAchievement> achievements;
+
+  factory HostTargetHistoryData.fromJson(Map<String, dynamic> json) {
+    final raw = json['achievements'];
+    return HostTargetHistoryData(
+      month: (json['month'] ?? '').toString().trim(),
+      currentMonth: (json['currentMonth'] ?? '').toString().trim(),
+      achievements: raw is List
+          ? raw
+              .whereType<Map>()
+              .map(
+                (item) => HostTargetHistoryAchievement.fromJson(
+                  Map<String, dynamic>.from(item),
+                ),
+              )
+              .toList(growable: false)
+          : const <HostTargetHistoryAchievement>[],
+    );
+  }
+}
 
 class HostAgencyLeaveRequest {
   const HostAgencyLeaveRequest({
@@ -349,6 +427,38 @@ class HostMyAgencyService {
   }
 
 
+  Future<HostTargetHistoryData> loadTargetHistory({
+    String? month,
+  }) async {
+    final token = await _idToken();
+    final response = await _client
+        .post(
+          Uri.parse('$_baseUrl/agency-host'),
+          headers: {
+            'authorization': 'Bearer $token',
+            'content-type': 'application/json',
+          },
+          body: jsonEncode({
+            'action': 'targetHistory',
+            if (month != null && month.trim().isNotEmpty)
+              'month': month.trim(),
+          }),
+        )
+        .timeout(_requestTimeout);
+
+    Map<String, dynamic> body = const <String, dynamic>{};
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map) body = Map<String, dynamic>.from(decoded);
+    } catch (_) {}
+    if (response.statusCode != 200 || body['ok'] != true) {
+      throw StateError(
+        (body['code'] ?? 'agency_target_history_failed').toString(),
+      );
+    }
+    return HostTargetHistoryData.fromJson(body);
+  }
+
   Future<HostAgencyLeaveStatus> loadLeaveStatus({
     required String agencyId,
   }) async {
@@ -414,6 +524,117 @@ class HostMyAgencyService {
       canRequestLeave: false,
       request: HostAgencyLeaveRequest.fromJson(body),
     );
+  }
+
+  Future<Map<String, dynamic>> updateAgencyProfile({
+    required String description,
+    required String publicContact,
+  }) async {
+    final token = await _idToken();
+    final response = await _client
+        .post(
+          Uri.parse('$_baseUrl/agency-host'),
+          headers: {
+            'authorization': 'Bearer $token',
+            'content-type': 'application/json',
+          },
+          body: jsonEncode({
+            'action': 'updateProfile',
+            'description': description.trim(),
+            'publicContact': publicContact.trim(),
+            'idempotencyKey':
+                'agency_profile_' + DateTime.now().microsecondsSinceEpoch.toString(),
+          }),
+        )
+        .timeout(_requestTimeout);
+    Map<String, dynamic> body = const <String, dynamic>{};
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map) body = Map<String, dynamic>.from(decoded);
+    } catch (_) {}
+    if (response.statusCode != 200 || body['ok'] != true) {
+      throw StateError(
+        (body['code'] ?? 'agency_profile_update_failed').toString(),
+      );
+    }
+    return body;
+  }
+
+  Future<Map<String, dynamic>> requestIdentityChange({
+    required String name,
+    required String? country,
+  }) async {
+    final nextName = name.trim();
+    final nextCountry = (country ?? '').trim();
+    if (nextName.isEmpty || nextName.length > 80) {
+      throw StateError('invalid_agency_name');
+    }
+    final token = await _idToken();
+    final response = await _client
+        .post(
+          Uri.parse('$_baseUrl/agency-host'),
+          headers: {
+            'authorization': 'Bearer $token',
+            'content-type': 'application/json',
+          },
+          body: jsonEncode({
+            'action': 'requestIdentityChange',
+            'name': nextName,
+            'country': nextCountry,
+            'idempotencyKey':
+                'agency_identity_' + DateTime.now().microsecondsSinceEpoch.toString(),
+          }),
+        )
+        .timeout(_requestTimeout);
+    Map<String, dynamic> body = const <String, dynamic>{};
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map) body = Map<String, dynamic>.from(decoded);
+    } catch (_) {}
+    if (response.statusCode != 200 || body['ok'] != true) {
+      throw StateError(
+        (body['code'] ?? 'agency_identity_change_request_failed').toString(),
+      );
+    }
+    return body;
+  }
+
+  Future<Map<String, dynamic>> requestOwnershipTransfer({
+    required String newOwnerPublicId,
+  }) async {
+    final publicId = newOwnerPublicId.trim();
+    if (!RegExp(r'^\d{3,8}$').hasMatch(publicId)) {
+      throw StateError('invalid_owner_public_id');
+    }
+    final token = await _idToken();
+    final response = await _client
+        .post(
+          Uri.parse('$_baseUrl/agency-host'),
+          headers: {
+            'authorization': 'Bearer $token',
+            'content-type': 'application/json',
+          },
+          body: jsonEncode({
+            'action': 'requestOwnershipTransfer',
+            'newOwnerPublicId': publicId,
+            'idempotencyKey':
+                'owner_transfer_' +
+                DateTime.now().microsecondsSinceEpoch.toString(),
+          }),
+        )
+        .timeout(_requestTimeout);
+
+    Map<String, dynamic> body = const <String, dynamic>{};
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map) body = Map<String, dynamic>.from(decoded);
+    } catch (_) {}
+    if (response.statusCode != 200 || body['ok'] != true) {
+      throw StateError(
+        (body['code'] ?? 'agency_ownership_transfer_request_failed').toString(),
+      );
+    }
+    return body;
   }
 
   void close() {
