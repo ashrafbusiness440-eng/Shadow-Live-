@@ -174,10 +174,32 @@ async function cachedGiftEconomyPolicy(db){
       if(!snap.exists)return defaultPolicy();
       const data=snap.data()||{};
       try{return normalizePolicy(data);}
-      catch(_){return {...defaultPolicy(),...data};}
+      catch(_){return safePolicyFallback(data);}
     },
     {ttlMs:60000,staleMs:5*60*1000},
   );
+}
+
+function safePolicyFallback(data={}){
+  const defaults=defaultPolicy();
+  const parsedAgencyBonus=Number(data.agencyPerformanceBonusBps);
+  const agencyPerformanceBonusBps=
+    clean(data.agencyPerformanceBonusMode)==="per_host_target_month_end" &&
+    Number.isSafeInteger(parsedAgencyBonus) &&
+    parsedAgencyBonus>=0 &&
+    parsedAgencyBonus<=3000
+      ?parsedAgencyBonus
+      :100;
+  return {
+    ...defaults,
+    ...data,
+    periodTimeZone:"Asia/Riyadh",
+    hostPerformanceBonusBps:0,
+    agencyPerformanceBonusBps,
+    agencyPerformanceBonusMode:"per_host_target_month_end",
+    hostBonusQualifiedDays:14,
+    hostBonusMinutesPerQualifiedDay:120,
+  };
 }
 
 export async function saveGiftEconomyPolicy(db,uid,raw={}){
