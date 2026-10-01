@@ -347,6 +347,7 @@ test("06-B gift idempotency rejects a changed request using an existing operatio
 
   const [sender,host,ledger,audit]=await Promise.all([
     db.collection("users").doc(senderId).get(),
+    db.collection("users").doc(hostId).get(),
     db.collection("financial_ledger").doc("gift_earnings_"+key).get(),
     db.collection("admin_audit_logs").doc("agency_target_salary_"+key).get(),
   ]);
