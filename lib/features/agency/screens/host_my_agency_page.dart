@@ -1,7 +1,9 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../services/navigation_service.dart';
+import '../../../shared/services/user_storage_service.dart';
 import '../../profile/screens/public_profile_screen.dart';
 import '../../profile/services/profile_action_service.dart';
 import '../services/host_my_agency_service.dart';
@@ -24,6 +26,8 @@ class HostMyAgencyPage extends StatefulWidget {
 class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
   final HostMyAgencyService _service = HostMyAgencyService();
   final PublicAgencyService _publicAgencyService = PublicAgencyService();
+  final UserStorageService _storage = UserStorageService();
+  final ImagePicker _imagePicker = ImagePicker();
 
   HostMyAgencyCoreData? _data;
   PublicAgencyRankingData? _ranking;
@@ -34,6 +38,7 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
   bool _archiveLoading = false;
   bool _leaveStatusLoading = false;
   bool _leaveSubmitting = false;
+  bool _logoUploading = false;
   String? _error;
   String? _rankingError;
   String? _leaveStatusError;
@@ -58,6 +63,7 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
   void dispose() {
     _service.close();
     _publicAgencyService.close();
+    _storage.close();
     super.dispose();
   }
 
@@ -297,6 +303,60 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
     }
   }
 
+  Future<void> _pickAgencyLogo() async {
+    final data = _data;
+    if (data == null ||
+        data.membershipRole != 'owner' ||
+        _logoUploading) {
+      return;
+    }
+
+    final picked = await _imagePicker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 82,
+      maxWidth: 1200,
+      maxHeight: 1200,
+    );
+    if (picked == null || !mounted) return;
+
+    final bytes = await picked.readAsBytes();
+    if (!mounted) return;
+
+    setState(() => _logoUploading = true);
+    try {
+      await _storage.upload(
+        scope: 'agency_logo',
+        targetId: data.agency.agencyId,
+        bytes: bytes,
+        mimeType: detectSupportedImageMime(bytes),
+      );
+      final refreshed = await _service.loadCore();
+      if (!mounted) return;
+      setState(() {
+        _data = refreshed;
+        _logoUploading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم تحديث شعار الوكالة.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _logoUploading = false);
+      final code = error.toString().replaceFirst('Bad state: ', '');
+      final message = code.contains('agency_owner_required')
+          ? 'تعديل شعار الوكالة متاح للمالك فقط.'
+          : code.contains('invalid_file_size')
+              ? 'حجم شعار الوكالة أكبر من المسموح.'
+              : code.contains('invalid_file_type') ||
+                      code.contains('unsupported_image_format')
+                  ? 'صيغة الصورة غير مدعومة.'
+                  : 'تعذر تحديث شعار الوكالة حاليًا.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    }
+  }
+
   void _openWallet() {
     NavigationService.navigateTo(AppRoutes.recharge);
   }
@@ -418,7 +478,12 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 18, 16, 28),
         children: [
-          _AgencyHeader(data: data),
+          _AgencyHeader(
+            data: data,
+            canEditLogo: data.membershipRole == 'owner',
+            logoUploading: _logoUploading,
+            onEditLogo: _pickAgencyLogo,
+          ),
           if (data.membershipRole == 'owner') ...[
             const SizedBox(height: 12),
             _OwnerDashboardEntry(onTap: _openOwnerDashboard),
@@ -469,9 +534,17 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
 }
 
 class _AgencyHeader extends StatelessWidget {
-  const _AgencyHeader({required this.data});
+  const _AgencyHeader({
+    required this.data,
+    required this.canEditLogo,
+    required this.logoUploading,
+    required this.onEditLogo,
+  });
 
   final HostMyAgencyCoreData data;
+  final bool canEditLogo;
+  final bool logoUploading;
+  final Future<void> Function() onEditLogo;
 
   @override
   Widget build(BuildContext context) {
@@ -484,17 +557,47 @@ class _AgencyHeader extends StatelessWidget {
       decoration: _cardDecoration(),
       child: Column(
         children: [
-          CircleAvatar(
-            radius: 38,
-            backgroundColor: const Color(0xFF6E49D8),
-            backgroundImage: logo.isEmpty ? null : NetworkImage(logo),
-            child: logo.isEmpty
-                ? const Icon(
-                    Icons.apartment_rounded,
-                    size: 40,
-                    color: Colors.white,
-                  )
-                : null,
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              CircleAvatar(
+                key: const Key('host-agency-logo'),
+                radius: 38,
+                backgroundColor: const Color(0xFF6E49D8),
+                backgroundImage: logo.isEmpty ? null : NetworkImage(logo),
+                child: logo.isEmpty
+                    ? const Icon(
+                        Icons.apartment_rounded,
+                        size: 40,
+                        color: Colors.white,
+                      )
+                    : null,
+              ),
+              if (canEditLogo)
+                Positioned(
+                  left: -4,
+                  bottom: -4,
+                  child: Material(
+                    color: const Color(0xFF171D31),
+                    shape: const CircleBorder(),
+                    child: IconButton(
+                      key: const Key('host-agency-logo-edit'),
+                      tooltip: 'تعديل شعار الوكالة',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: logoUploading ? null : onEditLogo,
+                      icon: logoUploading
+                          ? const SizedBox.square(
+                              dimension: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(
+                              Icons.camera_alt_rounded,
+                              size: 18,
+                            ),
+                    ),
+                  ),
+                ),
+            ],
           ),
           const SizedBox(height: 12),
           Text(
