@@ -117,3 +117,41 @@ test("opening an existing active room keeps the no-extra-user-read fast path", (
     true,
   );
 });
+
+
+test("Agency room managers reuse the actor snapshot and do not add Agency hot-path reads", () => {
+  const voice = source("../../cloudflare-worker/src/voice-session-legacy.js");
+
+  assert.equal(
+    voice.includes("function agencyRoomManagementCapabilities(room,actor,uid)"),
+    true,
+  );
+  assert.equal(voice.includes('role==="manager"||role==="senior_manager"'), true);
+  assert.equal(
+    voice.includes("agencyCapabilities=agencyRoomManagementCapabilities(room,actor,uid)"),
+    true,
+  );
+
+  const bootstrapStart = voice.indexOf("async function roomBootstrap");
+  const bootstrapEnd = voice.indexOf("async function ", bootstrapStart + 20);
+  const bootstrapBlock = voice.slice(
+    bootstrapStart,
+    bootstrapEnd === -1 ? voice.length : bootstrapEnd,
+  );
+  assert.equal(bootstrapBlock.includes('collection("agencies")'), false);
+  assert.equal(bootstrapBlock.includes("agencies/"), false);
+});
+
+test("First room creation for an Agency Owner links the same deterministic personal room id", () => {
+  const voice = source("../../cloudflare-worker/src/voice-session-legacy.js");
+
+  const start = voice.indexOf("async function openPersonalRoom");
+  const end = voice.indexOf("async function changeRoomPublicId", start);
+  const block = voice.slice(start, end);
+
+  assert.equal(block.includes('const roomId="personal_"+uid;'), true);
+  assert.equal(block.includes('clean(user.agencyRole)==="owner"'), true);
+  assert.equal(block.includes('roomType:createAsAgency?"agency":"personal"'), true);
+  assert.equal(block.includes("tx.set(agencyRef,{roomId,updatedAt:now},{merge:true});"), true);
+  assert.equal(block.includes("length:createAsAgency?10:8"), true);
+});
