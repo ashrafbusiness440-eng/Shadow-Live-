@@ -5,6 +5,7 @@ import { getFirestore } from "firebase-admin/firestore";
 
 import {
   listAgencyMembers,
+  loadAgencyMemberPerformance,
   setAgencyManagerRole,
 } from "../../cloudflare-worker/src/agency-membership.js";
 import { loadAgencyHostCore } from "../../cloudflare-worker/src/agency-host.js";
@@ -510,6 +511,85 @@ test("manager can view management surface but cannot change manager roles", asyn
       targetRole: "manager",
       idempotencyKey: "stage05b_manager_cannot_promote",
     }),
+    /forbidden/,
+  );
+});
+
+test("manager and senior manager see Host performance without salary or Agency finance", async () => {
+  const agencyId = "711001";
+  const ownerUid = "stage05b_privacy_owner";
+  const managerUid = "stage05b_privacy_manager";
+  const seniorUid = "stage05b_privacy_senior";
+  const hostUid = "stage05b_privacy_host";
+  await seedAgency(agencyId, ownerUid, "711901");
+  await addMember(agencyId, managerUid, "711101", "manager");
+  await addMember(agencyId, seniorUid, "711102", "senior_manager");
+  await addMember(agencyId, hostUid, "711103", "host");
+  await adminDb.collection("agencies").doc(agencyId).set({
+    memberCount: 4,
+    hostCount: 1,
+    managerCount: 1,
+    seniorManagerCount: 1,
+  }, { merge: true });
+  await adminDb.collection("agency_manager_slots").doc(agencyId).set({
+    managerUids: [managerUid],
+    seniorManagerUid: seniorUid,
+  }, { merge: true });
+  await adminDb.collection("users").doc(hostUid).set({
+    displayName: "مضيف الخصوصية",
+    agencyTargetMonth: "2026-10",
+    agencyTargetProgressCoins: 85000,
+    agencySalaryPaidDiamonds: 999,
+    giftHostActivityMonth: "2026-10",
+    giftHostQualifiedDays: 6,
+    giftHostMicSecondsMonth: 6 * 120 * 60,
+    diamonds: 123456,
+    coins: 987654321,
+  }, { merge: true });
+
+  for (const actorUid of [managerUid, seniorUid]) {
+    const result = await loadAgencyMemberPerformance(
+      db,
+      actorUid,
+      { agencyId, targetUid: hostUid },
+      new Date("2026-10-02T10:00:00.000Z"),
+    );
+    assert.equal(result.ok, true);
+    assert.equal(result.privacyMode, "manager_performance_only");
+    assert.equal(result.host.uid, hostUid);
+    assert.equal(result.target.progressCoins, 85000);
+    assert.equal(result.activity.qualifiedDays, 6);
+    assert.equal(result.activity.requiredQualifiedDays, 14);
+    assert.equal(result.activity.requiredMinutesPerDay, 120);
+
+    const serialized = JSON.stringify(result);
+    for (const forbidden of [
+      "salaryDiamonds",
+      "paidDiamonds",
+      "diamonds",
+      "coins",
+      "agencyShare",
+      "agencyBonus",
+      "wallet",
+      "ledger",
+      "transfer",
+      "recharge",
+    ]) {
+      assert.equal(
+        serialized.toLowerCase().includes(forbidden.toLowerCase()),
+        false,
+        "manager-safe performance leaked " + forbidden,
+      );
+    }
+  }
+
+  await assert.rejects(
+    loadAgencyMemberPerformance(
+      db,
+      hostUid,
+      { agencyId, targetUid: managerUid },
+      new Date("2026-10-02T10:00:00.000Z"),
+    ),
     /forbidden/,
   );
 });
