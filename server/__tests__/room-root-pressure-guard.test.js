@@ -98,7 +98,7 @@ test("Agency room House link reuses room metadata without an Agency bootstrap re
 
 test("opening an existing active room keeps the no-extra-user-read fast path", () => {
   const voice = source("../../cloudflare-worker/src/voice-session-legacy.js");
-  const start = voice.indexOf("async function openPersonalRoom(db,uid)");
+  const start = voice.indexOf("async function openPersonalRoom(db,uid");
   const end = voice.indexOf("async function changeRoomPublicId", start);
   const block = voice.slice(start, end);
   const fastReturn = block.indexOf("if(data.isActive!==false){");
@@ -154,4 +154,44 @@ test("First room creation for an Agency Owner links the same deterministic perso
   assert.equal(block.includes('roomType:createAsAgency?"agency":"personal"'), true);
   assert.equal(block.includes("tx.set(agencyRef,{roomId,updatedAt:now},{merge:true});"), true);
   assert.equal(block.includes("length:createAsAgency?10:8"), true);
+});
+
+
+test("Agency room discovery reuses the already-loaded room list", () => {
+  const rooms = source("../../lib/screens/room/room_list_screen.dart");
+
+  assert.equal(
+    rooms.includes("return ['الكل', 'دردشة', 'رسمية', 'وكالات', ...result];"),
+    true,
+  );
+  assert.equal(rooms.includes("case 'وكالات':"), true);
+  assert.equal(rooms.includes("return _isAgencyRoom(room);"), true);
+  assert.equal(
+    rooms.includes(".where((room) => _matchesRoomFilter(room, _category))"),
+    true,
+  );
+  assert.equal(rooms.includes("loadAgencyRooms"), false);
+});
+
+test("Agency application review cards are lazy and open the full profile", () => {
+  const control = source("../../lib/admin/agency_control_page.dart");
+  const backend = source("../../cloudflare-worker/src/agency-control.js");
+
+  assert.equal(control.includes("'action': 'reviewDetails'"), true);
+  assert.equal(control.includes("PublicProfileScreen(userId: uid)"), true);
+  assert.equal(control.includes("reviewPersonCard("), true);
+  assert.equal(control.includes("profileImageUrl"), true);
+  assert.equal(control.includes("accountStatus"), true);
+  assert.equal(control.includes("availability"), true);
+
+  const detailsStart = backend.indexOf("export async function getAgencyReviewDetails");
+  const reviewStart = backend.indexOf("export async function startAgencyReview", detailsStart);
+  const block = backend.slice(detailsStart, reviewStart);
+  assert.equal(block.includes("AGENCY_LIMITS.maxApplicationHostIds"), true);
+  assert.equal(block.includes("db.get(\`users/\${person.uid}\`)"), true);
+  assert.equal(
+    block.includes("db.get(\`agency_user_memberships/\${person.uid}\`)"),
+    true,
+  );
+  assert.equal(block.includes("runQuery("), false);
 });
