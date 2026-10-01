@@ -132,6 +132,12 @@ test("07-A room gifts accrue the approved base Agency Share by tier without muta
         agencyId,
         totalSupport:0,
       }),
+      db.collection("users").doc("owner_"+agencyId).set({
+        coins:0,diamonds:0,role:"user",accountStatus:"active",
+      }),
+      db.collection("agencies").doc(agencyId).set({
+        agencyId,ownerUid:"owner_"+agencyId,status:"active",
+      }),
       db.collection("agency_support_stats").doc(agencyId)
         .collection("monthly").doc(month).set({activeHostIds:[]}),
 
