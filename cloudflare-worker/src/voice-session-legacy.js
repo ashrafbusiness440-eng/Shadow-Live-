@@ -576,7 +576,7 @@ function roomResponse(roomId,data){
     ownerUid:clean(data.ownerUid||data.ownerId),
     hostUid:clean(data.hostUid||data.hostId),
     roomType,
-    agencyId:roomType==="agency"&&/^\d{6}$/.test(agencyId)?agencyId:"",
+    agencyId:roomType==="agency"&&/^\d{3,8}$/.test(agencyId)?agencyId:"",
     category:clean(data.category||"دردشة"),
     ownerName:clean(data.ownerName),
     ownerLocation:clean(data.ownerLocation),
@@ -626,6 +626,9 @@ async function openPersonalRoom(db,uid){
   const user=userSnap.data()||{};
   const displayName=clean(user.displayName||user.username||"مستخدم Shadow Live");
   const ownerLocation=clean(user.location);
+  const linkedAgencyId=clean(user.agencyId);
+  const createAsAgency=
+    clean(user.agencyRole)==="owner"&&/^\d{3,8}$/.test(linkedAgencyId);
 
   for(let attempt=0;attempt<40;attempt++){
     const publicId=String(randomInt(100000,1000000));
@@ -633,20 +636,48 @@ async function openPersonalRoom(db,uid){
       const result=await db.runTransaction(async tx=>{
         const publicRef=db.collection("room_ids").doc(publicId);
         const userPublicRef=db.collection("public_ids").doc(publicId);
-        const [roomNow,roomIdCollision,userIdCollision]=await Promise.all([
-          tx.get(roomRef),tx.get(publicRef),tx.get(userPublicRef),
+        const agencyRef=createAsAgency
+          ?db.collection("agencies").doc(linkedAgencyId)
+          :null;
+        const snapshots=await Promise.all([
+          tx.get(roomRef),
+          tx.get(publicRef),
+          tx.get(userPublicRef),
+          ...(agencyRef?[tx.get(agencyRef)]:[]),
         ]);
+        const [roomNow,roomIdCollision,userIdCollision]=snapshots;
+        const agencySnap=agencyRef?snapshots[3]:null;
+        const agency=agencySnap?.exists?agencySnap.data()||{}:null;
+        if(createAsAgency&&(
+          !agencySnap?.exists||
+          clean(agency?.ownerUid)!==uid||
+          clean(agency?.status||"active")!=="active"
+        )){
+          throw new ApiError("agency_owner_state_corrupt",409);
+        }
 
         if(roomNow.exists){
           const data=roomNow.data()||{};
           if(clean(data.ownerUid||data.hostId)!==uid)throw new ApiError("room_owner_mismatch",409);
-          tx.set(roomRef,{
+          const roomPatch={
             isActive:true,
             closedAt:FieldValue.delete(),
             updatedAt:FieldValue.serverTimestamp(),
-          },{merge:true});
+            ...(createAsAgency?{
+              roomType:"agency",
+              type:"agency",
+              agencyId:linkedAgencyId,
+              agencyName:clean(agency?.name),
+              agencyLogoUrl:clean(agency?.logoUrl||agency?.imageUrl),
+              agencyCoverUrl:clean(agency?.coverUrl||agency?.coverImageUrl),
+            }:{})
+          };
+          tx.set(roomRef,roomPatch,{merge:true});
           tx.set(userRef,{personalRoomId:roomId},{merge:true});
-          return roomResponse(roomId,{...data,isActive:true});
+          if(agencyRef){
+            tx.set(agencyRef,{roomId,updatedAt:FieldValue.serverTimestamp()},{merge:true});
+          }
+          return roomResponse(roomId,{...data,...roomPatch});
         }
         if(roomIdCollision.exists||userIdCollision.exists){
           throw new ApiError("room_public_id_taken",409);
@@ -659,8 +690,14 @@ async function openPersonalRoom(db,uid){
           title:name,
           ownerUid:uid,
           hostId:uid,
-          roomType:"personal",
-          type:"personal",
+          roomType:createAsAgency?"agency":"personal",
+          type:createAsAgency?"agency":"personal",
+          ...(createAsAgency?{
+            agencyId:linkedAgencyId,
+            agencyName:clean(agency?.name),
+            agencyLogoUrl:clean(agency?.logoUrl||agency?.imageUrl),
+            agencyCoverUrl:clean(agency?.coverUrl||agency?.coverImageUrl),
+          }:{}),
           category:"دردشة",
           ownerName:displayName,
           ownerLocation,
@@ -676,7 +713,7 @@ async function openPersonalRoom(db,uid){
           levelTarget:1000,
           followerCount:0,
           dailySupport:0,
-          seats:Array.from({length:8},(_,index)=>({
+          seats:Array.from({length:createAsAgency?10:8},(_,index)=>({
             index,uid:"",displayName:"",profileImageUrl:"",muted:true,
           })),
           micInvites:[],
@@ -701,10 +738,13 @@ async function openPersonalRoom(db,uid){
         tx.create(publicRef,{
           roomId,
           ownerUid:uid,
-          source:"personalRoom",
+          source:createAsAgency?"agencyRoom":"personalRoom",
           createdAt:now,
         });
         tx.set(userRef,{personalRoomId:roomId},{merge:true});
+        if(agencyRef){
+          tx.set(agencyRef,{roomId,updatedAt:now},{merge:true});
+        }
         return roomResponse(roomId,data);
       });
       return result;
