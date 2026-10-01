@@ -2987,6 +2987,7 @@ export async function overrideAgencyRejoinCooldown(
             title: "تم رفع انتظار الانضمام للوكالة",
             body: "تم السماح لك بالانضمام إلى وكالة دون انتظار المدة المتبقية.",
             read: false,
+            mandatory: true,
             agencyId,
             createdAt: now,
           },
