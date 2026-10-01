@@ -9,6 +9,9 @@ import {
 } from "../economy/economy-policy.js";
 import {
   agencyPerformanceBonusForTarget,
+  agencyTargetShareDelta,
+  agencyTargetShareEntitlement,
+  convertAgencyCoinsWithCarryover,
   hostActivityBonusForTarget,
 } from "../economy/agency-policy.js";
 
@@ -231,4 +234,82 @@ test("Agency Performance Bonus is per eligible Host highest Target",()=>{
       bonusCoins:8500,
     },
   );
+});
+
+
+test("Target-close Agency Share uses cumulative entitlement and pays only the delta",()=>{
+  const tiers=policy.tiers;
+  const starterG=agencyTargetShareEntitlement({
+    target:{id:"starter_g",tierId:"starter",thresholdCoins:50000},
+    tiers,
+  });
+  assert.equal(starterG.entitlementCoins,5000);
+
+  const first=agencyTargetShareDelta({
+    target:{id:"starter_g",tierId:"starter",thresholdCoins:50000},
+    tiers,
+    previousPaidCoins:0,
+  });
+  assert.equal(first.deltaCoins,5000);
+  assert.equal(first.paidCoins,5000);
+
+  const starterF=agencyTargetShareDelta({
+    target:{id:"starter_f",tierId:"starter",thresholdCoins:100000},
+    tiers,
+    previousPaidCoins:first.paidCoins,
+  });
+  assert.equal(starterF.entitlementCoins,10000);
+  assert.equal(starterF.deltaCoins,5000);
+  assert.equal(starterF.paidCoins,10000);
+
+  const duplicate=agencyTargetShareDelta({
+    target:{id:"starter_f",tierId:"starter",thresholdCoins:100000},
+    tiers,
+    previousPaidCoins:starterF.paidCoins,
+  });
+  assert.equal(duplicate.deltaCoins,0);
+});
+
+test("Target-close Agency Share carryover turns two half-Diamond payouts into one Diamond",()=>{
+  const first=convertAgencyCoinsWithCarryover({
+    carryoverCoins:0,
+    payableCoins:5000,
+    coinsPerDiamond:10000,
+  });
+  assert.deepEqual(first,{
+    openingCarryoverCoins:0,
+    payableCoins:5000,
+    diamondsEarned:0,
+    remainderCoins:5000,
+    coinsPerDiamond:10000,
+  });
+
+  const second=convertAgencyCoinsWithCarryover({
+    carryoverCoins:first.remainderCoins,
+    payableCoins:5000,
+    coinsPerDiamond:10000,
+  });
+  assert.deepEqual(second,{
+    openingCarryoverCoins:5000,
+    payableCoins:5000,
+    diamondsEarned:1,
+    remainderCoins:0,
+    coinsPerDiamond:10000,
+  });
+});
+
+test("Agency Share entitlement follows dynamic tier ratios instead of hardcoded values",()=>{
+  const bronze=agencyTargetShareEntitlement({
+    target:{id:"bronze_f",tierId:"bronze",thresholdCoins:1000000},
+    tiers:policy.tiers,
+  });
+  assert.equal(bronze.hostShareBps,5700);
+  assert.equal(bronze.agencyShareBps,600);
+  assert.equal(bronze.entitlementCoins,105263);
+
+  const custom=agencyTargetShareEntitlement({
+    target:{id:"custom",tierId:"custom",thresholdCoins:610000},
+    tiers:[{id:"custom",hostShareBps:6100,agencyShareBps:700}],
+  });
+  assert.equal(custom.entitlementCoins,70000);
 });
