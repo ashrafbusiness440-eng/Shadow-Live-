@@ -11,6 +11,10 @@ class AppNotification {
     required this.createdAt,
     required this.requestId,
     required this.agencyId,
+    required this.actionState,
+    required this.finalStatus,
+    required this.finalDecision,
+    required this.resolvedBy,
   });
 
   final String id;
@@ -21,6 +25,19 @@ class AppNotification {
   final DateTime? createdAt;
   final String? requestId;
   final String? agencyId;
+  final String? actionState;
+  final String? finalStatus;
+  final String? finalDecision;
+  final String? resolvedBy;
+
+  bool get agencyReviewAction =>
+      (type == 'agency_join_request' || type == 'agency_leave_request') &&
+      (requestId?.isNotEmpty ?? false);
+
+  bool get agencyReviewResolved =>
+      actionState == 'resolved' ||
+      finalStatus == 'accepted' ||
+      finalStatus == 'rejected';
 
   factory AppNotification.fromMap(String id, Map<String, dynamic> data) {
     final rawCreatedAt = data['createdAt'];
@@ -36,6 +53,10 @@ class AppNotification {
       createdAt: createdAt,
       requestId: _nullable(data['requestId']),
       agencyId: _nullable(data['agencyId']),
+      actionState: _nullable(data['actionState']),
+      finalStatus: _nullable(data['finalStatus']),
+      finalDecision: _nullable(data['finalDecision']),
+      resolvedBy: _nullable(data['resolvedBy']),
     );
   }
 }
