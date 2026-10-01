@@ -101,7 +101,7 @@ test("08-C concurrent Base Agency Share settlement credits exactly once without 
   const [wallet,statement,ledger,audits]=await Promise.all([
     db.collection("agency_wallets").doc(agencyId).get(),
     db.collection("agency_monthly_statements").doc(statementId).get(),
-    db.collection("financial_ledger").doc("agency_monthly_share_"+statementId).get(),
+    db.collection("financial_ledger").doc("agency_month_close_"+statementId).get(),
     db.collection("admin_audit_logs")
       .where("action","==","settleAgencyMonth")
       .where("targetId","==",statementId)
@@ -109,11 +109,17 @@ test("08-C concurrent Base Agency Share settlement credits exactly once without 
   ]);
 
   assert.equal(wallet.data().diamonds,1);
-  assert.equal(wallet.data().remainderCoins,5000);
+  assert.equal(wallet.data().remainderCoins,0);
+  assert.equal(statement.data().potentialAgencyShareCoins,5000);
+  assert.equal(statement.data().agencyTargetShareCoins,0);
   assert.equal(statement.data().agencyBonusCoins,0);
-  assert.equal(statement.data().agencyPayableCoins,5000);
+  assert.equal(statement.data().agencyPayableCoins,0);
+  assert.equal(statement.data().agencyMonthEndSharePayableCoins,0);
+  assert.equal(statement.data().unearnedPotentialAgencyShareCoins,5000);
+  assert.equal(ledger.data().asset,"coins");
   assert.equal(ledger.data().delta,0);
-  assert.equal(ledger.data().payableCoins,5000);
+  assert.equal(ledger.data().payableCoins,0);
+  assert.equal(ledger.data().reason,"agency_month_close_no_share_payout");
   assert.equal(audits.size,1);
 });
 
@@ -125,7 +131,18 @@ test("08-C concurrent per-host month-end settlement pays Host and Agency bonuses
   const month="2026-09";
   const now=new Date("2026-11-15T00:00:00.000Z");
 
-  await seedHost(agencyId,month,hostUid);
+  await Promise.all([
+    seedHost(agencyId,month,hostUid),
+    seedBaseMonth(agencyId,month),
+    db.collection("users").doc("owner_"+agencyId).set({
+      coins:0,diamonds:0,role:"user",accountStatus:"active",
+    }),
+    db.collection("agencies").doc(agencyId).set({
+      agencyId,ownerUid:"owner_"+agencyId,status:"active",
+    }),
+  ]);
+
+  await settleAgencyMonth(db,"owner_a",agencyId,month,{now});
 
   const results=await Promise.all([
     settleAgencyHostSurplusPage(db,"owner_a",agencyId,month,{now,limit:25}),
@@ -142,22 +159,29 @@ test("08-C concurrent per-host month-end settlement pays Host and Agency bonuses
   );
 
   const hostMonthId=agencyId+"__"+month+"__"+hostUid;
-  const [host,wallet,hostLedger,agencyLedger,bonus]=await Promise.all([
+  const [host,owner,state,hostLedger,agencyLedger,bonus,statement]=await Promise.all([
     db.collection("users").doc(hostUid).get(),
-    db.collection("agency_wallets").doc(agencyId).get(),
+    db.collection("users").doc("owner_"+agencyId).get(),
+    db.collection("agency_financial_state").doc(agencyId).get(),
     db.collection("financial_ledger")
       .doc("agency_host_activity_bonus_"+hostMonthId).get(),
     db.collection("financial_ledger")
-      .doc("agency_performance_bonus_"+hostMonthId).get(),
+      .doc("agency_performance_bonus_"+agencyId+"__"+month).get(),
     db.collection("agency_bonus_accruals").doc(agencyId+"__"+month).get(),
+    db.collection("agency_monthly_statements").doc(agencyId+"__"+month).get(),
   ]);
 
   assert.equal(host.data().coins,5000);
   assert.equal(hostLedger.data().delta,5000);
   assert.equal(agencyLedger.data().payableCoins,500);
-  assert.equal(wallet.data().remainderCoins,500);
+  assert.equal(agencyLedger.data().delta,0);
+  assert.equal(owner.data().diamonds,0);
+  assert.equal(state.data().carryoverCoins,500);
+  assert.equal(bonus.data().status,"collecting");
   assert.equal(bonus.data().perHostEligibleHostCount,1);
   assert.equal(bonus.data().perHostBonusCoins,500);
+  assert.equal(statement.data().agencyBonusCoins,500);
+  assert.equal(statement.data().bonusPayoutStatus,"settled");
 });
 
 test("08-C settled Host/Agency bonus replay remains historical after later policy changes",async()=>{
