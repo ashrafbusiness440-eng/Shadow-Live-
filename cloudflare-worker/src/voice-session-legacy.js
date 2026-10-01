@@ -185,23 +185,17 @@ export async function recordMicActivity(tx,db,userId,seat,endedAtMs=Date.now()){
   if(!userId||segments.length===0)return;
 
   const userRef=db.collection("users").doc(userId);
-  const economyRef=db.collection("system_config").doc("gift_economy");
   const dayRefs=segments.map(segment=>
     db.collection("host_mic_activity").doc(userId).collection("days").doc(segment.day)
   );
-  const [userSnap,economySnap,...daySnaps]=await Promise.all([
+  const [userSnap,...daySnaps]=await Promise.all([
     tx.get(userRef),
-    tx.get(economyRef),
     ...dayRefs.map(ref=>tx.get(ref)),
   ]);
   if(!userSnap.exists)return;
 
   const user=userSnap.data()||{};
-  const economy=economySnap.data()||{};
-  const requiredMinutes=Math.max(
-    1,
-    Math.min(1440,Number(economy.hostBonusMinutesPerQualifiedDay||120)),
-  );
+  const requiredMinutes=120;
   const thresholdSeconds=requiredMinutes*60;
   const newlyQualifiedByMonth=new Map();
   const addedSecondsByMonth=new Map();
