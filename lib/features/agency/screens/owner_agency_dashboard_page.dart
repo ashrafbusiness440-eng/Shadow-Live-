@@ -317,7 +317,6 @@ class _OwnerAgencyDashboardPageState extends State<OwnerAgencyDashboardPage> {
       builder: (_) => Directionality(
         textDirection: TextDirection.rtl,
         child: _HostPerformanceSheet(
-          member: member,
           future: future,
         ),
       ),
@@ -1225,11 +1224,9 @@ class _MemberManagementTile extends StatelessWidget {
 
 class _HostPerformanceSheet extends StatelessWidget {
   const _HostPerformanceSheet({
-    required this.member,
     required this.future,
   });
 
-  final OwnerAgencyMember member;
   final Future<OwnerHostPerformanceData> future;
 
   @override
