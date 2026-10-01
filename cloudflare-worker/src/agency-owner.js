@@ -92,7 +92,14 @@ function effectiveBonusPolicy(economy = {}, override = {}) {
   };
 }
 
-function currentMonthSummary(month, stats = {}, wallet = {}, bonus = {}) {
+function currentMonthSummary(
+  month,
+  stats = {},
+  targetShare = {},
+  ownerUser = {},
+  financialState = {},
+  bonusBps = 100,
+) {
   const supportCoins = nonNegativeInteger(
     stats.supportCoins,
     "agency_performance_state_corrupt",
@@ -102,7 +109,7 @@ function currentMonthSummary(month, stats = {}, wallet = {}, bonus = {}) {
     "agency_performance_state_corrupt",
   );
   const agencyBaseShareCoins = nonNegativeInteger(
-    stats.agencyEarningCoins,
+    targetShare.shareCoins,
     "agency_performance_state_corrupt",
   );
   const platformShareCoins = nonNegativeInteger(
@@ -120,28 +127,36 @@ function currentMonthSummary(month, stats = {}, wallet = {}, bonus = {}) {
     stats.activeHostCount ?? activeHostFallback,
     "agency_performance_state_corrupt",
   );
-
   const diamonds = nonNegativeInteger(
-    wallet.diamonds,
-    "agency_wallet_state_corrupt",
+    ownerUser.diamonds,
+    "agency_owner_wallet_state_corrupt",
   );
   const remainderCoins = nonNegativeInteger(
-    wallet.remainderCoins,
-    "agency_wallet_state_corrupt",
+    financialState.carryoverCoins,
+    "agency_financial_state_corrupt",
   );
   const lifetimeDiamonds = nonNegativeInteger(
-    wallet.lifetimeDiamonds ?? diamonds,
-    "agency_wallet_state_corrupt",
+    financialState.lifetimeAgencyDiamonds,
+    "agency_financial_state_corrupt",
   );
-  if (lifetimeDiamonds < diamonds) {
-    throw new ApiError("agency_wallet_state_corrupt", 409);
-  }
 
   return {
     month,
     supportCoins,
     hostShareCoins,
     agencyBaseShareCoins,
+    potentialAgencyShareCoins: nonNegativeInteger(
+      stats.agencyEarningCoins,
+      "agency_performance_state_corrupt",
+    ),
+    agencyTargetShareDiamonds: nonNegativeInteger(
+      targetShare.diamondsPaid,
+      "agency_performance_state_corrupt",
+    ),
+    agencyTargetSharePayoutCount: nonNegativeInteger(
+      targetShare.payoutCount,
+      "agency_performance_state_corrupt",
+    ),
     platformShareCoins,
     giftCount,
     activeHostCount,
@@ -149,7 +164,7 @@ function currentMonthSummary(month, stats = {}, wallet = {}, bonus = {}) {
       eligible: false,
       requiredActiveHosts: 0,
       bps: nonNegativeInteger(
-        bonus.configuredBonusBps ?? bonus.agencyBonusBps ?? 100,
+        bonusBps,
         "agency_bonus_state_corrupt",
       ),
       estimatedCoins: 0,
@@ -160,6 +175,7 @@ function currentMonthSummary(month, stats = {}, wallet = {}, bonus = {}) {
       diamonds,
       remainderCoins,
       lifetimeDiamonds,
+      unifiedWithOwnerWallet: true,
     },
   };
 }
@@ -172,39 +188,41 @@ export async function loadAgencyOwnerPerformance(
   const owner = await assertAgencyOwner(db, uidInput);
   const month = currentAgencyMonthKey(now);
 
-  const [statsSnap, walletSnap, economySnap, overrideSnap] = await Promise.all([
+  const [
+    statsSnap,
+    targetShareSnap,
+    financialStateSnap,
+    ownerUserSnap,
+    economySnap,
+    overrideSnap,
+  ] = await Promise.all([
     db.get(`agency_support_stats/${owner.agencyId}/monthly/${month}`),
-    db.get("agency_wallets/" + owner.agencyId),
+    db.get(`agency_target_share_monthly/${owner.agencyId}__${month}`),
+    db.get("agency_financial_state/" + owner.agencyId),
+    db.get("users/" + owner.uid),
     db.get("system_config/gift_economy"),
     db.get("agency_policy_overrides/" + owner.agencyId),
   ]);
 
+  if (!ownerUserSnap.exists) {
+    throw new ApiError("agency_owner_not_found", 404);
+  }
   const stats = statsSnap.exists ? statsSnap.data || {} : {};
-  const wallet = walletSnap.exists ? walletSnap.data || {} : {};
+  const targetShare = targetShareSnap.exists ? targetShareSnap.data || {} : {};
+  const financialState = financialStateSnap.exists
+    ? financialStateSnap.data || {}
+    : {};
+  const ownerUser = ownerUserSnap.data || {};
   const economy = economySnap.exists ? economySnap.data || {} : {};
   const override = overrideSnap.exists ? overrideSnap.data || {} : {};
   const policy = effectiveBonusPolicy(economy, override);
-
-  let bonus;
-  try {
-    const activeHostCount = nonNegativeInteger(
-      stats.activeHostCount ??
-        (Array.isArray(stats.activeHostIds) ? stats.activeHostIds.length : 0),
-      "agency_performance_state_corrupt",
-    );
-    bonus = calculateAgencyMonthlyBonus(policy, {
-      supportCoins: nonNegativeInteger(
-        stats.supportCoins,
-        "agency_performance_state_corrupt",
-      ),
-      activeHostCount,
-      hasAgency: true,
-    });
-  } catch (error) {
-    if (error instanceof ApiError) throw error;
-    throw new ApiError("agency_bonus_state_corrupt", 409);
-  }
-
+  const bonusBps = boundedInteger(
+    policy.agencyPerformanceBonusBps,
+    100,
+    0,
+    3000,
+    "agency_bonus_state_corrupt",
+  );
   const coinsPerDiamond = boundedInteger(
     economy.coinsPerDiamond,
     10000,
@@ -216,7 +234,14 @@ export async function loadAgencyOwnerPerformance(
   return {
     ok: true,
     agencyId: owner.agencyId,
-    current: currentMonthSummary(month, stats, wallet, bonus),
+    current: currentMonthSummary(
+      month,
+      stats,
+      targetShare,
+      ownerUser,
+      financialState,
+      bonusBps,
+    ),
     policy: {
       coinsPerDiamond,
       source:
@@ -224,6 +249,8 @@ export async function loadAgencyOwnerPerformance(
           "per_host_target_month_end"
           ? "agency_override"
           : "global",
+      agencySharePayoutMode: "target_close",
+      walletMode: "owner_diamond_wallet",
     },
   };
 }
@@ -414,22 +441,6 @@ function statementSummary(agencyId, month, snap, bonusSnap) {
   }
   const data = snap.data || {};
   const bonusData = bonusSnap?.exists ? bonusSnap.data || {} : {};
-  const perHostBonusCoins = nonNegativeInteger(
-    bonusData.perHostBonusCoins,
-    "agency_statement_bonus_state_corrupt",
-  );
-  const perHostBonusDiamonds = nonNegativeInteger(
-    bonusData.perHostBonusDiamonds,
-    "agency_statement_bonus_state_corrupt",
-  );
-  const eligibleHostCount = nonNegativeInteger(
-    bonusData.perHostEligibleHostCount,
-    "agency_statement_bonus_state_corrupt",
-  );
-  const configuredBonusBps = nonNegativeInteger(
-    bonusData.configuredBonusBps,
-    "agency_statement_bonus_state_corrupt",
-  );
   if (
     clean(data.agencyId) !== agencyId ||
     clean(data.month) !== month ||
@@ -437,6 +448,33 @@ function statementSummary(agencyId, month, snap, bonusSnap) {
   ) {
     throw new ApiError("agency_statement_state_corrupt", 409);
   }
+  const agencyTargetShareCoins = nonNegativeInteger(
+    data.agencyTargetShareCoins ??
+      data.agencyBaseShareCoins ??
+      data.agencyShareCoins,
+    "agency_statement_state_corrupt",
+  );
+  const agencyBonusCoins = nonNegativeInteger(
+    data.agencyBonusCoins ?? bonusData.perHostBonusCoins,
+    "agency_statement_state_corrupt",
+  );
+  const agencyTargetShareDiamonds = nonNegativeInteger(
+    data.agencyTargetShareDiamonds,
+    "agency_statement_state_corrupt",
+  );
+  const agencyBonusDiamonds = nonNegativeInteger(
+    data.agencyBonusDiamonds ?? bonusData.bonusDiamonds,
+    "agency_statement_state_corrupt",
+  );
+  const eligibleHostCount = nonNegativeInteger(
+    data.agencyPerformanceEligibleHostCount ??
+      bonusData.perHostEligibleHostCount,
+    "agency_statement_state_corrupt",
+  );
+  const configuredBonusBps = nonNegativeInteger(
+    bonusData.configuredBonusBps,
+    "agency_statement_state_corrupt",
+  );
   return {
     agencyId,
     month,
@@ -446,46 +484,30 @@ function statementSummary(agencyId, month, snap, bonusSnap) {
         data.supportCoins,
         "agency_statement_state_corrupt",
       ),
-      agencyBaseShareCoins: nonNegativeInteger(
-        data.agencyBaseShareCoins ?? data.agencyShareCoins,
-        "agency_statement_state_corrupt",
-      ),
-      agencyBonusCoins:
-        nonNegativeInteger(
-          data.agencyBonusCoins,
-          "agency_statement_state_corrupt",
-        ) + perHostBonusCoins,
-      agencyPayableCoins:
-        nonNegativeInteger(
-          data.agencyBaseShareCoins ?? data.agencyShareCoins,
-          "agency_statement_state_corrupt",
-        ) +
-        nonNegativeInteger(
-          data.agencyBonusCoins,
-          "agency_statement_state_corrupt",
-        ) +
-        perHostBonusCoins,
-      agencyDiamonds:
-        nonNegativeInteger(
-          data.agencyDiamonds,
-          "agency_statement_state_corrupt",
-        ) + perHostBonusDiamonds,
+      agencyBaseShareCoins: agencyTargetShareCoins,
+      agencyBonusCoins,
+      agencyPayableCoins: agencyTargetShareCoins + agencyBonusCoins,
+      agencyDiamonds: agencyTargetShareDiamonds + agencyBonusDiamonds,
       agencyRemainderCoins: nonNegativeInteger(
         data.agencyRemainderCoins,
         "agency_statement_state_corrupt",
       ),
       activeHostCount: eligibleHostCount,
       requiredActiveHosts: 0,
-      bonusEligible: eligibleHostCount > 0,
-      bonusBps:
-        configuredBonusBps > 0
-          ? configuredBonusBps
-          : nonNegativeInteger(
-              data.agencyBonusBps,
-              "agency_statement_state_corrupt",
-            ),
+      bonusEligible: eligibleHostCount > 0 && agencyBonusCoins > 0,
+      bonusBps: configuredBonusBps,
       giftCount: nonNegativeInteger(
         data.giftCount,
+        "agency_statement_state_corrupt",
+      ),
+      agencySharePayoutMode: "target_close",
+      agencyMonthEndSharePayableCoins: 0,
+      potentialAgencyShareCoins: nonNegativeInteger(
+        data.potentialAgencyShareCoins,
+        "agency_statement_state_corrupt",
+      ),
+      unearnedPotentialAgencyShareCoins: nonNegativeInteger(
+        data.unearnedPotentialAgencyShareCoins,
         "agency_statement_state_corrupt",
       ),
     },
