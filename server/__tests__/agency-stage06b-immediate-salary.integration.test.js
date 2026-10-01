@@ -129,11 +129,13 @@ test("06-B one room gift can jump multiple targets and pays only the reached sal
   assert.equal(first.diamondsEarned,20);
   assert.equal(first.agencySalaryPaidDiamonds,20);
 
-  const [hostAfterFirst,ledger1,audit1,op1]=await Promise.all([
+  const [hostAfterFirst,ledger1,audit1,op1,notification1]=await Promise.all([
     db.collection("users").doc(hostId).get(),
     db.collection("financial_ledger").doc("gift_earnings_"+key1).get(),
     db.collection("admin_audit_logs").doc("agency_target_salary_"+key1).get(),
     db.collection("gift_operations").doc(key1).get(),
+    db.collection("notifications")
+      .doc("agency_target_salary_"+key1+"_"+hostId).get(),
   ]);
   assert.equal(hostAfterFirst.data().diamonds,20);
   assert.equal(hostAfterFirst.data().agencyTargetProgressCoins,200000);
@@ -144,6 +146,12 @@ test("06-B one room gift can jump multiple targets and pays only the reached sal
   assert.equal(audit1.data().salaryDeltaDiamonds,20);
   assert.equal(op1.data().giftId,"stage06b_jump");
   assert.equal(op1.data().quantity,1);
+  assert.equal(notification1.data().userId,hostId);
+  assert.equal(notification1.data().type,"agency_target_salary_paid");
+  assert.equal(notification1.data().mandatory,true);
+  assert.equal(notification1.data().financial,true);
+  assert.equal(notification1.data().salaryDeltaDiamonds,20);
+  assert.equal(notification1.data().targetId,"starter_e");
 
   const second=await sendRoomGift(cloudflareDb,senderId,{
     roomId,receiverId:hostId,giftId:"stage06b_jump",quantity:1,idempotencyKey:key2,
@@ -155,16 +163,20 @@ test("06-B one room gift can jump multiple targets and pays only the reached sal
   assert.equal(second.diamondsEarned,10);
   assert.equal(second.agencySalaryPaidDiamonds,30);
 
-  const [hostAfterSecond,ledger2,audit2]=await Promise.all([
+  const [hostAfterSecond,ledger2,audit2,notification2]=await Promise.all([
     db.collection("users").doc(hostId).get(),
     db.collection("financial_ledger").doc("gift_earnings_"+key2).get(),
     db.collection("admin_audit_logs").doc("agency_target_salary_"+key2).get(),
+    db.collection("notifications")
+      .doc("agency_target_salary_"+key2+"_"+hostId).get(),
   ]);
   assert.equal(hostAfterSecond.data().diamonds,30);
   assert.equal(hostAfterSecond.data().agencyTargetProgressCoins,400000);
   assert.equal(hostAfterSecond.data().agencySalaryPaidDiamonds,30);
   assert.equal(ledger2.data().delta,10);
   assert.equal(audit2.data().salaryDeltaDiamonds,10);
+  assert.equal(notification2.data().salaryDeltaDiamonds,10);
+  assert.equal(notification2.data().targetId,"starter_d");
 });
 
 test("06-B concurrent room gifts serialize salary progress and never double-pay a target",async()=>{
@@ -311,11 +323,13 @@ test("06-B chat gifts use the same immediate target salary ledger audit and fing
   assert.equal(result.salaryDeltaDiamonds,20);
   assert.equal(result.agencySalaryPaidDiamonds,20);
 
-  const [host,ledger,audit,op]=await Promise.all([
+  const [host,ledger,audit,op,notification]=await Promise.all([
     db.collection("users").doc(hostId).get(),
     db.collection("financial_ledger").doc("gift_earnings_"+key).get(),
     db.collection("admin_audit_logs").doc("agency_target_salary_"+key).get(),
     db.collection("gift_operations").doc(key).get(),
+    db.collection("notifications")
+      .doc("agency_target_salary_"+key+"_"+hostId).get(),
   ]);
   assert.equal(host.data().diamonds,20);
   assert.equal(ledger.data().delta,20);
@@ -324,6 +338,9 @@ test("06-B chat gifts use the same immediate target salary ledger audit and fing
   assert.equal(op.data().conversationId,conversationId);
   assert.equal(op.data().giftId,"stage06b_jump");
   assert.equal(op.data().quantity,1);
+  assert.equal(notification.data().type,"agency_target_salary_paid");
+  assert.equal(notification.data().salaryDeltaDiamonds,20);
+  assert.equal(notification.data().targetId,"starter_e");
 
   const duplicate=await sendChatGift(cloudflareDb,senderId,{
     receiverId:hostId,
