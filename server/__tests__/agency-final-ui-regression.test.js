@@ -329,3 +329,37 @@ test("Agency manager Host performance stays privacy-safe and lazy", () => {
     true,
   );
 });
+
+
+test("Agency personal Target history stays bounded and immutable", () => {
+  const host = source("cloudflare-worker/src/agency-host.js");
+  const policy = source("cloudflare-worker/src/agency-policy.js");
+  const roomGift = source("cloudflare-worker/src/room-gift.js");
+  const chatGift = source("cloudflare-worker/src/chat-safety-actions.js");
+  const page = source(
+    "lib/features/agency/screens/host_my_agency_page.dart",
+  );
+
+  const start = host.indexOf(
+    "export async function loadAgencyHostTargetHistory",
+  );
+  const end = host.indexOf(
+    "export async function updateAgencyOwnerProfile",
+    start,
+  );
+  const history = host.slice(start, end);
+  assert.ok(start >= 0 && end > start);
+  assert.equal(history.includes('db.runQuery("gift_transactions"'), true);
+  assert.equal(history.includes("limit: 30"), true);
+  assert.equal(history.includes(".snapshots()"), false);
+  assert.equal(history.includes("Timer.periodic"), false);
+  assert.equal(history.includes('collection("agency_wallets")'), false);
+  assert.equal(
+    policy.includes("export function agencyTargetAchievementDeltas"),
+    true,
+  );
+  assert.equal(roomGift.includes("agencyTargetAchievements"), true);
+  assert.equal(chatGift.includes("agencyTargetAchievements"), true);
+  assert.equal(page.includes("host-agency-target-history-entry"), true);
+  assert.equal(page.includes("سجل الـTargets الشخصي"), true);
+});
