@@ -218,14 +218,24 @@ export async function searchPublicAgencies(db, body = {}) {
     throw new ApiError("agency_search_too_short", 400);
   }
 
+  if (mode === "country") {
+    const rows = await db.runQuery("agencies", {
+      filters: [{ field: "country", op: "==", value: query }],
+      orderBy: [{ field: "__name__", direction: "asc" }],
+      limit: PUBLIC_AGENCY_DISCOVERY_WINDOW + 1,
+    });
+    const truncated = rows.length > PUBLIC_AGENCY_DISCOVERY_WINDOW;
+    const filtered = rows
+      .slice(0, PUBLIC_AGENCY_DISCOVERY_WINDOW)
+      .filter((row) => clean(row?.data?.status) === "active")
+      .sort(comparePublicAgencyRows);
+    return pagedDiscoveryResult(filtered, body, truncated);
+  }
+
   const discovery = await discoveryRows(db);
-  const filtered = discovery.rows.filter((row) => {
-    const agency = row?.data || {};
-    if (mode === "country") {
-      return normalizeAgencySearchText(agency.country) === normalized;
-    }
-    return normalizeAgencySearchText(agency.name).includes(normalized);
-  });
+  const filtered = discovery.rows.filter((row) =>
+    normalizeAgencySearchText(row?.data?.name).includes(normalized)
+  );
   return pagedDiscoveryResult(filtered, body, discovery.truncated);
 }
 
