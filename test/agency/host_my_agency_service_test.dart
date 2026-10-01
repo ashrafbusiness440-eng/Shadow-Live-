@@ -110,6 +110,47 @@ void main() {
     expect(data.owner.publicId, isNull);
   });
 
+  test('Batch 2 keeps manager My Agency permissions server-authoritative', () {
+    final data = HostMyAgencyCoreData.fromJson({
+      'agency': {
+        'agencyId': '741209',
+        'name': 'Manager Agency',
+        'status': 'active',
+      },
+      'owner': {
+        'uid': 'owner-manager',
+        'displayName': 'Owner',
+      },
+      'membership': {
+        'role': 'manager',
+        'status': 'active',
+        'capabilities': ['reviewMembershipRequest'],
+        'permissions': {
+          'canReviewMembershipRequests': true,
+          'canManageInvites': true,
+        },
+      },
+      'target': {
+        'month': '2026-10',
+        'progressCoins': 0,
+        'paidDiamonds': 0,
+        'remainingCoins': 50000,
+        'targetCoins': 50000,
+      },
+      'activity': {
+        'month': '2026-10',
+        'qualifiedDays': 0,
+        'micSecondsMonth': 0,
+        'requiredQualifiedDays': 9,
+        'requiredMinutesPerDay': 120,
+      },
+    });
+
+    expect(data.membershipRole, 'manager');
+    expect(data.membershipCapabilities, ['reviewMembershipRequest']);
+    expect(data.canReviewMembershipRequests, isTrue);
+  });
+
   test('11-C parses Host leave request status', () {
     final pending = HostAgencyLeaveStatus.fromJson({
       'ok': true,

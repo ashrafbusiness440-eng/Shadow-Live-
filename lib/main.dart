@@ -34,7 +34,7 @@ import 'features/main/screens/main_shell_screen.dart';
 import 'features/auth/screens/register_screen.dart';
 import 'features/user/screens/profile_screen.dart';
 import 'features/user/screens/edit_profile_screen.dart';
-import 'features/agency/screens/host_my_agency_page.dart';
+import 'features/agency/screens/my_agency_entry_page.dart';
 import 'features/agency/screens/agency_application_page.dart';
 import 'features/agency/screens/agency_search_page.dart';
 import 'features/notifications/screens/notifications_page.dart';
@@ -153,7 +153,7 @@ class MyApp extends StatelessWidget {
         AppRoutes.profile: (context) => const ProfileScreen(),
         AppRoutes.editProfile: (context) => const EditProfileScreen(),
         AppRoutes.settings: (context) => const SettingsScreen(),
-        AppRoutes.myAgency: (context) => const HostMyAgencyPage(),
+        AppRoutes.myAgency: (context) => const MyAgencyEntryPage(),
         AppRoutes.agencyApplication: (context) => const AgencyApplicationPage(),
         AppRoutes.agencySearch: (context) => const AgencySearchPage(),
         AppRoutes.notifications: (context) => const NotificationsPage(),

@@ -121,6 +121,38 @@ void main() {
     expect(data.maxMonths, 6);
   });
 
+  test('Batch 2 parses discovery visuals ranking and bounded state', () {
+    final data = PublicAgencySearchData.fromJson({
+      'results': [
+        {
+          'agencyId': '815090',
+          'publicId': '815090',
+          'name': 'Top Shadow',
+          'country': 'الباشان',
+          'memberCount': 22,
+          'hostCount': 14,
+          'logoUrl': 'https://example.invalid/logo.webp',
+          'coverUrl': 'https://example.invalid/cover.webp',
+          'topValue': 990000,
+          'rank': 3,
+        },
+      ],
+      'page': {
+        'limit': 20,
+        'hasMore': false,
+        'nextCursor': null,
+        'truncated': true,
+      },
+    });
+
+    final agency = data.results.single;
+    expect(agency.logoUrl, 'https://example.invalid/logo.webp');
+    expect(agency.coverUrl, 'https://example.invalid/cover.webp');
+    expect(agency.topValue, 990000);
+    expect(agency.rank, 3);
+    expect(data.truncated, isTrue);
+  });
+
   test('Stage 15-A parses bounded Agency search results and cursor', () {
     final data = PublicAgencySearchData.fromJson({
       'results': [

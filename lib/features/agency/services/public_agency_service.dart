@@ -11,6 +11,10 @@ class PublicAgencyIdentity {
     required this.country,
     required this.memberCount,
     required this.hostCount,
+    required this.logoUrl,
+    required this.coverUrl,
+    required this.topValue,
+    required this.rank,
   });
 
   final String agencyId;
@@ -19,6 +23,10 @@ class PublicAgencyIdentity {
   final String? country;
   final int memberCount;
   final int hostCount;
+  final String? logoUrl;
+  final String? coverUrl;
+  final int topValue;
+  final int? rank;
 
   factory PublicAgencyIdentity.fromJson(Map<String, dynamic> json) {
     return PublicAgencyIdentity(
@@ -28,6 +36,10 @@ class PublicAgencyIdentity {
       country: _nullableString(json['country']),
       memberCount: _nonNegativeInt(json['memberCount']),
       hostCount: _nonNegativeInt(json['hostCount']),
+      logoUrl: _nullableString(json['logoUrl']),
+      coverUrl: _nullableString(json['coverUrl']),
+      topValue: _nonNegativeInt(json['topValue']),
+      rank: _positiveIntOrNull(json['rank']),
     );
   }
 }
@@ -187,12 +199,14 @@ class PublicAgencySearchData {
     required this.limit,
     required this.hasMore,
     required this.nextCursor,
+    required this.truncated,
   });
 
   final List<PublicAgencyIdentity> results;
   final int limit;
   final bool hasMore;
   final String? nextCursor;
+  final bool truncated;
 
   factory PublicAgencySearchData.fromJson(Map<String, dynamic> json) {
     final rawResults = json['results'];
@@ -211,6 +225,7 @@ class PublicAgencySearchData {
       limit: _nonNegativeInt(page['limit']),
       hasMore: page['hasMore'] == true,
       nextCursor: _nullableString(page['nextCursor']),
+      truncated: page['truncated'] == true,
     );
   }
 }
@@ -283,6 +298,19 @@ class PublicAgencyService {
     return PublicAgencyPageData.fromJson(body);
   }
 
+  Future<PublicAgencySearchData> browse({
+    String? cursor,
+    int limit = 20,
+  }) async {
+    final body = await _post({
+      'action': 'browse',
+      'limit': limit.clamp(1, 20),
+      if (cursor != null && cursor.trim().isNotEmpty)
+        'cursor': cursor.trim(),
+    });
+    return PublicAgencySearchData.fromJson(body);
+  }
+
   Future<PublicAgencySearchData> search({
     required String query,
     required String mode,
@@ -336,4 +364,10 @@ String? _nullableString(dynamic value) {
 int _nonNegativeInt(dynamic value) {
   final number = value is num ? value.toInt() : int.tryParse('$value') ?? 0;
   return number < 0 ? 0 : number;
+}
+
+
+int? _positiveIntOrNull(dynamic value) {
+  final parsed = value is num ? value.toInt() : int.tryParse('$value');
+  return parsed != null && parsed > 0 ? parsed : null;
 }

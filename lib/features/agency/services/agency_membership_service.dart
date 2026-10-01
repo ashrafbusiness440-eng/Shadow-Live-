@@ -79,6 +79,116 @@ class AgencyMembershipRequestDetail {
   }
 }
 
+class AgencyMembershipRequestSummary {
+  const AgencyMembershipRequestSummary({
+    required this.requestId,
+    required this.agencyId,
+    required this.agencyName,
+    required this.type,
+    required this.status,
+    required this.createdAt,
+  });
+
+  final String requestId;
+  final String agencyId;
+  final String? agencyName;
+  final String type;
+  final String status;
+  final DateTime? createdAt;
+
+  bool get isPending => status == 'pending';
+
+  factory AgencyMembershipRequestSummary.fromJson(Map<String, dynamic> json) {
+    return AgencyMembershipRequestSummary(
+      requestId: (json['requestId'] ?? '').toString().trim(),
+      agencyId: (json['agencyId'] ?? '').toString().trim(),
+      agencyName: _nullable(json['agencyName']),
+      type: (json['type'] ?? '').toString().trim(),
+      status: (json['status'] ?? '').toString().trim(),
+      createdAt: DateTime.tryParse((json['createdAt'] ?? '').toString()),
+    );
+  }
+}
+
+class AgencyJoinReservation {
+  const AgencyJoinReservation({
+    required this.requestId,
+    required this.agencyId,
+    required this.status,
+    required this.type,
+  });
+
+  final String? requestId;
+  final String? agencyId;
+  final String status;
+  final String? type;
+
+  factory AgencyJoinReservation.fromJson(Map<String, dynamic> json) {
+    return AgencyJoinReservation(
+      requestId: _nullable(json['requestId']),
+      agencyId: _nullable(json['agencyId']),
+      status: (json['status'] ?? '').toString().trim(),
+      type: _nullable(json['type']),
+    );
+  }
+}
+
+class AgencyApplicationReservation {
+  const AgencyApplicationReservation({
+    required this.applicationId,
+    required this.status,
+  });
+
+  final String? applicationId;
+  final String status;
+
+  factory AgencyApplicationReservation.fromJson(Map<String, dynamic> json) {
+    return AgencyApplicationReservation(
+      applicationId: _nullable(json['applicationId']),
+      status: (json['status'] ?? '').toString().trim(),
+    );
+  }
+}
+
+class AgencyJoinEligibility {
+  const AgencyJoinEligibility({
+    required this.canRequestJoin,
+    required this.linkedAgencyId,
+    required this.membershipRole,
+    required this.membershipStatus,
+    required this.membershipReservation,
+    required this.applicationReservation,
+  });
+
+  final bool canRequestJoin;
+  final String? linkedAgencyId;
+  final String? membershipRole;
+  final String? membershipStatus;
+  final AgencyJoinReservation? membershipReservation;
+  final AgencyApplicationReservation? applicationReservation;
+
+  factory AgencyJoinEligibility.fromJson(Map<String, dynamic> json) {
+    final membershipReservation = json['membershipReservation'];
+    final applicationReservation = json['applicationReservation'];
+    return AgencyJoinEligibility(
+      canRequestJoin: json['canRequestJoin'] == true,
+      linkedAgencyId: _nullable(json['linkedAgencyId']),
+      membershipRole: _nullable(json['membershipRole']),
+      membershipStatus: _nullable(json['membershipStatus']),
+      membershipReservation: membershipReservation is Map
+          ? AgencyJoinReservation.fromJson(
+              Map<String, dynamic>.from(membershipReservation),
+            )
+          : null,
+      applicationReservation: applicationReservation is Map
+          ? AgencyApplicationReservation.fromJson(
+              Map<String, dynamic>.from(applicationReservation),
+            )
+          : null,
+    );
+  }
+}
+
 class AgencyMembershipService {
   AgencyMembershipService({
     http.Client? client,
@@ -149,6 +259,31 @@ class AgencyMembershipService {
       'requestId': requestId.trim(),
     });
     return AgencyMembershipRequestDetail.fromJson(body);
+  }
+
+  Future<AgencyJoinEligibility> loadEligibility() async {
+    final body = await _post(const {
+      'action': 'eligibility',
+    });
+    return AgencyJoinEligibility.fromJson(body);
+  }
+
+  Future<List<AgencyMembershipRequestSummary>> loadMyRequests() async {
+    final body = await _post({
+      'action': 'listMy',
+      'limit': 20,
+    });
+    final requests = body['requests'];
+    if (requests is! List) return const <AgencyMembershipRequestSummary>[];
+    return requests
+        .whereType<Map>()
+        .map(
+          (item) => AgencyMembershipRequestSummary.fromJson(
+            Map<String, dynamic>.from(item),
+          ),
+        )
+        .where((item) => item.requestId.isNotEmpty)
+        .toList(growable: false);
   }
 
   Future<void> respond({

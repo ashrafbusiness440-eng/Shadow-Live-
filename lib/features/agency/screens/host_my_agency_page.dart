@@ -10,7 +10,12 @@ import 'agency_membership_review_page.dart';
 import 'owner_agency_dashboard_page.dart';
 
 class HostMyAgencyPage extends StatefulWidget {
-  const HostMyAgencyPage({super.key});
+  const HostMyAgencyPage({
+    super.key,
+    this.initialCore,
+  });
+
+  final HostMyAgencyCoreData? initialCore;
 
   @override
   State<HostMyAgencyPage> createState() => _HostMyAgencyPageState();
@@ -36,7 +41,17 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
   @override
   void initState() {
     super.initState();
-    _load();
+    final initial = widget.initialCore;
+    if (initial == null) {
+      _load();
+      return;
+    }
+    _data = initial;
+    _loading = false;
+    Future.microtask(() async {
+      await _loadLeaveStatus(initial.agency.agencyId);
+      await _loadRanking(initial.agency.agencyId);
+    });
   }
 
   @override

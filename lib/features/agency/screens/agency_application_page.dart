@@ -8,7 +8,12 @@ import '../../../shared/widgets/country_selector.dart';
 import '../services/agency_application_service.dart';
 
 class AgencyApplicationPage extends StatefulWidget {
-  const AgencyApplicationPage({super.key});
+  const AgencyApplicationPage({
+    super.key,
+    this.embedded = false,
+  });
+
+  final bool embedded;
 
   @override
   State<AgencyApplicationPage> createState() => _AgencyApplicationPageState();
@@ -432,6 +437,46 @@ class _AgencyApplicationPageState extends State<AgencyApplicationPage> {
 
   @override
   Widget build(BuildContext context) {
+    final body = _loading
+        ? const Center(child: CircularProgressIndicator())
+        : ListView(
+            padding: const EdgeInsets.fromLTRB(16, 18, 16, 32),
+            children: [
+              if (!widget.embedded) const _IntroCard(),
+              if (_status != null) ...[
+                if (!widget.embedded) const SizedBox(height: 12),
+                _statusCard(_status!),
+              ],
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                _ErrorCard(message: _error!),
+              ],
+              if (_showForm) ...[
+                const SizedBox(height: 16),
+                _form(),
+              ],
+              if (!widget.embedded) ...[
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: () =>
+                      Navigator.pushNamed(context, AppRoutes.agencySearch),
+                  icon: const Icon(Icons.travel_explore_rounded),
+                  label: const Text('البحث عن وكالة موجودة'),
+                ),
+              ],
+            ],
+          );
+
+    if (widget.embedded) {
+      return Directionality(
+        textDirection: TextDirection.rtl,
+        child: RefreshIndicator(
+          onRefresh: _loadStatus,
+          child: body,
+        ),
+      );
+    }
+
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
@@ -447,33 +492,7 @@ class _AgencyApplicationPageState extends State<AgencyApplicationPage> {
             ),
           ],
         ),
-        body: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : ListView(
-                padding: const EdgeInsets.fromLTRB(16, 18, 16, 32),
-                children: [
-                  const _IntroCard(),
-                  if (_status != null) ...[
-                    const SizedBox(height: 12),
-                    _statusCard(_status!),
-                  ],
-                  if (_error != null) ...[
-                    const SizedBox(height: 12),
-                    _ErrorCard(message: _error!),
-                  ],
-                  if (_showForm) ...[
-                    const SizedBox(height: 16),
-                    _form(),
-                  ],
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: () =>
-                        Navigator.pushNamed(context, AppRoutes.agencySearch),
-                    icon: const Icon(Icons.travel_explore_rounded),
-                    label: const Text('البحث عن وكالة موجودة'),
-                  ),
-                ],
-              ),
+        body: body,
       ),
     );
   }

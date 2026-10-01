@@ -777,23 +777,16 @@ class _ProfileScreenState extends State<ProfileScreen>
           () => unawaited(_openMyItems()),
         ),
         const SizedBox(height: 10),
-        if (_text(profile, 'agencyId', '').isNotEmpty)
-          _action(
-            Icons.apartment_rounded,
-            'وكالتي',
-            () => Navigator.pushNamed(context, AppRoutes.myAgency),
-          )
-        else
-          _action(
-            Icons.add_business_rounded,
-            'إنشاء / طلب وكالة',
-            () => Navigator.pushNamed(
-              context,
-              AppRoutes.agencyApplication,
-            ).then((_) {
-              if (mounted) _load();
-            }),
-          ),
+        _action(
+          Icons.apartment_rounded,
+          'وكالتي',
+          () => Navigator.pushNamed(
+            context,
+            AppRoutes.myAgency,
+          ).then((_) {
+            if (mounted) _load();
+          }),
+        ),
         const SizedBox(height: 16),
         _card(
           'الملف الشخصي',

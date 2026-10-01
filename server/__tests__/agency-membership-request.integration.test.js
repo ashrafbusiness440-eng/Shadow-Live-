@@ -5,6 +5,7 @@ import { getFirestore } from "firebase-admin/firestore";
 
 import {
   cancelAgencyMembershipRequest,
+  getMyAgencyJoinEligibility,
   inviteAgencyHost,
   listAgencyMembershipPending,
   listMyAgencyMembershipRequests,
@@ -55,6 +56,40 @@ async function seedAgency(agencyId, ownerUid, ownerPublicId, name = "Test Agency
   await adminDb.collection("agency_memberships")
     .doc(agencyId + "__" + ownerUid).set(membership);
 }
+
+test("join eligibility exposes bounded reservation state without scans", async () => {
+  const uid = "stage04a_eligibility_user";
+  await seedUser(uid, "640101");
+
+  let state = await getMyAgencyJoinEligibility(db, uid);
+  assert.equal(state.canRequestJoin, true);
+  assert.equal(state.membershipReservation, null);
+  assert.equal(state.applicationReservation, null);
+
+  await adminDb.collection("agency_membership_acceptance_locks").doc(uid).set({
+    requestId: "eligibility_request",
+    agencyId: "640001",
+    uid,
+    type: "join",
+    status: "pending",
+  });
+  state = await getMyAgencyJoinEligibility(db, uid);
+  assert.equal(state.canRequestJoin, false);
+  assert.equal(state.membershipReservation.agencyId, "640001");
+  assert.equal(state.membershipReservation.status, "pending");
+
+  await adminDb.collection("agency_membership_acceptance_locks").doc(uid).delete();
+  await adminDb.collection("agency_application_locks").doc(uid).set({
+    applicationId: "eligibility_application",
+    status: "under_review",
+  });
+  state = await getMyAgencyJoinEligibility(db, uid);
+  assert.equal(state.canRequestJoin, false);
+  assert.equal(
+    state.applicationReservation.applicationId,
+    "eligibility_application",
+  );
+});
 
 test("join request records user consent and appears in bounded agency queue", async () => {
   const agencyId = "641001";

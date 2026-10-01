@@ -268,8 +268,8 @@ test("11-C UI/route guards keep My Agency on explicit navigation only", () => {
   assert.equal(service.includes("'action': 'leaveStatus'"), true);
   assert.equal(service.includes("'action': 'requestLeave'"), true);
   assert.equal(profile.includes("AppRoutes.myAgency"), true);
-  assert.equal(profile.includes("إنشاء / طلب وكالة"), true);
-  assert.equal(profile.includes("AppRoutes.agencyApplication"), true);
+  assert.equal(profile.includes("إنشاء / طلب وكالة"), false);
+  assert.equal(profile.includes("AppRoutes.agencyApplication"), false);
   assert.equal(settings.includes("AppRoutes.myAgency"), true);
   assert.equal(navigation.includes("static const String myAgency = '/my-agency';"), true);
   assert.equal(
