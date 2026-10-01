@@ -3,7 +3,11 @@ import {
   assertUserDocumentSessionState,
   verifyFirebaseIdToken,
 } from "./firebase-auth.js";
-import { firestoreClient } from "./firestore.js";
+import {
+  firestoreClient,
+  firestoreErrorRetryDelayMs,
+  isTransientFirestoreError,
+} from "./firestore.js";
 import {
   calculateAgencyTargetProgress,
   currentAgencyMonthKey,
@@ -46,6 +50,10 @@ function boundedInteger(value, fallback, min, max) {
 
 function validAgencyId(value) {
   return /^\d{3,8}$/.test(clean(value));
+}
+
+function validIdempotencyKey(value) {
+  return /^[A-Za-z0-9_-]{12,120}$/.test(clean(value));
 }
 
 function safeAgencyRoomId(value) {
@@ -277,6 +285,238 @@ export async function loadAgencyHostCore(
   };
 }
 
+export async function requestAgencyOwnershipTransfer(
+  db,
+  uidInput,
+  body = {},
+  { now = new Date(), sessionPayload = null } = {},
+) {
+  const uid = clean(uidInput);
+  const newOwnerPublicId = clean(body.newOwnerPublicId);
+  const key = clean(body.idempotencyKey);
+  if (!uid) throw new ApiError("unauthorized", 401);
+  if (!/^\d{3,8}$/.test(newOwnerPublicId)) {
+    throw new ApiError("invalid_owner_public_id", 400);
+  }
+  if (!validIdempotencyKey(key)) {
+    throw new ApiError("invalid_idempotency_key", 400);
+  }
+
+  const opPath = `agency_owner_operations/${uid}__${key}`;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const tx = await db.beginTransaction();
+    try {
+      const [opSnap, actorUserSnap, membershipSnap, publicIdSnap] =
+        await Promise.all([
+          db.get(opPath, tx),
+          db.get(`users/${uid}`, tx),
+          db.get(`agency_user_memberships/${uid}`, tx),
+          db.get(`public_ids/${newOwnerPublicId}`, tx),
+        ]);
+
+      if (opSnap.exists) {
+        const existing = opSnap.data || {};
+        if (
+          clean(existing.newOwnerPublicId) !== newOwnerPublicId ||
+          clean(existing.action) !== "requestAgencyOwnershipTransfer"
+        ) {
+          throw new ApiError("idempotency_conflict", 409);
+        }
+        await db.rollback(tx);
+        return { ok: true, code: "duplicate", ...(existing.result || {}) };
+      }
+      if (!actorUserSnap.exists || !membershipSnap.exists) {
+        throw new ApiError("agency_owner_required", 403);
+      }
+      const actorUser = actorUserSnap.data || {};
+      if (sessionPayload) {
+        assertUserDocumentSessionState(sessionPayload, actorUser);
+      }
+      const membership = membershipSnap.data || {};
+      const agencyId = clean(membership.agencyId);
+      if (
+        !validAgencyId(agencyId) ||
+        clean(membership.role) !== "owner" ||
+        clean(membership.status) !== "active" ||
+        clean(actorUser.agencyId) !== agencyId
+      ) {
+        throw new ApiError("agency_owner_required", 403);
+      }
+      const newOwnerUid = clean(publicIdSnap.data?.uid);
+      if (!publicIdSnap.exists || !newOwnerUid) {
+        throw new ApiError("owner_not_found", 404);
+      }
+      if (newOwnerUid === uid) throw new ApiError("owner_unchanged", 409);
+
+      const lockPath = `agency_ownership_transfer_locks/${agencyId}`;
+      const [agencySnap, lockSnap, targetMembershipSnap, targetUserSnap] =
+        await Promise.all([
+          db.get(`agencies/${agencyId}`, tx),
+          db.get(lockPath, tx),
+          db.get(`agency_user_memberships/${newOwnerUid}`, tx),
+          db.get(`users/${newOwnerUid}`, tx),
+        ]);
+      if (!agencySnap.exists) throw new ApiError("agency_not_found", 404);
+      const agency = agencySnap.data || {};
+      if (
+        clean(agency.ownerUid) !== uid ||
+        clean(agency.status) !== "active"
+      ) {
+        throw new ApiError("agency_owner_required", 403);
+      }
+      if (lockSnap.exists && clean(lockSnap.data?.status) === "pending") {
+        throw new ApiError("ownership_transfer_pending", 409, {
+          requestId: clean(lockSnap.data?.requestId) || null,
+        });
+      }
+      if (!targetMembershipSnap.exists || !targetUserSnap.exists) {
+        throw new ApiError("new_owner_must_be_active_member", 409);
+      }
+      const targetMembership = targetMembershipSnap.data || {};
+      const targetUser = targetUserSnap.data || {};
+      if (
+        clean(targetMembership.agencyId) !== agencyId ||
+        clean(targetMembership.status) !== "active" ||
+        !["host", "manager", "senior_manager"].includes(
+          clean(targetMembership.role),
+        ) ||
+        clean(targetUser.agencyId) !== agencyId ||
+        clean(targetUser.accountStatus || "active") !== "active"
+      ) {
+        throw new ApiError("new_owner_must_be_active_member", 409);
+      }
+
+      const requestId = `${agencyId}__${key}`;
+      const requestPath = `agency_ownership_transfer_requests/${requestId}`;
+      const result = {
+        requestId,
+        agencyId,
+        status: "pending",
+        ownerUid: uid,
+        newOwnerUid,
+        newOwnerPublicId,
+        newOwnerDisplayName:
+          clean(
+            targetUser.displayName ||
+            targetUser.name ||
+            targetUser.username,
+          ) || newOwnerPublicId,
+        createdAt: now,
+      };
+      const writes = [
+        db.writeCreate(requestPath, {
+          ...result,
+          type: "ownership_transfer",
+          previousNewOwnerRole: clean(targetMembership.role),
+          updatedAt: now,
+        }),
+        lockSnap.exists
+          ? db.writeUpdate(
+              lockPath,
+              {
+                requestId,
+                agencyId,
+                status: "pending",
+                ownerUid: uid,
+                newOwnerUid,
+                newOwnerPublicId,
+                updatedAt: now,
+              },
+              [
+                "requestId",
+                "agencyId",
+                "status",
+                "ownerUid",
+                "newOwnerUid",
+                "newOwnerPublicId",
+                "updatedAt",
+              ],
+            )
+          : db.writeCreate(lockPath, {
+              requestId,
+              agencyId,
+              status: "pending",
+              ownerUid: uid,
+              newOwnerUid,
+              newOwnerPublicId,
+              createdAt: now,
+              updatedAt: now,
+            }),
+        db.writeCreate(opPath, {
+          actorUid: uid,
+          action: "requestAgencyOwnershipTransfer",
+          agencyId,
+          newOwnerPublicId,
+          status: "completed",
+          result,
+          createdAt: now,
+        }),
+        db.writeCreate(
+          `admin_audit_logs/agency_owner_transfer_request_${requestId}`,
+          {
+            actorUid: uid,
+            action: "requestAgencyOwnershipTransfer",
+            targetType: "agency",
+            targetId: agencyId,
+            after: result,
+            idempotencyKey: key,
+            createdAt: now,
+          },
+        ),
+        db.writeCreate(
+          `notifications/agency_owner_transfer_requested_${requestId}`,
+          {
+            userId: uid,
+            type: "agency_ownership_transfer_requested",
+            category: "system",
+            title: "تم إرسال طلب نقل ملكية الوكالة",
+            body:
+              "المالك المقترح: " +
+              result.newOwnerDisplayName +
+              " • ID " +
+              newOwnerPublicId,
+            read: false,
+            mandatory: true,
+            agencyId,
+            requestId,
+            newOwnerUid,
+            newOwnerPublicId,
+            createdAt: now,
+          },
+        ),
+        db.writeCreate(
+          `notifications/agency_owner_transfer_candidate_${requestId}`,
+          {
+            userId: newOwnerUid,
+            type: "agency_ownership_transfer_candidate",
+            category: "system",
+            title: "تم ترشيحك لملكية الوكالة",
+            body: clean(agency.name) || agencyId,
+            read: false,
+            mandatory: true,
+            agencyId,
+            requestId,
+            createdAt: now,
+          },
+        ),
+      ];
+      await db.commit(tx, writes);
+      return { ok: true, code: "ok", ...result };
+    } catch (error) {
+      await db.rollback(tx);
+      if (error instanceof ApiError) throw error;
+      if (isTransientFirestoreError(error) && attempt < 2) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, firestoreErrorRetryDelayMs(attempt))
+        );
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new ApiError("transaction_failed", 500);
+}
+
 export async function agencyHost(request, env) {
   if (request.method !== "POST") {
     return json(request, env, { ok: false, code: "method_not_allowed" }, 405);
@@ -290,19 +530,30 @@ export async function agencyHost(request, env) {
     });
     const body = await readJson(request);
     const action = clean(body.action) || "core";
-    if (action !== "core") {
-      throw new ApiError("invalid_agency_host_action", 400);
-    }
-
-    annotatePressureRequest(request, { action: "agencyHost:core" });
     const db = firestoreClient(env);
-    return json(
-      request,
-      env,
-      await loadAgencyHostCore(db, token.sub, new Date(), {
-        sessionPayload: token,
-      }),
-    );
+    if (action === "core") {
+      annotatePressureRequest(request, { action: "agencyHost:core" });
+      return json(
+        request,
+        env,
+        await loadAgencyHostCore(db, token.sub, new Date(), {
+          sessionPayload: token,
+        }),
+      );
+    }
+    if (action === "requestOwnershipTransfer") {
+      annotatePressureRequest(request, {
+        action: "agencyHost:requestOwnershipTransfer",
+      });
+      return json(
+        request,
+        env,
+        await requestAgencyOwnershipTransfer(db, token.sub, body, {
+          sessionPayload: token,
+        }),
+      );
+    }
+    throw new ApiError("invalid_agency_host_action", 400);
   } catch (error) {
     if (error instanceof ApiError) {
       return json(
