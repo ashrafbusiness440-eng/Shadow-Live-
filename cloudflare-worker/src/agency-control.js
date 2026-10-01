@@ -1629,6 +1629,255 @@ export async function updateAgencyIdentity(
   throw new ApiError("transaction_failed", 500);
 }
 
+export async function listAgencyIdentityChangeRequests(
+  db,
+  limitInput = 25,
+) {
+  const limit = Math.min(25, boundedAgencyPageSize(limitInput, 25));
+  const rows = await db.runQuery("agency_identity_change_requests", {
+    filters: [{ field: "status", op: "==", value: "pending" }],
+    limit,
+  });
+  return rows
+    .map((row) => {
+      const data = row?.data || {};
+      return {
+        requestId: clean(data.requestId || row?.id),
+        agencyId: clean(data.agencyId),
+        ownerUid: clean(data.ownerUid),
+        currentName: clean(data.currentName),
+        currentCountry: clean(data.currentCountry) || null,
+        requestedName: clean(data.requestedName),
+        requestedCountry: clean(data.requestedCountry) || null,
+        status: clean(data.status),
+        createdAt: data.createdAt || null,
+      };
+    })
+    .filter((item) => item.requestId && validAgencyId(item.agencyId))
+    .sort((left, right) =>
+      timestampMs(left.createdAt) - timestampMs(right.createdAt)
+    );
+}
+
+async function finalizeAgencyIdentityChangeRequest(
+  db,
+  actorUid,
+  request,
+  decision,
+  reason,
+  now,
+) {
+  const requestId = clean(request.requestId);
+  const agencyId = clean(request.agencyId);
+  const requestPath = `agency_identity_change_requests/${requestId}`;
+  const lockPath = `agency_identity_change_locks/${agencyId}`;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const tx = await db.beginTransaction();
+    try {
+      const [requestSnap, lockSnap] = await Promise.all([
+        db.get(requestPath, tx),
+        db.get(lockPath, tx),
+      ]);
+      if (!requestSnap.exists) {
+        throw new ApiError("agency_identity_change_request_not_found", 404);
+      }
+      const current = requestSnap.data || {};
+      const currentStatus = clean(current.status);
+      const finalStatus = decision === "accept" ? "accepted" : "rejected";
+      if (currentStatus === finalStatus) {
+        await db.rollback(tx);
+        return { ok: true, code: "already_processed", status: finalStatus };
+      }
+      if (currentStatus !== "pending") {
+        throw new ApiError("agency_identity_change_already_processed", 409);
+      }
+      if (
+        lockSnap.exists &&
+        clean(lockSnap.data?.requestId) !== requestId
+      ) {
+        throw new ApiError("agency_identity_change_lock_conflict", 409);
+      }
+      const ownerUid = clean(current.ownerUid);
+      const writes = [
+        db.writeUpdate(
+          requestPath,
+          {
+            status: finalStatus,
+            decision,
+            reason: reason || null,
+            resolvedBy: actorUid,
+            resolvedAt: now,
+            updatedAt: now,
+          },
+          [
+            "status",
+            "decision",
+            "reason",
+            "resolvedBy",
+            "resolvedAt",
+            "updatedAt",
+          ],
+        ),
+        ...(lockSnap.exists ? [db.writeDelete(lockPath)] : []),
+        db.writeCreate(
+          `admin_audit_logs/agency_identity_change_review_${requestId}`,
+          {
+            actorUid,
+            action:
+              decision === "accept"
+                ? "approveAgencyIdentityChange"
+                : "rejectAgencyIdentityChange",
+            targetType: "agency_identity_change_request",
+            targetId: requestId,
+            after: {
+              status: finalStatus,
+              reason: reason || null,
+            },
+            createdAt: now,
+          },
+        ),
+      ];
+      if (ownerUid) {
+        writes.push(
+          db.writeCreate(
+            `notifications/agency_identity_change_review_${requestId}`,
+            {
+              userId: ownerUid,
+              type:
+                decision === "accept"
+                  ? "agency_identity_change_approved"
+                  : "agency_identity_change_rejected",
+              category: "system",
+              title:
+                decision === "accept"
+                  ? "تمت الموافقة على تغيير بيانات الوكالة"
+                  : "تم رفض طلب تغيير بيانات الوكالة",
+              body:
+                decision === "accept"
+                  ? clean(current.requestedName) +
+                    (clean(current.requestedCountry)
+                      ? " — " + clean(current.requestedCountry)
+                      : "")
+                  : reason,
+              read: false,
+              mandatory: true,
+              agencyId,
+              requestId,
+              createdAt: now,
+            },
+          ),
+        );
+      }
+      await db.commit(tx, writes);
+      return { ok: true, code: "ok", status: finalStatus };
+    } catch (error) {
+      await db.rollback(tx);
+      if (error instanceof ApiError) throw error;
+      if (isTransientFirestoreError(error) && attempt < 2) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, firestoreErrorRetryDelayMs(attempt))
+        );
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new ApiError("transaction_failed", 500);
+}
+
+export async function reviewAgencyIdentityChange(
+  db,
+  actorUid,
+  body = {},
+  { now = new Date() } = {},
+) {
+  const requestId = clean(body.requestId);
+  const decision = clean(body.decision);
+  const reason = clean(body.reason).slice(0, 500);
+  const key = clean(body.idempotencyKey);
+  if (!requestId || requestId.includes("/")) {
+    throw new ApiError("invalid_agency_identity_change_request", 400);
+  }
+  if (!["accept", "reject"].includes(decision)) {
+    throw new ApiError("invalid_decision", 400);
+  }
+  if (decision === "reject" && reason.length < 3) {
+    throw new ApiError("agency_identity_change_rejection_reason_required", 400);
+  }
+  if (!validIdempotencyKey(key)) {
+    throw new ApiError("invalid_idempotency_key", 400);
+  }
+
+  const requestSnap = await db.get(
+    `agency_identity_change_requests/${requestId}`,
+  );
+  if (!requestSnap.exists) {
+    throw new ApiError("agency_identity_change_request_not_found", 404);
+  }
+  const request = requestSnap.data || {};
+  const status = clean(request.status);
+  if (status !== "pending") {
+    return {
+      ok: true,
+      code: "already_processed",
+      requestId,
+      status,
+    };
+  }
+
+  if (decision === "reject") {
+    const finalized = await finalizeAgencyIdentityChangeRequest(
+      db,
+      actorUid,
+      { ...request, requestId },
+      decision,
+      reason,
+      now,
+    );
+    return { ...finalized, requestId };
+  }
+
+  const agencyId = clean(request.agencyId);
+  const agencySnap = await db.get(`agencies/${agencyId}`);
+  if (!agencySnap.exists) throw new ApiError("agency_not_found", 404);
+  const agency = agencySnap.data || {};
+  if (
+    clean(agency.name) !== clean(request.currentName) ||
+    (clean(agency.country) || null) !==
+      (clean(request.currentCountry) || null)
+  ) {
+    throw new ApiError("agency_identity_changed_since_request", 409);
+  }
+
+  await updateAgencyIdentity(
+    db,
+    actorUid,
+    {
+      agencyId,
+      publicId: clean(agency.publicId || agencyId),
+      name: clean(request.requestedName),
+      country: clean(request.requestedCountry) || null,
+      idempotencyKey: key,
+    },
+    { now },
+  );
+  const finalized = await finalizeAgencyIdentityChangeRequest(
+    db,
+    actorUid,
+    { ...request, requestId },
+    decision,
+    null,
+    now,
+  );
+  return {
+    ...finalized,
+    requestId,
+    agencyId,
+    name: clean(request.requestedName),
+    country: clean(request.requestedCountry) || null,
+  };
+}
+
 export async function listAgencyOwnershipTransferRequests(
   db,
   limitInput = 25,
@@ -2788,6 +3037,7 @@ export async function agencyControl(request, env) {
         manualBlocks,
         applicationSettings,
         ownershipTransferRequests,
+        identityChangeRequests,
       ] = canReview
         ? await Promise.all([
             listAgencyReviewQueue(db, body.limit),
@@ -2795,6 +3045,9 @@ export async function agencyControl(request, env) {
             getAgencyApplicationSettings(db),
             actor.permissions.isOwner
               ? listAgencyOwnershipTransferRequests(db, 25)
+              : Promise.resolve([]),
+            actor.permissions.canManageAgencies
+              ? listAgencyIdentityChangeRequests(db, 25)
               : Promise.resolve([]),
           ])
         : [
@@ -2804,12 +3057,16 @@ export async function agencyControl(request, env) {
             actor.permissions.isOwner
               ? await listAgencyOwnershipTransferRequests(db, 25)
               : [],
+            actor.permissions.canManageAgencies
+              ? await listAgencyIdentityChangeRequests(db, 25)
+              : [],
           ];
       return json(request, env, {
         ok: true,
         applications,
         manualBlocks,
         ownershipTransferRequests,
+        identityChangeRequests,
         applicationSettings,
         limit: Math.min(50, boundedAgencyPageSize(body.limit, 50)),
         permissions: {
@@ -2883,6 +3140,16 @@ export async function agencyControl(request, env) {
     if (action === "updateIdentity") {
       if (!actor.permissions.canManageAgencies) throw new ApiError("forbidden", 403);
       return json(request, env, await updateAgencyIdentity(db, decoded.sub, body));
+    }
+    if (action === "reviewIdentityChange") {
+      if (!actor.permissions.canManageAgencies) {
+        throw new ApiError("forbidden", 403);
+      }
+      return json(
+        request,
+        env,
+        await reviewAgencyIdentityChange(db, decoded.sub, body),
+      );
     }
     if (action === "reviewOwnershipTransfer") {
       if (!actor.permissions.isOwner) throw new ApiError("forbidden", 403);
