@@ -103,13 +103,28 @@ test("Agencies target table renders every configured level and display-only econ
 test("Agency Room category and logo reuse bootstrap data without agency hot-path reads", () => {
   const main = source("lib/main.dart");
   const roomList = source("lib/screens/room/room_list_screen.dart");
+  const publicAgency = source(
+    "lib/features/agency/screens/public_agency_page.dart",
+  );
   const voice = source("cloudflare-worker/src/voice-session-legacy.js");
 
   assert.equal(main.includes("agency-room-logo-button"), true);
   assert.equal(main.includes("_buildAgencyLogoButton()"), true);
-  assert.equal(main.includes("viewerAgencyId == agencyId"), true);
-  assert.equal(main.includes("const MyAgencyEntryPage()"), true);
+  assert.equal(main.includes("viewerAgencyId: viewerAgencyId"), true);
+  assert.equal(main.includes("viewerAgencyRole: viewerAgencyRole"), true);
   assert.equal(main.includes("joinEnabled: viewerAgencyId.isEmpty"), true);
+  assert.equal(
+    publicAgency.includes("agency-public-membership-action"),
+    true,
+  );
+  assert.equal(
+    publicAgency.includes("const MyAgencyEntryPage()"),
+    true,
+  );
+  assert.equal(publicAgency.includes("أنت مالك هذه الوكالة"), true);
+  assert.equal(publicAgency.includes("أنت مدير أول في هذه الوكالة"), true);
+  assert.equal(publicAgency.includes("أنت مدير في هذه الوكالة"), true);
+  assert.equal(publicAgency.includes("أنت عضو في هذه الوكالة"), true);
   assert.equal(main.includes("تصنيف غرفة الوكالة ثابت: وكالة"), true);
   assert.equal(main.includes("agency-room-house-button"), false);
   assert.equal(
@@ -145,6 +160,9 @@ test("Agency reviewer notifications remain actionable once and resolved afterwar
   assert.equal(notificationPage.includes("respondReview("), true);
   assert.equal(notificationPage.includes("already_processed"), true);
   assert.equal(notificationService.includes("agencyReviewResolved"), true);
+  assert.equal(notificationService.includes("resolvedByName"), true);
+  assert.equal(notificationPage.includes("_resolvedNotificationText"), true);
   assert.equal(membership.includes("resolvedReviewerNotificationWrites"), true);
+  assert.equal(membership.includes("resolvedByName"), true);
   assert.equal(membership.includes('code: "already_processed"'), true);
 });
