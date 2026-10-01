@@ -55,6 +55,7 @@ test("Agencies target table renders every configured level and display-only econ
 
 test("Agency Room category and logo reuse bootstrap data without agency hot-path reads", () => {
   const main = source("lib/main.dart");
+  const roomList = source("lib/screens/room/room_list_screen.dart");
   const voice = source("cloudflare-worker/src/voice-session-legacy.js");
 
   assert.equal(main.includes("agency-room-logo-button"), true);
@@ -64,6 +65,10 @@ test("Agency Room category and logo reuse bootstrap data without agency hot-path
   assert.equal(main.includes("joinEnabled: viewerAgencyId.isEmpty"), true);
   assert.equal(main.includes("تصنيف غرفة الوكالة ثابت: وكالة"), true);
   assert.equal(main.includes("agency-room-house-button"), false);
+  assert.equal(
+    roomList.includes("if (_isAgencyRoom(room)) return 'وكالة';"),
+    true,
+  );
 
   assert.equal(voice.includes('agencyLogoUrl:roomType==="agency"'), true);
   assert.equal(voice.includes('category:roomType==="agency"?"وكالة"'), true);
