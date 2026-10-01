@@ -75,14 +75,20 @@ async function assertAgencyOwner(db, uidInput) {
 }
 
 function effectiveBonusPolicy(economy = {}, override = {}) {
+  const overrideIsNew =
+    clean(override.agencyPerformanceBonusMode) ===
+    "per_host_target_month_end";
+  const globalIsNew =
+    clean(economy.agencyPerformanceBonusMode) ===
+    "per_host_target_month_end";
   return {
     ...economy,
-    agencyPerformanceBonusBps:
-      override.agencyPerformanceBonusBps ??
-      economy.agencyPerformanceBonusBps,
-    agencyBonusActiveHosts:
-      override.agencyBonusActiveHosts ??
-      economy.agencyBonusActiveHosts,
+    agencyPerformanceBonusMode:"per_host_target_month_end",
+    agencyPerformanceBonusBps:overrideIsNew
+      ?Math.max(0,Math.min(3000,Number(override.agencyPerformanceBonusBps??100)))
+      :globalIsNew
+        ?Math.max(0,Math.min(3000,Number(economy.agencyPerformanceBonusBps??100)))
+        :100,
   };
 }
 
@@ -140,19 +146,14 @@ function currentMonthSummary(month, stats = {}, wallet = {}, bonus = {}) {
     giftCount,
     activeHostCount,
     bonus: {
-      eligible: bonus.eligible === true,
-      requiredActiveHosts: nonNegativeInteger(
-        bonus.requiredActiveHosts,
-        "agency_bonus_state_corrupt",
-      ),
+      eligible: false,
+      requiredActiveHosts: 0,
       bps: nonNegativeInteger(
-        bonus.agencyBonusBps,
+        bonus.configuredBonusBps ?? bonus.agencyBonusBps ?? 100,
         "agency_bonus_state_corrupt",
       ),
-      estimatedCoins: nonNegativeInteger(
-        bonus.agencyBonusCoins,
-        "agency_bonus_state_corrupt",
-      ),
+      estimatedCoins: 0,
+      mode:"per_host_target_month_end",
       deferredToMonthEnd: true,
     },
     wallet: {
@@ -219,14 +220,8 @@ export async function loadAgencyOwnerPerformance(
     policy: {
       coinsPerDiamond,
       source:
-        Object.prototype.hasOwnProperty.call(
-          override,
-          "agencyPerformanceBonusBps",
-        ) ||
-        Object.prototype.hasOwnProperty.call(
-          override,
-          "agencyBonusActiveHosts",
-        )
+        clean(override.agencyPerformanceBonusMode) ===
+          "per_host_target_month_end"
           ? "agency_override"
           : "global",
     },
@@ -408,7 +403,7 @@ export async function loadAgencyOwnerHostPerformance(
   };
 }
 
-function statementSummary(agencyId, month, snap) {
+function statementSummary(agencyId, month, snap, bonusSnap) {
   if (!snap.exists) {
     return {
       agencyId,
@@ -418,6 +413,23 @@ function statementSummary(agencyId, month, snap) {
     };
   }
   const data = snap.data || {};
+  const bonusData = bonusSnap?.exists ? bonusSnap.data || {} : {};
+  const perHostBonusCoins = nonNegativeInteger(
+    bonusData.perHostBonusCoins,
+    "agency_statement_bonus_state_corrupt",
+  );
+  const perHostBonusDiamonds = nonNegativeInteger(
+    bonusData.perHostBonusDiamonds,
+    "agency_statement_bonus_state_corrupt",
+  );
+  const eligibleHostCount = nonNegativeInteger(
+    bonusData.perHostEligibleHostCount,
+    "agency_statement_bonus_state_corrupt",
+  );
+  const configuredBonusBps = nonNegativeInteger(
+    bonusData.configuredBonusBps,
+    "agency_statement_bonus_state_corrupt",
+  );
   if (
     clean(data.agencyId) !== agencyId ||
     clean(data.month) !== month ||
@@ -438,35 +450,40 @@ function statementSummary(agencyId, month, snap) {
         data.agencyBaseShareCoins ?? data.agencyShareCoins,
         "agency_statement_state_corrupt",
       ),
-      agencyBonusCoins: nonNegativeInteger(
-        data.agencyBonusCoins,
-        "agency_statement_state_corrupt",
-      ),
-      agencyPayableCoins: nonNegativeInteger(
-        data.agencyPayableCoins,
-        "agency_statement_state_corrupt",
-      ),
-      agencyDiamonds: nonNegativeInteger(
-        data.agencyDiamonds,
-        "agency_statement_state_corrupt",
-      ),
+      agencyBonusCoins:
+        nonNegativeInteger(
+          data.agencyBonusCoins,
+          "agency_statement_state_corrupt",
+        ) + perHostBonusCoins,
+      agencyPayableCoins:
+        nonNegativeInteger(
+          data.agencyBaseShareCoins ?? data.agencyShareCoins,
+          "agency_statement_state_corrupt",
+        ) +
+        nonNegativeInteger(
+          data.agencyBonusCoins,
+          "agency_statement_state_corrupt",
+        ) +
+        perHostBonusCoins,
+      agencyDiamonds:
+        nonNegativeInteger(
+          data.agencyDiamonds,
+          "agency_statement_state_corrupt",
+        ) + perHostBonusDiamonds,
       agencyRemainderCoins: nonNegativeInteger(
         data.agencyRemainderCoins,
         "agency_statement_state_corrupt",
       ),
-      activeHostCount: nonNegativeInteger(
-        data.agencyActiveHostCount,
-        "agency_statement_state_corrupt",
-      ),
-      requiredActiveHosts: nonNegativeInteger(
-        data.agencyRequiredActiveHosts,
-        "agency_statement_state_corrupt",
-      ),
-      bonusEligible: data.agencyBonusEligible === true,
-      bonusBps: nonNegativeInteger(
-        data.agencyBonusBps,
-        "agency_statement_state_corrupt",
-      ),
+      activeHostCount: eligibleHostCount,
+      requiredActiveHosts: 0,
+      bonusEligible: eligibleHostCount > 0,
+      bonusBps:
+        configuredBonusBps > 0
+          ? configuredBonusBps
+          : nonNegativeInteger(
+              data.agencyBonusBps,
+              "agency_statement_state_corrupt",
+            ),
       giftCount: nonNegativeInteger(
         data.giftCount,
         "agency_statement_state_corrupt",
@@ -489,12 +506,13 @@ export async function loadAgencyOwnerStatement(
   }
 
   const owner = await assertAgencyOwner(db, uidInput);
-  const statementSnap = await db.get(
-    `agency_monthly_statements/${owner.agencyId}__${month}`,
-  );
+  const [statementSnap, bonusSnap] = await Promise.all([
+    db.get(`agency_monthly_statements/${owner.agencyId}__${month}`),
+    db.get(`agency_bonus_accruals/${owner.agencyId}__${month}`),
+  ]);
   return {
     ok: true,
-    ...statementSummary(owner.agencyId, month, statementSnap),
+    ...statementSummary(owner.agencyId, month, statementSnap, bonusSnap),
   };
 }
 
