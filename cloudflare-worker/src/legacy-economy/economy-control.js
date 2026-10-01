@@ -377,6 +377,12 @@ function assertSettledAgencyStatementConsistency({
 
 
 
+function agencyRankingCountryToken(value) {
+  return encodeURIComponent(
+    clean(value || "unknown").normalize("NFKC").toLowerCase(),
+  );
+}
+
 async function maybeNotifyAgencyMonthSettlement(
   db,
   agencyId,
@@ -392,6 +398,7 @@ async function maybeNotifyAgencyMonthSettlement(
   const stateRef=db.collection("agency_financial_state").doc(agencyId);
   const completionRef=db.collection("agency_host_settlement_completions")
     .doc(statementId);
+  const rankingRef=db.collection("agency_ranking_entries").doc(statementId);
 
   return db.runTransaction(async tx=>{
     const [
@@ -401,6 +408,7 @@ async function maybeNotifyAgencyMonthSettlement(
       bonusSnap,
       stateSnap,
       completionSnap,
+      rankingSnap,
     ]=await Promise.all([
       tx.get(notificationRef),
       tx.get(agencyRef),
@@ -408,10 +416,8 @@ async function maybeNotifyAgencyMonthSettlement(
       tx.get(bonusRef),
       tx.get(stateRef),
       tx.get(completionRef),
+      tx.get(rankingRef),
     ]);
-    if(notificationSnap.exists){
-      return {notified:false,duplicate:true};
-    }
     if(
       !agencySnap.exists ||
       !statementSnap.exists ||
@@ -423,12 +429,21 @@ async function maybeNotifyAgencyMonthSettlement(
     ){
       return {notified:false,pending:true};
     }
-    const ownerUid=clean(agencySnap.data()?.ownerUid);
+    if(notificationSnap.exists&&rankingSnap.exists){
+      return {notified:false,duplicate:true};
+    }
+
+    const agency=agencySnap.data()||{};
+    const ownerUid=clean(agency.ownerUid);
     if(!ownerUid)return {notified:false,pending:true};
 
     const statement=statementSnap.data()||{};
     const bonus=bonusSnap.data()||{};
     const state=stateSnap.exists?(stateSnap.data()||{}):{};
+    const supportCoins=agencyFinancialInteger(
+      statement.supportCoins||0,
+      "notification_support_coins",
+    );
     const targetShareCoins=agencyFinancialInteger(
       statement.agencyTargetShareCoins||
         statement.agencyBaseShareCoins||
@@ -448,31 +463,62 @@ async function maybeNotifyAgencyMonthSettlement(
       "notification_eligible_host_count",
     );
 
-    tx.create(notificationRef,{
-      userId:ownerUid,
-      type:"agency_monthly_settlement_summary",
-      category:"system",
-      title:"تم إغلاق تسوية الوكالة الشهرية",
-      body:
-        "الشهر "+month+
-        " • Agency Share المستحق من Targets: "+
-        String(targetShareCoins)+" Coins"+
-        " • Agency Bonus: "+String(performanceBonusCoins)+" Coins"+
-        " • Carryover: "+String(carryoverCoins)+" Coins",
-      read:false,
-      mandatory:true,
-      financial:true,
-      agencyId,
-      month,
-      agencyTargetShareCoins:targetShareCoins,
-      agencyPerformanceBonusCoins:performanceBonusCoins,
-      agencyPerformanceEligibleHostCount:eligibleHostCount,
-      agencyCarryoverCoins:carryoverCoins,
-      createdAt:now,
-    });
-    return {notified:true,ownerUid};
+    if(!rankingSnap.exists){
+      const country=clean(agency.country)||"unknown";
+      const countryToken=agencyRankingCountryToken(country);
+      const inverted=Number.MAX_SAFE_INTEGER-supportCoins;
+      const score=String(inverted).padStart(16,"0");
+      tx.create(rankingRef,{
+        agencyId,
+        month,
+        country,
+        countryToken,
+        supportCoins,
+        agencyName:clean(agency.name)||"Shadow Live Agency",
+        publicId:clean(agency.publicId)||agencyId,
+        logoUrl:
+          clean(agency.logoUrl||agency.imageUrl||agency.profileImageUrl)||null,
+        globalRankingKey:month+"__"+score+"__"+agencyId,
+        countryRankingKey:
+          month+"__"+countryToken+"__"+score+"__"+agencyId,
+        sourceStatementId:statementId,
+        createdAt:now,
+        updatedAt:now,
+      });
+    }
+
+    if(!notificationSnap.exists){
+      tx.create(notificationRef,{
+        userId:ownerUid,
+        type:"agency_monthly_settlement_summary",
+        category:"system",
+        title:"تم إغلاق تسوية الوكالة الشهرية",
+        body:
+          "الشهر "+month+
+          " • Agency Share المستحق من Targets: "+
+          String(targetShareCoins)+" Coins"+
+          " • Agency Bonus: "+String(performanceBonusCoins)+" Coins"+
+          " • Carryover: "+String(carryoverCoins)+" Coins",
+        read:false,
+        mandatory:true,
+        financial:true,
+        agencyId,
+        month,
+        agencyTargetShareCoins:targetShareCoins,
+        agencyPerformanceBonusCoins:performanceBonusCoins,
+        agencyPerformanceEligibleHostCount:eligibleHostCount,
+        agencyCarryoverCoins:carryoverCoins,
+        createdAt:now,
+      });
+    }
+    return {
+      notified:!notificationSnap.exists,
+      rankingCreated:!rankingSnap.exists,
+      ownerUid,
+    };
   });
 }
+
 
 async function finalizeAgencyPerformanceBonus(
   db,
