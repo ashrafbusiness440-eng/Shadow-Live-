@@ -371,6 +371,56 @@ test("direct create resolves owner public id and creates agency without applicat
   assert.equal(operation.data().status, "completed");
 });
 
+test("agency creation converts an existing personal room in place", async () => {
+  const ownerUid = "stage16_agency_room_owner";
+  await seedUser(ownerUid, "326991");
+  const roomId = "personal_" + ownerUid;
+  await adminDb.collection("rooms").doc(roomId).set({
+    name: "غرفتي القديمة",
+    title: "غرفتي القديمة",
+    ownerUid,
+    hostId: ownerUid,
+    roomType: "personal",
+    type: "personal",
+    publicId: "889911",
+    category: "دردشة",
+    isActive: true,
+    description: "يبقى المحتوى نفسه",
+    seats: [],
+  });
+
+  const result = await directCreateAgency(
+    db,
+    "control_owner_stage16_room",
+    {
+      ownerPublicId: "326991",
+      name: "Linked Agency",
+      country: "UAE",
+      agencyId: "626091",
+      idempotencyKey: "stage16_agency_room_convert_0001",
+    },
+    { now: new Date("2026-10-01T05:00:00.000Z") },
+  );
+
+  const [agencySnap, roomSnap, auditSnap] = await Promise.all([
+    adminDb.collection("agencies").doc("626091").get(),
+    adminDb.collection("rooms").doc(roomId).get(),
+    adminDb.collection("admin_audit_logs")
+      .doc("agency_room_link_626091_stage16_agency_room_convert_0001")
+      .get(),
+  ]);
+  const room = roomSnap.data();
+  assert.equal(result.roomId, roomId);
+  assert.equal(agencySnap.data().roomId, roomId);
+  assert.equal(room.roomType, "agency");
+  assert.equal(room.type, "agency");
+  assert.equal(room.agencyId, "626091");
+  assert.equal(room.publicId, "889911");
+  assert.equal(room.name, "غرفتي القديمة");
+  assert.equal(room.description, "يبقى المحتوى نفسه");
+  assert.equal(auditSnap.data().action, "convertExistingRoomToAgencyRoom");
+});
+
 test("direct create refuses owner with active agency application", async () => {
   const seeded = await seedApplication(
     "stage03b_direct_conflict",
