@@ -118,6 +118,12 @@ test("08-A room gift keeps Agency Bonus deferred even when activity threshold is
       pendingGiftEarningCoins:0,
     }),
     db.collection("rooms").doc(roomId).set({isActive:true,totalSupport:0}),
+    db.collection("users").doc("owner_"+agencyId).set({
+      coins:0,diamonds:0,role:"user",accountStatus:"active",
+    }),
+    db.collection("agencies").doc(agencyId).set({
+      agencyId,ownerUid:"owner_"+agencyId,status:"active",
+    }),
     db.collection("agency_support_stats").doc(agencyId)
       .collection("monthly").doc("2026-09").set({
         activeHostIds,
@@ -180,6 +186,12 @@ test("08-A chat gift matches room gift Base Agency Share with Bonus deferred",as
     db.collection("conversations").doc(conversationId).set({
       participants:[senderId,receiverId],
       unreadCounts:{[senderId]:0,[receiverId]:0},
+    }),
+    db.collection("users").doc("owner_"+agencyId).set({
+      coins:0,diamonds:0,role:"user",accountStatus:"active",
+    }),
+    db.collection("agencies").doc(agencyId).set({
+      agencyId,ownerUid:"owner_"+agencyId,status:"active",
     }),
     db.collection("agency_support_stats").doc(agencyId)
       .collection("monthly").doc("2026-09").set({
