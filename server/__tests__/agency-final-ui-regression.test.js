@@ -282,3 +282,50 @@ test("Agency permission and status notifications are mandatory", () => {
     true,
   );
 });
+
+
+test("Agency manager Host performance stays privacy-safe and lazy", () => {
+  const managerPage = source(
+    "lib/features/agency/screens/agency_membership_review_page.dart",
+  );
+  const service = source(
+    "lib/features/agency/services/owner_agency_service.dart",
+  );
+  const membership = source("cloudflare-worker/src/agency-membership.js");
+
+  assert.equal(managerPage.includes("agency-manager-load-members"), true);
+  assert.equal(managerPage.includes("agency-manager-member-"), true);
+  assert.equal(managerPage.includes("_membersData == null"), true);
+  assert.equal(managerPage.includes("loadManagerHostPerformance"), true);
+  assert.equal(
+    managerPage.includes("الرواتب وAgency Share وBonus وبيانات المحفظة مخفية"),
+    true,
+  );
+
+  assert.equal(service.includes("'action': 'memberPerformance'"), true);
+  assert.equal(
+    service.includes("class ManagerHostPerformanceData"),
+    true,
+  );
+
+  const start = membership.indexOf(
+    "export async function loadAgencyMemberPerformance",
+  );
+  const end = membership.indexOf(
+    "export async function listAgencyMembers",
+    start,
+  );
+  const segment = membership.slice(start, end);
+  assert.ok(start >= 0 && end > start);
+  assert.equal(segment.includes(".runQuery("), false);
+  assert.equal(segment.includes('collection("agency_wallets")'), false);
+  assert.equal(segment.includes("financial_ledger"), false);
+  assert.equal(segment.includes("salaryDiamonds"), false);
+  assert.equal(segment.includes("paidDiamonds"), false);
+  assert.equal(segment.includes("agencyShare"), false);
+  assert.equal(segment.includes("agencyBonus"), false);
+  assert.equal(
+    segment.includes('privacyMode: "manager_performance_only"'),
+    true,
+  );
+});
