@@ -951,17 +951,22 @@ export async function respondAgencyLeaveRequest(
         throw new ApiError("membership_request_not_found", 404);
       }
       const request = requestSnap.data || {};
-      if (
-        clean(request.status) !== "pending" ||
-        clean(request.type) !== "leave"
-      ) {
-        throw new ApiError("agency_leave_request_not_pending", 409);
-      }
-
       const agencyId = clean(request.agencyId);
       const uid = clean(request.uid);
-      if (!/^\d{3,8}$/.test(agencyId) || !uid) {
+      if (
+        clean(request.type) !== "leave" ||
+        !/^\d{3,8}$/.test(agencyId) ||
+        !uid
+      ) {
         throw new ApiError("agency_leave_request_invalid", 409);
+      }
+      if (actorUid === uid) {
+        throw new ApiError("cannot_review_own_request", 403);
+      }
+      if (clean(request.status) !== "pending") {
+        await loadAgencyActor(db, actorUid, agencyId, "review", tx);
+        await db.rollback(tx);
+        return resolvedRequestResult(request);
       }
 
       const [
@@ -994,15 +999,13 @@ export async function respondAgencyLeaveRequest(
         actorMembershipSnap.exists ? actorMembershipSnap.data || {} : {};
       const actorUser = actorUserSnap.exists ? actorUserSnap.data || {} : {};
       if (
-        clean(agency.status) !== "active" ||
-        clean(agency.ownerUid) !== actorUid ||
-        clean(actorMembership.agencyId) !== agencyId ||
-        clean(actorMembership.uid) !== actorUid ||
-        clean(actorMembership.status) !== "active" ||
-        clean(actorMembership.role) !== "owner" ||
-        clean(actorUser.agencyId) !== agencyId
+        !memberCanReview({
+          actorUser,
+          actorMembership,
+          agency,
+        })
       ) {
-        throw new ApiError("agency_owner_required", 403);
+        throw new ApiError("forbidden", 403);
       }
 
       if (!membershipSnap.exists || !agencyMembershipSnap.exists || !userSnap.exists) {
@@ -1041,6 +1044,25 @@ export async function respondAgencyLeaveRequest(
       }
 
       const status = decision === "accept" ? "accepted" : "rejected";
+      const reviewerUids = await joinReviewerNotificationUids(
+        db,
+        tx,
+        agencyId,
+        agency,
+      );
+      const notificationUpdates = await resolvedReviewerNotificationWrites(
+        db,
+        tx,
+        {
+          baseId: "agency_leave_request_" + requestId,
+          reviewerUids,
+          primaryUid: clean(agency.ownerUid),
+          status,
+          decision,
+          actorUid,
+          now,
+        },
+      );
       const result = {
         requestId,
         agencyId,
@@ -1085,6 +1107,10 @@ export async function respondAgencyLeaveRequest(
           "admin_audit_logs/agency_leave_response_" + requestId + "_" + key,
           {
             actorUid,
+            reviewerUid: actorUid,
+            decision,
+            decidedAt: now,
+            requestId,
             action:
               decision === "accept"
                 ? "acceptAgencyLeaveRequest"
@@ -1105,6 +1131,7 @@ export async function respondAgencyLeaveRequest(
             createdAt: now,
           },
         ),
+        ...notificationUpdates,
         db.writeCreate(
           "notifications/agency_leave_response_" + requestId + "_" + key,
           {
