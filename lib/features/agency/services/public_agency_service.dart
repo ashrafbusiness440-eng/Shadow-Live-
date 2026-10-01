@@ -189,7 +189,6 @@ class PublicAgencyPageData {
       limit: _nonNegativeInt(page['limit']),
       hasMore: page['hasMore'] == true,
       nextCursor: _nullableString(page['nextCursor']),
-      truncated: page['truncated'] == true,
     );
   }
 }
@@ -226,6 +225,7 @@ class PublicAgencySearchData {
       limit: _nonNegativeInt(page['limit']),
       hasMore: page['hasMore'] == true,
       nextCursor: _nullableString(page['nextCursor']),
+      truncated: page['truncated'] == true,
     );
   }
 }
