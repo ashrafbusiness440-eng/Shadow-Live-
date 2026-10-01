@@ -35,6 +35,7 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
   List<Map<String, dynamic>> applications = [];
   List<Map<String, dynamic>> manualBlocks = [];
   List<Map<String, dynamic>> ownershipTransferRequests = [];
+  List<Map<String, dynamic>> identityChangeRequests = [];
 
   @override
   void initState() {
@@ -102,6 +103,12 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
               .map((e) => Map<String, dynamic>.from(e))
               .toList()
           : <Map<String, dynamic>>[];
+      final identityChanges = body['identityChangeRequests'] is List
+          ? (body['identityChangeRequests'] as List)
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList()
+          : <Map<String, dynamic>>[];
       final permissions = body['permissions'] is Map
           ? Map<String, dynamic>.from(body['permissions'] as Map)
           : <String, dynamic>{};
@@ -116,6 +123,7 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
         applications = rows;
         manualBlocks = blocks;
         ownershipTransferRequests = transfers;
+        identityChangeRequests = identityChanges;
         canDirectCreate = permissions['canDirectCreate'] == true;
         canManageExisting = permissions['canManageExisting'] == true;
         canTransferOwnership = permissions['canTransferOwnership'] == true;
@@ -793,6 +801,107 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
   }
 
 
+  Future<void> reviewIdentityChange(
+    Map<String, dynamic> request,
+    String decision,
+  ) async {
+    if (busy || !canManageExisting) return;
+    String? reason;
+    if (decision == 'reject') {
+      final controller = TextEditingController();
+      final accepted = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('رفض طلب تغيير بيانات الوكالة'),
+          content: TextField(
+            controller: controller,
+            minLines: 2,
+            maxLines: 4,
+            maxLength: 500,
+            decoration: const InputDecoration(
+              labelText: 'سبب الرفض *',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (controller.text.trim().length >= 3) {
+                  Navigator.pop(dialogContext, true);
+                }
+              },
+              child: const Text('رفض'),
+            ),
+          ],
+        ),
+      );
+      reason = controller.text.trim();
+      controller.dispose();
+      if (accepted != true || reason.length < 3) return;
+    } else {
+      final accepted = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('اعتماد تغيير بيانات الوكالة'),
+          content: Text(
+            'الحالي: ${(request['currentName'] ?? '').toString()}'
+            '\nالمقترح: ${(request['requestedName'] ?? '').toString()}'
+            '\nالدولة: ${(request['requestedCountry'] ?? '—').toString()}',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('موافقة'),
+            ),
+          ],
+        ),
+      );
+      if (accepted != true) return;
+    }
+
+    setState(() => busy = true);
+    try {
+      await post({
+        'action': 'reviewIdentityChange',
+        'requestId': (request['requestId'] ?? '').toString(),
+        'decision': decision,
+        if (reason != null) 'reason': reason,
+        'idempotencyKey': operationKey(
+          decision == 'accept'
+              ? 'agency_identity_change_accept'
+              : 'agency_identity_change_reject',
+        ),
+      });
+      await load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            decision == 'accept'
+                ? 'تم اعتماد تغيير اسم/دولة الوكالة.'
+                : 'تم رفض طلب تغيير اسم/دولة الوكالة.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر معالجة طلب تغيير البيانات: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
   Future<void> reviewOwnershipTransfer(
     Map<String, dynamic> request,
     String decision,
@@ -1439,6 +1548,91 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
                       ),
                     );
                   }),
+                  if (canManageExisting) ...[
+                    const SizedBox(height: 20),
+                    const Text(
+                      'طلبات تغيير اسم/دولة الوكالات',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    if (identityChangeRequests.isEmpty)
+                      const Card(
+                        child: ListTile(
+                          leading: Icon(Icons.edit_location_alt_outlined),
+                          title: Text('لا توجد طلبات تغيير بيانات معلّقة'),
+                        ),
+                      ),
+                    ...identityChangeRequests.map(
+                      (request) => Card(
+                        key: ValueKey(
+                          'agency-identity-change-' +
+                              (request['requestId'] ?? '').toString(),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Text(
+                                'Agency ID: ' +
+                                    (request['agencyId'] ?? '').toString(),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'الحالي: ' +
+                                    (request['currentName'] ?? '').toString() +
+                                    ' • ' +
+                                    (request['currentCountry'] ?? '—')
+                                        .toString(),
+                              ),
+                              Text(
+                                'المقترح: ' +
+                                    (request['requestedName'] ?? '').toString() +
+                                    ' • ' +
+                                    (request['requestedCountry'] ?? '—')
+                                        .toString(),
+                              ),
+                              const SizedBox(height: 10),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  FilledButton.icon(
+                                    onPressed: busy
+                                        ? null
+                                        : () => reviewIdentityChange(
+                                              request,
+                                              'accept',
+                                            ),
+                                    icon: const Icon(
+                                      Icons.check_circle_outline,
+                                    ),
+                                    label: const Text('موافقة'),
+                                  ),
+                                  OutlinedButton.icon(
+                                    onPressed: busy
+                                        ? null
+                                        : () => reviewIdentityChange(
+                                              request,
+                                              'reject',
+                                            ),
+                                    icon: const Icon(Icons.cancel_outlined),
+                                    label: const Text('رفض'),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                   if (canTransferOwnership) ...[
                     const SizedBox(height: 20),
                     const Text(
