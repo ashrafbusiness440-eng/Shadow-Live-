@@ -65,6 +65,109 @@ export function hostActivityBonusForTarget(target = {}) {
     : { asset: "none", amount: 0 };
 }
 
+export function agencyTargetShareEntitlement({
+  target = null,
+  tiers = [],
+} = {}) {
+  if (!target) {
+    return {
+      targetId: "",
+      tierId: "",
+      hostShareBps: 0,
+      agencyShareBps: 0,
+      targetThresholdCoins: 0,
+      entitlementCoins: 0,
+    };
+  }
+  const targetId = clean(target.id || target.targetId);
+  const tierId = clean(target.tierId || target.targetTierId).toLowerCase();
+  const threshold = targetFinancialInteger(
+    target.thresholdCoins ?? target.targetThresholdCoins ?? 0,
+    "agency_share_target_threshold_coins",
+  );
+  const tier = Array.isArray(tiers)
+    ? tiers.find((item) => clean(item?.id).toLowerCase() === tierId)
+    : null;
+  if (!tier) {
+    throw new Error("agency_share_target_tier_missing");
+  }
+  const hostShareBps = targetFinancialInteger(
+    tier.hostShareBps || 0,
+    "agency_share_host_bps",
+  );
+  const agencyShareBps = targetFinancialInteger(
+    tier.agencyShareBps || 0,
+    "agency_share_agency_bps",
+  );
+  if (hostShareBps <= 0 || hostShareBps > 10000 || agencyShareBps > 10000) {
+    throw new Error("invalid_agency_share_tier");
+  }
+  const entitlementBig =
+    (BigInt(threshold) * BigInt(agencyShareBps)) / BigInt(hostShareBps);
+  const entitlementCoins = Number(entitlementBig);
+  if (!Number.isSafeInteger(entitlementCoins) || entitlementCoins < 0) {
+    throw new Error("invalid_agency_share_entitlement");
+  }
+  return {
+    targetId,
+    tierId,
+    hostShareBps,
+    agencyShareBps,
+    targetThresholdCoins: threshold,
+    entitlementCoins,
+  };
+}
+
+export function agencyTargetShareDelta({
+  target = null,
+  tiers = [],
+  previousPaidCoins = 0,
+} = {}) {
+  const entitlement = agencyTargetShareEntitlement({ target, tiers });
+  const previous = targetFinancialInteger(
+    previousPaidCoins,
+    "agency_share_previous_paid_coins",
+  );
+  const deltaCoins = Math.max(0, entitlement.entitlementCoins - previous);
+  return {
+    ...entitlement,
+    previousPaidCoins: previous,
+    deltaCoins,
+    paidCoins: previous + deltaCoins,
+  };
+}
+
+export function convertAgencyCoinsWithCarryover({
+  carryoverCoins = 0,
+  payableCoins = 0,
+  coinsPerDiamond = 10000,
+} = {}) {
+  const carryover = targetFinancialInteger(
+    carryoverCoins,
+    "agency_carryover_coins",
+  );
+  const payable = targetFinancialInteger(
+    payableCoins,
+    "agency_payable_coins",
+  );
+  const rate = targetFinancialInteger(
+    coinsPerDiamond,
+    "agency_coins_per_diamond",
+  );
+  if (rate <= 0) throw new Error("invalid_agency_coins_per_diamond");
+  const total = carryover + payable;
+  if (!Number.isSafeInteger(total)) {
+    throw new Error("invalid_agency_carryover_total");
+  }
+  return {
+    openingCarryoverCoins: carryover,
+    payableCoins: payable,
+    diamondsEarned: Math.floor(total / rate),
+    remainderCoins: total % rate,
+    coinsPerDiamond: rate,
+  };
+}
+
 export function agencyPerformanceBonusForTarget({
   targetThresholdCoins = 0,
   qualifiedDays = 0,
