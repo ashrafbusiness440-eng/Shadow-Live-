@@ -700,6 +700,8 @@ class _AgencyIdentityCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cover = agency.coverUrl?.trim() ?? '';
+    final logo = agency.logoUrl?.trim() ?? '';
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -713,17 +715,30 @@ class _AgencyIdentityCard extends StatelessWidget {
           ],
         ),
         border: Border.all(color: Colors.white12),
+        image: cover.isEmpty
+            ? null
+            : DecorationImage(
+                image: NetworkImage(cover),
+                fit: BoxFit.cover,
+                colorFilter: const ColorFilter.mode(
+                  Color(0xAA000000),
+                  BlendMode.darken,
+                ),
+              ),
       ),
       child: Column(
         children: [
-          const CircleAvatar(
+          CircleAvatar(
             radius: 34,
-            backgroundColor: Color(0xFF6E49D8),
-            child: Icon(
-              Icons.apartment_rounded,
-              size: 36,
-              color: Colors.white,
-            ),
+            backgroundColor: const Color(0xFF6E49D8),
+            backgroundImage: logo.isEmpty ? null : NetworkImage(logo),
+            child: logo.isEmpty
+                ? const Icon(
+                    Icons.apartment_rounded,
+                    size: 36,
+                    color: Colors.white,
+                  )
+                : null,
           ),
           const SizedBox(height: 12),
           Text(
