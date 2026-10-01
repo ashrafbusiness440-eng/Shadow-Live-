@@ -83,7 +83,7 @@ test("Agency room House link reuses room metadata without an Agency bootstrap re
   assert.equal(roomResponseBlock.includes("const agencyId=clean(data.agencyId);"), true);
   assert.equal(
     roomResponseBlock.includes(
-      'agencyId:roomType==="agency"&&/^\\d{6}$/.test(agencyId)?agencyId:""',
+      'agencyId:roomType==="agency"&&/^\\d{3,8}$/.test(agencyId)?agencyId:""',
     ),
     true,
   );
@@ -93,4 +93,27 @@ test("Agency room House link reuses room metadata without an Agency bootstrap re
   assert.equal(main.includes("agency-room-house-button"), true);
   assert.equal(main.includes("agencyIdForRoom(_roomArguments)"), true);
   assert.equal(main.includes("PublicAgencyPage(agencyId: agencyId)"), true);
+});
+
+
+test("opening an existing active room keeps the no-extra-user-read fast path", () => {
+  const voice = source("../../cloudflare-worker/src/voice-session-legacy.js");
+  const start = voice.indexOf("async function openPersonalRoom(db,uid)");
+  const end = voice.indexOf("async function changeRoomPublicId", start);
+  const block = voice.slice(start, end);
+  const fastReturn = block.indexOf("if(data.isActive!==false){");
+  const userRead = block.indexOf("const userSnap=await userRef.get();");
+
+  assert.notEqual(start, -1);
+  assert.notEqual(fastReturn, -1);
+  assert.notEqual(userRead, -1);
+  assert.ok(fastReturn < userRead);
+  assert.equal(
+    block.includes('clean(user.agencyRole)==="owner"&&/^\\d{3,8}$/.test(linkedAgencyId)'),
+    true,
+  );
+  assert.equal(
+    block.includes('tx.set(agencyRef,{roomId,updatedAt:now},{merge:true});'),
+    true,
+  );
 });
