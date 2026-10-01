@@ -300,6 +300,31 @@ async function joinReviewerNotificationUids(
   return [...recipients];
 }
 
+function reviewerNotificationPath(baseId, recipientUid, primaryUid) {
+  const safeRecipient = clean(recipientUid)
+    .replace(/[^A-Za-z0-9_-]/g, "_")
+    .slice(0, 80);
+  return `notifications/${baseId}${
+    clean(recipientUid) === clean(primaryUid) ? "" : "_" + safeRecipient
+  }`;
+}
+
+function resolvedRequestResult(request = {}) {
+  return {
+    ok: true,
+    code: "already_processed",
+    ...requestSummary(request),
+    actionable: false,
+    reviewerUid: clean(request.resolvedBy) || null,
+    decision:
+      clean(request.status) === "accepted"
+        ? "accept"
+        : clean(request.status) === "rejected"
+          ? "reject"
+          : null,
+  };
+}
+
 async function createRequest({
   db,
   actorUid,
@@ -419,6 +444,9 @@ async function createRequest({
           read: false,
           requestId,
           agencyId,
+          requestType: type,
+          applicantUid: uid,
+          actionState: "pending",
           createdAt: now,
         });
       });
@@ -678,6 +706,36 @@ export async function requestAgencyLeave(
       if (!ownerUid) {
         throw new ApiError("agency_owner_missing", 409);
       }
+      const reviewerUids = await joinReviewerNotificationUids(
+        db,
+        tx,
+        agencyId,
+        agencySnap.data || {},
+      );
+      const leaveNotificationBase = `agency_leave_request_${requestId}`;
+      const leaveNotificationWrites = reviewerUids.map((reviewerUid) =>
+        db.writeCreate(
+          reviewerNotificationPath(
+            leaveNotificationBase,
+            reviewerUid,
+            ownerUid,
+          ),
+          {
+            userId: reviewerUid,
+            type: "agency_leave_request",
+            category: "system",
+            title: "طلب مغادرة وكالة",
+            body: "يوجد عضو بانتظار مراجعة طلب مغادرة الوكالة.",
+            read: false,
+            requestId,
+            agencyId,
+            requestType: "leave",
+            applicantUid: actorUid,
+            actionState: "pending",
+            createdAt: now,
+          },
+        ),
+      );
 
       const writes = [
         db.writeCreate(requestPath, fullRequest),
@@ -715,21 +773,7 @@ export async function requestAgencyLeave(
             createdAt: now,
           },
         ),
-        db.writeCreate(
-          `notifications/agency_leave_request_${requestId}`,
-          {
-            userId: ownerUid,
-            type: "agency_leave_request",
-            category: "system",
-            title: "طلب مغادرة وكالة",
-            body: "يوجد مضيف بانتظار مراجعة طلب مغادرة الوكالة.",
-            read: false,
-            requestId,
-            agencyId,
-            memberUid: actorUid,
-            createdAt: now,
-          },
-        ),
+        ...leaveNotificationWrites,
       ];
 
       await db.commit(tx, writes);
