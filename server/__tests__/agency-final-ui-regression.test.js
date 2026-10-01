@@ -161,6 +161,7 @@ test("Agency reviewer notifications remain actionable once and resolved afterwar
   assert.equal(notificationPage.includes("already_processed"), true);
   assert.equal(notificationService.includes("agencyReviewResolved"), true);
   assert.equal(notificationService.includes("resolvedByName"), true);
+  assert.equal(notificationService.includes("resolvedAt"), true);
   assert.equal(notificationPage.includes("_resolvedNotificationText"), true);
   assert.equal(membership.includes("resolvedReviewerNotificationWrites"), true);
   assert.equal(membership.includes("resolvedByName"), true);
