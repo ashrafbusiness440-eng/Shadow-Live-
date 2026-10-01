@@ -143,13 +143,17 @@ test("11-A Host My Agency returns only the signed-in Host core data", async () =
   assert.equal(topLevel.salaryDiamonds, 85);
   assert.equal(topLevel.hostShareBps, 5000);
   assert.equal(topLevel.grossSupportCoins, 1700000);
-  assert.equal(topLevel.activityBonusBps, 200);
+  assert.deepEqual(topLevel.activityBonus, {
+    asset: "diamonds",
+    amount: 4,
+  });
   assert.equal(result.activity.qualifiedDays, 7);
   assert.equal(result.activity.micSecondsMonth, 54000);
   assert.equal(result.activity.requiredQualifiedDays, 14);
   assert.equal(result.activity.requiredMinutesPerDay, 120);
-  assert.equal(result.activity.activityBonusBps, 200);
+  assert.equal(result.activity.bonusMode, "highest_target_month_end");
   assert.equal(result.activity.requiredMicSecondsMonth, 100800);
+  assert.equal(JSON.stringify(result).includes("activityBonusBps"), false);
 
   const serialized = JSON.stringify(result);
   assert.equal(serialized.includes("agencyProfitDiamonds"), false);
