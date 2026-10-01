@@ -363,3 +363,50 @@ test("Agency personal Target history stays bounded and immutable", () => {
   assert.equal(page.includes("host-agency-target-history-entry"), true);
   assert.equal(page.includes("سجل الـTargets الشخصي"), true);
 });
+
+
+test("Agency 7-day cooldown exception stays explicit and bounded", () => {
+  const membership = source("cloudflare-worker/src/agency-membership.js");
+  const control = source("cloudflare-worker/src/agency-control.js");
+  const entry = source(
+    "lib/features/agency/screens/my_agency_entry_page.dart",
+  );
+  const service = source(
+    "lib/features/agency/services/agency_membership_service.dart",
+  );
+  const controlPage = source("lib/admin/agency_control_page.dart");
+
+  assert.equal(
+    membership.includes("export async function requestAgencyCooldownException"),
+    true,
+  );
+  assert.equal(
+    membership.includes("agency_cooldown_exception_requests/"),
+    true,
+  );
+  assert.equal(
+    membership.includes("cooldownActive"),
+    true,
+  );
+  assert.equal(
+    control.includes("export async function listAgencyCooldownExceptionRequests"),
+    true,
+  );
+  const listStart = control.indexOf(
+    "export async function listAgencyCooldownExceptionRequests",
+  );
+  const listEnd = control.indexOf(
+    "async function finalizeAgencyCooldownExceptionReview",
+    listStart,
+  );
+  const listSegment = control.slice(listStart, listEnd);
+  assert.equal(listSegment.includes("limit = Math.min(25"), true);
+  assert.equal(listSegment.includes(".runQuery("), true);
+  assert.equal(control.includes('action === "reviewCooldownException"'), true);
+  assert.equal(service.includes("'action': 'requestCooldownException'"), true);
+  assert.equal(entry.includes("agency-cooldown-exception-request"), true);
+  assert.equal(
+    controlPage.includes("طلبات استثناء انتظار 7 أيام"),
+    true,
+  );
+});
