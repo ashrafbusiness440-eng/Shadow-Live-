@@ -149,15 +149,13 @@ test("12-B closed-month statement merges bounded per-host Bonus accrual with fou
       month: "2026-08",
       status: "settled",
       supportCoins: 2000000,
-      agencyBaseShareCoins: 120000,
-      agencyBonusCoins: 40000,
-      agencyPayableCoins: 160000,
-      agencyDiamonds: 16,
+      agencyTargetShareCoins: 120000,
+      agencyTargetShareDiamonds: 12,
+      agencyBonusCoins: 5000,
+      agencyBonusDiamonds: 1,
       agencyRemainderCoins: 3500,
-      agencyActiveHostCount: 12,
-      agencyRequiredActiveHosts: 10,
+      agencyPerformanceEligibleHostCount: 2,
       agencyBonusEligible: true,
-      agencyBonusBps: 200,
       giftCount: 80,
     },
     bonusAccrual: {
@@ -180,9 +178,9 @@ test("12-B closed-month statement merges bounded per-host Bonus accrual with fou
 
   assert.equal(result.ok, true);
   assert.equal(result.settled, true);
-  assert.equal(result.statement.agencyPayableCoins, 165000);
-  assert.equal(result.statement.agencyBonusCoins, 45000);
-  assert.equal(result.statement.agencyDiamonds, 17);
+  assert.equal(result.statement.agencyPayableCoins, 125000);
+  assert.equal(result.statement.agencyBonusCoins, 5000);
+  assert.equal(result.statement.agencyDiamonds, 13);
   assert.equal(result.statement.activeHostCount, 2);
   assert.equal(result.statement.bonusBps, 150);
   assert.deepEqual(calls.gets, [
