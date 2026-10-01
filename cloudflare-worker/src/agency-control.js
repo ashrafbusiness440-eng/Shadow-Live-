@@ -500,6 +500,29 @@ async function createAgencyForOwner({
           throw new ApiError("owner_has_active_application", 409);
         }
 
+        // Agency creation is the authoritative one-time conversion point for
+        // an owner's existing personal room. This keeps the normal room-open
+        // hot path read-only and preserves the same room/Public Room ID.
+        const ownerRoomPath = `rooms/personal_${ownerUid}`;
+        const ownerRoomSnap = await db.get(ownerRoomPath, tx);
+        let linkedRoomId = null;
+        if (ownerRoomSnap.exists) {
+          const ownerRoom = ownerRoomSnap.data || {};
+          const roomOwnerUid = clean(
+            ownerRoom.ownerUid || ownerRoom.ownerId || ownerRoom.hostId,
+          );
+          const currentAgencyId = clean(ownerRoom.agencyId);
+          if (
+            roomOwnerUid !== ownerUid ||
+            ownerRoom.systemOwned === true ||
+            ownerRoom.officialRoom === true ||
+            (currentAgencyId && currentAgencyId !== candidate)
+          ) {
+            throw new ApiError("agency_room_conflict", 409);
+          }
+          linkedRoomId = `personal_${ownerUid}`;
+        }
+
         const agency = {
           ...createAgencyDocument({
             agencyId: candidate,
@@ -513,6 +536,7 @@ async function createAgencyForOwner({
           }),
           memberCount: 1 + (applicationId ? hostUids.length : 0),
           hostCount: applicationId ? hostUids.length : 0,
+          ...(linkedRoomId ? { roomId: linkedRoomId } : {}),
         };
         const ownerMembership = createAgencyMembershipDocument({
           agencyId: candidate,
@@ -543,6 +567,7 @@ async function createAgencyForOwner({
           country: agency.country,
           status: "active",
           hostCount: hostUids.length,
+          roomId: linkedRoomId,
           ...(applicationId ? { applicationId } : {}),
         };
 
@@ -608,6 +633,46 @@ async function createAgencyForOwner({
             createdAt: now,
           }),
         ];
+
+        if (linkedRoomId) {
+          writes.push(
+            db.writeUpdate(
+              ownerRoomPath,
+              {
+                roomType: "agency",
+                type: "agency",
+                agencyId: candidate,
+                agencyPublicId: candidate,
+                agencyName: agency.name,
+                updatedAt: now,
+              },
+              [
+                "roomType",
+                "type",
+                "agencyId",
+                "agencyPublicId",
+                "agencyName",
+                "updatedAt",
+              ],
+            ),
+            db.writeCreate(
+              `admin_audit_logs/agency_room_link_${candidate}_${key}`,
+              {
+                actorUid,
+                action: "convertExistingRoomToAgencyRoom",
+                targetType: "room",
+                targetId: linkedRoomId,
+                after: {
+                  agencyId: candidate,
+                  roomId: linkedRoomId,
+                  roomType: "agency",
+                },
+                idempotencyKey: key,
+                createdAt: now,
+              },
+            ),
+          );
+        }
 
         if (applicationId) {
           writes.push(
