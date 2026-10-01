@@ -103,6 +103,27 @@ function utcPeriodKeys(date = new Date()) {
   return { day, week: weekKey, month };
 }
 
+function riyadhPeriodKeys(date = new Date()) {
+  const shifted = new Date(date.getTime() + 3 * 60 * 60 * 1000);
+  const day = shifted.toISOString().slice(0, 10);
+  const month = day.slice(0, 7);
+  const d = new Date(Date.UTC(
+    shifted.getUTCFullYear(),
+    shifted.getUTCMonth(),
+    shifted.getUTCDate(),
+  ));
+  const weekday = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - weekday);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const week = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  return {
+    day,
+    week: d.getUTCFullYear().toString() + "-W" +
+      week.toString().padStart(2, "0"),
+    month,
+  };
+}
+
 const fallbackGifts = [
   {id:"rose",nameAr:"وردة",priceCoins:100,enabled:true,assetKey:"gifts.placeholder.default"},
   {id:"coffee",nameAr:"قهوة",priceCoins:300,enabled:true,assetKey:"gifts.placeholder.default"},
@@ -170,6 +191,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     transactionAttempts += 1;
     const now = operationNow(options);
     const periods = utcPeriodKeys(now);
+    const agencyPeriods = riyadhPeriodKeys(now);
     const nowMs = now.getTime();
     const roomPath = `rooms/${roomId}`;
     const senderPath = `users/${senderUid}`;
@@ -286,16 +308,17 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     const room = roomSnap.data || {};
     const economy = economySnap.data || {};
     const agencyId = clean(receiver.agencyId || "");
+    const revenueMonth = agencyId ? agencyPeriods.month : periods.month;
 
     const previousMonthCoins =
-      clean(receiver.giftRevenueMonth) === periods.month
+      clean(receiver.giftRevenueMonth) === revenueMonth
         ? Math.max(0, Number(receiver.giftRevenueMonthCoins || 0))
         : 0;
     const monthlyGrossCoins = previousMonthCoins + totalCost;
     const previousAgencyPublicSupportCoins =
       agencyId &&
       clean(receiver.agencyPublicSupportAgencyId) === agencyId &&
-      clean(receiver.agencyPublicSupportMonth) === periods.month
+      clean(receiver.agencyPublicSupportMonth) === agencyPeriods.month
         ? Math.max(
             0,
             Number(receiver.agencyPublicSupportCoins || 0),
@@ -323,7 +346,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       receiver,
       monthlyGrossCoins,
       agencyId,
-      periods.month,
+      revenueMonth,
     );
     const policyEnabled = economy.policyMode === "tiered_host_agency"
       ? economy.enabled !== false
@@ -355,7 +378,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     const accumulatedGiftCoins = previousPendingGiftCoins + recipientShareCoins;
     const agencyTarget = agencyId && earningsEnabled
       ? calculateAgencyTargetProgress({
-          monthKey: periods.month,
+          monthKey: agencyPeriods.month,
           storedMonth: receiver.agencyTargetMonth,
           storedProgressCoins: receiver.agencyTargetProgressCoins,
           addedHostShareCoins: recipientShareCoins,
@@ -443,7 +466,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     ];
 
     const receiverFields = {
-      giftRevenueMonth: periods.month,
+      giftRevenueMonth: revenueMonth,
       giftRevenueMonthCoins: monthlyGrossCoins,
       currentGiftRevenueTier: revenue.tierId,
     };
@@ -454,7 +477,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     ];
     if (agencyId) {
       receiverFields.agencyPublicSupportAgencyId = agencyId;
-      receiverFields.agencyPublicSupportMonth = periods.month;
+      receiverFields.agencyPublicSupportMonth = agencyPeriods.month;
       receiverFields.agencyPublicSupportCoins =
         agencyPublicSupportCoins;
       receiverMask.push(
@@ -479,7 +502,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
         db.increment("giftDiamondsLifetime", diamondsEarned),
       );
       if (agencyTarget) {
-        receiverFields.agencyTargetMonth = periods.month;
+        receiverFields.agencyTargetMonth = agencyPeriods.month;
         receiverFields.agencyTargetProgressCoins = agencyTarget.progressCoins;
         receiverFields.agencySalaryPaidDiamonds = agencyTarget.paidDiamonds;
         receiverFields.agencyCurrentTargetId =
@@ -616,9 +639,9 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
         db.increment("platformShareCoins", platformShareCoins),
       ];
       for (const path of [
-        `agency_support_stats/${agencyId}/daily/${periods.day}`,
-        `agency_support_stats/${agencyId}/weekly/${periods.week}`,
-        `agency_support_stats/${agencyId}/monthly/${periods.month}`,
+        `agency_support_stats/${agencyId}/daily/${agencyPeriods.day}`,
+        `agency_support_stats/${agencyId}/weekly/${agencyPeriods.week}`,
+        `agency_support_stats/${agencyId}/monthly/${agencyPeriods.month}`,
       ]) {
         writes.push(
           db.writeUpdate(
@@ -635,7 +658,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       const agencyShard = agencyAccrualShard(key);
       writes.push(
         db.writeUpdate(
-          `agency_monthly_accrual_shards/${agencyId}__${periods.month}__${String(agencyShard).padStart(2, "0")}`,
+          `agency_monthly_accrual_shards/${agencyId}__${agencyPeriods.month}__${String(agencyShard).padStart(2, "0")}`,
           {
             agencyId,
             month: periods.month,
@@ -654,7 +677,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       );
       writes.push(
         db.writeUpdate(
-          `agency_host_monthly/${agencyId}__${periods.month}__${receiverId}`,
+          `agency_host_monthly/${agencyId}__${agencyPeriods.month}__${receiverId}`,
           {
             agencyId,
             hostUid: receiverId,
@@ -665,7 +688,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
             targetThresholdCoins:
               agencyTarget?.reachedTarget?.thresholdCoins || 0,
             surplusPageKey:
-              `${agencyId}__${periods.month}__${receiverId}`,
+              `${agencyId}__${agencyPeriods.month}__${receiverId}`,
             publicRankingKey: agencyPublicRankingKey({
               agencyId,
               month: periods.month,
