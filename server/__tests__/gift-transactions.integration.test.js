@@ -128,6 +128,12 @@ test("room gift pays agency target salary immediately and records sharded monthl
     db.collection("rooms").doc(roomId).set({
       isActive:true,agencyId:roomAgencyId,totalSupport:0,
     }),
+    db.collection("users").doc("owner_"+agencyId).set({
+      coins:0,diamonds:0,role:"user",accountStatus:"active",
+    }),
+    db.collection("agencies").doc(agencyId).set({
+      agencyId,ownerUid:"owner_"+agencyId,status:"active",
+    }),
     db.collection("agency_support_stats").doc(agencyId).collection("monthly").doc(periods.month).set({
       activeHostIds:[],
     }),
@@ -248,6 +254,12 @@ test("chat gift uses the same monthly target salary and sharded accrual as room 
     db.collection("conversations").doc(conversationId).set({
       participants:[senderId,receiverId],
       unreadCounts:{[senderId]:0,[receiverId]:0},
+    }),
+    db.collection("users").doc("owner_"+agencyId).set({
+      coins:0,diamonds:0,role:"user",accountStatus:"active",
+    }),
+    db.collection("agencies").doc(agencyId).set({
+      agencyId,ownerUid:"owner_"+agencyId,status:"active",
     }),
     db.collection("agency_support_stats").doc(agencyId).collection("monthly").doc(periods.month).set({
       activeHostIds:[],
