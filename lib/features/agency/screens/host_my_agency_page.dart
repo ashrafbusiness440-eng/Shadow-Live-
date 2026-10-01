@@ -40,6 +40,7 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
   bool _loading = true;
   bool _rankingLoading = false;
   bool _archiveLoading = false;
+  bool _targetHistoryLoading = false;
   bool _leaveStatusLoading = false;
   bool _leaveSubmitting = false;
   bool _logoUploading = false;
@@ -184,6 +185,79 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
       setState(() => _archiveLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تعذر تحميل السجل الشهري.')),
+      );
+    }
+  }
+
+  Future<void> _showTargetHistory() async {
+    final data = _data;
+    if (data == null || _targetHistoryLoading) return;
+    setState(() => _targetHistoryLoading = true);
+    try {
+      final archive = _archive ??
+          await _publicAgencyService.loadArchive(
+            agencyId: data.agency.agencyId,
+          );
+      if (!mounted) return;
+      _archive = archive;
+      final months = <String>[
+        data.target.month,
+        ...archive.months,
+      ].where((value) => value.trim().isNotEmpty).toSet().toList();
+
+      setState(() => _targetHistoryLoading = false);
+      final selected = await showModalBottomSheet<String>(
+        context: context,
+        backgroundColor: const Color(0xFF0D1220),
+        builder: (sheetContext) => SafeArea(
+          child: Directionality(
+            textDirection: TextDirection.rtl,
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
+              children: [
+                const ListTile(
+                  leading: Icon(Icons.fact_check_rounded),
+                  title: Text('سجل الـTargets'),
+                  subtitle: Text(
+                    'اختر الشهر لعرض Targets المحققة والـDiamonds المدفوعة',
+                  ),
+                ),
+                ...months.map(
+                  (month) => ListTile(
+                    title: Text(_monthLabel(month)),
+                    subtitle: month == data.target.month
+                        ? const Text('الشهر الحالي')
+                        : const Text('شهر مغلق'),
+                    trailing: const Icon(Icons.chevron_left_rounded),
+                    onTap: () => Navigator.pop(sheetContext, month),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      if (selected == null || !mounted) return;
+
+      setState(() => _targetHistoryLoading = true);
+      final history = await _service.loadTargetHistory(month: selected);
+      if (!mounted) return;
+      setState(() => _targetHistoryLoading = false);
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: const Color(0xFF0D1220),
+        builder: (_) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: _TargetHistorySheet(history: history),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _targetHistoryLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر تحميل سجل الـTargets حاليًا.')),
       );
     }
   }
@@ -928,6 +1002,8 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
           _HostFinanceEntries(
             onWallet: _openWallet,
             onTargetTable: _showTargetTable,
+            onTargetHistory: _showTargetHistory,
+            targetHistoryLoading: _targetHistoryLoading,
           ),
           const SizedBox(height: 16),
           _HostRankingCard(
@@ -1554,10 +1630,14 @@ class _HostFinanceEntries extends StatelessWidget {
   const _HostFinanceEntries({
     required this.onWallet,
     required this.onTargetTable,
+    required this.onTargetHistory,
+    required this.targetHistoryLoading,
   });
 
   final VoidCallback onWallet;
   final Future<void> Function() onTargetTable;
+  final Future<void> Function() onTargetHistory;
+  final bool targetHistoryLoading;
 
   @override
   Widget build(BuildContext context) {
@@ -1565,26 +1645,145 @@ class _HostFinanceEntries extends StatelessWidget {
       key: const Key('host-agency-finance-entries'),
       padding: const EdgeInsets.all(12),
       decoration: _cardDecoration(),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: OutlinedButton.icon(
-              key: const Key('host-agency-wallet-entry'),
-              onPressed: onWallet,
-              icon: const Icon(Icons.account_balance_wallet_rounded),
-              label: const Text('المحفظة/الألماس'),
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  key: const Key('host-agency-wallet-entry'),
+                  onPressed: onWallet,
+                  icon: const Icon(Icons.account_balance_wallet_rounded),
+                  label: const Text('المحفظة/الألماس'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FilledButton.icon(
+                  key: const Key('host-agency-target-table-entry'),
+                  onPressed: onTargetTable,
+                  icon: const Icon(Icons.table_chart_rounded),
+                  label: const Text('جدول الـTarget'),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: FilledButton.icon(
-              key: const Key('host-agency-target-table-entry'),
-              onPressed: onTargetTable,
-              icon: const Icon(Icons.table_chart_rounded),
-              label: const Text('جدول الـTarget'),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            key: const Key('host-agency-target-history-entry'),
+            onPressed: targetHistoryLoading ? null : onTargetHistory,
+            icon: targetHistoryLoading
+                ? const SizedBox.square(
+                    dimension: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.fact_check_rounded),
+            label: Text(
+              targetHistoryLoading
+                  ? 'جارٍ تحميل السجل…'
+                  : 'سجل الـTargets والـDiamonds',
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _TargetHistorySheet extends StatelessWidget {
+  const _TargetHistorySheet({required this.history});
+
+  final HostTargetHistoryData history;
+
+  String _achievementLabel(HostTargetHistoryAchievement item) {
+    final tier = item.tierId?.trim() ?? '';
+    final rank = item.rank?.trim() ?? '';
+    if (tier.isNotEmpty) {
+      return rank.isEmpty ? tier : '$tier $rank';
+    }
+    return item.targetId;
+  }
+
+  String _dateLabel(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return 'التاريخ غير متاح';
+    final parsed = DateTime.tryParse(raw)?.toLocal();
+    if (parsed == null) return raw;
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${parsed.year}/${two(parsed.month)}/${two(parsed.day)} '
+        '${two(parsed.hour)}:${two(parsed.minute)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: .72,
+        minChildSize: .45,
+        maxChildSize: .92,
+        builder: (_, controller) => ListView(
+          controller: controller,
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
+          children: [
+            ListTile(
+              leading: const Icon(Icons.fact_check_rounded),
+              title: const Text(
+                'سجل الـTargets الشخصي',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
+              subtitle: Text(_monthLabel(history.month)),
+              trailing: IconButton(
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close_rounded),
+              ),
+            ),
+            const SizedBox(height: 6),
+            if (history.achievements.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 34),
+                child: Center(
+                  child: Text(
+                    'لا توجد Targets مدفوعة في هذا الشهر.',
+                    style: TextStyle(color: Colors.white54),
+                  ),
+                ),
+              )
+            else
+              ...history.achievements.map(
+                (item) => Card(
+                  color: const Color(0xFF11182A),
+                  child: ListTile(
+                    leading: const CircleAvatar(
+                      backgroundColor: Color(0xFF2A3150),
+                      child: Icon(Icons.flag_rounded),
+                    ),
+                    title: Text(
+                      _achievementLabel(item),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    subtitle: Text(
+                      '${_dateLabel(item.achievedAt)}'
+                      '\nTarget: ${_formatCoins(item.thresholdCoins)} Coins',
+                    ),
+                    isThreeLine: true,
+                    trailing: Text(
+                      '+${item.salaryDeltaDiamonds} D',
+                      key: Key(
+                        'host-target-history-diamonds-${item.targetId}',
+                      ),
+                      style: const TextStyle(
+                        color: Colors.lightBlueAccent,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
