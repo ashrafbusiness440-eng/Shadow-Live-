@@ -16,8 +16,9 @@ const cloudflareDb=cloudflareFirestoreAdapter(db);
 
 after(async()=>{await deleteApp(app);});
 
-const septemberEnd=new Date("2026-09-30T23:59:59.900Z");
-const octoberStart=new Date("2026-10-01T00:00:00.100Z");
+// Agency business periods close at Asia/Riyadh midnight (UTC+3).
+const septemberEnd=new Date("2026-09-30T20:59:59.900Z");
+const octoberStart=new Date("2026-09-30T21:00:00.100Z");
 
 function agencyAccrualShard(value){
   const text=String(value??"").trim();
@@ -102,7 +103,7 @@ async function seedSharedConfig(){
   ]);
 }
 
-test("06-C room target lifecycle resets at UTC month boundary and preserves both monthly histories",async()=>{
+test("06-C room target lifecycle resets at Riyadh month boundary and preserves both Agency monthly histories",async()=>{
   await seedSharedConfig();
   const suffix=Date.now().toString()+"_room";
   const senderId="stage06c_sender_"+suffix;
@@ -167,7 +168,6 @@ test("06-C room target lifecycle resets at UTC month boundary and preserves both
     septemberShardDoc,
     octoberShardDoc,
     septemberRoomSupport,
-    octoberRoomSupport,
     septemberTx,
     octoberTx,
     septemberLedger,
@@ -185,8 +185,6 @@ test("06-C room target lifecycle resets at UTC month boundary and preserves both
       .doc(agencyId+"__2026-10__"+String(octoberShard).padStart(2,"0")).get(),
     db.collection("rooms").doc(roomId)
       .collection("support_monthly").doc("2026-09").get(),
-    db.collection("rooms").doc(roomId)
-      .collection("support_monthly").doc("2026-10").get(),
     db.collection("gift_transactions").doc(septemberKey).get(),
     db.collection("gift_transactions").doc(octoberKey).get(),
     db.collection("financial_ledger").doc("gift_earnings_"+septemberKey).get(),
@@ -212,11 +210,14 @@ test("06-C room target lifecycle resets at UTC month boundary and preserves both
   assert.equal(septemberShardDoc.data().hostShareCoins,50000);
   assert.equal(octoberShardDoc.data().supportCoins,100000);
   assert.equal(octoberShardDoc.data().hostShareCoins,50000);
-  assert.equal(septemberRoomSupport.data().supportCoins,100000);
-  assert.equal(octoberRoomSupport.data().supportCoins,100000);
+  // Generic room-support analytics remain UTC by design, so both writes are
+  // still in September UTC while Agency accounting has already rolled over.
+  assert.equal(septemberRoomSupport.data().supportCoins,200000);
 
   assert.equal(septemberTx.data().periods.month,"2026-09");
-  assert.equal(octoberTx.data().periods.month,"2026-10");
+  assert.equal(octoberTx.data().periods.month,"2026-09");
+  assert.equal(septemberTx.data().agencyTargetMonth,"2026-09");
+  assert.equal(octoberTx.data().agencyTargetMonth,"2026-10");
   assert.equal(septemberLedger.data().month,"2026-09");
   assert.equal(octoberLedger.data().month,"2026-10");
   assert.equal(septemberLedger.data().delta,5);
@@ -228,7 +229,7 @@ test("06-C room target lifecycle resets at UTC month boundary and preserves both
   );
 });
 
-test("06-C a transaction retry that crosses midnight recomputes the month instead of committing stale period keys",async()=>{
+test("06-C a transaction retry that crosses Riyadh midnight recomputes the Agency month instead of committing stale keys",async()=>{
   await seedSharedConfig();
   const suffix=Date.now().toString()+"_retry";
   const senderId="stage06c_retry_sender_"+suffix;
@@ -307,14 +308,15 @@ test("06-C a transaction retry that crosses midnight recomputes the month instea
   assert.equal(host.data().agencyTargetMonth,"2026-10");
   assert.equal(host.data().agencySalaryPaidDiamonds,5);
   assert.equal(host.data().diamonds,5);
-  assert.equal(transaction.data().periods.month,"2026-10");
+  assert.equal(transaction.data().periods.month,"2026-09");
+  assert.equal(transaction.data().agencyTargetMonth,"2026-10");
   assert.equal(septemberHost.exists,false);
   assert.equal(septemberShard.exists,false);
   assert.equal(octoberHost.data().salaryPaidDiamonds,5);
   assert.equal(octoberShard.data().hostShareCoins,50000);
 });
 
-test("06-C chat gifts use the same UTC monthly rollover and keep prior-month host history",async()=>{
+test("06-C chat gifts use the same Riyadh Agency rollover and keep prior-month host history",async()=>{
   await seedSharedConfig();
   const suffix=Date.now().toString()+"_chat";
   const senderId="stage06c_chat_sender_"+suffix;
@@ -376,6 +378,8 @@ test("06-C chat gifts use the same UTC monthly rollover and keep prior-month hos
   assert.equal(octoberHost.data().salaryPaidDiamonds,5);
   assert.equal(septemberTx.data().contextType,"chat");
   assert.equal(septemberTx.data().periods.month,"2026-09");
+  assert.equal(septemberTx.data().agencyTargetMonth,"2026-09");
   assert.equal(octoberTx.data().contextType,"chat");
-  assert.equal(octoberTx.data().periods.month,"2026-10");
+  assert.equal(octoberTx.data().periods.month,"2026-09");
+  assert.equal(octoberTx.data().agencyTargetMonth,"2026-10");
 });
