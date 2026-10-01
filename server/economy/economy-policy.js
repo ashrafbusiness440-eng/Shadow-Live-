@@ -47,10 +47,7 @@ export function resolveRevenuePolicy(
   const qualifiedDays = activityMonth === monthKey
     ? Math.max(0, Number(receiverData?.giftHostQualifiedDays || 0))
     : 0;
-  const requiredDays = Math.max(
-    1,
-    Math.min(31, Number(economy?.hostBonusQualifiedDays || 14)),
-  );
+  const requiredDays = 14;
   const configuredHostBonus = Math.max(
     0,
     Math.min(3000, Number(economy?.hostPerformanceBonusBps ?? 200)),
@@ -219,10 +216,7 @@ export function calculateAgencyCycleSettlement(
   } = {},
 ) {
   const tier = tierForMonthlyGross(economy, monthlyGrossCoins);
-  const fullDays = Math.max(
-    1,
-    Math.min(31, Number(economy?.hostBonusQualifiedDays || 14)),
-  );
+  const fullDays = 14;
   const hostBonusBps = qualifiedDays >= fullDays
     ? Math.max(
         0,
@@ -247,12 +241,13 @@ export function calculateAgencyCycleSettlement(
         Math.min(10000 - hostShareBps, tier.agencyShareBps + agencyBonusBps),
       )
     : 0;
-  const payoutBps = activityPayoutBps(economy, qualifiedDays);
+  // Activity is bonus-only. It never reduces base Host or Agency shares.
+  const payoutBps = 10000;
   const support = Math.max(0, Number(supportCoins || 0));
   const hostGrossCoins = Math.floor(support * hostShareBps / 10000);
   const agencyGrossCoins = Math.floor(support * agencyShareBps / 10000);
-  const hostPayableCoins = Math.floor(hostGrossCoins * payoutBps / 10000);
-  const agencyPayableCoins = Math.floor(agencyGrossCoins * payoutBps / 10000);
+  const hostPayableCoins = hostGrossCoins;
+  const agencyPayableCoins = agencyGrossCoins;
   const platformCoins = Math.max(
     0,
     support - hostPayableCoins - agencyPayableCoins,
