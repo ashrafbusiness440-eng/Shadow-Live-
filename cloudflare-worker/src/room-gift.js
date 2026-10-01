@@ -660,6 +660,8 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
             hostUid: receiverId,
             month: periods.month,
             targetId: agencyTarget?.reachedTarget?.id || "",
+            targetTierId: agencyTarget?.reachedTarget?.tierId || "",
+            targetRank: agencyTarget?.reachedTarget?.rank || "",
             targetThresholdCoins:
               agencyTarget?.reachedTarget?.thresholdCoins || 0,
             surplusPageKey:
@@ -680,6 +682,8 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
             "hostUid",
             "month",
             "targetId",
+            "targetTierId",
+            "targetRank",
             "targetThresholdCoins",
             "surplusPageKey",
             "publicRankingKey",
