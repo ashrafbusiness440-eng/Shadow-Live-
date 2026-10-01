@@ -29,6 +29,9 @@ class _AgencyMembershipReviewPageState
   bool _loading = true;
   bool _loadingMore = false;
   bool _busy = false;
+  bool _membersLoading = false;
+  OwnerAgencyMembersData? _membersData;
+  String? _memberPerformanceLoadingUid;
   String? _error;
 
   String get _agencyId => widget.initialCore.agency.agencyId;
@@ -217,6 +220,57 @@ class _AgencyMembershipReviewPageState
     }
   }
 
+  Future<void> _loadMembers() async {
+    if (_membersLoading) return;
+    setState(() => _membersLoading = true);
+    try {
+      final data = await _service.loadMembers(_agencyId);
+      if (!mounted) return;
+      setState(() {
+        _membersData = data;
+        _membersLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _membersLoading = false;
+        _error = error.toString();
+      });
+    }
+  }
+
+  Future<void> _openMemberPerformance(OwnerAgencyMember member) async {
+    if (_memberPerformanceLoadingUid != null || member.uid.isEmpty) return;
+    setState(() => _memberPerformanceLoadingUid = member.uid);
+    try {
+      final data = await _service.loadManagerHostPerformance(
+        agencyId: _agencyId,
+        targetUid: member.uid,
+      );
+      if (!mounted) return;
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: const Color(0xFF0D1220),
+        builder: (_) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: _ManagerHostPerformanceSheet(data: data),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تعذر تحميل أداء العضو حاليًا.'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _memberPerformanceLoadingUid = null);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final requests = _requests ?? const <OwnerAgencyPendingRequest>[];
@@ -335,8 +389,207 @@ class _AgencyMembershipReviewPageState
                   style: TextStyle(color: Colors.redAccent, fontSize: 12),
                 ),
               ],
+              const SizedBox(height: 24),
+              const Divider(color: Color(0x22FFFFFF)),
+              const SizedBox(height: 14),
+              const Text(
+                'أداء أعضاء الوكالة',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 20,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'يعرض Target والتقدم والنشاط فقط. الرواتب وAgency Share وBonus وبيانات المحفظة مخفية عن الإدارة.',
+                style: TextStyle(
+                  color: Colors.white54,
+                  height: 1.4,
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (_membersData == null)
+                FilledButton.icon(
+                  key: const Key('agency-manager-load-members'),
+                  onPressed: _membersLoading ? null : _loadMembers,
+                  icon: _membersLoading
+                      ? const SizedBox.square(
+                          dimension: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.groups_rounded),
+                  label: Text(
+                    _membersLoading
+                        ? 'جارٍ تحميل الأعضاء…'
+                        : 'تحميل أداء المضيفين',
+                  ),
+                )
+              else ...[
+                ..._membersData!.members.map(
+                  (member) => _ManagerMemberPerformanceTile(
+                    member: member,
+                    loading:
+                        _memberPerformanceLoadingUid == member.uid,
+                    disabled: _memberPerformanceLoadingUid != null,
+                    onTap: () => _openMemberPerformance(member),
+                  ),
+                ),
+                if (_membersData!.truncated)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 6),
+                    child: Text(
+                      'تم عرض أول نافذة آمنة من الأعضاء.',
+                      style: TextStyle(
+                        color: Colors.amberAccent,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+              ],
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ManagerMemberPerformanceTile extends StatelessWidget {
+  const _ManagerMemberPerformanceTile({
+    required this.member,
+    required this.loading,
+    required this.disabled,
+    required this.onTap,
+  });
+
+  final OwnerAgencyMember member;
+  final bool loading;
+  final bool disabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final image = member.profileImageUrl?.trim() ?? '';
+    final publicId = member.publicId?.trim() ?? '';
+    return Card(
+      key: Key('agency-manager-member-${member.uid}'),
+      color: const Color(0xFF11182A),
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: const Color(0xFF2A3150),
+          backgroundImage: image.isEmpty ? null : NetworkImage(image),
+          child: image.isEmpty ? const Icon(Icons.person_rounded) : null,
+        ),
+        title: Text(
+          member.displayName ?? (publicId.isEmpty ? member.uid : publicId),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          publicId.isEmpty
+              ? _roleLabel(member.role)
+              : 'ID: $publicId • ${_roleLabel(member.role)}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: loading
+            ? const SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.query_stats_rounded),
+        onTap: disabled ? null : onTap,
+      ),
+    );
+  }
+}
+
+class _ManagerHostPerformanceSheet extends StatelessWidget {
+  const _ManagerHostPerformanceSheet({required this.data});
+
+  final ManagerHostPerformanceData data;
+
+  String _level(ManagerHostPerformanceLevel? level) {
+    if (level == null) return '—';
+    final tier = level.tierId.trim();
+    final rank = level.rank.trim();
+    return rank.isEmpty ? tier : '$tier $rank';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ratio =
+        (data.progressBps / 10000).clamp(0.0, 1.0).toDouble();
+    final micMinutes = data.micSecondsMonth ~/ 60;
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(18, 18, 18, 28),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    data.displayName,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
+            Text(
+              'ID: ${data.publicId ?? '—'} • ${_roleLabel(data.role)}',
+              style: const TextStyle(color: Colors.white54),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              'Target الحالي: ${_level(data.currentLevel)}',
+              style: const TextStyle(
+                color: Color(0xFFB99CFF),
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            LinearProgressIndicator(value: ratio),
+            const SizedBox(height: 8),
+            Text(
+              'التقدم: ${(data.progressBps / 100).toStringAsFixed(1)}% • '
+              '${data.progressCoins}/${data.targetCoins} Coins',
+              style: const TextStyle(color: Colors.white70),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'التالي: ${_level(data.nextLevel)} • المتبقي: '
+              '${data.remainingCoins} Coins',
+              style: const TextStyle(color: Colors.white70),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              'النشاط: ${data.qualifiedDays}/${data.requiredQualifiedDays} يوم '
+              '• $micMinutes/${data.requiredMicSecondsMonth ~/ 60} دقيقة',
+              style: const TextStyle(color: Colors.white70),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'هذه الشاشة تعرض بيانات الأداء المسموحة للإدارة فقط ولا تعرض رواتب Diamonds أو Agency Share/Bonus أو أرصدة المحفظة.',
+              style: TextStyle(
+                color: Colors.white38,
+                fontSize: 12,
+                height: 1.4,
+              ),
+            ),
+          ],
         ),
       ),
     );
