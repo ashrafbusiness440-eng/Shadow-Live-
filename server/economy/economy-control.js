@@ -436,7 +436,14 @@ export async function settleAgencyMonth(db,actorUid,agencyIdInput,monthInput,opt
       throw Error("settlement_ledger_conflict");
     }
     if(existingBonusAccrual.exists){
-      throw Error("settlement_bonus_accrual_conflict");
+      const existingBonusData=existingBonusAccrual.data()||{};
+      if(
+        clean(existingBonusData.statementId) ||
+        clean(existingBonusData.ledgerId) ||
+        clean(existingBonusData.status)==="settled"
+      ){
+        throw Error("settlement_bonus_accrual_conflict");
+      }
     }
 
     const [
@@ -612,7 +619,7 @@ export async function settleAgencyMonth(db,actorUid,agencyIdInput,monthInput,opt
       lifetimeDiamonds:closingLifetimeDiamonds,
       updatedAt:FieldValue.serverTimestamp(),
     },{merge:true});
-    tx.create(bonusAccrualRef,{
+    tx.set(bonusAccrualRef,{
       agencyId,
       month,
       supportCoins:totals.supportCoins,
@@ -629,7 +636,7 @@ export async function settleAgencyMonth(db,actorUid,agencyIdInput,monthInput,opt
       statementId,
       ledgerId,
       createdAt:FieldValue.serverTimestamp(),
-    });
+    },{merge:true});
     tx.create(settlementRef,{
       ...statement,
       settledAt:FieldValue.serverTimestamp(),
@@ -918,6 +925,8 @@ async function settleAgencyHostSurplus(
   const agencyBonusLedgerId="agency_performance_bonus_"+settlementId;
   const agencyBonusLedgerRef=db.collection("financial_ledger").doc(agencyBonusLedgerId);
   const agencyWalletRef=db.collection("agency_wallets").doc(agencyId);
+  const bonusAccrualRef=db.collection("agency_bonus_accruals")
+    .doc(agencyId+"__"+month);
   const auditRef=db.collection("admin_audit_logs").doc(
     "agency_host_surplus_"+settlementId,
   );
@@ -1293,6 +1302,18 @@ async function settleAgencyHostSurplus(
     }
 
     if(agencyPerformanceBonusCoins>0){
+      tx.set(bonusAccrualRef,{
+        agencyId,
+        month,
+        mode:"per_host_target_month_end",
+        configuredBonusBps:policySnapshot.agencyPerformanceBonusBps,
+        perHostEligibleHostCount:FieldValue.increment(
+          agencyPerformanceBonus.eligible===true?1:0,
+        ),
+        perHostBonusCoins:FieldValue.increment(agencyPerformanceBonusCoins),
+        perHostBonusDiamonds:FieldValue.increment(agencyBonusDiamonds),
+        updatedAt:FieldValue.serverTimestamp(),
+      },{merge:true});
       tx.create(agencyBonusLedgerRef,{
         agencyId,
         hostUid,
