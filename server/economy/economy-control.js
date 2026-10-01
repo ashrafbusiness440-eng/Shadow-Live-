@@ -375,6 +375,75 @@ function assertSettledAgencyStatementConsistency({
 }
 
 
+
+async function ensureAgencyShareSettlementNotification(
+  db,
+  agencyId,
+  month,
+  now=new Date(),
+){
+  const statementId=agencyId+"__"+month;
+  const notificationRef=db.collection("notifications")
+    .doc("agency_share_settlement_"+statementId);
+  const agencyRef=db.collection("agencies").doc(agencyId);
+  const statementRef=db.collection("agency_monthly_statements").doc(statementId);
+
+  return db.runTransaction(async tx=>{
+    const [notificationSnap,agencySnap,statementSnap]=await Promise.all([
+      tx.get(notificationRef),
+      tx.get(agencyRef),
+      tx.get(statementRef),
+    ]);
+    if(notificationSnap.exists){
+      return {notified:false,duplicate:true};
+    }
+    if(
+      !agencySnap.exists ||
+      !statementSnap.exists ||
+      clean(statementSnap.data()?.status)!=="settled"
+    ){
+      return {notified:false,pending:true};
+    }
+    const ownerUid=clean(agencySnap.data()?.ownerUid);
+    if(!ownerUid)return {notified:false,pending:true};
+    const statement=statementSnap.data()||{};
+    const baseShareCoins=agencyFinancialInteger(
+      statement.agencyBaseShareCoins??statement.agencyShareCoins??0,
+      "share_notification_base_coins",
+    );
+    const diamondsEarned=agencyFinancialInteger(
+      statement.agencyDiamonds||0,
+      "share_notification_diamonds",
+    );
+    const carryoverCoins=agencyFinancialInteger(
+      statement.agencyRemainderCoins||0,
+      "share_notification_carryover",
+    );
+
+    tx.create(notificationRef,{
+      userId:ownerUid,
+      type:"agency_share_settlement_paid",
+      category:"system",
+      title:"تمت إضافة Agency Share",
+      body:
+        "الشهر "+month+
+        " • Agency Share: "+String(baseShareCoins)+" Coins"+
+        " • المضاف للمحفظة: "+String(diamondsEarned)+" Diamonds"+
+        " • Carryover: "+String(carryoverCoins)+" Coins",
+      read:false,
+      mandatory:true,
+      financial:true,
+      agencyId,
+      month,
+      agencyBaseShareCoins:baseShareCoins,
+      agencyDiamondsAdded:diamondsEarned,
+      agencyCarryoverCoins:carryoverCoins,
+      createdAt:now,
+    });
+    return {notified:true,ownerUid};
+  });
+}
+
 async function maybeNotifyAgencyMonthSettlement(
   db,
   agencyId,
@@ -784,6 +853,12 @@ export async function settleAgencyMonth(db,actorUid,agencyIdInput,monthInput,opt
     });
     return {alreadySettled:false,settlement:statement};
   });
+  await ensureAgencyShareSettlementNotification(
+    db,
+    agencyId,
+    month,
+    options.now??new Date(),
+  );
   await maybeNotifyAgencyMonthSettlement(
     db,
     agencyId,
