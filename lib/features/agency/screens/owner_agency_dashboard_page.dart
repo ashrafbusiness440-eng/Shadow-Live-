@@ -1119,7 +1119,7 @@ class _MemberManagementTile extends StatelessWidget {
               : null,
         ),
         title: Text(
-          member.displayName ?? publicId.ifEmpty(member.uid),
+          member.displayName ?? (publicId.isEmpty ? member.uid : publicId),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
@@ -1346,11 +1346,11 @@ class _HostPerformanceSheet extends StatelessWidget {
                           ),
                           _PerformancePill(
                             label: 'الحالي',
-                            value: _ownerHostLevelLabel(data.currentLevel),
+                            value: _ownerHostLevelWithTarget(data.currentLevel),
                           ),
                           _PerformancePill(
                             label: 'التالي',
-                            value: _ownerHostLevelLabel(data.nextLevel),
+                            value: _ownerHostLevelWithTarget(data.nextLevel),
                           ),
                         ],
                       ),
@@ -1481,6 +1481,12 @@ String _ownerHostLevelLabel(OwnerHostPerformanceLevel? level) {
   final tier = level.tierId.trim();
   final rank = level.rank.trim();
   return [tier, rank].where((part) => part.isNotEmpty).join(' ');
+}
+
+String _ownerHostLevelWithTarget(OwnerHostPerformanceLevel? level) {
+  if (level == null) return '—';
+  final label = _ownerHostLevelLabel(level);
+  return '$label • ${_compact(level.thresholdCoins)}';
 }
 
 String _achievementDateLabel(DateTime? value) {
