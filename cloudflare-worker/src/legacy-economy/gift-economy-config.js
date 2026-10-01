@@ -55,7 +55,7 @@ export function defaultPolicy(){
     periodTimeZone:"UTC",
     hostPerformanceBonusBps:200,
     agencyPerformanceBonusBps:200,
-    hostBonusQualifiedDays:9,
+    hostBonusQualifiedDays:14,
     hostBonusMinutesPerQualifiedDay:120,
     agencyBonusActiveHosts:10,
     activityRuleMode:"monthly_multiplier",
