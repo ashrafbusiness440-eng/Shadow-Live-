@@ -124,6 +124,12 @@ test("06-C room target lifecycle resets at Riyadh month boundary and preserves b
     db.collection("rooms").doc(roomId).set({
       isActive:true,agencyId,totalSupport:0,
     }),
+    db.collection("users").doc("owner_"+agencyId).set({
+      coins:0,diamonds:0,role:"user",accountStatus:"active",
+    }),
+    db.collection("agencies").doc(agencyId).set({
+      agencyId,ownerUid:"owner_"+agencyId,status:"active",
+    }),
   ]);
 
   const presence=realtimeNamespaceWithPresentUids([senderId,hostId]);
@@ -258,6 +264,12 @@ test("06-C a transaction retry that crosses Riyadh midnight recomputes the Agenc
     db.collection("rooms").doc(roomId).set({
       isActive:true,agencyId,totalSupport:0,
     }),
+    db.collection("users").doc("owner_"+agencyId).set({
+      coins:0,diamonds:0,role:"user",accountStatus:"active",
+    }),
+    db.collection("agencies").doc(agencyId).set({
+      agencyId,ownerUid:"owner_"+agencyId,status:"active",
+    }),
   ]);
 
   const dates=[septemberEnd,octoberStart];
@@ -337,6 +349,12 @@ test("06-C chat gifts use the same Riyadh Agency rollover and keep prior-month h
     db.collection("conversations").doc(conversationId).set({
       participants:[senderId,hostId],
       unreadCounts:{[senderId]:0,[hostId]:0},
+    }),
+    db.collection("users").doc("owner_"+agencyId).set({
+      coins:0,diamonds:0,role:"user",accountStatus:"active",
+    }),
+    db.collection("agencies").doc(agencyId).set({
+      agencyId,ownerUid:"owner_"+agencyId,status:"active",
     }),
   ]);
 
