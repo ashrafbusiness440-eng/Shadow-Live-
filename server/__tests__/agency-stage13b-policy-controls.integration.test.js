@@ -33,10 +33,10 @@ const globalEconomy = {
   policyMode: "tiered_host_agency",
   coinsPerUsd: 10000,
   coinsPerDiamond: 10000,
-  agencyPerformanceBonusBps: 200,
-  agencyBonusActiveHosts: 10,
-  hostPerformanceBonusBps: 200,
-  hostBonusQualifiedDays: 9,
+  agencyPerformanceBonusBps: 100,
+  agencyPerformanceBonusMode: "per_host_target_month_end",
+  hostPerformanceBonusBps: 0,
+  hostBonusQualifiedDays: 14,
   tiers: [
     { id: "starter", nameAr: "Starter", minGiftCoins: 0, hostShareBps: 5000, agencyShareBps: 500 },
     { id: "bronze", nameAr: "Bronze", minGiftCoins: 1000000, hostShareBps: 5700, agencyShareBps: 600 },
@@ -122,7 +122,6 @@ test("13-B policy control inherits global then stores an idempotent per-agency o
     targets: customTargets,
     overrideBonus: true,
     agencyPerformanceBonusBps: 125,
-    agencyBonusActiveHosts: 3,
     surplusToShadow: false,
     idempotencyKey: "stage13b_policy_0001",
   };
@@ -142,7 +141,6 @@ test("13-B policy control inherits global then stores an idempotent per-agency o
   assert.equal(current.effective.tiers[0].hostShareBps, 5500);
   assert.equal(current.effective.targets[0].thresholdCoins, 55000);
   assert.equal(current.effective.agencyPerformanceBonusBps, 125);
-  assert.equal(current.effective.agencyBonusActiveHosts, 3);
   assert.equal(current.effective.surplusToShadow, false);
 
   const [override, agency, audit] = await Promise.all([
@@ -170,7 +168,6 @@ test("13-B disabling tier Target and Bonus overrides removes stale values and re
     targets: customTargets,
     overrideBonus: true,
     agencyPerformanceBonusBps: 125,
-    agencyBonusActiveHosts: 3,
     surplusToShadow: true,
     idempotencyKey: "stage13b_policy_0006_on",
   });
@@ -191,8 +188,11 @@ test("13-B disabling tier Target and Bonus overrides removes stale values and re
   assert.equal(current.effective.inherited.surplus, false);
   assert.equal(current.effective.tiers[0].hostShareBps, 5000);
   assert.equal(current.effective.targets[0].id, "starter_g");
-  assert.equal(current.effective.agencyPerformanceBonusBps, 200);
-  assert.equal(current.effective.agencyBonusActiveHosts, 10);
+  assert.equal(current.effective.agencyPerformanceBonusBps, 100);
+  assert.equal(
+    current.effective.agencyPerformanceBonusMode,
+    "per_host_target_month_end",
+  );
   assert.equal(current.effective.surplusToShadow, false);
 
   const stored = await adminDb.collection("agency_policy_overrides")
@@ -200,6 +200,7 @@ test("13-B disabling tier Target and Bonus overrides removes stale values and re
   assert.equal("tiers" in stored.data(), false);
   assert.equal("targets" in stored.data(), false);
   assert.equal("agencyPerformanceBonusBps" in stored.data(), false);
+  assert.equal("agencyPerformanceBonusMode" in stored.data(), false);
   assert.equal("agencyBonusActiveHosts" in stored.data(), false);
   assert.equal(stored.data().surplusToShadow, false);
 });
@@ -216,7 +217,6 @@ test("13-B propagates policy snapshots in bounded cursor pages and never touches
     targets: customTargets,
     overrideBonus: true,
     agencyPerformanceBonusBps: 125,
-    agencyBonusActiveHosts: 3,
     surplusToShadow: true,
     idempotencyKey: "stage13b_policy_0002",
   });
