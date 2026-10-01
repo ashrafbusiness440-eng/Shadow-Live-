@@ -51,11 +51,32 @@ function fakeDbForOwner({
       },
     ],
     [
-      "agency_wallets/" + agencyId,
+      "agency_target_share_monthly/" + agencyId + "__2026-09",
       {
+        agencyId,
+        month: "2026-09",
+        shareCoins: 60000,
+        diamondsPaid: 6,
+        payoutCount: 2,
+      },
+    ],
+    [
+      "agency_financial_state/" + agencyId,
+      {
+        agencyId,
+        carryoverCoins: 3500,
+        lifetimeAgencyDiamonds: 90,
+        legacyWalletMigrated: true,
+      },
+    ],
+    [
+      "users/" + uid,
+      {
+        uid,
+        agencyId,
+        agencyRole: "owner",
+        accountStatus: "active",
         diamonds: 42,
-        remainderCoins: 3500,
-        lifetimeDiamonds: 90,
       },
     ],
     [
@@ -108,7 +129,7 @@ function fakeDbForOwner({
   };
 }
 
-test("12-B owner performance uses exactly six direct reads and no query/write", async () => {
+test("12-B owner performance uses exactly eight direct reads and no query/write", async () => {
   const { db, calls } = fakeDbForOwner();
   const result = await loadAgencyOwnerPerformance(
     db,
@@ -134,7 +155,9 @@ test("12-B owner performance uses exactly six direct reads and no query/write", 
     "agency_user_memberships/stage12b_owner",
     "agencies/812002",
     "agency_support_stats/812002/monthly/2026-09",
-    "agency_wallets/812002",
+    "agency_target_share_monthly/812002__2026-09",
+    "agency_financial_state/812002",
+    "users/stage12b_owner",
     "system_config/gift_economy",
     "agency_policy_overrides/812002",
   ]);
