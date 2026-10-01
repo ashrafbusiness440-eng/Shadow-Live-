@@ -2690,6 +2690,159 @@ export async function removeAgencyMember(
 }
 
 
+export async function requestAgencyCooldownException(
+  db,
+  actorUid,
+  body = {},
+  { now = new Date() } = {},
+) {
+  const key = clean(body.idempotencyKey);
+  const reason = clean(body.reason).slice(0, 500);
+  if (!validIdempotencyKey(key)) {
+    throw new ApiError("invalid_idempotency_key", 400);
+  }
+  if (reason.length < 3) {
+    throw new ApiError("cooldown_exception_reason_required", 400);
+  }
+
+  const requestPath = "agency_cooldown_exception_requests/" + actorUid;
+  const opPath = operationPath(actorUid, key);
+  const fp = fingerprint({
+    action: "requestCooldownException",
+    reason,
+  });
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const tx = await db.beginTransaction();
+    try {
+      const [operationSnap, userSnap, membershipSnap, requestSnap] =
+        await Promise.all([
+          db.get(opPath, tx),
+          db.get("users/" + actorUid, tx),
+          db.get("agency_user_memberships/" + actorUid, tx),
+          db.get(requestPath, tx),
+        ]);
+
+      if (operationSnap.exists) {
+        const existing = operationSnap.data || {};
+        if (clean(existing.requestFingerprint) !== fp) {
+          throw new ApiError("idempotency_conflict", 409);
+        }
+        await db.rollback(tx);
+        return { ok: true, code: "duplicate", ...(existing.result || {}) };
+      }
+      if (!userSnap.exists) throw new ApiError("user_not_found", 404);
+      if (!historicalMembership(membershipSnap)) {
+        throw new ApiError("agency_membership_not_in_cooldown", 409);
+      }
+      const membership = membershipSnap.data || {};
+      const cooldownUntilMs = timestampMs(membership.cooldownUntil);
+      const nowMs = now instanceof Date ? now.getTime() : timestampMs(now);
+      if (!cooldownUntilMs || cooldownUntilMs <= nowMs) {
+        throw new ApiError("agency_rejoin_cooldown_not_active", 409);
+      }
+      if (
+        requestSnap.exists &&
+        clean(requestSnap.data?.status) === "pending"
+      ) {
+        throw new ApiError("cooldown_exception_pending", 409);
+      }
+
+      const agencyId = clean(membership.agencyId);
+      const requestId = actorUid;
+      const result = {
+        requestId,
+        uid: actorUid,
+        agencyId,
+        status: "pending",
+        reason,
+        cooldownUntil: new Date(cooldownUntilMs).toISOString(),
+      };
+      const requestData = {
+        ...result,
+        type: "rejoin_cooldown_exception",
+        requestedAt: now,
+        updatedAt: now,
+        resolvedAt: null,
+        resolvedBy: null,
+        resolutionReason: null,
+      };
+      const requestWrite = requestSnap.exists
+        ? db.writeUpdate(
+            requestPath,
+            requestData,
+            [
+              "requestId",
+              "uid",
+              "agencyId",
+              "status",
+              "reason",
+              "cooldownUntil",
+              "type",
+              "requestedAt",
+              "updatedAt",
+              "resolvedAt",
+              "resolvedBy",
+              "resolutionReason",
+            ],
+          )
+        : db.writeCreate(requestPath, requestData);
+
+      await db.commit(tx, [
+        requestWrite,
+        db.writeCreate(opPath, {
+          actorUid,
+          action: "requestCooldownException",
+          requestFingerprint: fp,
+          status: "completed",
+          result,
+          createdAt: now,
+        }),
+        db.writeCreate(
+          "admin_audit_logs/agency_cooldown_exception_request_" +
+            actorUid + "_" + key,
+          {
+            actorUid,
+            action: "requestAgencyCooldownException",
+            targetType: "agency_membership",
+            targetId: agencyId + "__" + actorUid,
+            after: result,
+            idempotencyKey: key,
+            createdAt: now,
+          },
+        ),
+        db.writeCreate(
+          "notifications/agency_cooldown_exception_requested_" +
+            actorUid + "_" + key,
+          {
+            userId: actorUid,
+            type: "agency_rejoin_cooldown_exception_requested",
+            category: "system",
+            title: "تم إرسال طلب استثناء فترة الانتظار",
+            body: "طلبك قيد مراجعة Shadow Live.",
+            read: false,
+            mandatory: true,
+            agencyId,
+            createdAt: now,
+          },
+        ),
+      ]);
+      return { ok: true, code: "ok", ...result };
+    } catch (error) {
+      await db.rollback(tx);
+      if (error instanceof ApiError) throw error;
+      if (isTransientFirestoreError(error) && attempt < 2) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, firestoreErrorRetryDelayMs(attempt))
+        );
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new ApiError("transaction_failed", 500);
+}
+
 export async function overrideAgencyRejoinCooldown(
   db,
   actorUid,
@@ -3545,13 +3698,19 @@ export async function getMyAgencyJoinEligibility(
   db,
   actorUid,
 ) {
-  const [userSnap, membershipSnap, appLockSnap, acceptanceSnap] =
-    await Promise.all([
-      db.get(`users/${actorUid}`),
-      db.get(`agency_user_memberships/${actorUid}`),
-      db.get(`agency_application_locks/${actorUid}`),
-      db.get(acceptanceLockPath(actorUid)),
-    ]);
+  const [
+    userSnap,
+    membershipSnap,
+    appLockSnap,
+    acceptanceSnap,
+    cooldownExceptionSnap,
+  ] = await Promise.all([
+    db.get(`users/${actorUid}`),
+    db.get(`agency_user_memberships/${actorUid}`),
+    db.get(`agency_application_locks/${actorUid}`),
+    db.get(acceptanceLockPath(actorUid)),
+    db.get(`agency_cooldown_exception_requests/${actorUid}`),
+  ]);
 
   if (!userSnap.exists) throw new ApiError("user_not_found", 404);
   const user = userSnap.data || {};
@@ -3573,13 +3732,23 @@ export async function getMyAgencyJoinEligibility(
   const membershipReserved =
     acceptanceSnap.exists &&
     ["pending", "accepted", "committed"].includes(clean(acceptance.status));
+  const nowMs = Date.now();
+  const cooldownUntilMs =
+    historicalMembership(membershipSnap)
+      ? timestampMs(membership.cooldownUntil)
+      : 0;
+  const cooldownActive = cooldownUntilMs > nowMs;
+  const cooldownException = cooldownExceptionSnap.exists
+    ? cooldownExceptionSnap.data || {}
+    : {};
 
   return {
     ok: true,
     canRequestJoin:
       !linkedAgencyId &&
       !applicationReserved &&
-      !membershipReserved,
+      !membershipReserved &&
+      !cooldownActive,
     linkedAgencyId: linkedAgencyId || null,
     membershipRole: clean(membership.role) || null,
     membershipStatus: clean(membership.status) || null,
@@ -3596,6 +3765,29 @@ export async function getMyAgencyJoinEligibility(
           applicationId:
             clean(appLock.applicationId || appLock.requestId) || null,
           status: applicationStatus,
+        }
+      : null,
+    cooldown: historicalMembership(membershipSnap)
+      ? {
+          active: cooldownActive,
+          agencyId: clean(membership.agencyId) || null,
+          status: clean(membership.status) || null,
+          cooldownUntil: cooldownUntilMs
+            ? new Date(cooldownUntilMs).toISOString()
+            : null,
+          remainingSeconds: cooldownActive
+            ? Math.max(1, Math.ceil((cooldownUntilMs - nowMs) / 1000))
+            : 0,
+          exceptionRequest: cooldownExceptionSnap.exists
+            ? {
+                status: clean(cooldownException.status) || null,
+                reason: clean(cooldownException.reason) || null,
+                resolutionReason:
+                  clean(cooldownException.resolutionReason) || null,
+                requestedAt: cooldownException.requestedAt || null,
+                resolvedAt: cooldownException.resolvedAt || null,
+              }
+            : null,
         }
       : null,
   };
@@ -3666,6 +3858,12 @@ export async function agencyMembership(request, env) {
       result = await removeAgencyMember(db, decoded.sub, body);
     } else if (action === "overrideCooldown") {
       result = await overrideAgencyRejoinCooldown(db, decoded.sub, body);
+    } else if (action === "requestCooldownException") {
+      result = await requestAgencyCooldownException(
+        db,
+        decoded.sub,
+        body,
+      );
     } else if (action === "setManagerRole") {
       result = await setAgencyManagerRole(db, decoded.sub, body);
     } else if (action === "listAgencyMembers") {
