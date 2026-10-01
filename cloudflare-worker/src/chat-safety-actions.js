@@ -9,6 +9,7 @@ import {
 } from "./economy-policy.js";
 import {
   agencyPublicRankingKey,
+  agencyTargetAchievementDeltas,
   calculateAgencyTargetProgress,
 } from "./agency-policy.js";
 import {
@@ -515,6 +516,8 @@ export async function sendGift(db, uid, body, options = {}) {
       Number(receiverData.pendingGiftEarningCoins || 0),
     );
     const accumulated = previousPending + recipientShareCoins;
+    const agencyTargetPolicy =
+      agencyPolicySnapshot?.targets || economyData.agencyTargets;
     const agencyTarget = agencyId && earningsEnabled
       ? calculateAgencyTargetProgress({
           monthKey: agencyPeriods.month,
@@ -522,11 +525,16 @@ export async function sendGift(db, uid, body, options = {}) {
           storedProgressCoins: receiverData.agencyTargetProgressCoins,
           addedHostShareCoins: recipientShareCoins,
           storedPaidDiamonds: receiverData.agencySalaryPaidDiamonds,
-          targets:
-            agencyPolicySnapshot?.targets ||
-            economyData.agencyTargets,
+          targets: agencyTargetPolicy,
         })
       : null;
+    const agencyTargetAchievements = agencyTarget
+      ? agencyTargetAchievementDeltas({
+          previousProgressCoins: agencyTarget.previousProgressCoins,
+          progressCoins: agencyTarget.progressCoins,
+          targets: agencyTargetPolicy,
+        })
+      : [];
     const diamondsEarned = agencyTarget
       ? agencyTarget.salaryDeltaDiamonds
       : earningsEnabled
@@ -963,6 +971,7 @@ export async function sendGift(db, uid, body, options = {}) {
         agencyTargetMonth: agencyTarget?.month || null,
         agencyTargetProgressCoins: agencyTarget?.progressCoins || 0,
         agencyTargetId: agencyTarget?.reachedTarget?.id || null,
+        agencyTargetAchievements,
         agencyNextTargetCoins: agencyTarget?.remainingToNextTargetCoins || 0,
         agencySalaryPaidDiamonds: agencyTarget?.paidDiamonds || 0,
         salaryDeltaDiamonds: agencyTarget?.salaryDeltaDiamonds || 0,
@@ -1031,6 +1040,7 @@ export async function sendGift(db, uid, body, options = {}) {
       agencyTargetMonth: agencyTarget?.month || null,
       agencyTargetProgressCoins: agencyTarget?.progressCoins || 0,
       agencyTargetId: agencyTarget?.reachedTarget?.id || null,
+      agencyTargetAchievements,
       agencyNextTargetCoins: agencyTarget?.remainingToNextTargetCoins || 0,
       agencySalaryPaidDiamonds: agencyTarget?.paidDiamonds || 0,
       salaryDeltaDiamonds: agencyTarget?.salaryDeltaDiamonds || 0,
