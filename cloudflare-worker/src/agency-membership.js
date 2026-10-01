@@ -1293,15 +1293,20 @@ export async function respondAgencyMembershipRequest(
       }
       if (!requestSnap.exists) throw new ApiError("membership_request_not_found", 404);
       const request = requestSnap.data || {};
-      if (clean(request.status) !== "pending") {
-        throw new ApiError("membership_request_not_pending", 409);
-      }
-
       const agencyId = clean(request.agencyId);
       const uid = clean(request.uid);
       const type = clean(request.type);
       if (!agencyId || !uid || !["join", "invite"].includes(type)) {
         throw new ApiError("membership_request_invalid", 409);
+      }
+      if (clean(request.status) !== "pending") {
+        if (type === "invite") {
+          if (actorUid !== uid) throw new ApiError("forbidden", 403);
+        } else {
+          await loadAgencyActor(db, actorUid, agencyId, "review", tx);
+        }
+        await db.rollback(tx);
+        return resolvedRequestResult(request);
       }
 
       const pairPath = requestKeyPath(agencyId, uid);
@@ -1390,6 +1395,34 @@ export async function respondAgencyMembershipRequest(
       }
 
       const status = decision === "reject" ? "rejected" : accepted ? "accepted" : "pending";
+      let notificationUpdates = [];
+      if (status !== "pending") {
+        const reviewerUids =
+          type === "join"
+            ? await joinReviewerNotificationUids(
+                db,
+                tx,
+                agencyId,
+                agencySnap.data || {},
+              )
+            : [uid];
+        notificationUpdates = await resolvedReviewerNotificationWrites(
+          db,
+          tx,
+          {
+            baseId: "agency_membership_" + type + "_" + requestId,
+            reviewerUids,
+            primaryUid:
+              type === "join"
+                ? clean(agencySnap.data?.ownerUid)
+                : uid,
+            status,
+            decision,
+            actorUid,
+            now,
+          },
+        );
+      }
       const membership = accepted
         ? createAgencyMembershipDocument({
             agencyId,
@@ -1433,6 +1466,7 @@ export async function respondAgencyMembershipRequest(
           "resolvedBy",
           "reason",
         ]),
+        ...notificationUpdates,
         db.writeCreate(opPath, {
           actorUid,
           action: "respondAgencyMembershipRequest",
@@ -1444,6 +1478,10 @@ export async function respondAgencyMembershipRequest(
         }),
         db.writeCreate(`admin_audit_logs/agency_membership_response_${requestId}_${key}`, {
           actorUid,
+          reviewerUid: actorUid,
+          decision,
+          decidedAt: now,
+          requestId,
           action: decision === "accept" ? "acceptAgencyMembershipRequest" : "rejectAgencyMembershipRequest",
           targetType: "agency_membership_request",
           targetId: requestId,
