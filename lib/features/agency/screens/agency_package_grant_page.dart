@@ -158,9 +158,14 @@ class _AgencyPackageGrantPageState extends State<AgencyPackageGrantPage> {
                               .toList(growable: false),
                           onChanged: (value) {
                             setState(() {
-                              _selected = _templates
-                                  .where((item) => item.templateId == value)
-                                  .firstOrNull;
+                              if (value == null || _templates.isEmpty) {
+                                _selected = null;
+                              } else {
+                                _selected = _templates.firstWhere(
+                                  (item) => item.templateId == value,
+                                  orElse: () => _templates.first,
+                                );
+                              }
                             });
                           },
                         ),
