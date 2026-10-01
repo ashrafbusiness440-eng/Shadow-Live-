@@ -17,6 +17,7 @@ const PUBLIC_ARCHIVE_READ_CONCURRENCY = 3;
 export const PUBLIC_RANKING_MAX = 10;
 export const PUBLIC_ARCHIVE_MONTHS_MAX = 6;
 export const PUBLIC_AGENCY_SEARCH_MAX = 20;
+export const PUBLIC_AGENCY_DISCOVERY_WINDOW = 80;
 
 class ApiError extends Error {
   constructor(code, status = 400, details = null) {
@@ -36,29 +37,118 @@ function validCursor(value) {
   return !cursor || (cursor.length <= 180 && !cursor.includes("/"));
 }
 
-function publicAgencySummary(row) {
+function publicAgencyTopValue(agency = {}) {
+  for (const value of [
+    agency.publicTopValue,
+    agency.topValue,
+    agency.topSupportCoins,
+    agency.supportCoins,
+  ]) {
+    const parsed = Number(value);
+    if (Number.isSafeInteger(parsed) && parsed >= 0) return parsed;
+  }
+  return 0;
+}
+
+function publicAgencySummary(row, rank = null) {
   const agency = row?.data || {};
   return {
     agencyId: clean(agency.agencyId || row?.id),
     publicId: clean(agency.publicId || agency.agencyId || row?.id),
     name: clean(agency.name) || "Shadow Live Agency",
     country: clean(agency.country) || null,
+    logoUrl:
+      clean(agency.logoUrl || agency.imageUrl || agency.profileImageUrl) ||
+      null,
+    coverUrl:
+      clean(agency.coverUrl || agency.backgroundUrl || agency.roomCoverUrl) ||
+      null,
     memberCount: Math.max(0, Number(agency.memberCount || 0)),
     hostCount: Math.max(0, Number(agency.hostCount || 0)),
+    topValue: publicAgencyTopValue(agency),
+    rank: Number.isInteger(rank) && rank > 0 ? rank : null,
   };
 }
 
-function parseSearchCursor(cursorInput, field) {
-  const cursor = clean(cursorInput);
-  if (!cursor) return null;
-  const separator = cursor.lastIndexOf("|");
-  if (separator < 1) throw new ApiError("invalid_cursor", 400);
-  const value = cursor.slice(0, separator);
-  const agencyId = cursor.slice(separator + 1);
-  if (!value || value.length > 80 || !validAgencyId(agencyId)) {
-    throw new ApiError("invalid_cursor", 400);
-  }
-  return { value, referencePath: `agencies/${agencyId}`, field };
+function normalizeAgencySearchText(value) {
+  return clean(value)
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[\u064B-\u065F\u0670\u06D6-\u06ED]/g, "")
+    .replace(/ـ/g, "")
+    .replace(/[أإآٱ]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function comparePublicAgencyRows(left, right) {
+  const a = left?.data || {};
+  const b = right?.data || {};
+  const topDelta = publicAgencyTopValue(b) - publicAgencyTopValue(a);
+  if (topDelta !== 0) return topDelta;
+  const membersDelta =
+    Math.max(0, Number(b.memberCount || 0)) -
+    Math.max(0, Number(a.memberCount || 0));
+  if (membersDelta !== 0) return membersDelta;
+  return clean(a.publicId || a.agencyId || left?.id).localeCompare(
+    clean(b.publicId || b.agencyId || right?.id),
+    "en",
+    { numeric: true },
+  );
+}
+
+function discoveryOffset(value) {
+  const parsed = Number(value || 0);
+  if (!Number.isInteger(parsed) || parsed < 0) return 0;
+  return Math.min(PUBLIC_AGENCY_DISCOVERY_WINDOW, parsed);
+}
+
+async function discoveryRows(db) {
+  const rows = await db.runQuery("agencies", {
+    orderBy: [{ field: "__name__", direction: "asc" }],
+    limit: PUBLIC_AGENCY_DISCOVERY_WINDOW + 1,
+  });
+  const truncated = rows.length > PUBLIC_AGENCY_DISCOVERY_WINDOW;
+  return {
+    rows: rows
+      .slice(0, PUBLIC_AGENCY_DISCOVERY_WINDOW)
+      .filter((row) => clean(row?.data?.status) === "active")
+      .sort(comparePublicAgencyRows),
+    truncated,
+  };
+}
+
+function pagedDiscoveryResult(rows, body = {}, truncated = false) {
+  const limit = Math.min(
+    PUBLIC_AGENCY_SEARCH_MAX,
+    boundedAgencyPageSize(body.limit, PUBLIC_AGENCY_SEARCH_MAX),
+  );
+  const offset = discoveryOffset(body.cursor);
+  const pageRows = rows.slice(offset, offset + limit);
+  const nextOffset = offset + pageRows.length;
+  const hasMore = nextOffset < rows.length;
+  return {
+    ok: true,
+    results: pageRows.map((row, index) =>
+      publicAgencySummary(row, offset + index + 1)
+    ),
+    page: {
+      limit,
+      hasMore,
+      nextCursor: hasMore ? String(nextOffset) : null,
+      truncated,
+    },
+  };
+}
+
+export async function browsePublicAgencies(db, body = {}) {
+  const discovery = await discoveryRows(db);
+  return pagedDiscoveryResult(
+    discovery.rows,
+    body,
+    discovery.truncated,
+  );
 }
 
 export async function searchPublicAgencies(db, body = {}) {
@@ -67,82 +157,76 @@ export async function searchPublicAgencies(db, body = {}) {
   if (!query || query.length > 80 || !["id", "name", "country"].includes(mode)) {
     throw new ApiError("invalid_agency_search", 400);
   }
+
   if (mode === "id") {
     if (!validAgencyId(query)) throw new ApiError("invalid_agency_id", 400);
 
-    // Keep the common/default Agency ID path at one direct read.
     const directSnap = await db.get(`agencies/${query}`);
     if (directSnap.exists) {
       const directPublicId = clean(directSnap.data?.publicId || query);
       const active =
         clean(directSnap.data?.status) === "active" &&
         directPublicId === query;
-      return { ok: true, results: active ? [publicAgencySummary(directSnap)] : [], page: {
-        limit: 1, hasMore: false, nextCursor: null,
-      } };
+      return {
+        ok: true,
+        results: active ? [publicAgencySummary(directSnap, 1)] : [],
+        page: {
+          limit: 1,
+          hasMore: false,
+          nextCursor: null,
+          truncated: false,
+        },
+      };
     }
 
-    // A changed Agency / Room ID resolves through the direct registry.
     const registrySnap = await db.get(`agency_ids/${query}`);
     const resolvedAgencyId =
       registrySnap.exists && registrySnap.data?.reserved !== true
         ? clean(registrySnap.data?.agencyId)
         : "";
     if (!validAgencyId(resolvedAgencyId)) {
-      return { ok: true, results: [], page: {
-        limit: 1, hasMore: false, nextCursor: null,
-      } };
+      return {
+        ok: true,
+        results: [],
+        page: {
+          limit: 1,
+          hasMore: false,
+          nextCursor: null,
+          truncated: false,
+        },
+      };
     }
     const snap = await db.get(`agencies/${resolvedAgencyId}`);
     const active =
       snap.exists &&
       clean(snap.data?.status) === "active" &&
       clean(snap.data?.publicId || resolvedAgencyId) === query;
-    return { ok: true, results: active ? [publicAgencySummary(snap)] : [], page: {
-      limit: 1, hasMore: false, nextCursor: null,
-    } };
+    return {
+      ok: true,
+      results: active ? [publicAgencySummary(snap, 1)] : [],
+      page: {
+        limit: 1,
+        hasMore: false,
+        nextCursor: null,
+        truncated: false,
+      },
+    };
   }
 
-  if (query.length < 2) throw new ApiError("agency_search_too_short", 400);
-  const limit = Math.min(
-    PUBLIC_AGENCY_SEARCH_MAX,
-    boundedAgencyPageSize(body.limit, PUBLIC_AGENCY_SEARCH_MAX),
-  );
-  const field = mode === "country" ? "country" : "name";
-  const cursor = parseSearchCursor(body.cursor, field);
-  const fetchLimit = Math.min(81, (limit * 4) + 1);
-  const rows = await db.runQuery("agencies", {
-    filters: [
-      { field, op: ">=", value: query },
-      { field, op: "<", value: query + "\uf8ff" },
-    ],
-    orderBy: [
-      { field, direction: "asc" },
-      { field: "__name__", direction: "asc" },
-    ],
-    ...(cursor ? { startAfter: [cursor.value, { referencePath: cursor.referencePath }] } : {}),
-    limit: fetchLimit,
-  });
-  const pageRows = [];
-  let consumedCount = 0;
-  for (const row of rows) {
-    consumedCount += 1;
-    if (clean(row?.data?.status) === "active") pageRows.push(row);
-    if (pageRows.length === limit) break;
+  const normalized = normalizeAgencySearchText(query);
+  if (normalized.length < 2) {
+    throw new ApiError("agency_search_too_short", 400);
   }
-  const hasMore = rows.length > consumedCount || rows.length === fetchLimit;
-  const last = rows[consumedCount - 1];
-  const lastId = clean(last?.data?.agencyId || last?.id);
-  const lastValue = clean(last?.data?.[field]);
-  return {
-    ok: true,
-    results: pageRows.map(publicAgencySummary),
-    page: {
-      limit,
-      hasMore,
-      nextCursor: hasMore && lastId && lastValue ? `${lastValue}|${lastId}` : null,
-    },
-  };
+
+  const discovery = await discoveryRows(db);
+  const filtered = discovery.rows.filter((row) => {
+    const agency = row?.data || {};
+    if (mode === "country") {
+      return normalizeAgencySearchText(agency.country) === normalized;
+    }
+    return normalizeAgencySearchText(agency.name).includes(normalized);
+  });
+  return pagedDiscoveryResult(filtered, body, discovery.truncated);
 }
 
 function previousAgencyMonths(currentMonth, count = PUBLIC_ARCHIVE_MONTHS_MAX) {
@@ -468,6 +552,10 @@ export async function agencyPublic(request, env) {
         env,
         await loadPublicAgencyArchive(db, body),
       );
+    }
+    if (action === "browse") {
+      annotatePressureRequest(request, { action: "agencyPublic:browse" });
+      return json(request, env, await browsePublicAgencies(db, body));
     }
     if (action === "search") {
       annotatePressureRequest(request, { action: "agencyPublic:search" });
