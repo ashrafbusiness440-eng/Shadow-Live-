@@ -13,6 +13,9 @@ class HostAgencyIdentity {
     required this.status,
     required this.logoUrl,
     required this.roomId,
+    required this.description,
+    required this.publicContact,
+    required this.backgroundUrl,
   });
 
   final String agencyId;
@@ -22,6 +25,9 @@ class HostAgencyIdentity {
   final String status;
   final String? logoUrl;
   final String? roomId;
+  final String? description;
+  final String? publicContact;
+  final String? backgroundUrl;
 
   factory HostAgencyIdentity.fromJson(Map<String, dynamic> json) {
     return HostAgencyIdentity(
@@ -32,6 +38,9 @@ class HostAgencyIdentity {
       status: (json['status'] ?? 'active').toString().trim(),
       logoUrl: _nullableString(json['logoUrl']),
       roomId: _nullableString(json['roomId']),
+      description: _nullableString(json['description']),
+      publicContact: _nullableString(json['publicContact']),
+      backgroundUrl: _nullableString(json['backgroundUrl']),
     );
   }
 }
@@ -421,6 +430,40 @@ class HostMyAgencyService {
       canRequestLeave: false,
       request: HostAgencyLeaveRequest.fromJson(body),
     );
+  }
+
+  Future<Map<String, dynamic>> updateAgencyProfile({
+    required String description,
+    required String publicContact,
+  }) async {
+    final token = await _idToken();
+    final response = await _client
+        .post(
+          Uri.parse('$_baseUrl/agency-host'),
+          headers: {
+            'authorization': 'Bearer $token',
+            'content-type': 'application/json',
+          },
+          body: jsonEncode({
+            'action': 'updateProfile',
+            'description': description.trim(),
+            'publicContact': publicContact.trim(),
+            'idempotencyKey':
+                'agency_profile_' + DateTime.now().microsecondsSinceEpoch.toString(),
+          }),
+        )
+        .timeout(_requestTimeout);
+    Map<String, dynamic> body = const <String, dynamic>{};
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map) body = Map<String, dynamic>.from(decoded);
+    } catch (_) {}
+    if (response.statusCode != 200 || body['ok'] != true) {
+      throw StateError(
+        (body['code'] ?? 'agency_profile_update_failed').toString(),
+      );
+    }
+    return body;
   }
 
   Future<Map<String, dynamic>> requestOwnershipTransfer({
