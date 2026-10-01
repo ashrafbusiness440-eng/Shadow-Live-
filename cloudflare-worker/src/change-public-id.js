@@ -63,7 +63,7 @@ function buildSearchTokens(values, maxSubstringLength = 8, maxTokens = 512) {
   return [...tokens];
 }
 
-async function execute(db, actorUid, body) {
+export async function executePublicIdChange(db, actorUid, body) {
   const currentId = normalizeId(body.currentId);
   const newId = normalizeId(body.newId);
   const reason = clean(body.reason);
@@ -255,7 +255,7 @@ export async function changePublicId(request, env) {
       throw new ApiError("invalid_request", 400);
     }
 
-    const result = await execute(firestoreClient(env), decoded.sub, body);
+    const result = await executePublicIdChange(firestoreClient(env), decoded.sub, body);
     return json(request, env, result, 200);
   } catch (error) {
     if (error instanceof ApiError) return json(request, env, { ok: false, code: error.code }, error.status);
