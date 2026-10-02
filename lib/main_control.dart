@@ -1515,6 +1515,8 @@ class _RoomsPageState extends State<RoomsPage> {
                     createPkEnabled=!customerService;
                     createGamesEnabled=!customerService;
                     createRoomRocketEnabled=!customerService;
+                    createSeatsController.text=customerService?'5':'8';
+                    createModeratorsController.text=customerService?'2':'3';
                   });
                 },
               ),
@@ -1669,7 +1671,7 @@ class _RoomsPageState extends State<RoomsPage> {
         Text('إدارة الغرف',style:TextStyle(fontSize:25,fontWeight:FontWeight.w900)),
       ]),
       const SizedBox(height:6),
-      const Text('إنشاء وإدارة الغرف الرسمية + Room Level + Overrides — كل التعديلات الحساسة تمر عبر Backend وAudit Log.',style:TextStyle(color:Color(0xFFAAA3B8))),
+      const Text('إنشاء وإدارة الغرف الرسمية + السعة اليدوية + الميزات — Room Level يبقى للغرف العادية والوكالات فقط. كل التعديلات الحساسة تمر عبر Backend وAudit Log.',style:TextStyle(color:Color(0xFFAAA3B8))),
       const SizedBox(height:12),
       SizedBox(width:double.infinity,child:FilledButton.icon(
         onPressed:busy?null:showCreateOfficialRoom,
@@ -1779,14 +1781,13 @@ class _RoomsPageState extends State<RoomsPage> {
               onSelected:busy||value==level?null:(_)=>execute('setLevel',extra:{'level':value}),
             );
           })),
-
-        ],
         ]))),
+        ],
         const SizedBox(height:12),
         Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
           const Text('Room Overrides',style:TextStyle(fontSize:18,fontWeight:FontWeight.w900)),
           const SizedBox(height:6),
-          const Text('اترك القيمة فارغة للرجوع لقيمة الـLevel.',style:TextStyle(color:Color(0xFFAAA3B8),fontSize:12)),
+          Text(official?'الغرف الرسمية تستخدم السعة اليدوية؛ حدّد عدد المايكات والمشرفين هنا.':'اترك القيمة فارغة للرجوع لقيمة الـLevel.',style:TextStyle(color:Color(0xFFAAA3B8),fontSize:12)),
           const SizedBox(height:12),
           Row(children:[
             Expanded(child:TextField(
