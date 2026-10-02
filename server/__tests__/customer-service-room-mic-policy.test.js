@@ -88,3 +88,33 @@ test("Customer Service ordinary mic sessions expire server-side after ten minute
     true,
   );
 });
+
+
+test("Customer Service room UI distinguishes manager and invite-only mics", () => {
+  const main = source("lib/main.dart");
+
+  assert.equal(
+    main.includes("'هذا المايك مخصص للإدارة.'"),
+    true,
+  );
+  assert.equal(
+    main.includes("'تمت دعوتك للمايك — الدعوة صالحة 60 ثانية'"),
+    true,
+  );
+  assert.equal(
+    main.includes("Icons.admin_panel_settings_rounded"),
+    true,
+  );
+  assert.equal(
+    main.includes("Icons.lock_open_rounded"),
+    true,
+  );
+  assert.equal(
+    main.includes("? 'إدارة ' + (seat.index + 1).toString()"),
+    true,
+  );
+  assert.equal(
+    main.includes(": 'دعوة ' + (seat.index - 1).toString()"),
+    true,
+  );
+});
