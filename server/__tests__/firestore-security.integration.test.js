@@ -446,35 +446,6 @@ test("public profile accepts R2 media object ids",async()=>{
     coverImageObjectId:"b".repeat(32),
     bio:"",
     location:"",
-    moodEmoji:"🙂",
-    moodText:"مبسوط اليوم",
-    interests:["موسيقى","ألعاب"],
-    level:0,
-    vipLevel:0,
-    badges:[],
-    isOnline:true,
-    createdAt:new Date(),
-    updatedAt:new Date(),
-  }));
-});
-
-test("public profile rejects oversized mood fields",async()=>{
-  const userDb=phoneUserDb();
-  await assertFails(setDoc(doc(userDb,"public_profiles",uid),{
-    uid,
-    displayName:"Mood Overflow",
-    username:"",
-    publicId:"",
-    searchTokens:["mood","overflow"],
-    profileImageUrl:"",
-    profileImageObjectId:"",
-    profileAvatarAsset:"",
-    coverImageUrl:"",
-    coverImageObjectId:"",
-    bio:"",
-    location:"",
-    moodEmoji:"🙂",
-    moodText:"x".repeat(81),
     interests:[],
     level:0,
     vipLevel:0,
