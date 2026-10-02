@@ -3159,6 +3159,7 @@ function activeMemberSummary(row, userSnap) {
       clean(user.displayName || user.name || user.username) || null,
     profileImageUrl:
       clean(user.profileImageUrl || user.photoUrl || user.avatarUrl) || null,
+    profileAvatarAsset: clean(user.profileAvatarAsset) || null,
     accountStatus: clean(user.accountStatus || "active"),
   };
 }
@@ -3333,6 +3334,7 @@ export async function loadAgencyMemberPerformance(
           targetUser.photoUrl ||
           targetUser.avatarUrl,
         ) || null,
+      profileAvatarAsset: clean(targetUser.profileAvatarAsset) || null,
       role: clean(targetMembership.role),
       status: clean(targetMembership.status),
       accountStatus: clean(targetUser.accountStatus || "active"),
@@ -3522,6 +3524,7 @@ function pendingRequestView({
       clean(user.displayName || user.name || user.username) || null,
     profileImageUrl:
       clean(user.profileImageUrl || user.photoUrl || user.avatarUrl) || null,
+    profileAvatarAsset: clean(user.profileAvatarAsset) || null,
     accountStatus: clean(user.accountStatus || "active"),
     conflictStatus: pendingConflictStatus({
       agencyId,
