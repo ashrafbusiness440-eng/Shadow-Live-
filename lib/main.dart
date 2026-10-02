@@ -3040,15 +3040,19 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     );
     final initialCoverImageUrl = isAgencyRoom
         ? (_roomArguments['agencyRoomImageUrl'] ?? '').toString().trim()
-        : (_roomArguments['coverImageUrl'] ??
-                _roomArguments['roomImageUrl'] ??
+        : (_roomArguments['roomImageUrl'] ??
+                _roomArguments['coverImageUrl'] ??
                 _roomArguments['imageUrl'] ??
                 '')
             .toString()
             .trim();
     final initialCoverObjectId = isAgencyRoom
         ? (_roomArguments['agencyRoomImageObjectId'] ?? '').toString().trim()
-        : (_roomArguments['coverImageObjectId'] ?? '').toString().trim();
+        : (_roomArguments['roomImageObjectId'] ??
+                _roomArguments['coverImageObjectId'] ??
+                '')
+            .toString()
+            .trim();
     Uint8List? pendingCoverBytes;
     var removeCover = false;
     final categoryController = TextEditingController(
@@ -3501,13 +3505,15 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                 Map<String, dynamic>? updatedRoom;
                                 try {
                                   final existingCoverImageUrl =
-                                      (_roomArguments['coverImageUrl'] ??
+                                      (_roomArguments['roomImageUrl'] ??
+                                              _roomArguments['coverImageUrl'] ??
                                               _roomArguments['imageUrl'] ??
                                               '')
                                           .toString()
                                           .trim();
                                   final existingCoverObjectId =
-                                      (_roomArguments['coverImageObjectId'] ??
+                                      (_roomArguments['roomImageObjectId'] ??
+                                              _roomArguments['coverImageObjectId'] ??
                                               '')
                                           .toString()
                                           .trim();
