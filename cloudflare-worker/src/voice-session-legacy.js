@@ -1431,6 +1431,10 @@ async function controlRoomPolicy(db,uid,body){
       category:clean(room.category),
       description:clean(room.description),
       coverImageUrl:clean(room.coverImageUrl),
+      activeRoomBackgroundRewardId:clean(room.activeRoomBackgroundRewardId),
+      activeRoomBackgroundImageUrl:clean(room.activeRoomBackgroundImageUrl),
+      activeRoomBackgroundAssetKey:clean(room.activeRoomBackgroundAssetKey),
+      activeRoomBackgroundExpiresAtMs:Number(room.activeRoomBackgroundExpiresAtMs||0),
       visibility:clean(room.visibility||"public"),
       tags:Array.isArray(room.tags)?room.tags:[],
       ...roomFeatureFlags(room),
@@ -1503,6 +1507,37 @@ async function controlRoomPolicy(db,uid,body){
         overrideUpdatedAt:now,
         updatedAt:now,
       };
+    }else if(controlAction==="setOfficialRoomBackground"){
+      if(!canGlobal)throw new ApiError("global_room_control_required",403);
+      if(!before.official)throw new ApiError("official_room_required",409);
+      const assetKey=clean(body.backgroundAssetKey);
+      const imageUrl=clean(body.backgroundImageUrl);
+      if(assetKey&&!/^[A-Za-z0-9_.-]{1,180}$/.test(assetKey)){
+        throw new ApiError("invalid_room_background_asset",400);
+      }
+      if(imageUrl&&(imageUrl.length>1200||!/^https:\/\//i.test(imageUrl))){
+        throw new ApiError("invalid_room_background_url",400);
+      }
+      const enabled=Boolean(assetKey||imageUrl);
+      patch=enabled
+        ? {
+            activeRoomBackgroundRewardId:"system_control",
+            activeRoomBackgroundAssetKey:assetKey,
+            activeRoomBackgroundImageUrl:imageUrl,
+            activeRoomBackgroundExpiresAtMs:0,
+            roomBackgroundUpdatedAt:now,
+            roomBackgroundUpdatedBy:uid,
+            updatedAt:now,
+          }
+        : {
+            activeRoomBackgroundRewardId:FieldValue.delete(),
+            activeRoomBackgroundAssetKey:FieldValue.delete(),
+            activeRoomBackgroundImageUrl:FieldValue.delete(),
+            activeRoomBackgroundExpiresAtMs:FieldValue.delete(),
+            roomBackgroundUpdatedAt:now,
+            roomBackgroundUpdatedBy:uid,
+            updatedAt:now,
+          };
     }else if(controlAction==="setRoomFeatures"){
       if(!canGlobal)throw new ApiError("global_room_control_required",403);
       if(!before.official)throw new ApiError("official_room_required",409);
