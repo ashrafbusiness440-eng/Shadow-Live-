@@ -3437,14 +3437,36 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                 }
 
                                 setSheetState(() => saving = true);
-                                String? uploadedCoverObjectId;
+                                String? uploadedRoomImageObjectId;
+                                Map<String, dynamic>? updatedRoom;
                                 try {
+                                  final existingCoverImageUrl =
+                                      (_roomArguments['coverImageUrl'] ??
+                                              _roomArguments['imageUrl'] ??
+                                              '')
+                                          .toString()
+                                          .trim();
+                                  final existingCoverObjectId =
+                                      (_roomArguments['coverImageObjectId'] ??
+                                              '')
+                                          .toString()
+                                          .trim();
+
                                   var nextCoverImageUrl =
-                                      removeCover ? '' : initialCoverImageUrl;
-                                  String? nextCoverObjectId = removeCover
-                                      ? ''
-                                      : initialCoverObjectId;
-                                  if (pendingCoverBytes != null) {
+                                      isAgencyRoom
+                                          ? existingCoverImageUrl
+                                          : (removeCover
+                                              ? ''
+                                              : initialCoverImageUrl);
+                                  String? nextCoverObjectId =
+                                      isAgencyRoom
+                                          ? existingCoverObjectId
+                                          : (removeCover
+                                              ? ''
+                                              : initialCoverObjectId);
+
+                                  if (!isAgencyRoom &&
+                                      pendingCoverBytes != null) {
                                     final bytes = pendingCoverBytes!;
                                     final upload = await _userStorage.upload(
                                       scope: 'room_cover',
@@ -3452,6 +3474,10 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                       mimeType:
                                           detectSupportedImageMime(bytes),
                                       targetId: roomId,
+                                      replaceObjectId:
+                                          initialCoverObjectId.isEmpty
+                                              ? null
+                                              : initialCoverObjectId,
                                     );
                                     final publicUrl =
                                         upload.publicUrl?.trim() ?? '';
@@ -3460,12 +3486,13 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                         'room_image_public_url_missing',
                                       );
                                     }
-                                    uploadedCoverObjectId = upload.objectId;
+                                    uploadedRoomImageObjectId =
+                                        upload.objectId;
                                     nextCoverImageUrl = publicUrl;
                                     nextCoverObjectId = upload.objectId;
                                   }
 
-                                  final updated =
+                                  updatedRoom =
                                       await _roomActions.updateRoomSettings(
                                     roomId: roomId,
                                     name: name,
@@ -3485,18 +3512,55 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                             ? null
                                             : passwordController.text,
                                   );
-                                  if (removeCover &&
+
+                                  String? agencyRoomImageUrl;
+                                  String? agencyRoomImageObjectId;
+                                  if (isAgencyRoom &&
+                                      pendingCoverBytes != null) {
+                                    final bytes = pendingCoverBytes!;
+                                    final upload = await _userStorage.upload(
+                                      scope: 'agency_room_image',
+                                      bytes: bytes,
+                                      mimeType:
+                                          detectSupportedImageMime(bytes),
+                                      targetId: _roomAgencyId,
+                                      replaceObjectId:
+                                          initialCoverObjectId.isEmpty
+                                              ? null
+                                              : initialCoverObjectId,
+                                    );
+                                    final publicUrl =
+                                        upload.publicUrl?.trim() ?? '';
+                                    if (publicUrl.isEmpty) {
+                                      throw StateError(
+                                        'room_image_public_url_missing',
+                                      );
+                                    }
+                                    agencyRoomImageUrl = publicUrl;
+                                    agencyRoomImageObjectId =
+                                        upload.objectId;
+                                  }
+
+                                  if (!isAgencyRoom &&
+                                      removeCover &&
                                       initialCoverObjectId.isNotEmpty) {
                                     try {
                                       await _userStorage
                                           .delete(initialCoverObjectId);
                                     } catch (_) {}
                                   }
+
                                   if (!mounted) return;
                                   setState(() {
                                     _roomArguments = {
                                       ..._roomArguments,
-                                      ...updated,
+                                      ...updatedRoom!,
+                                      if (agencyRoomImageUrl != null)
+                                        'agencyRoomImageUrl':
+                                            agencyRoomImageUrl,
+                                      if (agencyRoomImageObjectId != null)
+                                        'agencyRoomImageObjectId':
+                                            agencyRoomImageObjectId,
                                     };
                                   });
                                   if (sheetContext.mounted) {
@@ -3511,16 +3575,24 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                     );
                                   }
                                 } on StateError catch (error) {
-                                  if (uploadedCoverObjectId != null) {
+                                  if (!isAgencyRoom &&
+                                      uploadedRoomImageObjectId != null &&
+                                      updatedRoom == null) {
                                     try {
-                                      await _userStorage
-                                          .delete(uploadedCoverObjectId);
+                                      await _userStorage.delete(
+                                        uploadedRoomImageObjectId,
+                                      );
                                     } catch (_) {}
                                   }
                                   if (!sheetContext.mounted) return;
                                   String message =
                                       'تعذر حفظ إعدادات الغرفة حالياً.';
-                                  if (error.message ==
+                                  if (isAgencyRoom &&
+                                      updatedRoom != null &&
+                                      pendingCoverBytes != null) {
+                                    message =
+                                        'تم حفظ الإعدادات، لكن تعذر تحديث صورة غرفة الوكالة. حاول رفع الصورة مرة ثانية.';
+                                  } else if (error.message ==
                                       'hidden_room_forbidden') {
                                     message =
                                         'لا تملك صلاحية إنشاء غرفة مخفية.';
@@ -3534,18 +3606,25 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                     SnackBar(content: Text(message)),
                                   );
                                 } catch (_) {
-                                  if (uploadedCoverObjectId != null) {
+                                  if (!isAgencyRoom &&
+                                      uploadedRoomImageObjectId != null &&
+                                      updatedRoom == null) {
                                     try {
-                                      await _userStorage
-                                          .delete(uploadedCoverObjectId);
+                                      await _userStorage.delete(
+                                        uploadedRoomImageObjectId,
+                                      );
                                     } catch (_) {}
                                   }
                                   if (sheetContext.mounted) {
                                     ScaffoldMessenger.of(sheetContext)
                                         .showSnackBar(
-                                      const SnackBar(
+                                      SnackBar(
                                         content: Text(
-                                          'تعذر حفظ إعدادات الغرفة حالياً.',
+                                          isAgencyRoom &&
+                                                  updatedRoom != null &&
+                                                  pendingCoverBytes != null
+                                              ? 'تم حفظ الإعدادات، لكن تعذر تحديث صورة غرفة الوكالة. حاول رفع الصورة مرة ثانية.'
+                                              : 'تعذر حفظ إعدادات الغرفة حالياً.',
                                         ),
                                       ),
                                     );
