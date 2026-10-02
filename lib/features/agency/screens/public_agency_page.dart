@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../../profile/screens/public_profile_screen.dart';
 import '../services/agency_membership_service.dart';
 import '../services/public_agency_service.dart';
+import '../widgets/agency_user_avatar.dart';
 import 'my_agency_entry_page.dart';
 
 class PublicAgencyPage extends StatefulWidget {
@@ -602,7 +603,10 @@ class _RankingTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final person = entry.person;
-    final imageUrl = person.profileImageUrl?.trim() ?? '';
+    final avatar = agencyUserAvatarProvider(
+      imageUrl: person.profileImageUrl,
+      avatarAsset: person.profileAvatarAsset,
+    );
     return Material(
       color: Colors.black26,
       borderRadius: BorderRadius.circular(13),
@@ -627,9 +631,8 @@ class _RankingTile extends StatelessWidget {
             CircleAvatar(
               radius: 16,
               backgroundColor: const Color(0xFF2A3150),
-              backgroundImage:
-                  imageUrl.isEmpty ? null : NetworkImage(imageUrl),
-              child: imageUrl.isEmpty
+              backgroundImage: avatar,
+              child: avatar == null
                   ? const Icon(
                       Icons.person_rounded,
                       size: 17,
@@ -909,7 +912,10 @@ class _PersonTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final imageUrl = person.profileImageUrl?.trim() ?? '';
+    final avatar = agencyUserAvatarProvider(
+      imageUrl: person.profileImageUrl,
+      avatarAsset: person.profileAvatarAsset,
+    );
     return Material(
       color: const Color(0xFF111526),
       borderRadius: BorderRadius.circular(16),
@@ -920,8 +926,8 @@ class _PersonTile extends StatelessWidget {
         ),
         leading: CircleAvatar(
           backgroundColor: const Color(0xFF2A3150),
-          backgroundImage: imageUrl.isEmpty ? null : NetworkImage(imageUrl),
-          child: imageUrl.isEmpty
+          backgroundImage: avatar,
+          child: avatar == null
               ? const Icon(Icons.person_rounded, color: Colors.white70)
               : null,
         ),
