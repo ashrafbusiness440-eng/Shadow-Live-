@@ -13,6 +13,7 @@ import '../services/public_agency_service.dart';
 import 'agency_membership_review_page.dart';
 import 'owner_agency_dashboard_page.dart';
 import 'agency_package_inventory_page.dart';
+import '../widgets/agency_room_image_crop_sheet.dart';
 
 class HostMyAgencyPage extends StatefulWidget {
   const HostMyAgencyPage({
@@ -44,7 +45,7 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
   bool _leaveStatusLoading = false;
   bool _leaveSubmitting = false;
   bool _logoUploading = false;
-  bool _backgroundUploading = false;
+  bool _roomImageUploading = false;
   bool _openingAgencyRoom = false;
   bool _ownershipTransferSubmitting = false;
   bool _agencyProfileSaving = false;
@@ -469,11 +470,11 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
     }
   }
 
-  Future<void> _pickAgencyBackground() async {
+  Future<void> _pickAgencyRoomImage() async {
     final data = _data;
     if (data == null ||
         data.membershipRole != 'owner' ||
-        _backgroundUploading) {
+        _roomImageUploading) {
       return;
     }
 
@@ -488,37 +489,43 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
     final bytes = await picked.readAsBytes();
     if (!mounted) return;
 
-    setState(() => _backgroundUploading = true);
+    final croppedBytes = await showAgencyRoomImageCropSheet(
+      context,
+      imageBytes: bytes,
+    );
+    if (croppedBytes == null || !mounted) return;
+
+    setState(() => _roomImageUploading = true);
     try {
       await _storage.upload(
-        scope: 'agency_background',
+        scope: 'agency_room_image',
         targetId: data.agency.agencyId,
-        bytes: bytes,
-        mimeType: detectSupportedImageMime(bytes),
+        bytes: croppedBytes,
+        mimeType: detectSupportedImageMime(croppedBytes),
       );
       final refreshed = await _service.loadCore();
       if (!mounted) return;
       setState(() {
         _data = refreshed;
-        _backgroundUploading = false;
+        _roomImageUploading = false;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('تم تحديث خلفية الوكالة وغرفة الوكالة.'),
+          content: Text('تم تحديث صورة غرفة الوكالة.'),
         ),
       );
     } catch (error) {
       if (!mounted) return;
-      setState(() => _backgroundUploading = false);
+      setState(() => _roomImageUploading = false);
       final code = error.toString().replaceFirst('Bad state: ', '');
       final message = code.contains('agency_owner_required')
-          ? 'تعديل خلفية الوكالة متاح للمالك فقط.'
+          ? 'تعديل صورة غرفة الوكالة متاح للمالك فقط.'
           : code.contains('invalid_file_size')
-              ? 'حجم الخلفية أكبر من المسموح.'
+              ? 'حجم صورة الغرفة أكبر من المسموح.'
               : code.contains('invalid_file_type') ||
                       code.contains('unsupported_image_format')
                   ? 'صيغة الصورة غير مدعومة.'
-                  : 'تعذر تحديث خلفية الوكالة حاليًا.';
+                  : 'تعذر تحديث صورة غرفة الوكالة حاليًا.';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message)),
       );
@@ -952,9 +959,9 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
             const SizedBox(height: 10),
             _AgencyPackageInventoryEntry(onTap: _openPackageInventory),
             const SizedBox(height: 10),
-            _AgencyBackgroundEditEntry(
-              busy: _backgroundUploading,
-              onTap: _pickAgencyBackground,
+            _AgencyRoomImageEditEntry(
+              busy: _roomImageUploading,
+              onTap: _pickAgencyRoomImage,
             ),
             const SizedBox(height: 10),
             _OwnershipTransferRequestEntry(
@@ -1318,8 +1325,8 @@ class _AgencyPackageInventoryEntry extends StatelessWidget {
   }
 }
 
-class _AgencyBackgroundEditEntry extends StatelessWidget {
-  const _AgencyBackgroundEditEntry({
+class _AgencyRoomImageEditEntry extends StatelessWidget {
+  const _AgencyRoomImageEditEntry({
     required this.busy,
     required this.onTap,
   });
@@ -1330,26 +1337,26 @@ class _AgencyBackgroundEditEntry extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      key: const Key('owner-agency-background-edit-entry'),
+      key: const Key('owner-agency-room-image-edit-entry'),
       decoration: _cardDecoration(),
       child: ListTile(
         onTap: busy ? null : onTap,
         leading: const CircleAvatar(
           backgroundColor: Color(0xFF1B3440),
           child: Icon(
-            Icons.wallpaper_rounded,
+            Icons.image_rounded,
             color: Color(0xFF7ED8FF),
           ),
         ),
         title: const Text(
-          'تعديل خلفية الوكالة',
+          'تعديل صورة غرفة الوكالة',
           style: TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.w800,
           ),
         ),
         subtitle: const Text(
-          'تُستخدم كخلفية الوكالة وغطاء غرفة الوكالة المرتبطة.',
+          'الصورة التي تظهر أعلى غرفة الوكالة بجانب الاسم. خلفيات الغرفة من «مقتنياتي».',
           style: TextStyle(color: Colors.white60),
         ),
         trailing: busy

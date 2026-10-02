@@ -26,6 +26,7 @@ const REPLACEABLE_SCOPES = new Set([
   "room_cover",
   "agency_logo",
   "agency_background",
+  "agency_room_image",
 ]);
 
 export const STORAGE_SCOPE_CONFIG = Object.freeze({
@@ -34,6 +35,7 @@ export const STORAGE_SCOPE_CONFIG = Object.freeze({
   room_cover: Object.freeze({ maxBytes: MAX_COVER_BYTES }),
   agency_logo: Object.freeze({ maxBytes: MAX_PROFILE_BYTES }),
   agency_background: Object.freeze({ maxBytes: MAX_COVER_BYTES }),
+  agency_room_image: Object.freeze({ maxBytes: MAX_COVER_BYTES }),
   chat_image: Object.freeze({ maxBytes: MAX_CHAT_BYTES }),
 });
 
@@ -117,6 +119,8 @@ export function buildStorageObjectKey({
       return `agencies/${safeTarget}/logo/${safeObject}.${safeExt}`;
     case "agency_background":
       return `agencies/${safeTarget}/background/${safeObject}.${safeExt}`;
+    case "agency_room_image":
+      return `agencies/${safeTarget}/room-image/${safeObject}.${safeExt}`;
     case "chat_image":
       return `chat/${safeTarget}/${safeUid}/${safeObject}.${safeExt}`;
     default:
@@ -279,7 +283,9 @@ async function authorizeUpload(db, uid, scope, rawTargetId) {
     return { targetId };
   }
 
-  if (scope === "agency_logo" || scope === "agency_background") {
+  if (scope === "agency_logo" ||
+    scope === "agency_background" ||
+    scope === "agency_room_image") {
     await authorizeAgencyLogoManagement(db, uid, targetId);
     return { targetId };
   }
@@ -344,7 +350,8 @@ async function authorizeRead(db, uid, metadata) {
     scope === "profile_cover" ||
     scope === "room_cover" ||
     scope === "agency_logo" ||
-    scope === "agency_background"
+    scope === "agency_background" ||
+    scope === "agency_room_image"
   ) {
     return true;
   }
@@ -371,7 +378,8 @@ async function authorizeDelete(db, uid, metadata) {
   }
   if (
     clean(metadata.scope) === "agency_logo" ||
-    clean(metadata.scope) === "agency_background"
+    clean(metadata.scope) === "agency_background" ||
+    clean(metadata.scope) === "agency_room_image"
   ) {
     await authorizeAgencyLogoManagement(db, uid, clean(metadata.targetId));
     return true;
@@ -521,7 +529,8 @@ async function confirmUpload(request, env, auth, body) {
   }
   if (
     clean(ticket.scope) === "agency_logo" ||
-    clean(ticket.scope) === "agency_background"
+    clean(ticket.scope) === "agency_background" ||
+    clean(ticket.scope) === "agency_room_image"
   ) {
     await authorizeAgencyLogoManagement(
       auth.db,
@@ -571,7 +580,8 @@ async function confirmUpload(request, env, auth, body) {
     let agencyAuthorization = null;
     if (
       clean(ticket.scope) === "agency_logo" ||
-      clean(ticket.scope) === "agency_background"
+      clean(ticket.scope) === "agency_background" ||
+      clean(ticket.scope) === "agency_room_image"
     ) {
       agencyAuthorization = await authorizeAgencyLogoManagement(
         auth.db,
@@ -602,9 +612,12 @@ async function confirmUpload(request, env, auth, body) {
       if (
         !snap.exists ||
         (
-          !["room_cover", "agency_logo", "agency_background"].includes(
-            clean(ticket.scope),
-          ) &&
+          ![
+            "room_cover",
+            "agency_logo",
+            "agency_background",
+            "agency_room_image",
+          ].includes(clean(ticket.scope)) &&
           clean(snap.data?.ownerUid) !== auth.uid
         ) ||
         clean(snap.data?.scope) !== clean(ticket.scope) ||
@@ -619,7 +632,7 @@ async function confirmUpload(request, env, auth, body) {
 
   let linkedAgencyRoom = null;
   let linkedAgencyRoomId = "";
-  if (clean(ticket.scope) === "agency_background" && transaction) {
+  if (clean(ticket.scope) === "agency_room_image" && transaction) {
     const agency = await authorizeAgencyLogoManagement(
       auth.db,
       auth.uid,
@@ -737,11 +750,45 @@ async function confirmUpload(request, env, auth, body) {
           targetId: metadata.targetId,
           objectId,
           replacedObjectId: previous?.objectId || null,
-          roomId: linkedAgencyRoomId || null,
           createdAt: now,
         },
       ),
     );
+  }
+
+  if (metadata.scope === "agency_room_image") {
+    if (!stablePublicUrl) {
+      if (transaction) await auth.db.rollback(transaction);
+      throw new StorageApiError("public_media_url_missing", 500);
+    }
+
+    writes.push(
+      auth.db.writeUpdate(
+        `agencies/${metadata.targetId}`,
+        {
+          roomImageUrl: stablePublicUrl,
+          roomImageObjectId: objectId,
+          updatedAt: now,
+        },
+        ["roomImageUrl", "roomImageObjectId", "updatedAt"],
+      ),
+      auth.db.writeCreate(
+        `admin_audit_logs/agency_room_image_${metadata.targetId}_${objectId}`,
+        {
+          actorUid: auth.uid,
+          action: previous
+            ? "replaceAgencyRoomImage"
+            : "uploadAgencyRoomImage",
+          targetType: "agency_room",
+          targetId: metadata.targetId,
+          roomId: linkedAgencyRoomId || null,
+          objectId,
+          replacedObjectId: previous?.objectId || null,
+          createdAt: now,
+        },
+      ),
+    );
+
     if (
       linkedAgencyRoom?.exists &&
       clean(linkedAgencyRoom.data?.agencyId) === metadata.targetId
@@ -750,15 +797,13 @@ async function confirmUpload(request, env, auth, body) {
         auth.db.writeUpdate(
           `rooms/${linkedAgencyRoomId}`,
           {
-            coverImageUrl: stablePublicUrl,
-            coverImageObjectId: objectId,
-            agencyCoverUrl: stablePublicUrl,
+            agencyRoomImageUrl: stablePublicUrl,
+            agencyRoomImageObjectId: objectId,
             updatedAt: now,
           },
           [
-            "coverImageUrl",
-            "coverImageObjectId",
-            "agencyCoverUrl",
+            "agencyRoomImageUrl",
+            "agencyRoomImageObjectId",
             "updatedAt",
           ],
         ),
@@ -856,6 +901,10 @@ async function replacementObjectStillReferenced(
       documentPath = `agencies/${targetId}`;
       field = "backgroundObjectId";
       break;
+    case "agency_room_image":
+      documentPath = `agencies/${targetId}`;
+      field = "roomImageObjectId";
+      break;
     default:
       return false;
   }
@@ -947,14 +996,22 @@ async function transferAgencyAssetOnAccountDeletion({
   nowMs,
 }) {
   const scope = clean(item?.data?.scope);
-  if (!["agency_logo", "agency_background"].includes(scope)) return "";
+  if (
+    !["agency_logo", "agency_background", "agency_room_image"].includes(scope)
+  ) {
+    return "";
+  }
 
   const targetId = clean(item?.data?.targetId);
   if (!targetId) return "";
 
   const agency = await db.get(`agencies/${targetId}`);
   const activeField =
-    scope === "agency_logo" ? "logoObjectId" : "backgroundObjectId";
+    scope === "agency_logo"
+      ? "logoObjectId"
+      : scope === "agency_background"
+        ? "backgroundObjectId"
+        : "roomImageObjectId";
   if (
     !agency.exists ||
     clean(agency.data?.[activeField]) !== objectId
@@ -976,7 +1033,9 @@ async function transferAgencyAssetOnAccountDeletion({
       action:
         scope === "agency_logo"
           ? "transferDeletedAccountAgencyLogoOwnership"
-          : "transferDeletedAccountAgencyBackgroundOwnership",
+          : scope === "agency_background"
+            ? "transferDeletedAccountAgencyBackgroundOwnership"
+            : "transferDeletedAccountAgencyRoomImageOwnership",
       objectId,
       scope,
       targetId,
@@ -984,7 +1043,9 @@ async function transferAgencyAssetOnAccountDeletion({
       reason:
         scope === "agency_logo"
           ? "agency_logo_still_active"
-          : "agency_background_still_active",
+          : scope === "agency_background"
+            ? "agency_background_still_active"
+            : "agency_room_image_still_active",
       createdAt: now,
     }),
   ];

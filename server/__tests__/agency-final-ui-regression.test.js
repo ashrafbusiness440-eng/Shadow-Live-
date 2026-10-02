@@ -159,6 +159,11 @@ test("Agency Room category and logo reuse bootstrap data without agency hot-path
   );
 
   assert.equal(voice.includes('agencyLogoUrl:roomType==="agency"'), true);
+  assert.equal(voice.includes("agencyRoomImageUrl:"), true);
+  assert.equal(voice.includes("agencyRoomImageObjectId:"), true);
+  assert.equal(main.includes("String get _roomHeaderImageUrl"), true);
+  assert.equal(main.includes("_roomArguments['agencyRoomImageUrl']"), true);
+  assert.equal(main.includes("NetworkImage(\n                                                  _roomHeaderImageUrl,"), true);
   assert.equal(voice.includes('category:roomType==="agency"?"وكالة"'), true);
   assert.equal(voice.includes("viewerAgencyId:clean(actor.agencyId)"), true);
   assert.equal(voice.includes("viewerAgencyRole:clean(actor.agencyRole)"), true);
@@ -407,6 +412,38 @@ test("Agency 7-day cooldown exception stays explicit and bounded", () => {
   assert.equal(entry.includes("agency-cooldown-exception-request"), true);
   assert.equal(
     controlPage.includes("طلبات استثناء انتظار 7 أيام"),
+    true,
+  );
+});
+
+
+test("Agency room image editor uses real square crop with circle-only room preview", () => {
+  const hostPage = source(
+    "lib/features/agency/screens/host_my_agency_page.dart",
+  );
+  const cropSheet = source(
+    "lib/features/agency/widgets/agency_room_image_crop_sheet.dart",
+  );
+
+  assert.equal(hostPage.includes("owner-agency-room-image-edit-entry"), true);
+  assert.equal(hostPage.includes("تعديل صورة غرفة الوكالة"), true);
+  assert.equal(hostPage.includes("خلفيات الغرفة من «مقتنياتي»"), true);
+  assert.equal(hostPage.includes("scope: 'agency_room_image'"), true);
+  assert.equal(hostPage.includes("scope: 'agency_background'"), false);
+  assert.equal(hostPage.includes("تعديل خلفية الوكالة"), false);
+
+  assert.equal(cropSheet.includes("aspectRatio: 1"), true);
+  assert.equal(cropSheet.includes("fixCropRect: true"), true);
+  assert.equal(cropSheet.includes("interactive: true"), true);
+  assert.equal(cropSheet.includes("BoxShape.circle"), true);
+  assert.equal(cropSheet.includes("_cropController.crop();"), true);
+  assert.equal(cropSheet.includes("cropCircle"), false);
+  assert.equal(
+    cropSheet.includes("المربع هو القص الفعلي المحفوظ"),
+    true,
+  );
+  assert.equal(
+    cropSheet.includes("الدائرة معاينة فقط"),
     true,
   );
 });
