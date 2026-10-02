@@ -7,6 +7,22 @@ function source(relative) {
 }
 
 
+test("Room Image audit uses canonical variables without stale cover aliases", () => {
+  const voice = source("cloudflare-worker/src/voice-session-legacy.js");
+  const start = voice.indexOf("async function updateRoomSettings(");
+  const end = voice.indexOf("async function setRoomChatEnabled", start);
+  const block = voice.slice(start, end);
+
+  assert.notEqual(start, -1);
+  assert.equal(block.includes("coverImageObjectIdProvided"), false);
+  assert.equal(block.includes("\n        coverImageUrl,\n"), false);
+  assert.equal(block.includes("roomImageUrl,"), true);
+  assert.equal(
+    block.includes("coverImageUrl:roomImageUrl"),
+    true,
+  );
+});
+
 test("Room Image is the canonical external room image across list, API and settings", () => {
   const main = source("lib/main.dart");
   const rooms = source("lib/screens/room/room_list_screen.dart");

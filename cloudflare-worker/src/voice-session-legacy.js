@@ -1057,10 +1057,14 @@ async function updateRoomSettings(db,uid,body){
         tags,
         visibility,
         chatEnabled,
-        coverImageUrl,
-        coverImageObjectId:coverImageObjectIdProvided
-          ? coverImageObjectId
-          : clean(room.coverImageObjectId),
+        roomImageUrl,
+        roomImageObjectId:roomImageObjectIdProvided
+          ? roomImageObjectId
+          : clean(room.roomImageObjectId||room.coverImageObjectId),
+        coverImageUrl:roomImageUrl,
+        coverImageObjectId:roomImageObjectIdProvided
+          ? roomImageObjectId
+          : clean(room.coverImageObjectId||room.roomImageObjectId),
         passwordProtected:visibility==="password",
       },
       createdAt:FieldValue.serverTimestamp(),
