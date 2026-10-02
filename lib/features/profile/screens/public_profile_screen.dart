@@ -72,6 +72,14 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
             final publicId = (data['publicId'] ?? '—').toString();
             final bio = (data['bio'] ?? '').toString();
             final location = (data['location'] ?? '').toString();
+            final moodEmoji = (data['moodEmoji'] ?? '').toString().trim();
+            final moodText = (data['moodText'] ?? '').toString().trim();
+            final interests = data['interests'] is List
+                ? (data['interests'] as List)
+                    .map((e) => e.toString().trim())
+                    .where((e) => e.isNotEmpty)
+                    .toList(growable: false)
+                : <String>[];
             final level = (data['level'] as num?)?.toInt() ?? 0;
             final vip = (data['vipLevel'] as num?)?.toInt() ?? 0;
             final online = data['isOnline'] == true;
@@ -208,7 +216,13 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
               body: TabBarView(
                 controller: _tabs,
                 children: [
-                  _about(bio, location),
+                  _about(
+                    bio,
+                    location,
+                    moodEmoji,
+                    moodText,
+                    interests,
+                  ),
                   _gifts(),
                   _badges(vip, level, badges),
                 ],
@@ -315,10 +329,29 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
     );
   }
 
-  Widget _about(String bio, String location) {
+  Widget _about(
+    String bio,
+    String location,
+    String moodEmoji,
+    String moodText,
+    List<String> interests,
+  ) {
+    final mood = [
+      if (moodEmoji.isNotEmpty) moodEmoji,
+      if (moodText.isNotEmpty) moodText,
+    ].join(' ').trim();
+
     return ListView(
       padding: const EdgeInsets.all(18),
       children: [
+        if (mood.isNotEmpty) ...[
+          _infoCard(
+            'الحالة',
+            mood,
+            Icons.sentiment_satisfied_alt_rounded,
+          ),
+          const SizedBox(height: 12),
+        ],
         _infoCard(
           'نبذة',
           bio.isEmpty ? 'لا توجد نبذة بعد.' : bio,
@@ -330,7 +363,117 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
           location.isEmpty ? 'غير محدد' : location,
           Icons.location_on_outlined,
         ),
+        if (interests.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _interestsCard(interests),
+        ],
       ],
+    );
+  }
+
+  Widget _interestsCard(List<String> interests) {
+    final preview = interests.take(6).toList(growable: false);
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF101522),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.interests_rounded, color: Color(0xFFFFD54A)),
+              SizedBox(width: 10),
+              Text(
+                'الاهتمامات',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 7,
+            runSpacing: 7,
+            children: preview
+                .map(
+                  (interest) => Chip(
+                    label: Text(interest),
+                    labelStyle: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                    ),
+                    backgroundColor: const Color(0xFF20263A),
+                    side: BorderSide.none,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                )
+                .toList(growable: false),
+          ),
+          if (interests.length > preview.length)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: () => _showAllInterests(interests),
+                child: Text(
+                  'عرض الكل (' + interests.length.toString() + ')',
+                  style: const TextStyle(color: Color(0xFFFFD54A)),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showAllInterests(List<String> interests) {
+    return showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF0D111B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 26),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'الاهتمامات',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 19,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 7,
+                  runSpacing: 7,
+                  children: interests
+                      .map(
+                        (interest) => Chip(
+                          label: Text(interest),
+                          labelStyle: const TextStyle(color: Colors.white),
+                          backgroundColor: const Color(0xFF20263A),
+                          side: BorderSide.none,
+                        ),
+                      )
+                      .toList(growable: false),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
