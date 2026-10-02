@@ -2470,50 +2470,14 @@ async function refreshRoomPresenceSummary(db,roomId){
 
 async function roomPresenceAnnounceJoin(db,uid,roomId){
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
-  const roomRef=db.collection("rooms").doc(roomId);
-  const profileRef=db.collection("public_profiles").doc(uid);
-  const userRef=db.collection("users").doc(uid);
-  const [roomSnap,profileSnap,userSnap,present]=await Promise.all([
-    roomRef.get(),
-    profileRef.get(),
-    userRef.get(),
+  const [roomSnap,present]=await Promise.all([
+    db.collection("rooms").doc(roomId).get(),
     realtimeUserPresent(roomId,uid),
   ]);
   if(!roomSnap.exists||roomSnap.data()?.isActive===false)throw new ApiError("room_unavailable",404);
   if(present===false)throw new ApiError("presence_socket_required",409);
   if(present===null)await assertRoomRealtimePresence(db,roomId,uid);
-
-  const profile=profileSnap.data()||{};
-  const user=userSnap.data()||{};
-  const privacy=user.privacy&&typeof user.privacy==="object"?user.privacy:{};
-  const ghostMode=user.roomGhostMode===true||privacy.ghostMode===true;
-  const vipObject=user.vip&&typeof user.vip==="object"?user.vip:{};
-  const vipLevel=Math.max(0,Math.min(99,Number(
-    user.vipLevel??profile.vipLevel??vipObject.level??0
-  )||0));
-  const entryEffectKey=clean(
-    user.vipEntryEffectKey||profile.vipEntryEffectKey||vipObject.entryEffectKey
-  );
-  const displayName=clean(profile.displayName||profile.username||user.displayName||user.username||"مستخدم Shadow Live");
-  const profileImageUrl=clean(profile.profileImageUrl||user.profileImageUrl);
-
-  if(!ghostMode){
-    const messageRef=roomRef.collection("messages").doc();
-    await messageRef.set({
-      type:"system",
-      systemKind:"room_join",
-      senderUid:uid,
-      displayName,
-      profileImageUrl,
-      text:vipLevel>0
-        ?displayName+" دخل الغرفة — VIP "+String(vipLevel)
-        :displayName+" دخل الغرفة",
-      vipLevel,
-      entryEffectKey,
-      createdAt:FieldValue.serverTimestamp(),
-    });
-  }
-
+  // Join feed is emitted by RoomRealtimeObject. Do not persist room chat history.
   return {ok:true,roomId};
 }
 
@@ -2573,9 +2537,6 @@ async function roomPresenceJoin(db,uid,roomId){
   const vipLevel=Math.max(0,Math.min(99,Number(
     user.vipLevel??profile.vipLevel??vipObject.level??0
   )||0));
-  const entryEffectKey=clean(
-    user.vipEntryEffectKey||profile.vipEntryEffectKey||vipObject.entryEffectKey
-  );
   const displayName=clean(profile.displayName||profile.username||user.displayName||user.username||"مستخدم Shadow Live");
   const profileImageUrl=clean(profile.profileImageUrl||user.profileImageUrl);
   const now=Date.now();
@@ -2588,23 +2549,6 @@ async function roomPresenceJoin(db,uid,roomId){
     ghostMode,
     vipLevel,
   },{merge:true});
-
-  if(!presenceSnap.exists&&!ghostMode){
-    const messageRef=roomRef.collection("messages").doc();
-    await messageRef.set({
-      type:"system",
-      systemKind:"room_join",
-      senderUid:uid,
-      displayName,
-      profileImageUrl,
-      text:vipLevel>0
-        ? displayName+" دخل الغرفة — VIP "+String(vipLevel)
-        : displayName+" دخل الغرفة",
-      vipLevel,
-      entryEffectKey,
-      createdAt:FieldValue.serverTimestamp(),
-    });
-  }
 
   const participants=await refreshRoomPresenceSummary(db,roomId);
   return {ok:true,roomId,onlineCount:participants.length,participants};
