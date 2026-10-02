@@ -2949,11 +2949,12 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                           'الخصوصية',
                           visibilityLabel(),
                         ),
-                        infoRow(
-                          Icons.workspace_premium_rounded,
-                          'المستوى',
-                          'LV.' + level.toString(),
-                        ),
+                        if (_showRoomLevel)
+                          infoRow(
+                            Icons.workspace_premium_rounded,
+                            'المستوى',
+                            'LV.' + level.toString(),
+                          ),
                         infoRow(
                           Icons.group_rounded,
                           'المتصلون',
@@ -2961,7 +2962,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         ),
                         infoRow(
                           Icons.mic_external_on_rounded,
-                          'المقاعد',
+                          _isCustomerServiceRoom ? 'المداخل' : 'المقاعد',
                           (_roomSeatState?.seats.length ?? 0).toString(),
                         ),
                       ],
