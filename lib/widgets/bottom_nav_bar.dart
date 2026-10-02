@@ -51,7 +51,7 @@ class BottomNavBar extends StatelessWidget {
           ),
         ),
         child: BottomNavigationBar(
-          currentIndex: currentIndex.clamp(0, items.length - 1),
+          currentIndex: currentIndex.clamp(0, items.length - 1).toInt(),
           onTap: (index) {
             switch (index) {
               case 0:
