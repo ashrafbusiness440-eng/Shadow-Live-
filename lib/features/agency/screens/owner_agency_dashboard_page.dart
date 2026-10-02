@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../profile/screens/public_profile_screen.dart';
 import '../services/host_my_agency_service.dart';
 import '../services/owner_agency_service.dart';
+import '../widgets/agency_user_avatar.dart';
 
 class OwnerAgencyDashboardPage extends StatefulWidget {
   const OwnerAgencyDashboardPage({
@@ -1128,7 +1129,10 @@ class _MemberManagementTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final owner = member.role == 'owner';
-    final image = member.profileImageUrl?.trim() ?? '';
+    final avatar = agencyUserAvatarProvider(
+      imageUrl: member.profileImageUrl,
+      avatarAsset: member.profileAvatarAsset,
+    );
     final publicId = member.publicId?.trim() ?? '';
     final displayName =
         member.displayName ?? (publicId.isEmpty ? member.uid : publicId);
@@ -1161,9 +1165,8 @@ class _MemberManagementTile extends StatelessWidget {
                     key: Key('owner-member-avatar-${member.uid}'),
                     radius: 24,
                     backgroundColor: const Color(0xFF2A3150),
-                    backgroundImage:
-                        image.isEmpty ? null : NetworkImage(image),
-                    child: image.isEmpty
+                    backgroundImage: avatar,
+                    child: avatar == null
                         ? const Icon(Icons.person_rounded)
                         : null,
                   ),
@@ -1336,7 +1339,10 @@ class _HostPerformanceSheet extends StatelessWidget {
             }
 
             final data = snapshot.data!;
-            final image = data.profileImageUrl?.trim() ?? '';
+            final avatar = agencyUserAvatarProvider(
+              imageUrl: data.profileImageUrl,
+              avatarAsset: data.profileAvatarAsset,
+            );
             final denominator =
                 data.targetCoins <= 0 ? 1 : data.targetCoins;
             final ratio =
@@ -1363,9 +1369,8 @@ class _HostPerformanceSheet extends StatelessWidget {
                     CircleAvatar(
                       radius: 30,
                       backgroundColor: const Color(0xFF2A3150),
-                      backgroundImage:
-                          image.isEmpty ? null : NetworkImage(image),
-                      child: image.isEmpty
+                      backgroundImage: avatar,
+                      child: avatar == null
                           ? const Icon(Icons.person_rounded)
                           : null,
                     ),
@@ -1604,7 +1609,10 @@ class _PendingManagementTile extends StatelessWidget {
             ? 'طلب انضمام'
             : 'دعوة معلّقة';
     final publicId = request.userPublicId?.trim() ?? '';
-    final image = request.profileImageUrl?.trim() ?? '';
+    final avatar = agencyUserAvatarProvider(
+      imageUrl: request.profileImageUrl,
+      avatarAsset: request.profileAvatarAsset,
+    );
     final statusLabel = _pendingConflictLabel(request);
     final displayName =
         request.displayName ?? (publicId.isEmpty ? request.uid : publicId);
@@ -1636,9 +1644,8 @@ class _PendingManagementTile extends StatelessWidget {
                   child: CircleAvatar(
                     radius: 24,
                     backgroundColor: const Color(0xFF31204F),
-                    backgroundImage:
-                        image.isEmpty ? null : NetworkImage(image),
-                    child: image.isEmpty
+                    backgroundImage: avatar,
+                    child: avatar == null
                         ? const Icon(
                             Icons.person_rounded,
                             color: Colors.white70,
