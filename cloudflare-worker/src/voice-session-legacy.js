@@ -623,6 +623,10 @@ function roomResponse(roomId,data){
     agencyId:roomType==="agency"&&/^\d{3,8}$/.test(agencyId)?agencyId:"",
     agencyName:roomType==="agency"?clean(data.agencyName):"",
     agencyLogoUrl:roomType==="agency"?clean(data.agencyLogoUrl):"",
+    agencyRoomImageUrl:
+      roomType==="agency"?clean(data.agencyRoomImageUrl||data.roomImageUrl):"",
+    agencyRoomImageObjectId:
+      roomType==="agency"?clean(data.agencyRoomImageObjectId||data.roomImageObjectId):"",
     category:roomType==="agency"?"وكالة":clean(data.category||"دردشة"),
     ownerName:clean(data.ownerName),
     ownerLocation:clean(data.ownerLocation),
@@ -720,6 +724,8 @@ async function openPersonalRoom(db,uid,{forceAgency=false}={}){
               agencyName:clean(agency?.name),
               agencyLogoUrl:clean(agency?.logoUrl||agency?.imageUrl),
               agencyCoverUrl:clean(agency?.coverUrl||agency?.coverImageUrl),
+              agencyRoomImageUrl:clean(agency?.roomImageUrl),
+              agencyRoomImageObjectId:clean(agency?.roomImageObjectId),
               category:"وكالة",
             }:{})
           };
@@ -748,6 +754,8 @@ async function openPersonalRoom(db,uid,{forceAgency=false}={}){
             agencyName:clean(agency?.name),
             agencyLogoUrl:clean(agency?.logoUrl||agency?.imageUrl),
             agencyCoverUrl:clean(agency?.coverUrl||agency?.coverImageUrl),
+            agencyRoomImageUrl:clean(agency?.roomImageUrl),
+            agencyRoomImageObjectId:clean(agency?.roomImageObjectId),
           }:{}),
           category:createAsAgency?"وكالة":"دردشة",
           ownerName:displayName,
