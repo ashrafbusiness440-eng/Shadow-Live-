@@ -2457,7 +2457,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
 
   void _openInitialGameIfNeeded(Map<String, dynamic> args) {
     final key = (args['initialGameKey'] ?? '').toString().trim();
-    if (key.isEmpty || _initialGameOpened) return;
+    if (key.isEmpty || _initialGameOpened || !_roomGamesEnabled) return;
     _initialGameOpened = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -2466,6 +2466,14 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   }
 
   Future<void> _showRoomGameOverlay({String? initialGameKey}) async {
+    if (!_roomGamesEnabled) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('الألعاب غير مفعّلة في هذه الغرفة.')),
+        );
+      }
+      return;
+    }
     final roomId = (_roomArguments['roomId'] ?? '').toString().trim();
     if (roomId.isEmpty) return;
     await showModalBottomSheet<void>(
@@ -2673,15 +2681,16 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                           },
                           iconColor: const Color(0xFFCE93D8),
                         ),
-                        tool(
-                          icon: Icons.sports_esports_rounded,
-                          label: 'الألعاب',
-                          onTap: () {
-                            Navigator.pop(sheetContext);
-                            _showRoomGameOverlay();
-                          },
-                          iconColor: const Color(0xFF80D8FF),
-                        ),
+                        if (_roomGamesEnabled)
+                          tool(
+                            icon: Icons.sports_esports_rounded,
+                            label: 'الألعاب',
+                            onTap: () {
+                              Navigator.pop(sheetContext);
+                              _showRoomGameOverlay();
+                            },
+                            iconColor: const Color(0xFF80D8FF),
+                          ),
                         tool(
                           icon: Icons.music_note_rounded,
                           label: 'الأغاني',
@@ -4333,6 +4342,24 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         const {'official', 'administrative', 'customer_service'}.contains(type);
   }
 
+  bool get _isCustomerServiceRoom => _roomType == 'customer_service';
+
+  bool _roomFeatureEnabled(String key) {
+    if (_roomArguments.containsKey(key)) {
+      return _roomArguments[key] == true;
+    }
+    return !_isCustomerServiceRoom;
+  }
+
+  bool get _roomGiftsEnabled => _roomFeatureEnabled('giftsEnabled');
+  bool get _roomPkEnabled => _roomFeatureEnabled('pkEnabled');
+  bool get _roomGamesEnabled => _roomFeatureEnabled('gamesEnabled');
+  bool get _roomRocketEnabled => _roomFeatureEnabled('roomRocketEnabled');
+
+  bool get _showRoomLevel => !_isOfficialRoom;
+  bool get _showRoomSupport =>
+      !_isCustomerServiceRoom && (!_isOfficialRoom || _roomGiftsEnabled);
+
   String get _roomCategoryLabel {
     if (_roomAgencyId.isNotEmpty) return 'وكالة';
     if (_roomType == 'customer_service') return 'خدمة العملاء';
@@ -5019,6 +5046,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   }
 
   Future<void> _showRoomRocketSheet() async {
+    if (!_roomRocketEnabled) return;
     final roomId = (_roomArguments['roomId'] ?? '').toString().trim();
     if (roomId.isEmpty) return;
     final service = RoomRocketService();
@@ -5161,6 +5189,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   }
 
   Widget _buildRoomRocketButton() {
+    if (!_roomRocketEnabled) return const SizedBox.shrink();
     return Tooltip(
       message: 'صاروخ الغرفة',
       child: Material(
@@ -5267,6 +5296,9 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
 
   Widget _buildRoomInsightsBar() {
     final insights = _roomInsights;
+    if (!_showRoomLevel && !_showRoomSupport) {
+      return const SizedBox.shrink();
+    }
     if (insights == null) {
       return _loadingRoomInsights
           ? const LinearProgressIndicator(
@@ -5277,46 +5309,43 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           : const SizedBox.shrink();
     }
 
-    final levelBox = InkWell(
-      onTap: _showRoomLevelSheet,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        width: 118,
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-        decoration: BoxDecoration(
-          color: const Color(0xFF111522).withValues(alpha: .86),
+    Widget levelBox() => InkWell(
+          onTap: _showRoomLevelSheet,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white10),
-        ),
-        child: Row(
-          children: [
-            Text(
-              'LV.${insights.level}',
-              style: const TextStyle(
-                color: Color(0xFFFFD54A),
-                fontSize: 11,
-                fontWeight: FontWeight.w900,
-              ),
+          child: Container(
+            width: 118,
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0xFF111522).withValues(alpha: .86),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white10),
             ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: LinearProgressIndicator(
-                value: insights.levelProgress,
-                minHeight: 3,
-                borderRadius: BorderRadius.circular(99),
-                color: const Color(0xFF8A3DFF),
-                backgroundColor: Colors.white12,
-              ),
+            child: Row(
+              children: [
+                Text(
+                  'LV.${insights.level}',
+                  style: const TextStyle(
+                    color: Color(0xFFFFD54A),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: LinearProgressIndicator(
+                    value: insights.levelProgress,
+                    minHeight: 3,
+                    borderRadius: BorderRadius.circular(99),
+                    color: const Color(0xFF8A3DFF),
+                    backgroundColor: Colors.white12,
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
-    );
+          ),
+        );
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        InkWell(
+    Widget rankingBox() => InkWell(
           onTap: _showRoomRankingSheet,
           borderRadius: BorderRadius.circular(999),
           child: Container(
@@ -5348,16 +5377,23 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
               ],
             ),
           ),
-        ),
+        );
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        if (_showRoomSupport) rankingBox(),
         const Spacer(),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildSupporterCluster(),
-            const SizedBox(height: 6),
-            levelBox,
-          ],
-        ),
+        if (_showRoomSupport || _showRoomLevel)
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (_showRoomSupport) _buildSupporterCluster(),
+              if (_showRoomSupport && _showRoomLevel)
+                const SizedBox(height: 6),
+              if (_showRoomLevel) levelBox(),
+            ],
+          ),
       ],
     );
   }
@@ -5447,18 +5483,20 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             ),
           ),
           const SizedBox(width: 5),
-          circleButton(
-            icon: Icons.card_giftcard_rounded,
-            tooltip: 'الهدايا',
-            onPressed: roomId.isEmpty
-                ? null
-                : () => showRoomGiftSheet(
-                      context,
-                      roomId: roomId,
-                    ),
-            color: const Color(0xFFFFD54A),
-          ),
-          const SizedBox(width: 5),
+          if (_roomGiftsEnabled) ...[
+            circleButton(
+              icon: Icons.card_giftcard_rounded,
+              tooltip: 'الهدايا',
+              onPressed: roomId.isEmpty
+                  ? null
+                  : () => showRoomGiftSheet(
+                        context,
+                        roomId: roomId,
+                      ),
+              color: const Color(0xFFFFD54A),
+            ),
+            const SizedBox(width: 5),
+          ],
           circleButton(
             icon: Icons.chat_bubble_rounded,
             tooltip: 'الرسائل',
