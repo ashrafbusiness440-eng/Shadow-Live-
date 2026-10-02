@@ -3143,8 +3143,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       alignment: Alignment.centerRight,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        children: const [
-                          Text(
+                        children: [
+                          const Text(
                             'صورة الغرفة',
                             style: TextStyle(
                               color: Colors.white,
@@ -3152,12 +3152,12 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                               fontSize: 16,
                             ),
                           ),
-                          SizedBox(height: 3),
+                          const SizedBox(height: 3),
                           Text(
                             isAgencyRoom
                                 ? 'هذه صورة غرفة الوكالة التي تظهر خارج الروم وفي الهيدر، وليست الخلفية.'
                                 : 'تظهر في قائمة الغرف والهيدر فقط، وليست خلفية الغرفة.',
-                            style: TextStyle(
+                            style: const TextStyle(
                               color: Colors.white54,
                               fontSize: 11,
                             ),
