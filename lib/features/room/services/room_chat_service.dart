@@ -83,6 +83,23 @@ class RoomChatService {
 
   final VoiceRoomSessionController _session;
 
+  Future<void> reportMessage({
+    required String roomId,
+    required String messageId,
+    required String reason,
+  }) async {
+    final activeRoomId = _session.roomId.trim();
+    if (!_session.active ||
+        activeRoomId.isEmpty ||
+        activeRoomId != roomId.trim()) {
+      throw StateError('room_realtime_not_connected');
+    }
+    await _session.reportRoomChatMessage(
+      messageId: messageId,
+      reason: reason,
+    );
+  }
+
   Future<void> sendMessage({
     required String roomId,
     required String text,
