@@ -51,12 +51,14 @@ class HostAgencyOwner {
     required this.publicId,
     required this.displayName,
     required this.profileImageUrl,
+    this.profileAvatarAsset,
   });
 
   final String uid;
   final String? publicId;
   final String displayName;
   final String? profileImageUrl;
+  final String? profileAvatarAsset;
 
   factory HostAgencyOwner.fromJson(Map<String, dynamic> json) {
     return HostAgencyOwner(
@@ -64,6 +66,7 @@ class HostAgencyOwner {
       publicId: _nullableString(json['publicId']),
       displayName: (json['displayName'] ?? 'Shadow Live').toString().trim(),
       profileImageUrl: _nullableString(json['profileImageUrl']),
+      profileAvatarAsset: _nullableString(json['profileAvatarAsset']),
     );
   }
 }
