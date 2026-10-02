@@ -1369,6 +1369,7 @@ class _RoomsPageState extends State<RoomsPage> {
     'invalid_room_visibility'=>'خصوصية الغرفة الرسمية غير صالحة.',
     'room_public_id_exhausted'=>'تعذر حجز Room ID تلقائيًا. حاول مرة أخرى.',
     'official_room_required'=>'هذا التعديل متاح فقط للغرف الرسمية أو الإدارية.',
+    'customer_service_capacity_fixed'=>'سعة خدمة العملاء ثابتة على 5 مداخل و2 إدارة.',
     _=>'تعذر تنفيذ العملية: '+code,
   };
 
@@ -1662,7 +1663,9 @@ class _RoomsPageState extends State<RoomsPage> {
     final systemOwned=policy['systemOwned']==true;
     final effectiveSeats=(policy['effectiveSeats']??'—').toString();
     final effectiveModerators=(policy['effectiveModerators']??'—').toString();
-    final manual=(policy['capacityMode']??'level').toString()=='manual';
+    final capacityMode=(policy['capacityMode']??'level').toString();
+    final manual=capacityMode=='manual';
+    final customerServiceFixed=capacityMode=='customer_service_fixed';
 
     return ListView(padding:const EdgeInsets.all(16),children:[
       const Row(children:[
@@ -1751,7 +1754,9 @@ class _RoomsPageState extends State<RoomsPage> {
             if(!official)Chip(label:Text('LV.'+level.toString())),
             Chip(label:Text('المايكات الفعلية: '+effectiveSeats)),
             Chip(label:Text('المشرفون: '+effectiveModerators)),
-            Chip(label:Text(manual?'Manual Override':'حسب Level')),
+            Chip(label:Text(customerServiceFixed
+                ?'خدمة العملاء — سعة ثابتة'
+                :(manual?'Manual Override':'حسب Level'))),
           ]),
         ]))),
         if(!official)...[
@@ -1785,39 +1790,57 @@ class _RoomsPageState extends State<RoomsPage> {
         ],
         const SizedBox(height:12),
         Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-          const Text('Room Overrides',style:TextStyle(fontSize:18,fontWeight:FontWeight.w900)),
+          const Text('سعة الغرفة',style:TextStyle(fontSize:18,fontWeight:FontWeight.w900)),
           const SizedBox(height:6),
-          Text(official?'الغرف الرسمية تستخدم السعة اليدوية؛ حدّد عدد المايكات والمشرفين هنا.':'اترك القيمة فارغة للرجوع لقيمة الـLevel.',style:TextStyle(color:Color(0xFFAAA3B8),fontSize:12)),
-          const SizedBox(height:12),
-          Row(children:[
-            Expanded(child:TextField(
-              controller:seats,keyboardType:TextInputType.number,
-              decoration:const InputDecoration(labelText:'عدد المايكات',hintText:'1 - 50',border:OutlineInputBorder()),
-            )),
-            const SizedBox(width:10),
-            Expanded(child:TextField(
-              controller:moderators,keyboardType:TextInputType.number,
-              decoration:const InputDecoration(labelText:'عدد المشرفين',hintText:'0 - 30',border:OutlineInputBorder()),
-            )),
-          ]),
-          SwitchListTile(
-            contentPadding:EdgeInsets.zero,
-            title:const Text('تجاوز سعة الـLevel'),
-            subtitle:const Text('استخدم القيم اليدوية بدل الجدول الطبيعي.'),
-            value:bypassLevelCapacity,
-            onChanged:busy?null:(v)=>setState(()=>bypassLevelCapacity=v),
-          ),
-          Row(children:[
-            Expanded(child:FilledButton.icon(
-              onPressed:busy?null:saveOverrides,
-              icon:const Icon(Icons.save_outlined),label:const Text('حفظ الاستثناءات'),
-            )),
-            const SizedBox(width:8),
-            Expanded(child:OutlinedButton.icon(
-              onPressed:busy?null:()=>execute('resetOverrides'),
-              icon:const Icon(Icons.restart_alt_rounded),label:const Text('إلغاء الاستثناءات'),
-            )),
-          ]),
+          if(customerServiceFixed)...[
+            const Text(
+              'خدمة العملاء ثابتة: 5 مداخل — أول مقعدين للإدارة و3 مداخل بدعوة فقط.',
+              style:TextStyle(color:Color(0xFFAAA3B8),fontSize:12),
+            ),
+            const SizedBox(height:10),
+            const Wrap(spacing:8,children:[
+              Chip(label:Text('5 مداخل')),
+              Chip(label:Text('2 إدارة')),
+              Chip(label:Text('3 بدعوة')),
+            ]),
+          ]else...[
+            Text(
+              official
+                  ?'الغرف الرسمية تستخدم السعة اليدوية؛ حدّد عدد المايكات والمشرفين هنا.'
+                  :'اترك القيمة فارغة للرجوع لقيمة الـLevel.',
+              style:const TextStyle(color:Color(0xFFAAA3B8),fontSize:12),
+            ),
+            const SizedBox(height:12),
+            Row(children:[
+              Expanded(child:TextField(
+                controller:seats,keyboardType:TextInputType.number,
+                decoration:const InputDecoration(labelText:'عدد المايكات',hintText:'1 - 50',border:OutlineInputBorder()),
+              )),
+              const SizedBox(width:10),
+              Expanded(child:TextField(
+                controller:moderators,keyboardType:TextInputType.number,
+                decoration:const InputDecoration(labelText:'عدد المشرفين',hintText:'0 - 30',border:OutlineInputBorder()),
+              )),
+            ]),
+            SwitchListTile(
+              contentPadding:EdgeInsets.zero,
+              title:const Text('تجاوز سعة الـLevel'),
+              subtitle:const Text('استخدم القيم اليدوية بدل الجدول الطبيعي.'),
+              value:bypassLevelCapacity,
+              onChanged:busy?null:(v)=>setState(()=>bypassLevelCapacity=v),
+            ),
+            Row(children:[
+              Expanded(child:FilledButton.icon(
+                onPressed:busy?null:saveOverrides,
+                icon:const Icon(Icons.save_outlined),label:const Text('حفظ السعة'),
+              )),
+              const SizedBox(width:8),
+              Expanded(child:OutlinedButton.icon(
+                onPressed:busy?null:()=>execute('resetOverrides'),
+                icon:const Icon(Icons.restart_alt_rounded),label:const Text('إلغاء الاستثناءات'),
+              )),
+            ]),
+          ],
         ]))),
         const SizedBox(height:12),
         Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
