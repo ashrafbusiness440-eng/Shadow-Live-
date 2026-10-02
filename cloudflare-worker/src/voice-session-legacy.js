@@ -560,7 +560,7 @@ async function setRoomModerator(db,uid,body){
 
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
   if(!targetUid&&targetPublicId){
-    if(!/^[0-9]{6}$/.test(targetPublicId))throw new ApiError("invalid_public_id",400);
+    if(!/^[0-9]{3,8}$/.test(targetPublicId))throw new ApiError("invalid_public_id",400);
     const publicSnap=await db.collection("public_ids").doc(targetPublicId).get();
     targetUid=clean(publicSnap.data()?.uid);
   }
@@ -1216,7 +1216,7 @@ async function createOfficialRoomFromControl(db,uid,body){
     : featureDefault;
 
   if(name.length<2||name.length>80)throw new ApiError("invalid_room_name",400);
-  if(requestedPublicId&&!/^\d{3,12}$/.test(requestedPublicId))throw new ApiError("invalid_room_public_id",400);
+  if(requestedPublicId&&!/^\d{3,8}$/.test(requestedPublicId))throw new ApiError("invalid_room_public_id",400);
   if(!["official","administrative","customer_service"].includes(officialType)){
     throw new ApiError("invalid_official_room_type",400);
   }
@@ -1381,7 +1381,7 @@ async function controlRoomPolicy(db,uid,body){
   }
 
   if(!roomId&&roomPublicId){
-    if(!/^\d{3,12}$/.test(roomPublicId))throw new ApiError("invalid_room_public_id",400);
+    if(!/^\d{3,8}$/.test(roomPublicId))throw new ApiError("invalid_room_public_id",400);
     const idSnap=await db.collection("room_ids").doc(roomPublicId).get();
     roomId=clean(idSnap.data()?.roomId);
   }
