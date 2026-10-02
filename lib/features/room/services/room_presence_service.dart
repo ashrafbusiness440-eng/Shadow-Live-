@@ -65,6 +65,8 @@ class RoomPresenceService {
       StreamController<RoomRealtimeEvent>.broadcast();
   final Map<String, Completer<void>> _pendingChat =
       <String, Completer<void>>{};
+  final Map<String, Completer<void>> _pendingChatReports =
+      <String, Completer<void>>{};
 
   RoomPresenceSocketConnection? _socket;
   StreamSubscription<Object?>? _socketSubscription;
@@ -128,9 +130,15 @@ class RoomPresenceService {
       final requestId = (payload['requestId'] ?? '').toString().trim();
       if (requestId.isNotEmpty && type == 'room.chat_ack') {
         _pendingChat.remove(requestId)?.complete();
+      } else if (requestId.isNotEmpty &&
+          type == 'room.chat_report_ack') {
+        _pendingChatReports.remove(requestId)?.complete();
       } else if (requestId.isNotEmpty && type == 'server.error') {
         final code = (payload['code'] ?? 'room_chat_failed').toString();
-        _pendingChat.remove(requestId)?.completeError(StateError(code));
+        final chat = _pendingChat.remove(requestId);
+        final report = _pendingChatReports.remove(requestId);
+        chat?.completeError(StateError(code));
+        report?.completeError(StateError(code));
       }
       if (!_eventsController.isClosed) {
         _eventsController.add(
@@ -147,12 +155,58 @@ class RoomPresenceService {
   }
 
   void _failPendingChat(String code) {
-    final pending = _pendingChat.values.toList(growable: false);
+    final pending = [
+      ..._pendingChat.values,
+      ..._pendingChatReports.values,
+    ];
     _pendingChat.clear();
+    _pendingChatReports.clear();
     for (final completer in pending) {
       if (!completer.isCompleted) {
         completer.completeError(StateError(code));
       }
+    }
+  }
+
+  Future<void> reportChatMessage({
+    required String roomId,
+    required String messageId,
+    required String reason,
+  }) async {
+    final id = roomId.trim();
+    final targetMessageId = messageId.trim();
+    final reportReason = reason.trim();
+    if (id.isEmpty || id != _desiredRoomId || _socket == null) {
+      throw StateError('room_realtime_not_connected');
+    }
+    if (targetMessageId.isEmpty || reportReason.isEmpty) {
+      throw StateError('invalid_room_report');
+    }
+
+    final requestId = 'report_' +
+        DateTime.now().microsecondsSinceEpoch.toString() +
+        '_' +
+        _generation.toString();
+    final completer = Completer<void>();
+    _pendingChatReports[requestId] = completer;
+    try {
+      _socket!.send(
+        jsonEncode({
+          'type': 'client.room_chat_report',
+          'requestId': requestId,
+          'payload': {
+            'roomId': id,
+            'messageId': targetMessageId,
+            'reason': reportReason,
+          },
+        }),
+      );
+      await completer.future.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => throw StateError('room_report_timeout'),
+      );
+    } finally {
+      _pendingChatReports.remove(requestId);
     }
   }
 
