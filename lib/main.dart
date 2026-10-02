@@ -1641,12 +1641,12 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
               size: 20,
             ),
             const SizedBox(width: 8),
-            const Expanded(
+            Expanded(
               child: Text(
                 _isCustomerServiceRoom
                     ? 'تمت دعوتك للمايك — الدعوة صالحة 60 ثانية'
                     : 'تمت دعوتك للمايك — اختر مقعداً فارغاً',
-                style: TextStyle(
+                style: const TextStyle(
                   color: Colors.white,
                   fontSize: 11,
                   fontWeight: FontWeight.w800,
