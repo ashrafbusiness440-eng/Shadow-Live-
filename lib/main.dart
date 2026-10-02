@@ -460,11 +460,26 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
 
     if (!canSpeak) {
       if (state == null) return;
-      if (!state.micInviteOnly) {
-        final emptySeats = state.seats.where((seat) => !seat.occupied).toList();
+
+      final customerService = _isCustomerServiceRoom;
+      final canTakeDirectly = state.isHost ||
+          state.canManageMic ||
+          (!customerService && !state.micInviteOnly) ||
+          state.invited(uid);
+      if (canTakeDirectly) {
+        final emptySeats = state.seats
+            .where(
+              (seat) =>
+                  !seat.occupied &&
+                  (!customerService ||
+                      state.isHost ||
+                      state.canManageMic ||
+                      seat.index >= 2),
+            )
+            .toList();
         if (emptySeats.isEmpty) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('لا يوجد مايك فارغ حالياً.')),
+            const SnackBar(content: Text('لا يوجد مايك متاح حالياً.')),
           );
           return;
         }
@@ -480,6 +495,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         } catch (_) {}
         return;
       }
+
       if (state.requested(uid)) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('طلب المايك ما زال قيد الانتظار.')),
@@ -488,7 +504,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         await _runSeatAction(() => _roomSeatService.requestMic(roomId));
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('تم إرسال طلب المايك للمشرفين.')),
+            const SnackBar(content: Text('تم إرسال طلب المايك للإدارة.')),
           );
         }
       }
@@ -827,10 +843,14 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       if (!mounted) return;
       final code = error.message.toString();
       final message = code == 'mic_invite_required'
-          ? 'لازم صاحب الغرفة يقبل طلب المايك أولاً.'
-          : code == 'seat_occupied'
-              ? 'هذا المقعد مستخدم حالياً.'
-              : 'تعذر تنفيذ العملية حالياً.';
+          ? 'لازم الإدارة توافق على طلب المايك أولاً.'
+          : code == 'mic_invite_expired'
+              ? 'انتهت دعوة المايك. اطلب دعوة جديدة.'
+              : code == 'customer_service_manager_mic_required'
+                  ? 'هذا المايك مخصص للإدارة.'
+                  : code == 'seat_occupied'
+                      ? 'هذا المقعد مستخدم حالياً.'
+                      : 'تعذر تنفيذ العملية حالياً.';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message)),
       );
@@ -910,6 +930,16 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     final hasSeat = state.seats.any((current) => current.uid == uid);
 
     if (!seat.occupied) {
+      if (_isCustomerServiceRoom &&
+          seat.index < 2 &&
+          !state.isHost &&
+          !state.canManageMic) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('هذا المايك مخصص للإدارة.')),
+        );
+        return;
+      }
+
       if (hasSeat) {
         await _runSeatAction(
           () => _roomSeatService.switchSeat(
@@ -921,7 +951,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           state.isHost ||
           state.canManageMic ||
           state.invited(uid) ||
-          !state.micInviteOnly) {
+          (!_isCustomerServiceRoom && !state.micInviteOnly)) {
         await _runSeatAction(
           () => _roomSeatService.takeSeat(
             roomId: roomId,
@@ -938,7 +968,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         );
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('تم إرسال طلب المايك للمشرفين.')),
+            const SnackBar(content: Text('تم إرسال طلب المايك للإدارة.')),
           );
         }
       }
@@ -1613,7 +1643,9 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             const SizedBox(width: 8),
             const Expanded(
               child: Text(
-                'تمت دعوتك للمايك — اختر مقعداً فارغاً',
+                _isCustomerServiceRoom
+                    ? 'تمت دعوتك للمايك — الدعوة صالحة 60 ثانية'
+                    : 'تمت دعوتك للمايك — اختر مقعداً فارغاً',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 11,
@@ -1625,8 +1657,16 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
               onPressed: _changingSeat
                   ? null
                   : () {
-                      final emptySeats =
-                          state.seats.where((seat) => !seat.occupied).toList();
+                      final emptySeats = state.seats
+                          .where(
+                            (seat) =>
+                                !seat.occupied &&
+                                (!_isCustomerServiceRoom ||
+                                    state.isHost ||
+                                    state.canManageMic ||
+                                    seat.index >= 2),
+                          )
+                          .toList();
                       if (emptySeats.isEmpty) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
@@ -1826,9 +1866,15 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                               )
                             : null)
                         : Icon(
-                            Icons.add_rounded,
+                            _isCustomerServiceRoom
+                                ? (seat.index < 2
+                                    ? Icons.admin_panel_settings_rounded
+                                    : Icons.lock_open_rounded)
+                                : Icons.add_rounded,
                             size: compact ? 19 : 24,
-                            color: Colors.white38,
+                            color: _isCustomerServiceRoom && seat.index < 2
+                                ? const Color(0xFFFFD54A)
+                                : Colors.white38,
                           ),
                   ),
                   if (seat.frameActive)
@@ -1878,7 +1924,11 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
               Text(
                 seat.occupied
                     ? (seat.displayName.isEmpty ? 'متحدث' : seat.displayName)
-                    : 'مقعد ' + (seat.index + 1).toString(),
+                    : _isCustomerServiceRoom
+                        ? (seat.index < 2
+                            ? 'إدارة ' + (seat.index + 1).toString()
+                            : 'دعوة ' + (seat.index - 1).toString())
+                        : 'مقعد ' + (seat.index + 1).toString(),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
