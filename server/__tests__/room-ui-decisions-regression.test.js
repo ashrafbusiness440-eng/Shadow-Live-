@@ -61,3 +61,30 @@ test("Room menu is grouped and room IDs follow the latest 3-8 digit reusable pol
   assert.equal(change.includes("active:false"), false);
   assert.equal(change.includes("replacedBy:newPublicId"), false);
 });
+
+
+test("room image crop is real square output and Agency images stay on their dedicated path", () => {
+  const main = source("lib/main.dart");
+  const crop = source(
+    "lib/features/agency/widgets/agency_room_image_crop_sheet.dart",
+  );
+
+  assert.equal(main.includes("showRoomImageCropSheet("), true);
+  assert.equal(main.includes("scope: 'agency_room_image'"), true);
+  assert.equal(main.includes("'agencyRoomImageUrl'"), true);
+  assert.equal(main.includes("'agencyRoomImageObjectId'"), true);
+  assert.equal(
+    main.includes("replaceObjectId:"),
+    true,
+  );
+
+  assert.equal(crop.includes("aspectRatio: 1"), true);
+  assert.equal(crop.includes("fixCropRect: true"), true);
+  assert.equal(crop.includes("shape: BoxShape.circle"), true);
+  assert.equal(crop.includes("_cropController.crop();"), true);
+  assert.equal(crop.includes("_cropController.cropCircle();"), false);
+  assert.equal(
+    crop.includes("المربع هو القص الفعلي المحفوظ. الدائرة معاينة فقط"),
+    true,
+  );
+});
