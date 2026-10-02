@@ -10,7 +10,10 @@ import '../../auth/bloc/auth_bloc.dart';
 import '../../chat/screens/chat_list_screen.dart';
 import '../../home/screens/home_screen.dart';
 import '../../games/screens/games_hub_screen.dart';
+import '../../room/services/room_seat_service.dart';
 import '../../user/screens/profile_screen.dart';
+import '../../voice/services/voice_room_session_controller.dart';
+import '../../../services/navigation_service.dart';
 
 class MainShellScreen extends StatefulWidget {
   const MainShellScreen({super.key, this.initialNavIndex = 0});
@@ -23,11 +26,159 @@ class MainShellScreen extends StatefulWidget {
 
 class _MainShellScreenState extends State<MainShellScreen> {
   late int _currentNavIndex;
+  final VoiceRoomSessionController _voiceSession =
+      VoiceRoomSessionController.instance;
+  final RoomSeatService _miniRoomSeatService = RoomSeatService();
+  double _miniRoomRight = 14;
+  double _miniRoomBottom = 14;
 
   @override
   void initState() {
     super.initState();
     _currentNavIndex = widget.initialNavIndex;
+    _voiceSession.addListener(_syncVoiceRoomSession);
+  }
+
+  @override
+  void dispose() {
+    _voiceSession.removeListener(_syncVoiceRoomSession);
+    _miniRoomSeatService.close();
+    super.dispose();
+  }
+
+  void _syncVoiceRoomSession() {
+    if (mounted) setState(() {});
+  }
+
+  String get _miniRoomImageUrl {
+    final room = _voiceSession.roomArguments;
+    for (final key in const [
+      'agencyRoomImageUrl',
+      'roomImageUrl',
+      'roomPhotoUrl',
+      'imageUrl',
+      'coverImageUrl',
+    ]) {
+      final value = (room[key] ?? '').toString().trim();
+      if (value.isNotEmpty) return value;
+    }
+    return '';
+  }
+
+  void _restoreMiniRoom() {
+    if (!_voiceSession.active) return;
+    final arguments =
+        Map<String, dynamic>.from(_voiceSession.roomArguments);
+    _voiceSession.restore();
+    Navigator.of(context).pushNamed(
+      AppRoutes.voiceChatRoom,
+      arguments: arguments,
+    );
+  }
+
+  Future<void> _leaveMiniRoom() async {
+    final roomId = _voiceSession.roomId.trim();
+    if (roomId.isNotEmpty) {
+      try {
+        await _miniRoomSeatService.leaveSeat(roomId);
+      } catch (_) {
+        // Voice/presence leave still proceeds if the seat cleanup is already done.
+      }
+    }
+    await _voiceSession.leave();
+  }
+
+  Widget _buildMiniRoom({
+    required double maxWidth,
+    required double maxHeight,
+  }) {
+    if (!_voiceSession.active || !_voiceSession.minimized) {
+      return const SizedBox.shrink();
+    }
+
+    const cardSize = 72.0;
+    final maxRight = maxWidth > cardSize ? maxWidth - cardSize : 0.0;
+    final maxBottom = maxHeight > cardSize ? maxHeight - cardSize : 0.0;
+    final right = _miniRoomRight.clamp(0.0, maxRight).toDouble();
+    final bottom = _miniRoomBottom.clamp(0.0, maxBottom).toDouble();
+    final imageUrl = _miniRoomImageUrl;
+
+    return Positioned(
+      right: right,
+      bottom: bottom,
+      child: GestureDetector(
+        key: const Key('mini-room-card'),
+        behavior: HitTestBehavior.opaque,
+        onTap: _restoreMiniRoom,
+        onPanUpdate: (details) {
+          setState(() {
+            _miniRoomRight =
+                (right - details.delta.dx).clamp(0.0, maxRight).toDouble();
+            _miniRoomBottom =
+                (bottom - details.delta.dy).clamp(0.0, maxBottom).toDouble();
+          });
+        },
+        child: SizedBox(
+          width: cardSize,
+          height: cardSize,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned.fill(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF171D2B),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: .18),
+                      ),
+                      image: imageUrl.isEmpty
+                          ? null
+                          : DecorationImage(
+                              image: NetworkImage(imageUrl),
+                              fit: BoxFit.cover,
+                            ),
+                    ),
+                    child: imageUrl.isEmpty
+                        ? const Center(
+                            child: Icon(
+                              Icons.groups_rounded,
+                              color: Colors.white70,
+                              size: 30,
+                            ),
+                          )
+                        : null,
+                  ),
+                ),
+              ),
+              Positioned(
+                top: -6,
+                right: -6,
+                child: Material(
+                  color: Colors.black.withValues(alpha: .88),
+                  shape: const CircleBorder(),
+                  child: InkWell(
+                    key: const Key('mini-room-close'),
+                    customBorder: const CircleBorder(),
+                    onTap: _leaveMiniRoom,
+                    child: const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: Icon(
+                        Icons.close_rounded,
+                        size: 16,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   final List<Widget> _pages = const [
@@ -168,9 +319,21 @@ class _MainShellScreenState extends State<MainShellScreen> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         backgroundColor: const Color(0xFF05060D),
-        body: IndexedStack(
-          index: _pageForNav(_currentNavIndex),
-          children: _pages,
+        body: LayoutBuilder(
+          builder: (context, constraints) => Stack(
+            children: [
+              Positioned.fill(
+                child: IndexedStack(
+                  index: _pageForNav(_currentNavIndex),
+                  children: _pages,
+                ),
+              ),
+              _buildMiniRoom(
+                maxWidth: constraints.maxWidth,
+                maxHeight: constraints.maxHeight,
+              ),
+            ],
+          ),
         ),
         bottomNavigationBar: _ShadowBottomNavigation(
           currentIndex: _currentNavIndex,
