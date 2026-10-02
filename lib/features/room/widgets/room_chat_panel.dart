@@ -398,6 +398,7 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
           ),
         ),
       ),
+    ),
     );
   }
 
@@ -651,6 +652,131 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
   bool _effectSoundInitialized = false;
   String _lastEffectMessageId = '';
 
+  String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
+
+  Future<void> _reportMessage(RoomChatMessage message) async {
+    if (message.id.isEmpty ||
+        message.senderUid.isEmpty ||
+        message.senderUid == _uid) {
+      return;
+    }
+
+    final reason = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: const Color(0xFF0D111B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'إبلاغ عن الرسالة',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'يُحفظ فقط دليل محدود لهذه الرسالة وسياق قريب منها للمراجعة.',
+                  style: TextStyle(color: Colors.white54, fontSize: 11),
+                ),
+                const SizedBox(height: 12),
+                for (final item in const <(String, String)>[
+                  ('abuse', 'إساءة أو مضايقة'),
+                  ('hate', 'كلام مسيء أو تحريضي'),
+                  ('spam', 'سبام أو إزعاج'),
+                  ('sexual', 'محتوى غير لائق'),
+                  ('other', 'سبب آخر'),
+                ])
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      item.$2,
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    trailing: const Icon(
+                      Icons.chevron_left_rounded,
+                      color: Colors.white38,
+                    ),
+                    onTap: () => Navigator.pop(sheetContext, item.$1),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (reason == null || !mounted) return;
+
+    try {
+      await _service.reportMessage(
+        roomId: widget.roomId,
+        messageId: message.id,
+        reason: reason,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تم إرسال البلاغ للمراجعة.'),
+        ),
+      );
+    } on StateError catch (error) {
+      if (!mounted) return;
+      final code = error.message.toString();
+      final text = code == 'report_rate_limited'
+          ? 'أرسلت بلاغًا قبل لحظات. حاول بعد قليل.'
+          : code == 'report_message_not_in_session'
+              ? 'الرسالة لم تعد ضمن سياق جلستك الحالية.'
+              : 'تعذر إرسال البلاغ حالياً.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(text)),
+      );
+    }
+  }
+
+  Future<void> _showMessageActions(RoomChatMessage message) async {
+    if (message.type == 'system' ||
+        message.senderUid.isEmpty ||
+        message.senderUid == _uid) {
+      return;
+    }
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: const Color(0xFF0D111B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (sheetContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: SafeArea(
+          child: ListTile(
+            leading: const Icon(
+              Icons.flag_outlined,
+              color: Colors.redAccent,
+            ),
+            title: const Text(
+              'إبلاغ عن الرسالة',
+              style: TextStyle(color: Colors.white),
+            ),
+            onTap: () => Navigator.pop(sheetContext, 'report'),
+          ),
+        ),
+      ),
+    );
+    if (action == 'report' && mounted) {
+      await _reportMessage(message);
+    }
+  }
+
   @override
   void dispose() {
     _service.close();
@@ -659,12 +785,13 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
 
   Widget _entry(RoomChatMessage message) {
     final isSystem = message.type == 'system';
-    final isGift = message.systemKind.contains('gift');
-    if (isSystem) {
+    final isGift =
+        message.type == 'gift' || message.systemKind.contains('gift');
+    if (isSystem || isGift) {
       final vipEntry = widget.roomEffectsEnabled &&
           message.systemKind == 'room_join' &&
           message.vipLevel > 0;
-      return Padding(
+      final activity = Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Align(
           alignment: AlignmentDirectional.centerStart,
@@ -713,9 +840,22 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
           ),
         ),
       );
+      if (!isGift ||
+          message.senderUid.isEmpty ||
+          message.senderUid == _uid) {
+        return activity;
+      }
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onLongPress: () => _showMessageActions(message),
+        child: activity,
+      );
     }
 
-    return Padding(
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onLongPress: () => _showMessageActions(message),
+      child: Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Align(
         alignment: AlignmentDirectional.centerStart,
