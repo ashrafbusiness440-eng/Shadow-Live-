@@ -72,6 +72,7 @@ function personSummary(uidInput, snap) {
       clean(user.displayName || user.name || user.username) || "Shadow Live",
     profileImageUrl:
       clean(user.profileImageUrl || user.photoUrl || user.avatarUrl) || null,
+    profileAvatarAsset: clean(user.profileAvatarAsset) || null,
   };
 }
 
