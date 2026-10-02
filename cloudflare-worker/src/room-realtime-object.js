@@ -1,6 +1,9 @@
 import { DurableObject } from "cloudflare:workers";
 import { recordRealtimeTelemetry } from "./pressure-telemetry.js";
-import { firestoreClient } from "./firestore.js";
+import {
+  applyCustomerServiceMicExpiries,
+  persistRoomChatReport,
+} from "./room-realtime-persistence.js";
 
 import {
   ROOM_REALTIME_PROTOCOL_VERSION,
@@ -566,101 +569,22 @@ export class RoomRealtimeObject extends DurableObject {
       return { nextAtMs, checked: records.size, expired: due.length };
     }
 
-    const db = firestoreClient(this.env);
-    const roomSnap = await db.get(`rooms/${roomId}`);
-    if (!roomSnap.exists) {
-      await this.ctx.storage.delete(due.map(([key]) => key));
-      return { nextAtMs, checked: records.size, expired: due.length };
-    }
-
-    const room = roomSnap.data || {};
-    let invites = Array.isArray(room.micInvites) ? [...room.micInvites] : [];
-    let inviteExpiries =
-      room.customerServiceMicInviteExpiresAtMs &&
-      typeof room.customerServiceMicInviteExpiresAtMs === "object"
-        ? { ...room.customerServiceMicInviteExpiresAtMs }
-        : {};
-    let seats = Array.isArray(room.seats)
-      ? room.seats.map((seat) => ({ ...(seat || {}) }))
-      : [];
-    let invitesChanged = false;
-    let seatsChanged = false;
-    const deletes = [];
-
-    for (const [key, schedule] of due) {
-      const uid = String(schedule?.uid || "").trim();
-      const expiresAtMs = Number(schedule?.expiresAtMs || 0);
-      if (!uid) {
-        deletes.push(key);
-        continue;
-      }
-
-      if (schedule.kind === "invite_expire") {
-        if (
-          Number(inviteExpiries[uid] || 0) === expiresAtMs &&
-          expiresAtMs <= nowMs
-        ) {
-          invites = invites.filter((item) => String(item || "") !== uid);
-          delete inviteExpiries[uid];
-          invitesChanged = true;
-        }
-        deletes.push(key);
-        continue;
-      }
-
-      if (schedule.kind === "mic_expire") {
-        const index = seats.findIndex(
-          (seat) =>
-            String(seat?.uid || "") === uid &&
-            Number(seat?.customerServiceMicExpiresAtMs || 0) === expiresAtMs,
-        );
-        if (index >= 0 && expiresAtMs <= nowMs) {
-          seats[index] = {
-            ...seats[index],
-            uid: "",
-            displayName: "",
-            profileImageUrl: "",
-            muted: true,
-            micStartedAtMs: 0,
-            customerServiceMicExpiresAtMs: 0,
-            frameRewardId: "",
-            frameAssetKey: "",
-            frameImageUrl: "",
-            frameExpiresAtMs: 0,
-            voiceWaveRewardId: "",
-            voiceWaveAssetKey: "",
-            voiceWaveImageUrl: "",
-            voiceWaveExpiresAtMs: 0,
-          };
-          seatsChanged = true;
-        }
-        deletes.push(key);
-      }
-    }
-
-    const fields = {};
-    const mask = [];
-    if (invitesChanged) {
-      fields.micInvites = invites;
-      fields.customerServiceMicInviteExpiresAtMs = inviteExpiries;
-      mask.push("micInvites", "customerServiceMicInviteExpiresAtMs");
-    }
-    if (seatsChanged) {
-      fields.seats = seats;
-      mask.push("seats");
-    }
-    if (mask.length > 0) {
-      fields.updatedAt = new Date(nowMs);
-      mask.push("updatedAt");
-      await db.commit(null, [
-        db.writeUpdate(`rooms/${roomId}`, fields, mask),
-      ]);
-    }
+    const result = await applyCustomerServiceMicExpiries(
+      this.env,
+      roomId,
+      due.map(([, schedule]) => schedule),
+      nowMs,
+    );
+    const deletes = due.map(([key]) => key);
     if (deletes.length > 0) await this.ctx.storage.delete(deletes);
 
     recordRealtimeTelemetry(this.env, {
       event: "customer_service_mic_expiry",
-      outcome: seatsChanged ? "auto_drop" : invitesChanged ? "invite_expired" : "noop",
+      outcome: result.seatsChanged
+        ? "auto_drop"
+        : result.invitesChanged
+          ? "invite_expired"
+          : "noop",
       fanout: deletes.length,
       onlineCount: this.#presenceSnapshot().length,
     });
@@ -809,29 +733,17 @@ export class RoomRealtimeObject extends DurableObject {
       totalCost: Math.max(0, Number(item?.totalCost || 0)),
     }));
 
-    const reportId = "room_report_" + crypto.randomUUID().replaceAll("-", "");
-    const now = new Date(nowMs);
-    const db = firestoreClient(this.env);
-    await db.commit(null, [
-      db.writeCreate(`reports/${reportId}`, {
-        reportId,
-        reporterUid,
-        targetType: "room_message",
-        targetUid,
-        roomId,
-        messageId,
-        reason,
-        status: "new",
-        evidence: {
-          source: "room_realtime_session",
-          message: context.find((item) => item.id === messageId) || null,
-          context,
-          contextCount: context.length,
-        },
-        createdAt: now,
-        updatedAt: now,
-      }),
-    ]);
+    const report = await persistRoomChatReport(this.env, {
+      reporterUid,
+      targetUid,
+      roomId,
+      messageId,
+      reason,
+      message: context.find((item) => item.id === messageId) || null,
+      context,
+      nowMs,
+    });
+    const reportId = String(report.reportId || "");
 
     this.chatReportRateByUid.set(reporterUid, nowMs);
     safeSend(
