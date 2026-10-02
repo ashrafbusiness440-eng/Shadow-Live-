@@ -48,19 +48,19 @@ test("room insights and bootstrap read exact support period documents", () => {
   );
 });
 
-test("room chat touches the room root at most once per minute", () => {
+test("room chat is ephemeral and never persists message history or room-root activity", () => {
   const voice = source("../../cloudflare-worker/src/voice-session-legacy.js");
 
-  assert.equal(
-    voice.includes("const ROOM_CHAT_ROOT_TOUCH_INTERVAL_MS=60_000;"),
-    true,
-  );
-  assert.equal(
-    voice.includes(
-      "lastChatAtMs<=0||nowMs-lastChatAtMs>=ROOM_CHAT_ROOT_TOUCH_INTERVAL_MS",
-    ),
-    true,
-  );
+  const start = voice.indexOf("async function sendRoomChat(");
+  const end = voice.indexOf("async function kickRoomUser", start);
+  const block = voice.slice(start, end);
+
+  assert.notEqual(start, -1);
+  assert.equal(block.includes('collection("messages")'), false);
+  assert.equal(block.includes("room_chat_rate_limits"), false);
+  assert.equal(block.includes("lastChatAt"), false);
+  assert.equal(block.includes("publishRoomRealtimeEvent("), true);
+  assert.equal(voice.includes("ROOM_CHAT_ROOT_TOUCH_INTERVAL_MS"), false);
 });
 
 
