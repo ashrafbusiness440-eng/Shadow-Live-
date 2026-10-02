@@ -25,6 +25,7 @@ test("Mini Room is rendered, draggable, restorable, and explicitly leaveable", (
     true,
   );
   assert.equal(shell.includes("await _voiceSession.leave();"), true);
+  assert.equal(shell.includes("fit: StackFit.expand"), true);
 
   assert.equal(room.includes("PopScope<Object?>"), true);
   assert.equal(
