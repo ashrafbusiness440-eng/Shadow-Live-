@@ -350,7 +350,8 @@ async function authorizeRead(db, uid, metadata) {
     scope === "profile_cover" ||
     scope === "room_cover" ||
     scope === "agency_logo" ||
-    scope === "agency_background"
+    scope === "agency_background" ||
+    scope === "agency_room_image"
   ) {
     return true;
   }
@@ -579,7 +580,8 @@ async function confirmUpload(request, env, auth, body) {
     let agencyAuthorization = null;
     if (
       clean(ticket.scope) === "agency_logo" ||
-      clean(ticket.scope) === "agency_background"
+      clean(ticket.scope) === "agency_background" ||
+      clean(ticket.scope) === "agency_room_image"
     ) {
       agencyAuthorization = await authorizeAgencyLogoManagement(
         auth.db,
@@ -748,7 +750,6 @@ async function confirmUpload(request, env, auth, body) {
           targetId: metadata.targetId,
           objectId,
           replacedObjectId: previous?.objectId || null,
-          roomId: linkedAgencyRoomId || null,
           createdAt: now,
         },
       ),
