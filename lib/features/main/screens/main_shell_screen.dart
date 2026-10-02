@@ -321,6 +321,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
         backgroundColor: const Color(0xFF05060D),
         body: LayoutBuilder(
           builder: (context, constraints) => Stack(
+            fit: StackFit.expand,
             children: [
               Positioned.fill(
                 child: IndexedStack(
