@@ -42,6 +42,8 @@ class FirebaseService {
    'coverImageObjectId':data['coverImageObjectId']??'',
    'bio':data['bio']??'',
    'location':data['location']??'',
+   'moodEmoji':data['moodEmoji']??'',
+   'moodText':data['moodText']??'',
    'interests':data['interests'] is List ? data['interests'] : const [],
    'level':data['level']??0,
    'vipLevel':data['vipLevel']??0,
