@@ -1193,8 +1193,8 @@ async function createOfficialRoomFromControl(db,uid,body){
   const description=clean(body.description).slice(0,500);
   const coverImageUrl=clean(body.coverImageUrl).slice(0,1200);
   const visibility=clean(body.visibility||"public");
-  const seats=Number(body.seats??8);
-  const moderators=Number(body.moderators??3);
+  const seats=Number(body.seats??(officialType==="customer_service"?5:8));
+  const moderators=Number(body.moderators??(officialType==="customer_service"?2:3));
   const reason=clean(body.reason);
   const operationId=clean(body.idempotencyKey);
   const tags=Array.isArray(body.tags)
