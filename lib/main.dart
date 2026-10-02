@@ -4352,7 +4352,6 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   }
 
   bool get _roomGiftsEnabled => _roomFeatureEnabled('giftsEnabled');
-  bool get _roomPkEnabled => _roomFeatureEnabled('pkEnabled');
   bool get _roomGamesEnabled => _roomFeatureEnabled('gamesEnabled');
   bool get _roomRocketEnabled => _roomFeatureEnabled('roomRocketEnabled');
 
