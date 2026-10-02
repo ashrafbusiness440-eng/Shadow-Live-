@@ -28,9 +28,9 @@ await page.waitForTimeout(12000);
 const tabs = [
   { name: 'home', x: 357 },
   { name: 'rooms', x: 292 },
-  { name: 'voice', x: 227 },
-  { name: 'games', x: 162 },
-  { name: 'messages', x: 97 },
+  { name: 'games', x: 227 },
+  { name: 'messages', x: 162 },
+  { name: 'diaries', x: 97 },
   { name: 'profile', x: 32 },
 ];
 

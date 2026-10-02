@@ -5556,7 +5556,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           circleButton(
             icon: Icons.chat_bubble_rounded,
             tooltip: 'الرسائل',
-            onPressed: () => _minimizeVoiceRoom(destinationNavIndex: 4),
+            onPressed: () => _minimizeVoiceRoom(destinationNavIndex: 3),
             color: const Color(0xFFBFA5FF),
           ),
           const SizedBox(width: 5),

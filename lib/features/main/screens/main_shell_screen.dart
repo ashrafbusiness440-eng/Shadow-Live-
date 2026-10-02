@@ -186,6 +186,10 @@ class _MainShellScreenState extends State<MainShellScreen> {
     RoomListScreen(),
     GamesHubScreen(),
     ChatListScreen(),
+    _ComingSoonPage(
+      title: 'يومياتي',
+      icon: Icons.auto_stories_rounded,
+    ),
     ProfileScreen(),
   ];
 
@@ -198,14 +202,15 @@ class _MainShellScreenState extends State<MainShellScreen> {
       case 0:
         return 0;
       case 1:
-      case 2:
         return 1;
-      case 3:
+      case 2:
         return 2;
-      case 4:
+      case 3:
         return 3;
-      case 5:
+      case 4:
         return 4;
+      case 5:
+        return 5;
       default:
         return 0;
     }
@@ -305,7 +310,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
   }
 
   void _changePage(int navIndex) {
-    if (_guest && (navIndex == 3 || navIndex == 4)) {
+    if (_guest && (navIndex == 2 || navIndex == 3 || navIndex == 4)) {
       _guestGuard();
       return;
     }
@@ -369,12 +374,6 @@ class _ShadowBottomNavigation extends StatelessWidget {
       center: false,
     ),
     (
-      label: 'صوت',
-      icon: Icons.mic_none_rounded,
-      activeIcon: Icons.mic_rounded,
-      center: true,
-    ),
-    (
       label: 'الألعاب',
       icon: Icons.sports_esports_outlined,
       activeIcon: Icons.sports_esports_rounded,
@@ -387,7 +386,13 @@ class _ShadowBottomNavigation extends StatelessWidget {
       center: false,
     ),
     (
-      label: 'الملف',
+      label: 'يومياتي',
+      icon: Icons.auto_stories_outlined,
+      activeIcon: Icons.auto_stories_rounded,
+      center: false,
+    ),
+    (
+      label: 'الملف الشخصي',
       icon: Icons.person_outline_rounded,
       activeIcon: Icons.person_rounded,
       center: false,
@@ -520,7 +525,7 @@ class _ShadowBottomNavigation extends StatelessWidget {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          index == 4 && unread > 0
+                          index == 3 && unread > 0
                               ? Badge(
                                   label: Text(
                                     unread > 99 ? '99+' : '$unread',
