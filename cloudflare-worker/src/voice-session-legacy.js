@@ -2854,6 +2854,7 @@ async function createPk(db,uid,body){
     if(!roomSnap.exists)throw new ApiError("room_not_found",404);
     const room=roomSnap.data()||{};
     if(room.isActive===false)throw new ApiError("room_unavailable",409);
+    if(!roomFeatureFlags(room).pkEnabled)throw new ApiError("room_pk_disabled",409);
     if(!canManageRoomAction(room,actorSnap.data()||{},uid,"managePk")){
       throw new ApiError("forbidden",403);
     }
