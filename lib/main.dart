@@ -3755,24 +3755,45 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     } catch (_) {}
     if (!mounted) return;
 
+    Widget sectionTitle(String label) => Padding(
+          padding: const EdgeInsets.fromLTRB(4, 14, 4, 7),
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white54,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        );
+
+    Widget sectionCard(List<Widget> children) => Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFF171C29),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Colors.white10),
+          ),
+          child: Column(children: children),
+        );
+
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF111522),
+      backgroundColor: const Color(0xFF0D111B),
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
       ),
       builder: (sheetContext) => Directionality(
         textDirection: TextDirection.rtl,
         child: DraggableScrollableSheet(
           expand: false,
-          initialChildSize: .72,
+          initialChildSize: .68,
           minChildSize: .42,
-          maxChildSize: .92,
+          maxChildSize: .9,
           builder: (context, scrollController) => SafeArea(
             child: ListView(
               controller: scrollController,
-              padding: const EdgeInsets.fromLTRB(18, 14, 18, 20),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 22),
               children: [
                 Center(
                   child: Container(
@@ -3784,199 +3805,306 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 14),
-
-                // أهم إجراءات الغرفة تبقى في الأعلى لسهولة الوصول.
-                if (personal && owner)
-                  ListTile(
-                    leading: const Icon(
-                      Icons.power_settings_new_rounded,
-                      color: Colors.redAccent,
+                const SizedBox(height: 16),
+                const Row(
+                  children: [
+                    Icon(
+                      Icons.tune_rounded,
+                      color: Color(0xFFFFD54A),
+                      size: 24,
                     ),
-                    title: const Text(
-                      'إغلاق الغرفة',
+                    SizedBox(width: 9),
+                    Text(
+                      'خيارات الغرفة',
                       style: TextStyle(
-                        color: Colors.redAccent,
-                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
-                    onTap: () async {
-                      Navigator.pop(sheetContext);
-                      final confirmed = await showDialog<bool>(
-                        context: context,
-                        builder: (dialogContext) => Directionality(
-                          textDirection: TextDirection.rtl,
-                          child: AlertDialog(
-                            backgroundColor: const Color(0xFF111522),
-                            title: const Text(
-                              'إغلاق الغرفة؟',
-                              style: TextStyle(color: Colors.white),
-                            ),
-                            content: const Text(
-                              'سيتم إغلاق الغرفة وإنهاء الجلسة الحالية للجميع.',
-                              style: TextStyle(color: Colors.white70),
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () =>
-                                    Navigator.pop(dialogContext, false),
-                                child: const Text('إلغاء'),
-                              ),
-                              FilledButton(
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: Colors.redAccent,
-                                ),
-                                onPressed: () =>
-                                    Navigator.pop(dialogContext, true),
-                                child: const Text('إغلاق الغرفة'),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                      if (confirmed == true && mounted) {
-                        await _closePersonalRoom();
-                      }
-                    },
-                  ),
-                ListTile(
-                  leading: const Icon(
-                    Icons.picture_in_picture_alt_rounded,
-                    color: Color(0xFFFFD54A),
-                  ),
-                  title: const Text(
-                    'تصغير الغرفة',
-                    style: TextStyle(color: Colors.white),
-                  ),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    _minimizeVoiceRoom();
-                  },
+                  ],
                 ),
-                const Divider(color: Colors.white12, height: 18),
+                const SizedBox(height: 4),
+                const Text(
+                  'الإجراءات السريعة منفصلة عن الإدارة والإعدادات والمغادرة.',
+                  style: TextStyle(color: Colors.white38, fontSize: 11),
+                ),
 
-                if (_canModerateUsers)
+                sectionTitle('إجراء سريع'),
+                sectionCard([
                   ListTile(
                     leading: const Icon(
-                      Icons.block_rounded,
-                      color: Colors.redAccent,
-                    ),
-                    title: const Text(
-                      'المحظورون',
-                      style: TextStyle(color: Colors.white),
-                    ),
-                    onTap: () {
-                      Navigator.pop(sheetContext);
-                      _showRoomBansSheet();
-                    },
-                  ),
-                if (owner)
-                  ListTile(
-                    leading: const Icon(
-                      Icons.admin_panel_settings_rounded,
+                      Icons.picture_in_picture_alt_rounded,
                       color: Color(0xFFFFD54A),
                     ),
                     title: const Text(
-                      'مشرفو الغرفة',
-                      style: TextStyle(color: Colors.white),
+                      'تصغير الغرفة',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    subtitle: const Text(
+                      'يبقى الصوت والمايك والجلسة شغّالين.',
+                      style: TextStyle(color: Colors.white54, fontSize: 10),
+                    ),
+                    trailing: const Icon(
+                      Icons.chevron_left_rounded,
+                      color: Colors.white38,
                     ),
                     onTap: () {
                       Navigator.pop(sheetContext);
-                      _showRoomModeratorsSheet();
+                      _minimizeVoiceRoom();
                     },
                   ),
-                if (_canManageMic)
-                  ListTile(
-                    leading: Icon(
-                      (_roomSeatState?.micInviteOnly ?? false)
-                          ? Icons.lock_rounded
-                          : Icons.mic_external_on_rounded,
-                      color: const Color(0xFFFFD54A),
-                    ),
-                    title: const Text(
-                      'الصعود للمايك',
-                      style: TextStyle(color: Colors.white),
-                    ),
-                    subtitle: Text(
-                      (_roomSeatState?.micInviteOnly ?? false)
-                          ? 'بدعوة أو موافقة المشرفين فقط'
-                          : 'مفتوح — الضغط على + يصعد مباشرة',
-                      style: const TextStyle(
-                        color: Colors.white54,
-                        fontSize: 10,
-                      ),
-                    ),
-                    trailing: Switch(
-                      value: _roomSeatState?.micInviteOnly ?? false,
-                      onChanged: null,
-                    ),
-                    onTap: () async {
-                      final roomId =
-                          (_roomArguments['roomId'] ?? '').toString();
-                      if (roomId.isEmpty) return;
-                      final next = !(_roomSeatState?.micInviteOnly ?? false);
-                      Navigator.pop(sheetContext);
-                      await _runSeatAction(
-                        () => _roomSeatService.setMicInviteOnly(
-                          roomId: roomId,
-                          enabled: next,
+                ]),
+
+                if (_canModerateUsers || owner || _canManageMic ||
+                    (_canModerateChat && !owner)) ...[
+                  sectionTitle('إدارة الغرفة'),
+                  sectionCard([
+                    if (_canModerateUsers)
+                      ListTile(
+                        leading: const Icon(
+                          Icons.block_rounded,
+                          color: Colors.redAccent,
                         ),
-                      );
-                    },
-                  ),
-                if (_canModerateChat)
+                        title: const Text(
+                          'المحظورون',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          _showRoomBansSheet();
+                        },
+                      ),
+                    if (_canModerateUsers &&
+                        (owner || _canManageMic || (_canModerateChat && !owner)))
+                      const Divider(height: 1, color: Colors.white10),
+                    if (owner)
+                      ListTile(
+                        leading: const Icon(
+                          Icons.admin_panel_settings_rounded,
+                          color: Color(0xFFFFD54A),
+                        ),
+                        title: const Text(
+                          'مشرفو الغرفة',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          _showRoomModeratorsSheet();
+                        },
+                      ),
+                    if (owner && (_canManageMic || (_canModerateChat && !owner)))
+                      const Divider(height: 1, color: Colors.white10),
+                    if (_canManageMic)
+                      ListTile(
+                        leading: Icon(
+                          (_roomSeatState?.micInviteOnly ?? false)
+                              ? Icons.lock_rounded
+                              : Icons.mic_external_on_rounded,
+                          color: const Color(0xFFFFD54A),
+                        ),
+                        title: const Text(
+                          'الدخول إلى المايك',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                        subtitle: Text(
+                          (_roomSeatState?.micInviteOnly ?? false)
+                              ? 'بدعوة أو موافقة المشرفين'
+                              : 'مفتوح — الضغط على + يصعد مباشرة',
+                          style: const TextStyle(
+                            color: Colors.white54,
+                            fontSize: 10,
+                          ),
+                        ),
+                        trailing: Switch(
+                          value: _roomSeatState?.micInviteOnly ?? false,
+                          onChanged: null,
+                        ),
+                        onTap: () async {
+                          final roomId =
+                              (_roomArguments['roomId'] ?? '').toString();
+                          if (roomId.isEmpty) return;
+                          final next =
+                              !(_roomSeatState?.micInviteOnly ?? false);
+                          Navigator.pop(sheetContext);
+                          await _runSeatAction(
+                            () => _roomSeatService.setMicInviteOnly(
+                              roomId: roomId,
+                              enabled: next,
+                            ),
+                          );
+                        },
+                      ),
+                    if (_canManageMic && (_canModerateChat && !owner))
+                      const Divider(height: 1, color: Colors.white10),
+                    if (_canModerateChat && !owner)
+                      ListTile(
+                        leading: Icon(
+                          (_roomArguments['chatEnabled'] != false)
+                              ? Icons.chat_rounded
+                              : Icons.chat_bubble_outline_rounded,
+                          color: const Color(0xFFBFA5FF),
+                        ),
+                        title: const Text(
+                          'دردشة الغرفة',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                        subtitle: Text(
+                          (_roomArguments['chatEnabled'] != false)
+                              ? 'مفعّلة للأعضاء'
+                              : 'متوقفة للأعضاء',
+                          style: const TextStyle(
+                            color: Colors.white54,
+                            fontSize: 10,
+                          ),
+                        ),
+                        trailing: Switch(
+                          value: _roomArguments['chatEnabled'] != false,
+                          onChanged: null,
+                        ),
+                        onTap: () async {
+                          final roomId =
+                              (_roomArguments['roomId'] ?? '').toString();
+                          if (roomId.isEmpty) return;
+                          final next =
+                              !(_roomArguments['chatEnabled'] != false);
+                          try {
+                            final enabled =
+                                await _roomActions.setRoomChatEnabled(
+                              roomId: roomId,
+                              enabled: next,
+                            );
+                            if (mounted) {
+                              setState(() {
+                                _roomArguments = {
+                                  ..._roomArguments,
+                                  'chatEnabled': enabled,
+                                };
+                              });
+                            }
+                            if (sheetContext.mounted) {
+                              Navigator.pop(sheetContext);
+                            }
+                          } catch (_) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'تعذر تحديث دردشة الغرفة حالياً.',
+                                  ),
+                                ),
+                              );
+                            }
+                          }
+                        },
+                      ),
+                  ]),
+                ],
+
+                sectionTitle('الإعدادات'),
+                sectionCard([
+                  if (owner)
+                    ListTile(
+                      leading: const Icon(
+                        Icons.settings_rounded,
+                        color: Color(0xFFBFA5FF),
+                      ),
+                      title: const Text(
+                        'إعدادات الغرفة',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      subtitle: const Text(
+                        'الاسم، الصورة، الخلفية، الخصوصية والدردشة.',
+                        style: TextStyle(color: Colors.white54, fontSize: 10),
+                      ),
+                      trailing: const Icon(
+                        Icons.chevron_left_rounded,
+                        color: Colors.white38,
+                      ),
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        _showRoomSettingsSheet();
+                      },
+                    ),
+                  if (owner && _canManageIds)
+                    const Divider(height: 1, color: Colors.white10),
+                  if (_canManageIds)
+                    ListTile(
+                      leading: const Icon(
+                        Icons.tag_rounded,
+                        color: Color(0xFFFFD54A),
+                      ),
+                      title: const Text(
+                        'تغيير معرّف الغرفة',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                      subtitle: const Text(
+                        'من 3 إلى 8 أرقام.',
+                        style: TextStyle(color: Colors.white54, fontSize: 10),
+                      ),
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        _showChangeRoomIdSheet();
+                      },
+                    ),
+                  if ((owner || _canManageIds))
+                    const Divider(height: 1, color: Colors.white10),
                   ListTile(
                     leading: Icon(
-                      (_roomArguments['chatEnabled'] != false)
-                          ? Icons.chat_rounded
-                          : Icons.chat_bubble_outline_rounded,
-                      color: const Color(0xFFBFA5FF),
+                      ghostMode
+                          ? Icons.visibility_off_rounded
+                          : Icons.visibility_rounded,
+                      color: ghostMode
+                          ? const Color(0xFFBFA5FF)
+                          : Colors.white54,
                     ),
                     title: const Text(
-                      'دردشة الغرفة',
+                      'الدخول الخفي',
                       style: TextStyle(color: Colors.white),
                     ),
                     subtitle: Text(
-                      (_roomArguments['chatEnabled'] != false)
-                          ? 'مفعّلة للأعضاء'
-                          : 'متوقفة للأعضاء',
+                      ghostMode
+                          ? 'مفعّل — لا يظهر إشعار دخولك.'
+                          : 'متوقف — يظهر دخولك بشكل طبيعي.',
                       style: const TextStyle(
                         color: Colors.white54,
                         fontSize: 10,
                       ),
                     ),
                     trailing: Switch(
-                      value: _roomArguments['chatEnabled'] != false,
+                      value: ghostMode,
                       onChanged: null,
                     ),
                     onTap: () async {
-                      final roomId =
-                          (_roomArguments['roomId'] ?? '').toString();
-                      if (roomId.isEmpty) return;
-                      final next = !(_roomArguments['chatEnabled'] != false);
                       try {
-                        final enabled =
-                            await _roomActions.setRoomChatEnabled(
-                          roomId: roomId,
-                          enabled: next,
-                        );
-                        if (mounted) {
-                          setState(() {
-                            _roomArguments = {
-                              ..._roomArguments,
-                              'chatEnabled': enabled,
-                            };
-                          });
-                        }
+                        final next =
+                            await _roomActions.setGhostMode(!ghostMode);
                         if (sheetContext.mounted) {
                           Navigator.pop(sheetContext);
+                        }
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                next
+                                    ? 'تم تفعيل الدخول الخفي.'
+                                    : 'تم إيقاف الدخول الخفي.',
+                              ),
+                            ),
+                          );
                         }
                       } catch (_) {
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               content: Text(
-                                'تعذر تحديث دردشة الغرفة حالياً.',
+                                'تعذر تحديث الدخول الخفي حالياً.',
                               ),
                             ),
                           );
@@ -3984,106 +4112,90 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       }
                     },
                   ),
-                if (owner)
+                ]),
+
+                sectionTitle('الجلسة'),
+                sectionCard([
                   ListTile(
                     leading: const Icon(
-                      Icons.tune_rounded,
-                      color: Color(0xFFBFA5FF),
+                      Icons.logout_rounded,
+                      color: Colors.orangeAccent,
                     ),
                     title: const Text(
-                      'إعدادات الغرفة',
-                      style: TextStyle(color: Colors.white),
+                      'مغادرة الغرفة',
+                      style: TextStyle(
+                        color: Colors.orangeAccent,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    subtitle: const Text(
+                      'خروج كامل وإنهاء وجودك في الغرفة.',
+                      style: TextStyle(color: Colors.white54, fontSize: 10),
                     ),
                     onTap: () {
                       Navigator.pop(sheetContext);
-                      _showRoomSettingsSheet();
+                      _leaveVoiceRoom();
                     },
                   ),
-                if (_canManageIds)
-                  ListTile(
-                    leading: const Icon(
-                      Icons.tag_rounded,
-                      color: Color(0xFFFFD54A),
-                    ),
-                    title: const Text(
-                      'تغيير معرّف الغرفة',
-                      style: TextStyle(color: Colors.white),
-                    ),
-                    onTap: () {
-                      Navigator.pop(sheetContext);
-                      _showChangeRoomIdSheet();
-                    },
-                  ),
-                ListTile(
-                  leading: Icon(
-                    ghostMode
-                        ? Icons.visibility_off_rounded
-                        : Icons.visibility_rounded,
-                    color: ghostMode
-                        ? const Color(0xFFBFA5FF)
-                        : Colors.white54,
-                  ),
-                  title: const Text(
-                    'الدخول الخفي',
-                    style: TextStyle(color: Colors.white),
-                  ),
-                  subtitle: Text(
-                    ghostMode
-                        ? 'مفعّل — لن يظهر إشعار دخولك للغرفة.'
-                        : 'متوقف — يظهر إشعار دخولك بشكل طبيعي.',
-                    style: const TextStyle(
-                      color: Colors.white54,
-                      fontSize: 10,
-                    ),
-                  ),
-                  trailing: Switch(
-                    value: ghostMode,
-                    onChanged: null,
-                  ),
-                  onTap: () async {
-                    try {
-                      final next = await _roomActions.setGhostMode(!ghostMode);
-                      if (sheetContext.mounted) {
+                  if (personal && owner) ...[
+                    const Divider(height: 1, color: Colors.white10),
+                    ListTile(
+                      leading: const Icon(
+                        Icons.power_settings_new_rounded,
+                        color: Colors.redAccent,
+                      ),
+                      title: const Text(
+                        'إغلاق الغرفة',
+                        style: TextStyle(
+                          color: Colors.redAccent,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      subtitle: const Text(
+                        'ينهي الجلسة الحالية للجميع.',
+                        style: TextStyle(color: Colors.white54, fontSize: 10),
+                      ),
+                      onTap: () async {
                         Navigator.pop(sheetContext);
-                      }
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              next
-                                  ? 'تم تفعيل الدخول الخفي.'
-                                  : 'تم إيقاف الدخول الخفي.',
+                        final confirmed = await showDialog<bool>(
+                          context: context,
+                          builder: (dialogContext) => Directionality(
+                            textDirection: TextDirection.rtl,
+                            child: AlertDialog(
+                              backgroundColor: const Color(0xFF111522),
+                              title: const Text(
+                                'إغلاق الغرفة؟',
+                                style: TextStyle(color: Colors.white),
+                              ),
+                              content: const Text(
+                                'سيتم إغلاق الغرفة وإنهاء الجلسة الحالية للجميع.',
+                                style: TextStyle(color: Colors.white70),
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () =>
+                                      Navigator.pop(dialogContext, false),
+                                  child: const Text('إلغاء'),
+                                ),
+                                FilledButton(
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: Colors.redAccent,
+                                  ),
+                                  onPressed: () =>
+                                      Navigator.pop(dialogContext, true),
+                                  child: const Text('إغلاق الغرفة'),
+                                ),
+                              ],
                             ),
                           ),
                         );
-                      }
-                    } catch (_) {
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'تعذر تحديث الدخول الخفي حالياً.',
-                            ),
-                          ),
-                        );
-                      }
-                    }
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(
-                    Icons.logout_rounded,
-                    color: Colors.orangeAccent,
-                  ),
-                  title: const Text(
-                    'مغادرة الغرفة',
-                    style: TextStyle(color: Colors.white),
-                  ),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    _leaveVoiceRoom();
-                  },
-                ),
+                        if (confirmed == true && mounted) {
+                          await _closePersonalRoom();
+                        }
+                      },
+                    ),
+                  ],
+                ]),
               ],
             ),
           ),
