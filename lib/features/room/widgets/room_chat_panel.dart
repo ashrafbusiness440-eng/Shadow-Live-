@@ -1007,14 +1007,74 @@ class RoomChatComposer extends StatefulWidget {
 
 class _RoomChatComposerState extends State<RoomChatComposer> {
   final RoomChatService _service = RoomChatService();
+  final VoiceRoomSessionController _session =
+      VoiceRoomSessionController.instance;
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
+  RoomChatMessage? _replyingTo;
+  String? _mentionUid;
+  int _lastIntentRevision = -1;
   bool _sending = false;
 
   bool get _canSend => widget.chatEnabled || widget.isOwner;
 
   @override
+  void initState() {
+    super.initState();
+    _session.addListener(_syncComposerIntent);
+    _syncComposerIntent();
+  }
+
+  void _syncComposerIntent() {
+    final revision = _session.roomChatComposerIntentRevision;
+    if (revision == _lastIntentRevision) return;
+    _lastIntentRevision = revision;
+
+    final rawReply = _session.roomChatReplyTarget;
+    final rawMention = _session.roomChatMentionTarget;
+    if (rawReply != null) {
+      _replyingTo = RoomChatMessage.fromMap(rawReply);
+      _mentionUid = null;
+      if (mounted) setState(() {});
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _focusNode.requestFocus();
+      });
+      return;
+    }
+
+    if (rawMention != null) {
+      _replyingTo = null;
+      final mention = RoomChatMessage.fromMap(rawMention);
+      _mentionUid = mention.senderUid.isEmpty ? null : mention.senderUid;
+      final name = mention.displayName.trim().replaceAll(RegExp(r'\s+'), '_');
+      if (name.isNotEmpty) {
+        final prefix = '@' + name + ' ';
+        if (!_controller.text.contains(prefix)) {
+          _controller.text = prefix + _controller.text;
+          _controller.selection = TextSelection.collapsed(
+            offset: _controller.text.length,
+          );
+        }
+      }
+      if (mounted) setState(() {});
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _focusNode.requestFocus();
+      });
+      return;
+    }
+
+    _replyingTo = null;
+    _mentionUid = null;
+    if (mounted) setState(() {});
+  }
+
+  void _cancelReply() {
+    _session.clearRoomChatComposerIntent();
+  }
+
+  @override
   void dispose() {
+    _session.removeListener(_syncComposerIntent);
     _service.close();
     _controller.dispose();
     _focusNode.dispose();
@@ -1026,9 +1086,20 @@ class _RoomChatComposerState extends State<RoomChatComposer> {
     if (text.isEmpty || _sending || !_canSend) return;
     setState(() => _sending = true);
     try {
-      await _service.sendMessage(roomId: widget.roomId, text: text);
+      final reply = _replyingTo;
+      final mentionUid = _mentionUid;
+      await _service.sendMessage(
+        roomId: widget.roomId,
+        text: text,
+        replyTo: reply?.id,
+        replyPreview: reply?.text,
+        replySenderUid: reply?.senderUid,
+        mentionUids:
+            mentionUid == null ? const [] : <String>[mentionUid],
+      );
       if (!mounted) return;
       _controller.clear();
+      _session.clearRoomChatComposerIntent();
       _focusNode.requestFocus();
     } on StateError catch (error) {
       if (!mounted) return;
@@ -1048,68 +1119,128 @@ class _RoomChatComposerState extends State<RoomChatComposer> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 42,
+    final reply = _replyingTo;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 160),
+      height: reply == null ? 42 : 68,
       decoration: BoxDecoration(
         color: const Color(0xFF141722),
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(reply == null ? 22 : 16),
         border: Border.all(color: Colors.white12),
       ),
-      child: Row(
+      child: Column(
         children: [
-          IconButton(
-            tooltip: 'السمايلات',
-            onPressed: _canSend ? () => _focusNode.requestFocus() : null,
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(
-              Icons.sentiment_satisfied_alt_rounded,
-              color: Colors.white60,
-              size: 20,
-            ),
-          ),
-          Expanded(
-            child: TextField(
-              enabled: _canSend,
-              controller: _controller,
-              focusNode: _focusNode,
-              textInputAction: TextInputAction.send,
-              maxLength: 500,
-              buildCounter: (
-                context, {
-                required currentLength,
-                required isFocused,
-                required maxLength,
-              }) =>
-                  null,
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-              decoration: InputDecoration(
-                hintText: _canSend ? 'اكتب داخل الغرفة…' : 'الدردشة متوقفة',
-                hintStyle: const TextStyle(color: Colors.white30, fontSize: 11),
-                border: InputBorder.none,
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(vertical: 10),
-              ),
-              onSubmitted: (_) => _send(),
-            ),
-          ),
-          IconButton(
-            tooltip: 'إرسال',
-            onPressed: _sending || !_canSend ? null : _send,
-            visualDensity: VisualDensity.compact,
-            icon: _sending
-                ? const SizedBox(
-                    width: 15,
-                    height: 15,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Color(0xFFBFA5FF),
-                    ),
-                  )
-                : const Icon(
-                    Icons.send_rounded,
+          if (reply != null)
+            SizedBox(
+              height: 26,
+              child: Row(
+                children: [
+                  const SizedBox(width: 10),
+                  const Icon(
+                    Icons.reply_rounded,
                     color: Color(0xFFBFA5FF),
+                    size: 14,
+                  ),
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: Text(
+                      'رد على ' +
+                          reply.displayName +
+                          ': ' +
+                          reply.text,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 9,
+                      ),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: _cancelReply,
+                    borderRadius: BorderRadius.circular(99),
+                    child: const Padding(
+                      padding: EdgeInsets.all(5),
+                      child: Icon(
+                        Icons.close_rounded,
+                        color: Colors.white38,
+                        size: 14,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                ],
+              ),
+            ),
+          SizedBox(
+            height: 40,
+            child: Row(
+              children: [
+                IconButton(
+                  tooltip: 'السمايلات',
+                  onPressed:
+                      _canSend ? () => _focusNode.requestFocus() : null,
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(
+                    Icons.sentiment_satisfied_alt_rounded,
+                    color: Colors.white60,
                     size: 20,
                   ),
+                ),
+                Expanded(
+                  child: TextField(
+                    enabled: _canSend,
+                    controller: _controller,
+                    focusNode: _focusNode,
+                    textInputAction: TextInputAction.send,
+                    maxLength: 500,
+                    buildCounter: (
+                      context, {
+                      required currentLength,
+                      required isFocused,
+                      required maxLength,
+                    }) =>
+                        null,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                    ),
+                    decoration: InputDecoration(
+                      hintText:
+                          _canSend ? 'اكتب داخل الغرفة…' : 'الدردشة متوقفة',
+                      hintStyle: const TextStyle(
+                        color: Colors.white30,
+                        fontSize: 11,
+                      ),
+                      border: InputBorder.none,
+                      isDense: true,
+                      contentPadding:
+                          const EdgeInsets.symmetric(vertical: 10),
+                    ),
+                    onSubmitted: (_) => _send(),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'إرسال',
+                  onPressed: _sending || !_canSend ? null : _send,
+                  visualDensity: VisualDensity.compact,
+                  icon: _sending
+                      ? const SizedBox(
+                          width: 15,
+                          height: 15,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Color(0xFFBFA5FF),
+                          ),
+                        )
+                      : const Icon(
+                          Icons.send_rounded,
+                          color: Color(0xFFBFA5FF),
+                          size: 20,
+                        ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
