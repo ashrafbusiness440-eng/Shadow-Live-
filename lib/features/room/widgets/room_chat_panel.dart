@@ -398,7 +398,6 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
           ),
         ),
       ),
-    ),
     );
   }
 
@@ -940,7 +939,8 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
           ),
         ),
       ),
-    );
+    ),
+  );
   }
 
   @override
