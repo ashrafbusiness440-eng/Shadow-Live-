@@ -159,6 +159,11 @@ test("Agency Room category and logo reuse bootstrap data without agency hot-path
   );
 
   assert.equal(voice.includes('agencyLogoUrl:roomType==="agency"'), true);
+  assert.equal(voice.includes("agencyRoomImageUrl:"), true);
+  assert.equal(voice.includes("agencyRoomImageObjectId:"), true);
+  assert.equal(main.includes("String get _roomHeaderImageUrl"), true);
+  assert.equal(main.includes("_roomArguments['agencyRoomImageUrl']"), true);
+  assert.equal(main.includes("NetworkImage(\n                                                  _roomHeaderImageUrl,"), true);
   assert.equal(voice.includes('category:roomType==="agency"?"وكالة"'), true);
   assert.equal(voice.includes("viewerAgencyId:clean(actor.agencyId)"), true);
   assert.equal(voice.includes("viewerAgencyRole:clean(actor.agencyRole)"), true);
@@ -425,6 +430,7 @@ test("Agency room image editor uses real square crop with circle-only room previ
   assert.equal(hostPage.includes("خلفيات الغرفة من «مقتنياتي»"), true);
   assert.equal(hostPage.includes("scope: 'agency_room_image'"), true);
   assert.equal(hostPage.includes("scope: 'agency_background'"), false);
+  assert.equal(hostPage.includes("تعديل خلفية الوكالة"), false);
 
   assert.equal(cropSheet.includes("aspectRatio: 1"), true);
   assert.equal(cropSheet.includes("fixCropRect: true"), true);
