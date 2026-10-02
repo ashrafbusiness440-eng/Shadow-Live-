@@ -211,6 +211,20 @@ class VoiceRoomSessionController extends ChangeNotifier {
     }
   }
 
+  Future<void> reportRoomChatMessage({
+    required String messageId,
+    required String reason,
+  }) {
+    if (!_active || roomId.isEmpty) {
+      throw StateError('room_realtime_not_connected');
+    }
+    return _presenceService.reportChatMessage(
+      roomId: roomId,
+      messageId: messageId,
+      reason: reason,
+    );
+  }
+
   Future<void> sendRoomChat({
     required String text,
     String? replyTo,
