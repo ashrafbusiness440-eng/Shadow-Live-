@@ -98,8 +98,8 @@ class _RoomImageCropSheetState
                 borderRadius: BorderRadius.circular(999),
               ),
             ),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 18, 20, 6),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 6),
               child: Text(
                 widget.title,
                 style: const TextStyle(
