@@ -73,7 +73,8 @@ class RoomChatMessage {
       giftQuantity: (data['quantity'] as num?)?.toInt() ?? 0,
       giftTotalCost: (data['totalCost'] as num?)?.toInt() ?? 0,
     );
-  }}
+  }
+}
 
 class RoomChatService {
   RoomChatService({
@@ -91,7 +92,9 @@ class RoomChatService {
     List<String> mentionUids = const [],
   }) async {
     final activeRoomId = _session.roomId.trim();
-    if (!_session.active || activeRoomId.isEmpty || activeRoomId != roomId.trim()) {
+    if (!_session.active ||
+        activeRoomId.isEmpty ||
+        activeRoomId != roomId.trim()) {
       throw StateError('room_realtime_not_connected');
     }
     await _session.sendRoomChat(
