@@ -50,6 +50,7 @@ export class RoomRealtimeObject extends DurableObject {
     super(ctx, env);
     this.ctx = ctx;
     this.env = env;
+    this.chatRateByUid = new Map();
 
     recordRealtimeTelemetry(this.env, { event: "activate" });
 
@@ -267,6 +268,9 @@ export class RoomRealtimeObject extends DurableObject {
     if (url.pathname === "/broadcast" && request.method === "POST") {
       return this.#broadcast(request);
     }
+    if (url.pathname === "/chat/policy" && request.method === "POST") {
+      return this.#updateChatPolicy(request);
+    }
     return Response.json({ ok: false, code: "route_not_found" }, { status: 404 });
   }
 
@@ -278,6 +282,11 @@ export class RoomRealtimeObject extends DurableObject {
     const expiresAtMs = Number(body.expiresAtMs || 0);
     const displayName = String(body.displayName || "").trim();
     const profileImageUrl = String(body.profileImageUrl || "").trim();
+    const chatEnabled = body.chatEnabled !== false;
+    const canModerateChat = body.canModerateChat === true;
+    const ghostMode = body.ghostMode === true;
+    const vipLevel = Math.max(0, Math.min(99, Number(body.vipLevel || 0)));
+    const entryEffectKey = String(body.entryEffectKey || "").trim();
     const mode = String(body.mode || "room") === "rocket_feed"
       ? "rocket_feed"
       : "room";
@@ -300,6 +309,11 @@ export class RoomRealtimeObject extends DurableObject {
       expiresAtMs,
       displayName,
       profileImageUrl,
+      chatEnabled,
+      canModerateChat,
+      ghostMode,
+      vipLevel,
+      entryEffectKey,
       mode,
       reconnectAttempt,
     });
@@ -396,6 +410,11 @@ export class RoomRealtimeObject extends DurableObject {
       joinedAtMs,
       displayName,
       profileImageUrl,
+      chatEnabled: record.chatEnabled !== false,
+      canModerateChat: record.canModerateChat === true,
+      ghostMode: record.ghostMode === true,
+      vipLevel: Math.max(0, Math.min(99, Number(record.vipLevel || 0))),
+      entryEffectKey: String(record.entryEffectKey || ""),
       reconnectAttempt,
     });
     this.ctx.acceptWebSocket(server, [`uid:${uid}`]);
@@ -419,7 +438,7 @@ export class RoomRealtimeObject extends DurableObject {
       onlineCount,
     });
 
-    if (!alreadyPresent) {
+    if (!alreadyPresent && record.ghostMode !== true) {
       this.#broadcastEvent("room.presence_joined", {
         roomId,
         uid,
@@ -427,6 +446,8 @@ export class RoomRealtimeObject extends DurableObject {
         profileImageUrl,
         joinedAtMs,
         onlineCount,
+        vipLevel: Math.max(0, Math.min(99, Number(record.vipLevel || 0))),
+        entryEffectKey: String(record.entryEffectKey || ""),
       });
     }
 
@@ -496,6 +517,159 @@ export class RoomRealtimeObject extends DurableObject {
     return Response.json({ ok: true, stored });
   }
 
+  async #updateChatPolicy(request) {
+    const body = await request.json().catch(() => ({}));
+    const roomId = normalizeRoomId(body.roomId);
+    if (!roomId) {
+      return Response.json(
+        { ok: false, code: "invalid_room_id" },
+        { status: 400 },
+      );
+    }
+    const chatEnabled = body.chatEnabled !== false;
+    let updated = 0;
+    for (const socket of this.ctx.getWebSockets()) {
+      let attachment = {};
+      try {
+        attachment = socket.deserializeAttachment() || {};
+      } catch {}
+      if (String(attachment.mode || "room") !== "room") continue;
+      if (normalizeRoomId(attachment.roomId) !== roomId) continue;
+      try {
+        socket.serializeAttachment({
+          ...attachment,
+          chatEnabled,
+        });
+        updated += 1;
+      } catch {}
+    }
+    return Response.json({ ok: true, roomId, chatEnabled, updated });
+  }
+
+  #chatError(webSocket, requestId, code) {
+    safeSend(
+      webSocket,
+      realtimeEnvelope("server.error", {
+        requestId: String(requestId || "").slice(0, 120),
+        code,
+      }),
+    );
+  }
+
+  #handleRoomChatMessage(webSocket, raw) {
+    let attachment = {};
+    try {
+      attachment = webSocket.deserializeAttachment() || {};
+    } catch {}
+    if (String(attachment.mode || "room") !== "room") return false;
+
+    let message;
+    try {
+      message = JSON.parse(raw);
+    } catch {
+      return false;
+    }
+    if (!message || message.type !== "client.room_chat") return false;
+
+    const requestId = String(message.requestId || "").slice(0, 120);
+    const payload =
+      message.payload && typeof message.payload === "object"
+        ? message.payload
+        : {};
+    const roomId = normalizeRoomId(payload.roomId);
+    const attachedRoomId = normalizeRoomId(attachment.roomId);
+    const uid = String(attachment.uid || "").trim();
+    const text = String(payload.text || "").trim();
+
+    if (!requestId || !roomId || roomId !== attachedRoomId || !uid) {
+      this.#chatError(webSocket, requestId, "invalid_room_message");
+      return true;
+    }
+    if (!text || text.length > 500) {
+      this.#chatError(webSocket, requestId, "invalid_room_message");
+      return true;
+    }
+    if (
+      attachment.chatEnabled === false &&
+      attachment.canModerateChat !== true
+    ) {
+      this.#chatError(webSocket, requestId, "room_chat_disabled");
+      return true;
+    }
+
+    const nowMs = Date.now();
+    const current = this.chatRateByUid.get(uid) || {
+      windowStartedAtMs: nowMs,
+      count: 0,
+    };
+    const sameWindow =
+      nowMs - Number(current.windowStartedAtMs || 0) < 10_000;
+    const count = sameWindow ? Number(current.count || 0) : 0;
+    if (count >= 8) {
+      this.#chatError(webSocket, requestId, "rate_limited");
+      return true;
+    }
+    this.chatRateByUid.set(uid, {
+      windowStartedAtMs: sameWindow
+        ? Number(current.windowStartedAtMs || nowMs)
+        : nowMs,
+      count: count + 1,
+    });
+
+    const mentions = Array.isArray(payload.mentionUids)
+      ? Array.from(
+          new Set(
+            payload.mentionUids
+              .map((value) => String(value || "").trim())
+              .filter(Boolean),
+          ),
+        ).slice(0, 10)
+      : [];
+    const replyTo = String(payload.replyTo || "").trim().slice(0, 120);
+    const replyPreview = String(payload.replyPreview || "")
+      .trim()
+      .slice(0, 120);
+    const replySenderUid = String(payload.replySenderUid || "")
+      .trim()
+      .slice(0, 160);
+    const messageId = crypto.randomUUID();
+
+    this.#broadcastEvent("room.chat_message", {
+      roomId,
+      message: {
+        id: messageId,
+        type: "text",
+        senderUid: uid,
+        displayName:
+          String(attachment.displayName || "").trim() ||
+          "مستخدم Shadow Live",
+        profileImageUrl: String(attachment.profileImageUrl || "").trim(),
+        text,
+        mentionUids: mentions,
+        replyTo: replyTo || null,
+        replyPreview: replyPreview || null,
+        replySenderUid: replySenderUid || null,
+        createdAtMs: nowMs,
+        systemKind: "",
+        vipLevel: 0,
+        entryEffectKey: "",
+      },
+    });
+    safeSend(
+      webSocket,
+      realtimeEnvelope("room.chat_ack", {
+        requestId,
+        messageId,
+      }),
+    );
+    recordRealtimeTelemetry(this.env, {
+      event: "room_chat",
+      outcome: "sent",
+      onlineCount: this.#presenceSnapshot().length,
+    });
+    return true;
+  }
+
   async #broadcast(request) {
     const body = await request.json().catch(() => ({}));
     const type = String(body?.event?.type || "").trim();
@@ -515,6 +689,12 @@ export class RoomRealtimeObject extends DurableObject {
   }
 
   webSocketMessage(webSocket, message) {
+    if (
+      typeof message === "string" &&
+      this.#handleRoomChatMessage(webSocket, message)
+    ) {
+      return;
+    }
     const parsed = parseClientRealtimeMessage(message, Date.now());
     if (parsed.response) safeSend(webSocket, parsed.response);
   }
