@@ -294,6 +294,7 @@ function publicPersonSummary(uidInput, userSnap) {
       "Shadow Live",
     profileImageUrl:
       clean(user.profileImageUrl || user.photoUrl || user.avatarUrl) || null,
+    profileAvatarAsset: clean(user.profileAvatarAsset) || null,
   };
 }
 
