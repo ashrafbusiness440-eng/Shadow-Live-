@@ -438,11 +438,11 @@ function roomFeatureFlags(room){
 function roomModeratorLimit(room){
   const level=Math.max(1,Math.min(6,Number(room.level||1)));
   const type=clean(room.roomType||room.type||"personal");
+  if(type==="customer_service")return 2;
   const overrides=roomControlOverrides(room);
   if((isOfficialRoom(room)||overrides.bypassLevelCapacity)&&overrides.moderators!==null){
     return overrides.moderators;
   }
-  if(type==="customer_service")return 2;
   const agency=[5,6,7,9,11,14];
   const normal=[3,4,5,7,9,12];
   return (type==="agency"?agency:normal)[level-1];
@@ -1133,11 +1133,11 @@ async function closePersonalRoom(db,uid,roomId){
 function roomSeatCapacity(room){
   const level=Math.max(1,Math.min(6,Number(room.level||1)));
   const type=clean(room.roomType||room.type||"personal");
+  if(type==="customer_service")return 5;
   const overrides=roomControlOverrides(room);
   if((isOfficialRoom(room)||overrides.bypassLevelCapacity)&&overrides.seats!==null){
     return overrides.seats;
   }
-  if(type==="customer_service")return 5;
   const agency=[10,12,14,16,20,22];
   const normal=[8,10,12,15,20,20];
   return (type==="agency"?agency:normal)[level-1];
@@ -1185,7 +1185,8 @@ function roomControlPolicySnapshot(room){
   const baseModerators=type==="customer_service"
     ? 2
     : (type==="agency"?agencyMods:normalMods)[level-1];
-  const manual=isOfficialRoom(room)||overrides.bypassLevelCapacity;
+  const customerService=type==="customer_service";
+  const manual=!customerService&&(isOfficialRoom(room)||overrides.bypassLevelCapacity);
   return {
     level,
     type,
@@ -1196,9 +1197,13 @@ function roomControlPolicySnapshot(room){
     baseSeats,
     baseModerators,
     overrides,
-    effectiveSeats:manual&&overrides.seats!==null?overrides.seats:baseSeats,
-    effectiveModerators:manual&&overrides.moderators!==null?overrides.moderators:baseModerators,
-    capacityMode:manual?"manual":"level",
+    effectiveSeats:customerService
+      ? 5
+      : (manual&&overrides.seats!==null?overrides.seats:baseSeats),
+    effectiveModerators:customerService
+      ? 2
+      : (manual&&overrides.moderators!==null?overrides.moderators:baseModerators),
+    capacityMode:customerService?"customer_service_fixed":(manual?"manual":"level"),
   };
 }
 
@@ -1464,6 +1469,9 @@ async function controlRoomPolicy(db,uid,body){
       if(next===before.level)throw new ApiError("level_unchanged",409);
       patch={level:next,levelUpdatedAt:now,levelUpdatedBy:uid,updatedAt:now};
     }else if(controlAction==="setOverrides"){
+      if(clean(room.roomType||room.type)==="customer_service"){
+        throw new ApiError("customer_service_capacity_fixed",409);
+      }
       const current=roomControlOverrides(room);
       const parseBounded=(value,min,max,code)=>{
         if(value===null||value===undefined||value==="")return null;
