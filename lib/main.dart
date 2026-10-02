@@ -5278,9 +5278,14 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         .toString();
     final insights = _roomInsights;
 
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Scaffold(
+    return PopScope<Object?>(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) unawaited(_minimizeVoiceRoom());
+      },
+      child: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Scaffold(
         backgroundColor: Colors.black,
         resizeToAvoidBottomInset: true,
         body: SafeArea(
@@ -5450,6 +5455,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           ),
         ),
       ),
+    ),
     );
   }
 }
