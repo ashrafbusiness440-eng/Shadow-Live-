@@ -45,6 +45,9 @@ class VoiceRoomSessionController extends ChangeNotifier {
       StreamController<Map<String, dynamic>>.broadcast();
   final List<Map<String, dynamic>> _roomChatMessages =
       <Map<String, dynamic>>[];
+  Map<String, dynamic>? _roomChatReplyTarget;
+  Map<String, dynamic>? _roomChatMentionTarget;
+  int _roomChatComposerIntentRevision = 0;
   Map<String, dynamic>? _lastRoomMusicState;
   String _activeRoomMediaKey = '';
 
@@ -75,6 +78,15 @@ class VoiceRoomSessionController extends ChangeNotifier {
       List<Map<String, dynamic>>.unmodifiable(
         _roomChatMessages.reversed,
       );
+  Map<String, dynamic>? get roomChatReplyTarget =>
+      _roomChatReplyTarget == null
+          ? null
+          : Map<String, dynamic>.unmodifiable(_roomChatReplyTarget!);
+  Map<String, dynamic>? get roomChatMentionTarget =>
+      _roomChatMentionTarget == null
+          ? null
+          : Map<String, dynamic>.unmodifiable(_roomChatMentionTarget!);
+  int get roomChatComposerIntentRevision => _roomChatComposerIntentRevision;
 
   String get roomId => (_roomArguments['roomId'] ?? '').toString();
   String get roomTitle =>
@@ -209,6 +221,33 @@ class VoiceRoomSessionController extends ChangeNotifier {
     if (_roomChatMessages.length > 60) {
       _roomChatMessages.removeRange(0, _roomChatMessages.length - 60);
     }
+  }
+
+  void prepareRoomChatReply(Map<String, dynamic> message) {
+    final id = (message['id'] ?? '').toString().trim();
+    final senderUid = (message['senderUid'] ?? '').toString().trim();
+    if (id.isEmpty || senderUid.isEmpty) return;
+    _roomChatReplyTarget = Map<String, dynamic>.from(message);
+    _roomChatMentionTarget = null;
+    _roomChatComposerIntentRevision += 1;
+    notifyListeners();
+  }
+
+  void prepareRoomChatMention(Map<String, dynamic> message) {
+    final senderUid = (message['senderUid'] ?? '').toString().trim();
+    if (senderUid.isEmpty) return;
+    _roomChatMentionTarget = Map<String, dynamic>.from(message);
+    _roomChatReplyTarget = null;
+    _roomChatComposerIntentRevision += 1;
+    notifyListeners();
+  }
+
+  void clearRoomChatComposerIntent() {
+    if (_roomChatReplyTarget == null && _roomChatMentionTarget == null) return;
+    _roomChatReplyTarget = null;
+    _roomChatMentionTarget = null;
+    _roomChatComposerIntentRevision += 1;
+    notifyListeners();
   }
 
   Future<void> reportRoomChatMessage({
@@ -388,6 +427,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
     _error = 'room_banned';
     _connectionState = VoiceConnectionState.disconnected;
     _roomChatMessages.clear();
+    _roomChatReplyTarget = null;
+    _roomChatMentionTarget = null;
     notifyListeners();
   }
 
@@ -467,6 +508,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
     _error = 'room_closed';
     _connectionState = VoiceConnectionState.disconnected;
     _roomChatMessages.clear();
+    _roomChatReplyTarget = null;
+    _roomChatMentionTarget = null;
     notifyListeners();
   }
 
@@ -515,6 +558,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
 
     await _ensureService();
     _roomChatMessages.clear();
+    _roomChatReplyTarget = null;
+    _roomChatMentionTarget = null;
     _roomArguments = Map<String, dynamic>.from(arguments)
       ..remove('recentEntrance');
     _joining = true;
@@ -542,6 +587,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
       _joining = false;
       _sessionUserUid = null;
       _roomChatMessages.clear();
+      _roomChatReplyTarget = null;
+      _roomChatMentionTarget = null;
       _error = error.toString();
       _connectionState = VoiceConnectionState.failed;
       rethrow;
@@ -612,6 +659,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
     _connectionState = VoiceConnectionState.disconnected;
     _roomArguments = <String, dynamic>{};
     _roomChatMessages.clear();
+    _roomChatReplyTarget = null;
+    _roomChatMentionTarget = null;
     _sessionUserUid = null;
     notifyListeners();
   }
