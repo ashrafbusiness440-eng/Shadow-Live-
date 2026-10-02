@@ -1,8 +1,4 @@
-import 'dart:convert';
-
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:http/http.dart' as http;
+import '../../voice/services/voice_room_session_controller.dart';
 
 class RoomChatMessage {
   const RoomChatMessage({
@@ -47,13 +43,10 @@ class RoomChatMessage {
   final int giftQuantity;
   final int giftTotalCost;
 
-  factory RoomChatMessage.fromDoc(
-    QueryDocumentSnapshot<Map<String, dynamic>> doc,
-  ) {
-    final data = doc.data();
-    final timestamp = data['createdAt'];
+  factory RoomChatMessage.fromMap(Map<String, dynamic> data) {
+    final createdAtMs = (data['createdAtMs'] as num?)?.toInt() ?? 0;
     return RoomChatMessage(
-      id: doc.id,
+      id: (data['id'] ?? '').toString(),
       type: (data['type'] ?? 'text').toString(),
       senderUid: (data['senderUid'] ?? '').toString(),
       displayName:
@@ -68,7 +61,9 @@ class RoomChatMessage {
       replyTo: data['replyTo']?.toString(),
       replyPreview: data['replyPreview']?.toString(),
       replySenderUid: data['replySenderUid']?.toString(),
-      createdAt: timestamp is Timestamp ? timestamp.toDate() : null,
+      createdAt: createdAtMs > 0
+          ? DateTime.fromMillisecondsSinceEpoch(createdAtMs)
+          : null,
       systemKind: (data['systemKind'] ?? '').toString(),
       vipLevel: (data['vipLevel'] as num?)?.toInt() ?? 0,
       entryEffectKey: (data['entryEffectKey'] ?? '').toString(),
@@ -78,80 +73,35 @@ class RoomChatMessage {
       giftQuantity: (data['quantity'] as num?)?.toInt() ?? 0,
       giftTotalCost: (data['totalCost'] as num?)?.toInt() ?? 0,
     );
-  }
-}
+  }}
 
 class RoomChatService {
   RoomChatService({
-    FirebaseFirestore? firestore,
-    FirebaseAuth? auth,
-    http.Client? client,
-    String? baseUrl,
-  })  : _firestore = firestore ?? FirebaseFirestore.instance,
-        _auth = auth ?? FirebaseAuth.instance,
-        _client = client ?? http.Client(),
-        _baseUrl = baseUrl ??
-            const String.fromEnvironment(
-              'SHADOW_CLOUDFLARE_API_BASE_URL',
-              defaultValue: 'https://shadow-live.ashraf-business-440.workers.dev/api',
-            );
+    VoiceRoomSessionController? session,
+  }) : _session = session ?? VoiceRoomSessionController.instance;
 
-  final FirebaseFirestore _firestore;
-  final FirebaseAuth _auth;
-  final http.Client _client;
-  final String _baseUrl;
-
-  Stream<List<RoomChatMessage>> watchMessages(String roomId) {
-    return _firestore
-        .collection('rooms')
-        .doc(roomId)
-        .collection('messages')
-        .orderBy('createdAt', descending: true)
-        .limit(60)
-        .snapshots()
-        .map(
-          (snapshot) =>
-              snapshot.docs.map(RoomChatMessage.fromDoc).toList(growable: false),
-        );
-  }
+  final VoiceRoomSessionController _session;
 
   Future<void> sendMessage({
     required String roomId,
     required String text,
     String? replyTo,
+    String? replyPreview,
+    String? replySenderUid,
     List<String> mentionUids = const [],
   }) async {
-    final user = _auth.currentUser;
-    final token = await user?.getIdToken();
-    if (user == null || token == null || token.isEmpty) {
-      throw StateError('not_signed_in');
+    final activeRoomId = _session.roomId.trim();
+    if (!_session.active || activeRoomId.isEmpty || activeRoomId != roomId.trim()) {
+      throw StateError('room_realtime_not_connected');
     }
-
-    final response = await _client.post(
-      Uri.parse('$_baseUrl/voice-session'),
-      headers: {
-        'authorization': 'Bearer ' + token,
-        'content-type': 'application/json',
-      },
-      body: jsonEncode({
-        'action': 'sendRoomChat',
-        'roomId': roomId,
-        'text': text,
-        if (replyTo != null && replyTo.isNotEmpty) 'replyTo': replyTo,
-        if (mentionUids.isNotEmpty) 'mentionUids': mentionUids,
-      }),
+    await _session.sendRoomChat(
+      text: text,
+      replyTo: replyTo,
+      replyPreview: replyPreview,
+      replySenderUid: replySenderUid,
+      mentionUids: mentionUids,
     );
-
-    Map<String, dynamic> body = <String, dynamic>{};
-    try {
-      final decoded = jsonDecode(response.body);
-      if (decoded is Map<String, dynamic>) body = decoded;
-    } catch (_) {}
-
-    if (response.statusCode != 200 || body['ok'] != true) {
-      throw StateError((body['code'] ?? 'room_chat_failed').toString());
-    }
   }
 
-  void close() => _client.close();
+  void close() {}
 }
