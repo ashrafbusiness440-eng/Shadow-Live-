@@ -25,6 +25,11 @@ class _WebRoomPresenceSocketConnection
   Stream<Object?> get messages => _controller.stream;
 
   @override
+  void send(String message) {
+    _socket.send(message);
+  }
+
+  @override
   Future<void> close() async {
     _socket.close(1000, 'room_leave');
     await _messageSubscription.cancel();
