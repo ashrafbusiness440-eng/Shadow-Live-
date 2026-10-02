@@ -68,6 +68,7 @@ import 'features/games/widgets/room_game_overlay.dart';
 import 'features/profile/screens/my_items_screen.dart';
 import 'features/agency/screens/public_agency_page.dart';
 import 'features/agency/services/agency_room_link.dart';
+import 'features/agency/widgets/agency_room_image_crop_sheet.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -2977,13 +2978,17 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     final descriptionController = TextEditingController(
       text: (_roomArguments['description'] ?? '').toString(),
     );
-    final initialCoverImageUrl = (_roomArguments['coverImageUrl'] ??
-            _roomArguments['imageUrl'] ??
-            '')
-        .toString()
-        .trim();
-    final initialCoverObjectId =
-        (_roomArguments['coverImageObjectId'] ?? '').toString().trim();
+    final initialCoverImageUrl = isAgencyRoom
+        ? (_roomArguments['agencyRoomImageUrl'] ?? '').toString().trim()
+        : (_roomArguments['coverImageUrl'] ??
+                _roomArguments['roomImageUrl'] ??
+                _roomArguments['imageUrl'] ??
+                '')
+            .toString()
+            .trim();
+    final initialCoverObjectId = isAgencyRoom
+        ? (_roomArguments['agencyRoomImageObjectId'] ?? '').toString().trim()
+        : (_roomArguments['coverImageObjectId'] ?? '').toString().trim();
     Uint8List? pendingCoverBytes;
     var removeCover = false;
     final categoryController = TextEditingController(
@@ -3090,7 +3095,9 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                           ),
                           SizedBox(height: 3),
                           Text(
-                            'تظهر في قائمة الغرف والهيدر فقط، وليست خلفية الغرفة.',
+                            isAgencyRoom
+                                ? 'هذه صورة غرفة الوكالة التي تظهر خارج الروم وفي الهيدر، وليست الخلفية.'
+                                : 'تظهر في قائمة الغرف والهيدر فقط، وليست خلفية الغرفة.',
                             style: TextStyle(
                               color: Colors.white54,
                               fontSize: 11,
@@ -3172,8 +3179,20 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                           return;
                                         }
                                         if (!sheetContext.mounted) return;
+                                        final croppedBytes =
+                                            await showRoomImageCropSheet(
+                                          sheetContext,
+                                          imageBytes: bytes,
+                                          title: isAgencyRoom
+                                              ? 'قص صورة غرفة الوكالة'
+                                              : 'قص صورة الغرفة',
+                                        );
+                                        if (croppedBytes == null ||
+                                            !sheetContext.mounted) {
+                                          return;
+                                        }
                                         setSheetState(() {
-                                          pendingCoverBytes = bytes;
+                                          pendingCoverBytes = croppedBytes;
                                           removeCover = false;
                                         });
                                       },
@@ -3184,9 +3203,10 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                       : 'تغيير الصورة',
                                 ),
                               ),
-                              if (pendingCoverBytes != null ||
-                                  (!removeCover &&
-                                      initialCoverImageUrl.isNotEmpty))
+                              if (!isAgencyRoom &&
+                                  (pendingCoverBytes != null ||
+                                      (!removeCover &&
+                                          initialCoverImageUrl.isNotEmpty)))
                                 TextButton.icon(
                                   onPressed: saving
                                       ? null
