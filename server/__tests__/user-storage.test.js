@@ -909,8 +909,10 @@ test("agency background stays card-only while Agency room image owns linked room
   const roomImageBlock = source.slice(roomImageStart, roomImageEnd);
   assert.equal(roomImageBlock.includes("roomImageUrl: stablePublicUrl"), true);
   assert.equal(roomImageBlock.includes("roomImageObjectId: objectId"), true);
-  assert.equal(roomImageBlock.includes("coverImageUrl: stablePublicUrl"), true);
-  assert.equal(roomImageBlock.includes("agencyCoverUrl: stablePublicUrl"), true);
+  assert.equal(roomImageBlock.includes("agencyRoomImageUrl: stablePublicUrl"), true);
+  assert.equal(roomImageBlock.includes("agencyRoomImageObjectId: objectId"), true);
+  assert.equal(roomImageBlock.includes("coverImageUrl: stablePublicUrl"), false);
+  assert.equal(roomImageBlock.includes("agencyCoverUrl: stablePublicUrl"), false);
   assert.equal(roomImageBlock.includes("backgroundUrl: stablePublicUrl"), false);
   assert.equal(
     source.includes("transferDeletedAccountAgencyRoomImageOwnership"),
