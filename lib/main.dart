@@ -2835,10 +2835,10 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                   CircleAvatar(
                     radius: 38,
                     backgroundColor: const Color(0xFF171D2B),
-                    backgroundImage: _ownerPhotoUrl.trim().isEmpty
+                    backgroundImage: _roomHeaderImageUrl.isEmpty
                         ? null
-                        : NetworkImage(_ownerPhotoUrl),
-                    child: _ownerPhotoUrl.trim().isEmpty
+                        : NetworkImage(_roomHeaderImageUrl),
+                    child: _roomHeaderImageUrl.isEmpty
                         ? const Icon(
                             Icons.person_rounded,
                             color: Colors.white54,
@@ -4046,6 +4046,15 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
 
   String get _roomAgencyId => agencyIdForRoom(_roomArguments);
 
+  String get _roomHeaderImageUrl {
+    final agencyRoomImage =
+        (_roomArguments['agencyRoomImageUrl'] ?? '').toString().trim();
+    if (_roomAgencyId.isNotEmpty && agencyRoomImage.isNotEmpty) {
+      return agencyRoomImage;
+    }
+    return _ownerPhotoUrl.trim();
+  }
+
   void _openAgencyPage() {
     final agencyId = _roomAgencyId;
     if (agencyId.isEmpty) return;
@@ -5037,10 +5046,13 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                     child: CircleAvatar(
                                       radius: 22,
                                       backgroundColor: const Color(0xFF171D2B),
-                                      backgroundImage: _ownerPhotoUrl.isEmpty
-                                          ? null
-                                          : NetworkImage(_ownerPhotoUrl),
-                                      child: _ownerPhotoUrl.isEmpty
+                                      backgroundImage:
+                                          _roomHeaderImageUrl.isEmpty
+                                              ? null
+                                              : NetworkImage(
+                                                  _roomHeaderImageUrl,
+                                                ),
+                                      child: _roomHeaderImageUrl.isEmpty
                                           ? const Icon(
                                               Icons.person_rounded,
                                               color: Colors.white54,
