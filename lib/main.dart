@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'dart:math';
+import 'dart:ui';
 import 'widgets/bottom_nav_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -2746,10 +2747,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             'غرفة صوتية')
         .toString();
     final publicId = (_roomArguments['publicId'] ?? '—').toString();
-    final isAgencyRoom = _roomAgencyId.isNotEmpty;
-    final category = isAgencyRoom
-        ? 'وكالة'
-        : (_roomArguments['category'] ?? 'دردشة').toString();
+    final category = _roomCategoryLabel;
     final description =
         (_roomArguments['description'] ?? '').toString().trim();
     final visibility =
@@ -4046,6 +4044,41 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
 
   String get _roomAgencyId => agencyIdForRoom(_roomArguments);
 
+  String get _roomType =>
+      (_roomArguments['roomType'] ?? _roomArguments['type'] ?? 'personal')
+          .toString()
+          .trim();
+
+  bool get _isOfficialRoom {
+    final type = _roomType;
+    return _roomArguments['systemOwned'] == true ||
+        _roomArguments['officialRoom'] == true ||
+        const {'official', 'administrative', 'customer_service'}.contains(type);
+  }
+
+  String get _roomCategoryLabel {
+    if (_roomAgencyId.isNotEmpty) return 'وكالة';
+    if (_roomType == 'customer_service') return 'خدمة العملاء';
+
+    final category = (_roomArguments['category'] ?? '').toString().trim();
+    if (_isOfficialRoom && (category.isEmpty || category == 'دردشة')) {
+      return 'إداري';
+    }
+    return category.isEmpty ? 'دردشة' : category;
+  }
+
+  Color get _roomIdentityAccent {
+    if (_roomAgencyId.isNotEmpty) return const Color(0xFFB99CFF);
+    if (_isOfficialRoom) return const Color(0xFFFFD54A);
+    return const Color(0xFFBFA5FF);
+  }
+
+  String get _officialRoomBadgeLabel {
+    if (!_isOfficialRoom) return '';
+    if (_roomType == 'customer_service') return 'خدمة العملاء';
+    return 'Shadow Live';
+  }
+
   String get _roomHeaderImageUrl {
     final agencyRoomImage =
         (_roomArguments['agencyRoomImageUrl'] ?? '').toString().trim();
@@ -4145,6 +4178,265 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       const SnackBar(
         content: Text('تم نسخ ID الغرفة.'),
         duration: Duration(milliseconds: 1400),
+      ),
+    );
+  }
+
+  Widget _buildOfficialRoomBadge() {
+    final label = _officialRoomBadgeLabel;
+    if (label.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFD54A).withValues(alpha: .12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: const Color(0xFFFFD54A).withValues(alpha: .38),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.verified_rounded,
+            size: 11,
+            color: Color(0xFFFFD54A),
+          ),
+          const SizedBox(width: 3),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFFFFE082),
+              fontSize: 8,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRoomHeader({
+    required String roomTitle,
+    required String roomPublicId,
+    required RoomInsights? insights,
+  }) {
+    final accent = _roomIdentityAccent;
+    final category = _roomCategoryLabel;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(8, 7, 6, 7),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: .24),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: .09),
+            ),
+          ),
+          child: Row(
+            children: [
+              GestureDetector(
+                onTap: _showRoomInfoSheet,
+                child: Container(
+                  padding: const EdgeInsets.all(1.5),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: accent.withValues(alpha: .72),
+                    ),
+                  ),
+                  child: CircleAvatar(
+                    radius: 20.5,
+                    backgroundColor: const Color(0xFF171D2B),
+                    backgroundImage: _roomHeaderImageUrl.isEmpty
+                        ? null
+                        : NetworkImage(_roomHeaderImageUrl),
+                    child: _roomHeaderImageUrl.isEmpty
+                        ? Icon(
+                            _isOfficialRoom
+                                ? Icons.shield_rounded
+                                : Icons.person_rounded,
+                            color: accent.withValues(alpha: .8),
+                          )
+                        : null,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            roomTitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        InkWell(
+                          key: const Key('room-favorite-button'),
+                          onTap: _changingRoomFavorite || insights == null
+                              ? null
+                              : _toggleRoomFavorite,
+                          borderRadius: BorderRadius.circular(999),
+                          child: Padding(
+                            padding: const EdgeInsets.all(2),
+                            child: Icon(
+                              insights?.favorited == true
+                                  ? Icons.star_rounded
+                                  : Icons.star_border_rounded,
+                              size: 18,
+                              color: const Color(0xFFFFD54A),
+                            ),
+                          ),
+                        ),
+                        if (_isOfficialRoom) ...[
+                          const SizedBox(width: 5),
+                          _buildOfficialRoomBadge(),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        InkWell(
+                          onTap: () => _copyRoomPublicId(roomPublicId),
+                          borderRadius: BorderRadius.circular(99),
+                          child: const Padding(
+                            padding: EdgeInsets.all(2),
+                            child: Icon(
+                              Icons.copy_rounded,
+                              size: 12,
+                              color: Colors.white54,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          '# $roomPublicId',
+                          textDirection: TextDirection.ltr,
+                          style: const TextStyle(
+                            color: Colors.white60,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Container(
+                          width: 3,
+                          height: 3,
+                          decoration: const BoxDecoration(
+                            color: Colors.white30,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            category,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: accent.withValues(alpha: .92),
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 5),
+                        InkWell(
+                          key: const Key('room-follow-button'),
+                          onTap: _changingRoomFollow || insights == null
+                              ? null
+                              : _toggleRoomFollow,
+                          borderRadius: BorderRadius.circular(999),
+                          child: Padding(
+                            padding: const EdgeInsets.all(2),
+                            child: Icon(
+                              insights?.followed == true
+                                  ? Icons.favorite_rounded
+                                  : Icons.favorite_border_rounded,
+                              size: 16,
+                              color: insights?.followed == true
+                                  ? accent
+                                  : Colors.white54,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'مشاركة الغرفة',
+                visualDensity: VisualDensity.compact,
+                onPressed: _showShareRoomSheet,
+                icon: const Icon(
+                  Icons.share_rounded,
+                  size: 19,
+                ),
+              ),
+              InkWell(
+                onTap: _showRoomParticipantsSheet,
+                borderRadius: BorderRadius.circular(999),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: .32),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: Colors.white10),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.people_alt_rounded,
+                        size: 12,
+                        color: Colors.white70,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        (_roomArguments['onlineCount'] ?? 0).toString(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: 'المزيد',
+                visualDensity: VisualDensity.compact,
+                onPressed: _showRoomMenu,
+                icon: const Icon(
+                  Icons.more_horiz_rounded,
+                  size: 21,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -5039,159 +5331,10 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                           padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
                           child: Column(
                             children: [
-                              Row(
-                                children: [
-                                  GestureDetector(
-                                    onTap: _showRoomInfoSheet,
-                                    child: CircleAvatar(
-                                      radius: 22,
-                                      backgroundColor: const Color(0xFF171D2B),
-                                      backgroundImage:
-                                          _roomHeaderImageUrl.isEmpty
-                                              ? null
-                                              : NetworkImage(
-                                                  _roomHeaderImageUrl,
-                                                ),
-                                      child: _roomHeaderImageUrl.isEmpty
-                                          ? const Icon(
-                                              Icons.person_rounded,
-                                              color: Colors.white54,
-                                            )
-                                          : null,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Flexible(
-                                              child: Text(
-                                                roomTitle,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 15,
-                                                  fontWeight: FontWeight.w900,
-                                                ),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 5),
-                                            InkWell(
-                                              onTap: _changingRoomFollow ||
-                                                      insights == null
-                                                  ? null
-                                                  : _toggleRoomFollow,
-                                              child: Icon(
-                                                insights?.followed == true
-                                                    ? Icons.favorite_rounded
-                                                    : Icons.favorite_border_rounded,
-                                                size: 18,
-                                                color: const Color(0xFFBFA5FF),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 5),
-                                            InkWell(
-                                              onTap: _changingRoomFavorite ||
-                                                      insights == null
-                                                  ? null
-                                                  : _toggleRoomFavorite,
-                                              child: Icon(
-                                                insights?.favorited == true
-                                                    ? Icons.star_rounded
-                                                    : Icons.star_border_rounded,
-                                                size: 18,
-                                                color: const Color(0xFFFFD54A),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          textDirection: TextDirection.ltr,
-                                          children: [
-                                            InkWell(
-                                              onTap: () => _copyRoomPublicId(roomPublicId),
-                                              borderRadius: BorderRadius.circular(99),
-                                              child: const Padding(
-                                                padding: EdgeInsets.all(2),
-                                                child: Icon(
-                                                  Icons.copy_rounded,
-                                                  size: 13,
-                                                  color: Colors.white54,
-                                                ),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 4),
-                                            Text(
-                                              '# ID: $roomPublicId',
-                                              textDirection: TextDirection.ltr,
-                                              style: const TextStyle(
-                                                color: Colors.white54,
-                                                fontSize: 10,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  IconButton(
-                                    visualDensity: VisualDensity.compact,
-                                    onPressed: _showShareRoomSheet,
-                                    icon: const Icon(
-                                      Icons.share_rounded,
-                                      size: 20,
-                                    ),
-                                  ),
-                                  InkWell(
-                                    onTap: _showRoomParticipantsSheet,
-                                    borderRadius: BorderRadius.circular(999),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 5,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.black.withValues(alpha: .45),
-                                        borderRadius: BorderRadius.circular(999),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          const Icon(
-                                            Icons.people_alt_rounded,
-                                            size: 12,
-                                            color: Colors.white70,
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            (_roomArguments['onlineCount'] ?? 0)
-                                                .toString(),
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w800,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                  IconButton(
-                                    visualDensity: VisualDensity.compact,
-                                    onPressed: _showRoomMenu,
-                                    icon: const Icon(
-                                      Icons.more_horiz_rounded,
-                                      size: 22,
-                                    ),
-                                  ),
-                                ],
+                              _buildRoomHeader(
+                                roomTitle: roomTitle,
+                                roomPublicId: roomPublicId,
+                                insights: insights,
                               ),
                               const SizedBox(height: 6),
                               _buildRoomInsightsBar(),
