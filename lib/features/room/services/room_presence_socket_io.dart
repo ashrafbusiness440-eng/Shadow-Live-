@@ -12,6 +12,11 @@ class _IoRoomPresenceSocketConnection
   Stream<Object?> get messages => _socket;
 
   @override
+  void send(String message) {
+    _socket.add(message);
+  }
+
+  @override
   Future<void> close() async {
     await _socket.close(WebSocketStatus.normalClosure, 'room_leave');
   }
