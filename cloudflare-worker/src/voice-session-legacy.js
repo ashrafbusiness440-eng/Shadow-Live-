@@ -47,7 +47,7 @@ function cors(req,res){
 
 const out=(res,status,body)=>res.status(status).json(body);
 const clean=(v)=>String(v??"").trim();
-const ROOM_CHAT_ROOT_TOUCH_INTERVAL_MS=60_000;
+const legacyRoomChatRate=new Map();
 
 async function realtimePresenceState(roomId){
   const namespace=legacyEnv.ROOM_REALTIME;
@@ -1803,91 +1803,72 @@ async function roomSeatAction(db,uid,body){
 async function sendRoomChat(db,uid,body){
   const roomId=clean(body.roomId);
   const message=String(body.text??"").trim();
-  const replyTo=clean(body.replyTo);
+  const replyTo=clean(body.replyTo).slice(0,120);
+  const replyPreview=String(body.replyPreview??"").trim().slice(0,120);
+  const replySenderUid=clean(body.replySenderUid).slice(0,160);
   const mentions=Array.isArray(body.mentionUids)
     ? [...new Set(body.mentionUids.map(clean).filter(Boolean))].slice(0,10)
     : [];
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
   if(!message||message.length>500)throw new ApiError("invalid_room_message",400);
 
-  const roomRef=db.collection("rooms").doc(roomId);
-  const profileRef=db.collection("public_profiles").doc(uid);
-  const rateRef=db.collection("room_chat_rate_limits").doc(roomId+"__"+uid);
-  const banRef=db.collection("room_bans").doc(roomId).collection("users").doc(uid);
+  const [roomSnap,profileSnap,actorUserSnap,banSnap]=await Promise.all([
+    db.collection("rooms").doc(roomId).get(),
+    db.collection("public_profiles").doc(uid).get(),
+    db.collection("users").doc(uid).get(),
+    db.collection("room_bans").doc(roomId).collection("users").doc(uid).get(),
+  ]);
 
-  return db.runTransaction(async tx=>{
-    const refs=[roomRef,profileRef,rateRef,banRef];
-    let replyRef=null;
-    if(replyTo){
-      if(replyTo.includes("/"))throw new ApiError("invalid_reply",400);
-      replyRef=roomRef.collection("messages").doc(replyTo);
-      refs.push(replyRef);
-    }
-    const snapshots=await Promise.all(refs.map(ref=>tx.get(ref)));
-    const roomSnap=snapshots[0];
-    const profileSnap=snapshots[1];
-    const rateSnap=snapshots[2];
-    const banSnap=snapshots[3];
-    const replySnap=replyRef?snapshots[4]:null;
+  if(!roomSnap.exists||roomSnap.data()?.isActive===false)throw new ApiError("room_unavailable",404);
+  const roomData=roomSnap.data()||{};
+  const actorUser=actorUserSnap.data()||{};
+  const canModerateChat=canManageRoomAction(roomData,actorUser,uid,"moderateChat");
+  if(roomData.chatEnabled===false&&!canModerateChat)throw new ApiError("room_chat_disabled",403);
 
-    if(!roomSnap.exists||roomSnap.data()?.isActive===false)throw new ApiError("room_unavailable",404);
-    const roomData=roomSnap.data()||{};
-    const ownerUid=clean(roomData.ownerUid||roomData.ownerId||roomData.hostId);
-    const actorUserSnap=await tx.get(db.collection("users").doc(uid));
-    const actorUser=actorUserSnap.data()||{};
-    const canModerateChat=canManageRoomAction(roomData,actorUser,uid,"moderateChat");
-    if(roomData.chatEnabled===false&&!canModerateChat)throw new ApiError("room_chat_disabled",403);
-    if(banSnap.exists){
-      const ban=banSnap.data()||{};
-      const expiresAt=ban.expiresAt?.toMillis?.()||0;
-      const permanent=ban.permanent===true;
-      if(permanent||expiresAt>Date.now())throw new ApiError("room_banned",403);
-    }
+  if(banSnap.exists){
+    const ban=banSnap.data()||{};
+    const expiresAt=ban.expiresAt?.toMillis?.()||0;
+    const permanent=ban.permanent===true;
+    if(permanent||expiresAt>Date.now())throw new ApiError("room_banned",403);
+  }
 
-    const nowMs=Date.now();
-    const rate=rateSnap.data()||{};
-    const started=rate.windowStartedAt?.toMillis?.()||0;
-    const sameWindow=started>0&&(nowMs-started)<10000;
-    const count=sameWindow?Math.max(0,Number(rate.count||0)):0;
-    if(count>=8)throw new ApiError("rate_limited",429);
-    tx.set(rateRef,{
-      windowStartedAt:new Date(sameWindow?started:nowMs),
-      count:count+1,
-      updatedAt:new Date(nowMs),
-    },{merge:true});
-
-    let replyPreview=null;
-    let replySenderUid=null;
-    if(replyRef){
-      if(!replySnap?.exists)throw new ApiError("reply_not_found",404);
-      const reply=replySnap.data()||{};
-      replyPreview=String(reply.text||reply.systemText||"").slice(0,120);
-      replySenderUid=clean(reply.senderUid);
-    }
-
-    const profile=profileSnap.data()||{};
-    const messageRef=roomRef.collection("messages").doc();
-    tx.create(messageRef,{
-      type:"text",
-      senderUid:uid,
-      displayName:clean(profile.displayName||profile.username||"مستخدم Shadow Live"),
-      profileImageUrl:clean(profile.profileImageUrl),
-      text:message,
-      mentionUids:mentions,
-      replyTo:replyTo||null,
-      replyPreview,
-      replySenderUid,
-      createdAt:FieldValue.serverTimestamp(),
-    });
-    const lastChatAtMs=timestampMillis(roomData.lastChatAt);
-    if(lastChatAtMs<=0||nowMs-lastChatAtMs>=ROOM_CHAT_ROOT_TOUCH_INTERVAL_MS){
-      tx.update(roomRef,{
-        lastChatAt:FieldValue.serverTimestamp(),
-        updatedAt:FieldValue.serverTimestamp(),
-      });
-    }
-    return {ok:true,messageId:messageRef.id};
+  const nowMs=Date.now();
+  const rateKey=roomId+"__"+uid;
+  const previous=legacyRoomChatRate.get(rateKey)||{windowStartedAtMs:nowMs,count:0};
+  const sameWindow=nowMs-Number(previous.windowStartedAtMs||0)<10000;
+  const count=sameWindow?Math.max(0,Number(previous.count||0)):0;
+  if(count>=8)throw new ApiError("rate_limited",429);
+  legacyRoomChatRate.set(rateKey,{
+    windowStartedAtMs:sameWindow?Number(previous.windowStartedAtMs||nowMs):nowMs,
+    count:count+1,
   });
+
+  const profile=profileSnap.data()||{};
+  const messageId="msg_"+randomBytes(12).toString("hex");
+  await publishRoomRealtimeEvent(
+    legacyEnv,
+    roomId,
+    "room.chat_message",
+    {
+      message:{
+        id:messageId,
+        type:"text",
+        senderUid:uid,
+        displayName:clean(profile.displayName||profile.username||actorUser.displayName||actorUser.username||"مستخدم Shadow Live"),
+        profileImageUrl:clean(profile.profileImageUrl||actorUser.profileImageUrl),
+        text:message,
+        mentionUids:mentions,
+        replyTo:replyTo||null,
+        replyPreview:replyPreview||null,
+        replySenderUid:replySenderUid||null,
+        createdAtMs:nowMs,
+        systemKind:"",
+        vipLevel:0,
+        entryEffectKey:"",
+      },
+    },
+  );
+  return {ok:true,messageId};
 }
 
 async function kickRoomUser(db,uid,body){
