@@ -1,5 +1,9 @@
 import { DurableObject } from "cloudflare:workers";
 import { recordRealtimeTelemetry } from "./pressure-telemetry.js";
+import {
+  applyCustomerServiceMicExpiries,
+  persistRoomChatReport,
+} from "./room-realtime-persistence.js";
 
 import {
   ROOM_REALTIME_PROTOCOL_VERSION,
@@ -26,6 +30,7 @@ import {
 } from "./room-rocket-feed.js";
 
 const TICKET_PREFIX = "ticket:";
+const CUSTOMER_SERVICE_MIC_SCHEDULE_PREFIX = "cs_mic:";
 
 async function ticketStorageKey(ticket) {
   const bytes = new TextEncoder().encode(String(ticket || ""));
@@ -50,6 +55,8 @@ export class RoomRealtimeObject extends DurableObject {
     super(ctx, env);
     this.ctx = ctx;
     this.env = env;
+    this.chatRateByUid = new Map();
+    this.chatReportRateByUid = new Map();
 
     recordRealtimeTelemetry(this.env, { event: "activate" });
 
@@ -87,8 +94,28 @@ export class RoomRealtimeObject extends DurableObject {
 
   #broadcastEvent(type, payload) {
     const envelope = realtimeEnvelope(type, payload);
+    const chatMessage =
+      type === "room.chat_message" &&
+      payload?.message &&
+      typeof payload.message === "object"
+        ? payload.message
+        : null;
     let delivered = 0;
     for (const socket of this.ctx.getWebSockets()) {
+      if (chatMessage) {
+        try {
+          const attachment = socket.deserializeAttachment() || {};
+          if (String(attachment.mode || "room") === "room") {
+            const previous = Array.isArray(attachment.recentChat)
+              ? attachment.recentChat
+              : [];
+            socket.serializeAttachment({
+              ...attachment,
+              recentChat: [...previous, chatMessage].slice(-7),
+            });
+          }
+        } catch {}
+      }
       if (safeSend(socket, envelope)) delivered += 1;
     }
     recordRealtimeTelemetry(this.env, {
@@ -264,8 +291,17 @@ export class RoomRealtimeObject extends DurableObject {
     if (url.pathname === "/game/register" && request.method === "POST") {
       return this.#registerGameSchedules(request);
     }
+    if (
+      url.pathname === "/customer-service/mic/register" &&
+      request.method === "POST"
+    ) {
+      return this.#registerCustomerServiceMicSchedules(request);
+    }
     if (url.pathname === "/broadcast" && request.method === "POST") {
       return this.#broadcast(request);
+    }
+    if (url.pathname === "/chat/policy" && request.method === "POST") {
+      return this.#updateChatPolicy(request);
     }
     return Response.json({ ok: false, code: "route_not_found" }, { status: 404 });
   }
@@ -278,6 +314,11 @@ export class RoomRealtimeObject extends DurableObject {
     const expiresAtMs = Number(body.expiresAtMs || 0);
     const displayName = String(body.displayName || "").trim();
     const profileImageUrl = String(body.profileImageUrl || "").trim();
+    const chatEnabled = body.chatEnabled !== false;
+    const canModerateChat = body.canModerateChat === true;
+    const ghostMode = body.ghostMode === true;
+    const vipLevel = Math.max(0, Math.min(99, Number(body.vipLevel || 0)));
+    const entryEffectKey = String(body.entryEffectKey || "").trim();
     const mode = String(body.mode || "room") === "rocket_feed"
       ? "rocket_feed"
       : "room";
@@ -300,6 +341,11 @@ export class RoomRealtimeObject extends DurableObject {
       expiresAtMs,
       displayName,
       profileImageUrl,
+      chatEnabled,
+      canModerateChat,
+      ghostMode,
+      vipLevel,
+      entryEffectKey,
       mode,
       reconnectAttempt,
     });
@@ -396,6 +442,12 @@ export class RoomRealtimeObject extends DurableObject {
       joinedAtMs,
       displayName,
       profileImageUrl,
+      chatEnabled: record.chatEnabled !== false,
+      canModerateChat: record.canModerateChat === true,
+      ghostMode: record.ghostMode === true,
+      vipLevel: Math.max(0, Math.min(99, Number(record.vipLevel || 0))),
+      entryEffectKey: String(record.entryEffectKey || ""),
+      recentChat: [],
       reconnectAttempt,
     });
     this.ctx.acceptWebSocket(server, [`uid:${uid}`]);
@@ -419,7 +471,7 @@ export class RoomRealtimeObject extends DurableObject {
       onlineCount,
     });
 
-    if (!alreadyPresent) {
+    if (!alreadyPresent && record.ghostMode !== true) {
       this.#broadcastEvent("room.presence_joined", {
         roomId,
         uid,
@@ -427,10 +479,120 @@ export class RoomRealtimeObject extends DurableObject {
         profileImageUrl,
         joinedAtMs,
         onlineCount,
+        vipLevel: Math.max(0, Math.min(99, Number(record.vipLevel || 0))),
+        entryEffectKey: String(record.entryEffectKey || ""),
       });
     }
 
     return new Response(null, { status: 101, webSocket: client });
+  }
+
+  async #registerCustomerServiceMicSchedules(request) {
+    const body = await request.json().catch(() => ({}));
+    const roomId = normalizeRoomId(body.roomId);
+    const uid = String(body.uid || "").trim();
+    const schedules = Array.isArray(body.schedules)
+      ? body.schedules.slice(0, 2)
+      : [];
+    if (!roomId || !uid || schedules.length === 0) {
+      return Response.json(
+        { ok: false, code: "invalid_customer_service_mic_schedule" },
+        { status: 400 },
+      );
+    }
+
+    let stored = 0;
+    let nextAtMs = null;
+    for (const raw of schedules) {
+      const kind = String(raw?.kind || "");
+      if (!["invite_expire", "mic_expire"].includes(kind)) continue;
+      const expiresAtMs = Number(raw?.expiresAtMs || 0);
+      if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) continue;
+      const key =
+        CUSTOMER_SERVICE_MIC_SCHEDULE_PREFIX +
+        kind +
+        ":" +
+        uid;
+      await this.ctx.storage.put(key, {
+        roomId,
+        uid,
+        kind,
+        expiresAtMs,
+      });
+      nextAtMs =
+        nextAtMs === null ? expiresAtMs : Math.min(nextAtMs, expiresAtMs);
+      stored += 1;
+    }
+
+    if (stored === 0) {
+      return Response.json(
+        { ok: false, code: "invalid_customer_service_mic_schedule" },
+        { status: 400 },
+      );
+    }
+    if (nextAtMs !== null) {
+      const currentAlarm = await this.ctx.storage.getAlarm();
+      if (currentAlarm === null || nextAtMs < currentAlarm) {
+        await this.ctx.storage.setAlarm(Math.max(Date.now() + 20, nextAtMs));
+      }
+    }
+    return Response.json({ ok: true, stored });
+  }
+
+  async #processCustomerServiceMicSchedules(nowMs = Date.now()) {
+    const records = await this.ctx.storage.list({
+      prefix: CUSTOMER_SERVICE_MIC_SCHEDULE_PREFIX,
+      limit: 20,
+    });
+    if (records.size === 0) {
+      return { nextAtMs: null, checked: 0, expired: 0 };
+    }
+
+    const due = [];
+    let nextAtMs = null;
+    for (const [key, value] of records) {
+      const expiresAtMs = Number(value?.expiresAtMs || 0);
+      if (expiresAtMs > nowMs) {
+        nextAtMs =
+          nextAtMs === null ? expiresAtMs : Math.min(nextAtMs, expiresAtMs);
+        continue;
+      }
+      due.push([key, value]);
+    }
+    if (due.length === 0) {
+      return { nextAtMs, checked: records.size, expired: 0 };
+    }
+
+    const roomId = normalizeRoomId(due[0]?.[1]?.roomId);
+    if (!roomId) {
+      await this.ctx.storage.delete(due.map(([key]) => key));
+      return { nextAtMs, checked: records.size, expired: due.length };
+    }
+
+    const result = await applyCustomerServiceMicExpiries(
+      this.env,
+      roomId,
+      due.map(([, schedule]) => schedule),
+      nowMs,
+    );
+    const deletes = due.map(([key]) => key);
+    if (deletes.length > 0) await this.ctx.storage.delete(deletes);
+
+    recordRealtimeTelemetry(this.env, {
+      event: "customer_service_mic_expiry",
+      outcome: result.seatsChanged
+        ? "auto_drop"
+        : result.invitesChanged
+          ? "invite_expired"
+          : "noop",
+      fanout: deletes.length,
+      onlineCount: this.#presenceSnapshot().length,
+    });
+    return {
+      nextAtMs,
+      checked: records.size,
+      expired: deletes.length,
+    };
   }
 
   async #registerGameSchedules(request) {
@@ -496,6 +658,272 @@ export class RoomRealtimeObject extends DurableObject {
     return Response.json({ ok: true, stored });
   }
 
+  async #handleRoomChatReport(webSocket, raw) {
+    let attachment = {};
+    try {
+      attachment = webSocket.deserializeAttachment() || {};
+    } catch {}
+    if (String(attachment.mode || "room") !== "room") return false;
+
+    let message;
+    try {
+      message = JSON.parse(raw);
+    } catch {
+      return false;
+    }
+    if (!message || message.type !== "client.room_chat_report") return false;
+
+    const requestId = String(message.requestId || "").slice(0, 120);
+    const payload =
+      message.payload && typeof message.payload === "object"
+        ? message.payload
+        : {};
+    const messageId = String(payload.messageId || "").trim().slice(0, 160);
+    const reason = String(payload.reason || "").trim().slice(0, 160);
+    const roomId = normalizeRoomId(attachment.roomId);
+    const reporterUid = String(attachment.uid || "").trim();
+
+    if (!requestId || !messageId || !reason || !roomId || !reporterUid) {
+      this.#chatError(webSocket, requestId, "invalid_room_report");
+      return true;
+    }
+
+    const nowMs = Date.now();
+    const previousReportAt = Number(
+      this.chatReportRateByUid.get(reporterUid) || 0,
+    );
+    if (previousReportAt > 0 && nowMs - previousReportAt < 5000) {
+      this.#chatError(webSocket, requestId, "report_rate_limited");
+      return true;
+    }
+
+    const recentChat = Array.isArray(attachment.recentChat)
+      ? attachment.recentChat.slice(-7)
+      : [];
+    const targetIndex = recentChat.findIndex(
+      (item) => String(item?.id || "") === messageId,
+    );
+    if (targetIndex < 0) {
+      this.#chatError(
+        webSocket,
+        requestId,
+        "report_message_not_in_session",
+      );
+      return true;
+    }
+
+    const target = recentChat[targetIndex];
+    const targetUid = String(target?.senderUid || "").trim();
+    if (!targetUid || targetUid === reporterUid) {
+      this.#chatError(webSocket, requestId, "invalid_room_report");
+      return true;
+    }
+
+    const from = Math.max(0, targetIndex - 2);
+    const to = Math.min(recentChat.length, targetIndex + 3);
+    const context = recentChat.slice(from, to).map((item) => ({
+      id: String(item?.id || "").slice(0, 160),
+      type: String(item?.type || "text").slice(0, 40),
+      senderUid: String(item?.senderUid || "").slice(0, 180),
+      displayName: String(item?.displayName || "").slice(0, 120),
+      text: String(item?.text || "").slice(0, 500),
+      createdAtMs: Math.max(0, Number(item?.createdAtMs || 0)),
+      giftName: String(item?.giftName || "").slice(0, 120),
+      quantity: Math.max(0, Number(item?.quantity || 0)),
+      totalCost: Math.max(0, Number(item?.totalCost || 0)),
+    }));
+
+    let report;
+    try {
+      report = await persistRoomChatReport(this.env, {
+        reporterUid,
+        targetUid,
+        roomId,
+        messageId,
+        reason,
+        message: context.find((item) => item.id === messageId) || null,
+        context,
+        nowMs,
+      });
+    } catch {
+      this.#chatError(webSocket, requestId, "room_report_failed");
+      return true;
+    }
+    const reportId = String(report?.reportId || "");
+    if (!reportId) {
+      this.#chatError(webSocket, requestId, "room_report_failed");
+      return true;
+    }
+
+    this.chatReportRateByUid.set(reporterUid, nowMs);
+    safeSend(
+      webSocket,
+      realtimeEnvelope("room.chat_report_ack", {
+        requestId,
+        reportId,
+      }),
+    );
+    recordRealtimeTelemetry(this.env, {
+      event: "room_chat_report",
+      outcome: "saved",
+      onlineCount: this.#presenceSnapshot().length,
+    });
+    return true;
+  }
+
+  async #updateChatPolicy(request) {
+    const body = await request.json().catch(() => ({}));
+    const roomId = normalizeRoomId(body.roomId);
+    if (!roomId) {
+      return Response.json(
+        { ok: false, code: "invalid_room_id" },
+        { status: 400 },
+      );
+    }
+    const chatEnabled = body.chatEnabled !== false;
+    let updated = 0;
+    for (const socket of this.ctx.getWebSockets()) {
+      let attachment = {};
+      try {
+        attachment = socket.deserializeAttachment() || {};
+      } catch {}
+      if (String(attachment.mode || "room") !== "room") continue;
+      if (normalizeRoomId(attachment.roomId) !== roomId) continue;
+      try {
+        socket.serializeAttachment({
+          ...attachment,
+          chatEnabled,
+        });
+        updated += 1;
+      } catch {}
+    }
+    return Response.json({ ok: true, roomId, chatEnabled, updated });
+  }
+
+  #chatError(webSocket, requestId, code) {
+    safeSend(
+      webSocket,
+      realtimeEnvelope("server.error", {
+        requestId: String(requestId || "").slice(0, 120),
+        code,
+      }),
+    );
+  }
+
+  #handleRoomChatMessage(webSocket, raw) {
+    let attachment = {};
+    try {
+      attachment = webSocket.deserializeAttachment() || {};
+    } catch {}
+    if (String(attachment.mode || "room") !== "room") return false;
+
+    let message;
+    try {
+      message = JSON.parse(raw);
+    } catch {
+      return false;
+    }
+    if (!message || message.type !== "client.room_chat") return false;
+
+    const requestId = String(message.requestId || "").slice(0, 120);
+    const payload =
+      message.payload && typeof message.payload === "object"
+        ? message.payload
+        : {};
+    const roomId = normalizeRoomId(payload.roomId);
+    const attachedRoomId = normalizeRoomId(attachment.roomId);
+    const uid = String(attachment.uid || "").trim();
+    const text = String(payload.text || "").trim();
+
+    if (!requestId || !roomId || roomId !== attachedRoomId || !uid) {
+      this.#chatError(webSocket, requestId, "invalid_room_message");
+      return true;
+    }
+    if (!text || text.length > 500) {
+      this.#chatError(webSocket, requestId, "invalid_room_message");
+      return true;
+    }
+    if (
+      attachment.chatEnabled === false &&
+      attachment.canModerateChat !== true
+    ) {
+      this.#chatError(webSocket, requestId, "room_chat_disabled");
+      return true;
+    }
+
+    const nowMs = Date.now();
+    const current = this.chatRateByUid.get(uid) || {
+      windowStartedAtMs: nowMs,
+      count: 0,
+    };
+    const sameWindow =
+      nowMs - Number(current.windowStartedAtMs || 0) < 10_000;
+    const count = sameWindow ? Number(current.count || 0) : 0;
+    if (count >= 8) {
+      this.#chatError(webSocket, requestId, "rate_limited");
+      return true;
+    }
+    this.chatRateByUid.set(uid, {
+      windowStartedAtMs: sameWindow
+        ? Number(current.windowStartedAtMs || nowMs)
+        : nowMs,
+      count: count + 1,
+    });
+
+    const mentions = Array.isArray(payload.mentionUids)
+      ? Array.from(
+          new Set(
+            payload.mentionUids
+              .map((value) => String(value || "").trim())
+              .filter(Boolean),
+          ),
+        ).slice(0, 10)
+      : [];
+    const replyTo = String(payload.replyTo || "").trim().slice(0, 120);
+    const replyPreview = String(payload.replyPreview || "")
+      .trim()
+      .slice(0, 120);
+    const replySenderUid = String(payload.replySenderUid || "")
+      .trim()
+      .slice(0, 160);
+    const messageId = crypto.randomUUID();
+
+    this.#broadcastEvent("room.chat_message", {
+      roomId,
+      message: {
+        id: messageId,
+        type: "text",
+        senderUid: uid,
+        displayName:
+          String(attachment.displayName || "").trim() ||
+          "مستخدم Shadow Live",
+        profileImageUrl: String(attachment.profileImageUrl || "").trim(),
+        text,
+        mentionUids: mentions,
+        replyTo: replyTo || null,
+        replyPreview: replyPreview || null,
+        replySenderUid: replySenderUid || null,
+        createdAtMs: nowMs,
+        systemKind: "",
+        vipLevel: 0,
+        entryEffectKey: "",
+      },
+    });
+    safeSend(
+      webSocket,
+      realtimeEnvelope("room.chat_ack", {
+        requestId,
+        messageId,
+      }),
+    );
+    recordRealtimeTelemetry(this.env, {
+      event: "room_chat",
+      outcome: "sent",
+      onlineCount: this.#presenceSnapshot().length,
+    });
+    return true;
+  }
+
   async #broadcast(request) {
     const body = await request.json().catch(() => ({}));
     const type = String(body?.event?.type || "").trim();
@@ -514,7 +942,19 @@ export class RoomRealtimeObject extends DurableObject {
     });
   }
 
-  webSocketMessage(webSocket, message) {
+  async webSocketMessage(webSocket, message) {
+    if (
+      typeof message === "string" &&
+      await this.#handleRoomChatReport(webSocket, message)
+    ) {
+      return;
+    }
+    if (
+      typeof message === "string" &&
+      this.#handleRoomChatMessage(webSocket, message)
+    ) {
+      return;
+    }
     const parsed = parseClientRealtimeMessage(message, Date.now());
     if (parsed.response) safeSend(webSocket, parsed.response);
   }
@@ -557,6 +997,8 @@ export class RoomRealtimeObject extends DurableObject {
       error: reason === "error",
     });
     if (uid && !hasPresenceUid(participants, uid)) {
+      this.chatRateByUid.delete(uid);
+      this.chatReportRateByUid.delete(uid);
       this.#broadcastEvent("room.presence_left", {
         roomId,
         uid,
@@ -587,8 +1029,17 @@ export class RoomRealtimeObject extends DurableObject {
       prefix: GAME_SCHEDULE_PREFIX,
     });
     const rocketFeed = await this.#processRocketFeed(nowMs);
+    const customerServiceMic =
+      await this.#processCustomerServiceMicSchedules(nowMs);
     const deletes = [];
     let nextAlarmAtMs = rocketFeed.nextAtMs;
+    if (
+      customerServiceMic.nextAtMs !== null &&
+      (nextAlarmAtMs === null ||
+        customerServiceMic.nextAtMs < nextAlarmAtMs)
+    ) {
+      nextAlarmAtMs = customerServiceMic.nextAtMs;
+    }
 
     for (const [key, value] of tickets) {
       const expiresAtMs = Number(value?.expiresAtMs || 0);
@@ -629,7 +1080,10 @@ export class RoomRealtimeObject extends DurableObject {
     recordRealtimeTelemetry(this.env, {
       event: "alarm",
       durationMs: Date.now() - alarmStartedAtMs,
-      fanout: schedules.size + Number(rocketFeed.delivered || 0),
+      fanout:
+        schedules.size +
+        Number(rocketFeed.delivered || 0) +
+        Number(customerServiceMic.expired || 0),
       onlineCount: this.#presenceSnapshot().length,
     });
   }

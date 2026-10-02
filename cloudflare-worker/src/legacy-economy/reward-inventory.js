@@ -94,11 +94,21 @@ export async function listInventory(db,uid,nowMs=Date.now()){
   };
 }
 
+function roomUsesOwnerInventory(room={}){
+  const type=clean(room.roomType||room.type||"personal");
+  return room.systemOwned!==true&&
+    room.officialRoom!==true&&
+    !["official","administrative","customer_service"].includes(type);
+}
+
 async function ownedRoomRefs(db,uid){
   const refs=new Map();
   for(const field of ["ownerUid","ownerId","hostId"]){
     const snapshot=await db.collection("rooms").where(field,"==",uid).get();
-    for(const doc of snapshot.docs) refs.set(doc.ref.path,doc.ref);
+    for(const doc of snapshot.docs){
+      if(!roomUsesOwnerInventory(doc.data()||{}))continue;
+      refs.set(doc.ref.path,doc.ref);
+    }
   }
   return [...refs.values()];
 }

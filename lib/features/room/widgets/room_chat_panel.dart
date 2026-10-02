@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../../../core/assets/shadow_asset_registry.dart';
 
 import '../services/room_chat_service.dart';
+import '../../voice/services/voice_room_session_controller.dart';
 
 class RoomChatPanel extends StatefulWidget {
   const RoomChatPanel({
@@ -30,6 +31,8 @@ class RoomChatPanel extends StatefulWidget {
 
 class _RoomChatPanelState extends State<RoomChatPanel> {
   final RoomChatService _service = RoomChatService();
+  final VoiceRoomSessionController _session =
+      VoiceRoomSessionController.instance;
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
 
@@ -82,6 +85,8 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
         roomId: widget.roomId,
         text: text,
         replyTo: reply?.id,
+        replyPreview: reply?.text,
+        replySenderUid: reply?.senderUid,
         mentionUids: mention == null ? const [] : [mention],
       );
       if (!mounted) return;
@@ -441,33 +446,12 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
           ),
           const Divider(height: 1, color: Colors.white10),
           Expanded(
-            child: StreamBuilder<List<RoomChatMessage>>(
-              stream: _service.watchMessages(widget.roomId),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return const Center(
-                    child: Text(
-                      'تعذر تحميل دردشة الغرفة',
-                      style: TextStyle(
-                        color: Colors.white38,
-                        fontSize: 11,
-                      ),
-                    ),
-                  );
-                }
-                if (!snapshot.hasData) {
-                  return const Center(
-                    child: SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Color(0xFF8A3DFF),
-                      ),
-                    ),
-                  );
-                }
-                final messages = snapshot.data!;
+            child: AnimatedBuilder(
+              animation: _session,
+              builder: (context, _) {
+                final messages = _session.roomChatMessages
+                    .map(RoomChatMessage.fromMap)
+                    .toList(growable: false);
                 if (messages.isNotEmpty) {
                   final latest = messages.first;
                   if (!_effectSoundInitialized) {
@@ -662,8 +646,193 @@ class RoomChatFeed extends StatefulWidget {
 
 class _RoomChatFeedState extends State<RoomChatFeed> {
   final RoomChatService _service = RoomChatService();
+  final VoiceRoomSessionController _session =
+      VoiceRoomSessionController.instance;
   bool _effectSoundInitialized = false;
   String _lastEffectMessageId = '';
+
+  String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
+
+  Future<void> _reportMessage(RoomChatMessage message) async {
+    if (message.id.isEmpty ||
+        message.senderUid.isEmpty ||
+        message.senderUid == _uid) {
+      return;
+    }
+
+    final reason = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: const Color(0xFF0D111B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'إبلاغ عن الرسالة',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'يُحفظ فقط دليل محدود لهذه الرسالة وسياق قريب منها للمراجعة.',
+                  style: TextStyle(color: Colors.white54, fontSize: 11),
+                ),
+                const SizedBox(height: 12),
+                for (final item in const <(String, String)>[
+                  ('abuse', 'إساءة أو مضايقة'),
+                  ('hate', 'كلام مسيء أو تحريضي'),
+                  ('spam', 'سبام أو إزعاج'),
+                  ('sexual', 'محتوى غير لائق'),
+                  ('other', 'سبب آخر'),
+                ])
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      item.$2,
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    trailing: const Icon(
+                      Icons.chevron_left_rounded,
+                      color: Colors.white38,
+                    ),
+                    onTap: () => Navigator.pop(sheetContext, item.$1),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (reason == null || !mounted) return;
+
+    try {
+      await _service.reportMessage(
+        roomId: widget.roomId,
+        messageId: message.id,
+        reason: reason,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تم إرسال البلاغ للمراجعة.'),
+        ),
+      );
+    } on StateError catch (error) {
+      if (!mounted) return;
+      final code = error.message.toString();
+      final text = code == 'report_rate_limited'
+          ? 'أرسلت بلاغًا قبل لحظات. حاول بعد قليل.'
+          : code == 'report_message_not_in_session'
+              ? 'الرسالة لم تعد ضمن سياق جلستك الحالية.'
+              : 'تعذر إرسال البلاغ حالياً.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(text)),
+      );
+    }
+  }
+
+  Map<String, dynamic> _messageMap(RoomChatMessage message) => {
+        'id': message.id,
+        'type': message.type,
+        'senderUid': message.senderUid,
+        'displayName': message.displayName,
+        'profileImageUrl': message.profileImageUrl,
+        'text': message.text,
+        'mentionUids': message.mentionUids,
+        'replyTo': message.replyTo,
+        'replyPreview': message.replyPreview,
+        'replySenderUid': message.replySenderUid,
+        'createdAtMs': message.createdAt?.millisecondsSinceEpoch ?? 0,
+        'systemKind': message.systemKind,
+        'vipLevel': message.vipLevel,
+        'entryEffectKey': message.entryEffectKey,
+        'giftName': message.giftName,
+        'assetKey': message.giftAssetKey,
+        'imageUrl': message.giftImageUrl,
+        'quantity': message.giftQuantity,
+        'totalCost': message.giftTotalCost,
+      };
+
+  Future<void> _showMessageActions(RoomChatMessage message) async {
+    if (message.type == 'system' ||
+        message.senderUid.isEmpty ||
+        message.senderUid == _uid) {
+      return;
+    }
+    final isGift =
+        message.type == 'gift' || message.systemKind.contains('gift');
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: const Color(0xFF0D111B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (sheetContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (!isGift)
+                ListTile(
+                  leading: const Icon(
+                    Icons.reply_rounded,
+                    color: Color(0xFFBFA5FF),
+                  ),
+                  title: const Text(
+                    'رد',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  onTap: () => Navigator.pop(sheetContext, 'reply'),
+                ),
+              if (!isGift)
+                ListTile(
+                  leading: const Icon(
+                    Icons.alternate_email_rounded,
+                    color: Color(0xFFFFD54A),
+                  ),
+                  title: const Text(
+                    'منشن',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  onTap: () => Navigator.pop(sheetContext, 'mention'),
+                ),
+              ListTile(
+                leading: const Icon(
+                  Icons.flag_outlined,
+                  color: Colors.redAccent,
+                ),
+                title: const Text(
+                  'إبلاغ عن الرسالة',
+                  style: TextStyle(color: Colors.white),
+                ),
+                onTap: () => Navigator.pop(sheetContext, 'report'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (action == 'reply') {
+      _session.prepareRoomChatReply(_messageMap(message));
+    } else if (action == 'mention') {
+      _session.prepareRoomChatMention(_messageMap(message));
+    } else if (action == 'report') {
+      await _reportMessage(message);
+    }
+  }
 
   @override
   void dispose() {
@@ -673,12 +842,13 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
 
   Widget _entry(RoomChatMessage message) {
     final isSystem = message.type == 'system';
-    final isGift = message.systemKind.contains('gift');
-    if (isSystem) {
+    final isGift =
+        message.type == 'gift' || message.systemKind.contains('gift');
+    if (isSystem || isGift) {
       final vipEntry = widget.roomEffectsEnabled &&
           message.systemKind == 'room_join' &&
           message.vipLevel > 0;
-      return Padding(
+      final activity = Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Align(
           alignment: AlignmentDirectional.centerStart,
@@ -727,9 +897,22 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
           ),
         ),
       );
+      if (!isGift ||
+          message.senderUid.isEmpty ||
+          message.senderUid == _uid) {
+        return activity;
+      }
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onLongPress: () => _showMessageActions(message),
+        child: activity,
+      );
     }
 
-    return Padding(
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onLongPress: () => _showMessageActions(message),
+      child: Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Align(
         alignment: AlignmentDirectional.centerStart,
@@ -756,36 +939,19 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
           ),
         ),
       ),
-    );
+    ),
+  );
   }
 
   @override
   Widget build(BuildContext context) {
     if (widget.roomId.trim().isEmpty) return const SizedBox.shrink();
-    return StreamBuilder<List<RoomChatMessage>>(
-      stream: _service.watchMessages(widget.roomId),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return const Center(
-            child: Text(
-              'تعذر تحميل نشاط الغرفة',
-              style: TextStyle(color: Colors.white38, fontSize: 11),
-            ),
-          );
-        }
-        if (!snapshot.hasData) {
-          return const Center(
-            child: SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: Color(0xFF8A3DFF),
-              ),
-            ),
-          );
-        }
-        final messages = snapshot.data!;
+    return AnimatedBuilder(
+      animation: _session,
+      builder: (context, _) {
+        final messages = _session.roomChatMessages
+            .map(RoomChatMessage.fromMap)
+            .toList(growable: false);
         if (messages.isNotEmpty) {
           final latest = messages.first;
           if (!_effectSoundInitialized) {
@@ -841,14 +1007,74 @@ class RoomChatComposer extends StatefulWidget {
 
 class _RoomChatComposerState extends State<RoomChatComposer> {
   final RoomChatService _service = RoomChatService();
+  final VoiceRoomSessionController _session =
+      VoiceRoomSessionController.instance;
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
+  RoomChatMessage? _replyingTo;
+  String? _mentionUid;
+  int _lastIntentRevision = -1;
   bool _sending = false;
 
   bool get _canSend => widget.chatEnabled || widget.isOwner;
 
   @override
+  void initState() {
+    super.initState();
+    _session.addListener(_syncComposerIntent);
+    _syncComposerIntent();
+  }
+
+  void _syncComposerIntent() {
+    final revision = _session.roomChatComposerIntentRevision;
+    if (revision == _lastIntentRevision) return;
+    _lastIntentRevision = revision;
+
+    final rawReply = _session.roomChatReplyTarget;
+    final rawMention = _session.roomChatMentionTarget;
+    if (rawReply != null) {
+      _replyingTo = RoomChatMessage.fromMap(rawReply);
+      _mentionUid = null;
+      if (mounted) setState(() {});
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _focusNode.requestFocus();
+      });
+      return;
+    }
+
+    if (rawMention != null) {
+      _replyingTo = null;
+      final mention = RoomChatMessage.fromMap(rawMention);
+      _mentionUid = mention.senderUid.isEmpty ? null : mention.senderUid;
+      final name = mention.displayName.trim().replaceAll(RegExp(r'\s+'), '_');
+      if (name.isNotEmpty) {
+        final prefix = '@' + name + ' ';
+        if (!_controller.text.contains(prefix)) {
+          _controller.text = prefix + _controller.text;
+          _controller.selection = TextSelection.collapsed(
+            offset: _controller.text.length,
+          );
+        }
+      }
+      if (mounted) setState(() {});
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _focusNode.requestFocus();
+      });
+      return;
+    }
+
+    _replyingTo = null;
+    _mentionUid = null;
+    if (mounted) setState(() {});
+  }
+
+  void _cancelReply() {
+    _session.clearRoomChatComposerIntent();
+  }
+
+  @override
   void dispose() {
+    _session.removeListener(_syncComposerIntent);
     _service.close();
     _controller.dispose();
     _focusNode.dispose();
@@ -860,9 +1086,20 @@ class _RoomChatComposerState extends State<RoomChatComposer> {
     if (text.isEmpty || _sending || !_canSend) return;
     setState(() => _sending = true);
     try {
-      await _service.sendMessage(roomId: widget.roomId, text: text);
+      final reply = _replyingTo;
+      final mentionUid = _mentionUid;
+      await _service.sendMessage(
+        roomId: widget.roomId,
+        text: text,
+        replyTo: reply?.id,
+        replyPreview: reply?.text,
+        replySenderUid: reply?.senderUid,
+        mentionUids:
+            mentionUid == null ? const [] : <String>[mentionUid],
+      );
       if (!mounted) return;
       _controller.clear();
+      _session.clearRoomChatComposerIntent();
       _focusNode.requestFocus();
     } on StateError catch (error) {
       if (!mounted) return;
@@ -882,68 +1119,128 @@ class _RoomChatComposerState extends State<RoomChatComposer> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 42,
+    final reply = _replyingTo;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 160),
+      height: reply == null ? 42 : 68,
       decoration: BoxDecoration(
         color: const Color(0xFF141722),
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(reply == null ? 22 : 16),
         border: Border.all(color: Colors.white12),
       ),
-      child: Row(
+      child: Column(
         children: [
-          IconButton(
-            tooltip: 'السمايلات',
-            onPressed: _canSend ? () => _focusNode.requestFocus() : null,
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(
-              Icons.sentiment_satisfied_alt_rounded,
-              color: Colors.white60,
-              size: 20,
-            ),
-          ),
-          Expanded(
-            child: TextField(
-              enabled: _canSend,
-              controller: _controller,
-              focusNode: _focusNode,
-              textInputAction: TextInputAction.send,
-              maxLength: 500,
-              buildCounter: (
-                context, {
-                required currentLength,
-                required isFocused,
-                required maxLength,
-              }) =>
-                  null,
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-              decoration: InputDecoration(
-                hintText: _canSend ? 'اكتب داخل الغرفة…' : 'الدردشة متوقفة',
-                hintStyle: const TextStyle(color: Colors.white30, fontSize: 11),
-                border: InputBorder.none,
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(vertical: 10),
-              ),
-              onSubmitted: (_) => _send(),
-            ),
-          ),
-          IconButton(
-            tooltip: 'إرسال',
-            onPressed: _sending || !_canSend ? null : _send,
-            visualDensity: VisualDensity.compact,
-            icon: _sending
-                ? const SizedBox(
-                    width: 15,
-                    height: 15,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Color(0xFFBFA5FF),
-                    ),
-                  )
-                : const Icon(
-                    Icons.send_rounded,
+          if (reply != null)
+            SizedBox(
+              height: 26,
+              child: Row(
+                children: [
+                  const SizedBox(width: 10),
+                  const Icon(
+                    Icons.reply_rounded,
                     color: Color(0xFFBFA5FF),
+                    size: 14,
+                  ),
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: Text(
+                      'رد على ' +
+                          reply.displayName +
+                          ': ' +
+                          reply.text,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 9,
+                      ),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: _cancelReply,
+                    borderRadius: BorderRadius.circular(99),
+                    child: const Padding(
+                      padding: EdgeInsets.all(5),
+                      child: Icon(
+                        Icons.close_rounded,
+                        color: Colors.white38,
+                        size: 14,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                ],
+              ),
+            ),
+          SizedBox(
+            height: 40,
+            child: Row(
+              children: [
+                IconButton(
+                  tooltip: 'السمايلات',
+                  onPressed:
+                      _canSend ? () => _focusNode.requestFocus() : null,
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(
+                    Icons.sentiment_satisfied_alt_rounded,
+                    color: Colors.white60,
                     size: 20,
                   ),
+                ),
+                Expanded(
+                  child: TextField(
+                    enabled: _canSend,
+                    controller: _controller,
+                    focusNode: _focusNode,
+                    textInputAction: TextInputAction.send,
+                    maxLength: 500,
+                    buildCounter: (
+                      context, {
+                      required currentLength,
+                      required isFocused,
+                      required maxLength,
+                    }) =>
+                        null,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                    ),
+                    decoration: InputDecoration(
+                      hintText:
+                          _canSend ? 'اكتب داخل الغرفة…' : 'الدردشة متوقفة',
+                      hintStyle: const TextStyle(
+                        color: Colors.white30,
+                        fontSize: 11,
+                      ),
+                      border: InputBorder.none,
+                      isDense: true,
+                      contentPadding:
+                          const EdgeInsets.symmetric(vertical: 10),
+                    ),
+                    onSubmitted: (_) => _send(),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'إرسال',
+                  onPressed: _sending || !_canSend ? null : _send,
+                  visualDensity: VisualDensity.compact,
+                  icon: _sending
+                      ? const SizedBox(
+                          width: 15,
+                          height: 15,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Color(0xFFBFA5FF),
+                          ),
+                        )
+                      : const Icon(
+                          Icons.send_rounded,
+                          color: Color(0xFFBFA5FF),
+                          size: 20,
+                        ),
+                ),
+              ],
+            ),
           ),
         ],
       ),

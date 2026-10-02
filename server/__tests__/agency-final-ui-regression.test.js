@@ -151,7 +151,10 @@ test("Agency Room category and logo reuse bootstrap data without agency hot-path
   assert.equal(publicAgency.includes("أنت مدير أول في هذه الوكالة"), true);
   assert.equal(publicAgency.includes("أنت مدير في هذه الوكالة"), true);
   assert.equal(publicAgency.includes("أنت عضو في هذه الوكالة"), true);
-  assert.equal(main.includes("تصنيف غرفة الوكالة ثابت: وكالة"), true);
+  assert.equal(
+    main.includes("if (_roomAgencyId.isNotEmpty) return 'وكالة';"),
+    true,
+  );
   assert.equal(main.includes("agency-room-house-button"), false);
   assert.equal(
     roomList.includes("if (_isAgencyRoom(room)) return 'وكالة';"),
@@ -163,7 +166,7 @@ test("Agency Room category and logo reuse bootstrap data without agency hot-path
   assert.equal(voice.includes("agencyRoomImageObjectId:"), true);
   assert.equal(main.includes("String get _roomHeaderImageUrl"), true);
   assert.equal(main.includes("_roomArguments['agencyRoomImageUrl']"), true);
-  assert.equal(main.includes("NetworkImage(\n                                                  _roomHeaderImageUrl,"), true);
+  assert.equal(main.includes("NetworkImage(_roomHeaderImageUrl)"), true);
   assert.equal(voice.includes('category:roomType==="agency"?"وكالة"'), true);
   assert.equal(voice.includes("viewerAgencyId:clean(actor.agencyId)"), true);
   assert.equal(voice.includes("viewerAgencyRole:clean(actor.agencyRole)"), true);

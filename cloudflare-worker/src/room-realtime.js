@@ -34,6 +34,126 @@ function roomObject(env, roomId) {
   return env.ROOM_REALTIME.get(id);
 }
 
+function clean(value) {
+  return String(value ?? "").trim();
+}
+
+function isOfficialRoom(room = {}) {
+  const type = clean(room.roomType || room.type || "personal");
+  return room.systemOwned === true ||
+    room.officialRoom === true ||
+    ["official", "administrative", "customer_service"].includes(type);
+}
+
+function roomOwnerUid(room = {}) {
+  return clean(room.ownerUid || room.ownerId);
+}
+
+function roomHostUid(room = {}) {
+  return clean(room.hostUid || room.hostId);
+}
+
+function roomModeratorCan(room = {}, uid, capability) {
+  const moderators = Array.isArray(room.moderators) ? room.moderators : [];
+  const entry = moderators.find((item) => clean(item?.uid) === clean(uid));
+  const capabilities = Array.isArray(entry?.capabilities)
+    ? entry.capabilities.map(clean)
+    : [];
+  return capabilities.includes(capability);
+}
+
+function globalRoomManageAllowed(user = {}) {
+  const capabilities = Array.isArray(user.capabilities)
+    ? user.capabilities.map(clean)
+    : [];
+  const role = clean(user.role);
+  return role === "owner" ||
+    (user.adminEnabled === true &&
+      (capabilities.includes("manageRooms") ||
+       capabilities.includes("manage_rooms")));
+}
+
+function agencyRoomChatAllowed(room = {}, user = {}, uid) {
+  const type = clean(room.roomType || room.type || "personal");
+  const roomAgencyId = clean(room.agencyId);
+  if (type !== "agency" || !roomAgencyId) return false;
+  if (clean(user.agencyId) !== roomAgencyId) return false;
+  const role = clean(user.agencyRole);
+  return (role === "owner" && roomOwnerUid(room) === clean(uid)) ||
+    role === "manager" ||
+    role === "senior_manager";
+}
+
+function canModerateRoomChat(room = {}, user = {}, uid) {
+  const id = clean(uid);
+  if (!id) return false;
+  if (!isOfficialRoom(room) && roomOwnerUid(room) === id) return true;
+  if (isOfficialRoom(room) && roomHostUid(room) === id) return true;
+  return globalRoomManageAllowed(user) ||
+    agencyRoomChatAllowed(room, user, id) ||
+    roomModeratorCan(room, id, "moderateChat");
+}
+
+function activeBan(ban = {}, nowMs = Date.now()) {
+  if (ban.permanent === true) return true;
+  const raw = ban.expiresAt;
+  const parsed = typeof raw === "string" ? Date.parse(raw) : NaN;
+  const expiresAtMs = Number(
+    ban.expiresAtMs ||
+    ban.expires_at_ms ||
+    (Number.isFinite(parsed) ? parsed : 0),
+  );
+  return expiresAtMs > nowMs;
+}
+
+export async function publishRoomRealtimeEvent(
+  env,
+  roomId,
+  type,
+  payload = {},
+) {
+  const normalized = normalizeRoomId(roomId);
+  if (!normalized) return { ok: false, delivered: 0 };
+  const response = await roomObject(env, normalized).fetch(
+    "https://room-realtime.internal/broadcast",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        event: {
+          type: String(type || "").trim(),
+          payload: { roomId: normalized, ...(payload || {}) },
+        },
+      }),
+    },
+  );
+  if (!response.ok) return { ok: false, delivered: 0 };
+  return response.json().catch(() => ({ ok: true, delivered: 0 }));
+}
+
+export function invalidateRoomRealtimeAdmissionCache(roomId) {
+  const normalized = normalizeRoomId(roomId);
+  if (normalized) roomAdmissionCache.clear(normalized);
+}
+
+export async function setRoomRealtimeChatPolicy(env, roomId, enabled) {
+  const normalized = normalizeRoomId(roomId);
+  if (!normalized) return { ok: false, updated: 0 };
+  const response = await roomObject(env, normalized).fetch(
+    "https://room-realtime.internal/chat/policy",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        roomId: normalized,
+        chatEnabled: enabled !== false,
+      }),
+    },
+  );
+  if (!response.ok) return { ok: false, updated: 0 };
+  return response.json().catch(() => ({ ok: true, updated: 0 }));
+}
+
 export async function publishGlobalRocketEvents(env, rawEvents = []) {
   const events = Array.isArray(rawEvents)
     ? rawEvents
@@ -209,17 +329,24 @@ export async function roomRealtime(request, env) {
 
       const db = firestoreClient(env);
       const uid = String(payload.sub || "");
-      const [room, user] = await Promise.all([
+      const [room, user, ban] = await Promise.all([
         roomAdmissionCache.get(
           roomId,
           () => ticketFirestoreLimiter.run(() => db.get(`rooms/${roomId}`)),
         ),
         ticketFirestoreLimiter.run(() => db.get(`users/${uid}`)),
+        ticketFirestoreLimiter.run(
+          () => db.get(`room_bans/${roomId}/users/${uid}`),
+        ),
       ]);
       if (!room.exists || room.data?.isActive === false) {
         return json(request, env, { ok: false, code: "room_unavailable" }, 404);
       }
+      if (ban.exists && activeBan(ban.data || {})) {
+        return json(request, env, { ok: false, code: "room_banned" }, 403);
+      }
 
+      const roomData = room.data || {};
       const profileData = user.data || {};
       if (user.exists) {
         assertUserDocumentSessionState(payload, profileData);
@@ -242,6 +369,31 @@ export async function roomRealtime(request, env) {
           ),
           profileImageUrl: String(
             profileData.profileImageUrl || payload.picture || "",
+          ),
+          chatEnabled: roomData.chatEnabled !== false,
+          canModerateChat: canModerateRoomChat(
+            roomData,
+            profileData,
+            uid,
+          ),
+          ghostMode:
+            profileData.roomGhostMode === true ||
+            profileData.privacy?.ghostMode === true,
+          vipLevel: Math.max(
+            0,
+            Math.min(
+              99,
+              Number(
+                profileData.vipLevel ??
+                profileData.vip?.level ??
+                0,
+              ) || 0,
+            ),
+          ),
+          entryEffectKey: String(
+            profileData.vipEntryEffectKey ||
+            profileData.vip?.entryEffectKey ||
+            "",
           ),
           reconnectAttempt: Math.max(
             0,

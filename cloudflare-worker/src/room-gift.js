@@ -20,11 +20,22 @@ import {
   legacyPresenceFresh,
   realtimeUserPresentFromNamespace,
 } from "./room-presence-authority.js";
-import { publishGlobalRocketEvents } from "./room-realtime.js";
+import {
+  publishGlobalRocketEvents,
+  publishRoomRealtimeEvent,
+} from "./room-realtime.js";
 import { writePressureDataPoint } from "./pressure-telemetry.js";
 
 const clean = (value) => String(value ?? "").trim();
 const validKey = (value) => /^[A-Za-z0-9_-]{12,220}$/.test(clean(value));
+
+function roomFeatureEnabled(room = {}, key) {
+  const type = clean(room.roomType || room.type || "personal");
+  const defaultValue = type !== "customer_service";
+  return Object.prototype.hasOwnProperty.call(room, key)
+    ? room[key] === true
+    : defaultValue;
+}
 const AGENCY_MONTHLY_ACCRUAL_SHARDS = 32;
 
 function roomGiftOperationConflicts(data = {}, expected = {}) {
@@ -256,6 +267,9 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     if (!roomSnap.exists || roomSnap.data?.isActive === false) {
       throw new ApiError("room_unavailable", 409);
     }
+    if (!roomFeatureEnabled(roomSnap.data || {}, "giftsEnabled")) {
+      throw new ApiError("room_gifts_disabled", 409);
+    }
     if (!senderSnap.exists || !receiverSnap.exists) {
       throw new ApiError("user_not_found", 404);
     }
@@ -461,28 +475,57 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     const assetKey = clean(gift.assetKey || "gifts.placeholder.default");
     const imageUrl = clean(gift.imageUrl);
 
-    const rocketAdvance = advanceRoomRocket({
-      state: {
-        ...(rocketStateSnap.data || {}),
-        queueAvailableAtMs: Math.max(
-          Number(rocketStateSnap.data?.queueAvailableAtMs || 0),
-          Number(rocketGlobalQueueSnap.data?.queueAvailableAtMs || 0),
-        ),
-      },
-      config: rocketConfigSnap.data || {},
-      roomId,
-      sender: {
-        uid: senderUid,
-        displayName: senderName,
-        profileImageUrl: senderPhoto,
-      },
-      contributionCoins: totalCost,
-      nowMs,
-      operationId: key,
-    });
+    const roomRocketEnabled = roomFeatureEnabled(
+      room,
+      "roomRocketEnabled",
+    );
+    const rocketAdvance = roomRocketEnabled
+      ? advanceRoomRocket({
+          state: {
+            ...(rocketStateSnap.data || {}),
+            queueAvailableAtMs: Math.max(
+              Number(rocketStateSnap.data?.queueAvailableAtMs || 0),
+              Number(rocketGlobalQueueSnap.data?.queueAvailableAtMs || 0),
+            ),
+          },
+          config: rocketConfigSnap.data || {},
+          roomId,
+          sender: {
+            uid: senderUid,
+            displayName: senderName,
+            profileImageUrl: senderPhoto,
+          },
+          contributionCoins: totalCost,
+          nowMs,
+          operationId: key,
+        })
+      : {
+          nextState: {
+            currentLevel: Math.max(
+              1,
+              Number(rocketStateSnap.data?.currentLevel || 1),
+            ),
+            progressCoins: Math.max(
+              0,
+              Number(rocketStateSnap.data?.progressCoins || 0),
+            ),
+            levelThresholdCoins: Math.max(
+              1,
+              Number(
+                rocketStateSnap.data?.levelThresholdCoins ||
+                rocketStateSnap.data?.thresholdCoins ||
+                100000,
+              ),
+            ),
+            queueAvailableAtMs: Math.max(
+              0,
+              Number(rocketStateSnap.data?.queueAvailableAtMs || 0),
+            ),
+          },
+          explosions: [],
+        };
 
     const messageId = randomDocId("msg");
-    const messagePath = `${roomPath}/messages/${messageId}`;
     const transactionPath = `gift_transactions/${key}`;
     const ledgerPath = `financial_ledger/gift_${key}`;
     const earningsLedgerPath = `financial_ledger/gift_earnings_${key}`;
@@ -594,21 +637,23 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     // write out to every connected participant. Room insights/bootstrap read
     // the exact period documents instead.
 
-    writes.push(
-      db.writeUpdate(
-        rocketStatePath,
-        {
-          ...rocketAdvance.nextState,
-          roomId,
-          lastContributorUid: senderUid,
-          lastContributorDisplayName: senderName,
-          lastContributorProfileImageUrl: senderPhoto,
-          lastContributionCoins: totalCost,
-          lastOperationId: key,
-          updatedAt: now,
-        },
-      ),
-    );
+    if (roomRocketEnabled) {
+      writes.push(
+        db.writeUpdate(
+          rocketStatePath,
+          {
+            ...rocketAdvance.nextState,
+            roomId,
+            lastContributorUid: senderUid,
+            lastContributorDisplayName: senderName,
+            lastContributorProfileImageUrl: senderPhoto,
+            lastContributionCoins: totalCost,
+            lastOperationId: key,
+            updatedAt: now,
+          },
+        ),
+      );
+    }
 
     for (const explosion of rocketAdvance.explosions) {
       writes.push(
@@ -892,32 +937,6 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     }
 
     writes.push(
-      db.writeCreate(messagePath, {
-        type: "gift",
-        senderUid,
-        receiverUid: receiverId,
-        displayName: senderName,
-        profileImageUrl: senderPhoto,
-        giftId,
-        giftName,
-        quantity,
-        unitCoins,
-        totalCost,
-        assetKey,
-        imageUrl,
-        text:
-          senderName +
-          " أرسل " +
-          giftName +
-          " ×" +
-          quantity +
-          " إلى " +
-          receiverName +
-          " — " +
-          totalCost +
-          " كوينز",
-        createdAt: now,
-      }),
       db.writeCreate(transactionPath, {
         senderId: senderUid,
         receiverId,
@@ -1040,6 +1059,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       agencySalaryPaidDiamonds: agencyTarget?.paidDiamonds || 0,
       salaryDeltaDiamonds: agencyTarget?.salaryDeltaDiamonds || 0,
       messageId,
+      roomRocketEnabled,
       rocketCurrentLevel: rocketAdvance.nextState.currentLevel,
       rocketProgressCoins: rocketAdvance.nextState.progressCoins,
       rocketThresholdCoins: rocketAdvance.nextState.levelThresholdCoins,
@@ -1066,6 +1086,37 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       code: "ok",
       ...resultData,
       _rocketFeedEvents: rocketAdvance.explosions,
+      _chatEvent: {
+        roomId,
+        message: {
+          id: messageId,
+          type: "gift",
+          systemKind: "gift",
+          senderUid,
+          receiverUid: receiverId,
+          displayName: senderName,
+          profileImageUrl: senderPhoto,
+          giftId,
+          giftName,
+          quantity,
+          unitCoins,
+          totalCost,
+          assetKey,
+          imageUrl,
+          text:
+            senderName +
+            " أرسل " +
+            giftName +
+            " ×" +
+            quantity +
+            " إلى " +
+            receiverName +
+            " — " +
+            totalCost +
+            " كوينز",
+          createdAtMs: nowMs,
+        },
+      },
       _transactionAttempts: transactionAttempts,
       _agencyStatsTouched: Boolean(agencyId),
     };
@@ -1107,6 +1158,26 @@ export async function roomGift(request, env, ctx) {
         await publishTask;
       }
     }
+    const chatEvent = result?._chatEvent;
+    if (chatEvent?.roomId && chatEvent?.message) {
+      const publishTask = publishRoomRealtimeEvent(
+        env,
+        chatEvent.roomId,
+        "room.chat_message",
+        { message: chatEvent.message },
+      ).catch((error) => {
+        console.error(
+          "Room gift chat publish failed",
+          String(error?.message || error),
+        );
+      });
+      if (typeof ctx?.waitUntil === "function") {
+        ctx.waitUntil(publishTask);
+      } else {
+        await publishTask;
+      }
+    }
+
     const giftRetries = Math.max(
       0,
       Number(result?._transactionAttempts || 1) - 1,
@@ -1165,6 +1236,7 @@ export async function roomGift(request, env, ctx) {
     }
     const {
       _rocketFeedEvents,
+      _chatEvent,
       _transactionAttempts,
       _agencyStatsTouched,
       ...publicResult

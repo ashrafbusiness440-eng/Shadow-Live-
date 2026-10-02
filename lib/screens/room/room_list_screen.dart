@@ -553,7 +553,9 @@ class _RoomTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final coverUrl = (room.data['coverImageUrl'] ??
+    final roomImageUrl = (room.data['agencyRoomImageUrl'] ??
+            room.data['roomImageUrl'] ??
+            room.data['coverImageUrl'] ??
             room.data['imageUrl'] ??
             room.data['photoUrl'] ??
             '')
@@ -582,9 +584,9 @@ class _RoomTile extends StatelessWidget {
                 color: const Color(0xFF2B1950),
                 borderRadius: BorderRadius.circular(18),
               ),
-              child: coverUrl.isNotEmpty
+              child: roomImageUrl.isNotEmpty
                   ? CachedNetworkImage(
-                      imageUrl: coverUrl,
+                      imageUrl: roomImageUrl,
                       fit: BoxFit.cover,
                       errorWidget: (_, __, ___) => const Icon(
                         Icons.mic_rounded,

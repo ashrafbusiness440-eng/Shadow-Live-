@@ -492,6 +492,12 @@ export async function placeGameBet(
     }
     if(!userSnap.exists)throw Error("user_not_found");
     if(!roomSnap.exists||roomSnap.data()?.isActive===false)throw Error("room_unavailable");
+    const roomData=roomSnap.data()||{};
+    const roomType=clean(roomData.roomType||roomData.type||"personal");
+    const gamesEnabled=Object.prototype.hasOwnProperty.call(roomData,"gamesEnabled")
+      ? roomData.gamesEnabled===true
+      : roomType!=="customer_service";
+    if(!gamesEnabled)throw Error("room_games_disabled");
     if(useLegacyPresence){
       const lastSeenAtMs=Number(presenceSnap?.data()?.lastSeenAtMs||0);
       if(!presenceSnap?.exists||nowMs-lastSeenAtMs>90000){
@@ -1145,7 +1151,7 @@ export async function handler(req,res){
         "rng_not_configured","invalid_outcome","invalid_payout","round_locked",
         "round_not_finished","invalid_action",
       ].includes(code)?400:
-      ["games_disabled","game_disabled","emergency_locked","user_not_in_room",
+      ["games_disabled","game_disabled","room_games_disabled","emergency_locked","user_not_in_room",
         "room_unavailable","insufficient_balance"].includes(code)?409:500;
     return out(res,status,{ok:false,code});
   }

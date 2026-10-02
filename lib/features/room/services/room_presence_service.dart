@@ -63,6 +63,10 @@ class RoomPresenceService {
   final String _baseUrl;
   final StreamController<RoomRealtimeEvent> _eventsController =
       StreamController<RoomRealtimeEvent>.broadcast();
+  final Map<String, Completer<void>> _pendingChat =
+      <String, Completer<void>>{};
+  final Map<String, Completer<void>> _pendingChatReports =
+      <String, Completer<void>>{};
 
   RoomPresenceSocketConnection? _socket;
   StreamSubscription<Object?>? _socketSubscription;
@@ -123,6 +127,19 @@ class RoomPresenceService {
       final payload = rawPayload is Map
           ? Map<String, dynamic>.from(rawPayload)
           : <String, dynamic>{};
+      final requestId = (payload['requestId'] ?? '').toString().trim();
+      if (requestId.isNotEmpty && type == 'room.chat_ack') {
+        _pendingChat.remove(requestId)?.complete();
+      } else if (requestId.isNotEmpty &&
+          type == 'room.chat_report_ack') {
+        _pendingChatReports.remove(requestId)?.complete();
+      } else if (requestId.isNotEmpty && type == 'server.error') {
+        final code = (payload['code'] ?? 'room_chat_failed').toString();
+        final chat = _pendingChat.remove(requestId);
+        final report = _pendingChatReports.remove(requestId);
+        chat?.completeError(StateError(code));
+        report?.completeError(StateError(code));
+      }
       if (!_eventsController.isClosed) {
         _eventsController.add(
           RoomRealtimeEvent(
@@ -134,6 +151,117 @@ class RoomPresenceService {
       }
     } catch (_) {
       // Ignore malformed or future protocol messages without affecting voice.
+    }
+  }
+
+  void _failPendingChat(String code) {
+    final pending = [
+      ..._pendingChat.values,
+      ..._pendingChatReports.values,
+    ];
+    _pendingChat.clear();
+    _pendingChatReports.clear();
+    for (final completer in pending) {
+      if (!completer.isCompleted) {
+        completer.completeError(StateError(code));
+      }
+    }
+  }
+
+  Future<void> reportChatMessage({
+    required String roomId,
+    required String messageId,
+    required String reason,
+  }) async {
+    final id = roomId.trim();
+    final targetMessageId = messageId.trim();
+    final reportReason = reason.trim();
+    if (id.isEmpty || id != _desiredRoomId || _socket == null) {
+      throw StateError('room_realtime_not_connected');
+    }
+    if (targetMessageId.isEmpty || reportReason.isEmpty) {
+      throw StateError('invalid_room_report');
+    }
+
+    final requestId = 'report_' +
+        DateTime.now().microsecondsSinceEpoch.toString() +
+        '_' +
+        _generation.toString();
+    final completer = Completer<void>();
+    _pendingChatReports[requestId] = completer;
+    try {
+      _socket!.send(
+        jsonEncode({
+          'type': 'client.room_chat_report',
+          'requestId': requestId,
+          'payload': {
+            'roomId': id,
+            'messageId': targetMessageId,
+            'reason': reportReason,
+          },
+        }),
+      );
+      await completer.future.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => throw StateError('room_report_timeout'),
+      );
+    } finally {
+      _pendingChatReports.remove(requestId);
+    }
+  }
+
+  Future<void> sendChat({
+    required String roomId,
+    required String text,
+    String? replyTo,
+    String? replyPreview,
+    String? replySenderUid,
+    List<String> mentionUids = const [],
+  }) async {
+    final id = roomId.trim();
+    final message = text.trim();
+    if (id.isEmpty || id != _desiredRoomId || _socket == null) {
+      throw StateError('room_realtime_not_connected');
+    }
+    if (message.isEmpty || message.length > 500) {
+      throw StateError('invalid_room_message');
+    }
+
+    final requestId = 'chat_' +
+        DateTime.now().microsecondsSinceEpoch.toString() +
+        '_' +
+        _generation.toString();
+    final completer = Completer<void>();
+    _pendingChat[requestId] = completer;
+    try {
+      _socket!.send(
+        jsonEncode({
+          'type': 'client.room_chat',
+          'requestId': requestId,
+          'payload': {
+            'roomId': id,
+            'text': message,
+            if (replyTo != null && replyTo.trim().isNotEmpty)
+              'replyTo': replyTo.trim(),
+            if (replyPreview != null && replyPreview.trim().isNotEmpty)
+              'replyPreview': replyPreview.trim(),
+            if (replySenderUid != null && replySenderUid.trim().isNotEmpty)
+              'replySenderUid': replySenderUid.trim(),
+            if (mentionUids.isNotEmpty)
+              'mentionUids': mentionUids
+                  .map((value) => value.trim())
+                  .where((value) => value.isNotEmpty)
+                  .take(10)
+                  .toList(growable: false),
+          },
+        }),
+      );
+      await completer.future.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => throw StateError('room_chat_timeout'),
+      );
+    } finally {
+      _pendingChat.remove(requestId);
     }
   }
 
@@ -177,6 +305,7 @@ class RoomPresenceService {
     if (!identical(_socket, connection)) return;
     _socket = null;
     _socketSubscription = null;
+    _failPendingChat('room_realtime_disconnected');
     _scheduleReconnect(roomId, generation);
   }
 
@@ -257,6 +386,7 @@ class RoomPresenceService {
     _generation += 1;
     _desiredRoomId = '';
     _reconnectAttempt = 0;
+    _failPendingChat('room_left');
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     await _socketSubscription?.cancel();
@@ -297,6 +427,7 @@ class RoomPresenceService {
   void close() {
     _generation += 1;
     _desiredRoomId = '';
+    _failPendingChat('room_realtime_closed');
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     unawaited(_socketSubscription?.cancel());

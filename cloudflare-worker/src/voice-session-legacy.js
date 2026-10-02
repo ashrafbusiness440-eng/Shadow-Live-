@@ -7,6 +7,11 @@ import {
   legacyPresenceFresh,
   realtimeUserPresentFromNamespace,
 } from "./room-presence-authority.js";
+import {
+  invalidateRoomRealtimeAdmissionCache,
+  publishRoomRealtimeEvent,
+  setRoomRealtimeChatPolicy,
+} from "./room-realtime.js";
 
 class ApiError extends Error {
   constructor(code,status=400){super(code);this.code=code;this.status=status;}
@@ -42,7 +47,7 @@ function cors(req,res){
 
 const out=(res,status,body)=>res.status(status).json(body);
 const clean=(v)=>String(v??"").trim();
-const ROOM_CHAT_ROOT_TOUCH_INTERVAL_MS=60_000;
+const legacyRoomChatRate=new Map();
 
 async function realtimePresenceState(roomId){
   const namespace=legacyEnv.ROOM_REALTIME;
@@ -100,6 +105,29 @@ async function broadcastRoomRealtimeEvent(roomId,type,payload={}){
     return 0;
   }
 }
+
+async function registerCustomerServiceMicSchedules(roomId,uid,schedules){
+  const namespace=legacyEnv.ROOM_REALTIME;
+  if(!namespace||!Array.isArray(schedules)||schedules.length===0)return false;
+  try{
+    const id=namespace.idFromName(roomId);
+    const stub=namespace.get(id);
+    const response=await stub.fetch(
+      "https://room-realtime.internal/customer-service/mic/register",
+      {
+        method:"POST",
+        headers:{"content-type":"application/json"},
+        body:JSON.stringify({roomId,uid,schedules}),
+      },
+    );
+    return response.ok;
+  }catch(_){
+    return false;
+  }
+}
+
+const CUSTOMER_SERVICE_INVITE_MS=60_000;
+const CUSTOMER_SERVICE_MIC_MS=10*60_000;
 
 async function realtimeRoomCounts(roomIds){
   const ids=Array.from(new Set(
@@ -392,14 +420,29 @@ function isOfficialRoom(room){
     type==="official"||type==="administrative"||type==="customer_service";
 }
 
+function roomFeatureFlags(room){
+  const type=clean(room.roomType||room.type||"personal");
+  const customerService=type==="customer_service";
+  const read=(key,defaultValue)=>
+    Object.prototype.hasOwnProperty.call(room,key)
+      ? room[key]===true
+      : defaultValue;
+  return {
+    giftsEnabled:read("giftsEnabled",!customerService),
+    pkEnabled:read("pkEnabled",!customerService),
+    gamesEnabled:read("gamesEnabled",!customerService),
+    roomRocketEnabled:read("roomRocketEnabled",!customerService),
+  };
+}
+
 function roomModeratorLimit(room){
   const level=Math.max(1,Math.min(6,Number(room.level||1)));
   const type=clean(room.roomType||room.type||"personal");
+  if(type==="customer_service")return 2;
   const overrides=roomControlOverrides(room);
   if((isOfficialRoom(room)||overrides.bypassLevelCapacity)&&overrides.moderators!==null){
     return overrides.moderators;
   }
-  if(type==="customer_service")return 2;
   const agency=[5,6,7,9,11,14];
   const normal=[3,4,5,7,9,12];
   return (type==="agency"?agency:normal)[level-1];
@@ -540,7 +583,7 @@ async function setRoomModerator(db,uid,body){
 
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
   if(!targetUid&&targetPublicId){
-    if(!/^[0-9]{6}$/.test(targetPublicId))throw new ApiError("invalid_public_id",400);
+    if(!/^[0-9]{3,8}$/.test(targetPublicId))throw new ApiError("invalid_public_id",400);
     const publicSnap=await db.collection("public_ids").doc(targetPublicId).get();
     targetUid=clean(publicSnap.data()?.uid);
   }
@@ -631,13 +674,16 @@ function roomResponse(roomId,data){
     ownerName:clean(data.ownerName),
     ownerLocation:clean(data.ownerLocation),
     chatEnabled:data.chatEnabled!==false,
+    ...roomFeatureFlags(data),
     description:clean(data.description),
     tags:Array.isArray(data.tags)?data.tags.map(clean).filter(Boolean).slice(0,8):[],
     visibility:clean(data.visibility||"public"),
     isHidden:data.isHidden===true||clean(data.visibility)==="hidden",
     passwordProtected:clean(data.visibility)==="password",
-    coverImageUrl:clean(data.coverImageUrl||data.imageUrl),
-    coverImageObjectId:clean(data.coverImageObjectId),
+    roomImageUrl:clean(data.roomImageUrl||data.coverImageUrl||data.imageUrl),
+    roomImageObjectId:clean(data.roomImageObjectId||data.coverImageObjectId),
+    coverImageUrl:clean(data.coverImageUrl||data.roomImageUrl||data.imageUrl),
+    coverImageObjectId:clean(data.coverImageObjectId||data.roomImageObjectId),
     onlineCount:Math.max(0,Number(data.onlineCount||data.participantsCount||0)),
     level:Math.max(1,Number(data.level||1)),
     isActive:data.isActive!==false,
@@ -819,7 +865,7 @@ async function changeRoomPublicId(db,uid,body){
   const roomId=clean(body.roomId);
   const newPublicId=clean(body.publicId);
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
-  if(!/^[0-9]{3,12}$/.test(newPublicId))throw new ApiError("invalid_public_id",400);
+  if(!/^[0-9]{3,8}$/.test(newPublicId))throw new ApiError("invalid_public_id",400);
 
   const roomRef=db.collection("rooms").doc(roomId);
   const userRef=db.collection("users").doc(uid);
@@ -838,10 +884,6 @@ async function changeRoomPublicId(db,uid,body){
     const permissions=roomPermissions(user);
     const canManageId=canManageRoomAction(room,user,uid,"manageIds")||permissions.manageIds;
     if(!canManageId)throw new ApiError("forbidden",403);
-    if(!permissions.manageIds&&newPublicId.length!==6){
-      throw new ApiError("manage_ids_required",403);
-    }
-
     const oldPublicId=clean(room.publicId);
     if(oldPublicId===newPublicId){
       return {ok:true,roomId,publicId:newPublicId,unchanged:true};
@@ -860,14 +902,7 @@ async function changeRoomPublicId(db,uid,body){
 
     if(oldPublicId){
       const oldRef=db.collection("room_ids").doc(oldPublicId);
-      tx.set(oldRef,{
-        roomId,
-        ownerUid,
-        active:false,
-        reserved:true,
-        replacedBy:newPublicId,
-        updatedAt:now,
-      },{merge:true});
+      tx.delete(oldRef);
     }
 
     const name=clean(room.name||room.title||"غرفتي");
@@ -902,9 +937,11 @@ async function updateRoomSettings(db,uid,body){
   const visibility=clean(body.visibility)||"public";
   const password=String(body.password??"");
   const chatEnabled=body.chatEnabled!==false;
-  const coverImageUrl=clean(body.coverImageUrl);
-  const coverImageObjectIdProvided=Object.prototype.hasOwnProperty.call(body,"coverImageObjectId");
-  const coverImageObjectId=clean(body.coverImageObjectId);
+  const roomImageUrl=clean(body.roomImageUrl||body.coverImageUrl);
+  const roomImageObjectIdProvided=
+    Object.prototype.hasOwnProperty.call(body,"roomImageObjectId")||
+    Object.prototype.hasOwnProperty.call(body,"coverImageObjectId");
+  const roomImageObjectId=clean(body.roomImageObjectId||body.coverImageObjectId);
   const tags=Array.isArray(body.tags)
     ? [...new Set(body.tags.map(clean).filter(Boolean))].slice(0,8)
     : [];
@@ -916,24 +953,24 @@ async function updateRoomSettings(db,uid,body){
   if(!["public","password","hidden"].includes(visibility))throw new ApiError("invalid_visibility",400);
   if(visibility==="password"&&password&&password.length<4)throw new ApiError("room_password_too_short",400);
   if(password.length>32)throw new ApiError("room_password_too_long",400);
-  if(coverImageUrl&&(!/^https?:\/\//i.test(coverImageUrl)||coverImageUrl.length>1200)){
-    throw new ApiError("invalid_room_cover",400);
+  if(roomImageUrl&&(!/^https?:\/\//i.test(roomImageUrl)||roomImageUrl.length>1200)){
+    throw new ApiError("invalid_room_image",400);
   }
-  if(coverImageObjectIdProvided&&coverImageObjectId&&!/^[a-f0-9]{32}$/.test(coverImageObjectId)){
-    throw new ApiError("invalid_room_cover_object",400);
+  if(roomImageObjectIdProvided&&roomImageObjectId&&!/^[a-f0-9]{32}$/.test(roomImageObjectId)){
+    throw new ApiError("invalid_room_image_object",400);
   }
 
   const roomRef=db.collection("rooms").doc(roomId);
   const userRef=db.collection("users").doc(uid);
   const auditRef=db.collection("room_audit_logs").doc(roomId).collection("items").doc();
-  const coverObjectRef=coverImageObjectId
-    ? db.collection("storage_objects").doc(coverImageObjectId)
+  const roomImageObjectRef=roomImageObjectId
+    ? db.collection("storage_objects").doc(roomImageObjectId)
     : null;
 
   return db.runTransaction(async tx=>{
     const reads=[tx.get(roomRef),tx.get(userRef)];
-    if(coverObjectRef)reads.push(tx.get(coverObjectRef));
-    const [roomSnap,userSnap,coverObjectSnap]=await Promise.all(reads);
+    if(roomImageObjectRef)reads.push(tx.get(roomImageObjectRef));
+    const [roomSnap,userSnap,roomImageObjectSnap]=await Promise.all(reads);
     if(!roomSnap.exists)throw new ApiError("room_not_found",404);
     const room=roomSnap.data()||{};
     const user=userSnap.data()||{};
@@ -946,18 +983,18 @@ async function updateRoomSettings(db,uid,body){
     }
     if(visibility==="hidden"&&!permissions.hidden)throw new ApiError("hidden_room_forbidden",403);
 
-    if(coverImageObjectId){
-      if(!coverObjectSnap||!coverObjectSnap.exists){
-        throw new ApiError("room_cover_object_not_found",409);
+    if(roomImageObjectId){
+      if(!roomImageObjectSnap||!roomImageObjectSnap.exists){
+        throw new ApiError("room_image_object_not_found",409);
       }
-      const media=coverObjectSnap.data()||{};
+      const media=roomImageObjectSnap.data()||{};
       if(
         clean(media.scope)!=="room_cover"||
         clean(media.targetId)!==roomId||
-        clean(media.publicUrl)!==coverImageUrl||
+        clean(media.publicUrl)!==roomImageUrl||
         clean(media.state||"active")!=="active"
       ){
-        throw new ApiError("room_cover_object_mismatch",409);
+        throw new ApiError("room_image_object_mismatch",409);
       }
     }
 
@@ -970,9 +1007,13 @@ async function updateRoomSettings(db,uid,body){
       visibility,
       isHidden:visibility==="hidden",
       chatEnabled,
-      coverImageUrl,
-      ...(coverImageObjectIdProvided
-        ? {coverImageObjectId:coverImageObjectId||FieldValue.delete()}
+      roomImageUrl,
+      coverImageUrl:roomImageUrl,
+      ...(roomImageObjectIdProvided
+        ? {
+            roomImageObjectId:roomImageObjectId||FieldValue.delete(),
+            coverImageObjectId:roomImageObjectId||FieldValue.delete(),
+          }
         : {}),
       searchTokens:searchTokens(
         name+" "+tags.join(" ")+" "+category+" "+clean(room.ownerName)+" "+clean(room.ownerLocation),
@@ -1039,7 +1080,7 @@ async function setRoomChatEnabled(db,uid,body){
   const actorRef=db.collection("users").doc(uid);
   const auditRef=db.collection("room_audit_logs").doc(roomId).collection("items").doc();
 
-  return db.runTransaction(async tx=>{
+  const result=await db.runTransaction(async tx=>{
     const [roomSnap,actorSnap]=await Promise.all([tx.get(roomRef),tx.get(actorRef)]);
     if(!roomSnap.exists)throw new ApiError("room_not_found",404);
     const room=roomSnap.data()||{};
@@ -1060,6 +1101,12 @@ async function setRoomChatEnabled(db,uid,body){
     });
     return {ok:true,roomId,chatEnabled:enabled};
   });
+
+  invalidateRoomRealtimeAdmissionCache(roomId);
+  try{
+    await setRoomRealtimeChatPolicy(legacyEnv,roomId,enabled);
+  }catch(_){}
+  return result;
 }
 
 async function closePersonalRoom(db,uid,roomId){
@@ -1094,11 +1141,11 @@ async function closePersonalRoom(db,uid,roomId){
 function roomSeatCapacity(room){
   const level=Math.max(1,Math.min(6,Number(room.level||1)));
   const type=clean(room.roomType||room.type||"personal");
+  if(type==="customer_service")return 5;
   const overrides=roomControlOverrides(room);
   if((isOfficialRoom(room)||overrides.bypassLevelCapacity)&&overrides.seats!==null){
     return overrides.seats;
   }
-  if(type==="customer_service")return 5;
   const agency=[10,12,14,16,20,22];
   const normal=[8,10,12,15,20,20];
   return (type==="agency"?agency:normal)[level-1];
@@ -1117,6 +1164,8 @@ function normalizeSeats(room){
       profileImageUrl:String(found.profileImageUrl||""),
       muted:found.muted!==false,
       micStartedAtMs:Number(found.micStartedAtMs||0),
+      customerServiceMicExpiresAtMs:
+        Number(found.customerServiceMicExpiresAtMs||0),
       frameRewardId:String(found.frameRewardId||""),
       frameAssetKey:String(found.frameAssetKey||""),
       frameImageUrl:String(found.frameImageUrl||""),
@@ -1144,19 +1193,25 @@ function roomControlPolicySnapshot(room){
   const baseModerators=type==="customer_service"
     ? 2
     : (type==="agency"?agencyMods:normalMods)[level-1];
-  const manual=isOfficialRoom(room)||overrides.bypassLevelCapacity;
+  const customerService=type==="customer_service";
+  const manual=!customerService&&(isOfficialRoom(room)||overrides.bypassLevelCapacity);
   return {
     level,
     type,
     official:isOfficialRoom(room),
     systemOwned:room.systemOwned===true,
     hostUid:roomHostUid(room),
+    features:roomFeatureFlags(room),
     baseSeats,
     baseModerators,
     overrides,
-    effectiveSeats:manual&&overrides.seats!==null?overrides.seats:baseSeats,
-    effectiveModerators:manual&&overrides.moderators!==null?overrides.moderators:baseModerators,
-    capacityMode:manual?"manual":"level",
+    effectiveSeats:customerService
+      ? 5
+      : (manual&&overrides.seats!==null?overrides.seats:baseSeats),
+    effectiveModerators:customerService
+      ? 2
+      : (manual&&overrides.moderators!==null?overrides.moderators:baseModerators),
+    capacityMode:customerService?"customer_service_fixed":(manual?"manual":"level"),
   };
 }
 
@@ -1176,16 +1231,30 @@ async function createOfficialRoomFromControl(db,uid,body){
   const description=clean(body.description).slice(0,500);
   const coverImageUrl=clean(body.coverImageUrl).slice(0,1200);
   const visibility=clean(body.visibility||"public");
-  const seats=Number(body.seats??8);
-  const moderators=Number(body.moderators??3);
+  const seats=Number(body.seats??(officialType==="customer_service"?5:8));
+  const moderators=Number(body.moderators??(officialType==="customer_service"?2:3));
   const reason=clean(body.reason);
   const operationId=clean(body.idempotencyKey);
   const tags=Array.isArray(body.tags)
     ? [...new Set(body.tags.map(clean).filter(Boolean))].slice(0,8)
     : [];
+  const customerService=officialType==="customer_service";
+  const featureDefault=!customerService;
+  const giftsEnabled=Object.prototype.hasOwnProperty.call(body,"giftsEnabled")
+    ? body.giftsEnabled===true
+    : featureDefault;
+  const pkEnabled=Object.prototype.hasOwnProperty.call(body,"pkEnabled")
+    ? body.pkEnabled===true
+    : featureDefault;
+  const gamesEnabled=Object.prototype.hasOwnProperty.call(body,"gamesEnabled")
+    ? body.gamesEnabled===true
+    : featureDefault;
+  const roomRocketEnabled=Object.prototype.hasOwnProperty.call(body,"roomRocketEnabled")
+    ? body.roomRocketEnabled===true
+    : featureDefault;
 
   if(name.length<2||name.length>80)throw new ApiError("invalid_room_name",400);
-  if(requestedPublicId&&!/^\d{3,12}$/.test(requestedPublicId))throw new ApiError("invalid_room_public_id",400);
+  if(requestedPublicId&&!/^\d{3,8}$/.test(requestedPublicId))throw new ApiError("invalid_room_public_id",400);
   if(!["official","administrative","customer_service"].includes(officialType)){
     throw new ApiError("invalid_official_room_type",400);
   }
@@ -1235,6 +1304,10 @@ async function createOfficialRoomFromControl(db,uid,body){
         coverImageUrl,
         tags,
         chatEnabled:true,
+        giftsEnabled,
+        pkEnabled,
+        gamesEnabled,
+        roomRocketEnabled,
         visibility,
         isHidden:visibility==="hidden",
         isActive:true,
@@ -1346,7 +1419,7 @@ async function controlRoomPolicy(db,uid,body){
   }
 
   if(!roomId&&roomPublicId){
-    if(!/^\d{3,12}$/.test(roomPublicId))throw new ApiError("invalid_room_public_id",400);
+    if(!/^\d{3,8}$/.test(roomPublicId))throw new ApiError("invalid_room_public_id",400);
     const idSnap=await db.collection("room_ids").doc(roomPublicId).get();
     roomId=clean(idSnap.data()?.roomId);
   }
@@ -1366,8 +1439,13 @@ async function controlRoomPolicy(db,uid,body){
       category:clean(room.category),
       description:clean(room.description),
       coverImageUrl:clean(room.coverImageUrl),
+      activeRoomBackgroundRewardId:clean(room.activeRoomBackgroundRewardId),
+      activeRoomBackgroundImageUrl:clean(room.activeRoomBackgroundImageUrl),
+      activeRoomBackgroundAssetKey:clean(room.activeRoomBackgroundAssetKey),
+      activeRoomBackgroundExpiresAtMs:Number(room.activeRoomBackgroundExpiresAtMs||0),
       visibility:clean(room.visibility||"public"),
       tags:Array.isArray(room.tags)?room.tags:[],
+      ...roomFeatureFlags(room),
       policy:roomControlPolicySnapshot(room),
     };
   }
@@ -1403,6 +1481,9 @@ async function controlRoomPolicy(db,uid,body){
       if(next===before.level)throw new ApiError("level_unchanged",409);
       patch={level:next,levelUpdatedAt:now,levelUpdatedBy:uid,updatedAt:now};
     }else if(controlAction==="setOverrides"){
+      if(clean(room.roomType||room.type)==="customer_service"){
+        throw new ApiError("customer_service_capacity_fixed",409);
+      }
       const current=roomControlOverrides(room);
       const parseBounded=(value,min,max,code)=>{
         if(value===null||value===undefined||value==="")return null;
@@ -1434,6 +1515,58 @@ async function controlRoomPolicy(db,uid,body){
         overrideUpdatedAt:now,
         updatedAt:now,
       };
+    }else if(controlAction==="setOfficialRoomBackground"){
+      if(!canGlobal)throw new ApiError("global_room_control_required",403);
+      if(!before.official)throw new ApiError("official_room_required",409);
+      const assetKey=clean(body.backgroundAssetKey);
+      const imageUrl=clean(body.backgroundImageUrl);
+      if(assetKey&&!/^[A-Za-z0-9_.-]{1,180}$/.test(assetKey)){
+        throw new ApiError("invalid_room_background_asset",400);
+      }
+      if(imageUrl&&(imageUrl.length>1200||!/^https:\/\//i.test(imageUrl))){
+        throw new ApiError("invalid_room_background_url",400);
+      }
+      const enabled=Boolean(assetKey||imageUrl);
+      patch=enabled
+        ? {
+            activeRoomBackgroundRewardId:"system_control",
+            activeRoomBackgroundAssetKey:assetKey,
+            activeRoomBackgroundImageUrl:imageUrl,
+            activeRoomBackgroundExpiresAtMs:0,
+            roomBackgroundUpdatedAt:now,
+            roomBackgroundUpdatedBy:uid,
+            updatedAt:now,
+          }
+        : {
+            activeRoomBackgroundRewardId:FieldValue.delete(),
+            activeRoomBackgroundAssetKey:FieldValue.delete(),
+            activeRoomBackgroundImageUrl:FieldValue.delete(),
+            activeRoomBackgroundExpiresAtMs:FieldValue.delete(),
+            roomBackgroundUpdatedAt:now,
+            roomBackgroundUpdatedBy:uid,
+            updatedAt:now,
+          };
+    }else if(controlAction==="setRoomFeatures"){
+      if(!canGlobal)throw new ApiError("global_room_control_required",403);
+      if(!before.official)throw new ApiError("official_room_required",409);
+      const current=roomFeatureFlags(room);
+      patch={
+        giftsEnabled:Object.prototype.hasOwnProperty.call(body,"giftsEnabled")
+          ? body.giftsEnabled===true
+          : current.giftsEnabled,
+        pkEnabled:Object.prototype.hasOwnProperty.call(body,"pkEnabled")
+          ? body.pkEnabled===true
+          : current.pkEnabled,
+        gamesEnabled:Object.prototype.hasOwnProperty.call(body,"gamesEnabled")
+          ? body.gamesEnabled===true
+          : current.gamesEnabled,
+        roomRocketEnabled:Object.prototype.hasOwnProperty.call(body,"roomRocketEnabled")
+          ? body.roomRocketEnabled===true
+          : current.roomRocketEnabled,
+        featuresUpdatedAt:now,
+        featuresUpdatedBy:uid,
+        updatedAt:now,
+      };
     }else if(controlAction==="setOfficialRoom"){
       if(!canGlobal)throw new ApiError("global_room_control_required",403);
       const enabled=body.enabled===true;
@@ -1452,6 +1585,9 @@ async function controlRoomPolicy(db,uid,body){
         roomType:enabled?officialType:clean(room.previousRoomType||room.roomType||room.type||"personal"),
         hostUid:enabled?hostUid:"",
         ...(enabled?{previousRoomType:clean(room.roomType||room.type||"personal")}:{previousRoomType:FieldValue.delete()}),
+        ...(enabled&&officialType==="customer_service"&&before.type!=="customer_service"
+          ? {giftsEnabled:false,pkEnabled:false,gamesEnabled:false,roomRocketEnabled:false}
+          : {}),
         officialUpdatedAt:now,
         officialUpdatedBy:uid,
         updatedAt:now,
@@ -1487,6 +1623,9 @@ async function controlRoomPolicy(db,uid,body){
         tags,
         roomType:officialType,
         hostUid,
+        ...(officialType==="customer_service"&&before.type!=="customer_service"
+          ? {giftsEnabled:false,pkEnabled:false,gamesEnabled:false,roomRocketEnabled:false}
+          : {}),
         officialUpdatedAt:now,
         officialUpdatedBy:uid,
         updatedAt:now,
@@ -1620,6 +1759,14 @@ async function roomSeatAction(db,uid,body){
     let invites=Array.isArray(room.micInvites)?[...room.micInvites]:[];
     let requests=Array.isArray(room.micRequests)?[...room.micRequests]:[];
     let micInviteOnly=room.micInviteOnly===true;
+    const customerService=
+      clean(room.roomType||room.type)==="customer_service";
+    const inviteExpiries=
+      room.customerServiceMicInviteExpiresAtMs&&
+      typeof room.customerServiceMicInviteExpiresAtMs==="object"
+        ? {...room.customerServiceMicInviteExpiresAtMs}
+        : {};
+    let customerServiceSchedule=null;
 
     const clearUserSeat=userId=>{
       seats=seats.map(seat=>seat.uid===userId
@@ -1630,6 +1777,7 @@ async function roomSeatAction(db,uid,body){
             profileImageUrl:"",
             muted:true,
             micStartedAtMs:0,
+            customerServiceMicExpiresAtMs:0,
             frameRewardId:"",
             frameAssetKey:"",
             frameImageUrl:"",
@@ -1655,6 +1803,14 @@ async function roomSeatAction(db,uid,body){
       if(!targetUid||targetUid===uid)throw new ApiError("invalid_target",400);
       await assertRoomRealtimePresence(db,roomId,targetUid);
       if(!invites.includes(targetUid))invites.push(targetUid);
+      if(customerService){
+        const expiresAtMs=Date.now()+CUSTOMER_SERVICE_INVITE_MS;
+        inviteExpiries[targetUid]=expiresAtMs;
+        customerServiceSchedule={
+          uid:targetUid,
+          schedules:[{kind:"invite_expire",expiresAtMs}],
+        };
+      }
     }else if(action==="approveMicRequest"){
       if(!canManageMic)throw new ApiError("forbidden",403);
       if(!targetUid||targetUid===uid)throw new ApiError("invalid_target",400);
@@ -1662,12 +1818,21 @@ async function roomSeatAction(db,uid,body){
       await assertRoomRealtimePresence(db,roomId,targetUid);
       requests=requests.filter(id=>id!==targetUid);
       if(!invites.includes(targetUid))invites.push(targetUid);
+      if(customerService){
+        const expiresAtMs=Date.now()+CUSTOMER_SERVICE_INVITE_MS;
+        inviteExpiries[targetUid]=expiresAtMs;
+        customerServiceSchedule={
+          uid:targetUid,
+          schedules:[{kind:"invite_expire",expiresAtMs}],
+        };
+      }
     }else if(action==="rejectMicRequest"){
       if(!canManageMic)throw new ApiError("forbidden",403);
       if(!targetUid)throw new ApiError("invalid_target",400);
       requests=requests.filter(id=>id!==targetUid);
     }else if(action==="declineMicInvite"){
       invites=invites.filter(id=>id!==uid);
+      delete inviteExpiries[uid];
     }else if(action==="takeSeat"||action==="switchSeat"){
       if(!Number.isInteger(seatIndex)||seatIndex<0||seatIndex>=seats.length)throw new ApiError("invalid_seat",400);
       const currentSeatIndex=seats.findIndex(item=>item.uid===uid);
@@ -1679,7 +1844,20 @@ async function roomSeatAction(db,uid,body){
       if(reserved&&reserved.uid!==uid)throw new ApiError("pk_seat_reserved",409);
       if(mine&&mine.seatIndex!==seatIndex)throw new ApiError("pk_original_seat_required",409);
       if(seat.uid&&seat.uid!==uid)throw new ApiError("seat_occupied",409);
-      if(micInviteOnly&&!isOwner&&!isHost&&!canManageMic&&!invites.includes(uid)&&!mine&&currentSeatIndex<0)throw new ApiError("mic_invite_required",403);
+      if(customerService){
+        if(seatIndex<2&&!canManageMic){
+          throw new ApiError("customer_service_manager_mic_required",403);
+        }
+        if(seatIndex>=2&&!canManageMic&&currentSeatIndex<0){
+          if(!invites.includes(uid))throw new ApiError("mic_invite_required",403);
+          const inviteExpiresAtMs=Number(inviteExpiries[uid]||0);
+          if(inviteExpiresAtMs<=Date.now()){
+            throw new ApiError("mic_invite_expired",409);
+          }
+        }
+      }else if(micInviteOnly&&!isOwner&&!isHost&&!canManageMic&&!invites.includes(uid)&&!mine&&currentSeatIndex<0){
+        throw new ApiError("mic_invite_required",403);
+      }
 
       const profileSnap=await tx.get(myProfileRef);
       const profile=profileSnap.data()||{};
@@ -1697,6 +1875,14 @@ async function roomSeatAction(db,uid,body){
       const micStartedAtMs=keepMicActive
         ?Number(existingSeat.micStartedAtMs)
         :0;
+      const previousCsExpiry=
+        Number(existingSeat?.customerServiceMicExpiresAtMs||0);
+      const customerServiceMicExpiresAtMs=
+        customerService&&!canManageMic
+          ? (previousCsExpiry>Date.now()
+              ? previousCsExpiry
+              : Date.now()+CUSTOMER_SERVICE_MIC_MS)
+          : 0;
       clearUserSeat(uid);
       seats[seatIndex]={
         index:seatIndex,
@@ -1713,9 +1899,22 @@ async function roomSeatAction(db,uid,body){
         voiceWaveAssetKey:clean(voiceWave.assetKey),
         voiceWaveImageUrl:clean(voiceWave.imageUrl),
         voiceWaveExpiresAtMs:Number(voiceWave.expiresAtMs||0),
+        customerServiceMicExpiresAtMs,
       };
       invites=invites.filter(id=>id!==uid);
       requests=requests.filter(id=>id!==uid);
+      delete inviteExpiries[uid];
+      if(customerServiceMicExpiresAtMs>0){
+        customerServiceSchedule={
+          uid,
+          schedules:[
+            {
+              kind:"mic_expire",
+              expiresAtMs:customerServiceMicExpiresAtMs,
+            },
+          ],
+        };
+      }
     }else if(action==="muteSeat"||action==="unmuteSeat"){
       const seatIndex=seats.findIndex(seat=>seat.uid===uid);
       if(seatIndex<0)throw new ApiError("speaker_seat_required",403);
@@ -1766,6 +1965,7 @@ async function roomSeatAction(db,uid,body){
       clearUserSeat(targetUid);
       invites=invites.filter(id=>id!==targetUid);
       requests=requests.filter(id=>id!==targetUid);
+      delete inviteExpiries[targetUid];
     }else{
       throw new ApiError("invalid_seat_action",400);
     }
@@ -1775,6 +1975,7 @@ async function roomSeatAction(db,uid,body){
       micInvites:invites,
       micRequests:requests,
       micInviteOnly,
+      customerServiceMicInviteExpiresAtMs:inviteExpiries,
       updatedAt:FieldValue.serverTimestamp(),
     });
 
@@ -1791,103 +1992,94 @@ async function roomSeatAction(db,uid,body){
       canManageMic,
       isActive:true,
       onlineCount:Math.max(0,Number(room.onlineCount||0)),
+      _customerServiceSchedule:customerServiceSchedule,
     };
   });
+  const schedule=result._customerServiceSchedule;
+  if(schedule?.uid&&Array.isArray(schedule.schedules)){
+    await registerCustomerServiceMicSchedules(
+      roomId,
+      schedule.uid,
+      schedule.schedules,
+    );
+  }
   const liveOnlineCount=await realtimeRoomCount(roomId);
+  const {_customerServiceSchedule,...publicResult}=result;
   return {
-    ...result,
-    onlineCount:liveOnlineCount??result.onlineCount,
+    ...publicResult,
+    onlineCount:liveOnlineCount??publicResult.onlineCount,
   };
 }
 
 async function sendRoomChat(db,uid,body){
   const roomId=clean(body.roomId);
   const message=String(body.text??"").trim();
-  const replyTo=clean(body.replyTo);
+  const replyTo=clean(body.replyTo).slice(0,120);
+  const replyPreview=String(body.replyPreview??"").trim().slice(0,120);
+  const replySenderUid=clean(body.replySenderUid).slice(0,160);
   const mentions=Array.isArray(body.mentionUids)
     ? [...new Set(body.mentionUids.map(clean).filter(Boolean))].slice(0,10)
     : [];
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
   if(!message||message.length>500)throw new ApiError("invalid_room_message",400);
 
-  const roomRef=db.collection("rooms").doc(roomId);
-  const profileRef=db.collection("public_profiles").doc(uid);
-  const rateRef=db.collection("room_chat_rate_limits").doc(roomId+"__"+uid);
-  const banRef=db.collection("room_bans").doc(roomId).collection("users").doc(uid);
+  const [roomSnap,profileSnap,actorUserSnap,banSnap]=await Promise.all([
+    db.collection("rooms").doc(roomId).get(),
+    db.collection("public_profiles").doc(uid).get(),
+    db.collection("users").doc(uid).get(),
+    db.collection("room_bans").doc(roomId).collection("users").doc(uid).get(),
+  ]);
 
-  return db.runTransaction(async tx=>{
-    const refs=[roomRef,profileRef,rateRef,banRef];
-    let replyRef=null;
-    if(replyTo){
-      if(replyTo.includes("/"))throw new ApiError("invalid_reply",400);
-      replyRef=roomRef.collection("messages").doc(replyTo);
-      refs.push(replyRef);
-    }
-    const snapshots=await Promise.all(refs.map(ref=>tx.get(ref)));
-    const roomSnap=snapshots[0];
-    const profileSnap=snapshots[1];
-    const rateSnap=snapshots[2];
-    const banSnap=snapshots[3];
-    const replySnap=replyRef?snapshots[4]:null;
+  if(!roomSnap.exists||roomSnap.data()?.isActive===false)throw new ApiError("room_unavailable",404);
+  const roomData=roomSnap.data()||{};
+  const actorUser=actorUserSnap.data()||{};
+  const canModerateChat=canManageRoomAction(roomData,actorUser,uid,"moderateChat");
+  if(roomData.chatEnabled===false&&!canModerateChat)throw new ApiError("room_chat_disabled",403);
 
-    if(!roomSnap.exists||roomSnap.data()?.isActive===false)throw new ApiError("room_unavailable",404);
-    const roomData=roomSnap.data()||{};
-    const ownerUid=clean(roomData.ownerUid||roomData.ownerId||roomData.hostId);
-    const actorUserSnap=await tx.get(db.collection("users").doc(uid));
-    const actorUser=actorUserSnap.data()||{};
-    const canModerateChat=canManageRoomAction(roomData,actorUser,uid,"moderateChat");
-    if(roomData.chatEnabled===false&&!canModerateChat)throw new ApiError("room_chat_disabled",403);
-    if(banSnap.exists){
-      const ban=banSnap.data()||{};
-      const expiresAt=ban.expiresAt?.toMillis?.()||0;
-      const permanent=ban.permanent===true;
-      if(permanent||expiresAt>Date.now())throw new ApiError("room_banned",403);
-    }
+  if(banSnap.exists){
+    const ban=banSnap.data()||{};
+    const expiresAt=ban.expiresAt?.toMillis?.()||0;
+    const permanent=ban.permanent===true;
+    if(permanent||expiresAt>Date.now())throw new ApiError("room_banned",403);
+  }
 
-    const nowMs=Date.now();
-    const rate=rateSnap.data()||{};
-    const started=rate.windowStartedAt?.toMillis?.()||0;
-    const sameWindow=started>0&&(nowMs-started)<10000;
-    const count=sameWindow?Math.max(0,Number(rate.count||0)):0;
-    if(count>=8)throw new ApiError("rate_limited",429);
-    tx.set(rateRef,{
-      windowStartedAt:new Date(sameWindow?started:nowMs),
-      count:count+1,
-      updatedAt:new Date(nowMs),
-    },{merge:true});
-
-    let replyPreview=null;
-    let replySenderUid=null;
-    if(replyRef){
-      if(!replySnap?.exists)throw new ApiError("reply_not_found",404);
-      const reply=replySnap.data()||{};
-      replyPreview=String(reply.text||reply.systemText||"").slice(0,120);
-      replySenderUid=clean(reply.senderUid);
-    }
-
-    const profile=profileSnap.data()||{};
-    const messageRef=roomRef.collection("messages").doc();
-    tx.create(messageRef,{
-      type:"text",
-      senderUid:uid,
-      displayName:clean(profile.displayName||profile.username||"مستخدم Shadow Live"),
-      profileImageUrl:clean(profile.profileImageUrl),
-      text:message,
-      mentionUids:mentions,
-      replyTo:replyTo||null,
-      replyPreview,
-      replySenderUid,
-      createdAt:FieldValue.serverTimestamp(),
-    });
-    const lastChatAtMs=timestampMillis(roomData.lastChatAt);
-    if(lastChatAtMs<=0||nowMs-lastChatAtMs>=ROOM_CHAT_ROOT_TOUCH_INTERVAL_MS){
-      tx.update(roomRef,{
-        lastChatAt:FieldValue.serverTimestamp(),
-        updatedAt:FieldValue.serverTimestamp(),
-      });
-    }
-    return {ok:true,messageId:messageRef.id};
+  const nowMs=Date.now();
+  const rateKey=roomId+"__"+uid;
+  const previous=legacyRoomChatRate.get(rateKey)||{windowStartedAtMs:nowMs,count:0};
+  const sameWindow=nowMs-Number(previous.windowStartedAtMs||0)<10000;
+  const count=sameWindow?Math.max(0,Number(previous.count||0)):0;
+  if(count>=8)throw new ApiError("rate_limited",429);
+  legacyRoomChatRate.set(rateKey,{
+    windowStartedAtMs:sameWindow?Number(previous.windowStartedAtMs||nowMs):nowMs,
+    count:count+1,
   });
+
+  const profile=profileSnap.data()||{};
+  const messageId="msg_"+randomBytes(12).toString("hex");
+  await publishRoomRealtimeEvent(
+    legacyEnv,
+    roomId,
+    "room.chat_message",
+    {
+      message:{
+        id:messageId,
+        type:"text",
+        senderUid:uid,
+        displayName:clean(profile.displayName||profile.username||actorUser.displayName||actorUser.username||"مستخدم Shadow Live"),
+        profileImageUrl:clean(profile.profileImageUrl||actorUser.profileImageUrl),
+        text:message,
+        mentionUids:mentions,
+        replyTo:replyTo||null,
+        replyPreview:replyPreview||null,
+        replySenderUid:replySenderUid||null,
+        createdAtMs:nowMs,
+        systemKind:"",
+        vipLevel:0,
+        entryEffectKey:"",
+      },
+    },
+  );
+  return {ok:true,messageId};
 }
 
 async function kickRoomUser(db,uid,body){
@@ -2489,50 +2681,14 @@ async function refreshRoomPresenceSummary(db,roomId){
 
 async function roomPresenceAnnounceJoin(db,uid,roomId){
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
-  const roomRef=db.collection("rooms").doc(roomId);
-  const profileRef=db.collection("public_profiles").doc(uid);
-  const userRef=db.collection("users").doc(uid);
-  const [roomSnap,profileSnap,userSnap,present]=await Promise.all([
-    roomRef.get(),
-    profileRef.get(),
-    userRef.get(),
+  const [roomSnap,present]=await Promise.all([
+    db.collection("rooms").doc(roomId).get(),
     realtimeUserPresent(roomId,uid),
   ]);
   if(!roomSnap.exists||roomSnap.data()?.isActive===false)throw new ApiError("room_unavailable",404);
   if(present===false)throw new ApiError("presence_socket_required",409);
   if(present===null)await assertRoomRealtimePresence(db,roomId,uid);
-
-  const profile=profileSnap.data()||{};
-  const user=userSnap.data()||{};
-  const privacy=user.privacy&&typeof user.privacy==="object"?user.privacy:{};
-  const ghostMode=user.roomGhostMode===true||privacy.ghostMode===true;
-  const vipObject=user.vip&&typeof user.vip==="object"?user.vip:{};
-  const vipLevel=Math.max(0,Math.min(99,Number(
-    user.vipLevel??profile.vipLevel??vipObject.level??0
-  )||0));
-  const entryEffectKey=clean(
-    user.vipEntryEffectKey||profile.vipEntryEffectKey||vipObject.entryEffectKey
-  );
-  const displayName=clean(profile.displayName||profile.username||user.displayName||user.username||"مستخدم Shadow Live");
-  const profileImageUrl=clean(profile.profileImageUrl||user.profileImageUrl);
-
-  if(!ghostMode){
-    const messageRef=roomRef.collection("messages").doc();
-    await messageRef.set({
-      type:"system",
-      systemKind:"room_join",
-      senderUid:uid,
-      displayName,
-      profileImageUrl,
-      text:vipLevel>0
-        ?displayName+" دخل الغرفة — VIP "+String(vipLevel)
-        :displayName+" دخل الغرفة",
-      vipLevel,
-      entryEffectKey,
-      createdAt:FieldValue.serverTimestamp(),
-    });
-  }
-
+  // Join feed is emitted by RoomRealtimeObject. Do not persist room chat history.
   return {ok:true,roomId};
 }
 
@@ -2592,9 +2748,6 @@ async function roomPresenceJoin(db,uid,roomId){
   const vipLevel=Math.max(0,Math.min(99,Number(
     user.vipLevel??profile.vipLevel??vipObject.level??0
   )||0));
-  const entryEffectKey=clean(
-    user.vipEntryEffectKey||profile.vipEntryEffectKey||vipObject.entryEffectKey
-  );
   const displayName=clean(profile.displayName||profile.username||user.displayName||user.username||"مستخدم Shadow Live");
   const profileImageUrl=clean(profile.profileImageUrl||user.profileImageUrl);
   const now=Date.now();
@@ -2607,23 +2760,6 @@ async function roomPresenceJoin(db,uid,roomId){
     ghostMode,
     vipLevel,
   },{merge:true});
-
-  if(!presenceSnap.exists&&!ghostMode){
-    const messageRef=roomRef.collection("messages").doc();
-    await messageRef.set({
-      type:"system",
-      systemKind:"room_join",
-      senderUid:uid,
-      displayName,
-      profileImageUrl,
-      text:vipLevel>0
-        ? displayName+" دخل الغرفة — VIP "+String(vipLevel)
-        : displayName+" دخل الغرفة",
-      vipLevel,
-      entryEffectKey,
-      createdAt:FieldValue.serverTimestamp(),
-    });
-  }
 
   const participants=await refreshRoomPresenceSummary(db,roomId);
   return {ok:true,roomId,onlineCount:participants.length,participants};
@@ -2866,6 +3002,7 @@ async function createPk(db,uid,body){
     if(!roomSnap.exists)throw new ApiError("room_not_found",404);
     const room=roomSnap.data()||{};
     if(room.isActive===false)throw new ApiError("room_unavailable",409);
+    if(!roomFeatureFlags(room).pkEnabled)throw new ApiError("room_pk_disabled",409);
     if(!canManageRoomAction(room,actorSnap.data()||{},uid,"managePk")){
       throw new ApiError("forbidden",403);
     }
