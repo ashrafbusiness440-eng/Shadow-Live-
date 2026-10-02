@@ -3075,118 +3075,184 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         labelStyle: TextStyle(color: Colors.white60),
                       ),
                     ),
-                    const Align(
+                    Align(
                       alignment: Alignment.centerRight,
-                      child: Text(
-                        'غلاف الغرفة',
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: Container(
-                        height: 140,
-                        width: double.infinity,
-                        color: const Color(0xFF151A27),
-                        child: pendingCoverBytes != null
-                            ? Image.memory(
-                                pendingCoverBytes!,
-                                fit: BoxFit.cover,
-                              )
-                            : !removeCover && initialCoverImageUrl.isNotEmpty
-                                ? Image.network(
-                                    initialCoverImageUrl,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) =>
-                                        const Center(
-                                      child: Icon(
-                                        Icons.broken_image_outlined,
-                                        color: Colors.white38,
-                                        size: 38,
-                                      ),
-                                    ),
-                                  )
-                                : const Center(
-                                    child: Icon(
-                                      Icons.image_outlined,
-                                      color: Colors.white38,
-                                      size: 42,
-                                    ),
-                                  ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: FilledButton.icon(
-                            onPressed: saving
-                                ? null
-                                : () async {
-                                    final picked =
-                                        await _roomCoverPicker.pickImage(
-                                      source: ImageSource.gallery,
-                                      imageQuality: 82,
-                                      maxWidth: 1800,
-                                      maxHeight: 1200,
-                                      requestFullMetadata: false,
-                                    );
-                                    if (picked == null) return;
-                                    final bytes = await picked.readAsBytes();
-                                    try {
-                                      detectSupportedImageMime(bytes);
-                                    } catch (_) {
-                                      if (sheetContext.mounted) {
-                                        ScaffoldMessenger.of(sheetContext)
-                                            .showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                              'صيغة الصورة غير مدعومة. استخدم JPG أو PNG أو WebP.',
-                                            ),
-                                          ),
-                                        );
-                                      }
-                                      return;
-                                    }
-                                    if (!sheetContext.mounted) return;
-                                    setSheetState(() {
-                                      pendingCoverBytes = bytes;
-                                      removeCover = false;
-                                    });
-                                  },
-                            icon: const Icon(Icons.photo_library_rounded),
-                            label: Text(
-                              pendingCoverBytes == null
-                                  ? 'اختيار غلاف'
-                                  : 'تغيير الغلاف',
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: const [
+                          Text(
+                            'صورة الغرفة',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 16,
                             ),
                           ),
-                        ),
-                        if (pendingCoverBytes != null ||
-                            (!removeCover &&
-                                initialCoverImageUrl.isNotEmpty)) ...[
-                          const SizedBox(width: 8),
-                          IconButton(
-                            onPressed: saving
-                                ? null
-                                : () {
-                                    setSheetState(() {
-                                      pendingCoverBytes = null;
-                                      removeCover = true;
-                                    });
-                                  },
-                            tooltip: 'حذف الغلاف',
-                            icon: const Icon(
-                              Icons.delete_outline_rounded,
-                              color: Colors.redAccent,
+                          SizedBox(height: 3),
+                          Text(
+                            'تظهر في قائمة الغرف والهيدر فقط، وليست خلفية الغرفة.',
+                            style: TextStyle(
+                              color: Colors.white54,
+                              fontSize: 11,
                             ),
                           ),
                         ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(18),
+                          child: Container(
+                            width: 96,
+                            height: 96,
+                            color: const Color(0xFF151A27),
+                            child: pendingCoverBytes != null
+                                ? Image.memory(
+                                    pendingCoverBytes!,
+                                    fit: BoxFit.cover,
+                                  )
+                                : !removeCover &&
+                                        initialCoverImageUrl.isNotEmpty
+                                    ? Image.network(
+                                        initialCoverImageUrl,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) =>
+                                            const Center(
+                                          child: Icon(
+                                            Icons.broken_image_outlined,
+                                            color: Colors.white38,
+                                            size: 34,
+                                          ),
+                                        ),
+                                      )
+                                    : const Center(
+                                        child: Icon(
+                                          Icons.meeting_room_rounded,
+                                          color: Colors.white38,
+                                          size: 38,
+                                        ),
+                                      ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              FilledButton.icon(
+                                onPressed: saving
+                                    ? null
+                                    : () async {
+                                        final picked =
+                                            await _roomCoverPicker.pickImage(
+                                          source: ImageSource.gallery,
+                                          imageQuality: 86,
+                                          maxWidth: 1200,
+                                          maxHeight: 1200,
+                                          requestFullMetadata: false,
+                                        );
+                                        if (picked == null) return;
+                                        final bytes = await picked.readAsBytes();
+                                        try {
+                                          detectSupportedImageMime(bytes);
+                                        } catch (_) {
+                                          if (sheetContext.mounted) {
+                                            ScaffoldMessenger.of(sheetContext)
+                                                .showSnackBar(
+                                              const SnackBar(
+                                                content: Text(
+                                                  'صيغة الصورة غير مدعومة. استخدم JPG أو PNG أو WebP.',
+                                                ),
+                                              ),
+                                            );
+                                          }
+                                          return;
+                                        }
+                                        if (!sheetContext.mounted) return;
+                                        setSheetState(() {
+                                          pendingCoverBytes = bytes;
+                                          removeCover = false;
+                                        });
+                                      },
+                                icon: const Icon(Icons.photo_library_rounded),
+                                label: Text(
+                                  pendingCoverBytes == null
+                                      ? 'اختيار صورة'
+                                      : 'تغيير الصورة',
+                                ),
+                              ),
+                              if (pendingCoverBytes != null ||
+                                  (!removeCover &&
+                                      initialCoverImageUrl.isNotEmpty))
+                                TextButton.icon(
+                                  onPressed: saving
+                                      ? null
+                                      : () {
+                                          setSheetState(() {
+                                            pendingCoverBytes = null;
+                                            removeCover = true;
+                                          });
+                                        },
+                                  icon: const Icon(
+                                    Icons.delete_outline_rounded,
+                                    color: Colors.redAccent,
+                                  ),
+                                  label: const Text(
+                                    'حذف الصورة',
+                                    style: TextStyle(color: Colors.redAccent),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
                       ],
+                    ),
+                    const SizedBox(height: 14),
+                    Material(
+                      color: const Color(0xFF151A27),
+                      borderRadius: BorderRadius.circular(16),
+                      child: ListTile(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        leading: const Icon(
+                          Icons.wallpaper_rounded,
+                          color: Color(0xFFBFA5FF),
+                        ),
+                        title: const Text(
+                          'خلفية الغرفة',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        subtitle: const Text(
+                          'اختيار من مقتنياتي — لا يتم رفع صورة الجهاز كخلفية.',
+                          style: TextStyle(
+                            color: Colors.white54,
+                            fontSize: 10,
+                          ),
+                        ),
+                        trailing: const Icon(
+                          Icons.chevron_left_rounded,
+                          color: Colors.white38,
+                        ),
+                        onTap: saving
+                            ? null
+                            : () {
+                                Navigator.pop(sheetContext);
+                                Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) => const MyItemsScreen(
+                                      initialType: 'room_background',
+                                    ),
+                                  ),
+                                );
+                              },
+                      ),
                     ),
                     const SizedBox(height: 10),
                     TextField(
@@ -3371,7 +3437,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                         upload.publicUrl?.trim() ?? '';
                                     if (publicUrl.isEmpty) {
                                       throw StateError(
-                                        'room_cover_public_url_missing',
+                                        'room_image_public_url_missing',
                                       );
                                     }
                                     uploadedCoverObjectId = upload.objectId;
@@ -4085,7 +4151,17 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     if (_roomAgencyId.isNotEmpty && agencyRoomImage.isNotEmpty) {
       return agencyRoomImage;
     }
-    return _ownerPhotoUrl.trim();
+
+    for (final key in const [
+      'roomImageUrl',
+      'roomPhotoUrl',
+      'coverImageUrl',
+      'imageUrl',
+    ]) {
+      final value = (_roomArguments[key] ?? '').toString().trim();
+      if (value.isNotEmpty) return value;
+    }
+    return '';
   }
 
   void _openAgencyPage() {
@@ -5190,30 +5266,22 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   }
 
   Widget _buildRoomBackground({
-    required String coverImageUrl,
     required String rewardImageUrl,
     required String rewardAssetKey,
   }) {
-    Widget fallback() => coverImageUrl.isEmpty
-        ? const DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Color(0xFF24123D),
-                  Color(0xFF080A10),
-                  Colors.black,
-                ],
-              ),
+    Widget fallback() => const DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Color(0xFF24123D),
+                Color(0xFF080A10),
+                Colors.black,
+              ],
             ),
-          )
-        : Image.network(
-            coverImageUrl,
-            fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) =>
-                const ColoredBox(color: Colors.black),
-          );
+          ),
+        );
 
     if (rewardImageUrl.isNotEmpty) {
       return Image.network(
@@ -5242,11 +5310,6 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   @override
   Widget build(BuildContext context) {
     final roomId = (_roomArguments['roomId'] ?? '').toString();
-    final coverImageUrl = (_roomArguments['coverImageUrl'] ??
-            _roomArguments['imageUrl'] ??
-            '')
-        .toString()
-        .trim();
     final rewardBackgroundExpiresAtMs =
         (_roomArguments['activeRoomBackgroundExpiresAtMs'] as num?)?.toInt() ??
             0;
@@ -5303,7 +5366,6 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                     children: [
                       Positioned.fill(
                         child: _buildRoomBackground(
-                          coverImageUrl: coverImageUrl,
                           rewardImageUrl: rewardBackgroundImageUrl,
                           rewardAssetKey: rewardBackgroundAssetKey,
                         ),
