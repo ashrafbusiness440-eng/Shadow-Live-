@@ -819,7 +819,7 @@ async function changeRoomPublicId(db,uid,body){
   const roomId=clean(body.roomId);
   const newPublicId=clean(body.publicId);
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
-  if(!/^[0-9]{3,12}$/.test(newPublicId))throw new ApiError("invalid_public_id",400);
+  if(!/^[0-9]{3,8}$/.test(newPublicId))throw new ApiError("invalid_public_id",400);
 
   const roomRef=db.collection("rooms").doc(roomId);
   const userRef=db.collection("users").doc(uid);
@@ -838,10 +838,6 @@ async function changeRoomPublicId(db,uid,body){
     const permissions=roomPermissions(user);
     const canManageId=canManageRoomAction(room,user,uid,"manageIds")||permissions.manageIds;
     if(!canManageId)throw new ApiError("forbidden",403);
-    if(!permissions.manageIds&&newPublicId.length!==6){
-      throw new ApiError("manage_ids_required",403);
-    }
-
     const oldPublicId=clean(room.publicId);
     if(oldPublicId===newPublicId){
       return {ok:true,roomId,publicId:newPublicId,unchanged:true};
@@ -860,14 +856,7 @@ async function changeRoomPublicId(db,uid,body){
 
     if(oldPublicId){
       const oldRef=db.collection("room_ids").doc(oldPublicId);
-      tx.set(oldRef,{
-        roomId,
-        ownerUid,
-        active:false,
-        reserved:true,
-        replacedBy:newPublicId,
-        updatedAt:now,
-      },{merge:true});
+      tx.delete(oldRef);
     }
 
     const name=clean(room.name||room.title||"غرفتي");
