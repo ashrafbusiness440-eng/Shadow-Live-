@@ -6,7 +6,9 @@ import '../../../core/assets/shadow_asset_registry.dart';
 import '../services/reward_inventory_service.dart';
 
 class MyItemsScreen extends StatefulWidget {
-  const MyItemsScreen({super.key});
+  const MyItemsScreen({super.key, this.initialType});
+
+  final String? initialType;
 
   @override
   State<MyItemsScreen> createState() => _MyItemsScreenState();
@@ -39,7 +41,12 @@ class _MyItemsScreenState extends State<MyItemsScreen>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: _types.length, vsync: this);
+    final initialIndex = _types.indexOf(widget.initialType ?? '');
+    _tabs = TabController(
+      length: _types.length,
+      vsync: this,
+      initialIndex: initialIndex < 0 ? 0 : initialIndex,
+    );
     _load();
     _clock = Timer.periodic(
       const Duration(seconds: 30),
