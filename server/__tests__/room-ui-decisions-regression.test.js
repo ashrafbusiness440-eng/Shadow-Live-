@@ -6,6 +6,38 @@ function source(relative) {
   return readFileSync(new URL("../../" + relative, import.meta.url), "utf8");
 }
 
+
+test("Room Image is the canonical external room image across list, API and settings", () => {
+  const main = source("lib/main.dart");
+  const rooms = source("lib/screens/room/room_list_screen.dart");
+  const voice = source("cloudflare-worker/src/voice-session-legacy.js");
+
+  assert.equal(
+    rooms.includes("room.data['roomImageUrl'] ??"),
+    true,
+  );
+  assert.equal(
+    rooms.indexOf("room.data['roomImageUrl']") <
+      rooms.indexOf("room.data['coverImageUrl']"),
+    true,
+  );
+  assert.equal(
+    main.indexOf("_roomArguments['roomImageUrl']") <
+      main.indexOf("_roomArguments['coverImageUrl']"),
+    true,
+  );
+  assert.equal(
+    voice.includes(
+      "roomImageUrl:clean(data.roomImageUrl||data.coverImageUrl||data.imageUrl)",
+    ),
+    true,
+  );
+  assert.equal(
+    voice.includes("coverImageUrl:roomImageUrl"),
+    true,
+  );
+});
+
 test("Room image stays separate from room background and settings route to My Items", () => {
   const main = source("lib/main.dart");
   const items = source("lib/features/profile/screens/my_items_screen.dart");
