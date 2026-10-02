@@ -397,6 +397,21 @@ function isOfficialRoom(room){
     type==="official"||type==="administrative"||type==="customer_service";
 }
 
+function roomFeatureFlags(room){
+  const type=clean(room.roomType||room.type||"personal");
+  const customerService=type==="customer_service";
+  const read=(key,defaultValue)=>
+    Object.prototype.hasOwnProperty.call(room,key)
+      ? room[key]===true
+      : defaultValue;
+  return {
+    giftsEnabled:read("giftsEnabled",!customerService),
+    pkEnabled:read("pkEnabled",!customerService),
+    gamesEnabled:read("gamesEnabled",!customerService),
+    roomRocketEnabled:read("roomRocketEnabled",!customerService),
+  };
+}
+
 function roomModeratorLimit(room){
   const level=Math.max(1,Math.min(6,Number(room.level||1)));
   const type=clean(room.roomType||room.type||"personal");
@@ -636,6 +651,7 @@ function roomResponse(roomId,data){
     ownerName:clean(data.ownerName),
     ownerLocation:clean(data.ownerLocation),
     chatEnabled:data.chatEnabled!==false,
+    ...roomFeatureFlags(data),
     description:clean(data.description),
     tags:Array.isArray(data.tags)?data.tags.map(clean).filter(Boolean).slice(0,8):[],
     visibility:clean(data.visibility||"public"),
@@ -1151,6 +1167,7 @@ function roomControlPolicySnapshot(room){
     official:isOfficialRoom(room),
     systemOwned:room.systemOwned===true,
     hostUid:roomHostUid(room),
+    features:roomFeatureFlags(room),
     baseSeats,
     baseModerators,
     overrides,
@@ -1183,6 +1200,20 @@ async function createOfficialRoomFromControl(db,uid,body){
   const tags=Array.isArray(body.tags)
     ? [...new Set(body.tags.map(clean).filter(Boolean))].slice(0,8)
     : [];
+  const customerService=officialType==="customer_service";
+  const featureDefault=!customerService;
+  const giftsEnabled=Object.prototype.hasOwnProperty.call(body,"giftsEnabled")
+    ? body.giftsEnabled===true
+    : featureDefault;
+  const pkEnabled=Object.prototype.hasOwnProperty.call(body,"pkEnabled")
+    ? body.pkEnabled===true
+    : featureDefault;
+  const gamesEnabled=Object.prototype.hasOwnProperty.call(body,"gamesEnabled")
+    ? body.gamesEnabled===true
+    : featureDefault;
+  const roomRocketEnabled=Object.prototype.hasOwnProperty.call(body,"roomRocketEnabled")
+    ? body.roomRocketEnabled===true
+    : featureDefault;
 
   if(name.length<2||name.length>80)throw new ApiError("invalid_room_name",400);
   if(requestedPublicId&&!/^\d{3,12}$/.test(requestedPublicId))throw new ApiError("invalid_room_public_id",400);
@@ -1235,6 +1266,10 @@ async function createOfficialRoomFromControl(db,uid,body){
         coverImageUrl,
         tags,
         chatEnabled:true,
+        giftsEnabled,
+        pkEnabled,
+        gamesEnabled,
+        roomRocketEnabled,
         visibility,
         isHidden:visibility==="hidden",
         isActive:true,
@@ -1368,6 +1403,7 @@ async function controlRoomPolicy(db,uid,body){
       coverImageUrl:clean(room.coverImageUrl),
       visibility:clean(room.visibility||"public"),
       tags:Array.isArray(room.tags)?room.tags:[],
+      ...roomFeatureFlags(room),
       policy:roomControlPolicySnapshot(room),
     };
   }
@@ -1434,6 +1470,27 @@ async function controlRoomPolicy(db,uid,body){
         overrideUpdatedAt:now,
         updatedAt:now,
       };
+    }else if(controlAction==="setRoomFeatures"){
+      if(!canGlobal)throw new ApiError("global_room_control_required",403);
+      if(!before.official)throw new ApiError("official_room_required",409);
+      const current=roomFeatureFlags(room);
+      patch={
+        giftsEnabled:Object.prototype.hasOwnProperty.call(body,"giftsEnabled")
+          ? body.giftsEnabled===true
+          : current.giftsEnabled,
+        pkEnabled:Object.prototype.hasOwnProperty.call(body,"pkEnabled")
+          ? body.pkEnabled===true
+          : current.pkEnabled,
+        gamesEnabled:Object.prototype.hasOwnProperty.call(body,"gamesEnabled")
+          ? body.gamesEnabled===true
+          : current.gamesEnabled,
+        roomRocketEnabled:Object.prototype.hasOwnProperty.call(body,"roomRocketEnabled")
+          ? body.roomRocketEnabled===true
+          : current.roomRocketEnabled,
+        featuresUpdatedAt:now,
+        featuresUpdatedBy:uid,
+        updatedAt:now,
+      };
     }else if(controlAction==="setOfficialRoom"){
       if(!canGlobal)throw new ApiError("global_room_control_required",403);
       const enabled=body.enabled===true;
@@ -1452,6 +1509,9 @@ async function controlRoomPolicy(db,uid,body){
         roomType:enabled?officialType:clean(room.previousRoomType||room.roomType||room.type||"personal"),
         hostUid:enabled?hostUid:"",
         ...(enabled?{previousRoomType:clean(room.roomType||room.type||"personal")}:{previousRoomType:FieldValue.delete()}),
+        ...(enabled&&officialType==="customer_service"&&before.type!=="customer_service"
+          ? {giftsEnabled:false,pkEnabled:false,gamesEnabled:false,roomRocketEnabled:false}
+          : {}),
         officialUpdatedAt:now,
         officialUpdatedBy:uid,
         updatedAt:now,
@@ -1487,6 +1547,9 @@ async function controlRoomPolicy(db,uid,body){
         tags,
         roomType:officialType,
         hostUid,
+        ...(officialType==="customer_service"&&before.type!=="customer_service"
+          ? {giftsEnabled:false,pkEnabled:false,gamesEnabled:false,roomRocketEnabled:false}
+          : {}),
         officialUpdatedAt:now,
         officialUpdatedBy:uid,
         updatedAt:now,
