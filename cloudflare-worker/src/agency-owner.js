@@ -401,6 +401,7 @@ export async function loadAgencyOwnerHostPerformance(
       profileImageUrl:
         clean(user.profileImageUrl || user.photoUrl || user.avatarUrl) ||
         null,
+      profileAvatarAsset: clean(user.profileAvatarAsset) || null,
       role: clean(membership.role),
       status: clean(membership.status),
       accountStatus: clean(user.accountStatus || "active"),
