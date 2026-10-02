@@ -10,6 +10,7 @@ import '../../profile/screens/public_profile_screen.dart';
 import '../../profile/services/profile_action_service.dart';
 import '../services/host_my_agency_service.dart';
 import '../services/public_agency_service.dart';
+import '../widgets/agency_user_avatar.dart';
 import 'agency_membership_review_page.dart';
 import 'owner_agency_dashboard_page.dart';
 import 'agency_package_inventory_page.dart';
@@ -1528,7 +1529,10 @@ class _OwnerCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final image = owner.profileImageUrl?.trim() ?? '';
+    final avatar = agencyUserAvatarProvider(
+      imageUrl: owner.profileImageUrl,
+      avatarAsset: owner.profileAvatarAsset,
+    );
     return Container(
       decoration: _cardDecoration(),
       child: ListTile(
@@ -1540,8 +1544,8 @@ class _OwnerCard extends StatelessWidget {
         leading: CircleAvatar(
           radius: 26,
           backgroundColor: const Color(0xFF2A3150),
-          backgroundImage: image.isEmpty ? null : NetworkImage(image),
-          child: image.isEmpty
+          backgroundImage: avatar,
+          child: avatar == null
               ? const Icon(Icons.person_rounded, color: Colors.white70)
               : null,
         ),
@@ -2263,7 +2267,10 @@ class _HostRankingTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final person = entry.person;
-    final image = person.profileImageUrl?.trim() ?? '';
+    final avatar = agencyUserAvatarProvider(
+      imageUrl: person.profileImageUrl,
+      avatarAsset: person.profileAvatarAsset,
+    );
     return ListTile(
       dense: true,
       onTap: onTap,
@@ -2289,8 +2296,8 @@ class _HostRankingTile extends StatelessWidget {
           CircleAvatar(
             radius: 15,
             backgroundColor: const Color(0xFF2A3150),
-            backgroundImage: image.isEmpty ? null : NetworkImage(image),
-            child: image.isEmpty
+            backgroundImage: avatar,
+            child: avatar == null
                 ? const Icon(Icons.person_rounded, size: 16, color: Colors.white70)
                 : null,
           ),

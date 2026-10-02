@@ -179,6 +179,7 @@ void main() {
           'publicId': '812302',
           'displayName': 'Manager',
           'profileImageUrl': 'https://example.invalid/manager.webp',
+          'profileAvatarAsset': 'assets/images/avatars/male_2.png',
           'accountStatus': 'active',
         },
       ],
@@ -192,6 +193,10 @@ void main() {
     expect(
       members.members[1].profileImageUrl,
       'https://example.invalid/manager.webp',
+    );
+    expect(
+      members.members[1].profileAvatarAsset,
+      'assets/images/avatars/male_2.png',
     );
     expect(members.members[1].accountStatus, 'active');
 

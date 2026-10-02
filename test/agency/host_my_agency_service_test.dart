@@ -17,6 +17,7 @@ void main() {
         'publicId': '930001',
         'displayName': 'Agency Owner',
         'profileImageUrl': 'https://example.invalid/owner.webp',
+        'profileAvatarAsset': 'assets/images/avatars/male_1.png',
       },
       'membership': {
         'role': 'host',
@@ -78,6 +79,10 @@ void main() {
     expect(data.agency.name, 'Host Core Agency');
     expect(data.agency.roomId, 'agency_room_741201');
     expect(data.owner.uid, 'owner-1');
+    expect(
+      data.owner.profileAvatarAsset,
+      'assets/images/avatars/male_1.png',
+    );
     expect(data.membershipRole, 'host');
     expect(data.membershipStatus, 'active');
     expect(data.target.progressCoins, 650000);

@@ -188,6 +188,7 @@ class OwnerAgencyMember {
     required this.publicId,
     required this.displayName,
     required this.profileImageUrl,
+    this.profileAvatarAsset,
     required this.accountStatus,
   });
 
@@ -197,6 +198,7 @@ class OwnerAgencyMember {
   final String? publicId;
   final String? displayName;
   final String? profileImageUrl;
+  final String? profileAvatarAsset;
   final String accountStatus;
 
   factory OwnerAgencyMember.fromJson(Map<String, dynamic> json) {
@@ -207,6 +209,7 @@ class OwnerAgencyMember {
       publicId: _nullable(json['publicId']),
       displayName: _nullable(json['displayName']),
       profileImageUrl: _nullable(json['profileImageUrl']),
+      profileAvatarAsset: _nullable(json['profileAvatarAsset']),
       accountStatus: (json['accountStatus'] ?? 'active').toString(),
     );
   }
@@ -284,6 +287,7 @@ class ManagerHostPerformanceData {
     required this.publicId,
     required this.displayName,
     required this.profileImageUrl,
+    this.profileAvatarAsset,
     required this.role,
     required this.status,
     required this.accountStatus,
@@ -305,6 +309,7 @@ class ManagerHostPerformanceData {
   final String? publicId;
   final String displayName;
   final String? profileImageUrl;
+  final String? profileAvatarAsset;
   final String role;
   final String status;
   final String accountStatus;
@@ -344,6 +349,7 @@ class ManagerHostPerformanceData {
       publicId: _nullable(hostMap['publicId']),
       displayName: (hostMap['displayName'] ?? 'Shadow Live').toString(),
       profileImageUrl: _nullable(hostMap['profileImageUrl']),
+      profileAvatarAsset: _nullable(hostMap['profileAvatarAsset']),
       role: (hostMap['role'] ?? '').toString(),
       status: (hostMap['status'] ?? '').toString(),
       accountStatus: (hostMap['accountStatus'] ?? 'active').toString(),
@@ -424,6 +430,7 @@ class OwnerHostPerformanceData {
     required this.publicId,
     required this.displayName,
     required this.profileImageUrl,
+    this.profileAvatarAsset,
     required this.role,
     required this.status,
     required this.accountStatus,
@@ -446,6 +453,7 @@ class OwnerHostPerformanceData {
   final String? publicId;
   final String displayName;
   final String? profileImageUrl;
+  final String? profileAvatarAsset;
   final String role;
   final String status;
   final String accountStatus;
@@ -488,6 +496,7 @@ class OwnerHostPerformanceData {
       displayName:
           (hostMap['displayName'] ?? 'Shadow Live').toString(),
       profileImageUrl: _nullable(hostMap['profileImageUrl']),
+      profileAvatarAsset: _nullable(hostMap['profileAvatarAsset']),
       role: (hostMap['role'] ?? '').toString(),
       status: (hostMap['status'] ?? '').toString(),
       accountStatus: (hostMap['accountStatus'] ?? 'active').toString(),
@@ -531,6 +540,7 @@ class OwnerAgencyPendingRequest {
     required this.userPublicId,
     required this.displayName,
     required this.profileImageUrl,
+    this.profileAvatarAsset,
     required this.type,
     required this.targetRole,
     required this.status,
@@ -544,6 +554,7 @@ class OwnerAgencyPendingRequest {
   final String? userPublicId;
   final String? displayName;
   final String? profileImageUrl;
+  final String? profileAvatarAsset;
   final String type;
   final String targetRole;
   final String status;
@@ -563,6 +574,7 @@ class OwnerAgencyPendingRequest {
       userPublicId: _nullable(json['userPublicId']),
       displayName: _nullable(json['displayName']),
       profileImageUrl: _nullable(json['profileImageUrl']),
+      profileAvatarAsset: _nullable(json['profileAvatarAsset']),
       type: (json['type'] ?? '').toString(),
       targetRole: (json['targetRole'] ?? 'host').toString(),
       status: (json['status'] ?? '').toString(),
