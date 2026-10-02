@@ -797,15 +797,13 @@ async function confirmUpload(request, env, auth, body) {
         auth.db.writeUpdate(
           `rooms/${linkedAgencyRoomId}`,
           {
-            coverImageUrl: stablePublicUrl,
-            coverImageObjectId: objectId,
-            agencyCoverUrl: stablePublicUrl,
+            agencyRoomImageUrl: stablePublicUrl,
+            agencyRoomImageObjectId: objectId,
             updatedAt: now,
           },
           [
-            "coverImageUrl",
-            "coverImageObjectId",
-            "agencyCoverUrl",
+            "agencyRoomImageUrl",
+            "agencyRoomImageObjectId",
             "updatedAt",
           ],
         ),
