@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../profile/screens/public_profile_screen.dart';
 import '../services/host_my_agency_service.dart';
 import '../services/owner_agency_service.dart';
+import '../widgets/agency_user_avatar.dart';
 
 class AgencyMembershipReviewPage extends StatefulWidget {
   const AgencyMembershipReviewPage({
@@ -471,7 +472,10 @@ class _ManagerMemberPerformanceTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final image = member.profileImageUrl?.trim() ?? '';
+    final avatar = agencyUserAvatarProvider(
+      imageUrl: member.profileImageUrl,
+      avatarAsset: member.profileAvatarAsset,
+    );
     final publicId = member.publicId?.trim() ?? '';
     return Card(
       key: Key('agency-manager-member-${member.uid}'),
@@ -480,8 +484,8 @@ class _ManagerMemberPerformanceTile extends StatelessWidget {
       child: ListTile(
         leading: CircleAvatar(
           backgroundColor: const Color(0xFF2A3150),
-          backgroundImage: image.isEmpty ? null : NetworkImage(image),
-          child: image.isEmpty ? const Icon(Icons.person_rounded) : null,
+          backgroundImage: avatar,
+          child: avatar == null ? const Icon(Icons.person_rounded) : null,
         ),
         title: Text(
           member.displayName ?? (publicId.isEmpty ? member.uid : publicId),
@@ -612,7 +616,10 @@ class _ReviewRequestCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final publicId = request.userPublicId?.trim() ?? '';
-    final image = request.profileImageUrl?.trim() ?? '';
+    final avatar = agencyUserAvatarProvider(
+      imageUrl: request.profileImageUrl,
+      avatarAsset: request.profileAvatarAsset,
+    );
     final typeLabel = switch (request.type) {
       'leave' => 'طلب مغادرة',
       'join' => 'طلب انضمام',
@@ -649,9 +656,8 @@ class _ReviewRequestCard extends StatelessWidget {
                   child: CircleAvatar(
                     radius: 24,
                     backgroundColor: const Color(0xFF31204F),
-                    backgroundImage:
-                        image.isEmpty ? null : NetworkImage(image),
-                    child: image.isEmpty
+                    backgroundImage: avatar,
+                    child: avatar == null
                         ? const Icon(
                             Icons.person_rounded,
                             color: Colors.white70,
