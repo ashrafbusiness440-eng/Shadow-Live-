@@ -106,6 +106,29 @@ async function broadcastRoomRealtimeEvent(roomId,type,payload={}){
   }
 }
 
+async function registerCustomerServiceMicSchedules(roomId,uid,schedules){
+  const namespace=legacyEnv.ROOM_REALTIME;
+  if(!namespace||!Array.isArray(schedules)||schedules.length===0)return false;
+  try{
+    const id=namespace.idFromName(roomId);
+    const stub=namespace.get(id);
+    const response=await stub.fetch(
+      "https://room-realtime.internal/customer-service/mic/register",
+      {
+        method:"POST",
+        headers:{"content-type":"application/json"},
+        body:JSON.stringify({roomId,uid,schedules}),
+      },
+    );
+    return response.ok;
+  }catch(_){
+    return false;
+  }
+}
+
+const CUSTOMER_SERVICE_INVITE_MS=60_000;
+const CUSTOMER_SERVICE_MIC_MS=10*60_000;
+
 async function realtimeRoomCounts(roomIds){
   const ids=Array.from(new Set(
     (Array.isArray(roomIds)?roomIds:[])
@@ -1133,6 +1156,8 @@ function normalizeSeats(room){
       profileImageUrl:String(found.profileImageUrl||""),
       muted:found.muted!==false,
       micStartedAtMs:Number(found.micStartedAtMs||0),
+      customerServiceMicExpiresAtMs:
+        Number(found.customerServiceMicExpiresAtMs||0),
       frameRewardId:String(found.frameRewardId||""),
       frameAssetKey:String(found.frameAssetKey||""),
       frameImageUrl:String(found.frameImageUrl||""),
@@ -1683,6 +1708,14 @@ async function roomSeatAction(db,uid,body){
     let invites=Array.isArray(room.micInvites)?[...room.micInvites]:[];
     let requests=Array.isArray(room.micRequests)?[...room.micRequests]:[];
     let micInviteOnly=room.micInviteOnly===true;
+    const customerService=
+      clean(room.roomType||room.type)==="customer_service";
+    const inviteExpiries=
+      room.customerServiceMicInviteExpiresAtMs&&
+      typeof room.customerServiceMicInviteExpiresAtMs==="object"
+        ? {...room.customerServiceMicInviteExpiresAtMs}
+        : {};
+    let customerServiceSchedule=null;
 
     const clearUserSeat=userId=>{
       seats=seats.map(seat=>seat.uid===userId
@@ -1693,6 +1726,7 @@ async function roomSeatAction(db,uid,body){
             profileImageUrl:"",
             muted:true,
             micStartedAtMs:0,
+            customerServiceMicExpiresAtMs:0,
             frameRewardId:"",
             frameAssetKey:"",
             frameImageUrl:"",
@@ -1718,6 +1752,14 @@ async function roomSeatAction(db,uid,body){
       if(!targetUid||targetUid===uid)throw new ApiError("invalid_target",400);
       await assertRoomRealtimePresence(db,roomId,targetUid);
       if(!invites.includes(targetUid))invites.push(targetUid);
+      if(customerService){
+        const expiresAtMs=Date.now()+CUSTOMER_SERVICE_INVITE_MS;
+        inviteExpiries[targetUid]=expiresAtMs;
+        customerServiceSchedule={
+          uid:targetUid,
+          schedules:[{kind:"invite_expire",expiresAtMs}],
+        };
+      }
     }else if(action==="approveMicRequest"){
       if(!canManageMic)throw new ApiError("forbidden",403);
       if(!targetUid||targetUid===uid)throw new ApiError("invalid_target",400);
@@ -1725,12 +1767,21 @@ async function roomSeatAction(db,uid,body){
       await assertRoomRealtimePresence(db,roomId,targetUid);
       requests=requests.filter(id=>id!==targetUid);
       if(!invites.includes(targetUid))invites.push(targetUid);
+      if(customerService){
+        const expiresAtMs=Date.now()+CUSTOMER_SERVICE_INVITE_MS;
+        inviteExpiries[targetUid]=expiresAtMs;
+        customerServiceSchedule={
+          uid:targetUid,
+          schedules:[{kind:"invite_expire",expiresAtMs}],
+        };
+      }
     }else if(action==="rejectMicRequest"){
       if(!canManageMic)throw new ApiError("forbidden",403);
       if(!targetUid)throw new ApiError("invalid_target",400);
       requests=requests.filter(id=>id!==targetUid);
     }else if(action==="declineMicInvite"){
       invites=invites.filter(id=>id!==uid);
+      delete inviteExpiries[uid];
     }else if(action==="takeSeat"||action==="switchSeat"){
       if(!Number.isInteger(seatIndex)||seatIndex<0||seatIndex>=seats.length)throw new ApiError("invalid_seat",400);
       const currentSeatIndex=seats.findIndex(item=>item.uid===uid);
@@ -1742,7 +1793,20 @@ async function roomSeatAction(db,uid,body){
       if(reserved&&reserved.uid!==uid)throw new ApiError("pk_seat_reserved",409);
       if(mine&&mine.seatIndex!==seatIndex)throw new ApiError("pk_original_seat_required",409);
       if(seat.uid&&seat.uid!==uid)throw new ApiError("seat_occupied",409);
-      if(micInviteOnly&&!isOwner&&!isHost&&!canManageMic&&!invites.includes(uid)&&!mine&&currentSeatIndex<0)throw new ApiError("mic_invite_required",403);
+      if(customerService){
+        if(seatIndex<2&&!canManageMic){
+          throw new ApiError("customer_service_manager_mic_required",403);
+        }
+        if(seatIndex>=2&&!canManageMic&&currentSeatIndex<0){
+          if(!invites.includes(uid))throw new ApiError("mic_invite_required",403);
+          const inviteExpiresAtMs=Number(inviteExpiries[uid]||0);
+          if(inviteExpiresAtMs<=Date.now()){
+            throw new ApiError("mic_invite_expired",409);
+          }
+        }
+      }else if(micInviteOnly&&!isOwner&&!isHost&&!canManageMic&&!invites.includes(uid)&&!mine&&currentSeatIndex<0){
+        throw new ApiError("mic_invite_required",403);
+      }
 
       const profileSnap=await tx.get(myProfileRef);
       const profile=profileSnap.data()||{};
@@ -1760,6 +1824,14 @@ async function roomSeatAction(db,uid,body){
       const micStartedAtMs=keepMicActive
         ?Number(existingSeat.micStartedAtMs)
         :0;
+      const previousCsExpiry=
+        Number(existingSeat?.customerServiceMicExpiresAtMs||0);
+      const customerServiceMicExpiresAtMs=
+        customerService&&!canManageMic
+          ? (previousCsExpiry>Date.now()
+              ? previousCsExpiry
+              : Date.now()+CUSTOMER_SERVICE_MIC_MS)
+          : 0;
       clearUserSeat(uid);
       seats[seatIndex]={
         index:seatIndex,
@@ -1776,9 +1848,22 @@ async function roomSeatAction(db,uid,body){
         voiceWaveAssetKey:clean(voiceWave.assetKey),
         voiceWaveImageUrl:clean(voiceWave.imageUrl),
         voiceWaveExpiresAtMs:Number(voiceWave.expiresAtMs||0),
+        customerServiceMicExpiresAtMs,
       };
       invites=invites.filter(id=>id!==uid);
       requests=requests.filter(id=>id!==uid);
+      delete inviteExpiries[uid];
+      if(customerServiceMicExpiresAtMs>0){
+        customerServiceSchedule={
+          uid,
+          schedules:[
+            {
+              kind:"mic_expire",
+              expiresAtMs:customerServiceMicExpiresAtMs,
+            },
+          ],
+        };
+      }
     }else if(action==="muteSeat"||action==="unmuteSeat"){
       const seatIndex=seats.findIndex(seat=>seat.uid===uid);
       if(seatIndex<0)throw new ApiError("speaker_seat_required",403);
@@ -1829,6 +1914,7 @@ async function roomSeatAction(db,uid,body){
       clearUserSeat(targetUid);
       invites=invites.filter(id=>id!==targetUid);
       requests=requests.filter(id=>id!==targetUid);
+      delete inviteExpiries[targetUid];
     }else{
       throw new ApiError("invalid_seat_action",400);
     }
@@ -1838,6 +1924,7 @@ async function roomSeatAction(db,uid,body){
       micInvites:invites,
       micRequests:requests,
       micInviteOnly,
+      customerServiceMicInviteExpiresAtMs:inviteExpiries,
       updatedAt:FieldValue.serverTimestamp(),
     });
 
@@ -1854,12 +1941,22 @@ async function roomSeatAction(db,uid,body){
       canManageMic,
       isActive:true,
       onlineCount:Math.max(0,Number(room.onlineCount||0)),
+      _customerServiceSchedule:customerServiceSchedule,
     };
   });
+  const schedule=result._customerServiceSchedule;
+  if(schedule?.uid&&Array.isArray(schedule.schedules)){
+    await registerCustomerServiceMicSchedules(
+      roomId,
+      schedule.uid,
+      schedule.schedules,
+    );
+  }
   const liveOnlineCount=await realtimeRoomCount(roomId);
+  const {_customerServiceSchedule,...publicResult}=result;
   return {
-    ...result,
-    onlineCount:liveOnlineCount??result.onlineCount,
+    ...publicResult,
+    onlineCount:liveOnlineCount??publicResult.onlineCount,
   };
 }
 
