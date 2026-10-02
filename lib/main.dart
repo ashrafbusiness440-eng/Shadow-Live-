@@ -5612,18 +5612,25 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     final rewardBackgroundExpiresAtMs =
         (_roomArguments['activeRoomBackgroundExpiresAtMs'] as num?)?.toInt() ??
             0;
-    final rewardBackgroundValid = rewardBackgroundExpiresAtMs >
-        DateTime.now().millisecondsSinceEpoch;
-    final rewardBackgroundImageUrl = rewardBackgroundValid
-        ? (_roomArguments['activeRoomBackgroundImageUrl'] ?? '')
+    final rawRewardBackgroundImageUrl =
+        (_roomArguments['activeRoomBackgroundImageUrl'] ?? '')
             .toString()
-            .trim()
-        : '';
-    final rewardBackgroundAssetKey = rewardBackgroundValid
-        ? (_roomArguments['activeRoomBackgroundAssetKey'] ?? '')
+            .trim();
+    final rawRewardBackgroundAssetKey =
+        (_roomArguments['activeRoomBackgroundAssetKey'] ?? '')
             .toString()
-            .trim()
-        : '';
+            .trim();
+    final hasRewardBackground =
+        rawRewardBackgroundImageUrl.isNotEmpty ||
+        rawRewardBackgroundAssetKey.isNotEmpty;
+    final rewardBackgroundValid = hasRewardBackground &&
+        (rewardBackgroundExpiresAtMs == 0 ||
+            rewardBackgroundExpiresAtMs >
+                DateTime.now().millisecondsSinceEpoch);
+    final rewardBackgroundImageUrl =
+        rewardBackgroundValid ? rawRewardBackgroundImageUrl : '';
+    final rewardBackgroundAssetKey =
+        rewardBackgroundValid ? rawRewardBackgroundAssetKey : '';
     final rawEntrance = _roomArguments['recentEntrance'];
     final recentEntrance = rawEntrance is Map
         ? Map<String, dynamic>.from(rawEntrance)
