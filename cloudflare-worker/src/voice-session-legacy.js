@@ -7,6 +7,11 @@ import {
   legacyPresenceFresh,
   realtimeUserPresentFromNamespace,
 } from "./room-presence-authority.js";
+import {
+  invalidateRoomRealtimeAdmissionCache,
+  publishRoomRealtimeEvent,
+  setRoomRealtimeChatPolicy,
+} from "./room-realtime.js";
 
 class ApiError extends Error {
   constructor(code,status=400){super(code);this.code=code;this.status=status;}
@@ -1028,7 +1033,7 @@ async function setRoomChatEnabled(db,uid,body){
   const actorRef=db.collection("users").doc(uid);
   const auditRef=db.collection("room_audit_logs").doc(roomId).collection("items").doc();
 
-  return db.runTransaction(async tx=>{
+  const result=await db.runTransaction(async tx=>{
     const [roomSnap,actorSnap]=await Promise.all([tx.get(roomRef),tx.get(actorRef)]);
     if(!roomSnap.exists)throw new ApiError("room_not_found",404);
     const room=roomSnap.data()||{};
@@ -1049,6 +1054,12 @@ async function setRoomChatEnabled(db,uid,body){
     });
     return {ok:true,roomId,chatEnabled:enabled};
   });
+
+  invalidateRoomRealtimeAdmissionCache(roomId);
+  try{
+    await setRoomRealtimeChatPolicy(legacyEnv,roomId,enabled);
+  }catch(_){}
+  return result;
 }
 
 async function closePersonalRoom(db,uid,roomId){
