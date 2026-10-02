@@ -1323,6 +1323,7 @@ class _RoomsPageState extends State<RoomsPage> {
   final roomCover=TextEditingController();
   final roomTags=TextEditingController();
   bool busy=false,bypassLevelCapacity=false,hiddenOfficialRoom=false;
+  bool giftsEnabled=true,pkEnabled=true,gamesEnabled=true,roomRocketEnabled=true;
   String officialType='official';
   Map<String,dynamic>? room;
   String? error;
@@ -1384,6 +1385,13 @@ class _RoomsPageState extends State<RoomsPage> {
     roomTags.text=data['tags'] is List?(data['tags'] as List).map((e)=>'$e').join(', '):'';
     officialType=(policy['type']??'official').toString();
     if(!['official','administrative','customer_service'].contains(officialType))officialType='official';
+    final features=policy['features'] is Map
+        ? Map<String,dynamic>.from(policy['features'] as Map)
+        : <String,dynamic>{};
+    giftsEnabled=features['giftsEnabled']!=false;
+    pkEnabled=features['pkEnabled']!=false;
+    gamesEnabled=features['gamesEnabled']!=false;
+    roomRocketEnabled=features['roomRocketEnabled']!=false;
     hiddenOfficialRoom=(data['visibility']??'public').toString()=='hidden';
     bypassLevelCapacity=overrides['bypassLevelCapacity']==true;
   }
@@ -1455,6 +1463,10 @@ class _RoomsPageState extends State<RoomsPage> {
     final tagsController=TextEditingController();
     var officialType='official';
     var hidden=false;
+    var createGiftsEnabled=true;
+    var createPkEnabled=true;
+    var createGamesEnabled=true;
+    var createRoomRocketEnabled=true;
     var creating=false;
 
     await showModalBottomSheet<void>(
@@ -1494,7 +1506,17 @@ class _RoomsPageState extends State<RoomsPage> {
                   DropdownMenuItem(value:'administrative',child:Text('إدارية')),
                   DropdownMenuItem(value:'customer_service',child:Text('خدمة عملاء')),
                 ],
-                onChanged:creating?null:(v){if(v!=null)setSheetState(()=>officialType=v);},
+                onChanged:creating?null:(v){
+                  if(v==null)return;
+                  setSheetState((){
+                    final customerService=v=='customer_service';
+                    officialType=v;
+                    createGiftsEnabled=!customerService;
+                    createPkEnabled=!customerService;
+                    createGamesEnabled=!customerService;
+                    createRoomRocketEnabled=!customerService;
+                  });
+                },
               ),
               const SizedBox(height:10),
               TextField(controller:createHostController,decoration:const InputDecoration(labelText:'Host UID — اختياري',border:OutlineInputBorder(),prefixIcon:Icon(Icons.record_voice_over_outlined))),
@@ -1517,9 +1539,44 @@ class _RoomsPageState extends State<RoomsPage> {
               const SizedBox(height:10),
               TextField(controller:descriptionController,maxLines:2,decoration:const InputDecoration(labelText:'وصف الغرفة',border:OutlineInputBorder())),
               const SizedBox(height:10),
-              TextField(controller:coverController,decoration:const InputDecoration(labelText:'رابط صورة / غلاف الغرفة',border:OutlineInputBorder())),
+              TextField(controller:coverController,decoration:const InputDecoration(labelText:'رابط صورة الغرفة الخارجية',border:OutlineInputBorder())),
               const SizedBox(height:10),
               TextField(controller:tagsController,decoration:const InputDecoration(labelText:'وسوم — افصل بينها بفاصلة',border:OutlineInputBorder())),
+              const SizedBox(height:12),
+              const Text('ميزات الغرفة',style:TextStyle(fontWeight:FontWeight.w900)),
+              const SizedBox(height:4),
+              SwitchListTile(
+                contentPadding:EdgeInsets.zero,
+                title:const Text('الهدايا والدعم'),
+                value:createGiftsEnabled,
+                onChanged:creating?null:(v)=>setSheetState(()=>createGiftsEnabled=v),
+              ),
+              SwitchListTile(
+                contentPadding:EdgeInsets.zero,
+                title:const Text('PK'),
+                value:createPkEnabled,
+                onChanged:creating?null:(v)=>setSheetState(()=>createPkEnabled=v),
+              ),
+              SwitchListTile(
+                contentPadding:EdgeInsets.zero,
+                title:const Text('الألعاب'),
+                value:createGamesEnabled,
+                onChanged:creating?null:(v)=>setSheetState(()=>createGamesEnabled=v),
+              ),
+              SwitchListTile(
+                contentPadding:EdgeInsets.zero,
+                title:const Text('صاروخ الغرفة'),
+                value:createRoomRocketEnabled,
+                onChanged:creating?null:(v)=>setSheetState(()=>createRoomRocketEnabled=v),
+              ),
+              if(officialType=='customer_service')
+                const Padding(
+                  padding:EdgeInsets.only(bottom:8),
+                  child:Text(
+                    'خدمة العملاء تبدأ بهذه الميزات مقفلة افتراضيًا ويمكن تفعيل كل ميزة بشكل مستقل.',
+                    style:TextStyle(color:Color(0xFFAAA3B8),fontSize:12),
+                  ),
+                ),
               SwitchListTile(
                 contentPadding:EdgeInsets.zero,
                 title:const Text('غرفة مخفية'),
@@ -1549,6 +1606,10 @@ class _RoomsPageState extends State<RoomsPage> {
                       'coverImageUrl':coverController.text.trim(),
                       'tags':tagsController.text.split(',').map((e)=>e.trim()).where((e)=>e.isNotEmpty).toList(),
                       'visibility':hidden?'hidden':'public',
+                      'giftsEnabled':createGiftsEnabled,
+                      'pkEnabled':createPkEnabled,
+                      'gamesEnabled':createGamesEnabled,
+                      'roomRocketEnabled':createRoomRocketEnabled,
                       'reason':'إنشاء غرفة رسمية من Shadow Control',
                       'idempotencyKey':key,
                     });
@@ -1685,14 +1746,15 @@ class _RoomsPageState extends State<RoomsPage> {
           ]),
           const Divider(height:28),
           Wrap(spacing:8,runSpacing:8,children:[
-            Chip(label:Text('LV.'+level.toString())),
+            if(!official)Chip(label:Text('LV.'+level.toString())),
             Chip(label:Text('المايكات الفعلية: '+effectiveSeats)),
             Chip(label:Text('المشرفون: '+effectiveModerators)),
             Chip(label:Text(manual?'Manual Override':'حسب Level')),
           ]),
         ]))),
-        const SizedBox(height:12),
-        Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+        if(!official)...[
+          const SizedBox(height:12),
+          Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
           const Text('Room Level',style:TextStyle(fontSize:18,fontWeight:FontWeight.w900)),
           const SizedBox(height:10),
           Row(children:[
@@ -1717,6 +1779,8 @@ class _RoomsPageState extends State<RoomsPage> {
               onSelected:busy||value==level?null:(_)=>execute('setLevel',extra:{'level':value}),
             );
           })),
+
+        ],
         ]))),
         const SizedBox(height:12),
         Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
@@ -1780,7 +1844,7 @@ class _RoomsPageState extends State<RoomsPage> {
             const SizedBox(height:10),
             TextField(controller:roomDescription,maxLines:2,decoration:const InputDecoration(labelText:'الوصف',border:OutlineInputBorder())),
             const SizedBox(height:10),
-            TextField(controller:roomCover,decoration:const InputDecoration(labelText:'رابط الغلاف',border:OutlineInputBorder())),
+            TextField(controller:roomCover,decoration:const InputDecoration(labelText:'رابط صورة الغرفة الخارجية',border:OutlineInputBorder())),
             const SizedBox(height:10),
             TextField(controller:roomTags,decoration:const InputDecoration(labelText:'الوسوم — افصل بفاصلة',border:OutlineInputBorder())),
             SwitchListTile(
@@ -1790,6 +1854,43 @@ class _RoomsPageState extends State<RoomsPage> {
               value:hiddenOfficialRoom,
               onChanged:busy?null:(v)=>setState(()=>hiddenOfficialRoom=v),
             ),
+            const Divider(height:28),
+            const Text('ميزات الغرفة',style:TextStyle(fontSize:17,fontWeight:FontWeight.w900)),
+            SwitchListTile(
+              contentPadding:EdgeInsets.zero,
+              title:const Text('الهدايا والدعم'),
+              value:giftsEnabled,
+              onChanged:busy?null:(v)=>setState(()=>giftsEnabled=v),
+            ),
+            SwitchListTile(
+              contentPadding:EdgeInsets.zero,
+              title:const Text('PK'),
+              value:pkEnabled,
+              onChanged:busy?null:(v)=>setState(()=>pkEnabled=v),
+            ),
+            SwitchListTile(
+              contentPadding:EdgeInsets.zero,
+              title:const Text('الألعاب'),
+              value:gamesEnabled,
+              onChanged:busy?null:(v)=>setState(()=>gamesEnabled=v),
+            ),
+            SwitchListTile(
+              contentPadding:EdgeInsets.zero,
+              title:const Text('صاروخ الغرفة'),
+              value:roomRocketEnabled,
+              onChanged:busy?null:(v)=>setState(()=>roomRocketEnabled=v),
+            ),
+            SizedBox(width:double.infinity,child:OutlinedButton.icon(
+              onPressed:busy?null:()=>execute('setRoomFeatures',extra:{
+                'giftsEnabled':giftsEnabled,
+                'pkEnabled':pkEnabled,
+                'gamesEnabled':gamesEnabled,
+                'roomRocketEnabled':roomRocketEnabled,
+              }),
+              icon:const Icon(Icons.extension_rounded),
+              label:const Text('حفظ ميزات الغرفة'),
+            )),
+            const SizedBox(height:10),
             SizedBox(width:double.infinity,child:FilledButton.icon(
               onPressed:busy?null:()=>execute('updateOfficialRoom',extra:{
                 'name':roomName.text.trim(),
