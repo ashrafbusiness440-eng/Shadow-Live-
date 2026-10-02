@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../../../core/assets/shadow_asset_registry.dart';
 
 import '../services/room_chat_service.dart';
+import '../../voice/services/voice_room_session_controller.dart';
 
 class RoomChatPanel extends StatefulWidget {
   const RoomChatPanel({
@@ -30,6 +31,8 @@ class RoomChatPanel extends StatefulWidget {
 
 class _RoomChatPanelState extends State<RoomChatPanel> {
   final RoomChatService _service = RoomChatService();
+  final VoiceRoomSessionController _session =
+      VoiceRoomSessionController.instance;
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
 
@@ -82,6 +85,8 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
         roomId: widget.roomId,
         text: text,
         replyTo: reply?.id,
+        replyPreview: reply?.text,
+        replySenderUid: reply?.senderUid,
         mentionUids: mention == null ? const [] : [mention],
       );
       if (!mounted) return;
@@ -441,33 +446,12 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
           ),
           const Divider(height: 1, color: Colors.white10),
           Expanded(
-            child: StreamBuilder<List<RoomChatMessage>>(
-              stream: _service.watchMessages(widget.roomId),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return const Center(
-                    child: Text(
-                      'تعذر تحميل دردشة الغرفة',
-                      style: TextStyle(
-                        color: Colors.white38,
-                        fontSize: 11,
-                      ),
-                    ),
-                  );
-                }
-                if (!snapshot.hasData) {
-                  return const Center(
-                    child: SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Color(0xFF8A3DFF),
-                      ),
-                    ),
-                  );
-                }
-                final messages = snapshot.data!;
+            child: AnimatedBuilder(
+              animation: _session,
+              builder: (context, _) {
+                final messages = _session.roomChatMessages
+                    .map(RoomChatMessage.fromMap)
+                    .toList(growable: false);
                 if (messages.isNotEmpty) {
                   final latest = messages.first;
                   if (!_effectSoundInitialized) {
@@ -662,6 +646,8 @@ class RoomChatFeed extends StatefulWidget {
 
 class _RoomChatFeedState extends State<RoomChatFeed> {
   final RoomChatService _service = RoomChatService();
+  final VoiceRoomSessionController _session =
+      VoiceRoomSessionController.instance;
   bool _effectSoundInitialized = false;
   String _lastEffectMessageId = '';
 
@@ -762,30 +748,12 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
   @override
   Widget build(BuildContext context) {
     if (widget.roomId.trim().isEmpty) return const SizedBox.shrink();
-    return StreamBuilder<List<RoomChatMessage>>(
-      stream: _service.watchMessages(widget.roomId),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return const Center(
-            child: Text(
-              'تعذر تحميل نشاط الغرفة',
-              style: TextStyle(color: Colors.white38, fontSize: 11),
-            ),
-          );
-        }
-        if (!snapshot.hasData) {
-          return const Center(
-            child: SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: Color(0xFF8A3DFF),
-              ),
-            ),
-          );
-        }
-        final messages = snapshot.data!;
+    return AnimatedBuilder(
+      animation: _session,
+      builder: (context, _) {
+        final messages = _session.roomChatMessages
+            .map(RoomChatMessage.fromMap)
+            .toList(growable: false);
         if (messages.isNotEmpty) {
           final latest = messages.first;
           if (!_effectSoundInitialized) {
