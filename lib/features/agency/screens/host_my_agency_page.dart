@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../services/navigation_service.dart';
 import '../../../shared/services/user_storage_service.dart';
+import '../../../shared/widgets/country_selector.dart';
 import '../../room/services/room_action_service.dart';
 import '../../profile/screens/public_profile_screen.dart';
 import '../../profile/services/profile_action_service.dart';
@@ -690,69 +691,70 @@ class _HostMyAgencyPageState extends State<HostMyAgencyPage> {
       return;
     }
     final name = TextEditingController(text: data.agency.name);
-    final country = TextEditingController(text: data.agency.country ?? '');
+    ShadowCountryOption? selectedCountry =
+        shadowCountryByName(data.agency.country ?? '');
     final accepted = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => Directionality(
         textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          backgroundColor: const Color(0xFF101522),
-          title: const Text('طلب تغيير اسم/دولة الوكالة'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'تبقى بيانات الوكالة الحالية فعالة حتى موافقة Shadow Live.',
-                  style: TextStyle(color: Colors.white70, height: 1.4),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  key: const Key('owner-agency-name-change-field'),
-                  controller: name,
-                  maxLength: 80,
-                  decoration: const InputDecoration(
-                    labelText: 'اسم الوكالة المقترح',
-                    border: OutlineInputBorder(),
+        child: StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            backgroundColor: const Color(0xFF101522),
+            title: const Text('طلب تغيير اسم/دولة الوكالة'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'تبقى بيانات الوكالة الحالية فعالة حتى موافقة Shadow Live.',
+                    style: TextStyle(color: Colors.white70, height: 1.4),
                   ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  key: const Key('owner-agency-country-change-field'),
-                  controller: country,
-                  maxLength: 64,
-                  decoration: const InputDecoration(
-                    labelText: 'الدولة المقترحة',
-                    border: OutlineInputBorder(),
+                  const SizedBox(height: 12),
+                  TextField(
+                    key: const Key('owner-agency-name-change-field'),
+                    controller: name,
+                    maxLength: 80,
+                    decoration: const InputDecoration(
+                      labelText: 'اسم الوكالة المقترح',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 10),
+                  ShadowCountryField(
+                    key: const Key('owner-agency-country-change-field'),
+                    value: selectedCountry,
+                    optional: true,
+                    onChanged: (country) {
+                      setDialogState(() => selectedCountry = country);
+                    },
+                  ),
+                ],
+              ),
             ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('إلغاء'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('إرسال الطلب'),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('إلغاء'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('إرسال الطلب'),
-            ),
-          ],
         ),
       ),
     );
     final nextName = name.text.trim();
-    final nextCountry = country.text.trim();
+    final nextCountry = selectedCountry?.nameAr;
     name.dispose();
-    country.dispose();
     if (accepted != true || nextName.isEmpty || !mounted) return;
 
     setState(() => _identityChangeSubmitting = true);
     try {
       await _service.requestIdentityChange(
         name: nextName,
-        country: nextCountry.isEmpty ? null : nextCountry,
+        country: nextCountry,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

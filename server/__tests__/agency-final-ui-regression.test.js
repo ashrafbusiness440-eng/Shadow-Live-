@@ -417,6 +417,35 @@ test("Agency 7-day cooldown exception stays explicit and bounded", () => {
 });
 
 
+
+test("Agency owner identity change uses the canonical country picker", () => {
+  const hostPage = source(
+    "lib/features/agency/screens/host_my_agency_page.dart",
+  );
+  const countrySelector = source("lib/shared/widgets/country_selector.dart");
+
+  assert.equal(
+    hostPage.includes("ShadowCountryField("),
+    true,
+  );
+  assert.equal(
+    hostPage.includes("shadowCountryByName(data.agency.country ?? '')"),
+    true,
+  );
+  assert.equal(
+    hostPage.includes("country: nextCountry,"),
+    true,
+  );
+  assert.equal(
+    hostPage.includes("TextEditingController(text: data.agency.country ?? '')"),
+    false,
+  );
+  assert.equal(
+    countrySelector.includes("ShadowCountryOption('الباشان', 'SC')"),
+    true,
+  );
+});
+
 test("Agency room image editor uses real square crop with circle-only room preview", () => {
   const hostPage = source(
     "lib/features/agency/screens/host_my_agency_page.dart",
