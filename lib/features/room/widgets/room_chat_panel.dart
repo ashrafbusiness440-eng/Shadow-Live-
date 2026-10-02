@@ -743,12 +743,36 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
     }
   }
 
+  Map<String, dynamic> _messageMap(RoomChatMessage message) => {
+        'id': message.id,
+        'type': message.type,
+        'senderUid': message.senderUid,
+        'displayName': message.displayName,
+        'profileImageUrl': message.profileImageUrl,
+        'text': message.text,
+        'mentionUids': message.mentionUids,
+        'replyTo': message.replyTo,
+        'replyPreview': message.replyPreview,
+        'replySenderUid': message.replySenderUid,
+        'createdAtMs': message.createdAt?.millisecondsSinceEpoch ?? 0,
+        'systemKind': message.systemKind,
+        'vipLevel': message.vipLevel,
+        'entryEffectKey': message.entryEffectKey,
+        'giftName': message.giftName,
+        'assetKey': message.giftAssetKey,
+        'imageUrl': message.giftImageUrl,
+        'quantity': message.giftQuantity,
+        'totalCost': message.giftTotalCost,
+      };
+
   Future<void> _showMessageActions(RoomChatMessage message) async {
     if (message.type == 'system' ||
         message.senderUid.isEmpty ||
         message.senderUid == _uid) {
       return;
     }
+    final isGift =
+        message.type == 'gift' || message.systemKind.contains('gift');
     final action = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: const Color(0xFF0D111B),
@@ -758,21 +782,55 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
       builder: (sheetContext) => Directionality(
         textDirection: TextDirection.rtl,
         child: SafeArea(
-          child: ListTile(
-            leading: const Icon(
-              Icons.flag_outlined,
-              color: Colors.redAccent,
-            ),
-            title: const Text(
-              'إبلاغ عن الرسالة',
-              style: TextStyle(color: Colors.white),
-            ),
-            onTap: () => Navigator.pop(sheetContext, 'report'),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (!isGift)
+                ListTile(
+                  leading: const Icon(
+                    Icons.reply_rounded,
+                    color: Color(0xFFBFA5FF),
+                  ),
+                  title: const Text(
+                    'رد',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  onTap: () => Navigator.pop(sheetContext, 'reply'),
+                ),
+              if (!isGift)
+                ListTile(
+                  leading: const Icon(
+                    Icons.alternate_email_rounded,
+                    color: Color(0xFFFFD54A),
+                  ),
+                  title: const Text(
+                    'منشن',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  onTap: () => Navigator.pop(sheetContext, 'mention'),
+                ),
+              ListTile(
+                leading: const Icon(
+                  Icons.flag_outlined,
+                  color: Colors.redAccent,
+                ),
+                title: const Text(
+                  'إبلاغ عن الرسالة',
+                  style: TextStyle(color: Colors.white),
+                ),
+                onTap: () => Navigator.pop(sheetContext, 'report'),
+              ),
+            ],
           ),
         ),
       ),
     );
-    if (action == 'report' && mounted) {
+    if (!mounted) return;
+    if (action == 'reply') {
+      _session.prepareRoomChatReply(_messageMap(message));
+    } else if (action == 'mention') {
+      _session.prepareRoomChatMention(_messageMap(message));
+    } else if (action == 'report') {
       await _reportMessage(message);
     }
   }
