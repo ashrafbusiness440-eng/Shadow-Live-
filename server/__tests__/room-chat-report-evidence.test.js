@@ -8,6 +8,9 @@ function source(path) {
 
 test("room reports preserve only bounded live-session evidence", () => {
   const object = source("cloudflare-worker/src/room-realtime-object.js");
+  const persistence = source(
+    "cloudflare-worker/src/room-realtime-persistence.js",
+  );
 
   assert.equal(object.includes('"client.room_chat_report"'), true);
   assert.equal(object.includes('"room.chat_report_ack"'), true);
