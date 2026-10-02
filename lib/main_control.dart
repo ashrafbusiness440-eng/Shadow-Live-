@@ -1321,6 +1321,8 @@ class _RoomsPageState extends State<RoomsPage> {
   final roomCategory=TextEditingController();
   final roomDescription=TextEditingController();
   final roomCover=TextEditingController();
+  final roomBackgroundAssetKey=TextEditingController();
+  final roomBackgroundImageUrl=TextEditingController();
   final roomTags=TextEditingController();
   bool busy=false,bypassLevelCapacity=false,hiddenOfficialRoom=false;
   bool giftsEnabled=true,pkEnabled=true,gamesEnabled=true,roomRocketEnabled=true;
@@ -1330,7 +1332,8 @@ class _RoomsPageState extends State<RoomsPage> {
 
   @override void dispose(){
     publicId.dispose();reason.dispose();seats.dispose();moderators.dispose();hostUid.dispose();
-    roomName.dispose();roomCategory.dispose();roomDescription.dispose();roomCover.dispose();roomTags.dispose();
+    roomName.dispose();roomCategory.dispose();roomDescription.dispose();roomCover.dispose();
+    roomBackgroundAssetKey.dispose();roomBackgroundImageUrl.dispose();roomTags.dispose();
     super.dispose();
   }
 
@@ -1370,6 +1373,8 @@ class _RoomsPageState extends State<RoomsPage> {
     'room_public_id_exhausted'=>'تعذر حجز Room ID تلقائيًا. حاول مرة أخرى.',
     'official_room_required'=>'هذا التعديل متاح فقط للغرف الرسمية أو الإدارية.',
     'customer_service_capacity_fixed'=>'سعة خدمة العملاء ثابتة على 5 مداخل و2 إدارة.',
+    'invalid_room_background_asset'=>'Asset Key لخلفية الغرفة غير صالح.',
+    'invalid_room_background_url'=>'رابط خلفية الغرفة غير صالح.',
     _=>'تعذر تنفيذ العملية: '+code,
   };
 
@@ -1383,6 +1388,8 @@ class _RoomsPageState extends State<RoomsPage> {
     roomCategory.text=(data['category']??'').toString();
     roomDescription.text=(data['description']??'').toString();
     roomCover.text=(data['coverImageUrl']??'').toString();
+    roomBackgroundAssetKey.text=(data['activeRoomBackgroundAssetKey']??'').toString();
+    roomBackgroundImageUrl.text=(data['activeRoomBackgroundImageUrl']??'').toString();
     roomTags.text=data['tags'] is List?(data['tags'] as List).map((e)=>'$e').join(', '):'';
     officialType=(policy['type']??'official').toString();
     if(!['official','administrative','customer_service'].contains(officialType))officialType='official';
@@ -1869,6 +1876,56 @@ class _RoomsPageState extends State<RoomsPage> {
             TextField(controller:roomDescription,maxLines:2,decoration:const InputDecoration(labelText:'الوصف',border:OutlineInputBorder())),
             const SizedBox(height:10),
             TextField(controller:roomCover,decoration:const InputDecoration(labelText:'رابط صورة الغرفة الخارجية',border:OutlineInputBorder())),
+            const SizedBox(height:10),
+            Container(
+              padding:const EdgeInsets.all(12),
+              decoration:BoxDecoration(
+                color:const Color(0xFF15101F),
+                borderRadius:BorderRadius.circular(14),
+                border:Border.all(color:Colors.white12),
+              ),
+              child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+                const Text(
+                  'خلفية الغرفة الرسمية',
+                  style:TextStyle(fontWeight:FontWeight.w900),
+                ),
+                const SizedBox(height:4),
+                const Text(
+                  'مستقلة عن صورة الغرفة وعن مقتنيات الـHost. تُدار من Shadow Control فقط. اترك الحقلين فارغين للرجوع للخلفية الافتراضية.',
+                  style:TextStyle(color:Color(0xFFAAA3B8),fontSize:11),
+                ),
+                const SizedBox(height:10),
+                TextField(
+                  controller:roomBackgroundAssetKey,
+                  decoration:const InputDecoration(
+                    labelText:'Background Asset Key',
+                    hintText:'مثال: cosmetics.room_background.official_01',
+                    border:OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height:10),
+                TextField(
+                  controller:roomBackgroundImageUrl,
+                  decoration:const InputDecoration(
+                    labelText:'رابط صورة الخلفية — اختياري',
+                    hintText:'https://...',
+                    border:OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height:10),
+                SizedBox(width:double.infinity,child:OutlinedButton.icon(
+                  onPressed:busy?null:()=>execute(
+                    'setOfficialRoomBackground',
+                    extra:{
+                      'backgroundAssetKey':roomBackgroundAssetKey.text.trim(),
+                      'backgroundImageUrl':roomBackgroundImageUrl.text.trim(),
+                    },
+                  ),
+                  icon:const Icon(Icons.wallpaper_rounded),
+                  label:const Text('حفظ خلفية الغرفة'),
+                )),
+              ]),
+            ),
             const SizedBox(height:10),
             TextField(controller:roomTags,decoration:const InputDecoration(labelText:'الوسوم — افصل بفاصلة',border:OutlineInputBorder())),
             SwitchListTile(
