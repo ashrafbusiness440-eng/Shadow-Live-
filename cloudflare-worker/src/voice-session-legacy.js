@@ -680,8 +680,10 @@ function roomResponse(roomId,data){
     visibility:clean(data.visibility||"public"),
     isHidden:data.isHidden===true||clean(data.visibility)==="hidden",
     passwordProtected:clean(data.visibility)==="password",
-    coverImageUrl:clean(data.coverImageUrl||data.imageUrl),
-    coverImageObjectId:clean(data.coverImageObjectId),
+    roomImageUrl:clean(data.roomImageUrl||data.coverImageUrl||data.imageUrl),
+    roomImageObjectId:clean(data.roomImageObjectId||data.coverImageObjectId),
+    coverImageUrl:clean(data.coverImageUrl||data.roomImageUrl||data.imageUrl),
+    coverImageObjectId:clean(data.coverImageObjectId||data.roomImageObjectId),
     onlineCount:Math.max(0,Number(data.onlineCount||data.participantsCount||0)),
     level:Math.max(1,Number(data.level||1)),
     isActive:data.isActive!==false,
@@ -935,9 +937,11 @@ async function updateRoomSettings(db,uid,body){
   const visibility=clean(body.visibility)||"public";
   const password=String(body.password??"");
   const chatEnabled=body.chatEnabled!==false;
-  const coverImageUrl=clean(body.coverImageUrl);
-  const coverImageObjectIdProvided=Object.prototype.hasOwnProperty.call(body,"coverImageObjectId");
-  const coverImageObjectId=clean(body.coverImageObjectId);
+  const roomImageUrl=clean(body.roomImageUrl||body.coverImageUrl);
+  const roomImageObjectIdProvided=
+    Object.prototype.hasOwnProperty.call(body,"roomImageObjectId")||
+    Object.prototype.hasOwnProperty.call(body,"coverImageObjectId");
+  const roomImageObjectId=clean(body.roomImageObjectId||body.coverImageObjectId);
   const tags=Array.isArray(body.tags)
     ? [...new Set(body.tags.map(clean).filter(Boolean))].slice(0,8)
     : [];
@@ -949,24 +953,24 @@ async function updateRoomSettings(db,uid,body){
   if(!["public","password","hidden"].includes(visibility))throw new ApiError("invalid_visibility",400);
   if(visibility==="password"&&password&&password.length<4)throw new ApiError("room_password_too_short",400);
   if(password.length>32)throw new ApiError("room_password_too_long",400);
-  if(coverImageUrl&&(!/^https?:\/\//i.test(coverImageUrl)||coverImageUrl.length>1200)){
-    throw new ApiError("invalid_room_cover",400);
+  if(roomImageUrl&&(!/^https?:\/\//i.test(roomImageUrl)||roomImageUrl.length>1200)){
+    throw new ApiError("invalid_room_image",400);
   }
-  if(coverImageObjectIdProvided&&coverImageObjectId&&!/^[a-f0-9]{32}$/.test(coverImageObjectId)){
-    throw new ApiError("invalid_room_cover_object",400);
+  if(roomImageObjectIdProvided&&roomImageObjectId&&!/^[a-f0-9]{32}$/.test(roomImageObjectId)){
+    throw new ApiError("invalid_room_image_object",400);
   }
 
   const roomRef=db.collection("rooms").doc(roomId);
   const userRef=db.collection("users").doc(uid);
   const auditRef=db.collection("room_audit_logs").doc(roomId).collection("items").doc();
-  const coverObjectRef=coverImageObjectId
-    ? db.collection("storage_objects").doc(coverImageObjectId)
+  const roomImageObjectRef=roomImageObjectId
+    ? db.collection("storage_objects").doc(roomImageObjectId)
     : null;
 
   return db.runTransaction(async tx=>{
     const reads=[tx.get(roomRef),tx.get(userRef)];
-    if(coverObjectRef)reads.push(tx.get(coverObjectRef));
-    const [roomSnap,userSnap,coverObjectSnap]=await Promise.all(reads);
+    if(roomImageObjectRef)reads.push(tx.get(roomImageObjectRef));
+    const [roomSnap,userSnap,roomImageObjectSnap]=await Promise.all(reads);
     if(!roomSnap.exists)throw new ApiError("room_not_found",404);
     const room=roomSnap.data()||{};
     const user=userSnap.data()||{};
@@ -979,18 +983,18 @@ async function updateRoomSettings(db,uid,body){
     }
     if(visibility==="hidden"&&!permissions.hidden)throw new ApiError("hidden_room_forbidden",403);
 
-    if(coverImageObjectId){
-      if(!coverObjectSnap||!coverObjectSnap.exists){
-        throw new ApiError("room_cover_object_not_found",409);
+    if(roomImageObjectId){
+      if(!roomImageObjectSnap||!roomImageObjectSnap.exists){
+        throw new ApiError("room_image_object_not_found",409);
       }
-      const media=coverObjectSnap.data()||{};
+      const media=roomImageObjectSnap.data()||{};
       if(
         clean(media.scope)!=="room_cover"||
         clean(media.targetId)!==roomId||
-        clean(media.publicUrl)!==coverImageUrl||
+        clean(media.publicUrl)!==roomImageUrl||
         clean(media.state||"active")!=="active"
       ){
-        throw new ApiError("room_cover_object_mismatch",409);
+        throw new ApiError("room_image_object_mismatch",409);
       }
     }
 
@@ -1003,9 +1007,13 @@ async function updateRoomSettings(db,uid,body){
       visibility,
       isHidden:visibility==="hidden",
       chatEnabled,
-      coverImageUrl,
-      ...(coverImageObjectIdProvided
-        ? {coverImageObjectId:coverImageObjectId||FieldValue.delete()}
+      roomImageUrl,
+      coverImageUrl:roomImageUrl,
+      ...(roomImageObjectIdProvided
+        ? {
+            roomImageObjectId:roomImageObjectId||FieldValue.delete(),
+            coverImageObjectId:roomImageObjectId||FieldValue.delete(),
+          }
         : {}),
       searchTokens:searchTokens(
         name+" "+tags.join(" ")+" "+category+" "+clean(room.ownerName)+" "+clean(room.ownerLocation),
