@@ -131,6 +131,11 @@ export async function publishRoomRealtimeEvent(
   return response.json().catch(() => ({ ok: true, delivered: 0 }));
 }
 
+export function invalidateRoomRealtimeAdmissionCache(roomId) {
+  const normalized = normalizeRoomId(roomId);
+  if (normalized) roomAdmissionCache.clear(normalized);
+}
+
 export async function setRoomRealtimeChatPolicy(env, roomId, enabled) {
   const normalized = normalizeRoomId(roomId);
   if (!normalized) return { ok: false, updated: 0 };
