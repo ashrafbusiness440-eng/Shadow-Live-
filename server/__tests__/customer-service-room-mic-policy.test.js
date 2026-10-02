@@ -58,6 +58,9 @@ test("Customer Service ordinary mic sessions expire server-side after ten minute
   const realtime = source(
     "cloudflare-worker/src/room-realtime-object.js",
   );
+  const persistence = source(
+    "cloudflare-worker/src/room-realtime-persistence.js",
+  );
 
   assert.equal(
     voice.includes("const CUSTOMER_SERVICE_MIC_MS=10*60_000;"),
@@ -80,11 +83,16 @@ test("Customer Service ordinary mic sessions expire server-side after ten minute
     true,
   );
   assert.equal(
-    realtime.includes('customerServiceMicExpiresAtMs: 0'),
+    realtime.includes("applyCustomerServiceMicExpiries"),
+    true,
+  );
+  assert.equal(realtime.includes("firestoreClient"), false);
+  assert.equal(
+    persistence.includes("customerServiceMicExpiresAtMs: 0"),
     true,
   );
   assert.equal(
-    realtime.includes('outcome: seatsChanged ? "auto_drop"'),
+    persistence.includes("seatsChanged = true"),
     true,
   );
 });
