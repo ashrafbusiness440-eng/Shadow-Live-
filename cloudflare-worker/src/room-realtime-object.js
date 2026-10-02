@@ -27,6 +27,7 @@ import {
 } from "./room-rocket-feed.js";
 
 const TICKET_PREFIX = "ticket:";
+const CUSTOMER_SERVICE_MIC_SCHEDULE_PREFIX = "cs_mic:";
 
 async function ticketStorageKey(ticket) {
   const bytes = new TextEncoder().encode(String(ticket || ""));
@@ -287,6 +288,12 @@ export class RoomRealtimeObject extends DurableObject {
     if (url.pathname === "/game/register" && request.method === "POST") {
       return this.#registerGameSchedules(request);
     }
+    if (
+      url.pathname === "/customer-service/mic/register" &&
+      request.method === "POST"
+    ) {
+      return this.#registerCustomerServiceMicSchedules(request);
+    }
     if (url.pathname === "/broadcast" && request.method === "POST") {
       return this.#broadcast(request);
     }
@@ -475,6 +482,193 @@ export class RoomRealtimeObject extends DurableObject {
     }
 
     return new Response(null, { status: 101, webSocket: client });
+  }
+
+  async #registerCustomerServiceMicSchedules(request) {
+    const body = await request.json().catch(() => ({}));
+    const roomId = normalizeRoomId(body.roomId);
+    const uid = String(body.uid || "").trim();
+    const schedules = Array.isArray(body.schedules)
+      ? body.schedules.slice(0, 2)
+      : [];
+    if (!roomId || !uid || schedules.length === 0) {
+      return Response.json(
+        { ok: false, code: "invalid_customer_service_mic_schedule" },
+        { status: 400 },
+      );
+    }
+
+    let stored = 0;
+    let nextAtMs = null;
+    for (const raw of schedules) {
+      const kind = String(raw?.kind || "");
+      if (!["invite_expire", "mic_expire"].includes(kind)) continue;
+      const expiresAtMs = Number(raw?.expiresAtMs || 0);
+      if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) continue;
+      const key =
+        CUSTOMER_SERVICE_MIC_SCHEDULE_PREFIX +
+        kind +
+        ":" +
+        uid;
+      await this.ctx.storage.put(key, {
+        roomId,
+        uid,
+        kind,
+        expiresAtMs,
+      });
+      nextAtMs =
+        nextAtMs === null ? expiresAtMs : Math.min(nextAtMs, expiresAtMs);
+      stored += 1;
+    }
+
+    if (stored === 0) {
+      return Response.json(
+        { ok: false, code: "invalid_customer_service_mic_schedule" },
+        { status: 400 },
+      );
+    }
+    if (nextAtMs !== null) {
+      const currentAlarm = await this.ctx.storage.getAlarm();
+      if (currentAlarm === null || nextAtMs < currentAlarm) {
+        await this.ctx.storage.setAlarm(Math.max(Date.now() + 20, nextAtMs));
+      }
+    }
+    return Response.json({ ok: true, stored });
+  }
+
+  async #processCustomerServiceMicSchedules(nowMs = Date.now()) {
+    const records = await this.ctx.storage.list({
+      prefix: CUSTOMER_SERVICE_MIC_SCHEDULE_PREFIX,
+      limit: 20,
+    });
+    if (records.size === 0) {
+      return { nextAtMs: null, checked: 0, expired: 0 };
+    }
+
+    const due = [];
+    let nextAtMs = null;
+    for (const [key, value] of records) {
+      const expiresAtMs = Number(value?.expiresAtMs || 0);
+      if (expiresAtMs > nowMs) {
+        nextAtMs =
+          nextAtMs === null ? expiresAtMs : Math.min(nextAtMs, expiresAtMs);
+        continue;
+      }
+      due.push([key, value]);
+    }
+    if (due.length === 0) {
+      return { nextAtMs, checked: records.size, expired: 0 };
+    }
+
+    const roomId = normalizeRoomId(due[0]?.[1]?.roomId);
+    if (!roomId) {
+      await this.ctx.storage.delete(due.map(([key]) => key));
+      return { nextAtMs, checked: records.size, expired: due.length };
+    }
+
+    const db = firestoreClient(this.env);
+    const roomSnap = await db.get(`rooms/${roomId}`);
+    if (!roomSnap.exists) {
+      await this.ctx.storage.delete(due.map(([key]) => key));
+      return { nextAtMs, checked: records.size, expired: due.length };
+    }
+
+    const room = roomSnap.data || {};
+    let invites = Array.isArray(room.micInvites) ? [...room.micInvites] : [];
+    let inviteExpiries =
+      room.customerServiceMicInviteExpiresAtMs &&
+      typeof room.customerServiceMicInviteExpiresAtMs === "object"
+        ? { ...room.customerServiceMicInviteExpiresAtMs }
+        : {};
+    let seats = Array.isArray(room.seats)
+      ? room.seats.map((seat) => ({ ...(seat || {}) }))
+      : [];
+    let invitesChanged = false;
+    let seatsChanged = false;
+    const deletes = [];
+
+    for (const [key, schedule] of due) {
+      const uid = String(schedule?.uid || "").trim();
+      const expiresAtMs = Number(schedule?.expiresAtMs || 0);
+      if (!uid) {
+        deletes.push(key);
+        continue;
+      }
+
+      if (schedule.kind === "invite_expire") {
+        if (
+          Number(inviteExpiries[uid] || 0) === expiresAtMs &&
+          expiresAtMs <= nowMs
+        ) {
+          invites = invites.filter((item) => String(item || "") !== uid);
+          delete inviteExpiries[uid];
+          invitesChanged = true;
+        }
+        deletes.push(key);
+        continue;
+      }
+
+      if (schedule.kind === "mic_expire") {
+        const index = seats.findIndex(
+          (seat) =>
+            String(seat?.uid || "") === uid &&
+            Number(seat?.customerServiceMicExpiresAtMs || 0) === expiresAtMs,
+        );
+        if (index >= 0 && expiresAtMs <= nowMs) {
+          seats[index] = {
+            ...seats[index],
+            uid: "",
+            displayName: "",
+            profileImageUrl: "",
+            muted: true,
+            micStartedAtMs: 0,
+            customerServiceMicExpiresAtMs: 0,
+            frameRewardId: "",
+            frameAssetKey: "",
+            frameImageUrl: "",
+            frameExpiresAtMs: 0,
+            voiceWaveRewardId: "",
+            voiceWaveAssetKey: "",
+            voiceWaveImageUrl: "",
+            voiceWaveExpiresAtMs: 0,
+          };
+          seatsChanged = true;
+        }
+        deletes.push(key);
+      }
+    }
+
+    const fields = {};
+    const mask = [];
+    if (invitesChanged) {
+      fields.micInvites = invites;
+      fields.customerServiceMicInviteExpiresAtMs = inviteExpiries;
+      mask.push("micInvites", "customerServiceMicInviteExpiresAtMs");
+    }
+    if (seatsChanged) {
+      fields.seats = seats;
+      mask.push("seats");
+    }
+    if (mask.length > 0) {
+      fields.updatedAt = new Date(nowMs);
+      mask.push("updatedAt");
+      await db.commit(null, [
+        db.writeUpdate(`rooms/${roomId}`, fields, mask),
+      ]);
+    }
+    if (deletes.length > 0) await this.ctx.storage.delete(deletes);
+
+    recordRealtimeTelemetry(this.env, {
+      event: "customer_service_mic_expiry",
+      outcome: seatsChanged ? "auto_drop" : invitesChanged ? "invite_expired" : "noop",
+      fanout: deletes.length,
+      onlineCount: this.#presenceSnapshot().length,
+    });
+    return {
+      nextAtMs,
+      checked: records.size,
+      expired: deletes.length,
+    };
   }
 
   async #registerGameSchedules(request) {
@@ -911,8 +1105,17 @@ export class RoomRealtimeObject extends DurableObject {
       prefix: GAME_SCHEDULE_PREFIX,
     });
     const rocketFeed = await this.#processRocketFeed(nowMs);
+    const customerServiceMic =
+      await this.#processCustomerServiceMicSchedules(nowMs);
     const deletes = [];
     let nextAlarmAtMs = rocketFeed.nextAtMs;
+    if (
+      customerServiceMic.nextAtMs !== null &&
+      (nextAlarmAtMs === null ||
+        customerServiceMic.nextAtMs < nextAlarmAtMs)
+    ) {
+      nextAlarmAtMs = customerServiceMic.nextAtMs;
+    }
 
     for (const [key, value] of tickets) {
       const expiresAtMs = Number(value?.expiresAtMs || 0);
@@ -953,7 +1156,10 @@ export class RoomRealtimeObject extends DurableObject {
     recordRealtimeTelemetry(this.env, {
       event: "alarm",
       durationMs: Date.now() - alarmStartedAtMs,
-      fanout: schedules.size + Number(rocketFeed.delivered || 0),
+      fanout:
+        schedules.size +
+        Number(rocketFeed.delivered || 0) +
+        Number(customerServiceMic.expired || 0),
       onlineCount: this.#presenceSnapshot().length,
     });
   }
