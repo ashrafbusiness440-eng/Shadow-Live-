@@ -88,6 +88,7 @@ void main() {
           'publicId': '200001',
           'displayName': 'Host A',
           'profileImageUrl': null,
+          'profileAvatarAsset': 'assets/images/avatars/female_1.png',
         },
         {
           'rank': 2,
@@ -106,6 +107,10 @@ void main() {
     expect(data.top10.first.rank, 1);
     expect(data.top10.first.supportCoins, 1500000);
     expect(data.top10.first.person.uid, 'host_a');
+    expect(
+      data.top10.first.person.profileAvatarAsset,
+      'assets/images/avatars/female_1.png',
+    );
     expect(data.top10.last.rank, 2);
   });
 
