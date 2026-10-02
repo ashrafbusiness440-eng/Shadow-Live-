@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { recordRealtimeTelemetry } from "./pressure-telemetry.js";
+import { firestoreClient } from "./firestore.js";
 
 import {
   ROOM_REALTIME_PROTOCOL_VERSION,
@@ -51,6 +52,7 @@ export class RoomRealtimeObject extends DurableObject {
     this.ctx = ctx;
     this.env = env;
     this.chatRateByUid = new Map();
+    this.chatReportRateByUid = new Map();
 
     recordRealtimeTelemetry(this.env, { event: "activate" });
 
@@ -88,8 +90,28 @@ export class RoomRealtimeObject extends DurableObject {
 
   #broadcastEvent(type, payload) {
     const envelope = realtimeEnvelope(type, payload);
+    const chatMessage =
+      type === "room.chat_message" &&
+      payload?.message &&
+      typeof payload.message === "object"
+        ? payload.message
+        : null;
     let delivered = 0;
     for (const socket of this.ctx.getWebSockets()) {
+      if (chatMessage) {
+        try {
+          const attachment = socket.deserializeAttachment() || {};
+          if (String(attachment.mode || "room") === "room") {
+            const previous = Array.isArray(attachment.recentChat)
+              ? attachment.recentChat
+              : [];
+            socket.serializeAttachment({
+              ...attachment,
+              recentChat: [...previous, chatMessage].slice(-7),
+            });
+          }
+        } catch {}
+      }
       if (safeSend(socket, envelope)) delivered += 1;
     }
     recordRealtimeTelemetry(this.env, {
@@ -415,6 +437,7 @@ export class RoomRealtimeObject extends DurableObject {
       ghostMode: record.ghostMode === true,
       vipLevel: Math.max(0, Math.min(99, Number(record.vipLevel || 0))),
       entryEffectKey: String(record.entryEffectKey || ""),
+      recentChat: [],
       reconnectAttempt,
     });
     this.ctx.acceptWebSocket(server, [`uid:${uid}`]);
@@ -515,6 +538,121 @@ export class RoomRealtimeObject extends DurableObject {
       }
     }
     return Response.json({ ok: true, stored });
+  }
+
+  async #handleRoomChatReport(webSocket, raw) {
+    let attachment = {};
+    try {
+      attachment = webSocket.deserializeAttachment() || {};
+    } catch {}
+    if (String(attachment.mode || "room") !== "room") return false;
+
+    let message;
+    try {
+      message = JSON.parse(raw);
+    } catch {
+      return false;
+    }
+    if (!message || message.type !== "client.room_chat_report") return false;
+
+    const requestId = String(message.requestId || "").slice(0, 120);
+    const payload =
+      message.payload && typeof message.payload === "object"
+        ? message.payload
+        : {};
+    const messageId = String(payload.messageId || "").trim().slice(0, 160);
+    const reason = String(payload.reason || "").trim().slice(0, 160);
+    const roomId = normalizeRoomId(attachment.roomId);
+    const reporterUid = String(attachment.uid || "").trim();
+
+    if (!requestId || !messageId || !reason || !roomId || !reporterUid) {
+      this.#chatError(webSocket, requestId, "invalid_room_report");
+      return true;
+    }
+
+    const nowMs = Date.now();
+    const previousReportAt = Number(
+      this.chatReportRateByUid.get(reporterUid) || 0,
+    );
+    if (previousReportAt > 0 && nowMs - previousReportAt < 5000) {
+      this.#chatError(webSocket, requestId, "report_rate_limited");
+      return true;
+    }
+
+    const recentChat = Array.isArray(attachment.recentChat)
+      ? attachment.recentChat.slice(-7)
+      : [];
+    const targetIndex = recentChat.findIndex(
+      (item) => String(item?.id || "") === messageId,
+    );
+    if (targetIndex < 0) {
+      this.#chatError(
+        webSocket,
+        requestId,
+        "report_message_not_in_session",
+      );
+      return true;
+    }
+
+    const target = recentChat[targetIndex];
+    const targetUid = String(target?.senderUid || "").trim();
+    if (!targetUid || targetUid === reporterUid) {
+      this.#chatError(webSocket, requestId, "invalid_room_report");
+      return true;
+    }
+
+    const from = Math.max(0, targetIndex - 2);
+    const to = Math.min(recentChat.length, targetIndex + 3);
+    const context = recentChat.slice(from, to).map((item) => ({
+      id: String(item?.id || "").slice(0, 160),
+      type: String(item?.type || "text").slice(0, 40),
+      senderUid: String(item?.senderUid || "").slice(0, 180),
+      displayName: String(item?.displayName || "").slice(0, 120),
+      text: String(item?.text || "").slice(0, 500),
+      createdAtMs: Math.max(0, Number(item?.createdAtMs || 0)),
+      giftName: String(item?.giftName || "").slice(0, 120),
+      quantity: Math.max(0, Number(item?.quantity || 0)),
+      totalCost: Math.max(0, Number(item?.totalCost || 0)),
+    }));
+
+    const reportId = "room_report_" + crypto.randomUUID().replaceAll("-", "");
+    const now = new Date(nowMs);
+    const db = firestoreClient(this.env);
+    await db.commit(null, [
+      db.writeCreate(`reports/${reportId}`, {
+        reportId,
+        reporterUid,
+        targetType: "room_message",
+        targetUid,
+        roomId,
+        messageId,
+        reason,
+        status: "new",
+        evidence: {
+          source: "room_realtime_session",
+          message: context.find((item) => item.id === messageId) || null,
+          context,
+          contextCount: context.length,
+        },
+        createdAt: now,
+        updatedAt: now,
+      }),
+    ]);
+
+    this.chatReportRateByUid.set(reporterUid, nowMs);
+    safeSend(
+      webSocket,
+      realtimeEnvelope("room.chat_report_ack", {
+        requestId,
+        reportId,
+      }),
+    );
+    recordRealtimeTelemetry(this.env, {
+      event: "room_chat_report",
+      outcome: "saved",
+      onlineCount: this.#presenceSnapshot().length,
+    });
+    return true;
   }
 
   async #updateChatPolicy(request) {
@@ -688,7 +826,13 @@ export class RoomRealtimeObject extends DurableObject {
     });
   }
 
-  webSocketMessage(webSocket, message) {
+  async webSocketMessage(webSocket, message) {
+    if (
+      typeof message === "string" &&
+      await this.#handleRoomChatReport(webSocket, message)
+    ) {
+      return;
+    }
     if (
       typeof message === "string" &&
       this.#handleRoomChatMessage(webSocket, message)
