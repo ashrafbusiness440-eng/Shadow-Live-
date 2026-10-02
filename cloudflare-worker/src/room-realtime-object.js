@@ -733,17 +733,27 @@ export class RoomRealtimeObject extends DurableObject {
       totalCost: Math.max(0, Number(item?.totalCost || 0)),
     }));
 
-    const report = await persistRoomChatReport(this.env, {
-      reporterUid,
-      targetUid,
-      roomId,
-      messageId,
-      reason,
-      message: context.find((item) => item.id === messageId) || null,
-      context,
-      nowMs,
-    });
-    const reportId = String(report.reportId || "");
+    let report;
+    try {
+      report = await persistRoomChatReport(this.env, {
+        reporterUid,
+        targetUid,
+        roomId,
+        messageId,
+        reason,
+        message: context.find((item) => item.id === messageId) || null,
+        context,
+        nowMs,
+      });
+    } catch {
+      this.#chatError(webSocket, requestId, "room_report_failed");
+      return true;
+    }
+    const reportId = String(report?.reportId || "");
+    if (!reportId) {
+      this.#chatError(webSocket, requestId, "room_report_failed");
+      return true;
+    }
 
     this.chatReportRateByUid.set(reporterUid, nowMs);
     safeSend(
@@ -987,6 +997,8 @@ export class RoomRealtimeObject extends DurableObject {
       error: reason === "error",
     });
     if (uid && !hasPresenceUid(participants, uid)) {
+      this.chatRateByUid.delete(uid);
+      this.chatReportRateByUid.delete(uid);
       this.#broadcastEvent("room.presence_left", {
         roomId,
         uid,
