@@ -3,9 +3,10 @@ import 'dart:typed_data';
 import 'package:crop_your_image/crop_your_image.dart';
 import 'package:flutter/material.dart';
 
-Future<Uint8List?> showAgencyRoomImageCropSheet(
+Future<Uint8List?> showRoomImageCropSheet(
   BuildContext context, {
   required Uint8List imageBytes,
+  String title = 'قص صورة الغرفة',
 }) {
   return showModalBottomSheet<Uint8List>(
     context: context,
@@ -14,23 +15,41 @@ Future<Uint8List?> showAgencyRoomImageCropSheet(
     backgroundColor: Colors.transparent,
     builder: (sheetContext) => FractionallySizedBox(
       heightFactor: 0.9,
-      child: _AgencyRoomImageCropSheet(imageBytes: imageBytes),
+      child: _RoomImageCropSheet(
+        imageBytes: imageBytes,
+        title: title,
+      ),
     ),
   );
 }
 
-class _AgencyRoomImageCropSheet extends StatefulWidget {
-  const _AgencyRoomImageCropSheet({required this.imageBytes});
-
-  final Uint8List imageBytes;
-
-  @override
-  State<_AgencyRoomImageCropSheet> createState() =>
-      _AgencyRoomImageCropSheetState();
+Future<Uint8List?> showAgencyRoomImageCropSheet(
+  BuildContext context, {
+  required Uint8List imageBytes,
+}) {
+  return showRoomImageCropSheet(
+    context,
+    imageBytes: imageBytes,
+    title: 'قص صورة غرفة الوكالة',
+  );
 }
 
-class _AgencyRoomImageCropSheetState
-    extends State<_AgencyRoomImageCropSheet> {
+class _RoomImageCropSheet extends StatefulWidget {
+  const _RoomImageCropSheet({
+    required this.imageBytes,
+    required this.title,
+  });
+
+  final Uint8List imageBytes;
+  final String title;
+
+  @override
+  State<_RoomImageCropSheet> createState() =>
+      _RoomImageCropSheetState();
+}
+
+class _RoomImageCropSheetState
+    extends State<_RoomImageCropSheet> {
   final CropController _cropController = CropController();
 
   bool _cropping = false;
@@ -82,8 +101,8 @@ class _AgencyRoomImageCropSheetState
             const Padding(
               padding: EdgeInsets.fromLTRB(20, 18, 20, 6),
               child: Text(
-                'قص صورة غرفة الوكالة',
-                style: TextStyle(
+                widget.title,
+                style: const TextStyle(
                   color: Colors.white,
                   fontSize: 20,
                   fontWeight: FontWeight.w900,
