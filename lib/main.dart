@@ -3614,7 +3614,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       Icon(Icons.tag_rounded, color: Color(0xFFFFD54A)),
                       SizedBox(width: 8),
                       Text(
-                        'تغيير Room ID',
+                        'تغيير معرّف الغرفة',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 19,
@@ -3627,15 +3627,15 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                   TextField(
                     controller: controller,
                     keyboardType: TextInputType.number,
-                    maxLength: 6,
+                    maxLength: 8,
                     style: const TextStyle(color: Colors.white),
                     decoration: const InputDecoration(
-                      labelText: 'Room ID جديد — 6 أرقام',
+                      labelText: 'معرّف جديد — من 3 إلى 8 أرقام',
                       labelStyle: TextStyle(color: Colors.white60),
                     ),
                   ),
                   const Text(
-                    'بعد التغيير يبقى الـID القديم محجوزاً ولا يُعاد استخدامه.',
+                    'المعرّف القديم يصبح متاحًا للاستخدام بعد نجاح التغيير.',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Colors.white38, fontSize: 10),
                   ),
@@ -3650,11 +3650,11 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                               final current =
                                   (_roomArguments['publicId'] ?? '').toString();
                               final numeric = int.tryParse(requested) != null;
-                              if (requested.length != 6 || !numeric) {
+                              if (requested.length < 3 || requested.length > 8 || !numeric) {
                                 ScaffoldMessenger.of(sheetContext).showSnackBar(
                                   const SnackBar(
                                     content: Text(
-                                      'أدخل Room ID صحيح من 6 أرقام.',
+                                      'أدخل معرّف غرفة صحيحًا من 3 إلى 8 أرقام.',
                                     ),
                                   ),
                                 );
@@ -3663,7 +3663,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                               if (requested == current) {
                                 ScaffoldMessenger.of(sheetContext).showSnackBar(
                                   const SnackBar(
-                                    content: Text('هذا هو الـID الحالي للغرفة.'),
+                                    content: Text('هذا هو المعرّف الحالي للغرفة.'),
                                   ),
                                 );
                                 return;
@@ -3687,7 +3687,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
                                       content: Text(
-                                        'تم تغيير Room ID وحجز الـID القديم.',
+                                        'تم تغيير معرّف الغرفة وأصبح المعرّف القديم متاحًا.',
                                       ),
                                     ),
                                   );
@@ -3696,10 +3696,10 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                 if (!sheetContext.mounted) return;
                                 final message =
                                     error.message == 'public_id_taken'
-                                        ? 'هذا الـID مستخدم أو محجوز.'
+                                        ? 'هذا المعرّف مستخدم حاليًا.'
                                         : error.message == 'forbidden'
-                                            ? 'لا تملك صلاحية تغيير Room ID.'
-                                            : 'تعذر تغيير Room ID حالياً.';
+                                            ? 'لا تملك صلاحية تغيير معرّف الغرفة.'
+                                            : 'تعذر تغيير معرّف الغرفة حالياً.';
                                 ScaffoldMessenger.of(sheetContext).showSnackBar(
                                   SnackBar(content: Text(message)),
                                 );
@@ -3709,7 +3709,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                       .showSnackBar(
                                     const SnackBar(
                                       content: Text(
-                                        'تعذر تغيير Room ID حالياً.',
+                                        'تعذر تغيير معرّف الغرفة حالياً.',
                                       ),
                                     ),
                                   );
@@ -4006,7 +4006,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       color: Color(0xFFFFD54A),
                     ),
                     title: const Text(
-                      'تغيير Room ID',
+                      'تغيير معرّف الغرفة',
                       style: TextStyle(color: Colors.white),
                     ),
                     onTap: () {
@@ -4024,7 +4024,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         : Colors.white54,
                   ),
                   title: const Text(
-                    'Ghost Mode',
+                    'الدخول الخفي',
                     style: TextStyle(color: Colors.white),
                   ),
                   subtitle: Text(
@@ -4051,8 +4051,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                           SnackBar(
                             content: Text(
                               next
-                                  ? 'تم تفعيل Ghost Mode.'
-                                  : 'تم إيقاف Ghost Mode.',
+                                  ? 'تم تفعيل الدخول الخفي.'
+                                  : 'تم إيقاف الدخول الخفي.',
                             ),
                           ),
                         );
@@ -4062,7 +4062,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             content: Text(
-                              'تعذر تحديث Ghost Mode حالياً.',
+                              'تعذر تحديث الدخول الخفي حالياً.',
                             ),
                           ),
                         );
