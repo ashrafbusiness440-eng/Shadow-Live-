@@ -20,7 +20,10 @@ import {
   legacyPresenceFresh,
   realtimeUserPresentFromNamespace,
 } from "./room-presence-authority.js";
-import { publishGlobalRocketEvents } from "./room-realtime.js";
+import {
+  publishGlobalRocketEvents,
+  publishRoomRealtimeEvent,
+} from "./room-realtime.js";
 import { writePressureDataPoint } from "./pressure-telemetry.js";
 
 const clean = (value) => String(value ?? "").trim();
@@ -482,7 +485,6 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     });
 
     const messageId = randomDocId("msg");
-    const messagePath = `${roomPath}/messages/${messageId}`;
     const transactionPath = `gift_transactions/${key}`;
     const ledgerPath = `financial_ledger/gift_${key}`;
     const earningsLedgerPath = `financial_ledger/gift_earnings_${key}`;
@@ -892,32 +894,6 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     }
 
     writes.push(
-      db.writeCreate(messagePath, {
-        type: "gift",
-        senderUid,
-        receiverUid: receiverId,
-        displayName: senderName,
-        profileImageUrl: senderPhoto,
-        giftId,
-        giftName,
-        quantity,
-        unitCoins,
-        totalCost,
-        assetKey,
-        imageUrl,
-        text:
-          senderName +
-          " أرسل " +
-          giftName +
-          " ×" +
-          quantity +
-          " إلى " +
-          receiverName +
-          " — " +
-          totalCost +
-          " كوينز",
-        createdAt: now,
-      }),
       db.writeCreate(transactionPath, {
         senderId: senderUid,
         receiverId,
@@ -1066,6 +1042,37 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       code: "ok",
       ...resultData,
       _rocketFeedEvents: rocketAdvance.explosions,
+      _chatEvent: {
+        roomId,
+        message: {
+          id: messageId,
+          type: "gift",
+          systemKind: "gift",
+          senderUid,
+          receiverUid: receiverId,
+          displayName: senderName,
+          profileImageUrl: senderPhoto,
+          giftId,
+          giftName,
+          quantity,
+          unitCoins,
+          totalCost,
+          assetKey,
+          imageUrl,
+          text:
+            senderName +
+            " أرسل " +
+            giftName +
+            " ×" +
+            quantity +
+            " إلى " +
+            receiverName +
+            " — " +
+            totalCost +
+            " كوينز",
+          createdAtMs: nowMs,
+        },
+      },
       _transactionAttempts: transactionAttempts,
       _agencyStatsTouched: Boolean(agencyId),
     };
@@ -1107,6 +1114,26 @@ export async function roomGift(request, env, ctx) {
         await publishTask;
       }
     }
+    const chatEvent = result?._chatEvent;
+    if (chatEvent?.roomId && chatEvent?.message) {
+      const publishTask = publishRoomRealtimeEvent(
+        env,
+        chatEvent.roomId,
+        "room.chat_message",
+        { message: chatEvent.message },
+      ).catch((error) => {
+        console.error(
+          "Room gift chat publish failed",
+          String(error?.message || error),
+        );
+      });
+      if (typeof ctx?.waitUntil === "function") {
+        ctx.waitUntil(publishTask);
+      } else {
+        await publishTask;
+      }
+    }
+
     const giftRetries = Math.max(
       0,
       Number(result?._transactionAttempts || 1) - 1,
@@ -1165,6 +1192,7 @@ export async function roomGift(request, env, ctx) {
     }
     const {
       _rocketFeedEvents,
+      _chatEvent,
       _transactionAttempts,
       _agencyStatsTouched,
       ...publicResult
