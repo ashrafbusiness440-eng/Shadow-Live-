@@ -2,10 +2,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../screens/public_profile_screen.dart';
+import '../screens/user_level_screen.dart';
 import '../../gift/widgets/direct_gift_sheet.dart';
 import '../services/follow_service.dart';
 import '../services/profile_action_service.dart';
+import '../services/user_level_service.dart';
 import 'registry_badge.dart';
+import 'user_level_badges.dart';
 
 class QuickProfileAction {
   const QuickProfileAction({
@@ -52,7 +55,39 @@ class _QuickProfileSheet extends StatefulWidget {
 
 class _QuickProfileSheetState extends State<_QuickProfileSheet> {
   final _follow = FollowService();
+  late final UserLevelService _levelService;
+  late Future<DocumentSnapshot<Map<String, dynamic>>> _profileFuture;
+  late Future<UserLevelSummary> _levelFuture;
   bool _changingFollow = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _levelService = UserLevelService();
+    _loadFutures();
+  }
+
+  void _loadFutures() {
+    _profileFuture = FirebaseFirestore.instance
+        .collection('public_profiles')
+        .doc(widget.userId)
+        .get();
+    _levelFuture = _levelService.loadForUser(widget.userId);
+  }
+
+  @override
+  void didUpdateWidget(covariant _QuickProfileSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.userId != widget.userId) {
+      _loadFutures();
+    }
+  }
+
+  @override
+  void dispose() {
+    _levelService.close();
+    super.dispose();
+  }
 
   ImageProvider? _avatar(Map<String, dynamic> data) {
     final photo = (data['profileImageUrl'] ?? '').toString().trim();
@@ -74,13 +109,48 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
     navigator.push(MaterialPageRoute(builder: (_) => PublicProfileScreen(userId: widget.userId)));
   }
 
+  void _openLevel(int tabIndex) {
+    final navigator = Navigator.of(context);
+    Navigator.pop(context);
+    navigator.push(
+      MaterialPageRoute<void>(
+        builder: (_) => UserLevelScreen(
+          userId: widget.userId,
+          initialTabIndex: tabIndex,
+        ),
+      ),
+    );
+  }
+
+  Widget _publicLevelBadges() {
+    return FutureBuilder<UserLevelSummary>(
+      future: _levelFuture,
+      builder: (context, snapshot) {
+        final summary = snapshot.data;
+        if (summary == null) return const SizedBox.shrink();
+        final hasAny = summary.wealth.level > 0 ||
+            summary.attraction.level > 0 ||
+            summary.games.level > 0;
+        if (!hasAny) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: UserLevelBadges(
+            summary: summary,
+            onTap: _openLevel,
+            compact: true,
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: SafeArea(
         child: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-          future: FirebaseFirestore.instance.collection('public_profiles').doc(widget.userId).get(),
+          future: _profileFuture,
           builder: (context, snapshot) {
             if (!snapshot.hasData) {
               return const SizedBox(height: 330, child: Center(child: CircularProgressIndicator(color: Color(0xFF8A3DFF))));
@@ -177,6 +247,7 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                       ],
                     ),
                   ],
+                  _publicLevelBadges(),
                   const SizedBox(height: 20),
                   Row(
                     children: [
