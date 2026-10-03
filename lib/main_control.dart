@@ -814,16 +814,6 @@ class _UserAccountOverviewCardState extends State<_UserAccountOverviewCard> {
         final role=text(firstValue([data['role'],'user']));
         final status=text(firstValue([data['accountStatus'],'active']));
         final vip=firstValue([data['vipLevel'],profile['vipLevel'],0]);
-        final level=firstValue([data['level'],profile['level'],0]);
-        final charisma=firstValue([
-          data['charisma'],data['charismaLevel'],
-          profile['charisma'],profile['charismaLevel'],
-          data['popularity'],data['popularityLevel'],
-          profile['popularity'],profile['popularityLevel'],
-          data['appeal'],data['appealLevel'],
-          profile['appeal'],profile['appealLevel'],
-        ]);
-        final wealth=firstValue([data['wealth'],data['wealthLevel'],profile['wealth'],profile['wealthLevel']]);
         final roomId=text(firstValue([room['publicId'],data['personalRoomId'],data['roomId'],room['id']]));
         final agencyName=text(firstValue([agency['name'],agency['displayName'],agency['agencyName']]));
         final agencyId=text(firstValue([data['agencyId'],agency['id']]));
@@ -874,7 +864,7 @@ class _UserAccountOverviewCardState extends State<_UserAccountOverviewCard> {
                     const SizedBox(width:8),
                     Text(expanded?'إخفاء التفاصيل':'عرض المزيد',style:const TextStyle(fontWeight:FontWeight.w900)),
                     const Spacer(),
-                    Text('VIP $vip • Lv.$level',style:const TextStyle(color:Color(0xFFAAA3B8))),
+                    Text('VIP $vip',style:const TextStyle(color:Color(0xFFAAA3B8))),
                   ]),
                 ),
               ),
@@ -889,11 +879,8 @@ class _UserAccountOverviewCardState extends State<_UserAccountOverviewCard> {
                 detailRow('طرق الربط',providers.map((p)=>providerLabel(text(p['providerId']))).where((e)=>e.isNotEmpty).join(' • ')),
                 detailRow('Auth معطّل',auth['disabled']==true?'نعم':'لا'),
 
-                sectionTitle('المستويات والحالة',Icons.workspace_premium_outlined),
-                detailRow('المستوى',level),
+                sectionTitle('VIP والحالة',Icons.workspace_premium_outlined),
                 detailRow('VIP',vip),
-                detailRow('الجاذبية',charisma),
-                detailRow('الثروة',wealth),
                 detailRow('الدور',role),
                 detailRow('دخول الإدارة',data['adminEnabled']==true?'مفعّل':'غير مفعّل'),
                 detailRow('حالة الحساب',status),
