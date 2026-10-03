@@ -92,7 +92,6 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
             final name = (data['displayName'] ?? 'مستخدم Shadow Live').toString();
             final photo = (data['profileImageUrl'] ?? '').toString();
             final publicId = (data['publicId'] ?? '—').toString();
-            final level = (data['level'] as num?)?.toInt() ?? 0;
             final vip = (data['vipLevel'] as num?)?.toInt() ?? 0;
             final online = data['isOnline'] == true;
             final badges = data['badges'] is List
@@ -146,7 +145,7 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                       ],
                     ),
                   ),
-                  if (vip > 0 || level > 0 || badges.isNotEmpty) ...[
+                  if (vip > 0 || badges.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     Wrap(
                       alignment: WrapAlignment.center,
@@ -154,7 +153,6 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                       runSpacing: 7,
                       children: [
                         if (vip > 0) RegistryBadge(assetKey: 'vip.badge.$vip', label: 'VIP $vip'),
-                        if (level > 0) RegistryBadge(assetKey: 'level.badge.$level', label: 'Lv.$level', fallbackIcon: Icons.star_rounded),
                         ...badges.take(3).map((b) => RegistryBadge(assetKey: normalizePublicBadgeKey(b), label: publicBadgeLabel(b))),
                       ],
                     ),
