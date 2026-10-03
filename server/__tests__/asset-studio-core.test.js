@@ -116,13 +116,20 @@ test("asset manager keeps bounded registry and explicit draft publish flow", () 
   assert.equal(worker.includes('limit: 100'), true);
   assert.equal(worker.includes('action === "publish"'), true);
   assert.equal(worker.includes('"saveAppAssetDraft"'), true);
-  assert.equal(worker.includes('"published_asset_requires_publish"'), true);
+  assert.equal(worker.includes("asset-studio/drafts/"), true);
+  assert.equal(worker.includes("env?.USER_STORAGE"), true);
+  assert.equal(worker.includes("hasDraft: true"), true);
+  assert.equal(worker.includes('"published_with_draft"'), true);
+  assert.equal(worker.includes('"published_asset_requires_publish"'), false);
+  assert.equal(worker.includes("writeFinalAssetToGithub"), true);
   assert.equal(worker.includes("publicAssetStudioTemplates()"), true);
 
   assert.equal(control.includes("'حفظ مسودة'"), true);
   assert.equal(control.includes("'نشر'"), true);
   assert.equal(control.includes("'channels': _selectedChannels"), true);
   assert.equal(control.includes("'templateId': template.id"), true);
+  assert.equal(control.includes("R2 الخاص فقط"), true);
+  assert.equal(control.includes("النسخة الحية مستمرة + مسودة جديدة جاهزة"), true);
   assert.equal(control.includes("Timer.periodic"), false);
   assert.equal(control.includes(".snapshots()"), false);
 });
