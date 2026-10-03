@@ -25,6 +25,7 @@ import {
   publishRoomRealtimeEvent,
 } from "./room-realtime.js";
 import { writePressureDataPoint } from "./pressure-telemetry.js";
+import { safeAddUserLevelPoints } from "./user-level-policy.js";
 
 const clean = (value) => String(value ?? "").trim();
 const validKey = (value) => /^[A-Za-z0-9_-]{12,220}$/.test(clean(value));
@@ -325,6 +326,17 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     const sender = senderSnap.data || {};
     const receiver = receiverSnap.data || {};
     const room = roomSnap.data || {};
+    const nextWealthPoints = safeAddUserLevelPoints(
+      sender.wealthPoints,
+      totalCost,
+    );
+    const nextAttractionPoints = safeAddUserLevelPoints(
+      receiver.attractionPoints,
+      totalCost,
+    );
+    if (nextWealthPoints === null || nextAttractionPoints === null) {
+      throw new ApiError("invalid_level_points", 409);
+    }
     const economy = economySnap.data || {};
     const agencyId = clean(receiver.agencyId || "");
     const revenueMonth = agencyId ? agencyPeriods.month : periods.month;
@@ -547,8 +559,9 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
         {
           coins: after,
           walletUpdatedAt: now,
+          wealthPoints: nextWealthPoints,
         },
-        ["coins", "walletUpdatedAt"],
+        ["coins", "walletUpdatedAt", "wealthPoints"],
         [db.increment("totalGiftsSent", quantity)],
       ),
     ];
@@ -557,11 +570,13 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       giftRevenueMonth: revenueMonth,
       giftRevenueMonthCoins: monthlyGrossCoins,
       currentGiftRevenueTier: revenue.tierId,
+      attractionPoints: nextAttractionPoints,
     };
     const receiverMask = [
       "giftRevenueMonth",
       "giftRevenueMonthCoins",
       "currentGiftRevenueTier",
+      "attractionPoints",
     ];
     if (agencyId) {
       receiverFields.agencyPublicSupportAgencyId = agencyId;
@@ -948,6 +963,8 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
         unitCoins,
         totalCost,
         assetKey,
+        wealthPointsAwarded: totalCost,
+        attractionPointsAwarded: totalCost,
         policyMode: "tiered_host_agency",
         revenueTierId: revenue.tierId,
         revenueTierName: revenue.tierName,
@@ -1032,6 +1049,8 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       quantity,
       totalCost,
       balance: after,
+      wealthPointsAwarded: totalCost,
+      attractionPointsAwarded: totalCost,
       revenueTierId: revenue.tierId,
       recipientShareCoins,
       agencyShareCoins,
