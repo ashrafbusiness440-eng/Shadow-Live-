@@ -297,7 +297,7 @@ async function updateUserLevel(db, payload, body) {
         ? metricPolicy.thresholds.length
         : 0;
       if (mode === "setLevel" && (
-        requestedLevel < 0 ||
+        requestedLevel < 1 ||
         requestedLevel > maxLevel
       )) {
         await db.rollback(transaction);
@@ -310,9 +310,7 @@ async function updateUserLevel(db, payload, body) {
 
       const nextPoints = mode === "setPoints"
         ? requestedPoints
-        : requestedLevel === 0
-          ? 0
-          : Number(metricPolicy.thresholds[requestedLevel - 1]);
+        : Number(metricPolicy.thresholds[requestedLevel - 1]);
 
       if (!Number.isSafeInteger(nextPoints) || nextPoints < 0) {
         await db.rollback(transaction);
