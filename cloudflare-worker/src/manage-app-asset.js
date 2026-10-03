@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { firestoreQuotaResponse, json, readJson } from "./http.js";
 import {
   assertUserDocumentSessionState,
@@ -6,6 +5,12 @@ import {
 } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { invalidateConfigCache } from "./config-cache.js";
+import {
+  ASSET_STUDIO_CHANNELS,
+  ASSET_STUDIO_VERSION,
+  publicAssetStudioTemplates,
+  validateAssetStudioMetadata,
+} from "./asset-studio-templates.js";
 
 const OWNER = "ashrafbusiness440-eng";
 const REPO = "Shadow-Live-";
@@ -16,7 +21,9 @@ const ALLOWED_DIRS = new Set([
   "assets/images/levels","assets/images/roles","assets/images/frames","assets/images/gifts","assets/images/rooms",
   "assets/images/backgrounds","assets/images/banners","assets/images/games",
   "assets/images/games/greedy_cat","assets/images/games/witch","assets/images/games/slot",
-  "assets/images/store","assets/images/misc",
+  "assets/images/store","assets/images/misc","assets/images/chat_bubbles","assets/images/entrances",
+  "assets/images/audio_waves","assets/images/name_effects","assets/images/mic_effects","assets/images/stickers",
+  "assets/images/cards","assets/images/events","assets/images/agencies","assets/images/system",
 ]);
 const ALLOWED_EXTS = new Set(["png","jpg","jpeg","webp","gif"]);
 
@@ -45,6 +52,15 @@ function validFileName(name) {
 
 function validKey(key) {
   return /^[a-z0-9][a-z0-9._-]{2,119}$/.test(clean(key));
+}
+
+function validOperationKey(key) {
+  return /^[A-Za-z0-9_-]{12,180}$/.test(clean(key));
+}
+
+function validReason(reason) {
+  const length = clean(reason).length;
+  return length >= 3 && length <= 180;
 }
 
 function decodeBase64(input) {
@@ -143,6 +159,82 @@ async function sha1Blob(bytes) {
     .join("");
 }
 
+function invalidateAssetCaches(assetKey) {
+  invalidateConfigCache("registry:app_assets:list");
+  invalidateConfigCache(`registry:app_assets:key:${assetKey}`);
+}
+
+async function duplicateOperation(db, operationPath) {
+  const operation = await db.get(operationPath);
+  return operation.exists ? operation.data?.result || {} : null;
+}
+
+async function publishAsset({
+  db,
+  decoded,
+  assetKey,
+  reason,
+  idempotencyKey,
+  operationPath,
+}) {
+  const registryPath = `app_asset_registry/${assetKey}`;
+  const current = await db.get(registryPath);
+  if (!current.exists) throw new ApiError("asset_not_found", 404);
+
+  const data = current.data || {};
+  const now = new Date();
+  const patch = {
+    published: true,
+    status: "published",
+    publishedBy: decoded.sub,
+    publishedAt: now,
+    updatedBy: decoded.sub,
+    updatedAt: now,
+  };
+  const result = {
+    assetKey,
+    fullPath: data.fullPath || null,
+    mode: data.mode || "remote",
+    byteSize: Number(data.byteSize || 0),
+    replaced: data.replaced === true,
+    contentSha: data.contentSha || null,
+    commitSha: data.commitSha || null,
+    rawUrl: data.rawUrl || null,
+    published: true,
+    status: "published",
+  };
+  const auditId = crypto.randomUUID().replace(/-/g, "");
+
+  await db.commit(null, [
+    db.writeUpdate(registryPath, patch, Object.keys(patch)),
+    db.writeCreate(`admin_audit_logs/${auditId}`, {
+      actorUid: decoded.sub,
+      action: "publishAppAsset",
+      targetType: "app_asset",
+      targetId: assetKey,
+      reason,
+      before: {
+        published: data.published === true,
+        status: data.status || (data.published === true ? "published" : "draft"),
+      },
+      after: { published: true, status: "published" },
+      operationId: idempotencyKey,
+      createdAt: now,
+    }),
+    db.writeCreate(operationPath, {
+      action: "publishAppAsset",
+      actorUid: decoded.sub,
+      targetId: assetKey,
+      status: "completed",
+      result,
+      createdAt: now,
+    }),
+  ]);
+
+  invalidateAssetCaches(assetKey);
+  return result;
+}
+
 export async function manageAppAsset(request, env) {
   if (!["GET", "POST"].includes(request.method)) {
     return json(request, env, { ok: false, code: "method_not_allowed" }, 405);
@@ -155,26 +247,62 @@ export async function manageAppAsset(request, env) {
 
     if (request.method === "GET") {
       phase = "list";
-      return json(request, env, { ok: true, assets: await listAssets(db) });
+      return json(request, env, {
+        ok: true,
+        studioVersion: ASSET_STUDIO_VERSION,
+        channels: [...ASSET_STUDIO_CHANNELS],
+        templates: publicAssetStudioTemplates(),
+        assets: await listAssets(db),
+      });
     }
 
     const body = await readJson(request);
+    const action = clean(body.action) || "upload";
     const assetKey = clean(body.assetKey);
-    const directory = normalizeDirectory(body.directory);
-    const fileName = clean(body.fileName);
-    const mimeType = clean(body.mimeType);
-    const mode = body.mode === "bundled" ? "bundled" : "remote";
     const reason = clean(body.reason);
     const idempotencyKey = clean(body.idempotencyKey);
 
     if (
       !validKey(assetKey) ||
+      !validReason(reason) ||
+      !validOperationKey(idempotencyKey)
+    ) {
+      throw new ApiError("invalid_request", 400);
+    }
+
+    phase = "idempotency";
+    const operationPath = `control_operations/${idempotencyKey}`;
+    const duplicate = await duplicateOperation(db, operationPath);
+    if (duplicate) {
+      return json(request, env, { ok: true, code: "duplicate", ...duplicate });
+    }
+
+    if (action === "publish") {
+      phase = "publish";
+      const result = await publishAsset({
+        db,
+        decoded,
+        assetKey,
+        reason,
+        idempotencyKey,
+        operationPath,
+      });
+      return json(request, env, { ok: true, code: "ok", ...result });
+    }
+
+    if (action !== "upload") {
+      throw new ApiError("invalid_action", 400);
+    }
+
+    const directory = normalizeDirectory(body.directory);
+    const fileName = clean(body.fileName);
+    const mimeType = clean(body.mimeType);
+    const mode = body.mode === "bundled" ? "bundled" : "remote";
+
+    if (
       !ALLOWED_DIRS.has(directory) ||
       !validFileName(fileName) ||
-      !mimeType.startsWith("image/") ||
-      reason.length < 3 ||
-      reason.length > 180 ||
-      !/^[A-Za-z0-9_-]{12,180}$/.test(idempotencyKey)
+      !mimeType.startsWith("image/")
     ) {
       throw new ApiError("invalid_request", 400);
     }
@@ -187,17 +315,18 @@ export async function manageAppAsset(request, env) {
       throw new ApiError("invalid_request", 400);
     }
 
-    phase = "idempotency";
-    const operationPath = `control_operations/${idempotencyKey}`;
-    const operation = await db.get(operationPath);
-    if (operation.exists) {
-      return json(request, env, {
-        ok: true,
-        code: "duplicate",
-        ...(operation.data?.result || {}),
-      });
-    }
+    const studio = validateAssetStudioMetadata({
+      studioVersion: body.studioVersion,
+      assetType: body.assetType,
+      templateId: body.templateId,
+      channels: body.channels,
+      directory,
+      fileName,
+      byteSize: bytes.length,
+    });
+    if (!studio.ok) throw new ApiError(studio.code || "invalid_studio_asset", 400);
 
+    const publishNow = studio.legacy ? true : body.publish === true;
     const fullPath = `${directory}/${fileName}`;
     const branch = clean(env.GITHUB_ASSET_BRANCH) || DEFAULT_BRANCH;
     const repo = clean(env.GITHUB_ASSET_REPO) || `${OWNER}/${REPO}`;
@@ -214,6 +343,18 @@ export async function manageAppAsset(request, env) {
       : clean(existing.body?.sha);
     const nextBlobSha = await sha1Blob(bytes);
     const replaced = Boolean(existingSha);
+
+    phase = "registry_lookup";
+    const registryPath = `app_asset_registry/${assetKey}`;
+    const previous = await db.get(registryPath);
+    if (
+      !studio.legacy &&
+      previous.exists &&
+      previous.data?.published === true &&
+      publishNow !== true
+    ) {
+      throw new ApiError("published_asset_requires_publish", 409);
+    }
 
     let commitSha = null;
     let contentSha = nextBlobSha;
@@ -244,13 +385,13 @@ export async function manageAppAsset(request, env) {
       : null;
 
     phase = "registry";
-    const registryPath = `app_asset_registry/${assetKey}`;
-    const previous = await db.get(registryPath);
     const before = previous.exists
       ? {
           fullPath: previous.data?.fullPath || null,
           contentSha: previous.data?.contentSha || null,
           mode: previous.data?.mode || null,
+          published: previous.data?.published === true,
+          status: previous.data?.status || null,
         }
       : null;
 
@@ -266,10 +407,33 @@ export async function manageAppAsset(request, env) {
       contentSha,
       commitSha: commitSha || null,
       rawUrl: cacheUrl,
-      published: true,
+      published: publishNow,
+      status: publishNow ? "published" : "draft",
       replaced,
       updatedBy: decoded.sub,
       updatedAt: now,
+      ...(!studio.legacy
+        ? {
+            studioVersion: studio.studioVersion,
+            assetType: studio.template.type,
+            templateId: studio.template.id,
+            templateVersion: studio.template.version,
+            channels: studio.channels,
+            templateSpecs: {
+              width: studio.template.width,
+              height: studio.template.height,
+              dimensionsStatus: studio.template.dimensionsStatus,
+              transparency: studio.template.transparency,
+              motion: studio.template.motion,
+              maxBytes: studio.template.maxBytes,
+              extensions: [...studio.template.extensions],
+            },
+            prompt: studio.template.prompt,
+          }
+        : {}),
+      ...(publishNow
+        ? { publishedBy: decoded.sub, publishedAt: now }
+        : {}),
       ...(previous.exists
         ? {}
         : { createdBy: decoded.sub, createdAt: now }),
@@ -284,6 +448,16 @@ export async function manageAppAsset(request, env) {
       contentSha,
       commitSha,
       rawUrl: cacheUrl,
+      published: publishNow,
+      status: publishNow ? "published" : "draft",
+      ...(!studio.legacy
+        ? {
+            studioVersion: studio.studioVersion,
+            assetType: studio.template.type,
+            templateId: studio.template.id,
+            channels: studio.channels,
+          }
+        : {}),
     };
 
     const auditId = crypto.randomUUID().replace(/-/g, "");
@@ -295,7 +469,7 @@ export async function manageAppAsset(request, env) {
       ),
       db.writeCreate(`admin_audit_logs/${auditId}`, {
         actorUid: decoded.sub,
-        action: "upsertAppAsset",
+        action: publishNow ? "publishAppAssetUpload" : "saveAppAssetDraft",
         targetType: "app_asset",
         targetId: assetKey,
         reason,
@@ -306,12 +480,21 @@ export async function manageAppAsset(request, env) {
           mode,
           byteSize: bytes.length,
           replaced,
+          published: publishNow,
+          status: publishNow ? "published" : "draft",
+          ...(!studio.legacy
+            ? {
+                assetType: studio.template.type,
+                templateId: studio.template.id,
+                channels: studio.channels,
+              }
+            : {}),
         },
         operationId: idempotencyKey,
         createdAt: now,
       }),
       db.writeCreate(operationPath, {
-        action: "upsertAppAsset",
+        action: publishNow ? "publishAppAssetUpload" : "saveAppAssetDraft",
         actorUid: decoded.sub,
         targetId: assetKey,
         status: "completed",
@@ -320,8 +503,7 @@ export async function manageAppAsset(request, env) {
       }),
     ]);
 
-    invalidateConfigCache("registry:app_assets:list");
-    invalidateConfigCache(`registry:app_assets:key:${assetKey}`);
+    invalidateAssetCaches(assetKey);
     return json(request, env, { ok: true, code: "ok", ...result });
   } catch (error) {
     const quotaResponse = firestoreQuotaResponse(request, env, error);
