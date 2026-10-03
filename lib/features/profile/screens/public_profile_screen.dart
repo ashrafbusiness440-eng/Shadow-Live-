@@ -72,7 +72,6 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
             final publicId = (data['publicId'] ?? '—').toString();
             final bio = (data['bio'] ?? '').toString();
             final location = (data['location'] ?? '').toString();
-            final level = (data['level'] as num?)?.toInt() ?? 0;
             final vip = (data['vipLevel'] as num?)?.toInt() ?? 0;
             final online = data['isOnline'] == true;
             final badges = data['badges'] is List
@@ -96,7 +95,6 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
                       cover: cover,
                       online: online,
                       vip: vip,
-                      level: level,
                       badges: badges,
                     ),
                   ),
@@ -210,7 +208,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
                 children: [
                   _about(bio, location),
                   _gifts(),
-                  _badges(vip, level, badges),
+                  _badges(vip, badges),
                 ],
               ),
             );
@@ -227,7 +225,6 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
     required String cover,
     required bool online,
     required int vip,
-    required int level,
     required List<String> badges,
   }) {
     return Container(
@@ -276,7 +273,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
           Text(name, style: const TextStyle(color: Colors.white, fontSize: 25, fontWeight: FontWeight.w900)),
           const SizedBox(height: 4),
           Text('ID: $publicId', textDirection: TextDirection.ltr, style: const TextStyle(color: Colors.white60)),
-          if (vip > 0 || level > 0 || badges.isNotEmpty) ...[
+          if (vip > 0 || badges.isNotEmpty) ...[
             const SizedBox(height: 10),
             Wrap(
               alignment: WrapAlignment.center,
@@ -284,7 +281,6 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
               runSpacing: 7,
               children: [
                 if (vip > 0) RegistryBadge(assetKey: ShadowAssetKeys.vipBadge(vip), label: 'VIP $vip'),
-                if (level > 0) RegistryBadge(assetKey: ShadowAssetKeys.levelBadge(level), label: 'Lv.$level', fallbackIcon: Icons.star_rounded),
                 ...badges.take(4).map((b) => RegistryBadge(assetKey: normalizePublicBadgeKey(b), label: publicBadgeLabel(b))),
               ],
             ),
@@ -376,10 +372,9 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
     );
   }
 
-  Widget _badges(int vip, int level, List<String> badges) {
+  Widget _badges(int vip, List<String> badges) {
     final entries = <MapEntry<String, String>>[
       if (vip > 0) MapEntry(ShadowAssetKeys.vipBadge(vip), 'VIP $vip'),
-      if (level > 0) MapEntry(ShadowAssetKeys.levelBadge(level), 'المستوى $level'),
       ...badges.map((b) => MapEntry(normalizePublicBadgeKey(b), publicBadgeLabel(b))),
     ];
     if (entries.isEmpty) {

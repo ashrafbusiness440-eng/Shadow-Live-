@@ -43,7 +43,6 @@ class FirebaseService {
    'bio':data['bio']??'',
    'location':data['location']??'',
    'interests':data['interests'] is List ? data['interests'] : const [],
-   'level':data['level']??0,
    'vipLevel':data['vipLevel']??0,
    'badges':data['publicBadges'] is List ? data['publicBadges'] : const [],
    'isOnline':data['isOnline']??false,

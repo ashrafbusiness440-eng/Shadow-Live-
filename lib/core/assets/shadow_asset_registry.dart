@@ -44,5 +44,4 @@ abstract final class ShadowAssetKeys {
   static const moderatorBadge = 'role.moderator';
   static String vipBadge(int level) => 'vip.badge.$level';
   static String vipFrame(int level) => 'vip.frame.$level';
-  static String levelBadge(int level) => 'level.badge.$level';
 }
