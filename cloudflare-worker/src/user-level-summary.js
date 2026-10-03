@@ -230,9 +230,7 @@ export async function userLevelSummary(request, env) {
       return json(request, env, { ok: false, code: "method_not_allowed" }, 405);
     }
 
-    const decoded = await verifyFirebaseIdToken(request, env, {
-      checkUserState: false,
-    });
+    const decoded = await verifyFirebaseIdToken(request, env);
     const actorUid = safeUserId(decoded.sub);
     if (!actorUid) {
       return json(request, env, { ok: false, code: "unauthorized" }, 401);

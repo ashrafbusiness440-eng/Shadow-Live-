@@ -217,3 +217,40 @@ test("06-C delegated level permission operation is idempotent", async () => {
   assert.equal(duplicate.code, "duplicate");
   assert.equal(db.commits.length, 1);
 });
+
+
+test("07-A Owner can grant read-only hidden-level visibility to Safety moderator", async () => {
+  const actorUid = "hidden_level_owner";
+  const targetUid = "hidden_level_safety";
+  const db = new FakeDb({
+    ["users/" + actorUid]: owner(),
+    ["users/" + targetUid]: {
+      role: "moderator",
+      adminEnabled: true,
+      accountStatus: "active",
+      capabilities: [],
+    },
+  });
+
+  const result = await execute(db, payload(actorUid), {
+    targetUid,
+    role: "moderator",
+    adminEnabled: true,
+    capabilities: ["viewHiddenUserLevels"],
+    reason: "grant Safety read-only hidden level visibility",
+    idempotencyKey: "hidden_level_safety_0001",
+  });
+
+  assert.equal(result.code, "ok");
+  assert.deepEqual(result.capabilities, ["viewHiddenUserLevels"]);
+  const audit = db.docs.get(
+    "admin_audit_logs/admin_hidden_level_safety_0001",
+  );
+  assert.deepEqual(audit.capabilityChanges, [
+    {
+      capability: "viewHiddenUserLevels",
+      oldState: false,
+      newState: true,
+    },
+  ]);
+});
