@@ -458,8 +458,23 @@ export function userLevelSummaries(policy, {
 }
 
 async function loadPolicyDirect(db, transaction = null) {
-  const doc = await db.get(USER_LEVEL_CONFIG_PATH, transaction);
-  return normalizeUserLevelPolicy(doc.exists ? doc.data : {});
+  if (typeof db?.get === "function") {
+    const doc = await db.get(USER_LEVEL_CONFIG_PATH, transaction);
+    return normalizeUserLevelPolicy(doc.exists ? doc.data : {});
+  }
+
+  if (typeof db?.collection === "function") {
+    const ref = db.collection("system_config").doc("user_levels");
+    const doc = transaction && typeof transaction.get === "function"
+      ? await transaction.get(ref)
+      : await ref.get();
+    const data = doc.exists
+      ? (typeof doc.data === "function" ? doc.data() : doc.data)
+      : {};
+    return normalizeUserLevelPolicy(data || {});
+  }
+
+  throw new Error("unsupported_user_level_store");
 }
 
 export async function loadUserLevelPolicy(
