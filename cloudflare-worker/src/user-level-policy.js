@@ -130,6 +130,14 @@ function safeNonNegativeInteger(value) {
   return Number.isSafeInteger(number) && number >= 0 ? number : null;
 }
 
+export function safeAddUserLevelPoints(currentPoints, addedPoints) {
+  const current = safeNonNegativeInteger(currentPoints ?? 0);
+  const added = safeNonNegativeInteger(addedPoints);
+  if (current === null || added === null) return null;
+  const next = current + added;
+  return Number.isSafeInteger(next) && next >= 0 ? next : null;
+}
+
 function normalizeThresholds(raw, fallback, expectedLength) {
   if (!Array.isArray(raw) || raw.length !== expectedLength) {
     return [...fallback];
