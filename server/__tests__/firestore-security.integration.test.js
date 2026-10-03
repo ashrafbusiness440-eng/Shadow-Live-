@@ -456,6 +456,32 @@ test("public profile accepts R2 media object ids",async()=>{
   }));
 });
 
+test("public profile rejects oversized mood fields",async()=>{
+  const userDb=phoneUserDb();
+  await assertFails(setDoc(doc(userDb,"public_profiles",uid),{
+    uid,
+    displayName:"Mood Overflow",
+    username:"",
+    publicId:"",
+    searchTokens:["mood","overflow"],
+    profileImageUrl:"",
+    profileImageObjectId:"",
+    profileAvatarAsset:"",
+    coverImageUrl:"",
+    coverImageObjectId:"",
+    bio:"",
+    location:"",
+    moodEmoji:"🙂",
+    moodText:"x".repeat(81),
+    interests:[],
+    vipLevel:0,
+    badges:[],
+    isOnline:true,
+    createdAt:new Date(),
+    updatedAt:new Date(),
+  }));
+});
+
 test("chat image message accepts private R2 object metadata",async()=>{
   const userDb=phoneUserDb();
   await assertSucceeds(setDoc(
