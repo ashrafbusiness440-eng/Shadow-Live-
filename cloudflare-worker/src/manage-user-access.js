@@ -29,6 +29,7 @@ const ALLOWED_CAPABILITIES = new Set([
   "viewSystemHealth",
   "viewUsers",
   "manageUsers",
+  "viewHiddenUserLevels",
   "manageUserLevels",
   "manageWealthLevel",
   "manageAttractionLevel",

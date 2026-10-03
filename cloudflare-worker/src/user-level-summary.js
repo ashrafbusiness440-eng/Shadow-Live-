@@ -1,11 +1,19 @@
-import { json } from "./http.js";
-import { verifyFirebaseIdToken } from "./firebase-auth.js";
+import { json, readJson } from "./http.js";
+import {
+  assertUserDocumentSessionState,
+  verifyFirebaseIdToken,
+} from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import {
   gameInactivityDecayState,
   loadUserLevelPolicy,
   userLevelSummaries,
 } from "./user-level-policy.js";
+import {
+  applyUserLevelVisibilityForViewer,
+  effectiveVipLevel,
+  levelVisibilityPreferences,
+} from "./user-level-visibility.js";
 
 const clean = (value) => String(value ?? "").trim();
 
@@ -50,10 +58,13 @@ export function summarizeUserLevelData(policy, targetUid, user, nowMs = Date.now
     gamePoints: gameDecay.points,
   });
 
+  const visibility = levelVisibilityPreferences(user);
+
   return {
     summary: {
       uid: targetUid,
       policyVersion: Number(policy.version || 1),
+      visibility,
       wealth: summary.wealth,
       attraction: summary.attraction,
       games: {
@@ -162,9 +173,69 @@ export async function materializeUserLevelSummary(
   throw new Error("transaction_failed");
 }
 
+async function updateLevelVisibility(db, decoded, body) {
+  const actorUid = safeUserId(decoded?.sub);
+  const raw = body?.visibility;
+  if (
+    !actorUid ||
+    !raw ||
+    typeof raw !== "object" ||
+    typeof raw.hideWealthLevel !== "boolean" ||
+    typeof raw.hideAttractionLevel !== "boolean" ||
+    typeof raw.hideGameLevel !== "boolean"
+  ) {
+    throw new Error("invalid_request");
+  }
+
+  const transaction = await db.beginTransaction();
+  try {
+    const userSnap = await db.get(`users/${actorUid}`, transaction);
+    if (!userSnap.exists) throw new Error("user_not_found");
+    const user = userSnap.data || {};
+    assertUserDocumentSessionState(decoded, user);
+    if (effectiveVipLevel(user) < 3) {
+      throw new Error("vip_required");
+    }
+
+    const updatedAt = new Date();
+    const updates = {
+      hideWealthLevel: raw.hideWealthLevel,
+      hideAttractionLevel: raw.hideAttractionLevel,
+      hideGameLevel: raw.hideGameLevel,
+      levelVisibilityUpdatedAt: updatedAt,
+    };
+    await db.commit(transaction, [
+      db.writeUpdate(
+        `users/${actorUid}`,
+        updates,
+        [
+          "hideWealthLevel",
+          "hideAttractionLevel",
+          "hideGameLevel",
+          "levelVisibilityUpdatedAt",
+        ],
+      ),
+    ]);
+
+    return {
+      ...levelVisibilityPreferences({ ...user, ...updates }),
+      isSelf: true,
+      canEdit: true,
+      viewerOverride: {
+        wealth: false,
+        attraction: false,
+        games: false,
+      },
+    };
+  } catch (error) {
+    await db.rollback(transaction).catch(() => {});
+    throw error;
+  }
+}
+
 export async function userLevelSummary(request, env) {
   try {
-    if (request.method !== "GET") {
+    if (request.method !== "GET" && request.method !== "POST") {
       return json(request, env, { ok: false, code: "method_not_allowed" }, 405);
     }
 
@@ -174,26 +245,55 @@ export async function userLevelSummary(request, env) {
       return json(request, env, { ok: false, code: "unauthorized" }, 401);
     }
 
+    const db = firestoreClient(env);
+
+    if (request.method === "POST") {
+      const body = await readJson(request);
+      if (clean(body?.action) !== "updateVisibility") {
+        return json(request, env, { ok: false, code: "invalid_action" }, 400);
+      }
+      const visibility = await updateLevelVisibility(db, decoded, body);
+      return json(request, env, { ok: true, visibility }, 200);
+    }
+
     const url = new URL(request.url);
     const targetUid = safeUserId(url.searchParams.get("uid") || actorUid);
     if (!targetUid) {
       return json(request, env, { ok: false, code: "invalid_user" }, 400);
     }
 
-    const db = firestoreClient(env);
     const summary = await materializeUserLevelSummary(db, targetUid);
-    return json(request, env, { ok: true, summary });
+    let actorUser = null;
+    if (
+      actorUid !== targetUid &&
+      summary?.visibility?.hasAnyHiddenLevel === true
+    ) {
+      const actorSnap = await db.get(`users/${actorUid}`);
+      actorUser = actorSnap.exists ? actorSnap.data || {} : {};
+      if (actorSnap.exists) {
+        assertUserDocumentSessionState(decoded, actorUser);
+      }
+    }
+
+    const visibleSummary = applyUserLevelVisibilityForViewer(summary, {
+      actorUid,
+      targetUid,
+      actorUser,
+    });
+    return json(request, env, { ok: true, summary: visibleSummary });
   } catch (error) {
     const code = clean(error?.message) || "user_level_failed";
     const status = code === "unauthorized"
       ? 401
       : code === "user_not_found"
         ? 404
-        : code === "invalid_user"
+        : code === "invalid_user" || code === "invalid_request"
           ? 400
-          : code === "invalid_game_level_state"
-            ? 409
-            : 500;
+          : code === "vip_required"
+            ? 403
+            : code === "invalid_game_level_state"
+              ? 409
+              : 500;
     return json(
       request,
       env,
@@ -202,3 +302,7 @@ export async function userLevelSummary(request, env) {
     );
   }
 }
+
+export const userLevelSummaryInternals = Object.freeze({
+  updateLevelVisibility,
+});

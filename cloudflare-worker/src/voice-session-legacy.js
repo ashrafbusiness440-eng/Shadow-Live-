@@ -5,6 +5,7 @@ import {assertUserDocumentSessionState} from "./firebase-auth.js";
 import {gameCatalog} from "./legacy-games/game-runtime.js";
 import {loadUserLevelPolicy} from "./user-level-policy.js";
 import {summarizeUserLevelData} from "./user-level-summary.js";
+import {publicLevelMetadata} from "./user-level-visibility.js";
 import {
   legacyPresenceFresh,
   realtimeUserPresentFromNamespace,
@@ -3235,11 +3236,11 @@ async function enrichSupporterPublicMetadata(db,supporters){
           data,
           Date.now(),
         ).summary;
-        levels={
+        levels=publicLevelMetadata({
           wealthLevel:Math.max(0,Math.min(35,Number(summary?.wealth?.level||0))),
           attractionLevel:Math.max(0,Math.min(35,Number(summary?.attraction?.level||0))),
           gameLevel:Math.max(0,Math.min(21,Number(summary?.games?.level||0))),
-        };
+        },data);
       }catch(_){}
       const rawBadges=Array.isArray(data.publicBadges)
         ?data.publicBadges

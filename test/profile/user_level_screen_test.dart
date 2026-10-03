@@ -84,4 +84,116 @@ void main() {
     expect(find.text('دعم اللعبة'), findsOneWidget);
     expect(find.text('شريط الدعم'), findsNothing);
   });
+  hiddenLevelStage07Tests(summary);
+}
+
+
+const hiddenPublicSummary = UserLevelSummary(
+  uid: 'hidden_user',
+  policyVersion: 1,
+  visibility: UserLevelVisibility(
+    hiddenLevelEntitled: true,
+    hideWealthLevel: true,
+    isSelf: false,
+    canEdit: false,
+  ),
+  wealth: UserLevelSectionSummary(
+    level: 0,
+    maxLevel: 35,
+    points: 0,
+    minimumThreshold: 0,
+    nextThreshold: null,
+    remaining: 0,
+    progressBps: 0,
+    hidden: true,
+    publiclyHidden: true,
+  ),
+  attraction: UserLevelSectionSummary(
+    level: 4,
+    maxLevel: 35,
+    points: 50000,
+    minimumThreshold: 50000,
+    nextThreshold: 100000,
+    remaining: 50000,
+    progressBps: 0,
+  ),
+  games: UserGameLevelSummary(
+    level: 1,
+    maxLevel: 21,
+    points: 200000,
+    minimumThreshold: 200000,
+    nextThreshold: 1000000,
+    remaining: 800000,
+    progressBps: 0,
+    storedPoints: 200000,
+    pendingDecayPoints: 0,
+    pendingDecayDays: 0,
+    lastGameActivityAtMs: null,
+  ),
+);
+
+void hiddenLevelStage07Tests(UserLevelSummary baseSummary) {
+  testWidgets('Stage 07 direct public hidden section never renders LV0/details',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: UserLevelScreen(
+          userId: 'hidden_user',
+          loadSummary: () async => hiddenPublicSummary,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('مستوى مخفي'), findsOneWidget);
+    expect(find.text('LV0'), findsNothing);
+    expect(find.byKey(const Key('level-visibility-wealth')), findsNothing);
+  });
+
+  testWidgets('Stage 07 VIP3 self can toggle Wealth independently',
+      (tester) async {
+    var savedWealth = false;
+    var savedAttraction = false;
+    var savedGames = false;
+    final own = baseSummary.copyWithVisibility(
+      const UserLevelVisibility(
+        hiddenLevelEntitled: true,
+        isSelf: true,
+        canEdit: true,
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: UserLevelScreen(
+          loadSummary: () async => own,
+          updateVisibility: ({
+            required hideWealthLevel,
+            required hideAttractionLevel,
+            required hideGameLevel,
+          }) async {
+            savedWealth = hideWealthLevel;
+            savedAttraction = hideAttractionLevel;
+            savedGames = hideGameLevel;
+            return UserLevelVisibility(
+              hiddenLevelEntitled: true,
+              hideWealthLevel: hideWealthLevel,
+              hideAttractionLevel: hideAttractionLevel,
+              hideGameLevel: hideGameLevel,
+              isSelf: true,
+              canEdit: true,
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('level-visibility-wealth')));
+    await tester.pumpAndSettle();
+
+    expect(savedWealth, isTrue);
+    expect(savedAttraction, isFalse);
+    expect(savedGames, isFalse);
+  });
 }

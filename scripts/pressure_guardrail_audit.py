@@ -131,6 +131,9 @@ def main() -> int:
     level_control_backend = read("cloudflare-worker/src/manage-user-level.js")
     level_control_ui = read("lib/admin/control_user_level.dart")
     level_control_shell = read("lib/main_control.dart")
+    level_visibility_backend = read("cloudflare-worker/src/user-level-visibility.js")
+    level_summary_backend = read("cloudflare-worker/src/user-level-summary.js")
+    level_profile_ui = read("lib/features/profile/screens/user_level_screen.dart")
 
     if "_presenceTimer" in voice or ".heartbeat(" in voice:
         failures.append("Step 4 regression: Firestore presence heartbeat returned to the room session")
@@ -720,6 +723,98 @@ def main() -> int:
             failures.append(
                 f"Levels Stage 06 regression: CI missing {required_test}"
             )
+
+    # Levels Stage 07: VIP Hidden Level must stay server-authoritative and off hot paths.
+    for required in (
+        "effectiveVipLevel",
+        "hideWealthLevel",
+        "hideAttractionLevel",
+        "hideGameLevel",
+        "publicLevelMetadata",
+        "applyUserLevelVisibilityForViewer",
+    ):
+        if required not in level_visibility_backend:
+            failures.append(
+                f"Levels Stage 07 privacy regression: visibility authority missing {required}"
+            )
+    for forbidden in (
+        "user?.vipLevel",
+        "user?.vip?.level",
+        "FirebaseFirestore",
+        ".collection(",
+        ".snapshots()",
+        "Timer.periodic",
+        "StreamBuilder",
+    ):
+        if forbidden in level_visibility_backend:
+            failures.append(
+                f"Levels Stage 07 regression: visibility helper introduced legacy/hot-path marker {forbidden}"
+            )
+    if "updateVisibility" not in level_summary_backend:
+        failures.append(
+            "Levels Stage 07 regression: backend visibility mutation endpoint missing"
+        )
+    if "summary?.visibility?.hasAnyHiddenLevel === true" not in level_summary_backend:
+        failures.append(
+            "Levels Stage 07 pressure regression: actor override read is no longer conditional on an actually hidden target"
+        )
+    if 'db.runQuery(' in level_summary_backend or 'db.list(' in level_summary_backend:
+        failures.append(
+            "Levels Stage 07 pressure regression: user-level visibility introduced scan/list query"
+        )
+
+    room_level_metadata = function_body(room_realtime_entry, "roomUserLevelMetadata")
+    if room_level_metadata is None:
+        failures.append("Levels Stage 07 regression: roomUserLevelMetadata missing")
+    else:
+        if "publicLevelMetadata" not in room_level_metadata:
+            failures.append(
+                "Levels Stage 07 privacy regression: room ticket no longer applies hidden-level metadata"
+            )
+        for forbidden in ("db.get(", "db.getAll(", "runQuery(", ".list("):
+            if forbidden in room_level_metadata:
+                failures.append(
+                    f"Levels Stage 07 pressure regression: room level metadata added per-ticket lookup {forbidden}"
+                )
+
+    supporter_enrichment = function_body(worker, "enrichSupporterPublicMetadata")
+    if supporter_enrichment is None:
+        failures.append(
+            "Levels Stage 07 regression: bounded Full Supporters enrichment missing"
+        )
+    else:
+        if "publicLevelMetadata" not in supporter_enrichment:
+            failures.append(
+                "Levels Stage 07 privacy regression: Full Supporters no longer applies hidden-level metadata"
+            )
+        if supporter_enrichment.count("db.getAll(") != 1:
+            failures.append(
+                "Levels Stage 07 pressure regression: Full Supporters must keep exactly one bounded getAll enrichment"
+            )
+        if "slice(0,50)" not in supporter_enrichment:
+            failures.append(
+                "Levels Stage 07 pressure regression: Full Supporters 50-user bound changed"
+            )
+
+    for forbidden in (
+        "FirebaseFirestore",
+        ".collection(",
+        ".snapshots()",
+        "Timer.periodic",
+        "StreamBuilder",
+    ):
+        if forbidden in level_profile_ui:
+            failures.append(
+                f"Levels Stage 07 pressure regression: profile level UI introduced {forbidden}"
+            )
+    if "'action': 'updateVisibility'" not in read("lib/features/profile/services/user_level_service.dart"):
+        failures.append(
+            "Levels Stage 07 regression: Hidden Level UI no longer writes through backend authority"
+        )
+    if "server/__tests__/user-level-visibility.test.js" not in flutter_ci:
+        failures.append(
+            "Levels Stage 07 regression: hidden-level privacy test is not part of Flutter CI"
+        )
 
     # Step 11: observability must measure pressure without writing telemetry to Firestore.
     analytics_binding_enabled = (
