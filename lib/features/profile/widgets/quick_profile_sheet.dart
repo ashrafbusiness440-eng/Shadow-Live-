@@ -92,6 +92,12 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
             final name = (data['displayName'] ?? 'مستخدم Shadow Live').toString();
             final photo = (data['profileImageUrl'] ?? '').toString();
             final publicId = (data['publicId'] ?? '—').toString();
+            final moodEmoji = (data['moodEmoji'] ?? '').toString().trim();
+            final moodText = (data['moodText'] ?? '').toString().trim();
+            final mood = [
+              if (moodEmoji.isNotEmpty) moodEmoji,
+              if (moodText.isNotEmpty) moodText,
+            ].join(' ').trim();
             final vip = (data['vipLevel'] as num?)?.toInt() ?? 0;
             final online = data['isOnline'] == true;
             final badges = data['badges'] is List
@@ -142,6 +148,20 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                         Text(name, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
                         const SizedBox(height: 4),
                         Text('ID: $publicId', textDirection: TextDirection.ltr, style: const TextStyle(color: Colors.white54)),
+                        if (mood.isNotEmpty) ...[
+                          const SizedBox(height: 7),
+                          Text(
+                            mood,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Color(0xFFFFD54A),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
