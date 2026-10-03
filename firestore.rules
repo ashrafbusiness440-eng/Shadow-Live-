@@ -148,6 +148,8 @@ service cloud.firestore {
         'coins',
         'diamonds',
         'balance',
+        'wealthPoints',
+        'attractionPoints',
         'level',
         'vipLevel',
         'publicBadges',
@@ -216,6 +218,8 @@ service cloud.firestore {
         && request.resource.data.coins == 0
         && request.resource.data.diamonds == 0
         && (!('balance' in request.resource.data) || request.resource.data.balance == 0)
+        && (!('wealthPoints' in request.resource.data) || request.resource.data.wealthPoints == 0)
+        && (!('attractionPoints' in request.resource.data) || request.resource.data.attractionPoints == 0)
         && (!('level' in request.resource.data) || request.resource.data.level == 0)
         && (!('vipLevel' in request.resource.data) || request.resource.data.vipLevel == 0)
         && !('publicBadges' in request.resource.data)
