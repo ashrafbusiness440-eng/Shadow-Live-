@@ -461,3 +461,35 @@ test("06-A admin Game correction preserves inactivity clock and decay cursor", a
   assert.equal(result.summary.games.storedPoints, 2000000);
   assert.equal(result.summary.games.points, 1800000);
 });
+
+test("06-C Set Level rejects LV0; zero points remain a Set Points operation", async () => {
+  const actorUid = "owner_level_range";
+  const targetUid = "target_level_range";
+  const db = new FakeDb({
+    ["users/" + actorUid]: user({ role: "owner" }),
+    ["users/" + targetUid]: user({ gamePoints: 0 }),
+  });
+
+  await assert.rejects(
+    updateUserLevel(db, payload(actorUid), {
+      targetUid,
+      metric: "games",
+      mode: "setLevel",
+      level: 0,
+      reason: "invalid level boundary",
+      idempotencyKey: "level_zero_guard_0001",
+    }),
+    (error) => error?.code === "invalid_level" && error?.status === 400,
+  );
+
+  const zeroPoints = await updateUserLevel(db, payload(actorUid), {
+    targetUid,
+    metric: "games",
+    mode: "setPoints",
+    points: 0,
+    reason: "zero points correction",
+    idempotencyKey: "points_zero_ok_0001",
+  });
+  assert.equal(zeroPoints.code, "ok");
+  assert.equal(zeroPoints.newPoints, 0);
+});
