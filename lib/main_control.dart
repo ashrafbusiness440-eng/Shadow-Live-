@@ -13,6 +13,7 @@ import 'admin/agency_management_page.dart';
 import 'admin/control_api_endpoints.dart';
 import 'admin/control_firebase.dart';
 import 'admin/control_asset_manager_page.dart';
+import 'admin/control_relationship_types_page.dart';
 import 'admin/economy_control_page.dart';
 import 'admin/games_control_page.dart';
 import 'admin/user_access_control_card.dart';
@@ -2735,6 +2736,8 @@ class MorePage extends StatelessWidget {
               capabilities.contains('manageAgencies')||
               capabilities.contains('manageAgencyMemberships')||
               capabilities.contains('manageAgencyManagers')));
+        final canManageSystem=isOwner||
+            (adminEnabled&&capabilities.contains('manageSystem'));
         final items=<ControlItem>[
           if(canOpenAgencies)
             const ControlItem('الوكالات','طلبات الإنشاء والمراجعة والإنشاء المباشر',Icons.apartment_outlined),
@@ -2744,6 +2747,8 @@ class MorePage extends StatelessWidget {
           const ControlItem('VIP و IDs الخاصة','إدارة VIP والمعرّفات الخاصة',Icons.workspace_premium_outlined),
           if(isOwner)
             const ControlItem('استوديو الأصول','Shadow Asset Studio • Templates + Validation + Preview + Draft/Publish',Icons.auto_awesome_mosaic_outlined),
+          if(canManageSystem)
+            const ControlItem('العلاقات / CP','إدارة أنواع العلاقات: الاسم وAsset والتفعيل والترتيب وإضافة أنواع جديدة',Icons.favorite_outline_rounded),
           const ControlItem('إعدادات النظام','system_config — قراءة فقط، وEmergency Lock يبقى Backend فقط',Icons.settings_outlined),
           const ControlItem('سجل الإدارة','Audit Log للعمليات الحساسة — قراءة فقط',Icons.history_outlined),
         ];
@@ -2767,6 +2772,7 @@ class ControlList extends StatelessWidget {
     if (item.title == 'سجل الإدارة') return const AuditLogPage();
     if (item.title == 'إعدادات النظام') return const SystemConfigPage();
     if (item.title == 'استوديو الأصول' || item.title == 'إدارة أصول التطبيق') return const ControlAssetManagerPage();
+    if (item.title == 'العلاقات / CP') return const ControlRelationshipTypesPage();
     return DetailPage(item:item);
   }
 
