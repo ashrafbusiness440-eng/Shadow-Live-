@@ -36,7 +36,7 @@ class UserLevelSectionSummary {
       nextThreshold:
           json['nextThreshold'] == null ? null : _int(json['nextThreshold']),
       remaining: _int(json['remaining']),
-      progressBps: _int(json['progressBps']).clamp(0, 10000),
+      progressBps: _int(json['progressBps']).clamp(0, 10000).toInt(),
     );
   }
 }
