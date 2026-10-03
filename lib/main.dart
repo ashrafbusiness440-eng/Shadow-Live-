@@ -40,6 +40,9 @@ import 'features/agency/screens/agency_application_page.dart';
 import 'features/agency/screens/agency_search_page.dart';
 import 'features/notifications/screens/notifications_page.dart';
 import 'features/profile/widgets/quick_profile_sheet.dart';
+import 'features/profile/widgets/registry_badge.dart';
+import 'features/profile/widgets/user_level_badges.dart';
+import 'features/profile/screens/user_level_screen.dart';
 import 'screens/room/create_room_screen.dart';
 import 'screens/room/room_list_screen.dart';
 import 'screens/settings/settings_screen.dart';
@@ -2025,8 +2028,27 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                 const Divider(color: Colors.white10),
                             itemBuilder: (_, index) {
                               final supporter = supporters[index];
+                              final hasLevelBadges =
+                                  supporter.wealthLevel > 0 ||
+                                  supporter.attractionLevel > 0 ||
+                                  supporter.gameLevel > 0;
+                              final hasPublicBadges =
+                                  supporter.vipLevel > 0 ||
+                                  supporter.badges.isNotEmpty;
                               return ListTile(
                                 contentPadding: EdgeInsets.zero,
+                                onTap: supporter.uid.isEmpty
+                                    ? null
+                                    : () {
+                                        Navigator.of(sheetContext).pop();
+                                        Future<void>.microtask(() async {
+                                          if (!mounted) return;
+                                          await showQuickProfileSheet(
+                                            context,
+                                            userId: supporter.uid,
+                                          );
+                                        });
+                                      },
                                 leading: CircleAvatar(
                                   backgroundColor:
                                       const Color(0xFF25183F),
@@ -2053,11 +2075,88 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                     fontWeight: FontWeight.w800,
                                   ),
                                 ),
-                                subtitle: Text(
-                                  'المركز ' + supporter.rank.toString(),
-                                  style: const TextStyle(
-                                    color: Colors.white54,
-                                    fontSize: 11,
+                                subtitle: Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'ID: ' +
+                                            (supporter.publicId.isEmpty
+                                                ? '—'
+                                                : supporter.publicId),
+                                        textDirection: TextDirection.ltr,
+                                        style: const TextStyle(
+                                          color: Colors.white54,
+                                          fontSize: 10,
+                                        ),
+                                      ),
+                                      Text(
+                                        'المركز ' +
+                                            supporter.rank.toString(),
+                                        style: const TextStyle(
+                                          color: Colors.white54,
+                                          fontSize: 10,
+                                        ),
+                                      ),
+                                      if (hasPublicBadges) ...[
+                                        const SizedBox(height: 6),
+                                        Wrap(
+                                          spacing: 5,
+                                          runSpacing: 5,
+                                          children: [
+                                            if (supporter.vipLevel > 0)
+                                              RegistryBadge(
+                                                assetKey:
+                                                    ShadowAssetKeys.vipBadge(
+                                                  supporter.vipLevel,
+                                                ),
+                                                label:
+                                                    'VIP ${supporter.vipLevel}',
+                                              ),
+                                            ...supporter.badges.take(4).map(
+                                                  (badge) => RegistryBadge(
+                                                    assetKey:
+                                                        normalizePublicBadgeKey(
+                                                      badge,
+                                                    ),
+                                                    label: publicBadgeLabel(
+                                                      badge,
+                                                    ),
+                                                  ),
+                                                ),
+                                          ],
+                                        ),
+                                      ],
+                                      if (hasLevelBadges) ...[
+                                        const SizedBox(height: 6),
+                                        UserLevelBadges.fromLevels(
+                                          wealthLevel:
+                                              supporter.wealthLevel,
+                                          attractionLevel:
+                                              supporter.attractionLevel,
+                                          gameLevel: supporter.gameLevel,
+                                          compact: true,
+                                          onTap: (tabIndex) {
+                                            Navigator.of(sheetContext).pop();
+                                            Future<void>.microtask(() {
+                                              if (!mounted) return;
+                                              Navigator.of(context).push(
+                                                MaterialPageRoute<void>(
+                                                  builder: (_) =>
+                                                      UserLevelScreen(
+                                                    userId: supporter.uid,
+                                                    initialTabIndex:
+                                                        tabIndex,
+                                                  ),
+                                                ),
+                                              );
+                                            });
+                                          },
+                                        ),
+                                      ],
+                                    ],
                                   ),
                                 ),
                                 trailing: Text(
