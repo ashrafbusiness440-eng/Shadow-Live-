@@ -1,5 +1,8 @@
 import { json, readJson } from "./http.js";
-import { verifyFirebaseIdToken } from "./firebase-auth.js";
+import {
+  assertUserDocumentSessionState,
+  verifyFirebaseIdToken,
+} from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 
@@ -748,6 +751,87 @@ async function requestDetail(db, uid, body) {
   };
 }
 
+async function assertCanManageRelationshipTypes(db, decoded) {
+  const actorDoc = await db.get(`users/${decoded.sub}`);
+  if (!actorDoc.exists) throw new ApiError("forbidden", 403);
+  const actor = actorDoc.data || {};
+  assertUserDocumentSessionState(decoded, actor);
+  const caps = Array.isArray(actor.capabilities)
+    ? actor.capabilities.map(clean)
+    : [];
+  const allowed =
+    actor.adminEnabled === true &&
+    (clean(actor.role) === "owner" || caps.includes("manageSystem"));
+  if (!allowed) throw new ApiError("forbidden", 403);
+  return actor;
+}
+
+function validateSubmittedTypes(raw) {
+  if (!Array.isArray(raw) || raw.length < 1 || raw.length > MAX_TYPES) {
+    throw new ApiError("invalid_relationship_types", 400);
+  }
+  const seen = new Set();
+  const types = [];
+  for (const item of raw) {
+    const key = clean(item?.key).toLowerCase();
+    const labelAr = clean(item?.labelAr || item?.label);
+    const assetKey = clean(item?.assetKey);
+    const order = Number(item?.order);
+    if (
+      !validTypeKey(key) ||
+      seen.has(key) ||
+      !labelAr ||
+      labelAr.length > 40 ||
+      assetKey.length > 160 ||
+      !Number.isFinite(order)
+    ) {
+      throw new ApiError("invalid_relationship_types", 400);
+    }
+    seen.add(key);
+    types.push({
+      key,
+      labelAr,
+      enabled: item?.enabled !== false,
+      order: Math.trunc(order),
+      assetKey,
+    });
+  }
+  types.sort((a, b) => a.order - b.order || a.key.localeCompare(b.key));
+  return types;
+}
+
+async function setRelationshipTypes(db, decoded, body) {
+  await assertCanManageRelationshipTypes(db, decoded);
+  const submitted = validateSubmittedTypes(body.types);
+
+  return runTransaction(db, async (transaction) => {
+    const current = await relationshipTypes(db, transaction);
+    const submittedKeys = new Set(submitted.map((item) => item.key));
+    for (const currentType of current) {
+      if (!submittedKeys.has(currentType.key)) {
+        throw new ApiError("relationship_type_removal_not_allowed", 409);
+      }
+    }
+
+    const now = new Date();
+    await db.commit(transaction, [
+      db.writeUpdate("system_config/relationship_types", {
+        types: submitted,
+        updatedAt: now,
+        updatedBy: decoded.sub,
+      }),
+      db.writeCreate(`relationship_audit_logs/${randomId("relaudit")}`, {
+        action: "setRelationshipTypes",
+        actorUid: decoded.sub,
+        typeCount: submitted.length,
+        createdAt: now,
+      }),
+    ]);
+
+    return { ok: true, types: submitted };
+  });
+}
+
 async function listMine(db, uid) {
   const types = await relationshipTypes(db);
   const slots = await Promise.all(
@@ -823,6 +907,9 @@ export async function relationships(request, env) {
       case "listMine":
         result = await listMine(db, uid);
         break;
+      case "setTypes":
+        result = await setRelationshipTypes(db, decoded, body);
+        break;
       default:
         throw new ApiError("invalid_action", 400);
     }
@@ -851,6 +938,8 @@ export const relationshipCoreTestHooks = Object.freeze({
   pendingPath,
   activePairPath,
   operationConflict,
+  validateSubmittedTypes,
+  setRelationshipTypes,
   sendRequest,
   respondRequest,
   cancelRequest,
