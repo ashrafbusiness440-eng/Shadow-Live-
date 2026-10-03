@@ -1,7 +1,4 @@
 abstract final class VipEntitlementPolicy {
- static bool hideWealth(int level)=>level>=2;
- static bool hidePopularity(int level)=>level>=2;
- static bool hideUserLevel(int level)=>level>=3;
  static bool hideOnline(int level)=>level>=3;
  static bool hideCurrentRoom(int level)=>level>=4;
  static bool hideGamePkActivity(int level)=>level>=4;
