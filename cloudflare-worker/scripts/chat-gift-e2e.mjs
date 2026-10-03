@@ -296,6 +296,12 @@ try{
   if(senderAfter?.data?.coins!==senderOpening-totalCost){
     throw new Error(`sender debit mismatch: ${senderAfter?.data?.coins}`);
   }
+  if(senderAfter?.data?.wealthPoints!==totalCost){
+    throw new Error("sender wealth mismatch");
+  }
+  if(receiverAfter?.data?.attractionPoints!==totalCost){
+    throw new Error("receiver attraction mismatch");
+  }
   if(!txDoc||txDoc.data.totalCost!==totalCost||txDoc.data.contextType!=="chat"){
     throw new Error("gift transaction mismatch");
   }
@@ -327,9 +333,14 @@ try{
   if(!duplicate.res.ok||duplicate.body.code!=="duplicate"){
     throw new Error(`gift idempotency failed: ${duplicate.res.status} ${JSON.stringify(duplicate.body)}`);
   }
-  const senderAfterDup=await fsGet(`users/${senderUid}`);
-  if(senderAfterDup?.data?.coins!==senderOpening-totalCost){
-    throw new Error("duplicate gift mutated sender balance");
+  const [senderAfterDup,receiverAfterDup]=await Promise.all([
+    fsGet(`users/${senderUid}`),
+    fsGet(`users/${receiverUid}`),
+  ]);
+  if(senderAfterDup?.data?.coins!==senderOpening-totalCost||
+     senderAfterDup?.data?.wealthPoints!==totalCost||
+     receiverAfterDup?.data?.attractionPoints!==totalCost){
+    throw new Error("duplicate gift mutated balance or level points");
   }
   console.log("PASS chat gift idempotency");
   console.log("ALL CLOUDFLARE CHAT GIFT E2E CHECKS PASSED");

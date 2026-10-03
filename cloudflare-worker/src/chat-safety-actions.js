@@ -604,7 +604,10 @@ export async function sendGift(db, uid, body, options = {}) {
         senderPath,
         { coins: after },
         ["coins"],
-        [db.increment("totalGiftsSent", quantity)],
+        [
+          db.increment("totalGiftsSent", quantity),
+          db.increment("wealthPoints", totalCost),
+        ],
       ),
     ];
 
@@ -633,6 +636,7 @@ export async function sendGift(db, uid, body, options = {}) {
       db.increment("totalGiftsReceived", quantity),
       db.increment("totalValueReceived", totalCost),
       db.increment("giftSupportReceivedCoins", totalCost),
+      db.increment("attractionPoints", totalCost),
     ];
 
     if (earningsEnabled) {
@@ -922,6 +926,9 @@ export async function sendGift(db, uid, body, options = {}) {
         quantity,
         unitCoins,
         totalCost,
+        giftFundingSource: "coins",
+        wealthPointsAdded: totalCost,
+        attractionPointsAdded: totalCost,
         imageUrl,
         assetKey,
         createdAt: now,

@@ -517,6 +517,8 @@ test("regular user cannot change protected balances earnings agency or mic activ
     {giftEarningCoinsLifetime:5000},
     {giftDiamondsLifetime:5000},
     {giftSupportReceivedCoins:5000},
+    {wealthPoints:5000},
+    {attractionPoints:5000},
     {giftRevenueMonthCoins:5000},
     {currentGiftRevenueTier:"diamond"},
     {giftHostMicSecondsMonth:7200},
@@ -535,6 +537,8 @@ test("new client user cannot pre-seed agency target or policy state",async()=>{
     {agencyCurrentTargetId:"diamond"},
     {agencyNextTargetCoins:0},
     {agencyTargetUpdatedAt:new Date()},
+    {wealthPoints:5000},
+    {attractionPoints:5000},
   ];
   for(let index=0;index<forbiddenFields.length;index+=1){
     const userId="rules_target_forge_"+String(index);

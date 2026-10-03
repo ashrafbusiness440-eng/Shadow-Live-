@@ -549,7 +549,10 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
           walletUpdatedAt: now,
         },
         ["coins", "walletUpdatedAt"],
-        [db.increment("totalGiftsSent", quantity)],
+        [
+          db.increment("totalGiftsSent", quantity),
+          db.increment("wealthPoints", totalCost),
+        ],
       ),
     ];
 
@@ -578,6 +581,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       db.increment("totalGiftsReceived", quantity),
       db.increment("totalValueReceived", totalCost),
       db.increment("giftSupportReceivedCoins", totalCost),
+      db.increment("attractionPoints", totalCost),
     ];
     if (earningsEnabled) {
       receiverTransforms.push(
@@ -947,6 +951,9 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
         quantity,
         unitCoins,
         totalCost,
+        giftFundingSource: "coins",
+        wealthPointsAdded: totalCost,
+        attractionPointsAdded: totalCost,
         assetKey,
         policyMode: "tiered_host_agency",
         revenueTierId: revenue.tierId,
