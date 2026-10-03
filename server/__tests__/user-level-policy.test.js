@@ -11,6 +11,8 @@ import {
   normalizeUserLevelPolicy,
   safeAddUserLevelPoints,
   giftLevelPointAwards,
+  gameInactivityDecayState,
+  gameLevelAfterWager,
   userLevelSummaries,
 } from "../../cloudflare-worker/src/user-level-policy.js";
 
@@ -205,4 +207,70 @@ test("gift level awards separate paid wealth from nominal attraction value", () 
     giftLevelPointAwards({ nominalCoins: 5000, paidCoins: 6000 }),
     null,
   );
+});
+
+
+test("game inactivity starts decay on day 4 and compounds from remaining points", () => {
+  const policy = DEFAULT_USER_LEVEL_POLICY.games;
+  const day = 24 * 60 * 60 * 1000;
+  const base = Date.UTC(2026, 9, 1, 0, 0, 0);
+
+  const beforeDay4 = gameInactivityDecayState(policy, {
+    gamePoints: 100000,
+    lastGameActivityAtMs: base,
+    nowMs: base + (3 * day) - 1,
+  });
+  assert.equal(beforeDay4.points, 100000);
+  assert.equal(beforeDay4.newlyAppliedDecayDays, 0);
+
+  const day4 = gameInactivityDecayState(policy, {
+    gamePoints: 100000,
+    lastGameActivityAtMs: base,
+    nowMs: base + (3 * day),
+  });
+  assert.equal(day4.points, 90000);
+  assert.equal(day4.pointsDecayed, 10000);
+  assert.equal(day4.newlyAppliedDecayDays, 1);
+
+  const day5 = gameInactivityDecayState(policy, {
+    gamePoints: 100000,
+    lastGameActivityAtMs: base,
+    nowMs: base + (4 * day),
+  });
+  assert.equal(day5.points, 81000);
+  assert.equal(day5.pointsDecayed, 19000);
+  assert.equal(day5.newlyAppliedDecayDays, 2);
+});
+
+test("lazy game decay never reapplies already materialized days", () => {
+  const policy = DEFAULT_USER_LEVEL_POLICY.games;
+  const day = 24 * 60 * 60 * 1000;
+  const base = Date.UTC(2026, 9, 1, 0, 0, 0);
+  const state = gameInactivityDecayState(policy, {
+    gamePoints: 90000,
+    lastGameActivityAtMs: base,
+    inactivityDecayAppliedDays: 1,
+    nowMs: base + (4 * day),
+  });
+  assert.equal(state.points, 81000);
+  assert.equal(state.newlyAppliedDecayDays, 1);
+  assert.equal(state.inactivityDecayAppliedDays, 2);
+});
+
+test("returning to play applies due decay, awards wager 1:1, and resets grace", () => {
+  const policy = DEFAULT_USER_LEVEL_POLICY.games;
+  const day = 24 * 60 * 60 * 1000;
+  const base = Date.UTC(2026, 9, 1, 0, 0, 0);
+  const resumed = gameLevelAfterWager(policy, {
+    gamePoints: 100000,
+    wagerCoins: 20000,
+    lastGameActivityAtMs: base,
+    nowMs: base + (4 * day),
+  });
+  assert.equal(resumed.gamePointsAfterDecay, 81000);
+  assert.equal(resumed.gamePointsDecayed, 19000);
+  assert.equal(resumed.gamePointsAwarded, 20000);
+  assert.equal(resumed.gamePoints, 101000);
+  assert.equal(resumed.inactivityDecayAppliedDays, 0);
+  assert.equal(resumed.lastGameActivityAtMs, base + (4 * day));
 });

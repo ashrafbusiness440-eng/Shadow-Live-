@@ -151,6 +151,128 @@ export function giftLevelPointAwards({
   };
 }
 
+
+const USER_LEVEL_DAY_MS = 24 * 60 * 60 * 1000;
+const MAX_LAZY_GAME_DECAY_DAYS = 10_000;
+
+function safeEpochMs(value) {
+  if (value == null || value === "") return null;
+  if (value instanceof Date) {
+    const ms = value.getTime();
+    return Number.isSafeInteger(ms) && ms >= 0 ? ms : null;
+  }
+  if (typeof value?.toMillis === "function") {
+    const ms = Number(value.toMillis());
+    return Number.isSafeInteger(ms) && ms >= 0 ? ms : null;
+  }
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number >= 0 ? number : null;
+}
+
+function reducePointsByBps(points, bps) {
+  const current = safeNonNegativeInteger(points);
+  const rate = boundedInteger(bps, 1000, 1, 9999);
+  if (current === null) return null;
+  const kept = 10000 - rate;
+  return Number((BigInt(current) * BigInt(kept)) / 10000n);
+}
+
+export function gameInactivityDecayState(
+  policy,
+  {
+    gamePoints = 0,
+    lastGameActivityAtMs = null,
+    inactivityDecayAppliedDays = 0,
+    nowMs = Date.now(),
+  } = {},
+) {
+  const points = safeNonNegativeInteger(gamePoints ?? 0);
+  const now = safeEpochMs(nowMs);
+  const lastActivity = safeEpochMs(lastGameActivityAtMs);
+  const alreadyApplied = safeNonNegativeInteger(inactivityDecayAppliedDays ?? 0);
+  if (points === null || now === null || alreadyApplied === null) return null;
+
+  const graceDays = boundedInteger(policy?.inactivityGraceDays, 3, 1, 30);
+  const decayBps = boundedInteger(
+    policy?.inactivityDecayBpsPerDay,
+    1000,
+    1,
+    9999,
+  );
+
+  if (lastActivity === null) {
+    return {
+      points,
+      pointsBeforeDecay: points,
+      pointsDecayed: 0,
+      elapsedFullDays: 0,
+      totalDecayDays: 0,
+      newlyAppliedDecayDays: 0,
+      inactivityDecayAppliedDays: alreadyApplied,
+    };
+  }
+  if (now < lastActivity) return null;
+
+  const elapsedFullDays = Math.floor((now - lastActivity) / USER_LEVEL_DAY_MS);
+  const totalDecayDays = Math.max(0, elapsedFullDays - graceDays + 1);
+  if (alreadyApplied > totalDecayDays) return null;
+  const newlyAppliedDecayDays = totalDecayDays - alreadyApplied;
+  if (newlyAppliedDecayDays > MAX_LAZY_GAME_DECAY_DAYS) return null;
+
+  let nextPoints = points;
+  for (let day = 0; day < newlyAppliedDecayDays && nextPoints > 0; day += 1) {
+    nextPoints = reducePointsByBps(nextPoints, decayBps);
+  }
+  if (nextPoints === null) return null;
+
+  return {
+    points: nextPoints,
+    pointsBeforeDecay: points,
+    pointsDecayed: points - nextPoints,
+    elapsedFullDays,
+    totalDecayDays,
+    newlyAppliedDecayDays,
+    inactivityDecayAppliedDays: totalDecayDays,
+  };
+}
+
+export function gameLevelAfterWager(
+  policy,
+  {
+    gamePoints = 0,
+    wagerCoins = 0,
+    lastGameActivityAtMs = null,
+    inactivityDecayAppliedDays = 0,
+    nowMs = Date.now(),
+  } = {},
+) {
+  const wager = safeNonNegativeInteger(wagerCoins);
+  if (wager === null || wager <= 0) return null;
+
+  const decayed = gameInactivityDecayState(policy, {
+    gamePoints,
+    lastGameActivityAtMs,
+    inactivityDecayAppliedDays,
+    nowMs,
+  });
+  if (!decayed) return null;
+
+  const nextPoints = safeAddUserLevelPoints(decayed.points, wager);
+  const activityAtMs = safeEpochMs(nowMs);
+  if (nextPoints === null || activityAtMs === null) return null;
+
+  return {
+    gamePoints: nextPoints,
+    gamePointsBeforeDecay: decayed.pointsBeforeDecay,
+    gamePointsAfterDecay: decayed.points,
+    gamePointsDecayed: decayed.pointsDecayed,
+    gamePointsAwarded: wager,
+    decayDaysAppliedBeforeWager: decayed.newlyAppliedDecayDays,
+    lastGameActivityAtMs: activityAtMs,
+    inactivityDecayAppliedDays: 0,
+  };
+}
+
 function normalizeThresholds(raw, fallback, expectedLength) {
   if (!Array.isArray(raw) || raw.length !== expectedLength) {
     return [...fallback];
@@ -336,8 +458,23 @@ export function userLevelSummaries(policy, {
 }
 
 async function loadPolicyDirect(db, transaction = null) {
-  const doc = await db.get(USER_LEVEL_CONFIG_PATH, transaction);
-  return normalizeUserLevelPolicy(doc.exists ? doc.data : {});
+  if (typeof db?.get === "function") {
+    const doc = await db.get(USER_LEVEL_CONFIG_PATH, transaction);
+    return normalizeUserLevelPolicy(doc.exists ? doc.data : {});
+  }
+
+  if (typeof db?.collection === "function") {
+    const ref = db.collection("system_config").doc("user_levels");
+    const doc = transaction && typeof transaction.get === "function"
+      ? await transaction.get(ref)
+      : await ref.get();
+    const data = doc.exists
+      ? (typeof doc.data === "function" ? doc.data() : doc.data)
+      : {};
+    return normalizeUserLevelPolicy(data || {});
+  }
+
+  throw new Error("unsupported_user_level_store");
 }
 
 export async function loadUserLevelPolicy(

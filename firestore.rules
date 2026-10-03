@@ -150,6 +150,10 @@ service cloud.firestore {
         'balance',
         'wealthPoints',
         'attractionPoints',
+        'gamePoints',
+        'lastGameActivityAt',
+        'lastGameActivityAtMs',
+        'gameInactivityDecayAppliedDays',
         'level',
         'vipLevel',
         'publicBadges',
@@ -220,6 +224,11 @@ service cloud.firestore {
         && (!('balance' in request.resource.data) || request.resource.data.balance == 0)
         && (!('wealthPoints' in request.resource.data) || request.resource.data.wealthPoints == 0)
         && (!('attractionPoints' in request.resource.data) || request.resource.data.attractionPoints == 0)
+        && (!('gamePoints' in request.resource.data) || request.resource.data.gamePoints == 0)
+        && !('lastGameActivityAt' in request.resource.data)
+        && !('lastGameActivityAtMs' in request.resource.data)
+        && (!('gameInactivityDecayAppliedDays' in request.resource.data)
+          || request.resource.data.gameInactivityDecayAppliedDays == 0)
         && (!('level' in request.resource.data) || request.resource.data.level == 0)
         && (!('vipLevel' in request.resource.data) || request.resource.data.vipLevel == 0)
         && !('publicBadges' in request.resource.data)
