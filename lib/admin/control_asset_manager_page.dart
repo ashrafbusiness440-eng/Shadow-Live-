@@ -10,6 +10,7 @@ import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 
 import 'control_asset_policy.dart';
+import 'control_asset_studio_template.dart';
 
 class ControlAssetManagerPage extends StatefulWidget {
   const ControlAssetManagerPage({super.key});
@@ -32,6 +33,21 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
   bool _busy = false;
   String _mode = 'remote';
   String? _message;
+  int _studioVersion = 1;
+  String? _selectedTemplateId = 'badge.base.v1';
+  int? _preparedWidth;
+  int? _preparedHeight;
+  List<ControlAssetStudioTemplate> _templates = const [];
+  List<String> _channels = const [
+    'store',
+    'agency_packages',
+    'events',
+    'vip',
+    'agency',
+    'admin_grants',
+    'system',
+  ];
+  final Set<String> _selectedChannels = {'vip'};
   List<Map<String, dynamic>> _assets = const [];
 
   @override
@@ -52,6 +68,38 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
   }
 
   static final Uri _endpoint = Uri.parse('https://shadow-live.ashraf-business-440.workers.dev/api/manage-app-asset');
+
+  ControlAssetStudioTemplate? get _selectedTemplate {
+    final id = _selectedTemplateId;
+    if (id == null) return null;
+    for (final template in _templates) {
+      if (template.id == id) return template;
+    }
+    return null;
+  }
+
+  String _extensionOf(String value) {
+    final name = value.trim().toLowerCase();
+    final dot = name.lastIndexOf('.');
+    if (dot <= 0 || dot == name.length - 1) return '';
+    return name.substring(dot + 1);
+  }
+
+  void _applyTemplate(ControlAssetStudioTemplate template) {
+    _selectedTemplateId = template.id;
+    final currentDirectory = ControlAssetPolicy.normalizeDirectory(_directory.text);
+    if (!template.allowsDirectory(currentDirectory) && template.directories.isNotEmpty) {
+      _directory.text = template.directories.first;
+    }
+    final extension = _extensionOf(_fileName.text);
+    if (!template.allowsExtension(extension) && template.extensions.isNotEmpty) {
+      final name = _fileName.text.trim();
+      final dot = name.lastIndexOf('.');
+      final base = dot > 0 ? name.substring(0, dot) : (name.isEmpty ? 'asset' : name);
+      _fileName.text = '$base.${template.extensions.first}';
+    }
+    _syncGiftFileNameFromAssetKey();
+  }
 
   String _defaultFileNameFromCurrent(String pickedName) {
     final directory = ControlAssetPolicy.normalizeDirectory(_directory.text);
@@ -210,6 +258,8 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
       setState(() {
         _bytes = encoded;
         _mimeType = _mimeForExtension(extension);
+        _preparedWidth = prepared.width;
+        _preparedHeight = prepared.height;
         _conversionNote =
             'تجهيز تلقائي حسب اسم الملف → ${_formatLabel(extension)} • '
             '${prepared.width}×${prepared.height} • '
@@ -256,8 +306,38 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
       final body = jsonDecode(response.body);
       if (response.statusCode == 200 && body is Map<String, dynamic>) {
         final list = body['assets'];
-        if (list is List && mounted) {
-          setState(() => _assets = list.whereType<Map>().map((e) => Map<String,dynamic>.from(e)).toList());
+        final rawTemplates = body['templates'];
+        final rawChannels = body['channels'];
+        if (mounted) {
+          final templates = rawTemplates is List
+              ? rawTemplates
+                  .whereType<Map>()
+                  .map((e) => ControlAssetStudioTemplate.fromMap(Map<String, dynamic>.from(e)))
+                  .where((e) => e.id.isNotEmpty && e.type.isNotEmpty)
+                  .toList(growable: false)
+              : <ControlAssetStudioTemplate>[];
+          final channels = rawChannels is List
+              ? rawChannels
+                  .map((e) => e.toString().trim())
+                  .where((e) => e.isNotEmpty)
+                  .toList(growable: false)
+              : _channels;
+          setState(() {
+            _studioVersion = (body['studioVersion'] as num?)?.toInt() ?? 1;
+            _assets = list is List
+                ? list.whereType<Map>().map((e) => Map<String,dynamic>.from(e)).toList()
+                : const [];
+            _templates = templates;
+            _channels = channels;
+            if (_selectedTemplate == null && templates.isNotEmpty) {
+              final badge = templates.where((e) => e.id == 'badge.base.v1').toList();
+              _applyTemplate(badge.isNotEmpty ? badge.first : templates.first);
+            }
+            _selectedChannels.removeWhere((value) => !_channels.contains(value));
+            if (_selectedChannels.isEmpty && _channels.isNotEmpty) {
+              _selectedChannels.add(_channels.first);
+            }
+          });
         }
       }
     } catch (_) {}
@@ -265,6 +345,9 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
 
   String? _validate() {
     if (_bytes == null || _mimeType == null) return 'اختر صورة أولاً.';
+    final template = _selectedTemplate;
+    if (template == null) return 'اختر Template من Asset Studio أولاً.';
+    if (_selectedChannels.isEmpty) return 'اختر قناة استخدام واحدة على الأقل.';
     if (!ControlAssetPolicy.assetKeyAllowed(_assetKey.text)) {
       return 'مفتاح الاستخدام يجب أن يكون مثل vip.badge.3 وبأحرف إنجليزية صغيرة.';
     }
@@ -274,11 +357,27 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     if (!ControlAssetPolicy.fileNameAllowed(_fileName.text)) {
       return 'اسم الملف غير صالح أو الامتداد غير مدعوم.';
     }
+    final directory = ControlAssetPolicy.normalizeDirectory(_directory.text);
+    if (!template.allowsDirectory(directory)) {
+      return 'المسار لا يطابق Template المختار.';
+    }
+    final extension = _extensionOf(_fileName.text);
+    if (!template.allowsExtension(extension)) {
+      return 'صيغة الملف لا تطابق Template المختار.';
+    }
+    if (_bytes!.length > template.maxBytes) {
+      return 'حجم الملف أكبر من حد Template المختار.';
+    }
+    final width = _preparedWidth;
+    final height = _preparedHeight;
+    if (width != null && height != null && !template.dimensionsMatch(width, height)) {
+      return 'أبعاد الملف لا تطابق Template: ${template.dimensionsLabel}.';
+    }
     if (_reason.text.trim().length < 3) return 'اكتب سببًا مختصرًا للتغيير.';
     return null;
   }
 
-  Future<void> _upload() async {
+  Future<void> _upload({required bool publish}) async {
     if (_sourceBytes != null) {
       setState(() {
         _busy = true;
@@ -304,7 +403,14 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
       _message = null;
     });
     try {
+      final template = _selectedTemplate!;
       final payload = {
+        'action': 'upload',
+        'studioVersion': _studioVersion,
+        'assetType': template.type,
+        'templateId': template.id,
+        'channels': _selectedChannels.toList(growable: false),
+        'publish': publish,
         'assetKey': _assetKey.text.trim(),
         'directory': ControlAssetPolicy.normalizeDirectory(_directory.text),
         'fileName': _fileName.text.trim(),
@@ -327,9 +433,12 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
       if (response.statusCode >= 200 && response.statusCode < 300 && body['ok'] == true) {
         final replaced = body['replaced'] == true;
         final path = body['fullPath'] ?? '';
-        setState(() => _message = replaced
-            ? 'تم استبدال الصورة القديمة بنجاح: $path'
-            : 'تمت إضافة الصورة بنجاح: $path');
+        final status = '${body['status'] ?? (publish ? 'published' : 'draft')}';
+        setState(() => _message = status == 'published'
+            ? (replaced
+                ? 'تم التحقق ونشر النسخة الجديدة بنجاح: $path'
+                : 'تم التحقق ونشر الأصل بنجاح: $path')
+            : 'تم التحقق وحفظ الأصل كمسودة: $path');
         await _loadAssets();
       } else {
         final code = '${body['code'] ?? 'http_${response.statusCode}'}';
@@ -338,6 +447,12 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
           'forbidden' => 'هذه الصفحة والإجراء متاحان لحساب Owner فقط.',
           'github_not_configured' => 'GitHub Asset Token غير مضاف إلى Backend بعد.',
           'invalid_request' => 'تحقق من المسار والاسم والحجم ونوع الملف.',
+          'invalid_asset_template' => 'النوع وTemplate غير متطابقين.',
+          'invalid_asset_channels' => 'اختر قناة استخدام واحدة على الأقل.',
+          'template_directory_mismatch' => 'المسار لا يطابق Template المختار.',
+          'template_extension_mismatch' => 'صيغة الملف لا تطابق Template المختار.',
+          'template_size_mismatch' => 'حجم الملف لا يطابق Template المختار.',
+          'published_asset_requires_publish' => 'هذا المفتاح منشور مسبقًا؛ الاستبدال يجب أن يتم عبر نشر مباشر حتى لا يتوقف الأصل الحالي.',
           _ => 'تعذر رفع الصورة: $code',
         });
       }
