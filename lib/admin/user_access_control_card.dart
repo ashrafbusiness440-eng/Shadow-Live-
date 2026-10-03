@@ -221,6 +221,7 @@ class OwnerUserAccessCard extends StatelessWidget {
                 'owner_protected' => 'حساب الـOwner محمي.',
                 'forbidden' => 'هذه العملية متاحة للـOwner فقط.',
                 'invalid_capability' => 'توجد صلاحية غير معتمدة في الطلب.',
+                'invalid_level_capability_role' => 'صلاحيات المستوى يمكن منحها فقط لـ Admin أو Super Admin.',
                 'not_found' => 'الحساب المستهدف غير موجود.',
                 _ => 'تعذر حفظ التعديل: $code',
               };
