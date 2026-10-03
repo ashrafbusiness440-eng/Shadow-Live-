@@ -431,7 +431,7 @@ test("06-A admin Game correction preserves inactivity clock and decay cursor", a
     ["users/" + targetUid]: user({
       gamePoints: 1000000,
       lastGameActivityAt: originalActivityDate,
-      lastGameActivityAtMs,
+      lastGameActivityAtMs: lastActivityAtMs,
       gameInactivityDecayAppliedDays: 1,
     }),
   });
