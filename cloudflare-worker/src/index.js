@@ -26,6 +26,7 @@ import { agencyPublic } from "./agency-public.js";
 import { agencyHost } from "./agency-host.js";
 import { agencyOwner } from "./agency-owner.js";
 import { agencyPackages } from "./agency-packages.js";
+import { relationships } from "./relationships.js";
 import { configureLegacyEnv, getFirestore } from "./legacy-firebase-admin-shim.js";
 import { settleDueGameOperations } from "./legacy-games/game-runtime.js";
 import {
@@ -53,7 +54,7 @@ async function dispatchRequest(request, env, ctx) {
     return json(request, env, {
       ok: true,
       service: "shadow-live-cloudflare-worker",
-      version: 28,
+      version: 29,
       buildSha: env.BUILD_SHA || null,
       firebaseConfigured: Boolean(String(env.FIREBASE_SERVICE_ACCOUNT || "").trim()),
       pressureAnalyticsConfigured: Boolean(env.PRESSURE_ANALYTICS),
