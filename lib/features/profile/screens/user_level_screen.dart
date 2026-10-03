@@ -4,14 +4,19 @@ import '../../../utils/compact_number.dart';
 import '../services/user_level_service.dart';
 
 class UserLevelScreen extends StatefulWidget {
-  const UserLevelScreen({super.key});
+  const UserLevelScreen({
+    super.key,
+    this.loadSummary,
+  });
+
+  final Future<UserLevelSummary> Function()? loadSummary;
 
   @override
   State<UserLevelScreen> createState() => _UserLevelScreenState();
 }
 
 class _UserLevelScreenState extends State<UserLevelScreen> {
-  final UserLevelService _service = UserLevelService();
+  UserLevelService? _service;
   UserLevelSummary? _summary;
   bool _loading = true;
   String? _error;
@@ -19,12 +24,15 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.loadSummary == null) {
+      _service = UserLevelService();
+    }
     _load();
   }
 
   @override
   void dispose() {
-    _service.close();
+    _service?.close();
     super.dispose();
   }
 
@@ -36,7 +44,7 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
       });
     }
     try {
-      final summary = await _service.loadSelf();
+      final summary = await (widget.loadSummary?.call() ?? _service!.loadSelf());
       if (!mounted) return;
       setState(() {
         _summary = summary;
