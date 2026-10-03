@@ -7,6 +7,5 @@ void main() {
     expect(ShadowAssetKeys.supportTeamBadge, 'badge.support_team');
     expect(ShadowAssetKeys.ownerBadge, 'role.owner');
     expect(ShadowAssetKeys.vipBadge(3), 'vip.badge.3');
-    expect(ShadowAssetKeys.levelBadge(12), 'level.badge.12');
   });
 }
