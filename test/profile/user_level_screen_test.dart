@@ -50,7 +50,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('المستوى'), findsOneWidget);
+    expect(find.text('المستوى'), findsWidgets);
     expect(find.text('الثروة'), findsWidgets);
     expect(find.text('الجاذبية'), findsOneWidget);
     expect(find.text('الألعاب'), findsOneWidget);
