@@ -805,3 +805,17 @@ export async function relationships(request, env) {
     return json(request, env, { ok: false, code: "relationships_failed" }, 500);
   }
 }
+
+
+export const relationshipCoreTestHooks = Object.freeze({
+  normalizeTypes,
+  pairKey,
+  slotPath,
+  pendingPath,
+  activePairPath,
+  operationConflict,
+  sendRequest,
+  respondRequest,
+  cancelRequest,
+  endRelationship,
+});
