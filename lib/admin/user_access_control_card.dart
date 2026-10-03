@@ -246,7 +246,19 @@ class OwnerUserAccessCard extends StatelessWidget {
                     decoration: const InputDecoration(labelText: 'الدور', border: OutlineInputBorder()),
                     items: roleLabels.entries.map((entry) => DropdownMenuItem(value: entry.key, child: Text(entry.value))).toList(),
                     onChanged: saving ? null : (value) {
-                      if (value != null) setSheetState(() => selectedRole = value);
+                      if (value != null) {
+                        setSheetState(() {
+                          selectedRole = value;
+                          if (value != 'admin' && value != 'super_admin') {
+                            selected.removeAll(const {
+                              'manageUserLevels',
+                              'manageWealthLevel',
+                              'manageAttractionLevel',
+                              'manageGameLevel',
+                            });
+                          }
+                        });
+                      }
                     },
                   ),
                   const SizedBox(height: 8),
