@@ -6,9 +6,13 @@ import '../services/user_level_service.dart';
 class UserLevelScreen extends StatefulWidget {
   const UserLevelScreen({
     super.key,
+    this.userId,
+    this.initialTabIndex = 0,
     this.loadSummary,
   });
 
+  final String? userId;
+  final int initialTabIndex;
   final Future<UserLevelSummary> Function()? loadSummary;
 
   @override
@@ -44,7 +48,13 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
       });
     }
     try {
-      final summary = await (widget.loadSummary?.call() ?? _service!.loadSelf());
+      final targetUid = widget.userId?.trim() ?? '';
+      final summary = await (
+        widget.loadSummary?.call() ??
+        (targetUid.isEmpty
+            ? _service!.loadSelf()
+            : _service!.loadForUser(targetUid))
+      );
       if (!mounted) return;
       setState(() {
         _summary = summary;
@@ -65,6 +75,7 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
       textDirection: TextDirection.rtl,
       child: DefaultTabController(
         length: 3,
+        initialIndex: widget.initialTabIndex.clamp(0, 2).toInt(),
         child: Scaffold(
           backgroundColor: const Color(0xFF020711),
           appBar: AppBar(
