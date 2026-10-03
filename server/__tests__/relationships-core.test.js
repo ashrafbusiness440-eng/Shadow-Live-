@@ -19,6 +19,7 @@ const {
   sendRequest,
   respondRequest,
   endRelationship,
+  validateSubmittedTypes,
 } = relationshipCoreTestHooks;
 
 class FakeDb {
@@ -253,4 +254,58 @@ test("relationship core stays bounded and avoids query/list scans", () => {
   ]) {
     assert.equal(rules.includes(`match /${collection}/{`), true, collection);
   }
+});
+
+
+test("relationship type submissions are strict and bounded", () => {
+  const valid = validateSubmittedTypes([
+    { key: "cp", labelAr: "CP", enabled: true, order: 10, assetKey: "" },
+    { key: "bff", labelAr: "BFF", enabled: true, order: 20, assetKey: "" },
+  ]);
+  assert.deepEqual(valid.map((item) => item.key), ["cp", "bff"]);
+
+  assert.throws(
+    () => validateSubmittedTypes([
+      { key: "cp", labelAr: "CP", enabled: true, order: 10 },
+      { key: "cp", labelAr: "Duplicate", enabled: true, order: 20 },
+    ]),
+    /invalid_relationship_types/,
+  );
+
+  assert.throws(
+    () => validateSubmittedTypes(
+      Array.from({ length: 21 }, (_, index) => ({
+        key: "type_" + index,
+        labelAr: "نوع " + index,
+        enabled: true,
+        order: index,
+      })),
+    ),
+    /invalid_relationship_types/,
+  );
+});
+
+test("relationship UI and control avoid polling and direct relationship Firestore IO", () => {
+  const service = readFileSync(
+    new URL("../../lib/features/relationships/services/relationship_service.dart", import.meta.url),
+    "utf8",
+  );
+  const page = readFileSync(
+    new URL("../../lib/features/relationships/screens/relationships_page.dart", import.meta.url),
+    "utf8",
+  );
+  const control = readFileSync(
+    new URL("../../lib/admin/control_relationship_types_page.dart", import.meta.url),
+    "utf8",
+  );
+
+  for (const source of [service, page, control]) {
+    assert.equal(source.includes("Timer.periodic"), false);
+    assert.equal(source.includes(".snapshots()"), false);
+  }
+  assert.equal(service.includes("relationship_slots"), false);
+  assert.equal(service.includes("relationship_requests"), false);
+  assert.equal(control.includes("'setTypes'"), true);
+  assert.equal(control.includes("'types'"), true);
+  assert.equal(control.includes("لا يمكن حذف نوع موجود"), true);
 });
