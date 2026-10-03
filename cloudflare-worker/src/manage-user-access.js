@@ -17,6 +17,13 @@ const clean = (value) => String(value ?? "").trim();
 const validKey = (value) => /^[A-Za-z0-9_-]{12,160}$/.test(clean(value));
 
 const ALLOWED_ROLES = new Set(["user", "moderator", "admin", "super_admin"]);
+const LEVEL_CAPABILITIES = new Set([
+  "manageUserLevels",
+  "manageWealthLevel",
+  "manageAttractionLevel",
+  "manageGameLevel",
+]);
+
 const ALLOWED_CAPABILITIES = new Set([
   "viewDashboard",
   "viewSystemHealth",
@@ -74,6 +81,13 @@ async function execute(db, actorPayload, body) {
   const role = clean(body.role);
   const adminEnabled = body.adminEnabled === true;
   const capabilities = normalizeCapabilities(body.capabilities);
+  if (
+    capabilities.some((capability) => LEVEL_CAPABILITIES.has(capability)) &&
+    role !== "admin" &&
+    role !== "super_admin"
+  ) {
+    throw new ApiError("invalid_level_capability_role", 400);
+  }
   const reason = clean(body.reason);
   const key = clean(body.idempotencyKey);
 
