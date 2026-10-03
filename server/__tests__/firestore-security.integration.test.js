@@ -933,3 +933,22 @@ test("agency rejection notification is private to its applicant",async()=>{
 test("security assertions actually executed",()=>{
   assert.ok(env);
 });
+
+
+test("relationship collections stay server-authoritative",async()=>{
+  const userDb=phoneUserDb();
+  await assertFails(getDoc(doc(userDb,"relationship_requests","rules_relationship_request")));
+  await assertFails(getDoc(doc(userDb,"relationships","rules_relationship")));
+  await assertFails(getDoc(doc(userDb,"relationship_slots","rules_relationship_slot")));
+  await assertFails(setDoc(doc(userDb,"relationship_requests","rules_relationship_request"),{
+    actorUid:uid,
+    targetUid:otherUid,
+    relationshipType:"cp",
+    status:"pending",
+  }));
+  await assertFails(setDoc(doc(userDb,"relationship_slots","rules_relationship_slot"),{
+    userId:uid,
+    partnerUid:otherUid,
+    relationshipType:"cp",
+  }));
+});
