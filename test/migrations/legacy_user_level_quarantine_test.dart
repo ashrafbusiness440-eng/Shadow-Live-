@@ -8,8 +8,17 @@ void main() {
     final publicProfile = File('lib/features/profile/screens/public_profile_screen.dart').readAsStringSync();
     final quickProfile = File('lib/features/profile/widgets/quick_profile_sheet.dart').readAsStringSync();
     final control = File('lib/main_control.dart').readAsStringSync();
+    final rules = File('firestore.rules').readAsStringSync();
 
     expect(firebase.contains("'level':data['level']"), isFalse);
+    expect(
+      rules.contains('request.resource.data.level == source.get(\'level\', 0)'),
+      isFalse,
+    );
+    expect(
+      rules.contains("'interests','level','vipLevel'"),
+      isFalse,
+    );
     expect(publicProfile.contains("data['level']"), isFalse);
     expect(publicProfile.contains('ShadowAssetKeys.levelBadge'), isFalse);
     expect(quickProfile.contains("data['level']"), isFalse);
@@ -20,6 +29,22 @@ void main() {
     expect(control.contains("data['wealth']"), isFalse);
     expect(control.contains("data['wealthLevel']"), isFalse);
     expect(control.contains("data['level'],profile['level']"), isFalse);
+  });
+
+  test('ordinary profile reads do not write public profile', () {
+    final firebase =
+        File('lib/shared/services/firebase_service.dart').readAsStringSync();
+    final start = firebase.indexOf(
+      'Future<Map<String,dynamic>?> getUserProfile',
+    );
+    final end = firebase.indexOf(
+      'Future<void> updateUserProfile',
+      start,
+    );
+    expect(start, greaterThanOrEqualTo(0));
+    expect(end, greaterThan(start));
+    final getUserProfileSource = firebase.substring(start, end);
+    expect(getUserProfileSource.contains('_syncPublicProfile'), isFalse);
   });
 
   test('legacy Lv100 policy and generic level asset key cannot return', () {
