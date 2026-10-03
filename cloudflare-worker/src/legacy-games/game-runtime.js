@@ -14,6 +14,10 @@ import {
   validateOutcomeWeights,
 } from "./game-engine.js";
 import { readThroughConfigCache } from "../config-cache.js";
+import {
+  gameLevelAfterWager,
+  loadUserLevelPolicy,
+} from "../user-level-policy.js";
 
 const clean=(value)=>String(value??"").trim();
 const validRoomId=(value)=>/^[A-Za-z0-9_-]{1,180}$/.test(clean(value));
@@ -387,6 +391,11 @@ function publicOperation(data={}){
     roundNumber:Number(data.roundNumber||0),
     dayKey:clean(data.dayKey),
     totalStakeCoins:Number(data.totalStakeCoins||0),
+    gamePointsAwarded:Number(data.gamePointsAwarded||0),
+    gamePointsDecayed:Number(data.gamePointsDecayed||0),
+    gamePointsAfter:Number(data.gamePointsAfter||0),
+    decayDaysAppliedBeforeWager:
+      Number(data.decayDaysAppliedBeforeWager||0),
     payoutCoins:data.status==="settled"?Number(data.payoutCoins||0):null,
     status:clean(data.status),
     opensAtMs:Number(data.opensAtMs||0),
@@ -457,6 +466,9 @@ export async function placeGameBet(
   if(!validRoomId(roomId)||!validIdempotencyKey(key)){
     throw Error("invalid_request");
   }
+
+  const userLevelPolicy=await loadUserLevelPolicy(db);
+  const gameLevelPolicy=userLevelPolicy.games;
 
   const operationId=uid+"__"+key;
   const userRef=db.collection("users").doc(uid);
@@ -538,6 +550,15 @@ export async function placeGameBet(
       : [];
 
     const user=userSnap.data()||{};
+    const gameLevelState=gameLevelAfterWager(gameLevelPolicy,{
+      gamePoints:user.gamePoints??0,
+      wagerCoins:stake,
+      lastGameActivityAtMs:
+        user.lastGameActivityAtMs??user.lastGameActivityAt??null,
+      inactivityDecayAppliedDays:user.gameInactivityDecayAppliedDays??0,
+      nowMs,
+    });
+    if(!gameLevelState)throw Error("invalid_game_level_state");
     const before=Number(user.coins??user.balance??0);
     if(!Number.isSafeInteger(before)||before<0)throw Error("invalid_wallet_state");
     if(before<stake)throw Error("insufficient_balance");
@@ -559,6 +580,10 @@ export async function placeGameBet(
     tx.update(userRef,{
       coins:finalBalance,
       walletUpdatedAt:now,
+      gamePoints:gameLevelState.gamePoints,
+      lastGameActivityAt:now,
+      lastGameActivityAtMs:nowMs,
+      gameInactivityDecayAppliedDays:0,
     });
 
     const operation={
@@ -571,6 +596,11 @@ export async function placeGameBet(
       betEvents,
       selections,
       totalStakeCoins:stake,
+      gamePointsAwarded:gameLevelState.gamePointsAwarded,
+      gamePointsDecayed:gameLevelState.gamePointsDecayed,
+      gamePointsAfter:gameLevelState.gamePoints,
+      decayDaysAppliedBeforeWager:
+        gameLevelState.decayDaysAppliedBeforeWager,
       payoutCoins:payout,
       outcomeId:resolved.outcomeId,
       reels,
