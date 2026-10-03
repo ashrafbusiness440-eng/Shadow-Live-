@@ -1,0 +1,71 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:voice_chat_room/features/profile/screens/user_level_screen.dart';
+import 'package:voice_chat_room/features/profile/services/user_level_service.dart';
+
+void main() {
+  const summary = UserLevelSummary(
+    uid: 'user_1',
+    policyVersion: 1,
+    wealth: UserLevelSectionSummary(
+      level: 6,
+      maxLevel: 35,
+      points: 300000,
+      minimumThreshold: 300000,
+      nextThreshold: 500000,
+      remaining: 200000,
+      progressBps: 0,
+    ),
+    attraction: UserLevelSectionSummary(
+      level: 10,
+      maxLevel: 35,
+      points: 1150000,
+      minimumThreshold: 1150000,
+      nextThreshold: 3000000,
+      remaining: 1850000,
+      progressBps: 0,
+    ),
+    games: UserGameLevelSummary(
+      level: 1,
+      maxLevel: 21,
+      points: 810000,
+      minimumThreshold: 200000,
+      nextThreshold: 1000000,
+      remaining: 190000,
+      progressBps: 7625,
+      storedPoints: 1000000,
+      pendingDecayPoints: 190000,
+      pendingDecayDays: 2,
+      lastGameActivityAtMs: 1791028800000,
+    ),
+  );
+
+  testWidgets('level screen exposes all three approved sections', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: UserLevelScreen(
+          loadSummary: () async => summary,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('المستوى'), findsOneWidget);
+    expect(find.text('الثروة'), findsWidgets);
+    expect(find.text('الجاذبية'), findsOneWidget);
+    expect(find.text('الألعاب'), findsOneWidget);
+    expect(find.text('LV6'), findsOneWidget);
+    expect(find.text('شريط الدعم'), findsOneWidget);
+
+    await tester.tap(find.text('الجاذبية'));
+    await tester.pumpAndSettle();
+    expect(find.text('LV10'), findsOneWidget);
+    expect(find.text('رتبة بصرية'), findsOneWidget);
+
+    await tester.tap(find.text('الألعاب'));
+    await tester.pumpAndSettle();
+    expect(find.text('LV1'), findsOneWidget);
+    expect(find.text('خصم الخمول محسوب'), findsOneWidget);
+    expect(find.text('دعم اللعبة'), findsOneWidget);
+  });
+}
