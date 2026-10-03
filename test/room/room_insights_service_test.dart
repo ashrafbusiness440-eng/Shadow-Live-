@@ -24,6 +24,12 @@ void main() {
           'profileImageUrl': '',
           'totalSupport': 7000,
           'dailySupport': 7000,
+          'publicId': '7777',
+          'vipLevel': 4,
+          'badges': ['verified', 'support_team'],
+          'wealthLevel': 6,
+          'attractionLevel': 8,
+          'gameLevel': 3,
         },
         {
           'uid': 'u2',
@@ -43,6 +49,12 @@ void main() {
     expect(insights.supporters.length, 2);
     expect(insights.supporters.first.rank, 1);
     expect(insights.supporters.first.dailySupport, 7000);
+    expect(insights.supporters.first.publicId, '7777');
+    expect(insights.supporters.first.vipLevel, 4);
+    expect(insights.supporters.first.badges, ['verified', 'support_team']);
+    expect(insights.supporters.first.wealthLevel, 6);
+    expect(insights.supporters.first.attractionLevel, 8);
+    expect(insights.supporters.first.gameLevel, 3);
   });
 
   test('room support periods default safely to zero', () {
