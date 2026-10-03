@@ -314,6 +314,10 @@ export class RoomRealtimeObject extends DurableObject {
     const expiresAtMs = Number(body.expiresAtMs || 0);
     const displayName = String(body.displayName || "").trim();
     const profileImageUrl = String(body.profileImageUrl || "").trim();
+    const publicId = String(body.publicId || "").trim().slice(0, 16);
+    const wealthLevel = Math.max(0, Math.min(35, Number(body.wealthLevel || 0)));
+    const attractionLevel = Math.max(0, Math.min(35, Number(body.attractionLevel || 0)));
+    const gameLevel = Math.max(0, Math.min(21, Number(body.gameLevel || 0)));
     const chatEnabled = body.chatEnabled !== false;
     const canModerateChat = body.canModerateChat === true;
     const ghostMode = body.ghostMode === true;
@@ -341,6 +345,10 @@ export class RoomRealtimeObject extends DurableObject {
       expiresAtMs,
       displayName,
       profileImageUrl,
+      publicId,
+      wealthLevel,
+      attractionLevel,
+      gameLevel,
       chatEnabled,
       canModerateChat,
       ghostMode,
@@ -442,6 +450,10 @@ export class RoomRealtimeObject extends DurableObject {
       joinedAtMs,
       displayName,
       profileImageUrl,
+      publicId: String(record.publicId || "").trim().slice(0, 16),
+      wealthLevel: Math.max(0, Math.min(35, Number(record.wealthLevel || 0))),
+      attractionLevel: Math.max(0, Math.min(35, Number(record.attractionLevel || 0))),
+      gameLevel: Math.max(0, Math.min(21, Number(record.gameLevel || 0))),
       chatEnabled: record.chatEnabled !== false,
       canModerateChat: record.canModerateChat === true,
       ghostMode: record.ghostMode === true,
@@ -477,6 +489,10 @@ export class RoomRealtimeObject extends DurableObject {
         uid,
         displayName: displayName || "مستخدم Shadow Live",
         profileImageUrl,
+        publicId: String(record.publicId || "").trim().slice(0, 16),
+        wealthLevel: Math.max(0, Math.min(35, Number(record.wealthLevel || 0))),
+        attractionLevel: Math.max(0, Math.min(35, Number(record.attractionLevel || 0))),
+        gameLevel: Math.max(0, Math.min(21, Number(record.gameLevel || 0))),
         joinedAtMs,
         onlineCount,
         vipLevel: Math.max(0, Math.min(99, Number(record.vipLevel || 0))),
@@ -898,6 +914,10 @@ export class RoomRealtimeObject extends DurableObject {
           String(attachment.displayName || "").trim() ||
           "مستخدم Shadow Live",
         profileImageUrl: String(attachment.profileImageUrl || "").trim(),
+        publicId: String(attachment.publicId || "").trim().slice(0, 16),
+        wealthLevel: Math.max(0, Math.min(35, Number(attachment.wealthLevel || 0))),
+        attractionLevel: Math.max(0, Math.min(35, Number(attachment.attractionLevel || 0))),
+        gameLevel: Math.max(0, Math.min(21, Number(attachment.gameLevel || 0))),
         text,
         mentionUids: mentions,
         replyTo: replyTo || null,
