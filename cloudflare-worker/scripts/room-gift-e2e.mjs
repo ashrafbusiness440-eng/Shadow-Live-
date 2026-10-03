@@ -411,6 +411,12 @@ try{
     throw new Error("sender room-gift debit mismatch");
   }
   if(senderAfter?.data?.wealthPoints!==totalCost){
+    throw new Error("sender room-gift wealth mismatch");
+  }
+  if(receiverAfter?.data?.attractionPoints!==totalCost){
+    throw new Error("receiver room-gift attraction mismatch");
+  }
+  if(senderAfter?.data?.wealthPoints!==totalCost){
     throw new Error(`sender room-gift wealth mismatch: ${senderAfter?.data?.wealthPoints}`);
   }
   if(receiverAfter?.data?.attractionPoints!==totalCost){
