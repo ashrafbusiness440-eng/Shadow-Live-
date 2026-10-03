@@ -30,7 +30,7 @@ function timestampMs(value) {
   return Number.isSafeInteger(number) && number >= 0 ? number : null;
 }
 
-function summaryFromUser(policy, targetUid, user, nowMs) {
+export function summarizeUserLevelData(policy, targetUid, user, nowMs = Date.now()) {
   const lastGameActivityAtMs =
     timestampMs(user.lastGameActivityAtMs) ??
     timestampMs(user.lastGameActivityAt);
@@ -82,7 +82,7 @@ export async function buildUserLevelSummary(
   ]);
   if (!userSnap.exists) throw new Error("user_not_found");
 
-  return summaryFromUser(
+  return summarizeUserLevelData(
     policy,
     targetUid,
     userSnap.data || {},
@@ -105,7 +105,7 @@ export async function materializeUserLevelSummary(
       const userSnap = await db.get(`users/${targetUid}`, transaction);
       if (!userSnap.exists) throw new Error("user_not_found");
 
-      const calculated = summaryFromUser(
+      const calculated = summarizeUserLevelData(
         policy,
         targetUid,
         userSnap.data || {},
