@@ -4,9 +4,12 @@ import 'package:flutter/material.dart';
 import '../../../core/assets/shadow_asset_registry.dart';
 import '../services/follow_service.dart';
 import '../services/profile_action_service.dart';
+import '../services/user_level_service.dart';
+import 'user_level_screen.dart';
 import '../../gift/widgets/direct_gift_sheet.dart';
 import '../../relationships/services/relationship_service.dart';
 import '../widgets/registry_badge.dart';
+import '../widgets/user_level_badges.dart';
 
 class PublicProfileScreen extends StatefulWidget {
   const PublicProfileScreen({super.key, required this.userId});
@@ -20,6 +23,9 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
   late final TabController _tabs;
   final _follow = FollowService();
   final _relationships = RelationshipService();
+  late final UserLevelService _levelService;
+  late Future<DocumentSnapshot<Map<String, dynamic>>> _profileFuture;
+  late Future<UserLevelSummary> _levelFuture;
   bool _changingFollow = false;
   bool _sendingRelationship = false;
 
@@ -27,10 +33,29 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
   void initState() {
     super.initState();
     _tabs = TabController(length: 3, vsync: this);
+    _levelService = UserLevelService();
+    _loadProfileFutures();
+  }
+
+  void _loadProfileFutures() {
+    _profileFuture = FirebaseFirestore.instance
+        .collection('public_profiles')
+        .doc(widget.userId)
+        .get();
+    _levelFuture = _levelService.loadForUser(widget.userId);
+  }
+
+  @override
+  void didUpdateWidget(covariant PublicProfileScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.userId != widget.userId) {
+      _loadProfileFutures();
+    }
   }
 
   @override
   void dispose() {
+    _levelService.close();
     _tabs.dispose();
     super.dispose();
   }
@@ -126,6 +151,38 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
     }
   }
 
+  void _openLevel(int tabIndex) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => UserLevelScreen(
+          userId: widget.userId,
+          initialTabIndex: tabIndex,
+        ),
+      ),
+    );
+  }
+
+  Widget _publicLevelBadges() {
+    return FutureBuilder<UserLevelSummary>(
+      future: _levelFuture,
+      builder: (context, snapshot) {
+        final summary = snapshot.data;
+        if (summary == null) return const SizedBox.shrink();
+        final hasAny = summary.wealth.level > 0 ||
+            summary.attraction.level > 0 ||
+            summary.games.level > 0;
+        if (!hasAny) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: UserLevelBadges(
+            summary: summary,
+            onTap: _openLevel,
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Directionality(
@@ -133,7 +190,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
       child: Scaffold(
         backgroundColor: const Color(0xFF05060D),
         body: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-          future: FirebaseFirestore.instance.collection('public_profiles').doc(widget.userId).get(),
+          future: _profileFuture,
           builder: (context, snapshot) {
             if (snapshot.hasError) {
               return const Center(child: Text('تعذر تحميل الملف الشخصي', style: TextStyle(color: Colors.white60)));
@@ -171,7 +228,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
               headerSliverBuilder: (_, __) => [
                 SliverAppBar(
                   pinned: true,
-                  expandedHeight: 330,
+                  expandedHeight: 390,
                   backgroundColor: const Color(0xFF0B0D16),
                   foregroundColor: Colors.white,
                   title: const Text('الملف الشخصي'),
@@ -401,6 +458,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
               ],
             ),
           ],
+          _publicLevelBadges(),
         ],
       ),
     );
