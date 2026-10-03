@@ -175,7 +175,7 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                 : <String>[];
             final provider = _avatar(data);
 
-            return Padding(
+            return SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
