@@ -166,6 +166,8 @@ service cloud.firestore {
         'giftEarningCoinsLifetime',
         'giftDiamondsLifetime',
         'giftSupportReceivedCoins',
+        'wealthPoints',
+        'attractionPoints',
         'giftRevenueMonth',
         'giftRevenueMonthCoins',
         'currentGiftRevenueTier',
@@ -231,6 +233,8 @@ service cloud.firestore {
         && !('giftEarningCoinsLifetime' in request.resource.data)
         && !('giftDiamondsLifetime' in request.resource.data)
         && !('giftSupportReceivedCoins' in request.resource.data)
+        && !('wealthPoints' in request.resource.data)
+        && !('attractionPoints' in request.resource.data)
         && !('giftRevenueMonth' in request.resource.data)
         && !('giftRevenueMonthCoins' in request.resource.data)
         && !('currentGiftRevenueTier' in request.resource.data)
