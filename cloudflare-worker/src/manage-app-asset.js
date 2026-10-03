@@ -169,7 +169,94 @@ async function duplicateOperation(db, operationPath) {
   return operation.exists ? operation.data?.result || {} : null;
 }
 
+function assetDraftBucket(env) {
+  const bucket = env?.USER_STORAGE;
+  if (
+    !bucket ||
+    typeof bucket.put !== "function" ||
+    typeof bucket.get !== "function" ||
+    typeof bucket.delete !== "function"
+  ) {
+    throw new ApiError("r2_not_configured", 503);
+  }
+  return bucket;
+}
+
+function assetDraftKey(assetKey, contentSha, fileName) {
+  const extension = clean(fileName).toLowerCase().split(".").pop() || "bin";
+  return `asset-studio/drafts/${assetKey}/${contentSha}.${extension}`;
+}
+
+function templateSpecs(template) {
+  return {
+    width: template.width,
+    height: template.height,
+    dimensionsStatus: template.dimensionsStatus,
+    transparency: template.transparency,
+    motion: template.motion,
+    maxBytes: template.maxBytes,
+    extensions: [...template.extensions],
+  };
+}
+
+async function writeFinalAssetToGithub(
+  env,
+  { assetKey, directory, fileName, bytes },
+) {
+  const fullPath = `${directory}/${fileName}`;
+  const branch = clean(env.GITHUB_ASSET_BRANCH) || DEFAULT_BRANCH;
+  const repo = clean(env.GITHUB_ASSET_REPO) || `${OWNER}/${REPO}`;
+  const contentsUrl =
+    `https://api.github.com/repos/${repo}/contents/${encodePath(fullPath)}`;
+
+  const existing = await github(
+    env,
+    `${contentsUrl}?ref=${encodeURIComponent(branch)}`,
+  );
+  const existingSha = existing.status === 404
+    ? null
+    : clean(existing.body?.sha);
+  const nextBlobSha = await sha1Blob(bytes);
+  const replaced = Boolean(existingSha);
+
+  let commitSha = null;
+  let contentSha = nextBlobSha;
+  let downloadUrl = null;
+
+  if (existingSha === nextBlobSha) {
+    downloadUrl = existing.body?.download_url || null;
+  } else {
+    const payload = {
+      message: `Asset ${replaced ? "replace" : "add"}: ${assetKey} (${fullPath})`,
+      content: encodeBase64(bytes),
+      branch,
+      ...(existingSha ? { sha: existingSha } : {}),
+    };
+    const write = await github(env, contentsUrl, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    commitSha = clean(write.body?.commit?.sha) || null;
+    contentSha = clean(write.body?.content?.sha) || nextBlobSha;
+    downloadUrl = write.body?.content?.download_url || null;
+  }
+
+  const rawUrl = downloadUrl
+    ? `${downloadUrl}${downloadUrl.includes("?") ? "&" : "?"}v=${contentSha}`
+    : null;
+
+  return {
+    fullPath,
+    replaced,
+    contentSha,
+    commitSha,
+    rawUrl,
+  };
+}
+
 async function publishAsset({
+  env,
   db,
   decoded,
   assetKey,
@@ -182,10 +269,60 @@ async function publishAsset({
   if (!current.exists) throw new ApiError("asset_not_found", 404);
 
   const data = current.data || {};
+  const draft =
+    data.draft && typeof data.draft === "object"
+      ? data.draft
+      : null;
+  const storageKey = clean(draft?.storageKey);
+  if (!draft || !storageKey || data.hasDraft !== true) {
+    throw new ApiError("asset_draft_not_found", 404);
+  }
+
+  const bucket = assetDraftBucket(env);
+  const object = await bucket.get(storageKey);
+  if (!object) throw new ApiError("asset_draft_missing", 409);
+
+  const bytes = new Uint8Array(await object.arrayBuffer());
+  if (!bytes.length || bytes.length > MAX_BYTES) {
+    throw new ApiError("asset_draft_invalid", 409);
+  }
+  const expectedSha = clean(draft.contentSha);
+  const actualSha = await sha1Blob(bytes);
+  if (expectedSha && expectedSha !== actualSha) {
+    throw new ApiError("asset_draft_mismatch", 409);
+  }
+
+  const finalAsset = await writeFinalAssetToGithub(env, {
+    assetKey,
+    directory: clean(draft.directory),
+    fileName: clean(draft.fileName),
+    bytes,
+  });
+
   const now = new Date();
   const patch = {
+    assetKey,
+    directory: clean(draft.directory),
+    fileName: clean(draft.fileName),
+    fullPath: finalAsset.fullPath,
+    mimeType: clean(draft.mimeType),
+    mode: draft.mode === "bundled" ? "bundled" : "remote",
+    byteSize: bytes.length,
+    contentSha: finalAsset.contentSha,
+    commitSha: finalAsset.commitSha || null,
+    rawUrl: finalAsset.rawUrl,
     published: true,
     status: "published",
+    replaced: finalAsset.replaced,
+    studioVersion: Number(draft.studioVersion || ASSET_STUDIO_VERSION),
+    assetType: clean(draft.assetType),
+    templateId: clean(draft.templateId),
+    templateVersion: Number(draft.templateVersion || 1),
+    channels: Array.isArray(draft.channels) ? draft.channels : [],
+    templateSpecs: draft.templateSpecs || {},
+    prompt: clean(draft.prompt),
+    hasDraft: false,
+    draft: null,
     publishedBy: decoded.sub,
     publishedAt: now,
     updatedBy: decoded.sub,
@@ -193,15 +330,20 @@ async function publishAsset({
   };
   const result = {
     assetKey,
-    fullPath: data.fullPath || null,
-    mode: data.mode || "remote",
-    byteSize: Number(data.byteSize || 0),
-    replaced: data.replaced === true,
-    contentSha: data.contentSha || null,
-    commitSha: data.commitSha || null,
-    rawUrl: data.rawUrl || null,
+    fullPath: finalAsset.fullPath,
+    mode: patch.mode,
+    byteSize: bytes.length,
+    replaced: finalAsset.replaced,
+    contentSha: finalAsset.contentSha,
+    commitSha: finalAsset.commitSha,
+    rawUrl: finalAsset.rawUrl,
     published: true,
+    hasDraft: false,
     status: "published",
+    studioVersion: patch.studioVersion,
+    assetType: patch.assetType,
+    templateId: patch.templateId,
+    channels: patch.channels,
   };
   const auditId = crypto.randomUUID().replace(/-/g, "");
 
@@ -209,20 +351,27 @@ async function publishAsset({
     db.writeUpdate(registryPath, patch, Object.keys(patch)),
     db.writeCreate(`admin_audit_logs/${auditId}`, {
       actorUid: decoded.sub,
-      action: "publishAppAsset",
+      action: "publishAppAssetDraft",
       targetType: "app_asset",
       targetId: assetKey,
       reason,
       before: {
         published: data.published === true,
-        status: data.status || (data.published === true ? "published" : "draft"),
+        status: data.status || null,
+        liveContentSha: data.contentSha || null,
+        draftContentSha: expectedSha || null,
       },
-      after: { published: true, status: "published" },
+      after: {
+        published: true,
+        status: "published",
+        contentSha: finalAsset.contentSha,
+        fullPath: finalAsset.fullPath,
+      },
       operationId: idempotencyKey,
       createdAt: now,
     }),
     db.writeCreate(operationPath, {
-      action: "publishAppAsset",
+      action: "publishAppAssetDraft",
       actorUid: decoded.sub,
       targetId: assetKey,
       status: "completed",
@@ -230,6 +379,12 @@ async function publishAsset({
       createdAt: now,
     }),
   ]);
+
+  try {
+    await bucket.delete(storageKey);
+  } catch (error) {
+    console.warn("Asset Studio draft cleanup failed", clean(error?.message));
+  }
 
   invalidateAssetCaches(assetKey);
   return result;
