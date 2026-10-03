@@ -2743,7 +2743,7 @@ class MorePage extends StatelessWidget {
           const ControlItem('التقارير','واجهة جاهزة؛ القراءة الحقيقية تنتظر Rules محددة لـ reports بدل فتح Firestore بشكل واسع',Icons.flag_outlined),
           const ControlItem('VIP و IDs الخاصة','إدارة VIP والمعرّفات الخاصة',Icons.workspace_premium_outlined),
           if(isOwner)
-            const ControlItem('إدارة أصول التطبيق','Owner فقط • رفع/استبدال صور المشروع + Asset Registry + Audit Log',Icons.image_outlined),
+            const ControlItem('استوديو الأصول','Shadow Asset Studio • Templates + Validation + Preview + Draft/Publish',Icons.auto_awesome_mosaic_outlined),
           const ControlItem('إعدادات النظام','system_config — قراءة فقط، وEmergency Lock يبقى Backend فقط',Icons.settings_outlined),
           const ControlItem('سجل الإدارة','Audit Log للعمليات الحساسة — قراءة فقط',Icons.history_outlined),
         ];
@@ -2766,7 +2766,7 @@ class ControlList extends StatelessWidget {
     if (item.title == 'إدارة أعضاء الوكالات') return const AgencyManagementPage();
     if (item.title == 'سجل الإدارة') return const AuditLogPage();
     if (item.title == 'إعدادات النظام') return const SystemConfigPage();
-    if (item.title == 'إدارة أصول التطبيق') return const ControlAssetManagerPage();
+    if (item.title == 'استوديو الأصول' || item.title == 'إدارة أصول التطبيق') return const ControlAssetManagerPage();
     return DetailPage(item:item);
   }
 
