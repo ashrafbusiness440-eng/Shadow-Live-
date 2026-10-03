@@ -677,7 +677,7 @@ def main() -> int:
     for required in (
         'db.runQuery("public_profiles"',
         'limit: 20',
-        'db.get(\`public_ids/',
+        'db.get(`public_ids/',
         'control_operations/',
         'admin_audit_logs/level_',
     ):
