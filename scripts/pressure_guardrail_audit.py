@@ -128,6 +128,9 @@ def main() -> int:
     pressure_telemetry = read("cloudflare-worker/src/pressure-telemetry.js")
     step11_doc = read("docs/pressure-root-fix-step11-observability.md")
     pressure_telemetry_test = read("server/__tests__/pressure-telemetry.test.js")
+    level_control_backend = read("cloudflare-worker/src/manage-user-level.js")
+    level_control_ui = read("lib/admin/control_user_level.dart")
+    level_control_shell = read("lib/main_control.dart")
 
     if "_presenceTimer" in voice or ".heartbeat(" in voice:
         failures.append("Step 4 regression: Firestore presence heartbeat returned to the room session")
@@ -669,6 +672,54 @@ def main() -> int:
     ):
         if marker not in prod_gate:
             failures.append(f"Step 10 regression: automatic Production summary lost policy marker: {marker}")
+
+    # Levels Stage 06: control must stay bounded and off all hot/realtime paths.
+    for required in (
+        'db.runQuery("public_profiles"',
+        'limit: 20',
+        'db.get(`public_ids/',
+        'control_operations/',
+        'admin_audit_logs/level_',
+    ):
+        if required not in level_control_backend:
+            failures.append(
+                f"Levels Stage 06 pressure regression: backend missing bounded/authority marker {required}"
+            )
+    if 'db.runQuery("users"' in level_control_backend:
+        failures.append(
+            "Levels Stage 06 pressure regression: user collection scan introduced"
+        )
+    for forbidden in (
+        "Timer.periodic",
+        ".snapshots()",
+        "FirebaseFirestore",
+        ".collection(",
+        "StreamBuilder",
+    ):
+        if forbidden in level_control_ui:
+            failures.append(
+                f"Levels Stage 06 pressure regression: control UI introduced {forbidden}"
+            )
+    if "shadowApiEndpoint('manage-user-level')" not in level_control_ui:
+        failures.append(
+            "Levels Stage 06 regression: control UI no longer uses backend authority"
+        )
+    if "const UserLevelControlPage()" not in level_control_shell:
+        failures.append(
+            "Levels Stage 06 regression: dedicated Shadow Control level tab missing"
+        )
+    if "fieldData.lastGameActivityAt =" in level_control_backend or "fieldData.lastGameActivityAtMs =" in level_control_backend:
+        failures.append(
+            "Levels Stage 06 regression: administrative Game edit resets gameplay inactivity"
+        )
+    for required_test in (
+        "server/__tests__/user-level-control.test.js",
+        "server/__tests__/user-level-access.test.js",
+    ):
+        if required_test not in flutter_ci:
+            failures.append(
+                f"Levels Stage 06 regression: CI missing {required_test}"
+            )
 
     # Step 11: observability must measure pressure without writing telemetry to Firestore.
     analytics_binding_enabled = (

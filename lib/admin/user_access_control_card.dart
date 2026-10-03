@@ -50,6 +50,10 @@ class OwnerUserAccessCard extends StatelessWidget {
     'manageAgencyPolicies': 'إدارة سياسات ونسب الوكالات',
     'manageAgencySettlements': 'إدارة تسويات الوكالات',
     'suspendAgencies': 'تعليق وإعادة تفعيل الوكالات',
+    'manageUserLevels': 'إدارة المستوى — كاملة',
+    'manageWealthLevel': 'إدارة مستوى الثروة فقط',
+    'manageAttractionLevel': 'إدارة مستوى الجاذبية فقط',
+    'manageGameLevel': 'إدارة مستوى الألعاب فقط',
     'manageVip': 'إدارة VIP',
     'manageSpecialIds': 'إدارة IDs المميزة',
     'manageIds': 'إدارة IDs المستخدمين والغرف',
@@ -82,6 +86,9 @@ class OwnerUserAccessCard extends StatelessWidget {
       'manageAgencies', 'reviewAgencyApplications', 'manageAgencyMemberships',
       'manageAgencyManagers', 'viewAgencyFinance', 'manageAgencyPolicies',
       'manageAgencySettlements', 'suspendAgencies',
+    ],
+    'المستوى': [
+      'manageUserLevels', 'manageWealthLevel', 'manageAttractionLevel', 'manageGameLevel',
     ],
     'الإدارة العامة': [
       'manageVip', 'manageStore', 'manageCampaigns', 'manageRoles', 'viewAuditLog', 'emergencyLock',
@@ -214,6 +221,7 @@ class OwnerUserAccessCard extends StatelessWidget {
                 'owner_protected' => 'حساب الـOwner محمي.',
                 'forbidden' => 'هذه العملية متاحة للـOwner فقط.',
                 'invalid_capability' => 'توجد صلاحية غير معتمدة في الطلب.',
+                'invalid_level_capability_role' => 'صلاحيات المستوى يمكن منحها فقط لـ Admin أو Super Admin.',
                 'not_found' => 'الحساب المستهدف غير موجود.',
                 _ => 'تعذر حفظ التعديل: $code',
               };
@@ -239,7 +247,19 @@ class OwnerUserAccessCard extends StatelessWidget {
                     decoration: const InputDecoration(labelText: 'الدور', border: OutlineInputBorder()),
                     items: roleLabels.entries.map((entry) => DropdownMenuItem(value: entry.key, child: Text(entry.value))).toList(),
                     onChanged: saving ? null : (value) {
-                      if (value != null) setSheetState(() => selectedRole = value);
+                      if (value != null) {
+                        setSheetState(() {
+                          selectedRole = value;
+                          if (value != 'admin' && value != 'super_admin') {
+                            selected.removeAll(const {
+                              'manageUserLevels',
+                              'manageWealthLevel',
+                              'manageAttractionLevel',
+                              'manageGameLevel',
+                            });
+                          }
+                        });
+                      }
                     },
                   ),
                   const SizedBox(height: 8),
@@ -270,20 +290,41 @@ class OwnerUserAccessCard extends StatelessWidget {
                   for (final group in capabilityGroups.entries) ...[
                     Text(group.key, style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFFD7B85A))),
                     const SizedBox(height: 4),
-                    ...group.value.map((capability) => CheckboxListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(capabilityLabels[capability] ?? capability),
-                      subtitle: Text(capability, style: const TextStyle(fontSize: 11, color: Color(0xFF8F879E))),
-                      value: selected.contains(capability),
-                      onChanged: saving ? null : (value) => setSheetState(() {
-                        if (value == true) {
-                          selected.add(capability);
-                        } else {
-                          selected.remove(capability);
-                        }
-                      }),
-                    )),
+                    ...group.value.map((capability) {
+                      final levelCapability = const {
+                        'manageUserLevels',
+                        'manageWealthLevel',
+                        'manageAttractionLevel',
+                        'manageGameLevel',
+                      }.contains(capability);
+                      final levelRoleAllowed =
+                          selectedRole == 'admin' || selectedRole == 'super_admin';
+                      final capabilityEnabled =
+                          !levelCapability || levelRoleAllowed;
+                      return CheckboxListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(capabilityLabels[capability] ?? capability),
+                        subtitle: Text(
+                          levelCapability && !levelRoleAllowed
+                              ? '$capability — متاحة فقط لـ Admin / Super Admin'
+                              : capability,
+                          style: const TextStyle(fontSize: 11, color: Color(0xFF8F879E)),
+                        ),
+                        value: selected.contains(capability),
+                        onChanged: saving && capabilityEnabled
+                            ? null
+                            : !capabilityEnabled
+                                ? null
+                                : (value) => setSheetState(() {
+                                    if (value == true) {
+                                      selected.add(capability);
+                                    } else {
+                                      selected.remove(capability);
+                                    }
+                                  }),
+                      );
+                    }),
                     const Divider(),
                   ],
                   TextField(

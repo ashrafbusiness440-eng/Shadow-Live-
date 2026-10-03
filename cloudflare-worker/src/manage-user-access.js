@@ -17,11 +17,22 @@ const clean = (value) => String(value ?? "").trim();
 const validKey = (value) => /^[A-Za-z0-9_-]{12,160}$/.test(clean(value));
 
 const ALLOWED_ROLES = new Set(["user", "moderator", "admin", "super_admin"]);
+const LEVEL_CAPABILITIES = new Set([
+  "manageUserLevels",
+  "manageWealthLevel",
+  "manageAttractionLevel",
+  "manageGameLevel",
+]);
+
 const ALLOWED_CAPABILITIES = new Set([
   "viewDashboard",
   "viewSystemHealth",
   "viewUsers",
   "manageUsers",
+  "manageUserLevels",
+  "manageWealthLevel",
+  "manageAttractionLevel",
+  "manageGameLevel",
   "viewReports",
   "reviewReports",
   "muteUsers",
@@ -70,6 +81,13 @@ async function execute(db, actorPayload, body) {
   const role = clean(body.role);
   const adminEnabled = body.adminEnabled === true;
   const capabilities = normalizeCapabilities(body.capabilities);
+  if (
+    capabilities.some((capability) => LEVEL_CAPABILITIES.has(capability)) &&
+    role !== "admin" &&
+    role !== "super_admin"
+  ) {
+    throw new ApiError("invalid_level_capability_role", 400);
+  }
   const reason = clean(body.reason);
   const key = clean(body.idempotencyKey);
 
@@ -123,6 +141,21 @@ async function execute(db, actorPayload, body) {
         capabilities: beforeCapabilities,
       };
       const after = { role, adminEnabled, capabilities };
+      const beforeSet = new Set(beforeCapabilities);
+      const afterSet = new Set(capabilities);
+      const capabilityChanges = [...new Set([
+        ...beforeCapabilities,
+        ...capabilities,
+      ])]
+        .sort()
+        .filter((capability) =>
+          beforeSet.has(capability) !== afterSet.has(capability)
+        )
+        .map((capability) => ({
+          capability,
+          oldState: beforeSet.has(capability),
+          newState: afterSet.has(capability),
+        }));
       const updatedAt = new Date();
       const resultData = {
         targetUid,
@@ -145,6 +178,7 @@ async function execute(db, actorPayload, body) {
           reason,
           before,
           after,
+          capabilityChanges,
           operationId: key,
           createdAt: updatedAt,
         }),
@@ -229,3 +263,7 @@ export async function manageUserAccess(request, env) {
     return json(request, env, { ok: false, code: "server_transaction_failed" }, 500);
   }
 }
+export const manageUserAccessInternals = Object.freeze({
+  execute,
+  normalizeCapabilities,
+});

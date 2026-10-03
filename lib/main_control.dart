@@ -18,6 +18,7 @@ import 'admin/economy_control_page.dart';
 import 'admin/games_control_page.dart';
 import 'admin/user_access_control_card.dart';
 import 'admin/system_health_card.dart';
+import 'admin/control_user_level.dart';
 
 
 Future<void> main() async {
@@ -211,7 +212,7 @@ class _ControlShellState extends State<ControlShell> {
   @override
   void initState() {
     super.initState();
-    index = widget.initialNavIndex.clamp(0, 5);
+    index = widget.initialNavIndex.clamp(0, 6);
   }
   @override Widget build(BuildContext context) {
     final pages=[
@@ -221,6 +222,7 @@ class _ControlShellState extends State<ControlShell> {
       const FinancePage(),
       const IdManagementPage(),
       const MorePage(),
+      const UserLevelControlPage(),
     ];
     return Scaffold(
       appBar: AppBar(
@@ -275,6 +277,7 @@ class _ControlShellState extends State<ControlShell> {
           NavigationDestination(icon:Icon(Icons.wallet_outlined),selectedIcon:Icon(Icons.wallet),label:'المالية'),
           NavigationDestination(icon:Icon(Icons.badge_outlined),selectedIcon:Icon(Icons.badge),label:'IDs'),
           NavigationDestination(icon:Icon(Icons.more_horiz),label:'المزيد'),
+          NavigationDestination(icon:Icon(Icons.military_tech_outlined),selectedIcon:Icon(Icons.military_tech),label:'المستوى'),
         ],
       ),
     );
@@ -363,6 +366,7 @@ class DashboardPage extends StatelessWidget {
       ActionChip(label:const Text('السجل المالي'),avatar:const Icon(Icons.receipt_long_outlined),onPressed:()=>onOpen(3)),
       ActionChip(label:const Text('إدارة ID'),avatar:const Icon(Icons.badge_outlined),onPressed:()=>onOpen(4)),
       ActionChip(label:const Text('السجلات والإعدادات'),avatar:const Icon(Icons.history_outlined),onPressed:()=>onOpen(5)),
+      ActionChip(label:const Text('المستوى'),avatar:const Icon(Icons.military_tech_outlined),onPressed:()=>onOpen(6)),
     ]),
   ]);
 }
