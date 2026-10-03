@@ -130,6 +130,27 @@ function safeNonNegativeInteger(value) {
   return Number.isSafeInteger(number) && number >= 0 ? number : null;
 }
 
+export function safeAddUserLevelPoints(currentPoints, addedPoints) {
+  const current = safeNonNegativeInteger(currentPoints ?? 0);
+  const added = safeNonNegativeInteger(addedPoints);
+  if (current === null || added === null) return null;
+  const next = current + added;
+  return Number.isSafeInteger(next) && next >= 0 ? next : null;
+}
+
+export function giftLevelPointAwards({
+  nominalCoins = 0,
+  paidCoins = 0,
+} = {}) {
+  const nominal = safeNonNegativeInteger(nominalCoins);
+  const paid = safeNonNegativeInteger(paidCoins);
+  if (nominal === null || paid === null || paid > nominal) return null;
+  return {
+    wealthPoints: paid,
+    attractionPoints: nominal,
+  };
+}
+
 function normalizeThresholds(raw, fallback, expectedLength) {
   if (!Array.isArray(raw) || raw.length !== expectedLength) {
     return [...fallback];

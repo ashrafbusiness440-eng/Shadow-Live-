@@ -9,6 +9,8 @@ import {
   levelProgress,
   loadUserLevelPolicy,
   normalizeUserLevelPolicy,
+  safeAddUserLevelPoints,
+  giftLevelPointAwards,
   userLevelSummaries,
 } from "../../cloudflare-worker/src/user-level-policy.js";
 
@@ -175,4 +177,32 @@ test("shared summary derives all three sections without Flutter calculations", (
   assert.equal(summary.wealth.level, 2);
   assert.equal(summary.attraction.level, 10);
   assert.equal(summary.games.level, 3);
+});
+
+
+test("level point accumulation stays non-negative and inside JS safe integer range", () => {
+  assert.equal(safeAddUserLevelPoints(undefined, 100), 100);
+  assert.equal(safeAddUserLevelPoints(250000, 100000), 350000);
+  assert.equal(safeAddUserLevelPoints(-1, 100), null);
+  assert.equal(safeAddUserLevelPoints(100, -1), null);
+  assert.equal(
+    safeAddUserLevelPoints(Number.MAX_SAFE_INTEGER, 1),
+    null,
+  );
+});
+
+
+test("gift level awards separate paid wealth from nominal attraction value", () => {
+  assert.deepEqual(
+    giftLevelPointAwards({ nominalCoins: 5000, paidCoins: 5000 }),
+    { wealthPoints: 5000, attractionPoints: 5000 },
+  );
+  assert.deepEqual(
+    giftLevelPointAwards({ nominalCoins: 5000, paidCoins: 0 }),
+    { wealthPoints: 0, attractionPoints: 5000 },
+  );
+  assert.equal(
+    giftLevelPointAwards({ nominalCoins: 5000, paidCoins: 6000 }),
+    null,
+  );
 });

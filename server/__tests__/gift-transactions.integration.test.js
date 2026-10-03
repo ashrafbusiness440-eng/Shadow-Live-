@@ -116,10 +116,10 @@ test("room gift pays agency target salary immediately and records sharded monthl
 
   await Promise.all([
     db.collection("users").doc(senderId).set({
-      coins:1000000,diamonds:0,role:"user",
+      coins:1000000,diamonds:0,role:"user",wealthPoints:250000,
     }),
     db.collection("users").doc(receiverId).set({
-      coins:0,diamonds:0,role:"user",agencyId,
+      coins:0,diamonds:0,role:"user",agencyId,attractionPoints:500000,
       giftHostActivityMonth:periods.month,
       giftHostQualifiedDays:0,
       pendingAgencyGiftEarningCoins:0,
@@ -178,11 +178,15 @@ test("room gift pays agency target salary immediately and records sharded monthl
     db.collection("room_rocket_explosions").doc(key+"_rocket_1").get(),
   ]);
   assert.equal(sender.data().coins,900000);
+  assert.equal(sender.data().wealthPoints,350000);
   assert.equal(receiver.data().diamonds,5);
+  assert.equal(receiver.data().attractionPoints,600000);
   assert.equal(receiver.data().agencyTargetProgressCoins,50000);
   assert.equal(receiver.data().agencySalaryPaidDiamonds,5);
   assert.equal(receiver.data().agencyCurrentTargetId,"starter_g");
   assert.equal(transaction.data().contextType,"room");
+  assert.equal(transaction.data().wealthPointsAwarded,100000);
+  assert.equal(transaction.data().attractionPointsAwarded,100000);
   assert.equal(transaction.data().agencyId,agencyId);
   assert.notEqual(transaction.data().agencyId,roomAgencyId);
   assert.equal(transaction.data().recipientShareCoins,50000);
@@ -218,11 +222,14 @@ test("room gift pays agency target salary immediately and records sharded monthl
     "duplicate",
     "duplicate remains idempotent after realtime presence changes",
   );
-  const [senderAfter,accrualAfter]=await Promise.all([
+  const [senderAfter,receiverAfter,accrualAfter]=await Promise.all([
     db.collection("users").doc(senderId).get(),
+    db.collection("users").doc(receiverId).get(),
     db.collection("agency_monthly_accrual_shards").doc(accrualId).get(),
   ]);
   assert.equal(senderAfter.data().coins,900000);
+  assert.equal(senderAfter.data().wealthPoints,350000);
+  assert.equal(receiverAfter.data().attractionPoints,600000);
   assert.equal(accrualAfter.data().supportCoins,100000);
   const explosionsAfter=await db.collection("room_rocket_explosions")
     .where("operationId","==",key).get();
@@ -242,10 +249,10 @@ test("chat gift uses the same monthly target salary and sharded accrual as room 
 
   await Promise.all([
     db.collection("users").doc(senderId).set({
-      coins:1000000,diamonds:0,role:"user",
+      coins:1000000,diamonds:0,role:"user",wealthPoints:700000,
     }),
     db.collection("users").doc(receiverId).set({
-      coins:0,diamonds:0,role:"user",agencyId,
+      coins:0,diamonds:0,role:"user",agencyId,attractionPoints:900000,
       giftHostActivityMonth:periods.month,
       giftHostQualifiedDays:0,
       pendingAgencyGiftEarningCoins:0,
@@ -292,9 +299,13 @@ test("chat gift uses the same monthly target salary and sharded accrual as room 
     ).get(),
   ]);
   assert.equal(sender.data().coins,900000);
+  assert.equal(sender.data().wealthPoints,800000);
   assert.equal(receiver.data().diamonds,5);
+  assert.equal(receiver.data().attractionPoints,1000000);
   assert.equal(receiver.data().agencyTargetProgressCoins,50000);
   assert.equal(transaction.data().contextType,"chat");
+  assert.equal(transaction.data().wealthPointsAwarded,100000);
+  assert.equal(transaction.data().attractionPointsAwarded,100000);
   assert.equal(transaction.data().agencyId,agencyId);
   assert.equal(transaction.data().recipientShareCoins,50000);
   assert.equal(transaction.data().agencyShareCoins,5000);
@@ -316,6 +327,9 @@ test("chat gift uses the same monthly target salary and sharded accrual as room 
     db.collection("agency_monthly_accrual_shards").doc(accrualId).get(),
   ]);
   assert.equal(senderAfter.data().coins,900000);
+  assert.equal(senderAfter.data().wealthPoints,800000);
+  const receiverAfter=await db.collection("users").doc(receiverId).get();
+  assert.equal(receiverAfter.data().attractionPoints,1000000);
   assert.equal(accrualAfter.data().supportCoins,100000);
 });
 
