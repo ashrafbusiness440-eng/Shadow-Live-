@@ -263,3 +263,7 @@ export async function manageUserAccess(request, env) {
     return json(request, env, { ok: false, code: "server_transaction_failed" }, 500);
   }
 }
+export const manageUserAccessInternals = Object.freeze({
+  execute,
+  normalizeCapabilities,
+});
