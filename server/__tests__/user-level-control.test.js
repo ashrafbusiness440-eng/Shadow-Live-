@@ -185,6 +185,14 @@ test("06-A capability matrix supports full and partial level permissions only", 
   });
   assert.equal(canOpenLevelControl(disabled), false);
   assert.equal(canManageMetric(disabled, "wealth"), false);
+
+  const staleModerator = user({
+    role: "moderator",
+    adminEnabled: true,
+    capabilities: ["manageUserLevels", "manageGameLevel"],
+  });
+  assert.equal(canOpenLevelControl(staleModerator), false);
+  assert.equal(canManageMetric(staleModerator, "games"), false);
 });
 
 test("06-A partial capability update rejects every unauthorized metric", async () => {
