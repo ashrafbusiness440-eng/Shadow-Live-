@@ -8,6 +8,7 @@ class UserLevelBadges extends StatelessWidget {
     required this.summary,
     required this.onTap,
     this.compact = false,
+    this.micro = false,
   })  : wealthLevel = null,
         attractionLevel = null,
         gameLevel = null;
@@ -19,6 +20,7 @@ class UserLevelBadges extends StatelessWidget {
     required int gameLevel,
     required this.onTap,
     this.compact = false,
+    this.micro = false,
   })  : summary = null,
         wealthLevel = wealthLevel,
         attractionLevel = attractionLevel,
@@ -30,6 +32,7 @@ class UserLevelBadges extends StatelessWidget {
   final int? gameLevel;
   final ValueChanged<int> onTap;
   final bool compact;
+  final bool micro;
 
   @override
   Widget build(BuildContext context) {
@@ -58,8 +61,8 @@ class UserLevelBadges extends StatelessWidget {
 
     return Wrap(
       alignment: WrapAlignment.center,
-      spacing: compact ? 6 : 8,
-      runSpacing: compact ? 6 : 8,
+      spacing: micro ? 4 : (compact ? 6 : 8),
+      runSpacing: micro ? 4 : (compact ? 6 : 8),
       children: items.map((item) {
         return Material(
           color: const Color(0xFF151925),
@@ -70,8 +73,8 @@ class UserLevelBadges extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
             child: Container(
               padding: EdgeInsets.symmetric(
-                horizontal: compact ? 8 : 10,
-                vertical: compact ? 5 : 7,
+                horizontal: micro ? 6 : (compact ? 8 : 10),
+                vertical: micro ? 3 : (compact ? 5 : 7),
               ),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(16),
@@ -82,16 +85,16 @@ class UserLevelBadges extends StatelessWidget {
                 children: [
                   Icon(
                     item.icon,
-                    size: compact ? 16 : 18,
+                    size: micro ? 13 : (compact ? 16 : 18),
                     color: const Color(0xFFFFD54A),
                   ),
                   const SizedBox(width: 5),
                   Text(
-                    '${item.label} LV${item.level}',
+                    micro ? 'LV${item.level}' : '${item.label} LV${item.level}',
                     textDirection: TextDirection.rtl,
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: compact ? 10.5 : 12,
+                      fontSize: micro ? 9 : (compact ? 10.5 : 12),
                       fontWeight: FontWeight.w800,
                     ),
                   ),
