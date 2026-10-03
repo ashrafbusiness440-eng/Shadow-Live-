@@ -504,6 +504,8 @@ test("regular user cannot change protected balances earnings agency or mic activ
   for(const patch of [
     {coins:999999},
     {diamonds:999},
+    {wealthPoints:5000},
+    {attractionPoints:5000},
     {agencyId:"agency_hacked"},
     {agencyPolicySnapshot:{targets:[{id:"hacked",thresholdCoins:1,salaryDiamonds:999999}]}},
     {agencyTargetMonth:"2026-09"},
@@ -528,6 +530,8 @@ test("regular user cannot change protected balances earnings agency or mic activ
 
 test("new client user cannot pre-seed agency target or policy state",async()=>{
   const forbiddenFields=[
+    {wealthPoints:5000},
+    {attractionPoints:5000},
     {agencyPolicySnapshot:{targets:[{id:"hacked",thresholdCoins:1,salaryDiamonds:999999}]}},
     {agencyTargetMonth:"2026-09"},
     {agencyTargetProgressCoins:50000000},
