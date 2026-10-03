@@ -435,6 +435,7 @@ export async function manageAppAsset(request, env) {
     if (action === "publish") {
       phase = "publish";
       const result = await publishAsset({
+        env,
         db,
         decoded,
         assetKey,
@@ -483,112 +484,185 @@ export async function manageAppAsset(request, env) {
 
     const publishNow = studio.legacy ? true : body.publish === true;
     const fullPath = `${directory}/${fileName}`;
-    const branch = clean(env.GITHUB_ASSET_BRANCH) || DEFAULT_BRANCH;
-    const repo = clean(env.GITHUB_ASSET_REPO) || `${OWNER}/${REPO}`;
-    const contentsUrl =
-      `https://api.github.com/repos/${repo}/contents/${encodePath(fullPath)}`;
-
-    phase = "github_lookup";
-    const existing = await github(
-      env,
-      `${contentsUrl}?ref=${encodeURIComponent(branch)}`,
-    );
-    const existingSha = existing.status === 404
-      ? null
-      : clean(existing.body?.sha);
-    const nextBlobSha = await sha1Blob(bytes);
-    const replaced = Boolean(existingSha);
 
     phase = "registry_lookup";
     const registryPath = `app_asset_registry/${assetKey}`;
     const previous = await db.get(registryPath);
-    if (
-      !studio.legacy &&
-      previous.exists &&
-      previous.data?.published === true &&
-      publishNow !== true
-    ) {
-      throw new ApiError("published_asset_requires_publish", 409);
-    }
-
-    let commitSha = null;
-    let contentSha = nextBlobSha;
-    let downloadUrl = null;
-
-    if (existingSha === nextBlobSha) {
-      downloadUrl = existing.body?.download_url || null;
-    } else {
-      phase = "github_write";
-      const payload = {
-        message: `Asset ${replaced ? "replace" : "add"}: ${assetKey} (${fullPath})`,
-        content: encodeBase64(bytes),
-        branch,
-        ...(existingSha ? { sha: existingSha } : {}),
-      };
-      const write = await github(env, contentsUrl, {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      commitSha = clean(write.body?.commit?.sha) || null;
-      contentSha = clean(write.body?.content?.sha) || nextBlobSha;
-      downloadUrl = write.body?.content?.download_url || null;
-    }
-
-    const cacheUrl = downloadUrl
-      ? `${downloadUrl}${downloadUrl.includes("?") ? "&" : "?"}v=${contentSha}`
-      : null;
-
-    phase = "registry";
+    const previousData = previous.data || {};
+    const oldDraftKey = clean(previousData?.draft?.storageKey);
+    const now = new Date();
     const before = previous.exists
       ? {
-          fullPath: previous.data?.fullPath || null,
-          contentSha: previous.data?.contentSha || null,
-          mode: previous.data?.mode || null,
-          published: previous.data?.published === true,
-          status: previous.data?.status || null,
+          fullPath: previousData.fullPath || null,
+          contentSha: previousData.contentSha || null,
+          mode: previousData.mode || null,
+          published: previousData.published === true,
+          status: previousData.status || null,
+          hasDraft: previousData.hasDraft === true,
+          draftContentSha: previousData?.draft?.contentSha || null,
         }
       : null;
 
-    const now = new Date();
+    if (!publishNow) {
+      phase = "draft_storage";
+      const bucket = assetDraftBucket(env);
+      const contentSha = await sha1Blob(bytes);
+      const storageKey = assetDraftKey(assetKey, contentSha, fileName);
+      await bucket.put(storageKey, bytes, {
+        httpMetadata: { contentType: mimeType },
+        customMetadata: {
+          assetKey,
+          templateId: studio.template.id,
+          contentSha,
+        },
+      });
+
+      const draft = {
+        storageKey,
+        directory,
+        fileName,
+        fullPath,
+        mimeType,
+        mode,
+        byteSize: bytes.length,
+        contentSha,
+        studioVersion: studio.studioVersion,
+        assetType: studio.template.type,
+        templateId: studio.template.id,
+        templateVersion: studio.template.version,
+        channels: studio.channels,
+        templateSpecs: templateSpecs(studio.template),
+        prompt: studio.template.prompt,
+        updatedBy: decoded.sub,
+        updatedAt: now,
+      };
+      const keepLive = previous.exists && previousData.published === true;
+      const registryData = keepLive
+        ? {
+            hasDraft: true,
+            draft,
+            status: "published_with_draft",
+            updatedBy: decoded.sub,
+            updatedAt: now,
+          }
+        : {
+            assetKey,
+            published: false,
+            status: "draft",
+            hasDraft: true,
+            draft,
+            updatedBy: decoded.sub,
+            updatedAt: now,
+            ...(previous.exists
+              ? {}
+              : { createdBy: decoded.sub, createdAt: now }),
+          };
+      const result = {
+        assetKey,
+        fullPath,
+        mode,
+        byteSize: bytes.length,
+        contentSha,
+        published: keepLive,
+        hasDraft: true,
+        status: keepLive ? "published_with_draft" : "draft",
+        studioVersion: studio.studioVersion,
+        assetType: studio.template.type,
+        templateId: studio.template.id,
+        channels: studio.channels,
+      };
+      const auditId = crypto.randomUUID().replace(/-/g, "");
+
+      try {
+        await db.commit(null, [
+          db.writeUpdate(
+            registryPath,
+            registryData,
+            previous.exists ? Object.keys(registryData) : null,
+          ),
+          db.writeCreate(`admin_audit_logs/${auditId}`, {
+            actorUid: decoded.sub,
+            action: "saveAppAssetDraft",
+            targetType: "app_asset",
+            targetId: assetKey,
+            reason,
+            before,
+            after: {
+              fullPath,
+              contentSha,
+              mode,
+              byteSize: bytes.length,
+              published: keepLive,
+              status: result.status,
+              assetType: studio.template.type,
+              templateId: studio.template.id,
+              channels: studio.channels,
+            },
+            operationId: idempotencyKey,
+            createdAt: now,
+          }),
+          db.writeCreate(operationPath, {
+            action: "saveAppAssetDraft",
+            actorUid: decoded.sub,
+            targetId: assetKey,
+            status: "completed",
+            result,
+            createdAt: now,
+          }),
+        ]);
+      } catch (error) {
+        await bucket.delete(storageKey).catch(() => {});
+        throw error;
+      }
+
+      if (oldDraftKey && oldDraftKey !== storageKey) {
+        await bucket.delete(oldDraftKey).catch(() => {});
+      }
+
+      return json(request, env, { ok: true, code: "ok", ...result });
+    }
+
+    phase = "github_write";
+    const finalAsset = await writeFinalAssetToGithub(env, {
+      assetKey,
+      directory,
+      fileName,
+      bytes,
+    });
+
+    phase = "registry";
+    const studioFields = !studio.legacy
+      ? {
+          studioVersion: studio.studioVersion,
+          assetType: studio.template.type,
+          templateId: studio.template.id,
+          templateVersion: studio.template.version,
+          channels: studio.channels,
+          templateSpecs: templateSpecs(studio.template),
+          prompt: studio.template.prompt,
+        }
+      : {};
     const registryData = {
       assetKey,
       directory,
       fileName,
-      fullPath,
+      fullPath: finalAsset.fullPath,
       mimeType,
       mode,
       byteSize: bytes.length,
-      contentSha,
-      commitSha: commitSha || null,
-      rawUrl: cacheUrl,
-      published: publishNow,
-      status: publishNow ? "published" : "draft",
-      replaced,
+      contentSha: finalAsset.contentSha,
+      commitSha: finalAsset.commitSha || null,
+      rawUrl: finalAsset.rawUrl,
+      published: true,
+      status: "published",
+      replaced: finalAsset.replaced,
+      hasDraft: false,
+      draft: null,
       updatedBy: decoded.sub,
       updatedAt: now,
-      ...(!studio.legacy
-        ? {
-            studioVersion: studio.studioVersion,
-            assetType: studio.template.type,
-            templateId: studio.template.id,
-            templateVersion: studio.template.version,
-            channels: studio.channels,
-            templateSpecs: {
-              width: studio.template.width,
-              height: studio.template.height,
-              dimensionsStatus: studio.template.dimensionsStatus,
-              transparency: studio.template.transparency,
-              motion: studio.template.motion,
-              maxBytes: studio.template.maxBytes,
-              extensions: [...studio.template.extensions],
-            },
-            prompt: studio.template.prompt,
-          }
-        : {}),
-      ...(publishNow
-        ? { publishedBy: decoded.sub, publishedAt: now }
-        : {}),
+      publishedBy: decoded.sub,
+      publishedAt: now,
+      ...studioFields,
       ...(previous.exists
         ? {}
         : { createdBy: decoded.sub, createdAt: now }),
@@ -596,15 +670,16 @@ export async function manageAppAsset(request, env) {
 
     const result = {
       assetKey,
-      fullPath,
+      fullPath: finalAsset.fullPath,
       mode,
       byteSize: bytes.length,
-      replaced,
-      contentSha,
-      commitSha,
-      rawUrl: cacheUrl,
-      published: publishNow,
-      status: publishNow ? "published" : "draft",
+      replaced: finalAsset.replaced,
+      contentSha: finalAsset.contentSha,
+      commitSha: finalAsset.commitSha,
+      rawUrl: finalAsset.rawUrl,
+      published: true,
+      hasDraft: false,
+      status: "published",
       ...(!studio.legacy
         ? {
             studioVersion: studio.studioVersion,
@@ -624,19 +699,19 @@ export async function manageAppAsset(request, env) {
       ),
       db.writeCreate(`admin_audit_logs/${auditId}`, {
         actorUid: decoded.sub,
-        action: publishNow ? "publishAppAssetUpload" : "saveAppAssetDraft",
+        action: "publishAppAssetUpload",
         targetType: "app_asset",
         targetId: assetKey,
         reason,
         before,
         after: {
-          fullPath,
-          contentSha,
+          fullPath: finalAsset.fullPath,
+          contentSha: finalAsset.contentSha,
           mode,
           byteSize: bytes.length,
-          replaced,
-          published: publishNow,
-          status: publishNow ? "published" : "draft",
+          replaced: finalAsset.replaced,
+          published: true,
+          status: "published",
           ...(!studio.legacy
             ? {
                 assetType: studio.template.type,
@@ -649,7 +724,7 @@ export async function manageAppAsset(request, env) {
         createdAt: now,
       }),
       db.writeCreate(operationPath, {
-        action: publishNow ? "publishAppAssetUpload" : "saveAppAssetDraft",
+        action: "publishAppAssetUpload",
         actorUid: decoded.sub,
         targetId: assetKey,
         status: "completed",
@@ -658,6 +733,9 @@ export async function manageAppAsset(request, env) {
       }),
     ]);
 
+    if (oldDraftKey) {
+      assetDraftBucket(env).delete(oldDraftKey).catch(() => {});
+    }
     invalidateAssetCaches(assetKey);
     return json(request, env, { ok: true, code: "ok", ...result });
   } catch (error) {
