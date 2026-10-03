@@ -257,7 +257,7 @@ class _UserLevelControlPageState extends State<UserLevelControlPage> {
   }
 
   Future<void> _editLevel(_LevelUser user, _LevelMetric metric) async {
-    var selected = metric.level.clamp(1, metric.maxLevel);
+    var selected = metric.level.clamp(1, metric.maxLevel).toInt();
     final reason = TextEditingController(text: 'تصحيح المستوى إداريًا');
     final accepted = await showDialog<bool>(
       context: context,
@@ -338,7 +338,7 @@ class _UserLevelControlPageState extends State<UserLevelControlPage> {
   }
 
   Widget _metricCard(_LevelUser user, _LevelMetric metric) {
-    final progress = (metric.progressBps / 10000).clamp(0.0, 1.0);
+    final progress = (metric.progressBps / 10000).clamp(0.0, 1.0).toDouble();
     final allowed = _canManage(metric.key);
     return Card(
       child: Padding(
