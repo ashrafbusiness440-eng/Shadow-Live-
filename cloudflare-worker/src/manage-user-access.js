@@ -45,6 +45,10 @@ const ALLOWED_CAPABILITIES = new Set([
   "manageIds",
   "manageStore",
   "manageGames",
+  "manageUserLevels",
+  "manageWealthLevel",
+  "manageAttractionLevel",
+  "manageGameLevel",
   "manageEconomy",
   "adjustBalances",
   "manageWithdrawals",
@@ -122,6 +126,22 @@ async function execute(db, actorPayload, body) {
         adminEnabled: target.adminEnabled === true,
         capabilities: beforeCapabilities,
       };
+      const levelCapabilities = new Set([
+        "manageUserLevels",
+        "manageWealthLevel",
+        "manageAttractionLevel",
+        "manageGameLevel",
+      ]);
+      const requestedLevelCapabilities = capabilities.filter((capability) =>
+        levelCapabilities.has(capability),
+      );
+      if (
+        requestedLevelCapabilities.length > 0 &&
+        !["admin", "super_admin"].includes(role)
+      ) {
+        await db.rollback(transaction);
+        throw new ApiError("invalid_level_capability_role", 409);
+      }
       const after = { role, adminEnabled, capabilities };
       const updatedAt = new Date();
       const resultData = {
@@ -130,6 +150,22 @@ async function execute(db, actorPayload, body) {
         adminEnabled,
         capabilities,
       };
+
+      const trackedLevelCapabilities = [
+        "manageUserLevels",
+        "manageWealthLevel",
+        "manageAttractionLevel",
+        "manageGameLevel",
+      ];
+      const beforeCapabilitySet = new Set(beforeCapabilities);
+      const afterCapabilitySet = new Set(capabilities);
+      const levelCapabilityChanges = trackedLevelCapabilities
+        .map((capability) => ({
+          capability,
+          oldState: beforeCapabilitySet.has(capability),
+          newState: afterCapabilitySet.has(capability),
+        }))
+        .filter((item) => item.oldState !== item.newState);
 
       await db.commit(transaction, [
         db.writeUpdate(
@@ -148,6 +184,24 @@ async function execute(db, actorPayload, body) {
           operationId: key,
           createdAt: updatedAt,
         }),
+        ...levelCapabilityChanges.map((item) =>
+          db.writeCreate(
+            `admin_audit_logs/level_cap_${key}_${item.capability}`,
+            {
+              actorUid,
+              targetAdminUid: targetUid,
+              action: "setLevelCapability",
+              targetType: "admin",
+              targetId: targetUid,
+              capability: item.capability,
+              oldState: item.oldState,
+              newState: item.newState,
+              reason,
+              operationId: key,
+              createdAt: updatedAt,
+            },
+          ),
+        ),
         db.writeCreate(`control_operations/${key}`, {
           action: "manageUserAccess",
           actorUid,
