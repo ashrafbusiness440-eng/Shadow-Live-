@@ -7,6 +7,10 @@ class RoomChatMessage {
     required this.senderUid,
     required this.displayName,
     required this.profileImageUrl,
+    this.publicId = '',
+    this.wealthLevel = 0,
+    this.attractionLevel = 0,
+    this.gameLevel = 0,
     required this.text,
     required this.mentionUids,
     required this.replyTo,
@@ -28,6 +32,10 @@ class RoomChatMessage {
   final String senderUid;
   final String displayName;
   final String profileImageUrl;
+  final String publicId;
+  final int wealthLevel;
+  final int attractionLevel;
+  final int gameLevel;
   final String text;
   final List<String> mentionUids;
   final String? replyTo;
@@ -52,6 +60,10 @@ class RoomChatMessage {
       displayName:
           (data['displayName'] ?? 'مستخدم Shadow Live').toString(),
       profileImageUrl: (data['profileImageUrl'] ?? '').toString(),
+      publicId: (data['publicId'] ?? '').toString(),
+      wealthLevel: (data['wealthLevel'] as num?)?.toInt() ?? 0,
+      attractionLevel: (data['attractionLevel'] as num?)?.toInt() ?? 0,
+      gameLevel: (data['gameLevel'] as num?)?.toInt() ?? 0,
       text: (data['text'] ?? data['systemText'] ?? '').toString(),
       mentionUids: data['mentionUids'] is List
           ? (data['mentionUids'] as List)

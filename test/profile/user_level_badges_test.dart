@@ -61,4 +61,28 @@ void main() {
     await tester.tap(find.byKey(const Key('level-badge-2')));
     expect(taps, [0, 2]);
   });
+  testWidgets('embedded room levels render without a summary request', (tester) async {
+    final taps = <int>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: UserLevelBadges.fromLevels(
+            wealthLevel: 7,
+            attractionLevel: 0,
+            gameLevel: 5,
+            micro: true,
+            onTap: taps.add,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('LV7'), findsOneWidget);
+    expect(find.text('LV5'), findsOneWidget);
+    expect(find.text('الثروة LV7'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('level-badge-0')));
+    await tester.tap(find.byKey(const Key('level-badge-2')));
+    expect(taps, [0, 2]);
+  });
 }

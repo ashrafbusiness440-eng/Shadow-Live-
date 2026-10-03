@@ -11,6 +11,12 @@ class RoomSupporter {
     required this.profileImageUrl,
     required this.totalSupport,
     required this.dailySupport,
+    this.publicId = '',
+    this.vipLevel = 0,
+    this.badges = const [],
+    this.wealthLevel = 0,
+    this.attractionLevel = 0,
+    this.gameLevel = 0,
   });
 
   final String uid;
@@ -19,6 +25,12 @@ class RoomSupporter {
   final String profileImageUrl;
   final num totalSupport;
   final num dailySupport;
+  final String publicId;
+  final int vipLevel;
+  final List<String> badges;
+  final int wealthLevel;
+  final int attractionLevel;
+  final int gameLevel;
 
   factory RoomSupporter.fromJson(Map<String, dynamic> json) => RoomSupporter(
         uid: (json['uid'] ?? '').toString(),
@@ -28,6 +40,17 @@ class RoomSupporter {
         profileImageUrl: (json['profileImageUrl'] ?? '').toString(),
         totalSupport: (json['totalSupport'] as num?) ?? 0,
         dailySupport: (json['dailySupport'] as num?) ?? 0,
+        publicId: (json['publicId'] ?? '').toString(),
+        vipLevel: (json['vipLevel'] as num?)?.toInt() ?? 0,
+        badges: json['badges'] is List
+            ? (json['badges'] as List)
+                .map((value) => value.toString())
+                .where((value) => value.isNotEmpty)
+                .toList(growable: false)
+            : const [],
+        wealthLevel: (json['wealthLevel'] as num?)?.toInt() ?? 0,
+        attractionLevel: (json['attractionLevel'] as num?)?.toInt() ?? 0,
+        gameLevel: (json['gameLevel'] as num?)?.toInt() ?? 0,
       );
 }
 

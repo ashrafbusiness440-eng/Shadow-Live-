@@ -1,4 +1,6 @@
 import { firestoreClient } from "./firestore.js";
+import { loadUserLevelPolicy } from "./user-level-policy.js";
+import { summarizeUserLevelData } from "./user-level-summary.js";
 import {
   assertUserDocumentSessionState,
   verifyFirebaseIdToken,
@@ -36,6 +38,27 @@ function roomObject(env, roomId) {
 
 function clean(value) {
   return String(value ?? "").trim();
+}
+
+function roomUserLevelMetadata(policy, uid, user) {
+  if (!policy || !user || typeof user !== "object") {
+    return { wealthLevel: 0, attractionLevel: 0, gameLevel: 0 };
+  }
+  try {
+    const value = summarizeUserLevelData(
+      policy,
+      uid,
+      user,
+      Date.now(),
+    ).summary;
+    return {
+      wealthLevel: Math.max(0, Math.min(35, Number(value?.wealth?.level || 0))),
+      attractionLevel: Math.max(0, Math.min(35, Number(value?.attraction?.level || 0))),
+      gameLevel: Math.max(0, Math.min(21, Number(value?.games?.level || 0))),
+    };
+  } catch (_) {
+    return { wealthLevel: 0, attractionLevel: 0, gameLevel: 0 };
+  }
 }
 
 function isOfficialRoom(room = {}) {
@@ -329,7 +352,7 @@ export async function roomRealtime(request, env) {
 
       const db = firestoreClient(env);
       const uid = String(payload.sub || "");
-      const [room, user, ban] = await Promise.all([
+      const [room, user, ban, levelPolicy] = await Promise.all([
         roomAdmissionCache.get(
           roomId,
           () => ticketFirestoreLimiter.run(() => db.get(`rooms/${roomId}`)),
@@ -338,6 +361,7 @@ export async function roomRealtime(request, env) {
         ticketFirestoreLimiter.run(
           () => db.get(`room_bans/${roomId}/users/${uid}`),
         ),
+        loadUserLevelPolicy(db).catch(() => null),
       ]);
       if (!room.exists || room.data?.isActive === false) {
         return json(request, env, { ok: false, code: "room_unavailable" }, 404);
@@ -348,6 +372,7 @@ export async function roomRealtime(request, env) {
 
       const roomData = room.data || {};
       const profileData = user.data || {};
+      const levelMetadata = roomUserLevelMetadata(levelPolicy, uid, profileData);
       if (user.exists) {
         assertUserDocumentSessionState(payload, profileData);
       }
@@ -370,6 +395,10 @@ export async function roomRealtime(request, env) {
           profileImageUrl: String(
             profileData.profileImageUrl || payload.picture || "",
           ),
+          publicId: String(profileData.publicId || ""),
+          wealthLevel: levelMetadata.wealthLevel,
+          attractionLevel: levelMetadata.attractionLevel,
+          gameLevel: levelMetadata.gameLevel,
           chatEnabled: roomData.chatEnabled !== false,
           canModerateChat: canModerateRoomChat(
             roomData,

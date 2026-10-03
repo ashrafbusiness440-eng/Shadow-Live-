@@ -3,6 +3,8 @@ import {getApps,initializeApp,cert,getAuth,getFirestore,FieldValue,legacyEnv} fr
 import {activeMicSegments} from "./mic-activity.js";
 import {assertUserDocumentSessionState} from "./firebase-auth.js";
 import {gameCatalog} from "./legacy-games/game-runtime.js";
+import {loadUserLevelPolicy} from "./user-level-policy.js";
+import {summarizeUserLevelData} from "./user-level-summary.js";
 import {
   legacyPresenceFresh,
   realtimeUserPresentFromNamespace,
@@ -3211,6 +3213,70 @@ function utcSupportPeriods(date=new Date()){
   };
 }
 
+async function enrichSupporterPublicMetadata(db,supporters){
+  const list=Array.isArray(supporters)?supporters.slice(0,50):[];
+  if(!list.length)return list;
+  try{
+    const refs=list.map(item=>db.collection("users").doc(clean(item.uid)));
+    const [policy,snaps]=await Promise.all([
+      loadUserLevelPolicy(db),
+      db.getAll(...refs),
+    ]);
+    const byUid=new Map();
+    for(const snap of snaps){
+      if(!snap?.exists)continue;
+      const data=snap.data()||{};
+      const userId=clean(snap.id);
+      let levels={wealthLevel:0,attractionLevel:0,gameLevel:0};
+      try{
+        const summary=summarizeUserLevelData(
+          policy,
+          userId,
+          data,
+          Date.now(),
+        ).summary;
+        levels={
+          wealthLevel:Math.max(0,Math.min(35,Number(summary?.wealth?.level||0))),
+          attractionLevel:Math.max(0,Math.min(35,Number(summary?.attraction?.level||0))),
+          gameLevel:Math.max(0,Math.min(21,Number(summary?.games?.level||0))),
+        };
+      }catch(_){}
+      const rawBadges=Array.isArray(data.publicBadges)
+        ?data.publicBadges
+        :Array.isArray(data.badges)
+          ?data.badges
+          :[];
+      byUid.set(userId,{
+        publicId:clean(data.publicId),
+        vipLevel:Math.max(0,Math.min(99,Number(data.vipLevel??data.vip?.level??0)||0)),
+        badges:rawBadges.map(clean).filter(Boolean).slice(0,12),
+        ...levels,
+      });
+    }
+    return list.map(item=>({
+      ...item,
+      ...(byUid.get(clean(item.uid))||{
+        publicId:"",
+        vipLevel:0,
+        badges:[],
+        wealthLevel:0,
+        attractionLevel:0,
+        gameLevel:0,
+      }),
+    }));
+  }catch(_){
+    return list.map(item=>({
+      ...item,
+      publicId:"",
+      vipLevel:0,
+      badges:[],
+      wealthLevel:0,
+      attractionLevel:0,
+      gameLevel:0,
+    }));
+  }
+}
+
 async function roomInsights(db,uid,body={}){
   const roomId=clean(body.roomId);
   const includeRanking=body.includeRanking===true;
@@ -3247,7 +3313,7 @@ async function roomInsights(db,uid,body={}){
   if(!roomSnap.exists)throw new ApiError("room_not_found",404);
 
   const room=roomSnap.data()||{};
-  const supporters=topSupportersSnap.docs
+  let supporters=topSupportersSnap.docs
     .map(doc=>{
       const data=doc.data()||{};
       return {
@@ -3261,6 +3327,10 @@ async function roomInsights(db,uid,body={}){
     .sort((a,b)=>b.dailySupport-a.dailySupport)
     .slice(0,includeSupporters?50:3)
     .map((item,index)=>({...item,rank:index+1,totalSupport:item.dailySupport}));
+
+  if(includeSupporters){
+    supporters=await enrichSupporterPublicMetadata(db,supporters);
+  }
 
   let ranking=[];
   let dailyRank=Number.isFinite(Number(room.dailyRank))
