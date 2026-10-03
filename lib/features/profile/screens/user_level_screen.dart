@@ -417,19 +417,20 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
     required String title,
     required bool value,
   }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF0C1728),
+    return Material(
+      color: const Color(0xFF0C1728),
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white10),
+        side: const BorderSide(color: Colors.white10),
       ),
+      clipBehavior: Clip.antiAlias,
       child: SwitchListTile.adaptive(
         key: Key('level-visibility-$metric'),
         value: value,
         onChanged: _savingVisibility
             ? null
             : (next) => _toggleVisibility(metric, next),
-        activeColor: const Color(0xFFFFD54A),
+        activeThumbColor: const Color(0xFFFFD54A),
         title: Text(
           'إخفاء مستوى $title',
           style: const TextStyle(

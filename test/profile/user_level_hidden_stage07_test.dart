@@ -23,9 +23,10 @@ void main() {
     expect(service, contains("'hideWealthLevel'"));
     expect(service, contains("'hideAttractionLevel'"));
     expect(service, contains("'hideGameLevel'"));
-    expect(screen, contains('level-visibility-wealth'));
-    expect(screen, contains('level-visibility-attraction'));
-    expect(screen, contains('level-visibility-games'));
+    expect(screen, contains("Key('level-visibility-\$metric')"));
+    expect(screen, contains("metric: 'wealth'"));
+    expect(screen, contains("metric: 'attraction'"));
+    expect(screen, contains("metric: 'games'"));
     expect(screen, contains('مستوى مخفي'));
     expect(access, contains('viewHiddenUserLevels'));
 
