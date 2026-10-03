@@ -133,13 +133,25 @@ class UserLevelService {
 
   Future<UserLevelSummary> loadSelf() async {
     final user = _auth.currentUser;
+    if (user == null) throw StateError('not_signed_in');
+    return loadForUser(user.uid);
+  }
+
+  Future<UserLevelSummary> loadForUser(String uid) async {
+    final targetUid = uid.trim();
+    if (targetUid.isEmpty || targetUid.contains('/')) {
+      throw StateError('invalid_user');
+    }
+    final user = _auth.currentUser;
     final token = await user?.getIdToken();
     if (user == null || token == null || token.isEmpty) {
       throw StateError('not_signed_in');
     }
 
     final response = await _client.get(
-      Uri.parse('$_baseUrl/user-level'),
+      Uri.parse('$_baseUrl/user-level').replace(
+        queryParameters: <String, String>{'uid': targetUid},
+      ),
       headers: {
         'authorization': 'Bearer $token',
         'accept': 'application/json',
