@@ -481,4 +481,7 @@ export const userLevelControlInternals = Object.freeze({
   canOpenLevelControl,
   canManageMetric,
   safePoints,
+  searchUsers,
+  updateUserLevel,
+  publicUser,
 });
