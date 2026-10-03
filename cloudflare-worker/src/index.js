@@ -54,7 +54,7 @@ async function dispatchRequest(request, env, ctx) {
     return json(request, env, {
       ok: true,
       service: "shadow-live-cloudflare-worker",
-      version: 29,
+      version: 28,
       buildSha: env.BUILD_SHA || null,
       firebaseConfigured: Boolean(String(env.FIREBASE_SERVICE_ACCOUNT || "").trim()),
       pressureAnalyticsConfigured: Boolean(env.PRESSURE_ANALYTICS),
