@@ -257,7 +257,7 @@ class _UserLevelControlPageState extends State<UserLevelControlPage> {
   }
 
   Future<void> _editLevel(_LevelUser user, _LevelMetric metric) async {
-    var selected = metric.level.clamp(0, metric.maxLevel);
+    var selected = metric.level.clamp(1, metric.maxLevel);
     final reason = TextEditingController(text: 'تصحيح المستوى إداريًا');
     final accepted = await showDialog<bool>(
       context: context,
@@ -276,10 +276,10 @@ class _UserLevelControlPageState extends State<UserLevelControlPage> {
                     border: OutlineInputBorder(),
                   ),
                   items: List<DropdownMenuItem<int>>.generate(
-                    metric.maxLevel + 1,
+                    metric.maxLevel,
                     (index) => DropdownMenuItem<int>(
-                      value: index,
-                      child: Text('LV' + index.toString()),
+                      value: index + 1,
+                      child: Text('LV' + (index + 1).toString()),
                     ),
                   ),
                   onChanged: (value) {
