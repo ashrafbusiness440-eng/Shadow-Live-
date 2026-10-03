@@ -1,6 +1,7 @@
 import { firestoreClient } from "./firestore.js";
 import { loadUserLevelPolicy } from "./user-level-policy.js";
 import { summarizeUserLevelData } from "./user-level-summary.js";
+import { publicLevelMetadata } from "./user-level-visibility.js";
 import {
   assertUserDocumentSessionState,
   verifyFirebaseIdToken,
@@ -51,11 +52,11 @@ function roomUserLevelMetadata(policy, uid, user) {
       user,
       Date.now(),
     ).summary;
-    return {
+    return publicLevelMetadata({
       wealthLevel: Math.max(0, Math.min(35, Number(value?.wealth?.level || 0))),
       attractionLevel: Math.max(0, Math.min(35, Number(value?.attraction?.level || 0))),
       gameLevel: Math.max(0, Math.min(21, Number(value?.games?.level || 0))),
-    };
+    }, user);
   } catch (_) {
     return { wealthLevel: 0, attractionLevel: 0, gameLevel: 0 };
   }

@@ -156,6 +156,11 @@ service cloud.firestore {
         'gameInactivityDecayAppliedDays',
         'level',
         'vipLevel',
+        'effectiveVipLevel',
+        'hideWealthLevel',
+        'hideAttractionLevel',
+        'hideGameLevel',
+        'levelVisibilityUpdatedAt',
         'publicBadges',
         'totalGiftsSent',
         'totalGiftsReceived',
@@ -230,6 +235,11 @@ service cloud.firestore {
           || request.resource.data.gameInactivityDecayAppliedDays == 0)
         && (!('level' in request.resource.data) || request.resource.data.level == 0)
         && (!('vipLevel' in request.resource.data) || request.resource.data.vipLevel == 0)
+        && !('effectiveVipLevel' in request.resource.data)
+        && !('hideWealthLevel' in request.resource.data)
+        && !('hideAttractionLevel' in request.resource.data)
+        && !('hideGameLevel' in request.resource.data)
+        && !('levelVisibilityUpdatedAt' in request.resource.data)
         && !('publicBadges' in request.resource.data)
         && !('totalGiftsSent' in request.resource.data)
         && !('totalGiftsReceived' in request.resource.data)
