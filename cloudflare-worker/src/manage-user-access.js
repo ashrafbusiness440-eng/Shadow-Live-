@@ -22,6 +22,10 @@ const ALLOWED_CAPABILITIES = new Set([
   "viewSystemHealth",
   "viewUsers",
   "manageUsers",
+  "manageUserLevels",
+  "manageWealthLevel",
+  "manageAttractionLevel",
+  "manageGameLevel",
   "viewReports",
   "reviewReports",
   "muteUsers",
@@ -123,6 +127,21 @@ async function execute(db, actorPayload, body) {
         capabilities: beforeCapabilities,
       };
       const after = { role, adminEnabled, capabilities };
+      const beforeSet = new Set(beforeCapabilities);
+      const afterSet = new Set(capabilities);
+      const capabilityChanges = [...new Set([
+        ...beforeCapabilities,
+        ...capabilities,
+      ])]
+        .sort()
+        .filter((capability) =>
+          beforeSet.has(capability) !== afterSet.has(capability)
+        )
+        .map((capability) => ({
+          capability,
+          oldState: beforeSet.has(capability),
+          newState: afterSet.has(capability),
+        }));
       const updatedAt = new Date();
       const resultData = {
         targetUid,
@@ -145,6 +164,7 @@ async function execute(db, actorPayload, body) {
           reason,
           before,
           after,
+          capabilityChanges,
           operationId: key,
           createdAt: updatedAt,
         }),
