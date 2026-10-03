@@ -68,4 +68,20 @@ void main() {
     expect(find.text('خصم الخمول محسوب'), findsOneWidget);
     expect(find.text('دعم اللعبة'), findsOneWidget);
   });
+  testWidgets('level screen can open directly on the requested public section', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: UserLevelScreen(
+          userId: 'public_user_2',
+          initialTabIndex: 2,
+          loadSummary: () async => summary,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('LV1'), findsOneWidget);
+    expect(find.text('دعم اللعبة'), findsOneWidget);
+    expect(find.text('شريط الدعم'), findsNothing);
+  });
 }
