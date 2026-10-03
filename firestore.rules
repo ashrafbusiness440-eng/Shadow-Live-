@@ -530,10 +530,10 @@ service cloud.firestore {
         && request.resource.data.searchTokens.size() <= 512
         && request.resource.data.interests is list
         && request.resource.data.interests.size() <= 30
-        && request.resource.data.moodEmoji is string
-        && request.resource.data.moodEmoji.size() <= 16
-        && request.resource.data.moodText is string
-        && request.resource.data.moodText.size() <= 80
+        && request.resource.data.get('moodEmoji', '') is string
+        && request.resource.data.get('moodEmoji', '').size() <= 16
+        && request.resource.data.get('moodText', '') is string
+        && request.resource.data.get('moodText', '').size() <= 80
         && request.resource.data.badges is list
         && request.resource.data.badges.size() <= 20
         && publicProfileAuthoritativeFieldsMatch(userId)
