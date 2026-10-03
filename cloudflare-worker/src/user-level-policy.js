@@ -151,6 +151,118 @@ export function giftLevelPointAwards({
   };
 }
 
+
+function timestampValueToMillis(value) {
+  if (value == null) return null;
+  if (value instanceof Date) {
+    const ms = value.getTime();
+    return Number.isSafeInteger(ms) && ms >= 0 ? ms : null;
+  }
+  if (typeof value?.toMillis === "function") {
+    const ms = Number(value.toMillis());
+    return Number.isSafeInteger(ms) && ms >= 0 ? ms : null;
+  }
+  const seconds = Number(value?.seconds ?? value?._seconds);
+  const nanos = Number(value?.nanoseconds ?? value?._nanoseconds ?? 0);
+  if (
+    Number.isSafeInteger(seconds) &&
+    seconds >= 0 &&
+    Number.isFinite(nanos) &&
+    nanos >= 0 &&
+    nanos < 1_000_000_000
+  ) {
+    const ms = seconds * 1000 + Math.floor(nanos / 1_000_000);
+    return Number.isSafeInteger(ms) ? ms : null;
+  }
+  const numeric = Number(value);
+  return Number.isSafeInteger(numeric) && numeric >= 0 ? numeric : null;
+}
+
+export function gamePointsAfterInactivity({
+  points = 0,
+  lastGameActivityAt = null,
+  nowMs = Date.now(),
+  inactivityGraceDays = DEFAULT_USER_LEVEL_POLICY.games.inactivityGraceDays,
+  inactivityDecayBpsPerDay =
+    DEFAULT_USER_LEVEL_POLICY.games.inactivityDecayBpsPerDay,
+} = {}) {
+  const normalizedPoints = safeNonNegativeInteger(points);
+  const normalizedNowMs = safeNonNegativeInteger(nowMs);
+  const graceDays = boundedInteger(inactivityGraceDays, 3, 1, 30);
+  const decayBps = boundedInteger(inactivityDecayBpsPerDay, 1000, 1, 9999);
+  if (normalizedPoints === null || normalizedNowMs === null) return null;
+
+  const lastActivityAtMs = timestampValueToMillis(lastGameActivityAt);
+  if (lastActivityAtMs === null || normalizedNowMs <= lastActivityAtMs) {
+    return {
+      pointsBeforeDecay: normalizedPoints,
+      pointsAfterDecay: normalizedPoints,
+      inactiveMs: Math.max(
+        0,
+        lastActivityAtMs === null ? 0 : normalizedNowMs - lastActivityAtMs,
+      ),
+      completedInactiveDays: 0,
+      decayDays: 0,
+      lastActivityAtMs,
+    };
+  }
+
+  const inactiveMs = normalizedNowMs - lastActivityAtMs;
+  const dayMs = 24 * 60 * 60 * 1000;
+  const completedInactiveDays = Math.floor(inactiveMs / dayMs);
+  const decayDays = completedInactiveDays >= graceDays
+    ? completedInactiveDays - graceDays + 1
+    : 0;
+
+  let decayed = normalizedPoints;
+  let appliedDays = 0;
+  const keepBps = 10_000 - decayBps;
+  while (appliedDays < decayDays && decayed > 0) {
+    decayed = Math.floor((decayed * keepBps) / 10_000);
+    appliedDays += 1;
+  }
+
+  return {
+    pointsBeforeDecay: normalizedPoints,
+    pointsAfterDecay: decayed,
+    inactiveMs,
+    completedInactiveDays,
+    decayDays,
+    lastActivityAtMs,
+  };
+}
+
+export function applyGameActivityPoints({
+  points = 0,
+  lastGameActivityAt = null,
+  nowMs = Date.now(),
+  stakeCoins = 0,
+  inactivityGraceDays = DEFAULT_USER_LEVEL_POLICY.games.inactivityGraceDays,
+  inactivityDecayBpsPerDay =
+    DEFAULT_USER_LEVEL_POLICY.games.inactivityDecayBpsPerDay,
+} = {}) {
+  const stake = safeNonNegativeInteger(stakeCoins);
+  if (stake === null) return null;
+  const decay = gamePointsAfterInactivity({
+    points,
+    lastGameActivityAt,
+    nowMs,
+    inactivityGraceDays,
+    inactivityDecayBpsPerDay,
+  });
+  if (!decay) return null;
+  const pointsAfterActivity = safeAddUserLevelPoints(
+    decay.pointsAfterDecay,
+    stake,
+  );
+  if (pointsAfterActivity === null) return null;
+  return {
+    ...decay,
+    stakePointsAwarded: stake,
+    pointsAfterActivity,
+  };
+}
+
 function normalizeThresholds(raw, fallback, expectedLength) {
   if (!Array.isArray(raw) || raw.length !== expectedLength) {
     return [...fallback];
