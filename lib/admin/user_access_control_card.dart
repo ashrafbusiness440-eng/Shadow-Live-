@@ -34,6 +34,7 @@ class OwnerUserAccessCard extends StatelessWidget {
     'viewSystemHealth': 'عرض حالة النظام والضغط',
     'viewUsers': 'عرض المستخدمين',
     'manageUsers': 'إدارة المستخدمين',
+    'viewHiddenUserLevels': 'عرض المستويات المخفية — Safety',
     'viewReports': 'عرض البلاغات',
     'reviewReports': 'مراجعة البلاغات',
     'muteUsers': 'كتم المستخدمين',
@@ -88,6 +89,7 @@ class OwnerUserAccessCard extends StatelessWidget {
       'manageAgencySettlements', 'suspendAgencies',
     ],
     'المستوى': [
+      'viewHiddenUserLevels',
       'manageUserLevels', 'manageWealthLevel', 'manageAttractionLevel', 'manageGameLevel',
     ],
     'الإدارة العامة': [

@@ -217,7 +217,16 @@ async function updateLevelVisibility(db, decoded, body) {
       ),
     ]);
 
-    return levelVisibilityPreferences({ ...user, ...updates });
+    return {
+      ...levelVisibilityPreferences({ ...user, ...updates }),
+      isSelf: true,
+      canEdit: true,
+      viewerOverride: {
+        wealth: false,
+        attraction: false,
+        games: false,
+      },
+    };
   } catch (error) {
     await db.rollback(transaction).catch(() => {});
     throw error;

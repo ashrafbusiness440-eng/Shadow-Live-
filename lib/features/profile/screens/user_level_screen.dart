@@ -3,17 +3,25 @@ import 'package:flutter/material.dart';
 import '../../../utils/compact_number.dart';
 import '../services/user_level_service.dart';
 
+typedef UpdateUserLevelVisibility = Future<UserLevelVisibility> Function({
+  required bool hideWealthLevel,
+  required bool hideAttractionLevel,
+  required bool hideGameLevel,
+});
+
 class UserLevelScreen extends StatefulWidget {
   const UserLevelScreen({
     super.key,
     this.userId,
     this.initialTabIndex = 0,
     this.loadSummary,
+    this.updateVisibility,
   });
 
   final String? userId;
   final int initialTabIndex;
   final Future<UserLevelSummary> Function()? loadSummary;
+  final UpdateUserLevelVisibility? updateVisibility;
 
   @override
   State<UserLevelScreen> createState() => _UserLevelScreenState();
@@ -23,6 +31,7 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
   UserLevelService? _service;
   UserLevelSummary? _summary;
   bool _loading = true;
+  bool _savingVisibility = false;
   String? _error;
 
   @override
@@ -66,6 +75,56 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
         _loading = false;
         _error = 'تعذر تحميل المستوى حالياً.';
       });
+    }
+  }
+
+  Future<void> _toggleVisibility(String metric, bool value) async {
+    final currentSummary = _summary;
+    if (currentSummary == null ||
+        !currentSummary.visibility.canEdit ||
+        _savingVisibility) {
+      return;
+    }
+
+    var next = currentSummary.visibility;
+    switch (metric) {
+      case 'wealth':
+        next = next.copyWith(hideWealthLevel: value);
+      case 'attraction':
+        next = next.copyWith(hideAttractionLevel: value);
+      case 'games':
+        next = next.copyWith(hideGameLevel: value);
+      default:
+        return;
+    }
+
+    setState(() => _savingVisibility = true);
+    try {
+      final saved = await (widget.updateVisibility?.call(
+            hideWealthLevel: next.hideWealthLevel,
+            hideAttractionLevel: next.hideAttractionLevel,
+            hideGameLevel: next.hideGameLevel,
+          ) ??
+          _service!.updateVisibility(
+            hideWealthLevel: next.hideWealthLevel,
+            hideAttractionLevel: next.hideAttractionLevel,
+            hideGameLevel: next.hideGameLevel,
+          ));
+      if (!mounted) return;
+      setState(() {
+        _summary = currentSummary.copyWithVisibility(saved);
+        _savingVisibility = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _savingVisibility = false);
+      final code = error.toString().replaceFirst('Bad state: ', '');
+      final message = code.contains('vip_required')
+          ? 'ميزة مستوى مخفي متاحة من VIP3 فما فوق.'
+          : 'تعذر تحديث إخفاء المستوى حالياً.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
     }
   }
 
@@ -124,6 +183,7 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
           children: [
             _levelList(
               child: _section(
+                metric: 'wealth',
                 title: 'الثروة',
                 subtitle: 'كل Coin مدفوع بهدية = نقطة ثروة',
                 icon: Icons.monetization_on_rounded,
@@ -139,10 +199,13 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
                 ],
                 currentSlice: _sliceFor(summary.wealth.level, 5),
                 footer: _wealthPrivileges(summary.wealth.level),
+                canEditVisibility: summary.visibility.canEdit,
+                hiddenPreference: summary.visibility.hideWealthLevel,
               ),
             ),
             _levelList(
               child: _section(
+                metric: 'attraction',
                 title: 'الجاذبية',
                 subtitle: 'تُحتسب من القيمة الاسمية الكاملة للهدايا المستلمة',
                 icon: Icons.auto_awesome_rounded,
@@ -162,10 +225,13 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
                   text:
                       'مستوى الجاذبية شارات ورتب بصرية فقط، بدون امتيازات إضافية.',
                 ),
+                canEditVisibility: summary.visibility.canEdit,
+                hiddenPreference: summary.visibility.hideAttractionLevel,
               ),
             ),
             _levelList(
               child: _section(
+                metric: 'games',
                 title: 'الألعاب',
                 subtitle: 'كل Coin يتم رهانها أو صرفها في الألعاب = نقطة لعبة',
                 icon: Icons.sports_esports_rounded,
@@ -183,6 +249,8 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
                     ? -1
                     : _sliceFor(summary.games.level, 3),
                 footer: _gameFooter(summary.games),
+                canEditVisibility: summary.visibility.canEdit,
+                hiddenPreference: summary.visibility.hideGameLevel,
               ),
             ),
           ],
@@ -210,6 +278,7 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
   }
 
   Widget _section({
+    required String metric,
     required String title,
     required String subtitle,
     required IconData icon,
@@ -217,7 +286,13 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
     required List<String> slices,
     required int currentSlice,
     required Widget footer,
+    required bool canEditVisibility,
+    required bool hiddenPreference,
   }) {
+    if (data.hidden) {
+      return _HiddenLevelCard(title: title, icon: icon);
+    }
+
     final progress =
         (data.progressBps / 10000).clamp(0.0, 1.0).toDouble();
     final levelLabel = data.level <= 0 ? 'LV0' : 'LV${data.level}';
@@ -318,11 +393,52 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
             ],
           ),
         ),
+        if (canEditVisibility) ...[
+          const SizedBox(height: 14),
+          _visibilityControl(
+            metric: metric,
+            title: title,
+            value: hiddenPreference,
+          ),
+        ],
         const SizedBox(height: 14),
         _sliceGrid(slices, currentSlice),
         const SizedBox(height: 14),
         footer,
       ],
+    );
+  }
+
+  Widget _visibilityControl({
+    required String metric,
+    required String title,
+    required bool value,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF0C1728),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: SwitchListTile.adaptive(
+        key: Key('level-visibility-$metric'),
+        value: value,
+        onChanged: _savingVisibility
+            ? null
+            : (next) => _toggleVisibility(metric, next),
+        activeColor: const Color(0xFFFFD54A),
+        title: Text(
+          'إخفاء مستوى $title',
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        subtitle: const Text(
+          'ميزة VIP3+ — تخفي هذا القسم عن العامة فقط، بدون تغيير نقاطك أو مستواك الحقيقي.',
+          style: TextStyle(color: Colors.white54, fontSize: 11, height: 1.4),
+        ),
+      ),
     );
   }
 
@@ -501,6 +617,49 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
               'إذا واجهت مشكلة في احتساب نقاط الألعاب، تواصل مع خدمة العملاء من قسم الرسائل.',
         ),
       ],
+    );
+  }
+}
+
+class _HiddenLevelCard extends StatelessWidget {
+  const _HiddenLevelCard({required this.title, required this.icon});
+
+  final String title;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 34),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0C1728),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, size: 48, color: Colors.white30),
+          const SizedBox(height: 14),
+          const Text(
+            'مستوى مخفي',
+            style: TextStyle(
+              color: Color(0xFFFFD54A),
+              fontSize: 22,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'اختار المستخدم إخفاء مستوى $title عن العامة.',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white60,
+              fontSize: 12,
+              height: 1.45,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

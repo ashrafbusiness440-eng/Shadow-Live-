@@ -6,6 +6,15 @@ void main() {
     final summary = UserLevelSummary.fromJson({
       'uid': 'user_1',
       'policyVersion': 1,
+      'visibility': {
+        'hiddenLevelEntitled': true,
+        'hideWealthLevel': true,
+        'hideAttractionLevel': false,
+        'hideGameLevel': true,
+        'isSelf': true,
+        'canEdit': true,
+        'viewerOverride': {'wealth': false, 'attraction': false, 'games': false},
+      },
       'wealth': {
         'level': 12,
         'maxLevel': 35,
@@ -14,6 +23,8 @@ void main() {
         'nextThreshold': 10000000,
         'remaining': 3000000,
         'progressBps': 769,
+        'hidden': false,
+        'publiclyHidden': true,
       },
       'attraction': {
         'level': 5,
@@ -47,6 +58,11 @@ void main() {
     expect(summary.games.storedPoints, 1000000);
     expect(summary.games.pendingDecayPoints, 190000);
     expect(summary.games.pendingDecayDays, 2);
+    expect(summary.visibility.hiddenLevelEntitled, isTrue);
+    expect(summary.visibility.hideWealthLevel, isTrue);
+    expect(summary.visibility.hideGameLevel, isTrue);
+    expect(summary.visibility.canEdit, isTrue);
+    expect(summary.wealth.publiclyHidden, isTrue);
   });
 
   test('level progress basis points are clamped defensively', () {
@@ -73,3 +89,22 @@ void main() {
     expect(low.progressBps, 0);
   });
 }
+
+
+  test('hidden public level section parses without leaking a real level', () {
+    final section = UserLevelSectionSummary.fromJson({
+      'hidden': true,
+      'publiclyHidden': true,
+      'level': 0,
+      'points': 0,
+      'maxLevel': 35,
+      'minimumThreshold': 0,
+      'nextThreshold': null,
+      'remaining': 0,
+      'progressBps': 0,
+    });
+    expect(section.hidden, isTrue);
+    expect(section.publiclyHidden, isTrue);
+    expect(section.level, 0);
+    expect(section.points, 0);
+  });

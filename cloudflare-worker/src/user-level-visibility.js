@@ -136,6 +136,7 @@ export function applyUserLevelVisibilityForViewer(
 
   output.visibility = {
     ...visibility,
+    isSelf: self,
     canEdit: self && visibility.hiddenLevelEntitled,
     viewerOverride,
   };
