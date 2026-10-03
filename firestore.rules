@@ -194,8 +194,7 @@ service cloud.firestore {
 
     function publicProfileAuthoritativeFieldsMatch(userId) {
       let source = get(/databases/$(database)/documents/users/$(userId)).data;
-      return request.resource.data.level == source.get('level', 0)
-        && request.resource.data.vipLevel == source.get('vipLevel', 0)
+      return request.resource.data.vipLevel == source.get('vipLevel', 0)
         && request.resource.data.badges == source.get('publicBadges', []);
     }
 
@@ -552,7 +551,7 @@ service cloud.firestore {
         && publicProfileAuthoritativeFieldsMatch(userId)
         && request.resource.data.keys().hasOnly([
           'uid','displayName','username','publicId','searchTokens','profileImageUrl','profileImageObjectId','profileAvatarAsset',
-          'coverImageUrl','coverImageObjectId','bio','location','moodEmoji','moodText','interests','level','vipLevel','badges','isOnline','createdAt','updatedAt'
+          'coverImageUrl','coverImageObjectId','bio','location','moodEmoji','moodText','interests','vipLevel','badges','isOnline','createdAt','updatedAt'
         ]);
       allow delete: if false;
     }
