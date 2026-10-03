@@ -10,6 +10,7 @@ import {
   loadUserLevelPolicy,
   normalizeUserLevelPolicy,
   safeAddUserLevelPoints,
+  giftLevelPointAwards,
   userLevelSummaries,
 } from "../../cloudflare-worker/src/user-level-policy.js";
 
@@ -186,6 +187,22 @@ test("level point accumulation stays non-negative and inside JS safe integer ran
   assert.equal(safeAddUserLevelPoints(100, -1), null);
   assert.equal(
     safeAddUserLevelPoints(Number.MAX_SAFE_INTEGER, 1),
+    null,
+  );
+});
+
+
+test("gift level awards separate paid wealth from nominal attraction value", () => {
+  assert.deepEqual(
+    giftLevelPointAwards({ nominalCoins: 5000, paidCoins: 5000 }),
+    { wealthPoints: 5000, attractionPoints: 5000 },
+  );
+  assert.deepEqual(
+    giftLevelPointAwards({ nominalCoins: 5000, paidCoins: 0 }),
+    { wealthPoints: 0, attractionPoints: 5000 },
+  );
+  assert.equal(
+    giftLevelPointAwards({ nominalCoins: 5000, paidCoins: 6000 }),
     null,
   );
 });
