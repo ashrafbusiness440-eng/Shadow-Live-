@@ -77,13 +77,26 @@ async function relationshipTypes(db, transaction = null) {
   return normalizeTypes(config.exists ? config.data : null);
 }
 
-async function requireEnabledType(db, type, transaction = null) {
+async function relationshipTypeInfo(
+  db,
+  type,
+  transaction = null,
+  { requireEnabled = false, fallbackLabel = "" } = {},
+) {
   const key = clean(type).toLowerCase();
   if (!validTypeKey(key)) throw new ApiError("invalid_relationship_type", 400);
   const types = await relationshipTypes(db, transaction);
-  const found = types.find((item) => item.key === key && item.enabled !== false);
-  if (!found) throw new ApiError("relationship_type_disabled", 409);
-  return found;
+  const found = types.find((item) => item.key === key);
+  if (requireEnabled && (!found || found.enabled === false)) {
+    throw new ApiError("relationship_type_disabled", 409);
+  }
+  return found || {
+    key,
+    labelAr: clean(fallbackLabel || key).slice(0, 40),
+    enabled: false,
+    order: 999,
+    assetKey: "",
+  };
 }
 
 function assertSafeUserId(value) {
@@ -189,7 +202,12 @@ async function sendRequest(db, uid, body) {
   if (!validOperationKey(idempotencyKey)) throw new ApiError("invalid_idempotency_key", 400);
 
   return runTransaction(db, async (transaction) => {
-    const type = await requireEnabledType(db, typeKey, transaction);
+    const type = await relationshipTypeInfo(
+      db,
+      typeKey,
+      transaction,
+      { requireEnabled: true },
+    );
     const opPath = `relationship_operations/${idempotencyKey}`;
     const actorPath = `users/${uid}`;
     const targetPath = `users/${targetUid}`;
@@ -333,7 +351,15 @@ async function respondRequest(db, uid, body) {
     const data = request.data || {};
     const actorUid = assertSafeUserId(data.actorUid);
     const targetUid = assertSafeUserId(data.targetUid);
-    const type = await requireEnabledType(db, data.relationshipType, transaction);
+    const type = await relationshipTypeInfo(
+      db,
+      data.relationshipType,
+      transaction,
+      {
+        requireEnabled: decision === "accept",
+        fallbackLabel: data.relationshipTypeLabel,
+      },
+    );
     if (targetUid !== uid) throw new ApiError("forbidden", 403);
     if (clean(data.status) !== "pending") throw new ApiError("request_already_resolved", 409);
 
@@ -521,7 +547,12 @@ async function cancelRequest(db, uid, body) {
     if (clean(data.status) !== "pending") throw new ApiError("request_already_resolved", 409);
 
     const targetUid = assertSafeUserId(data.targetUid);
-    const type = await requireEnabledType(db, data.relationshipType, transaction);
+    const type = await relationshipTypeInfo(
+      db,
+      data.relationshipType,
+      transaction,
+      { fallbackLabel: data.relationshipTypeLabel },
+    );
     const pairPendingPath = pendingPath(uid, targetUid, type.key);
     const pending = await db.get(pairPendingPath, transaction);
     if (!pending.exists || clean(pending.data?.requestId) !== requestId) {
@@ -612,7 +643,12 @@ async function endRelationship(db, uid, body) {
     if (clean(data.status) !== "active") throw new ApiError("relationship_not_active", 409);
 
     const otherUid = participants.find((item) => item !== uid);
-    const type = await requireEnabledType(db, data.relationshipType, transaction);
+    const type = await relationshipTypeInfo(
+      db,
+      data.relationshipType,
+      transaction,
+      { fallbackLabel: data.relationshipTypeLabel },
+    );
     const minePath = slotPath(uid, type.key);
     const otherPath = slotPath(otherUid, type.key);
     const pairPath = activePairPath(uid, otherUid, type.key);
@@ -713,7 +749,7 @@ async function requestDetail(db, uid, body) {
 }
 
 async function listMine(db, uid) {
-  const types = (await relationshipTypes(db)).filter((item) => item.enabled !== false);
+  const types = await relationshipTypes(db);
   const slots = await Promise.all(
     types.slice(0, MAX_TYPES).map(async (type) => ({
       type,
@@ -809,6 +845,7 @@ export async function relationships(request, env) {
 
 export const relationshipCoreTestHooks = Object.freeze({
   normalizeTypes,
+  relationshipTypeInfo,
   pairKey,
   slotPath,
   pendingPath,
