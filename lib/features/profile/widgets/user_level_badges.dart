@@ -8,9 +8,26 @@ class UserLevelBadges extends StatelessWidget {
     required this.summary,
     required this.onTap,
     this.compact = false,
-  });
+  })  : wealthLevel = null,
+        attractionLevel = null,
+        gameLevel = null;
 
-  final UserLevelSummary summary;
+  const UserLevelBadges.fromLevels({
+    super.key,
+    required int wealthLevel,
+    required int attractionLevel,
+    required int gameLevel,
+    required this.onTap,
+    this.compact = false,
+  })  : summary = null,
+        wealthLevel = wealthLevel,
+        attractionLevel = attractionLevel,
+        gameLevel = gameLevel;
+
+  final UserLevelSummary? summary;
+  final int? wealthLevel;
+  final int? attractionLevel;
+  final int? gameLevel;
   final ValueChanged<int> onTap;
   final bool compact;
 
@@ -20,19 +37,19 @@ class UserLevelBadges extends StatelessWidget {
       (
         tab: 0,
         label: 'الثروة',
-        level: summary.wealth.level,
+        level: wealthLevel ?? summary?.wealth.level ?? 0,
         icon: Icons.monetization_on_rounded,
       ),
       (
         tab: 1,
         label: 'الجاذبية',
-        level: summary.attraction.level,
+        level: attractionLevel ?? summary?.attraction.level ?? 0,
         icon: Icons.auto_awesome_rounded,
       ),
       (
         tab: 2,
         label: 'الألعاب',
-        level: summary.games.level,
+        level: gameLevel ?? summary?.games.level ?? 0,
         icon: Icons.sports_esports_rounded,
       ),
     ].where((item) => item.level > 0).toList(growable: false);
