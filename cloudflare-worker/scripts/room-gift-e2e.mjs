@@ -397,8 +397,9 @@ try{
   cleanup.add(`rooms/${roomId}/messages/${messageId}`);
   cleanup.add(`public_gift_showcases/${receiverUid}/items/${String(selectedGift.id)}`);
 
-  const [senderAfter,roomAfter,rocketAfter,txDoc,ledgerDoc,msgDoc]=await Promise.all([
+  const [senderAfter,receiverAfter,roomAfter,rocketAfter,txDoc,ledgerDoc,msgDoc]=await Promise.all([
     fsGet(`users/${senderUid}`),
+    fsGet(`users/${receiverUid}`),
     fsGet(`rooms/${roomId}`),
     fsGet(`room_rocket_state/${roomId}`),
     fsGet(`gift_transactions/${key}`),
@@ -408,6 +409,12 @@ try{
 
   if(senderAfter?.data?.coins!==senderOpening-totalCost){
     throw new Error("sender room-gift debit mismatch");
+  }
+  if(senderAfter?.data?.wealthPoints!==totalCost){
+    throw new Error(`sender room-gift wealth mismatch: ${senderAfter?.data?.wealthPoints}`);
+  }
+  if(receiverAfter?.data?.attractionPoints!==totalCost){
+    throw new Error(`receiver room-gift attraction mismatch: ${receiverAfter?.data?.attractionPoints}`);
   }
   if(roomAfter?.data?.totalSupport!==totalCost||
      roomAfter?.data?.dailySupport!==totalCost||
@@ -439,11 +446,16 @@ try{
   if(!duplicate.res.ok||duplicate.body.code!=="duplicate"){
     throw new Error(`room gift idempotency failed: ${duplicate.res.status} ${JSON.stringify(duplicate.body)}`);
   }
-  const senderAfterDup=await fsGet(`users/${senderUid}`);
-  const roomAfterDup=await fsGet(`rooms/${roomId}`);
+  const [senderAfterDup,receiverAfterDup,roomAfterDup]=await Promise.all([
+    fsGet(`users/${senderUid}`),
+    fsGet(`users/${receiverUid}`),
+    fsGet(`rooms/${roomId}`),
+  ]);
   if(senderAfterDup?.data?.coins!==senderOpening-totalCost||
+     senderAfterDup?.data?.wealthPoints!==totalCost||
+     receiverAfterDup?.data?.attractionPoints!==totalCost||
      roomAfterDup?.data?.totalSupport!==totalCost){
-    throw new Error("duplicate room gift mutated balances or support");
+    throw new Error("duplicate room gift mutated balances, level points, or support");
   }
   console.log("PASS room gift idempotency");
   console.log("ALL CLOUDFLARE ROOM GIFT E2E CHECKS PASSED");
