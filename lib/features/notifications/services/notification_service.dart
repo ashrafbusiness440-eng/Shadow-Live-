@@ -43,9 +43,21 @@ class AppNotification {
       (requestId?.isNotEmpty ?? false);
 
   bool get agencyReviewResolved =>
-      actionState == 'resolved' ||
-      finalStatus == 'accepted' ||
-      finalStatus == 'rejected';
+      (type == 'agency_join_request' || type == 'agency_leave_request') &&
+      (actionState == 'resolved' ||
+          finalStatus == 'accepted' ||
+          finalStatus == 'rejected');
+
+  bool get relationshipRequestAction =>
+      type == 'relationship_request' &&
+      (requestId?.isNotEmpty ?? false);
+
+  bool get relationshipRequestResolved =>
+      type == 'relationship_request' &&
+      (actionState == 'resolved' ||
+          finalStatus == 'accepted' ||
+          finalStatus == 'rejected' ||
+          finalStatus == 'cancelled');
 
   factory AppNotification.fromMap(String id, Map<String, dynamic> data) {
     final rawCreatedAt = data['createdAt'];

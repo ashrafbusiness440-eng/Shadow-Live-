@@ -16,6 +16,7 @@ import '../../profile/screens/my_items_screen.dart';
 import '../../profile/services/reward_inventory_service.dart';
 import '../../room/widgets/cosmetic_effect_widgets.dart';
 import '../../agency/screens/agency_package_grant_page.dart';
+import '../../relationships/screens/relationships_page.dart';
 import '../bloc/user_bloc.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -785,6 +786,18 @@ class _ProfileScreenState extends State<ProfileScreen>
           Icons.inventory_2_rounded,
           'مقتنياتي',
           () => unawaited(_openMyItems()),
+        ),
+        const SizedBox(height: 10),
+        _action(
+          Icons.favorite_rounded,
+          'العلاقات',
+          () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const RelationshipsPage(),
+              ),
+            );
+          },
         ),
         const SizedBox(height: 10),
         _action(

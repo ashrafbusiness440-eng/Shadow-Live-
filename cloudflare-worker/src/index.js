@@ -26,6 +26,7 @@ import { agencyPublic } from "./agency-public.js";
 import { agencyHost } from "./agency-host.js";
 import { agencyOwner } from "./agency-owner.js";
 import { agencyPackages } from "./agency-packages.js";
+import { relationships } from "./relationships.js";
 import { configureLegacyEnv, getFirestore } from "./legacy-firebase-admin-shim.js";
 import { settleDueGameOperations } from "./legacy-games/game-runtime.js";
 import {

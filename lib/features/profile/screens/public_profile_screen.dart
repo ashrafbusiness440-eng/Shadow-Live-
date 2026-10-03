@@ -5,6 +5,7 @@ import '../../../core/assets/shadow_asset_registry.dart';
 import '../services/follow_service.dart';
 import '../services/profile_action_service.dart';
 import '../../gift/widgets/direct_gift_sheet.dart';
+import '../../relationships/services/relationship_service.dart';
 import '../widgets/registry_badge.dart';
 
 class PublicProfileScreen extends StatefulWidget {
@@ -18,7 +19,9 @@ class PublicProfileScreen extends StatefulWidget {
 class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTickerProviderStateMixin {
   late final TabController _tabs;
   final _follow = FollowService();
+  final _relationships = RelationshipService();
   bool _changingFollow = false;
+  bool _sendingRelationship = false;
 
   @override
   void initState() {
@@ -45,6 +48,83 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
         receiverId: widget.userId,
         receiverName: name,
       );
+
+  Future<void> _requestRelationship(String name) async {
+    if (_sendingRelationship) return;
+    setState(() => _sendingRelationship = true);
+    try {
+      final types = await _relationships.types();
+      if (!mounted) return;
+      final enabled =
+          types.where((type) => type.enabled).toList(growable: false);
+      if (enabled.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('لا توجد أنواع علاقات متاحة حالياً.')),
+        );
+        return;
+      }
+
+      final selected = await showModalBottomSheet<RelationshipTypeOption>(
+        context: context,
+        backgroundColor: const Color(0xFF0D111B),
+        showDragHandle: true,
+        builder: (sheetContext) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: SafeArea(
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+              children: [
+                Text(
+                  'طلب علاقة مع $name',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                ...enabled.map(
+                  (type) => ListTile(
+                    leading: const Icon(
+                      Icons.favorite_rounded,
+                      color: Color(0xFFFFD54A),
+                    ),
+                    title: Text(
+                      type.labelAr,
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    onTap: () => Navigator.pop(sheetContext, type),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      if (selected == null || !mounted) return;
+
+      await _relationships.sendRequest(
+        targetUserId: widget.userId,
+        relationshipType: selected.key,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'تم إرسال طلب ${selected.labelAr}.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(relationshipErrorMessage(error))),
+      );
+    } finally {
+      if (mounted) setState(() => _sendingRelationship = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -190,6 +270,28 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
                           ),
                         ),
                       ],
+                    ),
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: OutlinedButton.icon(
+                      onPressed: _sendingRelationship
+                          ? null
+                          : () => _requestRelationship(name),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFFFD54A),
+                        side: const BorderSide(color: Color(0xFF7B2DFF)),
+                        minimumSize: const Size.fromHeight(46),
+                      ),
+                      icon: _sendingRelationship
+                          ? const SizedBox.square(
+                              dimension: 17,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.favorite_outline_rounded),
+                      label: const Text('طلب علاقة'),
                     ),
                   ),
                 ),

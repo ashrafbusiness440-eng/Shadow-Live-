@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../agency/services/agency_membership_service.dart';
 import '../../profile/screens/public_profile_screen.dart';
+import '../../relationships/services/relationship_service.dart';
 import '../services/notification_service.dart';
 
 class NotificationsPage extends StatefulWidget {
@@ -15,6 +16,7 @@ class NotificationsPage extends StatefulWidget {
 class _NotificationsPageState extends State<NotificationsPage> {
   final NotificationService _service = NotificationService();
   final AgencyMembershipService _membershipService = AgencyMembershipService();
+  final RelationshipService _relationshipService = RelationshipService();
   final List<AppNotification> _items = [];
   NotificationPage? _page;
   bool _loading = true;
@@ -112,6 +114,12 @@ class _NotificationsPageState extends State<NotificationsPage> {
       }
     }
 
+    if (item.relationshipRequestAction &&
+        (item.requestId?.isNotEmpty ?? false)) {
+      await _openRelationshipRequest(item);
+      return;
+    }
+
     if (item.agencyReviewAction && (item.requestId?.isNotEmpty ?? false)) {
       await _openAgencyReview(item.requestId!);
       return;
@@ -120,6 +128,134 @@ class _NotificationsPageState extends State<NotificationsPage> {
     if (item.type == 'agency_membership_invite' &&
         (item.requestId?.isNotEmpty ?? false)) {
       await _openAgencyInvitation(item.requestId!);
+    }
+  }
+
+  Future<void> _openRelationshipRequest(AppNotification item) async {
+    final requestId = item.requestId;
+    if (requestId == null || requestId.isEmpty) return;
+
+    try {
+      final detail = await _relationshipService.requestDetail(requestId);
+      if (!mounted) return;
+
+      final action = await showModalBottomSheet<String>(
+        context: context,
+        backgroundColor: const Color(0xFF0D1220),
+        showDragHandle: true,
+        builder: (sheetContext) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(18, 4, 18, 22),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Icon(
+                    Icons.favorite_rounded,
+                    size: 42,
+                    color: Color(0xFFFFD54A),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    detail.actorName.isEmpty
+                        ? 'طلب علاقة'
+                        : detail.actorName,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    detail.relationshipTypeLabel.isEmpty
+                        ? detail.relationshipType
+                        : detail.relationshipTypeLabel,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Color(0xFFFFD54A),
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    _relationshipRequestStatusLabel(detail.status),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white60),
+                  ),
+                  const SizedBox(height: 16),
+                  OutlinedButton.icon(
+                    onPressed: detail.actorUid.isEmpty
+                        ? null
+                        : () => Navigator.pop(sheetContext, 'profile'),
+                    icon: const Icon(Icons.person_outline_rounded),
+                    label: const Text('عرض الملف الشخصي'),
+                  ),
+                  if (detail.status == 'pending') ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () =>
+                                Navigator.pop(sheetContext, 'reject'),
+                            child: const Text('رفض'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: () =>
+                                Navigator.pop(sheetContext, 'accept'),
+                            child: const Text('قبول'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      if (!mounted || action == null) return;
+      if (action == 'profile') {
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => PublicProfileScreen(userId: detail.actorUid),
+          ),
+        );
+        return;
+      }
+
+      if (action == 'accept' || action == 'reject') {
+        await _relationshipService.respondRequest(
+          requestId: requestId,
+          accept: action == 'accept',
+        );
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              action == 'accept'
+                  ? 'تم قبول طلب العلاقة.'
+                  : 'تم رفض طلب العلاقة.',
+            ),
+          ),
+        );
+        await _reload();
+      }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(relationshipErrorMessage(error))),
+      );
+      await _reload();
     }
   }
 
@@ -600,14 +736,16 @@ class _NotificationsPageState extends State<NotificationsPage> {
                         title: Text(item.title,
                             style:
                                 const TextStyle(fontWeight: FontWeight.w700)),
-                        subtitle: item.agencyReviewResolved
+                        subtitle: item.agencyReviewResolved ||
+                                item.relationshipRequestResolved
                             ? Text(
                                 _resolvedNotificationText(item),
                               )
                             : item.body.isEmpty
                                 ? null
                                 : Text(item.body),
-                        trailing: item.agencyReviewResolved
+                        trailing: item.agencyReviewResolved ||
+                                item.relationshipRequestResolved
                             ? const Icon(
                                 Icons.check_circle_outline_rounded,
                                 color: Colors.greenAccent,
@@ -631,7 +769,32 @@ class _NotificationsPageState extends State<NotificationsPage> {
 }
 
 
+String _relationshipRequestStatusLabel(String status) {
+  switch (status) {
+    case 'pending':
+      return 'بانتظار قرارك';
+    case 'accepted':
+      return 'تم قبول الطلب';
+    case 'rejected':
+      return 'تم رفض الطلب';
+    case 'cancelled':
+      return 'تم إلغاء الطلب';
+    default:
+      return status.isEmpty ? 'حالة غير معروفة' : status;
+  }
+}
+
 String _resolvedNotificationText(AppNotification item) {
+  if (item.relationshipRequestResolved) {
+    if (item.finalStatus == 'accepted' || item.finalDecision == 'accept') {
+      return 'تم قبول طلب العلاقة.';
+    }
+    if (item.finalStatus == 'cancelled' || item.finalDecision == 'cancel') {
+      return 'تم إلغاء طلب العلاقة.';
+    }
+    return 'تم رفض طلب العلاقة.';
+  }
+
   final accepted =
       item.finalDecision == 'accept' || item.finalStatus == 'accepted';
   final reviewer = item.resolvedByName?.trim().isNotEmpty == true
