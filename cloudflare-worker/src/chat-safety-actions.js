@@ -20,6 +20,7 @@ import {
   legacyPresenceFresh,
   realtimeUserPresentFromNamespace,
 } from "./room-presence-authority.js";
+import { safeAddUserLevelPoints } from "./user-level-policy.js";
 
 const clean = (value) => String(value ?? "").trim();
 const validKey = (value) => /^[A-Za-z0-9_-]{12,220}$/.test(clean(value));
@@ -451,6 +452,17 @@ export async function sendGift(db, uid, body, options = {}) {
 
     const senderData = sender.data || {};
     const receiverData = receiver.data || {};
+    const nextWealthPoints = safeAddUserLevelPoints(
+      senderData.wealthPoints,
+      totalCost,
+    );
+    const nextAttractionPoints = safeAddUserLevelPoints(
+      receiverData.attractionPoints,
+      totalCost,
+    );
+    if (nextWealthPoints === null || nextAttractionPoints === null) {
+      throw new ApiError("invalid_level_points", 409);
+    }
     const before = Number(senderData.coins || 0);
     if (!Number.isSafeInteger(before) || before < totalCost) {
       throw new ApiError("insufficient_balance", 409);
@@ -602,8 +614,8 @@ export async function sendGift(db, uid, body, options = {}) {
     const writes = [
       db.writeUpdate(
         senderPath,
-        { coins: after },
-        ["coins"],
+        { coins: after, wealthPoints: nextWealthPoints },
+        ["coins", "wealthPoints"],
         [db.increment("totalGiftsSent", quantity)],
       ),
     ];
@@ -612,11 +624,13 @@ export async function sendGift(db, uid, body, options = {}) {
       giftRevenueMonth: revenueMonth,
       giftRevenueMonthCoins: monthlyGrossCoins,
       currentGiftRevenueTier: revenue.tierId,
+      attractionPoints: nextAttractionPoints,
     };
     const receiverMask = [
       "giftRevenueMonth",
       "giftRevenueMonthCoins",
       "currentGiftRevenueTier",
+      "attractionPoints",
     ];
     if (agencyId) {
       receiverFields.agencyPublicSupportAgencyId = agencyId;
@@ -937,6 +951,8 @@ export async function sendGift(db, uid, body, options = {}) {
         unitCoins,
         totalCost,
         assetKey,
+        wealthPointsAwarded: totalCost,
+        attractionPointsAwarded: totalCost,
         policyMode: "tiered_host_agency",
         revenueTierId: revenue.tierId,
         revenueTierName: revenue.tierName,
@@ -1018,6 +1034,8 @@ export async function sendGift(db, uid, body, options = {}) {
       totalCost,
       messageId,
       balance: after,
+      wealthPointsAwarded: totalCost,
+      attractionPointsAwarded: totalCost,
       revenueTierId: revenue.tierId,
       recipientShareCoins,
       agencyShareCoins,
