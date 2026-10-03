@@ -17,6 +17,16 @@ abstract final class ControlAssetPolicy {
     'assets/images/games/witch',
     'assets/images/games/slot',
     'assets/images/store',
+    'assets/images/chat_bubbles',
+    'assets/images/entrances',
+    'assets/images/audio_waves',
+    'assets/images/name_effects',
+    'assets/images/mic_effects',
+    'assets/images/stickers',
+    'assets/images/cards',
+    'assets/images/events',
+    'assets/images/agencies',
+    'assets/images/system',
     'assets/images/misc',
   ];
 
