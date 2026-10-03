@@ -11,6 +11,8 @@ import {
   normalizeUserLevelPolicy,
   safeAddUserLevelPoints,
   giftLevelPointAwards,
+  gamePointsAfterInactivity,
+  applyGameActivityPoints,
   userLevelSummaries,
 } from "../../cloudflare-worker/src/user-level-policy.js";
 
@@ -203,6 +205,70 @@ test("gift level awards separate paid wealth from nominal attraction value", () 
   );
   assert.equal(
     giftLevelPointAwards({ nominalCoins: 5000, paidCoins: 6000 }),
+    null,
+  );
+});
+
+
+test("game inactivity decay starts when day four begins and compounds daily", () => {
+  const day = 24 * 60 * 60 * 1000;
+  const base = Date.UTC(2026, 9, 1, 0, 0, 0);
+
+  assert.equal(
+    gamePointsAfterInactivity({
+      points: 1000,
+      lastGameActivityAt: base,
+      nowMs: base + (2 * day) + (23 * 60 * 60 * 1000),
+    }).pointsAfterDecay,
+    1000,
+  );
+
+  const dayFour = gamePointsAfterInactivity({
+    points: 1000,
+    lastGameActivityAt: base,
+    nowMs: base + (3 * day),
+  });
+  assert.equal(dayFour.decayDays, 1);
+  assert.equal(dayFour.pointsAfterDecay, 900);
+
+  const dayFive = gamePointsAfterInactivity({
+    points: 1000,
+    lastGameActivityAt: base,
+    nowMs: base + (4 * day),
+  });
+  assert.equal(dayFive.decayDays, 2);
+  assert.equal(dayFive.pointsAfterDecay, 810);
+});
+
+test("game activity applies lazy decay then awards wagered coins one-to-one", () => {
+  const day = 24 * 60 * 60 * 1000;
+  const base = Date.UTC(2026, 9, 1, 0, 0, 0);
+  const result = applyGameActivityPoints({
+    points: 1000,
+    lastGameActivityAt: { toMillis: () => base },
+    nowMs: base + (4 * day),
+    stakeCoins: 200,
+  });
+  assert.equal(result.pointsAfterDecay, 810);
+  assert.equal(result.stakePointsAwarded, 200);
+  assert.equal(result.pointsAfterActivity, 1010);
+});
+
+test("game activity without previous timestamp does not decay and keeps safe integers", () => {
+  const result = applyGameActivityPoints({
+    points: 500,
+    lastGameActivityAt: null,
+    nowMs: Date.UTC(2026, 9, 1, 0, 0, 0),
+    stakeCoins: 300,
+  });
+  assert.equal(result.decayDays, 0);
+  assert.equal(result.pointsAfterActivity, 800);
+
+  assert.equal(
+    applyGameActivityPoints({
+      points: Number.MAX_SAFE_INTEGER,
+      stakeCoins: 1,
+    }),
     null,
   );
 });
