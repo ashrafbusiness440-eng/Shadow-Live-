@@ -84,6 +84,7 @@ function actorCapabilities(actor = {}) {
 function canOpenLevelControl(actor = {}) {
   if (actor.role === "owner") return true;
   if (actor.adminEnabled !== true) return false;
+  if (actor.role !== "admin" && actor.role !== "super_admin") return false;
   const caps = actorCapabilities(actor);
   return (
     caps.has("manageUserLevels") ||
@@ -96,6 +97,7 @@ function canOpenLevelControl(actor = {}) {
 function canManageMetric(actor = {}, metric) {
   if (actor.role === "owner") return true;
   if (actor.adminEnabled !== true) return false;
+  if (actor.role !== "admin" && actor.role !== "super_admin") return false;
   const config = METRICS[metric];
   if (!config) return false;
   const caps = actorCapabilities(actor);
