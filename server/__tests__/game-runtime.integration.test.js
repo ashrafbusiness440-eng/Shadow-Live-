@@ -21,6 +21,10 @@ async function seedRuntime(){
     db.collection("system_config").doc("emergency_lock").set({
       enabled:false,economyLocked:false,gamesLocked:false,
     }),
+    db.collection("system_config").doc("user_levels").set({
+      gameInactivityGraceDays:3,
+      gameInactivityDecayBpsPerDay:1000,
+    }),
     db.collection("system_config").doc("game_runtime").set({
       enabled:true,
       targetRtpBps:8500,
@@ -130,9 +134,15 @@ test("collective game debits once and settles after disconnect",async()=>{
   assert.equal(first.code,"ok");
   assert.equal(first.status,"pending");
   assert.equal(first.totalStakeCoins,800);
+  assert.equal(first.gamePointsAwarded,800);
+  assert.equal(first.gamePointsDecayed,0);
+  assert.equal(first.gamePointsAfter,800);
 
   const afterDebit=await db.collection("users").doc(uid).get();
   assert.equal(afterDebit.data().coins,19200);
+  assert.equal(afterDebit.data().gamePoints,800);
+  assert.equal(afterDebit.data().lastGameActivityAtMs,nowMs);
+  assert.equal(afterDebit.data().gameInactivityDecayAppliedDays,0);
 
   const duplicate=await placeGameBet(db,uid,{
     gameId:"greedy_cat",
@@ -141,7 +151,9 @@ test("collective game debits once and settles after disconnect",async()=>{
     bets:[{choiceId:"tomato5",amountCoins:200}],
   },{nowMs,rngSecret});
   assert.equal(duplicate.code,"duplicate");
-  assert.equal((await db.collection("users").doc(uid).get()).data().coins,19200);
+  const afterDuplicate=(await db.collection("users").doc(uid).get()).data();
+  assert.equal(afterDuplicate.coins,19200);
+  assert.equal(afterDuplicate.gamePoints,800);
 
   const operationRef=db.collection("game_operations").doc(uid+"__"+key);
   const operation=(await operationRef.get()).data();
@@ -230,7 +242,9 @@ test("witch separate taps in one round aggregate to 21K on the same choice",asyn
   }
 
   assert.equal(new Set(operations.map(item=>item.roundId)).size,1);
-  assert.equal((await db.collection("users").doc(uid).get()).data().coins,79000);
+  const witchUser=(await db.collection("users").doc(uid).get()).data();
+  assert.equal(witchUser.coins,79000);
+  assert.equal(witchUser.gamePoints,21000);
 
   const state=await gameState(db,uid,{
     gameId:"witch",
@@ -494,6 +508,52 @@ test("finished greedy round exposes top winners and player summary",async()=>{
   );
 });
 
+test("returning player applies lazy compounded inactivity decay before wager",async()=>{
+  await seedRuntime();
+  const suffix=Date.now().toString()+"_game_decay";
+  const uid="decay_user_"+suffix;
+  const roomId="decay_room_"+suffix;
+  const key="decay_operation_"+suffix;
+  const day=24*60*60*1000;
+  await seedUserRoom(uid,roomId,5000);
+  await db.collection("users").doc(uid).set({
+    role:"user",
+    coins:5000,
+    gamePoints:100000,
+    lastGameActivityAtMs:nowMs-(4*day),
+    gameInactivityDecayAppliedDays:0,
+  },{merge:true});
+
+  const first=await placeGameBet(db,uid,{
+    gameId:"greedy_cat",
+    roomId,
+    idempotencyKey:key,
+    bets:[{choiceId:"tomato5",amountCoins:200}],
+  },{nowMs,rngSecret});
+
+  assert.equal(first.gamePointsDecayed,19000);
+  assert.equal(first.decayDaysAppliedBeforeWager,2);
+  assert.equal(first.gamePointsAwarded,200);
+  assert.equal(first.gamePointsAfter,81200);
+
+  const user=(await db.collection("users").doc(uid).get()).data();
+  assert.equal(user.gamePoints,81200);
+  assert.equal(user.lastGameActivityAtMs,nowMs);
+  assert.equal(user.gameInactivityDecayAppliedDays,0);
+
+  const duplicate=await placeGameBet(db,uid,{
+    gameId:"greedy_cat",
+    roomId,
+    idempotencyKey:key,
+    bets:[{choiceId:"tomato5",amountCoins:200}],
+  },{nowMs,rngSecret});
+  assert.equal(duplicate.code,"duplicate");
+  assert.equal(
+    (await db.collection("users").doc(uid).get()).data().gamePoints,
+    81200,
+  );
+});
+
 test("slot settles debit and payout atomically in one operation",async()=>{
   await seedRuntime();
   const suffix=Date.now().toString()+"_slot";
@@ -517,4 +577,7 @@ test("slot settles debit and payout atomically in one operation",async()=>{
   const operation=(await db.collection("game_operations").doc(uid+"__"+key).get()).data();
   const user=(await db.collection("users").doc(uid).get()).data();
   assert.equal(user.coins,5000-200+Number(operation.payoutCoins));
+  assert.equal(user.gamePoints,200);
+  assert.equal(operation.gamePointsAwarded,200);
+  assert.equal(operation.gamePointsAfter,200);
 });
