@@ -13,6 +13,7 @@ import '../../../utils/compact_number.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../wallet/screens/recharge_screen.dart';
 import '../../profile/screens/my_items_screen.dart';
+import '../../profile/screens/user_level_screen.dart';
 import '../../profile/services/reward_inventory_service.dart';
 import '../../room/widgets/cosmetic_effect_widgets.dart';
 import '../../agency/screens/agency_package_grant_page.dart';
@@ -786,6 +787,18 @@ class _ProfileScreenState extends State<ProfileScreen>
           Icons.inventory_2_rounded,
           'مقتنياتي',
           () => unawaited(_openMyItems()),
+        ),
+        const SizedBox(height: 10),
+        _action(
+          Icons.workspace_premium_rounded,
+          'المستوى',
+          () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const UserLevelScreen(),
+              ),
+            );
+          },
         ),
         const SizedBox(height: 10),
         _action(
