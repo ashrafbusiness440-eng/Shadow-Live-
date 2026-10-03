@@ -447,7 +447,33 @@ test("public profile accepts R2 media object ids",async()=>{
     bio:"",
     location:"",
     interests:[],
-    level:0,
+    vipLevel:0,
+    badges:[],
+    isOnline:true,
+    createdAt:new Date(),
+    updatedAt:new Date(),
+  }));
+});
+
+test("public profile rejects legacy generic level",async()=>{
+  const userDb=phoneUserDb();
+  await assertFails(setDoc(doc(userDb,"public_profiles",uid),{
+    uid,
+    displayName:"Legacy Level",
+    username:"",
+    publicId:"",
+    searchTokens:["legacy","level"],
+    profileImageUrl:"",
+    profileImageObjectId:"",
+    profileAvatarAsset:"",
+    coverImageUrl:"",
+    coverImageObjectId:"",
+    bio:"",
+    location:"",
+    moodEmoji:"",
+    moodText:"",
+    interests:[],
+    level:99,
     vipLevel:0,
     badges:[],
     isOnline:true,
