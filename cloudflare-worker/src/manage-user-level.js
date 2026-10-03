@@ -330,19 +330,10 @@ async function updateUserLevel(db, payload, body) {
       };
       const fieldPaths = [config.pointsField, "updatedAt"];
 
-      if (metric === "games") {
-        fieldData.lastGameActivityAt = updatedAt;
-        fieldData.lastGameActivityAtMs = updatedAt.getTime();
-        fieldData.gameInactivityDecayAppliedDays = 0;
-        afterUser.lastGameActivityAt = updatedAt;
-        afterUser.lastGameActivityAtMs = updatedAt.getTime();
-        afterUser.gameInactivityDecayAppliedDays = 0;
-        fieldPaths.push(
-          "lastGameActivityAt",
-          "lastGameActivityAtMs",
-          "gameInactivityDecayAppliedDays",
-        );
-      }
+      // Administrative corrections are not gameplay. For Games, preserve
+      // lastGameActivityAt / lastGameActivityAtMs and the already-applied
+      // inactivity-decay cursor so normal lazy decay continues from the
+      // corrected balance without resetting the three-day grace window.
 
       const afterSummary = userSummary(policy, targetUid, afterUser, updatedAt.getTime());
       const afterMetric = afterSummary[metric];
