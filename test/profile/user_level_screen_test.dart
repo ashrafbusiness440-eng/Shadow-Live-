@@ -84,7 +84,7 @@ void main() {
     expect(find.text('دعم اللعبة'), findsOneWidget);
     expect(find.text('شريط الدعم'), findsNothing);
   });
-  hiddenLevelStage07Tests();
+  hiddenLevelStage07Tests(summary);
 }
 
 
@@ -132,7 +132,7 @@ const hiddenPublicSummary = UserLevelSummary(
   ),
 );
 
-void hiddenLevelStage07Tests() {
+void hiddenLevelStage07Tests(UserLevelSummary baseSummary) {
   testWidgets('Stage 07 direct public hidden section never renders LV0/details',
       (tester) async {
     await tester.pumpWidget(
@@ -155,7 +155,7 @@ void hiddenLevelStage07Tests() {
     var savedWealth = false;
     var savedAttraction = false;
     var savedGames = false;
-    final own = summary.copyWithVisibility(
+    final own = baseSummary.copyWithVisibility(
       const UserLevelVisibility(
         hiddenLevelEntitled: true,
         isSelf: true,

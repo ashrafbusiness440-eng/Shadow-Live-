@@ -88,8 +88,6 @@ void main() {
     expect(high.progressBps, 10000);
     expect(low.progressBps, 0);
   });
-}
-
 
   test('hidden public level section parses without leaking a real level', () {
     final section = UserLevelSectionSummary.fromJson({
@@ -108,3 +106,4 @@ void main() {
     expect(section.level, 0);
     expect(section.points, 0);
   });
+}

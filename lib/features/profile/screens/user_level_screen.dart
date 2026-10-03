@@ -90,10 +90,13 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
     switch (metric) {
       case 'wealth':
         next = next.copyWith(hideWealthLevel: value);
+        break;
       case 'attraction':
         next = next.copyWith(hideAttractionLevel: value);
+        break;
       case 'games':
         next = next.copyWith(hideGameLevel: value);
+        break;
       default:
         return;
     }
