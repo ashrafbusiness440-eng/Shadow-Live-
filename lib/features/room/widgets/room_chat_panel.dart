@@ -8,6 +8,9 @@ import '../../../core/assets/shadow_asset_registry.dart';
 
 import '../services/room_chat_service.dart';
 import '../../voice/services/voice_room_session_controller.dart';
+import '../../profile/screens/user_level_screen.dart';
+import '../../profile/widgets/quick_profile_sheet.dart';
+import '../../profile/widgets/user_level_badges.dart';
 
 class RoomChatPanel extends StatefulWidget {
   const RoomChatPanel({
@@ -653,6 +656,25 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
 
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
+  Future<void> _openChatQuickProfile(RoomChatMessage message) async {
+    final uid = message.senderUid.trim();
+    if (uid.isEmpty) return;
+    await showQuickProfileSheet(context, userId: uid);
+  }
+
+  void _openChatLevel(RoomChatMessage message, int tabIndex) {
+    final uid = message.senderUid.trim();
+    if (uid.isEmpty) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => UserLevelScreen(
+          userId: uid,
+          initialTabIndex: tabIndex,
+        ),
+      ),
+    );
+  }
+
   Future<void> _reportMessage(RoomChatMessage message) async {
     if (message.id.isEmpty ||
         message.senderUid.isEmpty ||
@@ -748,6 +770,10 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
         'senderUid': message.senderUid,
         'displayName': message.displayName,
         'profileImageUrl': message.profileImageUrl,
+        'publicId': message.publicId,
+        'wealthLevel': message.wealthLevel,
+        'attractionLevel': message.attractionLevel,
+        'gameLevel': message.gameLevel,
         'text': message.text,
         'mentionUids': message.mentionUids,
         'replyTo': message.replyTo,
@@ -913,34 +939,79 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
       behavior: HitTestBehavior.opaque,
       onLongPress: () => _showMessageActions(message),
       child: Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Align(
-        alignment: AlignmentDirectional.centerStart,
-        child: RichText(
-          textDirection: TextDirection.rtl,
-          text: TextSpan(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              TextSpan(
-                text: message.displayName + ': ',
-                style: const TextStyle(
-                  color: Color(0xFFBFA5FF),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900,
+              InkWell(
+                onTap: () => _openChatQuickProfile(message),
+                customBorder: const CircleBorder(),
+                child: CircleAvatar(
+                  radius: 16,
+                  backgroundColor: const Color(0xFF25183F),
+                  backgroundImage: message.profileImageUrl.trim().isEmpty
+                      ? null
+                      : NetworkImage(message.profileImageUrl),
+                  child: message.profileImageUrl.trim().isEmpty
+                      ? const Icon(
+                          Icons.person_rounded,
+                          size: 17,
+                          color: Color(0xFFFFD54A),
+                        )
+                      : null,
                 ),
               ),
-              TextSpan(
-                text: message.text,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
+              const SizedBox(width: 8),
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    InkWell(
+                      onTap: () => _openChatQuickProfile(message),
+                      child: Text(
+                        message.displayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFFBFA5FF),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    if (message.wealthLevel > 0 ||
+                        message.attractionLevel > 0 ||
+                        message.gameLevel > 0) ...[
+                      const SizedBox(height: 4),
+                      UserLevelBadges.fromLevels(
+                        wealthLevel: message.wealthLevel,
+                        attractionLevel: message.attractionLevel,
+                        gameLevel: message.gameLevel,
+                        compact: true,
+                        micro: true,
+                        onTap: (tabIndex) =>
+                            _openChatLevel(message, tabIndex),
+                      ),
+                    ],
+                    const SizedBox(height: 3),
+                    Text(
+                      message.text,
+                      textDirection: TextDirection.rtl,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
         ),
       ),
-    ),
-  );
+    );
   }
 
   @override
