@@ -20,7 +20,7 @@ import {
   legacyPresenceFresh,
   realtimeUserPresentFromNamespace,
 } from "./room-presence-authority.js";
-import { safeAddUserLevelPoints } from "./user-level-policy.js";
+import { giftLevelPointAwards, safeAddUserLevelPoints } from "./user-level-policy.js";
 
 const clean = (value) => String(value ?? "").trim();
 const validKey = (value) => /^[A-Za-z0-9_-]{12,220}$/.test(clean(value));
@@ -452,15 +452,27 @@ export async function sendGift(db, uid, body, options = {}) {
 
     const senderData = sender.data || {};
     const receiverData = receiver.data || {};
-    const nextWealthPoints = safeAddUserLevelPoints(
-      senderData.wealthPoints,
-      totalCost,
-    );
-    const nextAttractionPoints = safeAddUserLevelPoints(
-      receiverData.attractionPoints,
-      totalCost,
-    );
-    if (nextWealthPoints === null || nextAttractionPoints === null) {
+    const levelPointAwards = giftLevelPointAwards({
+      nominalCoins: totalCost,
+      paidCoins: totalCost,
+    });
+    const nextWealthPoints = levelPointAwards
+      ? safeAddUserLevelPoints(
+          senderData.wealthPoints,
+          levelPointAwards.wealthPoints,
+        )
+      : null;
+    const nextAttractionPoints = levelPointAwards
+      ? safeAddUserLevelPoints(
+          receiverData.attractionPoints,
+          levelPointAwards.attractionPoints,
+        )
+      : null;
+    if (
+      !levelPointAwards ||
+      nextWealthPoints === null ||
+      nextAttractionPoints === null
+    ) {
       throw new ApiError("invalid_level_points", 409);
     }
     const before = Number(senderData.coins || 0);
@@ -951,8 +963,8 @@ export async function sendGift(db, uid, body, options = {}) {
         unitCoins,
         totalCost,
         assetKey,
-        wealthPointsAwarded: totalCost,
-        attractionPointsAwarded: totalCost,
+        wealthPointsAwarded: levelPointAwards.wealthPoints,
+        attractionPointsAwarded: levelPointAwards.attractionPoints,
         policyMode: "tiered_host_agency",
         revenueTierId: revenue.tierId,
         revenueTierName: revenue.tierName,
@@ -1034,8 +1046,8 @@ export async function sendGift(db, uid, body, options = {}) {
       totalCost,
       messageId,
       balance: after,
-      wealthPointsAwarded: totalCost,
-      attractionPointsAwarded: totalCost,
+      wealthPointsAwarded: levelPointAwards.wealthPoints,
+      attractionPointsAwarded: levelPointAwards.attractionPoints,
       revenueTierId: revenue.tierId,
       recipientShareCoins,
       agencyShareCoins,
