@@ -636,6 +636,36 @@ service cloud.firestore {
       allow create, delete: if false;
     }
 
+    // Relationships / CP are server-authoritative. Clients use the bounded
+    // Cloudflare relationship API; no direct scans, listeners, or writes.
+    match /relationship_requests/{requestId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /relationships/{relationshipId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /relationship_slots/{slotId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /relationship_pending/{pairId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /relationship_active_pairs/{pairId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /relationship_operations/{operationId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /relationship_audit_logs/{logId} {
+      allow read, create, update, delete: if false;
+    }
+
     match /rooms/{roomId} {
       allow read: if signedIn();
       allow create, update, delete: if false;
