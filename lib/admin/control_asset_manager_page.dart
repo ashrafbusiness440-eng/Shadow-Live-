@@ -452,7 +452,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
           'template_directory_mismatch' => 'المسار لا يطابق Template المختار.',
           'template_extension_mismatch' => 'صيغة الملف لا تطابق Template المختار.',
           'template_size_mismatch' => 'حجم الملف لا يطابق Template المختار.',
-          'published_asset_requires_publish' => 'هذا المفتاح منشور مسبقًا؛ الاستبدال يجب أن يتم عبر نشر مباشر حتى لا يتوقف الأصل الحالي.',
+          'r2_not_configured' => 'تخزين R2 الخاص بالمسودات غير متاح حاليًا.',
           _ => 'تعذر رفع الصورة: $code',
         });
       }
@@ -512,6 +512,10 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
         final code = '${body['code'] ?? 'http_${response.statusCode}'}';
         setState(() => _message = switch (code) {
               'asset_not_found' => 'المسودة غير موجودة في Registry.',
+              'asset_draft_not_found' => 'لا توجد مسودة جاهزة للنشر.',
+              'asset_draft_missing' => 'ملف المسودة غير موجود في R2.',
+              'asset_draft_invalid' => 'ملف المسودة غير صالح.',
+              'asset_draft_mismatch' => 'ملف المسودة لا يطابق النسخة المسجلة.',
               'recent_auth_required' =>
                 'يلزم تسجيل الدخول من جديد قبل نشر الأصول.',
               'forbidden' => 'النشر متاح لحساب Owner فقط.',
@@ -852,9 +856,8 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'ملاحظة: إذا كان نفس Asset Key منشورًا مسبقًا، '
-                  'لا يسمح النظام باستبداله كمسودة حتى لا يتوقف الأصل الحي؛ '
-                  'استخدم نشر مباشر بعد المعاينة.',
+                  'حفظ المسودة يستخدم R2 الخاص فقط ولا يعمل Commit أو Deploy. '
+                  'إذا كان الأصل منشورًا، تبقى النسخة الحية كما هي حتى تضغط «نشر».',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.white54, fontSize: 12),
                 ),
@@ -896,33 +899,54 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
         else
           ..._assets.map((a) {
             final published = a['published'] == true;
-            final channels = a['channels'] is List
-                ? (a['channels'] as List).map((e) => e.toString()).join(', ')
+            final draft = a['draft'] is Map
+                ? Map<String, dynamic>.from(a['draft'] as Map)
+                : <String, dynamic>{};
+            final hasDraft = a['hasDraft'] == true && draft.isNotEmpty;
+            final source = hasDraft ? draft : a;
+            final channels = source['channels'] is List
+                ? (source['channels'] as List)
+                    .map((e) => e.toString())
+                    .join(', ')
                 : '';
-            final type = '${a['assetType'] ?? 'legacy'}';
+            final type =
+                '${source['assetType'] ?? a['assetType'] ?? 'legacy'}';
+            final status = '${a['status'] ??
+                (published ? 'published' : (hasDraft ? 'draft' : 'unknown'))}';
             return Card(
               child: ListTile(
                 leading: Icon(
-                  published ? Icons.public_rounded : Icons.drafts_outlined,
-                  color:
-                      published ? Colors.greenAccent : Colors.orangeAccent,
+                  hasDraft
+                      ? Icons.edit_note_rounded
+                      : (published
+                          ? Icons.public_rounded
+                          : Icons.drafts_outlined),
+                  color: hasDraft
+                      ? Colors.orangeAccent
+                      : (published
+                          ? Colors.greenAccent
+                          : Colors.white54),
                 ),
                 title: Text('${a['assetKey'] ?? ''}'),
                 subtitle: Text(
-                  '${a['fullPath'] ?? ''}\n'
-                  '$type • ${a['status'] ?? (published ? 'published' : 'draft')}'
-                  ' • ${a['mode'] ?? ''}'
+                  '${source['fullPath'] ?? a['fullPath'] ?? ''}\n'
+                  '$type • $status • ${source['mode'] ?? a['mode'] ?? ''}'
+                  '${published && hasDraft ? '\nالنسخة الحية مستمرة + مسودة جديدة جاهزة' : ''}'
                   '${channels.isEmpty ? '' : '\n$channels'}',
                 ),
-                isThreeLine: channels.isNotEmpty,
-                trailing: published
-                    ? const Icon(Icons.verified_rounded,
-                        color: Colors.greenAccent)
-                    : IconButton(
+                isThreeLine: true,
+                trailing: hasDraft
+                    ? IconButton(
                         tooltip: 'نشر المسودة',
                         onPressed: _busy ? null : () => _publishAsset(a),
                         icon: const Icon(Icons.publish_outlined),
-                      ),
+                      )
+                    : (published
+                        ? const Icon(
+                            Icons.verified_rounded,
+                            color: Colors.greenAccent,
+                          )
+                        : null),
               ),
             );
           }),
@@ -934,7 +958,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
             title: Text('حماية Asset Studio'),
             subtitle: Text(
               'Owner-only + Recent Auth + Templates/Channels + Validation + '
-              'Draft/Publish + Idempotency + GitHub Commit + Firestore Registry + Audit Log. '
+              'R2 Drafts + Publish-only GitHub Commit + Idempotency + Firestore Registry + Audit Log. '
               'لا Polling ولا Reads على Room/Gift hot paths.',
             ),
           ),
