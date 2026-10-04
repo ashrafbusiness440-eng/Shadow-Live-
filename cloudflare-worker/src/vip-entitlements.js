@@ -31,7 +31,7 @@ export function vipEntitlementsFromUser(user = {}, nowMs = Date.now()) {
 }
 
 export function canOverrideVipRoomProtection(user = {}) {
-  return canOverrideVipRoomProtection(user);
+  return canInspectHiddenRoomPresence(user);
 }
 
 export function canInspectHiddenRoomPresence(user = {}) {
