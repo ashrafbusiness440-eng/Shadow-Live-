@@ -10,6 +10,7 @@ import {
   activeRoomGhostMode,
   canInspectHiddenRoomPresence,
   canOverrideVipRoomProtection,
+  canUseHiddenRoomEntry,
   canUseRoomGhostMode,
   vipEntitlementsFromUser,
 } from "./vip-entitlements.js";
@@ -2788,6 +2789,40 @@ async function setRoomGhostMode(db,uid,body){
   };
 }
 
+async function roomHiddenEntryState(db,uid){
+  const snap=await db.collection("users").doc(uid).get();
+  const data=snap.data()||{};
+  const canUse=canUseHiddenRoomEntry(data,Date.now());
+  return {
+    ok:true,
+    hiddenRoomEntry:activeHiddenRoomEntry(data,Date.now()),
+    canUseHiddenRoomEntry:canUse,
+    requiredVipLevel:7,
+  };
+}
+
+async function setRoomHiddenEntry(db,uid,body){
+  const enabled=body.enabled===true;
+  const userRef=db.collection("users").doc(uid);
+  const snap=await userRef.get();
+  if(!snap.exists)throw new ApiError("user_not_found",404);
+  const user=snap.data()||{};
+  if(enabled&&!canUseHiddenRoomEntry(user,Date.now())){
+    throw new ApiError("hidden_entry_requires_vip7",403);
+  }
+  await userRef.set({
+    roomHiddenEntry:enabled,
+    roomHiddenEntryUpdatedAt:FieldValue.serverTimestamp(),
+    updatedAt:FieldValue.serverTimestamp(),
+  },{merge:true});
+  return {
+    ok:true,
+    hiddenRoomEntry:enabled,
+    canUseHiddenRoomEntry:canUseHiddenRoomEntry(user,Date.now()),
+    requiredVipLevel:7,
+  };
+}
+
 async function refreshRoomPresenceSummary(db,roomId,{includeGhost=false}={}){
   const now=Date.now();
   const cutoff=now-90000;
@@ -3988,6 +4023,12 @@ export default async function handler(req,res){
     if(action==="setRoomGhostMode"){
       return out(res,200,await setRoomGhostMode(getFirestore(),decoded.uid,req.body||{}));
     }
+    if(action==="roomHiddenEntryState"){
+      return out(res,200,await roomHiddenEntryState(getFirestore(),decoded.uid));
+    }
+    if(action==="setRoomHiddenEntry"){
+      return out(res,200,await setRoomHiddenEntry(getFirestore(),decoded.uid,req.body||{}));
+    }
     if(action==="roomPresenceAnnounceJoin"){
       const roomId=clean(req.body?.roomId);
       return out(res,200,await roomPresenceAnnounceJoin(getFirestore(),decoded.uid,roomId));
@@ -4136,4 +4177,11 @@ export default async function handler(req,res){
   }
 }
 
-export { kickRoomUser, roomGhostState, setRoomGhostMode, roomPresenceState };
+export {
+  kickRoomUser,
+  roomGhostState,
+  setRoomGhostMode,
+  roomHiddenEntryState,
+  setRoomHiddenEntry,
+  roomPresenceState,
+};
