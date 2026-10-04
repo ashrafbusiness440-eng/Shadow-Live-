@@ -289,3 +289,17 @@ test("Owner and delegated Safety/room-control roles retain hidden presence visib
     false,
   );
 });
+
+
+test("VIP6 unlocks kick protection while VIP5 does not", () => {
+  const vip5 = {
+    effectiveVipLevel: 5,
+    vipExpiresAt: new Date(base + day),
+  };
+  const vip6 = {
+    effectiveVipLevel: 6,
+    vipExpiresAt: new Date(base + day),
+  };
+  assert.equal(vipEntitlementsFromUser(vip5, base).kickProtection, false);
+  assert.equal(vipEntitlementsFromUser(vip6, base).kickProtection, true);
+});
