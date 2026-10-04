@@ -5,6 +5,7 @@ import { getFirestore } from "firebase-admin/firestore";
 
 import {
   buyVipGrowth,
+  setHideRankingLists,
   vipSummary,
 } from "../../cloudflare-worker/src/vip-actions.js";
 import { cloudflareFirestoreAdapter } from "./helpers/cloudflare-firestore-adapter.js";
@@ -162,4 +163,75 @@ test("VIP Growth purchase rejects insufficient coins", async () => {
 
   const user = await db.collection("users").doc(uid).get();
   assert.equal(user.data().coins, 5);
+});
+
+
+test("VIP7 Hide Lists preference is server-authoritative and expiry-aware", async () => {
+  const suffix = Date.now().toString() + "_hide_lists";
+  const vip6 = `hide_lists_vip6_${suffix}`;
+  const vip7 = `hide_lists_vip7_${suffix}`;
+  const expired = `hide_lists_expired_${suffix}`;
+  const nowMs = Date.UTC(2026, 9, 4, 12, 0, 0);
+  const future = new Date(nowMs + 24 * 60 * 60 * 1000);
+  const past = new Date(nowMs - 1000);
+
+  await Promise.all([
+    db.collection("users").doc(vip6).set({
+      role: "user",
+      effectiveVipLevel: 6,
+      vipExpiresAt: future,
+      hideRankingLists: false,
+    }),
+    db.collection("users").doc(vip7).set({
+      role: "user",
+      effectiveVipLevel: 7,
+      vipExpiresAt: future,
+      hideRankingLists: false,
+    }),
+    db.collection("users").doc(expired).set({
+      role: "user",
+      effectiveVipLevel: 7,
+      vipExpiresAt: past,
+      hideRankingLists: true,
+    }),
+  ]);
+
+  await assert.rejects(
+    setHideRankingLists(cloudflareDb, vip6, { enabled: true }, nowMs),
+    /hide_lists_requires_vip7/,
+  );
+
+  const enabled = await setHideRankingLists(
+    cloudflareDb,
+    vip7,
+    { enabled: true },
+    nowMs,
+  );
+  assert.equal(enabled.hideRankingLists, true);
+  assert.equal(enabled.canHideRankingLists, true);
+  assert.equal(enabled.requiredVipLevel, 7);
+
+  const summary = await vipSummary(cloudflareDb, vip7, nowMs);
+  assert.equal(summary.hideRankingLists, true);
+  assert.equal(summary.canHideRankingLists, true);
+
+  const expiredSummary = await vipSummary(cloudflareDb, expired, nowMs);
+  assert.equal(expiredSummary.hideRankingLists, false);
+  assert.equal(expiredSummary.canHideRankingLists, false);
+  await assert.rejects(
+    setHideRankingLists(cloudflareDb, expired, { enabled: true }, nowMs),
+    /hide_lists_requires_vip7/,
+  );
+
+  const disabled = await setHideRankingLists(
+    cloudflareDb,
+    vip6,
+    { enabled: false },
+    nowMs,
+  );
+  assert.equal(disabled.hideRankingLists, false);
+
+  const stored = await db.collection("users").doc(vip7).get();
+  assert.equal(stored.data().hideRankingLists, true);
+  assert.ok(stored.data().rankingVisibilityUpdatedAt);
 });
