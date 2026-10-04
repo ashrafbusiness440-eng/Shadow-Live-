@@ -219,7 +219,8 @@ function safeDirectoryWithinRoot(value, root) {
   ) {
     return false;
   }
-  return directory === normalizedRoot || directory.startsWith(`${normalizedRoot}/`);
+  return directory === normalizedRoot ||
+    directory.startsWith(`${normalizedRoot}/`);
 }
 
 export function validateAssetStudioMetadata({
