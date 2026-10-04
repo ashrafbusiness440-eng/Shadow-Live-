@@ -73,7 +73,12 @@ abstract final class ControlAssetPolicy {
   }
 
   static bool assetKeyAllowed(String value) =>
-      RegExp(r'^[a-z0-9][a-z0-9._-]{2,119}$').hasMatch(value.trim());
+      RegExp(r'^[a-z0-9][A-Za-z0-9._-]{2,119}
+
+  static String fullPath(String directory, String fileName) =>
+      '${normalizeDirectory(directory)}/${fileName.trim()}';
+}
+).hasMatch(value.trim());
 
   static String fullPath(String directory, String fileName) =>
       '${normalizeDirectory(directory)}/${fileName.trim()}';
