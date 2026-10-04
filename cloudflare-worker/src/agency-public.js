@@ -8,6 +8,10 @@ import {
   normalizeAgencyMonthKey,
 } from "./agency-policy.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
+import {
+  activeHideRankingLists,
+  canInspectHiddenRankingLists,
+} from "./vip-entitlements.js";
 
 const clean = (value) => String(value ?? "").trim();
 const PUBLIC_HOST_PAGE_DEFAULT = 12;
@@ -423,6 +427,7 @@ export async function loadPublicAgencyRanking(
   db,
   body = {},
   now = new Date(),
+  viewerUid = "",
 ) {
   const agencyId = clean(body.agencyId);
   if (!validAgencyId(agencyId)) {
@@ -480,20 +485,46 @@ export async function loadPublicAgencyRanking(
     };
   });
 
-  const userSnaps = await readPublicPeople(
+  const cleanViewerUid = clean(viewerUid);
+  const viewerIndex = cleanViewerUid
+    ? normalizedRows.findIndex((row) => row.hostUid === cleanViewerUid)
+    : -1;
+  const peopleRows =
+    cleanViewerUid && viewerIndex < 0
+      ? [...normalizedRows, { hostUid: cleanViewerUid }]
+      : normalizedRows;
+  const peopleSnaps = await readPublicPeople(
     db,
-    normalizedRows,
+    peopleRows,
     (row) => row.hostUid,
   );
+  const userSnaps = peopleSnaps.slice(0, normalizedRows.length);
+  const viewerSnap =
+    viewerIndex >= 0
+      ? userSnaps[viewerIndex]
+      : cleanViewerUid
+        ? peopleSnaps[normalizedRows.length]
+        : null;
+  const viewerUser = viewerSnap?.exists ? viewerSnap.data || {} : {};
+  const canInspectHidden = canInspectHiddenRankingLists(viewerUser);
+
+  const visibleRows = normalizedRows
+    .map((row, index) => ({ row, userSnap: userSnaps[index] }))
+    .filter(({ userSnap }) => {
+      if (canInspectHidden) return true;
+      if (!userSnap?.exists) return false;
+      const user = userSnap.data || {};
+      return !activeHideRankingLists(user, now.getTime());
+    });
 
   return {
     ok: true,
     month,
     currentMonth,
-    top10: normalizedRows.map((row, index) => ({
+    top10: visibleRows.map(({ row, userSnap }, index) => ({
       rank: index + 1,
       supportCoins: row.supportCoins,
-      ...publicPersonSummary(row.hostUid, userSnaps[index]),
+      ...publicPersonSummary(row.hostUid, userSnap),
     })),
   };
 }
@@ -546,7 +577,7 @@ export async function agencyPublic(request, env) {
   }
 
   try {
-    await verifyFirebaseIdToken(request, env);
+    const decoded = await verifyFirebaseIdToken(request, env);
     const body = await readJson(request);
     const action = clean(body.action) || "page";
     const db = firestoreClient(env);
@@ -556,7 +587,12 @@ export async function agencyPublic(request, env) {
       return json(
         request,
         env,
-        await loadPublicAgencyRanking(db, body),
+        await loadPublicAgencyRanking(
+          db,
+          body,
+          new Date(),
+          clean(decoded?.uid || decoded?.sub),
+        ),
       );
     }
     if (action === "archive") {

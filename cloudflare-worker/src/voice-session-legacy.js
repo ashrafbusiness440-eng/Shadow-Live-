@@ -7,8 +7,10 @@ import {loadUserLevelPolicy} from "./user-level-policy.js";
 import {summarizeUserLevelData} from "./user-level-summary.js";
 import {publicLevelMetadata} from "./user-level-visibility.js";
 import {
+  activeHideRankingLists,
   activeHiddenRoomEntry,
   activeRoomGhostMode,
+  canInspectHiddenRankingLists,
   canInspectHiddenRoomPresence,
   canOverrideVipRoomProtection,
   canUseHiddenRoomEntry,
@@ -3432,20 +3434,63 @@ function utcSupportPeriods(date=new Date()){
   };
 }
 
-async function enrichSupporterPublicMetadata(db,supporters){
+async function supporterRankingUserSnapshots(db,list,viewerUid,maxUsers){
+  const ids=[];
+  const seen=new Set();
+  for(const item of list.slice(0,maxUsers)){
+    const id=clean(item?.uid);
+    if(id&&!seen.has(id)){seen.add(id);ids.push(id);}
+  }
+  const viewer=clean(viewerUid);
+  if(viewer&&!seen.has(viewer)){seen.add(viewer);ids.push(viewer);}
+  if(!ids.length)return new Map();
+  const refs=ids.map(id=>db.collection("users").doc(id));
+  const snaps=await db.getAll(...refs);
+  const byUid=new Map();
+  for(const snap of snaps){
+    if(snap?.exists)byUid.set(clean(snap.id),snap.data()||{});
+  }
+  return byUid;
+}
+
+function filterHiddenSupporters(list,byUid,viewerUid,nowMs=Date.now()){
+  const viewer=byUid.get(clean(viewerUid))||{};
+  const canInspect=canInspectHiddenRankingLists(viewer);
+  return list
+    .filter(item=>{
+      if(canInspect)return true;
+      const userId=clean(item.uid);
+      if(!byUid.has(userId))return false;
+      return !activeHideRankingLists(byUid.get(userId)||{},nowMs);
+    })
+    .map((item,index)=>({...item,rank:index+1,totalSupport:item.dailySupport}));
+}
+
+async function filterSupporterRankingVisibility(db,supporters,viewerUid){
+  const list=Array.isArray(supporters)?supporters.slice(0,3):[];
+  if(!list.length)return list;
+  try{
+    const byUid=await supporterRankingUserSnapshots(db,list,viewerUid,3);
+    return filterHiddenSupporters(list,byUid,viewerUid);
+  }catch(_){
+    // Privacy fails closed: never expose a possibly hidden supporter.
+    return [];
+  }
+}
+
+async function enrichSupporterPublicMetadata(db,supporters,viewerUid){
   const list=Array.isArray(supporters)?supporters.slice(0,50):[];
   if(!list.length)return list;
   try{
-    const refs=list.map(item=>db.collection("users").doc(clean(item.uid)));
-    const [policy,snaps]=await Promise.all([
+    const [policy,byUidData]=await Promise.all([
       loadUserLevelPolicy(db),
-      db.getAll(...refs),
+      supporterRankingUserSnapshots(db,list,viewerUid,50),
     ]);
+    const visible=filterHiddenSupporters(list,byUidData,viewerUid);
     const byUid=new Map();
-    for(const snap of snaps){
-      if(!snap?.exists)continue;
-      const data=snap.data()||{};
-      const userId=clean(snap.id);
+    for(const item of visible){
+      const userId=clean(item.uid);
+      const data=byUidData.get(userId)||{};
       let levels={wealthLevel:0,attractionLevel:0,gameLevel:0};
       try{
         const summary=summarizeUserLevelData(
@@ -3467,12 +3512,12 @@ async function enrichSupporterPublicMetadata(db,supporters){
           :[];
       byUid.set(userId,{
         publicId:clean(data.publicId),
-        vipLevel:Math.max(0,Math.min(99,Number(data.vipLevel??data.vip?.level??0)||0)),
+        vipLevel:vipEntitlementsFromUser(data,Date.now()).level,
         badges:rawBadges.map(clean).filter(Boolean).slice(0,12),
         ...levels,
       });
     }
-    return list.map(item=>({
+    return visible.map(item=>({
       ...item,
       ...(byUid.get(clean(item.uid))||{
         publicId:"",
@@ -3484,15 +3529,8 @@ async function enrichSupporterPublicMetadata(db,supporters){
       }),
     }));
   }catch(_){
-    return list.map(item=>({
-      ...item,
-      publicId:"",
-      vipLevel:0,
-      badges:[],
-      wealthLevel:0,
-      attractionLevel:0,
-      gameLevel:0,
-    }));
+    // Privacy fails closed: do not leak supporter visibility on lookup errors.
+    return [];
   }
 }
 
@@ -3548,7 +3586,9 @@ async function roomInsights(db,uid,body={}){
     .map((item,index)=>({...item,rank:index+1,totalSupport:item.dailySupport}));
 
   if(includeSupporters){
-    supporters=await enrichSupporterPublicMetadata(db,supporters);
+    supporters=await enrichSupporterPublicMetadata(db,supporters,uid);
+  }else{
+    supporters=await filterSupporterRankingVisibility(db,supporters,uid);
   }
 
   let ranking=[];
@@ -4184,5 +4224,6 @@ export {
   setRoomGhostMode,
   roomHiddenEntryState,
   setRoomHiddenEntry,
+  roomInsights,
   roomPresenceState,
 };

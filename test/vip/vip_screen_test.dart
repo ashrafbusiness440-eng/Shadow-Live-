@@ -4,6 +4,39 @@ import 'package:voice_chat_room/features/vip/screens/vip_screen.dart';
 import 'package:voice_chat_room/features/vip/services/vip_service.dart';
 
 void main() {
+  test('VIP summary parses Hide Lists entitlement and preference', () {
+    final parsed = VipSummaryData.fromJson({
+      'effectiveVipLevel': 7,
+      'effectiveVipSource': 'progression',
+      'earnedVipLevel': 7,
+      'adminGrantVipLevel': 0,
+      'growthPoints': 1,
+      'maintenancePoints': 0,
+      'maintenanceRequired': 1,
+      'currentThreshold': 1,
+      'remainingToNext': 1,
+      'maxGrowthPoints': 1,
+      'earnedVipExpiresAtMs': 1,
+      'adminGrantExpiresAtMs': 0,
+      'coins': 0,
+      'purchaseGrowthPerCoin': 3,
+      'paidRechargeGrowthPerCoin': 1,
+      'canHideRankingLists': true,
+      'hideRankingLists': true,
+    });
+    expect(parsed.canHideRankingLists, isTrue);
+    expect(parsed.hideRankingLists, isTrue);
+
+    final state = VipHideListsState.fromJson({
+      'hideRankingLists': true,
+      'canHideRankingLists': true,
+      'requiredVipLevel': 7,
+    });
+    expect(state.hideRankingLists, isTrue);
+    expect(state.canHideRankingLists, isTrue);
+    expect(state.requiredVipLevel, 7);
+  });
+
   VipSummaryData summary() => const VipSummaryData(
         effectiveVipLevel: 1,
         effectiveVipSource: 'progression',

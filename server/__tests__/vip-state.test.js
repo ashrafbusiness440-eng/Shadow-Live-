@@ -12,8 +12,10 @@ import {
   vipPublicProfilePatch,
 } from "../../cloudflare-worker/src/vip-runtime.js";
 import {
+  activeHideRankingLists,
   activeHiddenRoomEntry,
   activeRoomGhostMode,
+  canInspectHiddenRankingLists,
   canInspectHiddenRoomPresence,
   canOverrideVipRoomProtection,
   canUseRoomGhostMode,
@@ -331,4 +333,55 @@ test("VIP6 unlocks kick protection while VIP5 does not", () => {
   };
   assert.equal(vipEntitlementsFromUser(vip5, base).kickProtection, false);
   assert.equal(vipEntitlementsFromUser(vip6, base).kickProtection, true);
+});
+
+
+test("VIP7 Hide Lists is independent, expiry-aware, and keeps platform visibility", () => {
+  const vip6 = {
+    effectiveVipLevel: 6,
+    vipExpiresAt: new Date(base + day),
+    hideRankingLists: true,
+  };
+  const vip7 = {
+    effectiveVipLevel: 7,
+    vipExpiresAt: new Date(base + day),
+    hideRankingLists: true,
+  };
+  const expiredVip7 = {
+    effectiveVipLevel: 7,
+    vipExpiresAt: new Date(base - 1),
+    hideRankingLists: true,
+  };
+
+  assert.equal(vipEntitlementsFromUser(vip6, base).hideRankingLists, false);
+  assert.equal(vipEntitlementsFromUser(vip7, base).hideRankingLists, true);
+  assert.equal(activeHideRankingLists(vip6, base), false);
+  assert.equal(activeHideRankingLists(vip7, base), true);
+  assert.equal(activeHideRankingLists(expiredVip7, base), false);
+
+  assert.equal(canInspectHiddenRankingLists({ role: "owner" }), true);
+  assert.equal(
+    canInspectHiddenRankingLists({
+      role: "admin",
+      adminEnabled: true,
+      capabilities: ["reviewReports"],
+    }),
+    true,
+  );
+  assert.equal(
+    canInspectHiddenRankingLists({
+      role: "admin",
+      adminEnabled: true,
+      capabilities: ["manageUserLevels"],
+    }),
+    true,
+  );
+  assert.equal(
+    canInspectHiddenRankingLists({
+      role: "user",
+      adminEnabled: false,
+      capabilities: ["manageUserLevels"],
+    }),
+    false,
+  );
 });

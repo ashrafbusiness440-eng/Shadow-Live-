@@ -20,6 +20,8 @@ class VipSummaryData {
     required this.coins,
     required this.purchaseGrowthPerCoin,
     required this.paidRechargeGrowthPerCoin,
+    this.canHideRankingLists = false,
+    this.hideRankingLists = false,
   });
 
   final int effectiveVipLevel;
@@ -37,6 +39,8 @@ class VipSummaryData {
   final int coins;
   final int purchaseGrowthPerCoin;
   final int paidRechargeGrowthPerCoin;
+  final bool canHideRankingLists;
+  final bool hideRankingLists;
 
   factory VipSummaryData.fromJson(Map<String, dynamic> json) {
     int value(String key) {
@@ -62,8 +66,29 @@ class VipSummaryData {
       coins: value('coins'),
       purchaseGrowthPerCoin: value('purchaseGrowthPerCoin'),
       paidRechargeGrowthPerCoin: value('paidRechargeGrowthPerCoin'),
+      canHideRankingLists: json['canHideRankingLists'] == true,
+      hideRankingLists: json['hideRankingLists'] == true,
     );
   }
+}
+
+class VipHideListsState {
+  const VipHideListsState({
+    required this.hideRankingLists,
+    required this.canHideRankingLists,
+    required this.requiredVipLevel,
+  });
+
+  final bool hideRankingLists;
+  final bool canHideRankingLists;
+  final int requiredVipLevel;
+
+  factory VipHideListsState.fromJson(Map<String, dynamic> json) =>
+      VipHideListsState(
+        hideRankingLists: json['hideRankingLists'] == true,
+        canHideRankingLists: json['canHideRankingLists'] == true,
+        requiredVipLevel: (json['requiredVipLevel'] as num?)?.toInt() ?? 7,
+      );
 }
 
 class VipService {
@@ -129,6 +154,15 @@ class VipService {
     final vip = body['vip'];
     if (vip is! Map) throw const FormatException('invalid_vip_summary');
     return VipSummaryData.fromJson(Map<String, dynamic>.from(vip));
+  }
+
+
+  Future<VipHideListsState> setHideRankingLists(bool enabled) async {
+    final body = await _post({
+      'action': 'setHideRankingLists',
+      'enabled': enabled,
+    });
+    return VipHideListsState.fromJson(body);
   }
 
   void close() {
