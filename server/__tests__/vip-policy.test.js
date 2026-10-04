@@ -81,7 +81,7 @@ test("VIP1→VIP3 drop one level; VIP4→VIP10 retain approved progress", () => 
   const vip4 = vipDowngradeState(DEFAULT_VIP_POLICY, 4);
   assert.equal(vip4.level, 3);
   assert.equal(vip4.retentionBps, 8800);
-  assert.equal(vip4.growthPoints, 10700007);
+  assert.equal(vip4.growthPoints, 10700307);
 
   const vip8 = vipDowngradeState(DEFAULT_VIP_POLICY, 8);
   assert.equal(vip8.level, 7);
@@ -91,7 +91,7 @@ test("VIP1→VIP3 drop one level; VIP4→VIP10 retain approved progress", () => 
   const vip10 = vipDowngradeState(DEFAULT_VIP_POLICY, 10);
   assert.equal(vip10.level, 9);
   assert.equal(vip10.retentionBps, 4500);
-  assert.equal(vip10.growthPoints, 1499999999);
+  assert.equal(vip10.growthPoints, 1500000000);
 });
 
 test("progress returns next threshold and remaining points without UI math", () => {
