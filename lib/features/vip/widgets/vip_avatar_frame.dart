@@ -19,7 +19,7 @@ class VipAvatarFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final level = vipLevel.clamp(0, 10);
+    final level = vipLevel.clamp(0, 10).toInt();
     if (level <= 0) return child;
 
     final frameSize = avatarDiameter * 1.22;
