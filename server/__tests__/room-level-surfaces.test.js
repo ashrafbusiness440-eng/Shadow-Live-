@@ -31,23 +31,53 @@ test("room chat embeds level metadata without per-message Firestore reads", () =
   assert.equal(feed.includes("micro: true"), true);
 });
 
-test("full supporter list uses one bounded batch enrichment and top3 stays image-only", () => {
+test("supporter privacy uses bounded batch reads and keeps top3 image-only", () => {
   const voice = source("cloudflare-worker/src/voice-session-legacy.js");
   const main = source("lib/main.dart");
 
-  const enrichStart = voice.indexOf("async function enrichSupporterPublicMetadata");
+  const snapshotStart = voice.indexOf(
+    "async function supporterRankingUserSnapshots",
+  );
+  const filterStart = voice.indexOf(
+    "async function filterSupporterRankingVisibility",
+    snapshotStart,
+  );
+  const enrichStart = voice.indexOf(
+    "async function enrichSupporterPublicMetadata",
+    filterStart,
+  );
   const insightsStart = voice.indexOf("async function roomInsights", enrichStart);
+
+  const snapshots = voice.slice(snapshotStart, filterStart);
+  const filter = voice.slice(filterStart, enrichStart);
   const enrich = voice.slice(enrichStart, insightsStart);
-  assert.notEqual(enrichStart, -1);
-  assert.equal(enrich.includes("supporters.slice(0,50)"), true);
-  assert.equal(enrich.includes("db.getAll(...refs)"), true);
-  assert.equal(enrich.includes("loadUserLevelPolicy(db)"), true);
+  assert.notEqual(snapshotStart, -1);
+  assert.equal(snapshots.includes("list.slice(0,maxUsers)"), true);
+  assert.equal(snapshots.includes("db.getAll(...refs)"), true);
+  assert.equal(snapshots.includes(".get()"), false);
+
+  assert.equal(enrich.includes("publicLevelMetadata"), true);
+  assert.equal(
+    enrich.includes("supporterRankingUserSnapshots(db,list,viewerUid,50)"),
+    true,
+  );
+  assert.equal(enrich.includes("filterHiddenSupporters"), true);
+  assert.equal(filter.includes("supporterRankingUserSnapshots(db,list,viewerUid,3)"), true);
+  assert.equal(filter.includes("return [];"), true);
 
   const roomStart = insightsStart;
   const roomEnd = voice.indexOf("\nasync function ", roomStart + 20);
   const roomBlock = voice.slice(roomStart, roomEnd);
   assert.equal(
-    roomBlock.includes("if(includeSupporters){\n    supporters=await enrichSupporterPublicMetadata"),
+    roomBlock.includes(
+      "supporters=await enrichSupporterPublicMetadata(db,supporters,uid)",
+    ),
+    true,
+  );
+  assert.equal(
+    roomBlock.includes(
+      "supporters=await filterSupporterRankingVisibility(db,supporters,uid)",
+    ),
     true,
   );
 
