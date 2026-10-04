@@ -587,7 +587,12 @@ export async function agencyPublic(request, env) {
       return json(
         request,
         env,
-        await loadPublicAgencyRanking(db, body, new Date(), decoded.uid),
+        await loadPublicAgencyRanking(
+          db,
+          body,
+          new Date(),
+          clean(decoded?.uid || decoded?.sub),
+        ),
       );
     }
     if (action === "archive") {
