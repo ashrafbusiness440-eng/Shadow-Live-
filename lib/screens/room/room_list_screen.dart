@@ -5,36 +5,8 @@ import 'package:flutter/material.dart';
 import '../../features/home/screens/discovery_search_screen.dart';
 import '../../features/home/services/discovery_service.dart';
 import '../../features/room/services/room_action_service.dart';
+import '../../features/room/services/room_image_source.dart';
 import '../../services/navigation_service.dart';
-
-
-String roomListImageUrl(Map<String, dynamic> room) {
-  final roomType = (room['roomType'] ?? room['type'] ?? '')
-      .toString()
-      .trim()
-      .toLowerCase();
-
-  // Agency identity, agency owner identity, and agency room identity are
-  // intentionally separate. Agency rooms may only use their dedicated
-  // Room Image fields; never fall back to agency/profile/legacy cover fields.
-  final candidates = roomType == 'agency'
-      ? <dynamic>[
-          room['agencyRoomImageUrl'],
-          room['roomImageUrl'],
-        ]
-      : <dynamic>[
-          room['roomImageUrl'],
-          room['coverImageUrl'],
-          room['imageUrl'],
-          room['photoUrl'],
-        ];
-
-  for (final candidate in candidates) {
-    final value = (candidate ?? '').toString().trim();
-    if (value.isNotEmpty) return value;
-  }
-  return '';
-}
 
 class RoomListScreen extends StatefulWidget {
   const RoomListScreen({super.key});
@@ -582,7 +554,7 @@ class _RoomTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final roomImageUrl = roomListImageUrl(room.data);
+    final roomImageUrl = roomSurfaceImageUrl(room.data);
     final description = (room.data['description'] ?? '').toString().trim();
 
     return InkWell(
