@@ -156,7 +156,14 @@ service cloud.firestore {
         'gameInactivityDecayAppliedDays',
         'level',
         'vipLevel',
+        'earnedVipLevel',
         'effectiveVipLevel',
+        'adminGrantVipLevel',
+        'vipGrowthPoints',
+        'vipMaintenancePoints',
+        'vipExpiresAt',
+        'vipSource',
+        'vipUpdatedAt',
         'hideWealthLevel',
         'hideAttractionLevel',
         'hideGameLevel',
@@ -235,7 +242,14 @@ service cloud.firestore {
           || request.resource.data.gameInactivityDecayAppliedDays == 0)
         && (!('level' in request.resource.data) || request.resource.data.level == 0)
         && (!('vipLevel' in request.resource.data) || request.resource.data.vipLevel == 0)
+        && !('earnedVipLevel' in request.resource.data)
         && !('effectiveVipLevel' in request.resource.data)
+        && !('adminGrantVipLevel' in request.resource.data)
+        && !('vipGrowthPoints' in request.resource.data)
+        && !('vipMaintenancePoints' in request.resource.data)
+        && !('vipExpiresAt' in request.resource.data)
+        && !('vipSource' in request.resource.data)
+        && !('vipUpdatedAt' in request.resource.data)
         && !('hideWealthLevel' in request.resource.data)
         && !('hideAttractionLevel' in request.resource.data)
         && !('hideGameLevel' in request.resource.data)
