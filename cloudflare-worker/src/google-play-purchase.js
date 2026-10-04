@@ -8,7 +8,11 @@ import {
   loadVipPolicy,
 } from "./vip-policy.js";
 import { applyVipGrowth, materializeVipState } from "./vip-state.js";
-import { vipStateFromUser, vipUserPatch } from "./vip-runtime.js";
+import {
+  vipPublicProfilePatch,
+  vipStateFromUser,
+  vipUserPatch,
+} from "./vip-runtime.js";
 
 const PLAY_SCOPE = "https://www.googleapis.com/auth/androidpublisher";
 
@@ -150,6 +154,20 @@ async function markConsumeState(db, hash, fields) {
         return;
       }
       await db.commit(transaction, [
+        ...(publicProfileSnap.exists
+          ? [
+              db.writeUpdate(
+                `public_profiles/${uid}`,
+                vipPublicProfilePatch(vipAfter, now),
+                [
+                  "vipLevel",
+                  "effectiveVipLevel",
+                  "vipExpiresAt",
+                  "updatedAt",
+                ],
+              ),
+            ]
+          : []),
         db.writeUpdate(
           `google_play_purchases/${hash}`,
           fields,
@@ -180,12 +198,14 @@ export async function creditPurchase(
   for (let attempt = 0; attempt < 3; attempt++) {
     const transaction = await db.beginTransaction();
     try {
-      const [userSnap, purchaseSnap, lockSnap, vipPolicy] = await Promise.all([
-        db.get(`users/${uid}`, transaction),
-        db.get(`google_play_purchases/${hash}`, transaction),
-        db.get("system_config/emergency_lock", transaction),
-        loadVipPolicy(db, { transaction, useCache: false }),
-      ]);
+      const [userSnap, publicProfileSnap, purchaseSnap, lockSnap, vipPolicy] =
+        await Promise.all([
+          db.get(`users/${uid}`, transaction),
+          db.get(`public_profiles/${uid}`, transaction),
+          db.get(`google_play_purchases/${hash}`, transaction),
+          db.get("system_config/emergency_lock", transaction),
+          loadVipPolicy(db, { transaction, useCache: false }),
+        ]);
 
       if (!userSnap.exists) throw new ApiError("user_not_found", 404);
 
