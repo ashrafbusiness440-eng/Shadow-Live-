@@ -56,6 +56,11 @@ async function seedRoom(roomId) {
       supportCoins: 5000,
       giftCount: 5,
     }),
+    supportUsers.doc("hide_lists_missing").set({
+      displayName: "Missing User",
+      supportCoins: 4000,
+      giftCount: 4,
+    }),
   ]);
 }
 
@@ -131,10 +136,15 @@ test("VIP7 Hide Lists removes public supporters but preserves Owner visibility",
   });
   assert.deepEqual(
     ownerFull.supporters.map((item) => item.uid),
-    ["hide_lists_hidden", "hide_lists_visible", "hide_lists_expired"],
+    [
+      "hide_lists_hidden",
+      "hide_lists_visible",
+      "hide_lists_expired",
+      "hide_lists_missing",
+    ],
   );
   assert.deepEqual(
     ownerFull.supporters.map((item) => item.rank),
-    [1, 2, 3],
+    [1, 2, 3, 4],
   );
 });
