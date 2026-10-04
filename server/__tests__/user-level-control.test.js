@@ -501,3 +501,83 @@ test("06-C Set Level rejects LV0; zero points remain a Set Points operation", as
   assert.equal(zeroPoints.code, "ok");
   assert.equal(zeroPoints.newPoints, 0);
 });
+
+
+test("09 regression: user level corrections never mutate Room Level or VIP state", async () => {
+  const actorUid = "owner_stage09_independence";
+  const targetUid = "target_stage09_independence";
+  const db = new FakeDb({
+    ["users/" + actorUid]: user({ role: "owner" }),
+    ["users/" + targetUid]: user({
+      wealthPoints: 10000,
+      attractionPoints: 25000,
+      gamePoints: 1000000,
+      roomLevel: 6,
+      roomLevelId: "room_level_6",
+      vipLevel: 8,
+      effectiveVipLevel: 8,
+      vip: { level: 8 },
+    }),
+  });
+
+  const before = clone(db.docs.get("users/" + targetUid));
+
+  const wealth = await updateUserLevel(db, payload(actorUid), {
+    targetUid,
+    metric: "wealth",
+    mode: "setPoints",
+    points: 50000,
+    reason: "stage09 independence regression",
+    idempotencyKey: "stage09_independence_wealth_0001",
+  });
+  assert.equal(wealth.code, "ok");
+
+  const attraction = await updateUserLevel(db, payload(actorUid), {
+    targetUid,
+    metric: "attraction",
+    mode: "setPoints",
+    points: 100000,
+    reason: "stage09 independence regression",
+    idempotencyKey: "stage09_independence_attraction_0001",
+  });
+  assert.equal(attraction.code, "ok");
+
+  const games = await updateUserLevel(db, payload(actorUid), {
+    targetUid,
+    metric: "games",
+    mode: "setPoints",
+    points: 3000000,
+    reason: "stage09 independence regression",
+    idempotencyKey: "stage09_independence_games_0001",
+  });
+  assert.equal(games.code, "ok");
+
+  const after = db.docs.get("users/" + targetUid);
+  assert.equal(after.roomLevel, before.roomLevel);
+  assert.equal(after.roomLevelId, before.roomLevelId);
+  assert.equal(after.vipLevel, before.vipLevel);
+  assert.equal(after.effectiveVipLevel, before.effectiveVipLevel);
+  assert.deepEqual(after.vip, before.vip);
+
+  for (const writes of db.commits) {
+    const userWrite = writes.find(
+      (write) => write.kind === "update" && write.path === "users/" + targetUid,
+    );
+    assert.ok(userWrite);
+    const protectedFields = [
+      "roomLevel",
+      "roomLevelId",
+      "vipLevel",
+      "effectiveVipLevel",
+      "vip",
+    ];
+    for (const field of protectedFields) {
+      assert.equal(
+        userWrite.fieldPaths.includes(field),
+        false,
+        field + " must stay outside user-level correction writes",
+      );
+      assert.equal(field in userWrite.fields, false);
+    }
+  }
+});
