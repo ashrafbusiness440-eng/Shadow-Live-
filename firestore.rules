@@ -171,6 +171,8 @@ service cloud.firestore {
         'hideAttractionLevel',
         'hideGameLevel',
         'levelVisibilityUpdatedAt',
+        'hideRankingLists',
+        'rankingVisibilityUpdatedAt',
         'publicBadges',
         'totalGiftsSent',
         'totalGiftsReceived',
@@ -262,6 +264,8 @@ service cloud.firestore {
         && !('hideAttractionLevel' in request.resource.data)
         && !('hideGameLevel' in request.resource.data)
         && !('levelVisibilityUpdatedAt' in request.resource.data)
+        && !('hideRankingLists' in request.resource.data)
+        && !('rankingVisibilityUpdatedAt' in request.resource.data)
         && !('publicBadges' in request.resource.data)
         && !('totalGiftsSent' in request.resource.data)
         && !('totalGiftsReceived' in request.resource.data)
