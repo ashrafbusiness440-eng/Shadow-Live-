@@ -26,6 +26,7 @@ void main() {
     'VIP1 user can preview VIP10 without unlocking it',
     (tester) async {
       final data = summary();
+      final requestedAssets = <String>{};
       await tester.pumpWidget(
         MaterialApp(
           home: VipScreen(
@@ -35,7 +36,10 @@ void main() {
               required String idempotencyKey,
             }) async =>
                 data,
-            assetResolver: (_) async => null,
+            assetResolver: (key) async {
+              requestedAssets.add(key);
+              return null;
+            },
           ),
         ),
       );
@@ -66,6 +70,9 @@ void main() {
       expect(find.text('الامتيازات الحصرية 41/41'), findsOneWidget);
       expect(find.text('شريط الدخول العام'), findsWidgets);
       expect(find.text('الحماية من الكتم'), findsOneWidget);
+      expect(requestedAssets.contains('vip.v10.mainBadge'), isTrue);
+      expect(requestedAssets.contains('vip.v10.profileFrame'), isTrue);
+      expect(requestedAssets.contains('vip.v10.globalEntryBanner'), isTrue);
     },
   );
 
