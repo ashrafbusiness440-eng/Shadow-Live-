@@ -33,6 +33,13 @@ test("VIP Growth purchase debits coins once and upgrades progression atomically"
       effectiveVipLevel: 0,
       adminGrantVipLevel: 0,
     }),
+    db.collection("public_profiles").doc(uid).set({
+      uid,
+      displayName: "VIP Test",
+      vipLevel: 0,
+      effectiveVipLevel: 0,
+      vipExpiresAt: null,
+    }),
     db.collection("system_config").doc("emergency_lock").set({
       enabled: false,
       economyLocked: false,
@@ -76,8 +83,10 @@ test("VIP Growth purchase debits coins once and upgrades progression atomically"
   assert.equal(duplicate.coins, 10000);
   assert.equal(duplicate.vip.growthPoints, 32308);
 
-  const [user, operation, ledger, history, audit] = await Promise.all([
+  const [user, publicProfile, operation, ledger, history, audit] =
+    await Promise.all([
     db.collection("users").doc(uid).get(),
+    db.collection("public_profiles").doc(uid).get(),
     db.collection("vip_operations").doc(`${uid}__${key}`).get(),
     db.collection("financial_ledger").doc(`${uid}__${key}__vip_growth`).get(),
     db.collection("vip_growth_history").doc(`${uid}__${key}`).get(),
@@ -89,6 +98,9 @@ test("VIP Growth purchase debits coins once and upgrades progression atomically"
   assert.equal(user.data().earnedVipLevel, 1);
   assert.equal(user.data().effectiveVipLevel, 1);
   assert.equal(user.data().vipLevel, 1);
+  assert.equal(publicProfile.data().vipLevel, 1);
+  assert.equal(publicProfile.data().effectiveVipLevel, 1);
+  assert.ok(publicProfile.data().vipExpiresAt);
   assert.equal(operation.data().status, "completed");
   assert.equal(ledger.data().delta, -10000);
   assert.equal(history.data().deltaGrowthPoints, 30000);

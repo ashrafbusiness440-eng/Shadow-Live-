@@ -14,6 +14,7 @@ import {
   materializeVipState,
 } from "./vip-state.js";
 import {
+  vipPublicProfilePatch,
   vipStateFromUser,
   vipUserPatch,
 } from "./vip-runtime.js";
@@ -102,12 +103,14 @@ export async function buyVipGrowth(db, uid, body, nowMs = Date.now()) {
   for (let attempt = 0; attempt < 3; attempt++) {
     const transaction = await db.beginTransaction();
     try {
-      const [userSnap, operationSnap, lockSnap, policy] = await Promise.all([
-        db.get(`users/${uid}`, transaction),
-        db.get(`vip_operations/${uid}__${key}`, transaction),
-        db.get("system_config/emergency_lock", transaction),
-        loadVipPolicy(db, { transaction, useCache: false }),
-      ]);
+      const [userSnap, publicProfileSnap, operationSnap, lockSnap, policy] =
+        await Promise.all([
+          db.get(`users/${uid}`, transaction),
+          db.get(`public_profiles/${uid}`, transaction),
+          db.get(`vip_operations/${uid}__${key}`, transaction),
+          db.get("system_config/emergency_lock", transaction),
+          loadVipPolicy(db, { transaction, useCache: false }),
+        ]);
 
       if (!userSnap.exists) throw new ApiError("user_not_found", 404);
       if (operationSnap.exists) {
@@ -198,6 +201,20 @@ export async function buyVipGrowth(db, uid, body, nowMs = Date.now()) {
             "vipUpdatedAt",
           ],
         ),
+        ...(publicProfileSnap.exists
+          ? [
+              db.writeUpdate(
+                `public_profiles/${uid}`,
+                vipPublicProfilePatch(afterState, now),
+                [
+                  "vipLevel",
+                  "effectiveVipLevel",
+                  "vipExpiresAt",
+                  "updatedAt",
+                ],
+              ),
+            ]
+          : []),
         db.writeCreate(`financial_ledger/${uid}__${key}__vip_growth`, {
           userId: uid,
           asset: "coins",

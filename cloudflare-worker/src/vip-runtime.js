@@ -51,3 +51,27 @@ export function vipUserPatch(state, now = new Date()) {
     vipUpdatedAt: now,
   };
 }
+
+
+export function activeEffectiveVipLevelFromUser(
+  user = {},
+  nowMs = Date.now(),
+) {
+  const level = Math.max(
+    0,
+    Math.min(10, Number(user.effectiveVipLevel || 0) || 0),
+  );
+  if (level <= 0) return 0;
+  const expiresAtMs = timestampToEpochMs(user.vipExpiresAt);
+  return expiresAtMs > Number(nowMs) ? level : 0;
+}
+
+export function vipPublicProfilePatch(state, now = new Date()) {
+  const userPatch = vipUserPatch(state, now);
+  return {
+    vipLevel: userPatch.effectiveVipLevel,
+    effectiveVipLevel: userPatch.effectiveVipLevel,
+    vipExpiresAt: userPatch.vipExpiresAt,
+    updatedAt: now,
+  };
+}

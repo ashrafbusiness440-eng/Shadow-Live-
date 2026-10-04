@@ -10,6 +10,8 @@ import '../services/user_level_service.dart';
 import 'user_level_screen.dart';
 import '../../gift/widgets/direct_gift_sheet.dart';
 import '../../relationships/services/relationship_service.dart';
+import '../../vip/utils/vip_public_state.dart';
+import '../../vip/widgets/vip_avatar_frame.dart';
 import '../widgets/registry_badge.dart';
 import '../widgets/user_level_badges.dart';
 
@@ -231,7 +233,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
                     .where((e) => e.isNotEmpty)
                     .toList(growable: false)
                 : <String>[];
-            final vip = (data['vipLevel'] as num?)?.toInt() ?? 0;
+            final vip = effectivePublicVipLevel(data);
             final online = data['isOnline'] == true;
             final badges = data['badges'] is List
                 ? (data['badges'] as List).map((e) => e.toString()).where((e) => e.isNotEmpty).toList()
@@ -438,11 +440,21 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
           Stack(
             clipBehavior: Clip.none,
             children: [
-              CircleAvatar(
-                radius: 55,
-                backgroundColor: const Color(0xFF25183F),
-                backgroundImage: photo,
-                child: photo == null ? const Icon(Icons.person, size: 52, color: Color(0xFFFFD54A)) : null,
+              VipAvatarFrame(
+                vipLevel: vip,
+                avatarDiameter: 110,
+                child: CircleAvatar(
+                  radius: 55,
+                  backgroundColor: const Color(0xFF25183F),
+                  backgroundImage: photo,
+                  child: photo == null
+                      ? const Icon(
+                          Icons.person,
+                          size: 52,
+                          color: Color(0xFFFFD54A),
+                        )
+                      : null,
+                ),
               ),
               if (online)
                 Positioned(
@@ -492,7 +504,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
               spacing: 7,
               runSpacing: 7,
               children: [
-                if (vip > 0) RegistryBadge(assetKey: ShadowAssetKeys.vipBadge(vip), label: 'VIP $vip'),
+                if (vip > 0) RegistryBadge(assetKey: ShadowAssetKeys.vipLevelBadge(vip), label: 'VIP $vip'),
                 ...badges.take(4).map((b) => RegistryBadge(assetKey: normalizePublicBadgeKey(b), label: publicBadgeLabel(b))),
               ],
             ),

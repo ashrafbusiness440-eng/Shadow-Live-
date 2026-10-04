@@ -32,6 +32,13 @@ test("paid recharge awards VIP Growth from base Coins only, never bonus Coins", 
       effectiveVipLevel: 0,
       adminGrantVipLevel: 0,
     }),
+    db.collection("public_profiles").doc(uid).set({
+      uid,
+      displayName: "Recharge VIP",
+      vipLevel: 0,
+      effectiveVipLevel: 0,
+      vipExpiresAt: null,
+    }),
     db.collection("system_config").doc("emergency_lock").set({
       enabled: false,
       economyLocked: false,
@@ -69,8 +76,9 @@ test("paid recharge awards VIP Growth from base Coins only, never bonus Coins", 
   assert.equal(result.vipGrowthPoints, 30000);
   assert.equal(result.vipLevel, 1);
 
-  const [user, purchase, history, ledger] = await Promise.all([
+  const [user, publicProfile, purchase, history, ledger] = await Promise.all([
     db.collection("users").doc(uid).get(),
+    db.collection("public_profiles").doc(uid).get(),
     db.collection("google_play_purchases").doc(hash).get(),
     db.collection("vip_growth_history").doc(`play_${hash}`).get(),
     db.collection("financial_ledger").doc(`play_${hash}`).get(),
@@ -81,6 +89,9 @@ test("paid recharge awards VIP Growth from base Coins only, never bonus Coins", 
   assert.equal(user.data().earnedVipLevel, 1);
   assert.equal(user.data().effectiveVipLevel, 1);
   assert.equal(user.data().vipLevel, 1);
+  assert.equal(publicProfile.data().vipLevel, 1);
+  assert.equal(publicProfile.data().effectiveVipLevel, 1);
+  assert.ok(publicProfile.data().vipExpiresAt);
 
   assert.equal(purchase.data().baseCoins, 30000);
   assert.equal(purchase.data().bonusCoins, 10000);

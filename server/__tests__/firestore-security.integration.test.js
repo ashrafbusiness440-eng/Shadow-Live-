@@ -24,6 +24,7 @@ const legacyShortIdUid="rules_legacy_short_id_user";
 const blockedShortSetupUid="rules_blocked_short_setup_user";
 const manualShortSetupUid="rules_manual_short_setup_user";
 const eightDigitSetupUid="rules_eight_digit_setup_user";
+const vipProjectionUid="rules_vip_projection_user";
 
 function phoneDbFor(userId) {
   return env.authenticatedContext(userId,{
@@ -99,6 +100,17 @@ before(async()=>{
       giftHostActivityMonth:"2026-09",
       giftHostMicSecondsMonth:0,
       giftHostQualifiedDays:0,
+    });
+    await setDoc(doc(context.firestore(),"users",vipProjectionUid),{
+      role:"user",
+      displayName:"VIP Projection",
+      coins:0,
+      diamonds:0,
+      publicId:"",
+      effectiveVipLevel:3,
+      vipLevel:3,
+      vipExpiresAt:new Date("2026-12-01T00:00:00Z"),
+      publicBadges:[],
     });
     for (const userId of [initialIdUid,shortInitialIdUid,legacyShortIdUid]) {
       await setDoc(doc(context.firestore(),"users",userId),{
@@ -448,6 +460,62 @@ test("public profile accepts R2 media object ids",async()=>{
     location:"",
     interests:[],
     vipLevel:0,
+    badges:[],
+    isOnline:true,
+    createdAt:new Date(),
+    updatedAt:new Date(),
+  }));
+});
+
+test("public profile rejects forged effective VIP projection",async()=>{
+  const userDb=phoneDbFor(vipProjectionUid);
+  await assertFails(setDoc(doc(userDb,"public_profiles",vipProjectionUid),{
+    uid:vipProjectionUid,
+    displayName:"VIP Projection",
+    username:"",
+    publicId:"",
+    searchTokens:["vip","projection"],
+    profileImageUrl:"",
+    profileImageObjectId:"",
+    profileAvatarAsset:"",
+    coverImageUrl:"",
+    coverImageObjectId:"",
+    bio:"",
+    location:"",
+    moodEmoji:"",
+    moodText:"",
+    interests:[],
+    vipLevel:3,
+    effectiveVipLevel:9,
+    vipExpiresAt:new Date("2026-12-01T00:00:00Z"),
+    badges:[],
+    isOnline:true,
+    createdAt:new Date(),
+    updatedAt:new Date(),
+  }));
+});
+
+test("public profile accepts matching effective VIP projection",async()=>{
+  const userDb=phoneDbFor(vipProjectionUid);
+  await assertSucceeds(setDoc(doc(userDb,"public_profiles",vipProjectionUid),{
+    uid:vipProjectionUid,
+    displayName:"VIP Projection",
+    username:"",
+    publicId:"",
+    searchTokens:["vip","projection"],
+    profileImageUrl:"",
+    profileImageObjectId:"",
+    profileAvatarAsset:"",
+    coverImageUrl:"",
+    coverImageObjectId:"",
+    bio:"",
+    location:"",
+    moodEmoji:"",
+    moodText:"",
+    interests:[],
+    vipLevel:3,
+    effectiveVipLevel:3,
+    vipExpiresAt:new Date("2026-12-01T00:00:00Z"),
     badges:[],
     isOnline:true,
     createdAt:new Date(),
