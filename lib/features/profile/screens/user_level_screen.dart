@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/assets/shadow_asset_registry.dart';
 import '../../../utils/compact_number.dart';
 import '../services/user_level_service.dart';
+import '../widgets/level_asset_image.dart';
 
 typedef UpdateUserLevelVisibility = Future<UserLevelVisibility> Function({
   required bool hideWealthLevel,
@@ -323,10 +325,15 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
                     width: 2,
                   ),
                 ),
-                child: Icon(
-                  icon,
-                  size: 48,
-                  color: const Color(0xFFFFD54A),
+                child: LevelAssetImage(
+                  assetKey: ShadowAssetKeys.levelMainBadge(metric, data.level),
+                  width: 78,
+                  height: 78,
+                  fallback: Icon(
+                    icon,
+                    size: 48,
+                    color: const Color(0xFFFFD54A),
+                  ),
                 ),
               ),
               const SizedBox(height: 12),

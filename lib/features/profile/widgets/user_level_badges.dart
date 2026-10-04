@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/assets/shadow_asset_registry.dart';
 import '../services/user_level_service.dart';
+import 'level_asset_image.dart';
 
 class UserLevelBadges extends StatelessWidget {
   const UserLevelBadges({
@@ -36,21 +38,24 @@ class UserLevelBadges extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final items = <({int tab, String label, int level, IconData icon})>[
+    final items = <({int tab, String metric, String label, int level, IconData icon})>[
       (
         tab: 0,
+        metric: 'wealth',
         label: 'الثروة',
         level: wealthLevel ?? summary?.wealth.level ?? 0,
         icon: Icons.monetization_on_rounded,
       ),
       (
         tab: 1,
+        metric: 'attraction',
         label: 'الجاذبية',
         level: attractionLevel ?? summary?.attraction.level ?? 0,
         icon: Icons.auto_awesome_rounded,
       ),
       (
         tab: 2,
+        metric: 'game',
         label: 'الألعاب',
         level: gameLevel ?? summary?.games.level ?? 0,
         icon: Icons.sports_esports_rounded,
@@ -83,10 +88,18 @@ class UserLevelBadges extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    item.icon,
-                    size: micro ? 13 : (compact ? 16 : 18),
-                    color: const Color(0xFFFFD54A),
+                  LevelAssetImage(
+                    assetKey: ShadowAssetKeys.levelMiniBadge(
+                      item.metric,
+                      item.level,
+                    ),
+                    width: micro ? 18 : (compact ? 22 : 26),
+                    height: micro ? 14 : (compact ? 18 : 20),
+                    fallback: Icon(
+                      item.icon,
+                      size: micro ? 13 : (compact ? 16 : 18),
+                      color: const Color(0xFFFFD54A),
+                    ),
                   ),
                   const SizedBox(width: 5),
                   Text(
