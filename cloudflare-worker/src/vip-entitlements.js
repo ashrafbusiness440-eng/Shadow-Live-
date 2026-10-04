@@ -30,6 +30,10 @@ export function vipEntitlementsFromUser(user = {}, nowMs = Date.now()) {
   };
 }
 
+export function canOverrideVipRoomProtection(user = {}) {
+  return canInspectHiddenRoomPresence(user);
+}
+
 export function canInspectHiddenRoomPresence(user = {}) {
   const role = clean(user.role);
   if (role === "owner") return true;

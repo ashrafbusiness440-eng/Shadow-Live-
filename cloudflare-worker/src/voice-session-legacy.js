@@ -9,6 +9,7 @@ import {publicLevelMetadata} from "./user-level-visibility.js";
 import {
   activeRoomGhostMode,
   canInspectHiddenRoomPresence,
+  canOverrideVipRoomProtection,
   canUseRoomGhostMode,
   vipEntitlementsFromUser,
 } from "./vip-entitlements.js";
@@ -1114,10 +1115,15 @@ async function setRoomChatEnabled(db,uid,body){
   const auditRef=db.collection("room_audit_logs").doc(roomId).collection("items").doc();
 
   const result=await db.runTransaction(async tx=>{
-    const [roomSnap,actorSnap]=await Promise.all([tx.get(roomRef),tx.get(actorRef)]);
+    const [roomSnap,actorSnap,targetSnap]=await Promise.all([
+      tx.get(roomRef),
+      tx.get(actorRef),
+      tx.get(targetRef),
+    ]);
     if(!roomSnap.exists)throw new ApiError("room_not_found",404);
     const room=roomSnap.data()||{};
     const actor=actorSnap.data()||{};
+    const target=targetSnap.data()||{};
     if(!canManageRoomAction(room,actor,uid,"moderateChat"))throw new ApiError("forbidden",403);
 
     const before=room.chatEnabled!==false;
@@ -1183,6 +1189,19 @@ function roomSeatCapacity(room){
   const agency=[10,12,14,16,20,22];
   const normal=[8,10,12,15,20,20];
   return (type==="agency"?agency:normal)[level-1];
+}
+
+function normalizeUidList(value){
+  if(!Array.isArray(value))return [];
+  const seen=new Set();
+  const result=[];
+  for(const raw of value){
+    const uid=clean(raw);
+    if(!uid||seen.has(uid))continue;
+    seen.add(uid);
+    result.push(uid);
+  }
+  return result;
 }
 
 function normalizeSeats(room){
@@ -2209,18 +2228,30 @@ async function kickRoomUser(db,uid,body){
 
   const roomRef=db.collection("rooms").doc(roomId);
   const actorRef=db.collection("users").doc(uid);
+  const targetRef=db.collection("users").doc(targetUid);
   const banRef=db.collection("room_bans").doc(roomId).collection("users").doc(targetUid);
   const auditRef=db.collection("room_audit_logs").doc(roomId).collection("items").doc();
 
   return db.runTransaction(async tx=>{
-    const [roomSnap,actorSnap]=await Promise.all([tx.get(roomRef),tx.get(actorRef)]);
+    const [roomSnap,actorSnap,targetSnap]=await Promise.all([
+      tx.get(roomRef),
+      tx.get(actorRef),
+      tx.get(targetRef),
+    ]);
     if(!roomSnap.exists)throw new ApiError("room_not_found",404);
     const room=roomSnap.data()||{};
     const actor=actorSnap.data()||{};
+    const target=targetSnap.data()||{};
     const permissions=roomPermissions(actor);
     const ownerUid=clean(room.ownerUid||room.ownerId||room.hostId);
     if(!canManageRoomAction(room,actor,uid,"moderateUsers"))throw new ApiError("forbidden",403);
     if(targetUid===ownerUid&&!permissions.appOwner)throw new ApiError("owner_protected",403);
+
+    const targetVip=vipEntitlementsFromUser(target,Date.now());
+    const protectionOverride=canOverrideVipRoomProtection(actor);
+    if(targetVip.kickProtection&&!protectionOverride){
+      throw new ApiError("vip_kick_protected",403);
+    }
 
     const expiresAt=permanent?null:new Date(Date.now()+minutes*60*1000);
     tx.set(banRef,{
@@ -2255,6 +2286,10 @@ async function kickRoomUser(db,uid,body){
       after:{
         permanent,
         durationMinutes:permanent?null:minutes,
+        targetVipLevel:targetVip.level,
+        vipKickProtection:targetVip.kickProtection,
+        vipProtectionOverride:
+          targetVip.kickProtection&&protectionOverride,
       },
       createdAt:FieldValue.serverTimestamp(),
     });
@@ -4101,4 +4136,4 @@ export default async function handler(req,res){
   }
 }
 
-export { roomGhostState, setRoomGhostMode, roomPresenceState };
+export { kickRoomUser, roomGhostState, setRoomGhostMode, roomPresenceState };

@@ -15,6 +15,7 @@ import {
   activeHiddenRoomEntry,
   activeRoomGhostMode,
   canInspectHiddenRoomPresence,
+  canOverrideVipRoomProtection,
   canUseRoomGhostMode,
   vipEntitlementsFromUser,
 } from "../../cloudflare-worker/src/vip-entitlements.js";
@@ -288,4 +289,46 @@ test("Owner and delegated Safety/room-control roles retain hidden presence visib
     }),
     false,
   );
+});
+
+
+test("VIP kick protection override follows platform authority only", () => {
+  assert.equal(canOverrideVipRoomProtection({ role: "owner" }), true);
+  assert.equal(
+    canOverrideVipRoomProtection({
+      role: "admin",
+      adminEnabled: true,
+      capabilities: ["reviewReports"],
+    }),
+    true,
+  );
+  assert.equal(
+    canOverrideVipRoomProtection({
+      role: "admin",
+      adminEnabled: true,
+      capabilities: ["globalRoomControl"],
+    }),
+    true,
+  );
+  assert.equal(
+    canOverrideVipRoomProtection({
+      role: "user",
+      adminEnabled: false,
+      capabilities: ["manageRooms"],
+    }),
+    false,
+  );
+});
+
+test("VIP6 unlocks kick protection while VIP5 does not", () => {
+  const vip5 = {
+    effectiveVipLevel: 5,
+    vipExpiresAt: new Date(base + day),
+  };
+  const vip6 = {
+    effectiveVipLevel: 6,
+    vipExpiresAt: new Date(base + day),
+  };
+  assert.equal(vipEntitlementsFromUser(vip5, base).kickProtection, false);
+  assert.equal(vipEntitlementsFromUser(vip6, base).kickProtection, true);
 });
