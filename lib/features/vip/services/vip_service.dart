@@ -44,11 +44,11 @@ class VipSummaryData {
     }
 
     return VipSummaryData(
-      effectiveVipLevel: value('effectiveVipLevel').clamp(0, 10),
+      effectiveVipLevel: value('effectiveVipLevel').clamp(0, 10).toInt(),
       effectiveVipSource:
           (json['effectiveVipSource'] ?? 'none').toString().trim(),
-      earnedVipLevel: value('earnedVipLevel').clamp(0, 10),
-      adminGrantVipLevel: value('adminGrantVipLevel').clamp(0, 10),
+      earnedVipLevel: value('earnedVipLevel').clamp(0, 10).toInt(),
+      adminGrantVipLevel: value('adminGrantVipLevel').clamp(0, 10).toInt(),
       growthPoints: value('growthPoints'),
       maintenancePoints: value('maintenancePoints'),
       maintenanceRequired: value('maintenanceRequired'),
