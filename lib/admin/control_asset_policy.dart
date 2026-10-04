@@ -49,25 +49,7 @@ abstract final class ControlAssetPolicy {
       return false;
     }
     final segments = directory.split('/');
-    final safeSegment = RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,79}
-
-  static bool fileNameAllowed(String value) {
-    final name = value.trim();
-    if (!RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$').hasMatch(name)) {
-      return false;
-    }
-    final dot = name.lastIndexOf('.');
-    if (dot <= 0 || dot == name.length - 1) return false;
-    return allowedExtensions.contains(name.substring(dot + 1).toLowerCase());
-  }
-
-  static bool assetKeyAllowed(String value) =>
-      RegExp(r'^[a-z0-9][a-z0-9._-]{2,119}$').hasMatch(value.trim());
-
-  static String fullPath(String directory, String fileName) =>
-      '${normalizeDirectory(directory)}/${fileName.trim()}';
-}
-);
+    final safeSegment = RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$');
     if (segments.any((segment) =>
         segment.isEmpty ||
         segment == '.' ||
