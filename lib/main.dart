@@ -4063,6 +4063,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         (_roomModeratorState?.ownerAbsoluteRoomAccess ?? false);
     final ghostMode = _roomGhostMode;
     if (!mounted) return;
+    // Open immediately; refresh this non-critical preference in parallel.
+    unawaited(_refreshRoomGhostMode());
 
     Widget sectionTitle(String label) => Padding(
           padding: const EdgeInsets.fromLTRB(4, 14, 4, 7),
