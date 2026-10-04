@@ -590,9 +590,6 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
 
   Widget _ownerBody() {
     final template = _selectedTemplate;
-    final directoryChoices = template?.directories.isNotEmpty == true
-        ? template!.directories
-        : ControlAssetPolicy.allowedDirectories;
     final validation = _bytes == null ? null : _validate();
 
     return ListView(
@@ -687,29 +684,17 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                   ),
                 ],
                 const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  value: directoryChoices.contains(
-                    ControlAssetPolicy.normalizeDirectory(_directory.text),
-                  )
-                      ? ControlAssetPolicy.normalizeDirectory(_directory.text)
-                      : null,
-                  decoration: const InputDecoration(
+                TextField(
+                  controller: _directory,
+                  enabled: !_busy,
+                  onChanged: (_) => setState(_syncGiftFileNameFromAssetKey),
+                  decoration: InputDecoration(
                     labelText: 'المسار داخل المشروع',
-                    border: OutlineInputBorder(),
+                    helperText: template == null || template.directories.isEmpty
+                        ? 'استخدم مسارًا آمنًا تحت أحد الجذور المعتمدة.'
+                        : 'الجذور المسموحة: ${template.directories.join(' • ')} — يمكن إضافة مجلدات فرعية آمنة.',
+                    border: const OutlineInputBorder(),
                   ),
-                  items: directoryChoices
-                      .map((p) => DropdownMenuItem(value: p, child: Text(p)))
-                      .toList(growable: false),
-                  onChanged: _busy
-                      ? null
-                      : (v) {
-                          if (v != null) {
-                            setState(() {
-                              _directory.text = v;
-                              _syncGiftFileNameFromAssetKey();
-                            });
-                          }
-                        },
                 ),
                 const SizedBox(height: 12),
                 TextField(
