@@ -44,4 +44,18 @@ void main() {
     expect(roomChat.contains('errorBuilder: (_, __, ___)'), isTrue);
     expect(roomChat.contains('child: _senderAvatar(message)'), isTrue);
   });
+  test('own profile reuses existing user data for levels mood and interests', () {
+    final ownProfile = File(
+      'lib/features/user/screens/profile_screen.dart',
+    ).readAsStringSync();
+
+    expect(ownProfile.contains('UserLevelBadges.fromLevels('), isTrue);
+    expect(ownProfile.contains("wealthLevel: _num(profile, ['wealthLevel'])"), isTrue);
+    expect(ownProfile.contains("attractionLevel: _num(profile, ['attractionLevel'])"), isTrue);
+    expect(ownProfile.contains("gameLevel: _num(profile, ['gameLevel'])"), isTrue);
+    expect(ownProfile.contains("final moodEmoji = _text(profile, 'moodEmoji', '').trim();"), isTrue);
+    expect(ownProfile.contains("final interests = profile['interests'] is List"), isTrue);
+    expect(ownProfile.contains('UserLevelService()'), isFalse);
+  });
+
 }
