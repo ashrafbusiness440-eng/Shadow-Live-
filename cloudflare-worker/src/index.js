@@ -9,6 +9,7 @@ import { manageUserLevel } from "./manage-user-level.js";
 import { manageUserAccount, releaseExpiredSuspensions } from "./manage-user-account.js";
 import { controlUserDetails } from "./control-user-details.js";
 import { walletActions } from "./wallet-actions.js";
+import { vipActions } from "./vip-actions.js";
 import { chatSafetyActions } from "./chat-safety-actions.js";
 import { storageHealth } from "./storage-health.js";
 import { systemHealth } from "./system-health.js";
@@ -93,6 +94,10 @@ async function dispatchRequest(request, env, ctx) {
   }
   if (url.pathname === "/api/wallet-actions") {
     return walletActions(request, env);
+  }
+  if (url.pathname === "/api/vip") {
+    annotatePressureRequest(request, { action: "vip" });
+    return vipActions(request, env);
   }
   if (url.pathname === "/api/chat-actions") {
     return chatSafetyActions(request, env);
