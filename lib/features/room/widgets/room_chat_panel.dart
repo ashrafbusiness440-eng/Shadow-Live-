@@ -656,6 +656,40 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
 
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
+  Widget _senderAvatar(RoomChatMessage message) {
+    final url = message.profileImageUrl.trim();
+    if (url.isEmpty) {
+      return const CircleAvatar(
+        radius: 16,
+        backgroundColor: Color(0xFF25183F),
+        child: Icon(
+          Icons.person_rounded,
+          size: 17,
+          color: Color(0xFFFFD54A),
+        ),
+      );
+    }
+    return ClipOval(
+      child: SizedBox.square(
+        dimension: 32,
+        child: Image.network(
+          url,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => const ColoredBox(
+            color: Color(0xFF25183F),
+            child: Center(
+              child: Icon(
+                Icons.person_rounded,
+                size: 17,
+                color: Color(0xFFFFD54A),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _openChatQuickProfile(RoomChatMessage message) async {
     final uid = message.senderUid.trim();
     if (uid.isEmpty) return;
@@ -948,20 +982,7 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
               InkWell(
                 onTap: () => _openChatQuickProfile(message),
                 customBorder: const CircleBorder(),
-                child: CircleAvatar(
-                  radius: 16,
-                  backgroundColor: const Color(0xFF25183F),
-                  backgroundImage: message.profileImageUrl.trim().isEmpty
-                      ? null
-                      : NetworkImage(message.profileImageUrl),
-                  child: message.profileImageUrl.trim().isEmpty
-                      ? const Icon(
-                          Icons.person_rounded,
-                          size: 17,
-                          color: Color(0xFFFFD54A),
-                        )
-                      : null,
-                ),
+                child: _senderAvatar(message),
               ),
               const SizedBox(width: 8),
               Flexible(
