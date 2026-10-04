@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../core/assets/shadow_asset_registry.dart';
 import '../services/follow_service.dart';
@@ -28,6 +30,18 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
   late Future<UserLevelSummary> _levelFuture;
   bool _changingFollow = false;
   bool _sendingRelationship = false;
+
+  bool get _isSelf => FirebaseAuth.instance.currentUser?.uid == widget.userId;
+
+  Future<void> _copyPublicId(String publicId) async {
+    final value = publicId.trim();
+    if (value.isEmpty || value == '—') return;
+    await Clipboard.setData(ClipboardData(text: value));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('تم نسخ ID المستخدم')),
+    );
+  }
 
   @override
   void initState() {
@@ -223,6 +237,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
                 ? (data['badges'] as List).map((e) => e.toString()).where((e) => e.isNotEmpty).toList()
                 : <String>[];
             final provider = _avatar(data);
+            final isSelf = _isSelf;
 
             return NestedScrollView(
               headerSliverBuilder: (_, __) => [
@@ -231,7 +246,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
                   expandedHeight: 390,
                   backgroundColor: const Color(0xFF0B0D16),
                   foregroundColor: Colors.white,
-                  title: const Text('الملف الشخصي'),
+                  title: Text(isSelf ? 'بروفايلي' : 'الملف الشخصي'),
                   flexibleSpace: FlexibleSpaceBar(
                     background: _header(
                       name: name,
@@ -249,70 +264,72 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
                     padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
                     child: Row(
                       children: [
-                        Expanded(
-                          child: StreamBuilder<bool>(
-                            stream: _follow.isFollowing(widget.userId),
-                            builder: (context, followSnapshot) {
-                              final following = followSnapshot.data == true;
-                              return FilledButton.icon(
-                                onPressed: _changingFollow
-                                    ? null
-                                    : () async {
-                                        setState(() => _changingFollow = true);
-                                        try {
-                                          await _follow.setFollowing(widget.userId, !following);
-                                        } catch (_) {
-                                          if (mounted) {
-                                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تعذر تحديث المتابعة')));
+                        if (!isSelf) ...[
+                          Expanded(
+                            child: StreamBuilder<bool>(
+                              stream: _follow.isFollowing(widget.userId),
+                              builder: (context, followSnapshot) {
+                                final following = followSnapshot.data == true;
+                                return FilledButton.icon(
+                                  onPressed: _changingFollow
+                                      ? null
+                                      : () async {
+                                          setState(() => _changingFollow = true);
+                                          try {
+                                            await _follow.setFollowing(widget.userId, !following);
+                                          } catch (_) {
+                                            if (mounted) {
+                                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تعذر تحديث المتابعة')));
+                                            }
+                                          } finally {
+                                            if (mounted) setState(() => _changingFollow = false);
                                           }
-                                        } finally {
-                                          if (mounted) setState(() => _changingFollow = false);
-                                        }
-                                      },
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: following ? const Color(0xFF272C39) : const Color(0xFF7B2DFF),
-                                  foregroundColor: Colors.white,
-                                  disabledForegroundColor: Colors.white54,
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 13),
-                                  minimumSize: const Size(0, 48),
-                                  textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
-                                ),
-                                icon: Icon(
-                                  following ? Icons.person_remove_alt_1_rounded : Icons.person_add_alt_1_rounded,
-                                  size: 18,
-                                ),
-                                label: FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  child: Text(
-                                    following ? 'إلغاء المتابعة' : 'متابعة',
-                                    maxLines: 1,
-                                    softWrap: false,
+                                        },
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: following ? const Color(0xFF272C39) : const Color(0xFF7B2DFF),
+                                    foregroundColor: Colors.white,
+                                    disabledForegroundColor: Colors.white54,
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 13),
+                                    minimumSize: const Size(0, 48),
+                                    textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
                                   ),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () => ProfileActionService.openChat(
-                              context,
-                              otherUid: widget.userId,
-                              otherName: name,
-                              otherPhoto: photo,
+                                  icon: Icon(
+                                    following ? Icons.person_remove_alt_1_rounded : Icons.person_add_alt_1_rounded,
+                                    size: 18,
+                                  ),
+                                  label: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Text(
+                                      following ? 'إلغاء المتابعة' : 'متابعة',
+                                      maxLines: 1,
+                                      softWrap: false,
+                                    ),
+                                  ),
+                                );
+                              },
                             ),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: const Color(0xFFFFD54A),
-                              side: const BorderSide(color: Colors.white70),
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 13),
-                              minimumSize: const Size(0, 48),
-                            ),
-                            icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
-                            label: const FittedBox(fit: BoxFit.scaleDown, child: Text('رسالة', maxLines: 1)),
                           ),
-                        ),
-                        const SizedBox(width: 8),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => ProfileActionService.openChat(
+                                context,
+                                otherUid: widget.userId,
+                                otherName: name,
+                                otherPhoto: photo,
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFFFFD54A),
+                                side: const BorderSide(color: Colors.white70),
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 13),
+                                minimumSize: const Size(0, 48),
+                              ),
+                              icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+                              label: const FittedBox(fit: BoxFit.scaleDown, child: Text('رسالة', maxLines: 1)),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                        ],
                         Expanded(
                           child: OutlinedButton.icon(
                             onPressed: () => _showGiftInfo(name),
@@ -330,28 +347,29 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
                     ),
                   ),
                 ),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                    child: OutlinedButton.icon(
-                      onPressed: _sendingRelationship
-                          ? null
-                          : () => _requestRelationship(name),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFFFFD54A),
-                        side: const BorderSide(color: Color(0xFF7B2DFF)),
-                        minimumSize: const Size.fromHeight(46),
+                if (!isSelf)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      child: OutlinedButton.icon(
+                        onPressed: _sendingRelationship
+                            ? null
+                            : () => _requestRelationship(name),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFFFFD54A),
+                          side: const BorderSide(color: Color(0xFF7B2DFF)),
+                          minimumSize: const Size.fromHeight(46),
+                        ),
+                        icon: _sendingRelationship
+                            ? const SizedBox.square(
+                                dimension: 17,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.favorite_outline_rounded),
+                        label: const Text('طلب علاقة'),
                       ),
-                      icon: _sendingRelationship
-                          ? const SizedBox.square(
-                              dimension: 17,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.favorite_outline_rounded),
-                      label: const Text('طلب علاقة'),
                     ),
                   ),
-                ),
                 SliverToBoxAdapter(child: _stats(widget.userId)),
                 SliverPersistentHeader(
                   pinned: true,
@@ -445,7 +463,28 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
           const SizedBox(height: 11),
           Text(name, style: const TextStyle(color: Colors.white, fontSize: 25, fontWeight: FontWeight.w900)),
           const SizedBox(height: 4),
-          Text('ID: $publicId', textDirection: TextDirection.ltr, style: const TextStyle(color: Colors.white60)),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'ID: $publicId',
+                textDirection: TextDirection.ltr,
+                style: const TextStyle(color: Colors.white60),
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                key: const Key('public-profile-copy-id'),
+                tooltip: 'نسخ ID',
+                visualDensity: VisualDensity.compact,
+                onPressed: () => _copyPublicId(publicId),
+                icon: const Icon(
+                  Icons.copy_rounded,
+                  size: 16,
+                  color: Color(0xFFFFD54A),
+                ),
+              ),
+            ],
+          ),
           if (vip > 0 || badges.isNotEmpty) ...[
             const SizedBox(height: 10),
             Wrap(

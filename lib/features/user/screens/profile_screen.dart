@@ -14,6 +14,7 @@ import '../../auth/bloc/auth_bloc.dart';
 import '../../wallet/screens/recharge_screen.dart';
 import '../../profile/screens/my_items_screen.dart';
 import '../../profile/screens/user_level_screen.dart';
+import '../../profile/widgets/user_level_badges.dart';
 import '../../profile/services/reward_inventory_service.dart';
 import '../../room/widgets/cosmetic_effect_widgets.dart';
 import '../../agency/screens/agency_package_grant_page.dart';
@@ -157,6 +158,14 @@ class _ProfileScreenState extends State<ProfileScreen>
     } finally {
       if (mounted) setState(() => _openingEdit = false);
     }
+  }
+
+  void _openLevel(int tabIndex) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => UserLevelScreen(initialTabIndex: tabIndex),
+      ),
+    );
   }
 
   Future<void> _recharge(int tab) async {
@@ -658,6 +667,17 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
             ),
           ],
+          const SizedBox(height: 10),
+          if (_num(profile, ['wealthLevel']) > 0 ||
+              _num(profile, ['attractionLevel']) > 0 ||
+              _num(profile, ['gameLevel']) > 0)
+            UserLevelBadges.fromLevels(
+              wealthLevel: _num(profile, ['wealthLevel']),
+              attractionLevel: _num(profile, ['attractionLevel']),
+              gameLevel: _num(profile, ['gameLevel']),
+              compact: true,
+              onTap: _openLevel,
+            ),
           const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -725,6 +745,18 @@ class _ProfileScreenState extends State<ProfileScreen>
     final following = _num(profile, ['followingCount', 'following']);
     final rooms = _num(profile, ['roomsCount']);
     final gifts = _num(profile, ['giftsCount', 'totalGiftsReceived']);
+    final moodEmoji = _text(profile, 'moodEmoji', '').trim();
+    final moodText = _text(profile, 'moodText', '').trim();
+    final mood = [
+      if (moodEmoji.isNotEmpty) moodEmoji,
+      if (moodText.isNotEmpty) moodText,
+    ].join(' ').trim();
+    final interests = profile['interests'] is List
+        ? (profile['interests'] as List)
+            .map((item) => item.toString().trim())
+            .where((item) => item.isNotEmpty)
+            .toList(growable: false)
+        : <String>[];
     final capabilities = profile['capabilities'] is List
         ? (profile['capabilities'] as List)
             .map((item) => item.toString())
@@ -754,6 +786,59 @@ class _ProfileScreenState extends State<ProfileScreen>
             ],
           ),
         ),
+        if (mood.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          _card(
+            'الحالة',
+            [
+              _row('الآن', mood),
+            ],
+          ),
+        ],
+        if (interests.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0C1728),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.white.withValues(alpha: .06)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'الاهتمامات',
+                  style: TextStyle(
+                    color: Color(0xFFFFD54A),
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 7,
+                  runSpacing: 7,
+                  children: interests
+                      .take(6)
+                      .map(
+                        (interest) => Chip(
+                          label: Text(interest),
+                          labelStyle: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                          ),
+                          backgroundColor: const Color(0xFF20263A),
+                          side: BorderSide.none,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      )
+                      .toList(growable: false),
+                ),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: 14),
         Row(
           children: [
