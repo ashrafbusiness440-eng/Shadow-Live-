@@ -398,3 +398,101 @@ test("10-B ranking is single-field indexless and adds no Gift write operation", 
     assert.equal(source.includes("agency_public_rankings/"), false);
   }
 });
+
+
+test("VIP7 Hide Lists filters public agency contribution ranking without extra ranking queries", async () => {
+  const agencyId = "741206";
+  const hiddenHost = "rank_hidden_host";
+  const visibleHost = "rank_visible_host";
+  const viewer = "rank_public_viewer";
+  const ownerViewer = "rank_owner_viewer";
+  const future = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
+  await Promise.all([
+    adminDb.collection("agencies").doc(agencyId).set({
+      agencyId,
+      publicId: agencyId,
+      name: "Privacy Ranking Agency",
+      ownerUid: ownerViewer,
+      status: "active",
+    }),
+    adminDb.collection("users").doc(hiddenHost).set({
+      ...user(hiddenHost, "830001", "Hidden Host"),
+      effectiveVipLevel: 7,
+      vipExpiresAt: future,
+      hideRankingLists: true,
+    }),
+    adminDb.collection("users").doc(visibleHost).set({
+      ...user(visibleHost, "830002", "Visible Host"),
+      effectiveVipLevel: 6,
+      vipExpiresAt: future,
+      hideRankingLists: false,
+    }),
+    adminDb.collection("users").doc(viewer).set({
+      role: "user",
+      adminEnabled: false,
+    }),
+    adminDb.collection("users").doc(ownerViewer).set({
+      role: "owner",
+      adminEnabled: true,
+    }),
+    adminDb.collection("agency_host_monthly")
+      .doc(agencyId + "__2026-09__" + hiddenHost)
+      .set({
+        agencyId,
+        month: "2026-09",
+        hostUid: hiddenHost,
+        publicRankingKey: agencyPublicRankingKey({
+          agencyId,
+          month: "2026-09",
+          hostUid: hiddenHost,
+          supportCoins: 300000,
+        }),
+        publicSupportCoins: 300000,
+      }),
+    adminDb.collection("agency_host_monthly")
+      .doc(agencyId + "__2026-09__" + visibleHost)
+      .set({
+        agencyId,
+        month: "2026-09",
+        hostUid: visibleHost,
+        publicRankingKey: agencyPublicRankingKey({
+          agencyId,
+          month: "2026-09",
+          hostUid: visibleHost,
+          supportCoins: 200000,
+        }),
+        publicSupportCoins: 200000,
+      }),
+  ]);
+
+  const publicResult = await loadPublicAgencyRanking(
+    db,
+    { agencyId, month: "2026-09" },
+    now,
+    viewer,
+  );
+  assert.deepEqual(
+    publicResult.top10.map((entry) => entry.uid),
+    [visibleHost],
+  );
+  assert.deepEqual(
+    publicResult.top10.map((entry) => entry.rank),
+    [1],
+  );
+
+  const ownerResult = await loadPublicAgencyRanking(
+    db,
+    { agencyId, month: "2026-09" },
+    now,
+    ownerViewer,
+  );
+  assert.deepEqual(
+    ownerResult.top10.map((entry) => entry.uid),
+    [hiddenHost, visibleHost],
+  );
+  assert.deepEqual(
+    ownerResult.top10.map((entry) => entry.rank),
+    [1, 2],
+  );
+});
