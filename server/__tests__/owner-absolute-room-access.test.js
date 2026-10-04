@@ -12,23 +12,35 @@ const realtime = readFileSync(
 );
 
 test("Owner absolute room access defaults ON for backward compatibility", () => {
-  assert.match(voice, /ownerAbsoluteRoomAccess=appOwner&&data\.ownerAbsoluteRoomAccess!==false/);
+  assert.match(
+    voice,
+    /ownerAbsoluteRoomAccess=appOwner&&data\.ownerAbsoluteRoomAccess!==false/,
+  );
 });
 
 test("Owner absolute room access gates global room authority", () => {
   assert.match(voice, /manageRooms:ownerAbsoluteRoomAccess\|\|/);
   assert.match(voice, /manageIds:ownerAbsoluteRoomAccess\|\|/);
-  assert.match(realtime, /role === "owner" && user\.ownerAbsoluteRoomAccess !== false/);
+  assert.match(
+    realtime,
+    /role === "owner" && user\.ownerAbsoluteRoomAccess !== false/,
+  );
 });
 
 test("bootstrap exposes one authoritative management state", () => {
   assert.match(voice, /platformOwner:global\.appOwner/);
-  assert.match(voice, /ownerAbsoluteRoomAccess:global\.ownerAbsoluteRoomAccess/);
+  assert.match(
+    voice,
+    /ownerAbsoluteRoomAccess:global\.ownerAbsoluteRoomAccess/,
+  );
   assert.match(voice, /globalRoomManage:global\.manageRooms/);
-  assert.match(voice, /myCapabilities:\(actualOwner\|\|global\.manageRooms\)/);
+  assert.match(
+    voice,
+    /myCapabilities:\(actualOwner\|\|global\.manageRooms\)/,
+  );
 });
 
-test("Shadow Control mutation is Owner-only, idempotent and audited", () => {
+test("Shadow Control mutation is Owner-only idempotent and audited", () => {
   assert.match(voice, /controlAction==="ownerAbsoluteRoomAccessState"/);
   assert.match(voice, /controlAction==="setOwnerAbsoluteRoomAccess"/);
   assert.match(voice, /action:"setOwnerAbsoluteRoomAccess"/);
@@ -39,5 +51,5 @@ test("Shadow Control mutation is Owner-only, idempotent and audited", () => {
 test("cross-room absolute actions carry an audit source", () => {
   assert.match(voice, /absoluteRoomAccessAudit/);
   assert.match(voice, /authoritySource:"ownerAbsoluteRoomAccess"/);
-  assert.match(voice, /ownerAbsoluteRoomAccess:"\+action/);
+  assert.match(voice, /action:"ownerAbsoluteRoomAccess:"\+action/);
 });

@@ -226,6 +226,48 @@ def main() -> int:
     if "'action': 'roomBootstrap'" not in room_bootstrap_service:
         failures.append("Step 7 regression: Flutter bootstrap service lost its single bootstrap request")
 
+    # Owner Absolute Room Access: reuse existing actor reads and room bootstrap.
+    for required in (
+        "ownerAbsoluteRoomAccess",
+        "setOwnerAbsoluteRoomAccess",
+        "ownerAbsoluteRoomAccessState",
+        'authoritySource:"ownerAbsoluteRoomAccess"',
+    ):
+        if required not in worker:
+            failures.append(
+                f"Owner room access regression: voice authority missing {required}"
+            )
+    if 'user.ownerAbsoluteRoomAccess !== false' not in room_realtime_entry:
+        failures.append(
+            "Owner room access regression: realtime moderation ignores the Owner toggle"
+        )
+    if "صلاحيات غرف مطلقة" not in level_control_shell:
+        failures.append(
+            "Owner room access regression: Shadow Control toggle disappeared"
+        )
+    room_menu_start = app_main.find("Future<void> _showRoomMenu()")
+    room_menu_end = app_main.find("@override\n  void dispose()", room_menu_start)
+    if room_menu_start < 0 or room_menu_end < 0:
+        failures.append("Owner room access regression: Room Menu function missing")
+    else:
+        room_menu = app_main[room_menu_start:room_menu_end]
+        if "await _roomActions.loadGhostMode()" in room_menu:
+            failures.append(
+                "Owner room menu regression: three-dot menu blocks on ghost-mode network read"
+            )
+        if "_roomModeratorState?.ownerAbsoluteRoomAccess" not in room_menu:
+            failures.append(
+                "Owner room menu regression: absolute Owner state is not applied to the menu"
+            )
+    if "globalManageMic: globalRoomManage" not in app_main:
+        failures.append(
+            "Owner room access regression: live room snapshots can drop global mic authority"
+        )
+    if "globalRoomManage" not in room_moderator_service:
+        failures.append(
+            "Owner room access regression: moderator state cannot preserve global authority"
+        )
+
     # Step 8: low-change configuration cache must reduce hot Firestore reads
     # without moving financial authority out of Firestore transactions.
     for required in (
