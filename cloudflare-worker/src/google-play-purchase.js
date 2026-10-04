@@ -154,20 +154,6 @@ async function markConsumeState(db, hash, fields) {
         return;
       }
       await db.commit(transaction, [
-        ...(publicProfileSnap.exists
-          ? [
-              db.writeUpdate(
-                `public_profiles/${uid}`,
-                vipPublicProfilePatch(vipAfter, now),
-                [
-                  "vipLevel",
-                  "effectiveVipLevel",
-                  "vipExpiresAt",
-                  "updatedAt",
-                ],
-              ),
-            ]
-          : []),
         db.writeUpdate(
           `google_play_purchases/${hash}`,
           fields,
@@ -301,6 +287,20 @@ export async function creditPurchase(
             "vipUpdatedAt",
           ],
         ),
+        ...(publicProfileSnap.exists
+          ? [
+              db.writeUpdate(
+                `public_profiles/${uid}`,
+                vipPublicProfilePatch(vipAfter, now),
+                [
+                  "vipLevel",
+                  "effectiveVipLevel",
+                  "vipExpiresAt",
+                  "updatedAt",
+                ],
+              ),
+            ]
+          : []),
         db.writeUpdate(
           `google_play_purchases/${hash}`,
           {
