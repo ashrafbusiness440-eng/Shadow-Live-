@@ -12,6 +12,7 @@ class VipSummaryData {
     required this.growthPoints,
     required this.maintenancePoints,
     required this.maintenanceRequired,
+    required this.currentThreshold,
     required this.remainingToNext,
     required this.maxGrowthPoints,
     required this.earnedVipExpiresAtMs,
@@ -28,6 +29,7 @@ class VipSummaryData {
   final int growthPoints;
   final int maintenancePoints;
   final int maintenanceRequired;
+  final int currentThreshold;
   final int remainingToNext;
   final int maxGrowthPoints;
   final int earnedVipExpiresAtMs;
@@ -52,6 +54,7 @@ class VipSummaryData {
       growthPoints: value('growthPoints'),
       maintenancePoints: value('maintenancePoints'),
       maintenanceRequired: value('maintenanceRequired'),
+      currentThreshold: value('currentThreshold'),
       remainingToNext: value('remainingToNext'),
       maxGrowthPoints: value('maxGrowthPoints'),
       earnedVipExpiresAtMs: value('earnedVipExpiresAtMs'),
