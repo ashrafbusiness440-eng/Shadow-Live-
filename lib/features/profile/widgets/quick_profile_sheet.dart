@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../screens/public_profile_screen.dart';
 import '../screens/user_level_screen.dart';
@@ -59,6 +61,18 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
   late Future<DocumentSnapshot<Map<String, dynamic>>> _profileFuture;
   late Future<UserLevelSummary> _levelFuture;
   bool _changingFollow = false;
+
+  bool get _isSelf => FirebaseAuth.instance.currentUser?.uid == widget.userId;
+
+  Future<void> _copyPublicId(String publicId) async {
+    final value = publicId.trim();
+    if (value.isEmpty || value == '—') return;
+    await Clipboard.setData(ClipboardData(text: value));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('تم نسخ ID المستخدم')),
+    );
+  }
 
   @override
   void initState() {
@@ -174,6 +188,7 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                 ? (data['badges'] as List).map((e) => e.toString()).where((e) => e.isNotEmpty).toList()
                 : <String>[];
             final provider = _avatar(data);
+            final isSelf = _isSelf;
 
             return SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
@@ -217,7 +232,28 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                       children: [
                         Text(name, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
                         const SizedBox(height: 4),
-                        Text('ID: $publicId', textDirection: TextDirection.ltr, style: const TextStyle(color: Colors.white54)),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'ID: $publicId',
+                              textDirection: TextDirection.ltr,
+                              style: const TextStyle(color: Colors.white54),
+                            ),
+                            const SizedBox(width: 3),
+                            IconButton(
+                              key: const Key('quick-profile-copy-id'),
+                              tooltip: 'نسخ ID',
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () => _copyPublicId(publicId),
+                              icon: const Icon(
+                                Icons.copy_rounded,
+                                size: 15,
+                                color: Color(0xFFFFD54A),
+                              ),
+                            ),
+                          ],
+                        ),
                         if (mood.isNotEmpty) ...[
                           const SizedBox(height: 7),
                           Text(
@@ -251,76 +287,88 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                   const SizedBox(height: 20),
                   Row(
                     children: [
-                      Expanded(
-                        child: StreamBuilder<bool>(
-                          stream: _follow.isFollowing(widget.userId),
-                          builder: (context, followSnapshot) {
-                            final following = followSnapshot.data == true;
-                            return FilledButton.icon(
-                              onPressed: _changingFollow
-                                  ? null
-                                  : () async {
-                                      setState(() => _changingFollow = true);
-                                      try {
-                                        await _follow.setFollowing(widget.userId, !following);
-                                      } catch (_) {
-                                        if (mounted) {
-                                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تعذر تحديث المتابعة')));
+                      if (!isSelf) ...[
+                        Expanded(
+                          child: StreamBuilder<bool>(
+                            stream: _follow.isFollowing(widget.userId),
+                            builder: (context, followSnapshot) {
+                              final following = followSnapshot.data == true;
+                              return FilledButton.icon(
+                                onPressed: _changingFollow
+                                    ? null
+                                    : () async {
+                                        setState(() => _changingFollow = true);
+                                        try {
+                                          await _follow.setFollowing(widget.userId, !following);
+                                        } catch (_) {
+                                          if (mounted) {
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              const SnackBar(content: Text('تعذر تحديث المتابعة')),
+                                            );
+                                          }
+                                        } finally {
+                                          if (mounted) setState(() => _changingFollow = false);
                                         }
-                                      } finally {
-                                        if (mounted) setState(() => _changingFollow = false);
-                                      }
-                                    },
-                              style: FilledButton.styleFrom(
-                                backgroundColor: following ? const Color(0xFF262B38) : const Color(0xFF7B2DFF),
-                                foregroundColor: Colors.white,
-                                disabledForegroundColor: Colors.white54,
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 13),
-                                minimumSize: const Size(0, 48),
-                                textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
-                              ),
-                              icon: Icon(
-                                following ? Icons.person_remove_alt_1_rounded : Icons.person_add_alt_1_rounded,
-                                size: 18,
-                              ),
-                              label: FittedBox(
-                                fit: BoxFit.scaleDown,
-                                child: Text(
-                                  following ? 'إلغاء المتابعة' : 'متابعة',
-                                  maxLines: 1,
-                                  softWrap: false,
+                                      },
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: following
+                                      ? const Color(0xFF262B38)
+                                      : const Color(0xFF7B2DFF),
+                                  foregroundColor: Colors.white,
+                                  disabledForegroundColor: Colors.white54,
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 13),
+                                  minimumSize: const Size(0, 48),
+                                  textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
                                 ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () async {
-                            final navigator = Navigator.of(context);
-                            Navigator.pop(context);
-                            await ProfileActionService.openChatWithNavigator(
-                              navigator,
-                              otherUid: widget.userId,
-                              otherName: name,
-                              otherPhoto: photo,
-                            );
-                          },
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFFFFD54A),
-                            side: const BorderSide(color: Colors.white70),
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 13),
-                            minimumSize: const Size(0, 48),
+                                icon: Icon(
+                                  following
+                                      ? Icons.person_remove_alt_1_rounded
+                                      : Icons.person_add_alt_1_rounded,
+                                  size: 18,
+                                ),
+                                label: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    following ? 'إلغاء المتابعة' : 'متابعة',
+                                    maxLines: 1,
+                                    softWrap: false,
+                                  ),
+                                ),
+                              );
+                            },
                           ),
-                          icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
-                          label: const FittedBox(fit: BoxFit.scaleDown, child: Text('رسالة', maxLines: 1)),
                         ),
-                      ),
-                      const SizedBox(width: 8),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () async {
+                              final navigator = Navigator.of(context);
+                              Navigator.pop(context);
+                              await ProfileActionService.openChatWithNavigator(
+                                navigator,
+                                otherUid: widget.userId,
+                                otherName: name,
+                                otherPhoto: photo,
+                              );
+                            },
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFFFFD54A),
+                              side: const BorderSide(color: Colors.white70),
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 13),
+                              minimumSize: const Size(0, 48),
+                            ),
+                            icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+                            label: const FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('رسالة', maxLines: 1),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
                       Expanded(
                         child: OutlinedButton.icon(
+                          key: const Key('quick-profile-gift'),
                           onPressed: () => _gift(context, name),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: const Color(0xFFFFD54A),
@@ -329,7 +377,10 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                             minimumSize: const Size(0, 48),
                           ),
                           icon: const Icon(Icons.card_giftcard_rounded, size: 18),
-                          label: const FittedBox(fit: BoxFit.scaleDown, child: Text('هدية', maxLines: 1)),
+                          label: const FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text('هدية', maxLines: 1),
+                          ),
                         ),
                       ),
                     ],
