@@ -48,3 +48,64 @@ class VipAvatarFrame extends StatelessWidget {
     );
   }
 }
+
+
+class VipInlineBadge extends StatelessWidget {
+  const VipInlineBadge({
+    super.key,
+    required this.vipLevel,
+    this.micro = false,
+    this.resolveUri,
+  });
+
+  final int vipLevel;
+  final bool micro;
+  final LevelAssetUriResolver? resolveUri;
+
+  @override
+  Widget build(BuildContext context) {
+    final level = vipLevel.clamp(0, 10).toInt();
+    if (level <= 0) return const SizedBox.shrink();
+
+    final iconSize = micro ? 13.0 : 17.0;
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: micro ? 5 : 7,
+        vertical: micro ? 2 : 4,
+      ),
+      decoration: BoxDecoration(
+        color: const Color(0xFF3A220F),
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: const Color(0x88FFD98A)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox.square(
+            dimension: iconSize,
+            child: LevelAssetImage(
+              assetKey: ShadowAssetKeys.vipLevelBadge(level),
+              resolveUri: resolveUri,
+              fit: BoxFit.contain,
+              fallback: Icon(
+                Icons.workspace_premium_rounded,
+                size: iconSize,
+                color: const Color(0xFFFFD98A),
+              ),
+            ),
+          ),
+          SizedBox(width: micro ? 3 : 4),
+          Text(
+            'VIP$level',
+            textDirection: TextDirection.ltr,
+            style: TextStyle(
+              color: const Color(0xFFFFE2B5),
+              fontSize: micro ? 8.5 : 10.5,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
