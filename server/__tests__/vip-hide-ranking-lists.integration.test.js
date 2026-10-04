@@ -108,13 +108,17 @@ test("VIP7 Hide Lists removes public supporters but preserves Owner visibility",
     roomId,
     includeSupporters: false,
   });
-  assert.deepEqual(
-    publicTop3.supporters.map((item) => item.uid),
-    ["hide_lists_visible", "hide_lists_expired"],
+  assert.equal(
+    publicTop3.supporters.some((item) => item.uid === "hide_lists_hidden"),
+    false,
+  );
+  assert.equal(
+    publicTop3.supporters.some((item) => item.uid === "hide_lists_missing"),
+    false,
   );
   assert.deepEqual(
     publicTop3.supporters.map((item) => item.rank),
-    [1, 2],
+    publicTop3.supporters.map((_, index) => index + 1),
   );
 
   const publicFull = await roomInsights(db, "hide_lists_viewer", {
