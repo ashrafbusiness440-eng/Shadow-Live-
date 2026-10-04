@@ -93,7 +93,6 @@ async function syncWealthLevelRewards(db, uid, rootRef, root, user, policy) {
       );
       batch.set(itemRef, {
         ...reward,
-        active: false,
         updatedAt: FieldValue.serverTimestamp(),
       }, { merge: true });
     }
