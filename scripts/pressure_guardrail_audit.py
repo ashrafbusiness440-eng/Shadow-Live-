@@ -861,23 +861,37 @@ def main() -> int:
                     f"Levels Stage 07 pressure regression: room level metadata added per-ticket lookup {forbidden}"
                 )
 
+    supporter_snapshots = function_body(worker, "supporterRankingUserSnapshots")
     supporter_enrichment = function_body(worker, "enrichSupporterPublicMetadata")
-    if supporter_enrichment is None:
+    supporter_top3_filter = function_body(worker, "filterSupporterRankingVisibility")
+    if supporter_snapshots is None or supporter_enrichment is None:
         failures.append(
-            "Levels Stage 07 regression: bounded Full Supporters enrichment missing"
+            "VIP Stage 06-D regression: bounded supporter privacy enrichment missing"
         )
     else:
+        if supporter_snapshots.count("db.getAll(") != 1:
+            failures.append(
+                "VIP Stage 06-D pressure regression: supporter privacy must use exactly one bounded getAll batch"
+            )
+        if "list.slice(0,maxUsers)" not in supporter_snapshots:
+            failures.append(
+                "VIP Stage 06-D pressure regression: supporter privacy batch lost its explicit bound"
+            )
+        if ".get()" in supporter_snapshots or "runQuery(" in supporter_snapshots:
+            failures.append(
+                "VIP Stage 06-D pressure regression: supporter privacy introduced per-row/query reads"
+            )
         if "publicLevelMetadata" not in supporter_enrichment:
             failures.append(
                 "Levels Stage 07 privacy regression: Full Supporters no longer applies hidden-level metadata"
             )
-        if supporter_enrichment.count("db.getAll(") != 1:
+        if "supporterRankingUserSnapshots(db,list,viewerUid,50)" not in supporter_enrichment:
             failures.append(
-                "Levels Stage 07 pressure regression: Full Supporters must keep exactly one bounded getAll enrichment"
+                "VIP Stage 06-D pressure regression: Full Supporters must keep the 50-user privacy bound"
             )
-        if "slice(0,50)" not in supporter_enrichment:
+        if supporter_top3_filter is None or "supporterRankingUserSnapshots(db,list,viewerUid,3)" not in supporter_top3_filter:
             failures.append(
-                "Levels Stage 07 pressure regression: Full Supporters 50-user bound changed"
+                "VIP Stage 06-D pressure regression: Top3 privacy must stay bounded to three supporters"
             )
 
     for forbidden in (
