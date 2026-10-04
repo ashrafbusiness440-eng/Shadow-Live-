@@ -3,9 +3,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../core/assets/shadow_asset_registry.dart';
+
 import '../screens/public_profile_screen.dart';
 import '../screens/user_level_screen.dart';
 import '../../gift/widgets/direct_gift_sheet.dart';
+import '../../vip/utils/vip_public_state.dart';
+import '../../vip/widgets/vip_avatar_frame.dart';
 import '../services/follow_service.dart';
 import '../services/profile_action_service.dart';
 import '../services/user_level_service.dart';
@@ -182,7 +186,7 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
               if (moodEmoji.isNotEmpty) moodEmoji,
               if (moodText.isNotEmpty) moodText,
             ].join(' ').trim();
-            final vip = (data['vipLevel'] as num?)?.toInt() ?? 0;
+            final vip = effectivePublicVipLevel(data);
             final online = data['isOnline'] == true;
             final badges = data['badges'] is List
                 ? (data['badges'] as List).map((e) => e.toString()).where((e) => e.isNotEmpty).toList()
@@ -202,11 +206,21 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                     onTap: _openFull,
                     child: Stack(
                       children: [
-                        CircleAvatar(
-                          radius: 48,
-                          backgroundColor: const Color(0xFF25183F),
-                          backgroundImage: provider,
-                          child: provider == null ? const Icon(Icons.person, color: Color(0xFFFFD54A), size: 44) : null,
+                        VipAvatarFrame(
+                          vipLevel: vip,
+                          avatarDiameter: 96,
+                          child: CircleAvatar(
+                            radius: 48,
+                            backgroundColor: const Color(0xFF25183F),
+                            backgroundImage: provider,
+                            child: provider == null
+                                ? const Icon(
+                                    Icons.person,
+                                    color: Color(0xFFFFD54A),
+                                    size: 44,
+                                  )
+                                : null,
+                          ),
                         ),
                         if (online)
                           Positioned(
@@ -278,7 +292,7 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                       spacing: 7,
                       runSpacing: 7,
                       children: [
-                        if (vip > 0) RegistryBadge(assetKey: 'vip.badge.$vip', label: 'VIP $vip'),
+                        if (vip > 0) RegistryBadge(assetKey: ShadowAssetKeys.vipLevelBadge(vip), label: 'VIP $vip'),
                         ...badges.take(3).map((b) => RegistryBadge(assetKey: normalizePublicBadgeKey(b), label: publicBadgeLabel(b))),
                       ],
                     ),
