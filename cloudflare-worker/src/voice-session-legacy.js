@@ -3457,7 +3457,12 @@ function filterHiddenSupporters(list,byUid,viewerUid,nowMs=Date.now()){
   const viewer=byUid.get(clean(viewerUid))||{};
   const canInspect=canInspectHiddenRankingLists(viewer);
   return list
-    .filter(item=>canInspect||!activeHideRankingLists(byUid.get(clean(item.uid))||{},nowMs))
+    .filter(item=>{
+      if(canInspect)return true;
+      const userId=clean(item.uid);
+      if(!byUid.has(userId))return false;
+      return !activeHideRankingLists(byUid.get(userId)||{},nowMs);
+    })
     .map((item,index)=>({...item,rank:index+1,totalSupport:item.dailySupport}));
 }
 
