@@ -1,0 +1,36 @@
+name: Stage 08-B Batch E Wealth LV26-30
+
+on:
+  push:
+    branches:
+      - stage08b-batch-e-wealth-lv26-30
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stage08b-batch-e-wealth-lv26-30
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout publisher
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install bounded publisher dependencies
+        run: pip install --disable-pip-version-check pillow requests google-auth
+
+      - name: Generate validate publish link and verify Wealth LV26-30
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          SHADOW_ASSET_GITHUB_TOKEN: ${{ secrets.SHADOW_ASSET_GITHUB_TOKEN }}
+          WEALTH_TIER: lv26_30
+        run: python cloudflare-worker/scripts/publish-wealth-tier-assets.py
