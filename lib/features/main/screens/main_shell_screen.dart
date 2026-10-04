@@ -11,6 +11,7 @@ import '../../chat/screens/chat_list_screen.dart';
 import '../../home/screens/home_screen.dart';
 import '../../games/screens/games_hub_screen.dart';
 import '../../room/services/room_seat_service.dart';
+import '../../room/services/room_image_source.dart';
 import '../../user/screens/profile_screen.dart';
 import '../../voice/services/voice_room_session_controller.dart';
 import '../../../services/navigation_service.dart';
@@ -50,20 +51,8 @@ class _MainShellScreenState extends State<MainShellScreen> {
     if (mounted) setState(() {});
   }
 
-  String get _miniRoomImageUrl {
-    final room = _voiceSession.roomArguments;
-    for (final key in const [
-      'agencyRoomImageUrl',
-      'roomImageUrl',
-      'roomPhotoUrl',
-      'imageUrl',
-      'coverImageUrl',
-    ]) {
-      final value = (room[key] ?? '').toString().trim();
-      if (value.isNotEmpty) return value;
-    }
-    return '';
-  }
+  String get _miniRoomImageUrl =>
+      roomSurfaceImageUrl(_voiceSession.roomArguments);
 
   void _restoreMiniRoom() {
     if (!_voiceSession.active) return;

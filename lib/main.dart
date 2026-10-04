@@ -49,6 +49,7 @@ import 'screens/settings/settings_screen.dart';
 import 'services/navigation_service.dart';
 import 'features/voice/services/voice_room_session_controller.dart';
 import 'features/room/services/room_action_service.dart';
+import 'features/room/services/room_image_source.dart';
 import 'features/room/services/room_invite_service.dart';
 import 'features/room/services/room_insights_service.dart';
 import 'features/room/services/room_bootstrap_service.dart';
@@ -3161,7 +3162,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       text: (_roomArguments['description'] ?? '').toString(),
     );
     final initialCoverImageUrl = isAgencyRoom
-        ? (_roomArguments['agencyRoomImageUrl'] ?? '').toString().trim()
+        ? roomSurfaceImageUrl(_roomArguments)
         : (_roomArguments['roomImageUrl'] ??
                 _roomArguments['coverImageUrl'] ??
                 _roomArguments['imageUrl'] ??
@@ -3169,7 +3170,11 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             .toString()
             .trim();
     final initialCoverObjectId = isAgencyRoom
-        ? (_roomArguments['agencyRoomImageObjectId'] ?? '').toString().trim()
+        ? (_roomArguments['agencyRoomImageObjectId'] ??
+                _roomArguments['roomImageObjectId'] ??
+                '')
+            .toString()
+            .trim()
         : (_roomArguments['roomImageObjectId'] ??
                 _roomArguments['coverImageObjectId'] ??
                 '')
@@ -3627,18 +3632,26 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                 Map<String, dynamic>? updatedRoom;
                                 try {
                                   final existingCoverImageUrl =
-                                      (_roomArguments['roomImageUrl'] ??
-                                              _roomArguments['coverImageUrl'] ??
-                                              _roomArguments['imageUrl'] ??
-                                              '')
-                                          .toString()
-                                          .trim();
+                                      isAgencyRoom
+                                          ? roomSurfaceImageUrl(_roomArguments)
+                                          : (_roomArguments['roomImageUrl'] ??
+                                                  _roomArguments['coverImageUrl'] ??
+                                                  _roomArguments['imageUrl'] ??
+                                                  '')
+                                              .toString()
+                                              .trim();
                                   final existingCoverObjectId =
-                                      (_roomArguments['roomImageObjectId'] ??
-                                              _roomArguments['coverImageObjectId'] ??
-                                              '')
-                                          .toString()
-                                          .trim();
+                                      isAgencyRoom
+                                          ? (_roomArguments['agencyRoomImageObjectId'] ??
+                                                  _roomArguments['roomImageObjectId'] ??
+                                                  '')
+                                              .toString()
+                                              .trim()
+                                          : (_roomArguments['roomImageObjectId'] ??
+                                                  _roomArguments['coverImageObjectId'] ??
+                                                  '')
+                                              .toString()
+                                              .trim();
 
                                   var nextCoverImageUrl =
                                       isAgencyRoom
@@ -4565,24 +4578,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     return 'Shadow Live';
   }
 
-  String get _roomHeaderImageUrl {
-    final agencyRoomImage =
-        (_roomArguments['agencyRoomImageUrl'] ?? '').toString().trim();
-    if (_roomAgencyId.isNotEmpty && agencyRoomImage.isNotEmpty) {
-      return agencyRoomImage;
-    }
-
-    for (final key in const [
-      'roomImageUrl',
-      'roomPhotoUrl',
-      'coverImageUrl',
-      'imageUrl',
-    ]) {
-      final value = (_roomArguments[key] ?? '').toString().trim();
-      if (value.isNotEmpty) return value;
-    }
-    return '';
-  }
+  String get _roomHeaderImageUrl =>
+      roomSurfaceImageUrl(_roomArguments);
 
   void _openAgencyPage() {
     final agencyId = _roomAgencyId;
