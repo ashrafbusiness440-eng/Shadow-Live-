@@ -1,0 +1,78 @@
+{
+  "batch": "E",
+  "metric": "wealth",
+  "tier": "lv31_35",
+  "publishedAt": "2026-10-04T09:14:57.646583Z",
+  "assets": [
+    {
+      "assetKey": "levels.wealth.lv31_35.mainBadge",
+      "fullPath": "assets/images/levels/wealth/lv31_35/wealth_lv31_35_main_badge.webp",
+      "width": 1024,
+      "height": 1024,
+      "contentSha": "b5e6ad304836dc16189fa2d383867f9ff891504c"
+    },
+    {
+      "assetKey": "levels.wealth.lv31_35.wealthBadge",
+      "fullPath": "assets/images/levels/wealth/lv31_35/wealth_lv31_35_wealth_badge.webp",
+      "width": 512,
+      "height": 256,
+      "contentSha": "11d9548426f29ab6d9055e4750fbc47c666d20ec"
+    },
+    {
+      "assetKey": "levels.wealth.lv31_35.upgradeAnnouncement",
+      "fullPath": "assets/images/levels/wealth/lv31_35/wealth_lv31_35_upgrade_announcement.webp",
+      "width": 1536,
+      "height": 384,
+      "contentSha": "c45c6689de92ce671de2e8478ec285b1cb79d0b0"
+    },
+    {
+      "assetKey": "levels.wealth.lv31_35.entryEffect",
+      "fullPath": "assets/images/levels/wealth/lv31_35/wealth_lv31_35_entry_effect.webp",
+      "width": 1536,
+      "height": 512,
+      "contentSha": "c8f4436075ca17146b4ac3530f8ff460d2f466d3"
+    },
+    {
+      "assetKey": "levels.wealth.lv31_35.chatBubble",
+      "fullPath": "assets/images/levels/wealth/lv31_35/wealth_lv31_35_chat_bubble.webp",
+      "width": 1024,
+      "height": 512,
+      "contentSha": "659ef2b996f6af514b5bd5ddd9951a93345a36b5"
+    },
+    {
+      "assetKey": "levels.wealth.lv31_35.profileFrame",
+      "fullPath": "assets/images/levels/wealth/lv31_35/wealth_lv31_35_profile_frame.webp",
+      "width": 1024,
+      "height": 1024,
+      "contentSha": "8ca1d62ee669ace94e26ea898c6a40c583487129"
+    },
+    {
+      "assetKey": "levels.wealth.lv31_35.supportBar",
+      "fullPath": "assets/images/levels/wealth/lv31_35/wealth_lv31_35_support_bar.webp",
+      "width": 1536,
+      "height": 384,
+      "contentSha": "3dc33b8bd23d3341944cb34c2d027b4be83313f7"
+    },
+    {
+      "assetKey": "levels.wealth.lv31_35.giftPrivilege",
+      "fullPath": "assets/images/levels/wealth/lv31_35/wealth_lv31_35_gift_privilege.webp",
+      "width": 1024,
+      "height": 1024,
+      "contentSha": "82b20fed8c71ecea65c43a033610faa0db7e4531"
+    },
+    {
+      "assetKey": "levels.wealth.lv31_35.entryBar",
+      "fullPath": "assets/images/levels/wealth/lv31_35/wealth_lv31_35_entry_bar.webp",
+      "width": 1536,
+      "height": 384,
+      "contentSha": "3dc33b8bd23d3341944cb34c2d027b4be83313f7"
+    },
+    {
+      "assetKey": "levels.wealth.lv31_35.vehicle",
+      "fullPath": "assets/images/levels/wealth/lv31_35/wealth_lv31_35_vehicle.webp",
+      "width": 1024,
+      "height": 1024,
+      "contentSha": "8eb61bf48a47ee6e90e88efcb2d12df4310e0784"
+    }
+  ]
+}
