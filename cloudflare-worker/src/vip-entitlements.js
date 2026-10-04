@@ -62,6 +62,10 @@ export function activeRoomGhostMode(user = {}, nowMs = Date.now()) {
   return user.roomGhostMode === true && canUseRoomGhostMode(user, nowMs);
 }
 
+export function canUseHiddenRoomEntry(user = {}, nowMs = Date.now()) {
+  return vipEntitlementsFromUser(user, nowMs).hiddenRoomEntry;
+}
+
 export function activeHiddenRoomEntry(user = {}, nowMs = Date.now()) {
   return (
     user.roomHiddenEntry === true &&
