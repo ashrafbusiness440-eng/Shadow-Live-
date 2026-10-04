@@ -16,7 +16,7 @@ const OWNER = "ashrafbusiness440-eng";
 const REPO = "Shadow-Live-";
 const DEFAULT_BRANCH = "main";
 const MAX_BYTES = 2500000;
-const ALLOWED_DIRS = new Set([
+const ALLOWED_DIRS = Object.freeze([
   "assets/images","assets/images/avatars","assets/images/coins","assets/images/badges","assets/images/vip",
   "assets/images/levels","assets/images/roles","assets/images/frames","assets/images/gifts","assets/images/rooms",
   "assets/images/backgrounds","assets/images/banners","assets/images/games",
@@ -41,6 +41,28 @@ function normalizeDirectory(value) {
   let text = clean(value).replace(/\\/g, "/");
   while (text.endsWith("/")) text = text.slice(0, -1);
   return text;
+}
+
+function safeDirectory(value) {
+  const directory = normalizeDirectory(value);
+  if (!directory || directory.startsWith("/") || directory.includes("//")) {
+    return false;
+  }
+  const segments = directory.split("/");
+  if (
+    segments.some(
+      (segment) =>
+        !segment ||
+        segment === "." ||
+        segment === ".." ||
+        !/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(segment),
+    )
+  ) {
+    return false;
+  }
+  return ALLOWED_DIRS.some(
+    (root) => directory === root || directory.startsWith(`${root}/`),
+  );
 }
 
 function validFileName(name) {
@@ -456,7 +478,7 @@ export async function manageAppAsset(request, env) {
     const mode = body.mode === "bundled" ? "bundled" : "remote";
 
     if (
-      !ALLOWED_DIRS.has(directory) ||
+      !safeDirectory(directory) ||
       !validFileName(fileName) ||
       !mimeType.startsWith("image/")
     ) {

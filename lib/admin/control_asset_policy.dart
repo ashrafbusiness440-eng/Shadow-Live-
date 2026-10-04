@@ -41,8 +41,26 @@ abstract final class ControlAssetPolicy {
     return text;
   }
 
-  static bool directoryAllowed(String value) =>
-      allowedDirectories.contains(normalizeDirectory(value));
+  static bool directoryAllowed(String value) {
+    final directory = normalizeDirectory(value);
+    if (directory.isEmpty ||
+        directory.startsWith('/') ||
+        directory.contains('//')) {
+      return false;
+    }
+    final segments = directory.split('/');
+    final safeSegment = RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$');
+    if (segments.any((segment) =>
+        segment.isEmpty ||
+        segment == '.' ||
+        segment == '..' ||
+        !safeSegment.hasMatch(segment))) {
+      return false;
+    }
+    return allowedDirectories.any(
+      (root) => directory == root || directory.startsWith('$root/'),
+    );
+  }
 
   static bool fileNameAllowed(String value) {
     final name = value.trim();

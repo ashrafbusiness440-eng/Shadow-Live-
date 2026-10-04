@@ -62,8 +62,29 @@ class ControlAssetStudioTemplate {
     );
   }
 
-  bool allowsDirectory(String value) =>
-      directories.contains(value.trim().replaceAll(RegExp(r'/+$'), ''));
+  bool allowsDirectory(String value) {
+    var directory = value.trim().replaceAll('\\', '/');
+    directory = directory.replaceAll(RegExp(r'/+$'), '');
+    if (directory.isEmpty ||
+        directory.startsWith('/') ||
+        directory.contains('//')) {
+      return false;
+    }
+    final safeSegment = RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$');
+    final segments = directory.split('/');
+    if (segments.any((segment) =>
+        segment.isEmpty ||
+        segment == '.' ||
+        segment == '..' ||
+        !safeSegment.hasMatch(segment))) {
+      return false;
+    }
+    return directories.any((root) {
+      final normalizedRoot = root.trim().replaceAll(RegExp(r'/+$'), '');
+      return directory == normalizedRoot ||
+          directory.startsWith('$normalizedRoot/');
+    });
+  }
 
   bool allowsExtension(String value) =>
       extensions.contains(value.trim().toLowerCase());
