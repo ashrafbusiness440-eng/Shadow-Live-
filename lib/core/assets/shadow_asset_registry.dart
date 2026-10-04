@@ -42,8 +42,26 @@ abstract final class ShadowAssetKeys {
   static const ownerBadge = 'role.owner';
   static const adminBadge = 'role.admin';
   static const moderatorBadge = 'role.moderator';
+  // Legacy VIP keys remain for already-published surfaces.
   static String vipBadge(int level) => 'vip.badge.$level';
   static String vipFrame(int level) => 'vip.frame.$level';
+
+  // Official VIP1→VIP10 Asset Studio keys. Entitlement unlock is separate
+  // from the selected level skin so designs can be replaced without rewriting
+  // VIP business logic or Flutter surfaces.
+  static String vipMainBadge(int level) => 'vip.v$level.mainBadge';
+  static String vipLevelBadge(int level) => 'vip.v$level.badge';
+  static String vipChatBubble(int level) => 'vip.v$level.chatBubble';
+  static String vipProfileFrame(int level) => 'vip.v$level.profileFrame';
+  static String vipProfileBackground(int level) => 'vip.v$level.profileBackground';
+  static String vipVehicle(int level) => 'vip.v$level.vehicle';
+  static String vipAudioWave(int level) => 'vip.v$level.audioWave';
+  static String vipEntryStrip(int level) => 'vip.v$level.entryStrip';
+  static String vipDataCard(int level) => 'vip.v$level.dataCard';
+  static String vipGiftVisual(int level) => 'vip.v$level.giftVisual';
+  static String vipProfileDecoration(int level) => 'vip.v$level.profileDecoration';
+  static String vipNameEffect(int level) => 'vip.v$level.nameEffect';
+  static String vipGlobalEntryBanner(int level) => 'vip.v$level.globalEntryBanner';
 
   static String? levelMainBadge(String metric, int level) {
     final bucket = _levelBucket(metric, level);
