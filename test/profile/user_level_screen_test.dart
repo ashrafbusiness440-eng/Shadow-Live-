@@ -77,7 +77,7 @@ void main() {
     await tester.tap(find.text('الجاذبية'));
     await tester.pumpAndSettle();
     expect(find.text('LV10'), findsOneWidget);
-    expect(find.text('رتبة بصرية'), findsOneWidget);
+    expect(find.text('شارة الجاذبية'), findsOneWidget);
 
     await tester.tap(find.text('الألعاب'));
     await tester.pumpAndSettle();
