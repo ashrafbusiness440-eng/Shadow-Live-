@@ -95,6 +95,36 @@ test("studio validation accepts matching metadata and rejects mismatches", () =>
   }).code, "template_extension_mismatch");
 });
 
+test("studio validation accepts safe level subdirectories and blocks traversal", () => {
+  const nested = validateAssetStudioMetadata({
+    studioVersion: 1,
+    assetType: "badge",
+    templateId: "badge.base.v1",
+    channels: ["system"],
+    directory: "assets/images/levels/game/lv01_03",
+    fileName: "game_main_lv01_03.webp",
+    byteSize: 120000,
+  });
+  assert.equal(nested.ok, true);
+
+  for (const directory of [
+    "assets/images/levels/../secrets",
+    "assets/images/levels/game/../../vip",
+    "/assets/images/levels/game",
+    "assets/images/levels//game",
+  ]) {
+    assert.equal(validateAssetStudioMetadata({
+      studioVersion: 1,
+      assetType: "badge",
+      templateId: "badge.base.v1",
+      channels: ["system"],
+      directory,
+      fileName: "game_main_lv01_03.webp",
+      byteSize: 120000,
+    }).code, "template_directory_mismatch");
+  }
+});
+
 test("legacy asset manager requests stay backward compatible", () => {
   const result = validateAssetStudioMetadata({
     studioVersion: 0,
@@ -123,6 +153,8 @@ test("asset manager keeps bounded registry and explicit draft publish flow", () 
   assert.equal(worker.includes('"published_asset_requires_publish"'), false);
   assert.equal(worker.includes("writeFinalAssetToGithub"), true);
   assert.equal(worker.includes("publicAssetStudioTemplates()"), true);
+  assert.equal(worker.includes("segment === \"..\""), true);
+  assert.equal(worker.includes("directory.startsWith(`\${root}/`)"), true);
 
   assert.equal(control.includes("'حفظ مسودة'"), true);
   assert.equal(control.includes("'نشر'"), true);
