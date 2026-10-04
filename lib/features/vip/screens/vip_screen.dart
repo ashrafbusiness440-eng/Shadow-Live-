@@ -472,9 +472,13 @@ class _VipScreenState extends State<VipScreen> {
     final currentForProgress = summary.growthPoints;
     final target =
         summary.remainingToNext > 0 ? currentForProgress + summary.remainingToNext : 0;
-    final progress = target <= 0
-        ? (summary.effectiveVipLevel >= 10 ? 1.0 : 0.0)
-        : (currentForProgress / target).clamp(0.0, 1.0);
+    final span = target - summary.currentThreshold;
+    final progress = summary.effectiveVipLevel >= 10
+        ? 1.0
+        : span <= 0
+            ? 0.0
+            : ((currentForProgress - summary.currentThreshold) / span)
+                .clamp(0.0, 1.0);
 
     return Container(
       padding: const EdgeInsets.all(16),
