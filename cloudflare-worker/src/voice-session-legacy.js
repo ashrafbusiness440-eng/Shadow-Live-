@@ -4100,3 +4100,5 @@ export default async function handler(req,res){
     return out(res,500,{ok:false,code:"server_failed"});
   }
 }
+
+export { roomGhostState, setRoomGhostMode, roomPresenceState };
