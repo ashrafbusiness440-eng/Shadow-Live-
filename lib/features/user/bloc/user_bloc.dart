@@ -157,30 +157,13 @@ class UserBloc extends Bloc<UserEvent, UserState> {
     UpdateVipStatus event,
     Emitter<UserState> emit,
   ) async {
-    emit(UserLoading());
-    try {
-      final updateData = {
-        'vipLevel': event.vipLevel,
-        'vipData': event.vipData,
-        'vipUpdatedAt': DateTime.now().toIso8601String(),
-      };
-
-      await _firebaseService.updateUserProfile(event.userId, updateData);
-
-      final updatedProfile =
-          await _firebaseService.getUserProfile(event.userId);
-      if (updatedProfile != null) {
-        await _storageService.saveUser(updatedProfile);
-        emit(UserProfileUpdated(
-          event.userId,
-          <String, dynamic>{...updatedProfile, 'uid': event.userId},
-        ));
-      } else {
-        emit(UserError('Failed to fetch updated profile'));
-      }
-    } catch (e) {
-      emit(UserError(e.toString()));
-    }
+    // VIP1→VIP10 is server-authoritative. Keep the legacy event temporarily
+    // for source compatibility, but never allow it to write VIP state.
+    emit(
+      UserError(
+        'VIP state is server-authoritative and cannot be changed by the client',
+      ),
+    );
   }
 
   Future<void> _onUpdateUserBalance(
