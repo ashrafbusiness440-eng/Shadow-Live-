@@ -53,6 +53,18 @@ function boundedInteger(value, fallback, min, max) {
   return Math.max(min, Math.min(max, number));
 }
 
+function integerOrDefault(value, fallback, min, max) {
+  const number = Number(value);
+  if (
+    !Number.isSafeInteger(number) ||
+    number < min ||
+    number > max
+  ) {
+    return fallback;
+  }
+  return number;
+}
+
 function normalizeAscendingIntegers(raw, fallback, length) {
   if (!Array.isArray(raw) || raw.length !== length) return [...fallback];
   const normalized = [];
@@ -115,19 +127,19 @@ export function normalizeVipPolicy(raw = {}) {
       0,
       10_000,
     ),
-    maxGrowthPoints: boundedInteger(
+    maxGrowthPoints: integerOrDefault(
       data.maxGrowthPoints,
       DEFAULT_VIP_POLICY.maxGrowthPoints,
       growthThresholds.at(-1),
       Number.MAX_SAFE_INTEGER,
     ),
-    paidRechargeGrowthPerCoin: boundedInteger(
+    paidRechargeGrowthPerCoin: integerOrDefault(
       data.paidRechargeGrowthPerCoin,
       1,
       1,
       100,
     ),
-    purchasedGrowthPerCoin: boundedInteger(
+    purchasedGrowthPerCoin: integerOrDefault(
       data.purchasedGrowthPerCoin,
       3,
       1,
