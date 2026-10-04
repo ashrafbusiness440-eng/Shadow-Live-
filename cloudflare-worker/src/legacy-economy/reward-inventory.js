@@ -195,7 +195,7 @@ export async function listInventory(db,uid,nowMs=Date.now()){
       policy,
     );
   }
-  const snapshot=await rootRef.collection("items").limit(100).get();
+  const snapshot=await rootRef.collection("items").limit(200).get();
   const items=snapshot.docs.map((doc)=>serializeReward(doc,nowMs))
     .filter((item)=>ALLOWED_TYPES.has(item.type))
     .sort((a,b)=>{
