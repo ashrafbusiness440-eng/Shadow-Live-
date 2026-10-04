@@ -34,6 +34,24 @@ export function canOverrideVipRoomProtection(user = {}) {
   return canInspectHiddenRoomPresence(user);
 }
 
+export function canInspectHiddenRankingLists(user = {}) {
+  const role = clean(user.role);
+  if (role === "owner") return true;
+  if (user.adminEnabled !== true) return false;
+  const capabilities = new Set(
+    Array.isArray(user.capabilities)
+      ? user.capabilities.map(clean).filter(Boolean)
+      : [],
+  );
+  return (
+    capabilities.has("reviewReports") ||
+    capabilities.has("manageUsers") ||
+    capabilities.has("manageUserLevels") ||
+    capabilities.has("globalRoomControl") ||
+    capabilities.has("manageRooms")
+  );
+}
+
 export function canInspectHiddenRoomPresence(user = {}) {
   const role = clean(user.role);
   if (role === "owner") return true;
@@ -70,5 +88,16 @@ export function activeHiddenRoomEntry(user = {}, nowMs = Date.now()) {
   return (
     user.roomHiddenEntry === true &&
     vipEntitlementsFromUser(user, nowMs).hiddenRoomEntry
+  );
+}
+
+export function canUseRankingListHiding(user = {}, nowMs = Date.now()) {
+  return vipEntitlementsFromUser(user, nowMs).hideRankingLists;
+}
+
+export function activeHideRankingLists(user = {}, nowMs = Date.now()) {
+  return (
+    user.hideRankingLists === true &&
+    canUseRankingListHiding(user, nowMs)
   );
 }
