@@ -1,0 +1,57 @@
+{
+  "batch": "E",
+  "metric": "wealth",
+  "tier": "lv06_10",
+  "publishedAt": "2026-10-04T08:10:58.997278Z",
+  "assets": [
+    {
+      "assetKey": "levels.wealth.lv06_10.mainBadge",
+      "fullPath": "assets/images/levels/wealth/lv06_10/wealth_lv06_10_main_badge.webp",
+      "width": 1024,
+      "height": 1024,
+      "contentSha": "11132c22832b5f8a038e9878c2bea9a50b9ec87f"
+    },
+    {
+      "assetKey": "levels.wealth.lv06_10.wealthBadge",
+      "fullPath": "assets/images/levels/wealth/lv06_10/wealth_lv06_10_wealth_badge.webp",
+      "width": 512,
+      "height": 256,
+      "contentSha": "a145aba6785aed54dd454facf92bcd44c7f723bc"
+    },
+    {
+      "assetKey": "levels.wealth.lv06_10.upgradeAnnouncement",
+      "fullPath": "assets/images/levels/wealth/lv06_10/wealth_lv06_10_upgrade_announcement.webp",
+      "width": 1536,
+      "height": 384,
+      "contentSha": "3f94f52c1dfa4301f940726e0d46f9e13e897d1d"
+    },
+    {
+      "assetKey": "levels.wealth.lv06_10.entryEffect",
+      "fullPath": "assets/images/levels/wealth/lv06_10/wealth_lv06_10_entry_effect.webp",
+      "width": 1536,
+      "height": 512,
+      "contentSha": "53d47978a6292740657c47944efc69f0f6933ad4"
+    },
+    {
+      "assetKey": "levels.wealth.lv06_10.chatBubble",
+      "fullPath": "assets/images/levels/wealth/lv06_10/wealth_lv06_10_chat_bubble.webp",
+      "width": 1024,
+      "height": 512,
+      "contentSha": "72ad77017a396063f7d0138d15bec47078897f77"
+    },
+    {
+      "assetKey": "levels.wealth.lv06_10.profileFrame",
+      "fullPath": "assets/images/levels/wealth/lv06_10/wealth_lv06_10_profile_frame.webp",
+      "width": 1024,
+      "height": 1024,
+      "contentSha": "0f67b95cef225e0904e05b9cbef396403e4b218e"
+    },
+    {
+      "assetKey": "levels.wealth.lv06_10.supportBar",
+      "fullPath": "assets/images/levels/wealth/lv06_10/wealth_lv06_10_support_bar.webp",
+      "width": 1536,
+      "height": 384,
+      "contentSha": "867849b14c8973c40102dc6278195cbdef4bfe78"
+    }
+  ]
+}
