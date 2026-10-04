@@ -131,6 +131,9 @@ def main() -> int:
     level_control_backend = read("cloudflare-worker/src/manage-user-level.js")
     level_control_ui = read("lib/admin/control_user_level.dart")
     level_control_shell = read("lib/main_control.dart")
+    level_asset_image = read("lib/features/profile/widgets/level_asset_image.dart")
+    level_asset_registry = read("lib/core/assets/shadow_asset_registry.dart")
+    level_badges_ui = read("lib/features/profile/widgets/user_level_badges.dart")
     level_visibility_backend = read("cloudflare-worker/src/user-level-visibility.js")
     level_summary_backend = read("cloudflare-worker/src/user-level-summary.js")
     level_profile_ui = read("lib/features/profile/screens/user_level_screen.dart")
@@ -723,6 +726,45 @@ def main() -> int:
             failures.append(
                 f"Levels Stage 06 regression: CI missing {required_test}"
             )
+
+    # Levels Stage 08: cosmetic level assets must reuse the cached Asset Registry.
+    for required in (
+        "levelMainBadge",
+        "levelMiniBadge",
+        "levels.$metric.$bucket.mainBadge",
+    ):
+        if required not in level_asset_registry:
+            failures.append(
+                f"Levels Stage 08 asset regression: registry mapping missing {required}"
+            )
+    if "_cache.putIfAbsent" not in level_asset_registry:
+        failures.append(
+            "Levels Stage 08 pressure regression: Asset Registry lost shared Future cache"
+        )
+    for required in (
+        "ShadowAssetRegistry.remoteUrl",
+        "FutureBuilder<Uri?>",
+        "errorBuilder",
+    ):
+        if required not in level_asset_image:
+            failures.append(
+                f"Levels Stage 08 asset regression: remote fallback renderer missing {required}"
+            )
+    for forbidden in (
+        "FirebaseFirestore",
+        ".collection(",
+        ".snapshots()",
+        "Timer.periodic",
+        "StreamBuilder",
+    ):
+        if forbidden in level_asset_image or forbidden in level_badges_ui:
+            failures.append(
+                f"Levels Stage 08 pressure regression: level cosmetic surface introduced {forbidden}"
+            )
+    if "ShadowAssetKeys.levelMiniBadge" not in level_badges_ui:
+        failures.append(
+            "Levels Stage 08 asset regression: public/room level badges no longer use central asset keys"
+        )
 
     # Levels Stage 07: VIP Hidden Level must stay server-authoritative and off hot paths.
     for required in (

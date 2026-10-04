@@ -44,4 +44,34 @@ abstract final class ShadowAssetKeys {
   static const moderatorBadge = 'role.moderator';
   static String vipBadge(int level) => 'vip.badge.$level';
   static String vipFrame(int level) => 'vip.frame.$level';
+
+  static String? levelMainBadge(String metric, int level) {
+    final bucket = _levelBucket(metric, level);
+    if (bucket == null) return null;
+    return 'levels.$metric.$bucket.mainBadge';
+  }
+
+  static String? levelMiniBadge(String metric, int level) {
+    final bucket = _levelBucket(metric, level);
+    if (bucket == null) return null;
+    final suffix = metric == 'wealth' ? 'wealthBadge' : 'miniBadge';
+    return 'levels.$metric.$bucket.$suffix';
+  }
+
+  static String? _levelBucket(String metric, int level) {
+    if (level <= 0) return null;
+    if (metric == 'wealth' || metric == 'attraction') {
+      if (level > 35) return null;
+      final start = ((level - 1) ~/ 5) * 5 + 1;
+      final end = start + 4;
+      return 'lv${start.toString().padLeft(2, '0')}_${end.toString().padLeft(2, '0')}';
+    }
+    if (metric == 'game') {
+      if (level > 21) return null;
+      final start = ((level - 1) ~/ 3) * 3 + 1;
+      final end = start + 2;
+      return 'lv${start.toString().padLeft(2, '0')}_${end.toString().padLeft(2, '0')}';
+    }
+    return null;
+  }
 }
