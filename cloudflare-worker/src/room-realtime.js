@@ -409,9 +409,8 @@ export async function roomRealtime(request, env) {
             profileData,
             uid,
           ),
-          ghostMode:
-            profileData.roomGhostMode === true ||
-            profileData.privacy?.ghostMode === true,
+          ghostMode: activeRoomGhostMode(profileData, Date.now()),
+          hiddenRoomEntry: activeHiddenRoomEntry(profileData, Date.now()),
           vipLevel: activeEffectiveVipLevelFromUser(
             profileData,
             Date.now(),

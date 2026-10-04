@@ -7,6 +7,13 @@ import {loadUserLevelPolicy} from "./user-level-policy.js";
 import {summarizeUserLevelData} from "./user-level-summary.js";
 import {publicLevelMetadata} from "./user-level-visibility.js";
 import {
+  activeRoomGhostMode,
+  canInspectHiddenRoomPresence,
+  canUseRoomGhostMode,
+  vipEntitlementsFromUser,
+} from "./vip-entitlements.js";
+import {timestampToEpochMs} from "./vip-runtime.js";
+import {
   legacyPresenceFresh,
   realtimeUserPresentFromNamespace,
 } from "./room-presence-authority.js";
@@ -2715,20 +2722,38 @@ async function roomMusicCommand(db,uid,body){
 async function roomGhostState(db,uid){
   const snap=await db.collection("users").doc(uid).get();
   const data=snap.data()||{};
-  const privacy=data.privacy&&typeof data.privacy==="object"?data.privacy:{};
-  return {ok:true,ghostMode:data.roomGhostMode===true||privacy.ghostMode===true};
+  const canUse=canUseRoomGhostMode(data,Date.now());
+  return {
+    ok:true,
+    ghostMode:activeRoomGhostMode(data,Date.now()),
+    canUseGhostMode:canUse,
+    requiredVipLevel:5,
+  };
 }
 
 async function setRoomGhostMode(db,uid,body){
   const enabled=body.enabled===true;
-  await db.collection("users").doc(uid).set({
+  const userRef=db.collection("users").doc(uid);
+  const snap=await userRef.get();
+  if(!snap.exists)throw new ApiError("user_not_found",404);
+  const user=snap.data()||{};
+  if(enabled&&!canUseRoomGhostMode(user,Date.now())){
+    throw new ApiError("ghost_mode_requires_vip5",403);
+  }
+  await userRef.set({
     roomGhostMode:enabled,
+    roomGhostModeUpdatedAt:FieldValue.serverTimestamp(),
     updatedAt:FieldValue.serverTimestamp(),
   },{merge:true});
-  return {ok:true,ghostMode:enabled};
+  return {
+    ok:true,
+    ghostMode:enabled,
+    canUseGhostMode:canUseRoomGhostMode(user,Date.now()),
+    requiredVipLevel:5,
+  };
 }
 
-async function refreshRoomPresenceSummary(db,roomId){
+async function refreshRoomPresenceSummary(db,roomId,{includeGhost=false}={}){
   const now=Date.now();
   const cutoff=now-90000;
   const collection=db.collection("room_presence").doc(roomId).collection("users");
@@ -2739,12 +2764,16 @@ async function refreshRoomPresenceSummary(db,roomId){
     const data=doc.data()||{};
     const lastSeenAtMs=Number(data.lastSeenAtMs||0);
     if(lastSeenAtMs>=cutoff){
+      const vipExpiresAtMs=Math.max(0,Number(data.vipExpiresAtMs||0));
+      const ghostMode=data.ghostMode===true&&
+        (vipExpiresAtMs===0||vipExpiresAtMs>now);
       active.push({
         uid:doc.id,
         displayName:clean(data.displayName||"مستخدم Shadow Live"),
         profileImageUrl:clean(data.profileImageUrl),
         joinedAtMs:Number(data.joinedAtMs||0),
         lastSeenAtMs,
+        ghostMode,
       });
     }else{
       stale.push(doc.ref);
@@ -2759,9 +2788,10 @@ async function refreshRoomPresenceSummary(db,roomId){
   const roomRef=db.collection("rooms").doc(roomId);
   const roomSnap=await roomRef.get();
   const room=roomSnap.data()||{};
+  const publicActive=active.filter(item=>item.ghostMode!==true);
   const update={
-    onlineCount:active.length,
-    participantsCount:active.length,
+    onlineCount:publicActive.length,
+    participantsCount:publicActive.length,
     lastPresenceAtMs:now,
     updatedAt:FieldValue.serverTimestamp(),
   };
@@ -2782,7 +2812,8 @@ async function refreshRoomPresenceSummary(db,roomId){
   }
   await roomRef.set(update,{merge:true});
   active.sort((a,b)=>a.joinedAtMs-b.joinedAtMs);
-  return active;
+  publicActive.sort((a,b)=>a.joinedAtMs-b.joinedAtMs);
+  return includeGhost?active:publicActive;
 }
 
 async function roomPresenceAnnounceJoin(db,uid,roomId){
@@ -2848,15 +2879,13 @@ async function roomPresenceJoin(db,uid,roomId){
   if(!roomSnap.exists||roomSnap.data()?.isActive===false)throw new ApiError("room_unavailable",404);
   const profile=profileSnap.data()||{};
   const user=userSnap.data()||{};
-  const privacy=user.privacy&&typeof user.privacy==="object"?user.privacy:{};
-  const ghostMode=user.roomGhostMode===true||privacy.ghostMode===true;
-  const vipObject=user.vip&&typeof user.vip==="object"?user.vip:{};
-  const vipLevel=Math.max(0,Math.min(99,Number(
-    user.vipLevel??profile.vipLevel??vipObject.level??0
-  )||0));
+  const now=Date.now();
+  const entitlements=vipEntitlementsFromUser(user,now);
+  const ghostMode=activeRoomGhostMode(user,now);
+  const vipLevel=entitlements.level;
+  const vipExpiresAtMs=timestampToEpochMs(user.vipExpiresAt);
   const displayName=clean(profile.displayName||profile.username||user.displayName||user.username||"مستخدم Shadow Live");
   const profileImageUrl=clean(profile.profileImageUrl||user.profileImageUrl);
-  const now=Date.now();
   await presenceRef.set({
     uid,
     displayName,
@@ -2865,6 +2894,7 @@ async function roomPresenceJoin(db,uid,roomId){
     lastSeenAtMs:now,
     ghostMode,
     vipLevel,
+    vipExpiresAtMs,
   },{merge:true});
 
   const participants=await refreshRoomPresenceSummary(db,roomId);
@@ -2881,14 +2911,22 @@ async function roomPresenceHeartbeat(db,uid,roomId){
   if(snap.exists){
     await presenceRef.set({lastSeenAtMs:now},{merge:true});
   }else{
-    const profile=await db.collection("public_profiles").doc(uid).get();
-    const data=profile.data()||{};
+    const [profileSnap,userSnap]=await Promise.all([
+      db.collection("public_profiles").doc(uid).get(),
+      db.collection("users").doc(uid).get(),
+    ]);
+    const data=profileSnap.data()||{};
+    const user=userSnap.data()||{};
+    const entitlements=vipEntitlementsFromUser(user,now);
     await presenceRef.set({
       uid,
       displayName:clean(data.displayName||data.username||"مستخدم Shadow Live"),
       profileImageUrl:clean(data.profileImageUrl),
       joinedAtMs:now,
       lastSeenAtMs:now,
+      ghostMode:activeRoomGhostMode(user,now),
+      vipLevel:entitlements.level,
+      vipExpiresAtMs:timestampToEpochMs(user.vipExpiresAt),
     });
   }
   return {ok:true,roomId};
@@ -2916,12 +2954,22 @@ async function roomPresenceLeave(db,uid,roomId){
   return {ok:true,roomId,onlineCount:participants.length};
 }
 
-async function roomPresenceState(db,roomId){
+async function roomPresenceState(db,uid,roomId){
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
-  const roomSnap=await db.collection("rooms").doc(roomId).get();
+  const [roomSnap,actorSnap]=await Promise.all([
+    db.collection("rooms").doc(roomId).get(),
+    db.collection("users").doc(uid).get(),
+  ]);
   if(!roomSnap.exists)throw new ApiError("room_not_found",404);
-  const participants=await refreshRoomPresenceSummary(db,roomId);
-  return {ok:true,roomId,onlineCount:participants.length,participants};
+  const includeGhost=canInspectHiddenRoomPresence(actorSnap.data()||{});
+  const participants=await refreshRoomPresenceSummary(db,roomId,{includeGhost});
+  return {
+    ok:true,
+    roomId,
+    onlineCount:participants.length,
+    participants,
+    hiddenPresenceVisible:includeGhost,
+  };
 }
 
 function normalizeStarBattleState(room){
@@ -3927,7 +3975,7 @@ export default async function handler(req,res){
     }
     if(action==="roomPresenceState"){
       const roomId=clean(req.body?.roomId);
-      return out(res,200,await roomPresenceState(getFirestore(),roomId));
+      return out(res,200,await roomPresenceState(getFirestore(),decoded.uid,roomId));
     }
     if(action==="pkState"){
       const roomId=clean(req.body?.roomId);
@@ -4052,3 +4100,5 @@ export default async function handler(req,res){
     return out(res,500,{ok:false,code:"server_failed"});
   }
 }
+
+export { roomGhostState, setRoomGhostMode, roomPresenceState };

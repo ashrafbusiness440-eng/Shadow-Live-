@@ -5,9 +5,11 @@ function clean(value) {
 export function presenceSnapshotFromAttachments(
   attachments,
   nowMs = Date.now(),
+  { includeGhost = false } = {},
 ) {
   const byUid = new Map();
   for (const raw of attachments || []) {
+    if (!includeGhost && raw?.ghostMode === true) continue;
     const item = raw && typeof raw === "object" ? raw : {};
     const uid = clean(item.uid);
     if (!uid) continue;

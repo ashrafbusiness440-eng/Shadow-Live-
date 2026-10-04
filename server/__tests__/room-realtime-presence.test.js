@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -170,3 +171,50 @@ test("legacy presence freshness works only as bounded fallback", () => {
   assert.equal(legacyPresenceFresh({ exists: false, data: {} }, now), false);
 });
 
+
+
+test("ghost sockets are excluded from public presence but remain internally authoritative", () => {
+  const attachments = [
+    { uid: "visible", connectedAtMs: 1000, ghostMode: false },
+    { uid: "ghost", connectedAtMs: 2000, ghostMode: true },
+  ];
+
+  const publicParticipants = presenceSnapshotFromAttachments(
+    attachments,
+    9000,
+  );
+  const internalParticipants = presenceSnapshotFromAttachments(
+    attachments,
+    9000,
+    { includeGhost: true },
+  );
+
+  assert.deepEqual(
+    publicParticipants.map((item) => item.uid),
+    ["visible"],
+  );
+  assert.deepEqual(
+    internalParticipants.map((item) => item.uid),
+    ["visible", "ghost"],
+  );
+  assert.equal(hasPresenceUid(attachments, "ghost"), true);
+});
+
+test("realtime object separates hideRoomPresence from hiddenRoomEntry", () => {
+  const source = readFileSync(
+    "cloudflare-worker/src/room-realtime-object.js",
+    "utf8",
+  );
+  assert.equal(
+    source.includes("record.hiddenRoomEntry !== true"),
+    true,
+  );
+  assert.equal(
+    source.includes("record.ghostMode !== true"),
+    false,
+  );
+  assert.equal(
+    source.includes('url.pathname === "/presence/internal"'),
+    true,
+  );
+});
