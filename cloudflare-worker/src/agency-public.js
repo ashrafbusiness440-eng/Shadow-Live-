@@ -512,7 +512,8 @@ export async function loadPublicAgencyRanking(
     .map((row, index) => ({ row, userSnap: userSnaps[index] }))
     .filter(({ userSnap }) => {
       if (canInspectHidden) return true;
-      const user = userSnap?.exists ? userSnap.data || {} : {};
+      if (!userSnap?.exists) return false;
+      const user = userSnap.data || {};
       return !activeHideRankingLists(user, now.getTime());
     });
 
