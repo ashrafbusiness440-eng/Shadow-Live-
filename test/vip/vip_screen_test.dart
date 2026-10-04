@@ -63,10 +63,11 @@ void main() {
         findsOneWidget,
       );
 
-      await tester.scrollUntilVisible(
-        find.text('الامتيازات الحصرية 41/41'),
-        350,
-      );
+      final scrollable = find.byType(ListView).first;
+      for (var i = 0; i < 5; i++) {
+        await tester.drag(scrollable, const Offset(0, -500));
+        await tester.pumpAndSettle();
+      }
       expect(find.text('الامتيازات الحصرية 41/41'), findsOneWidget);
       expect(find.text('شريط الدخول العام'), findsWidgets);
       expect(find.text('الحماية من الكتم'), findsOneWidget);
