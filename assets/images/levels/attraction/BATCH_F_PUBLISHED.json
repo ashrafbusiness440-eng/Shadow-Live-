@@ -1,0 +1,105 @@
+{
+  "batch": "F",
+  "metric": "attraction",
+  "publishedAt": "2026-10-04T06:20:15.119500Z",
+  "assets": [
+    {
+      "assetKey": "levels.attraction.lv01_05.mainBadge",
+      "fullPath": "assets/images/levels/attraction/lv01_05/attraction_lv01_05_main_badge.webp",
+      "width": 1024,
+      "height": 1024,
+      "contentSha": "9ca28c1cb90321bdf875bf806399ee435cf7a82a"
+    },
+    {
+      "assetKey": "levels.attraction.lv01_05.miniBadge",
+      "fullPath": "assets/images/levels/attraction/lv01_05/attraction_lv01_05_mini_badge.webp",
+      "width": 512,
+      "height": 256,
+      "contentSha": "651ceb9cc516c8972c124995addb1501197b907b"
+    },
+    {
+      "assetKey": "levels.attraction.lv06_10.mainBadge",
+      "fullPath": "assets/images/levels/attraction/lv06_10/attraction_lv06_10_main_badge.webp",
+      "width": 1024,
+      "height": 1024,
+      "contentSha": "9ae7fe9ba2df773782ba16b3d7557097f2b3571e"
+    },
+    {
+      "assetKey": "levels.attraction.lv06_10.miniBadge",
+      "fullPath": "assets/images/levels/attraction/lv06_10/attraction_lv06_10_mini_badge.webp",
+      "width": 512,
+      "height": 256,
+      "contentSha": "ed0e735b2130f69cb916c54d07066557d5764c47"
+    },
+    {
+      "assetKey": "levels.attraction.lv11_15.mainBadge",
+      "fullPath": "assets/images/levels/attraction/lv11_15/attraction_lv11_15_main_badge.webp",
+      "width": 1024,
+      "height": 1024,
+      "contentSha": "0ac694c8d8e302ccfe744c7d2c7def0bb6d1e566"
+    },
+    {
+      "assetKey": "levels.attraction.lv11_15.miniBadge",
+      "fullPath": "assets/images/levels/attraction/lv11_15/attraction_lv11_15_mini_badge.webp",
+      "width": 512,
+      "height": 256,
+      "contentSha": "6025567d83322810b10fd685b8d58421057ccda0"
+    },
+    {
+      "assetKey": "levels.attraction.lv16_20.mainBadge",
+      "fullPath": "assets/images/levels/attraction/lv16_20/attraction_lv16_20_main_badge.webp",
+      "width": 1024,
+      "height": 1024,
+      "contentSha": "1d1a9152aa1e659270be3ba2ae2f10296563ae20"
+    },
+    {
+      "assetKey": "levels.attraction.lv16_20.miniBadge",
+      "fullPath": "assets/images/levels/attraction/lv16_20/attraction_lv16_20_mini_badge.webp",
+      "width": 512,
+      "height": 256,
+      "contentSha": "ef0e3f42f4a6b34f4cefd8996e08afa9ec5e6a8b"
+    },
+    {
+      "assetKey": "levels.attraction.lv21_25.mainBadge",
+      "fullPath": "assets/images/levels/attraction/lv21_25/attraction_lv21_25_main_badge.webp",
+      "width": 1024,
+      "height": 1024,
+      "contentSha": "e0e176f3028dd6304c37ce0eb00642b2785fd761"
+    },
+    {
+      "assetKey": "levels.attraction.lv21_25.miniBadge",
+      "fullPath": "assets/images/levels/attraction/lv21_25/attraction_lv21_25_mini_badge.webp",
+      "width": 512,
+      "height": 256,
+      "contentSha": "50293c24437fea5b3e504d3d6699a25fb12b0f52"
+    },
+    {
+      "assetKey": "levels.attraction.lv26_30.mainBadge",
+      "fullPath": "assets/images/levels/attraction/lv26_30/attraction_lv26_30_main_badge.webp",
+      "width": 1024,
+      "height": 1024,
+      "contentSha": "713a586f0fdfd96ba4da93f932c4982afc34802c"
+    },
+    {
+      "assetKey": "levels.attraction.lv26_30.miniBadge",
+      "fullPath": "assets/images/levels/attraction/lv26_30/attraction_lv26_30_mini_badge.webp",
+      "width": 512,
+      "height": 256,
+      "contentSha": "7dbae9e5a80369b004f28921b41d96fe40bd50cb"
+    },
+    {
+      "assetKey": "levels.attraction.lv31_35.mainBadge",
+      "fullPath": "assets/images/levels/attraction/lv31_35/attraction_lv31_35_main_badge.webp",
+      "width": 1024,
+      "height": 1024,
+      "contentSha": "32af59ed79c5596fb639ba76a19dec67bfa8357b"
+    },
+    {
+      "assetKey": "levels.attraction.lv31_35.miniBadge",
+      "fullPath": "assets/images/levels/attraction/lv31_35/attraction_lv31_35_mini_badge.webp",
+      "width": 512,
+      "height": 256,
+      "contentSha": "1302b664eb37e7093e703c7ea4b4be2679e40c56"
+    }
+  ]
+}
