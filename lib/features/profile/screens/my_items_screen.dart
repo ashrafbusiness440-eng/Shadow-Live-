@@ -63,7 +63,7 @@ class _MyItemsScreenState extends State<MyItemsScreen>
     super.initState();
     final initialIndex = _sectionIndexForType(widget.initialType);
     _tabs = TabController(
-      length: _types.length,
+      length: _sections.length,
       vsync: this,
       initialIndex: initialIndex < 0 ? 0 : initialIndex,
     );
