@@ -73,7 +73,7 @@ function validFileName(name) {
 }
 
 function validKey(key) {
-  return /^[a-z0-9][a-z0-9._-]{2,119}$/.test(clean(key));
+  return /^[a-z0-9][A-Za-z0-9._-]{2,119}$/.test(clean(key));
 }
 
 function validOperationKey(key) {
