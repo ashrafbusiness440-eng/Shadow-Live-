@@ -68,6 +68,30 @@ void main() {
     expect(find.text('خصم الخمول محسوب'), findsOneWidget);
     expect(find.text('دعم اللعبة'), findsOneWidget);
   });
+  testWidgets('wealth allows previewing locked cosmetic tiers', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: UserLevelScreen(
+          loadSummary: () async => summary,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final lockedTier = find.byKey(const Key('level-tier-preview-6'));
+    await tester.ensureVisible(lockedTier);
+    await tester.tap(lockedTier);
+    await tester.pumpAndSettle();
+
+    expect(find.text('LV31–35'), findsWidgets);
+    expect(find.text('معاينة فقط — تُفتح عند الوصول إلى هذه الفئة'), findsOneWidget);
+    expect(find.text('المركبة'), findsOneWidget);
+    expect(
+      find.text('يمكنك مشاهدة هذه التصاميم الآن، لكنها لا تصبح قابلة للاستخدام إلا بعد فتح الفئة.'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('level screen can open directly on the requested public section', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
