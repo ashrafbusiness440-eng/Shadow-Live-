@@ -14,6 +14,7 @@ import {
   materializeVipState,
 } from "./vip-state.js";
 import {
+  activeEffectiveVipLevelFromUser,
   vipPublicProfilePatch,
   vipStateFromUser,
   vipUserPatch,
@@ -75,6 +76,8 @@ function summaryPayload(policy, state, user = {}) {
     coins: Math.max(0, Number(user.coins ?? user.balance ?? 0) || 0),
     purchaseGrowthPerCoin: policy.purchasedGrowthPerCoin,
     paidRechargeGrowthPerCoin: policy.paidRechargeGrowthPerCoin,
+    canHideRankingLists: currentLevel >= 7,
+    hideRankingLists: currentLevel >= 7 && user.hideRankingLists === true,
   };
 }
 
@@ -91,6 +94,52 @@ export async function vipSummary(db, uid, nowMs = Date.now()) {
     nowMs,
   );
   return summaryPayload(policy, state, user);
+}
+
+export async function setHideRankingLists(
+  db,
+  uid,
+  body,
+  nowMs = Date.now(),
+) {
+  if (typeof body?.enabled !== "boolean") {
+    throw new ApiError("invalid_hide_lists_state", 400);
+  }
+
+  const transaction = await db.beginTransaction();
+  try {
+    const userSnap = await db.get(`users/${uid}`, transaction);
+    if (!userSnap.exists) throw new ApiError("user_not_found", 404);
+
+    const user = userSnap.data || {};
+    const enabled = body.enabled === true;
+    const activeLevel = activeEffectiveVipLevelFromUser(user, nowMs);
+    if (enabled && activeLevel < 7) {
+      throw new ApiError("hide_lists_requires_vip7", 403);
+    }
+
+    const updatedAt = new Date(nowMs);
+    await db.commit(transaction, [
+      db.writeUpdate(
+        `users/${uid}`,
+        {
+          hideRankingLists: enabled,
+          rankingVisibilityUpdatedAt: updatedAt,
+        },
+        ["hideRankingLists", "rankingVisibilityUpdatedAt"],
+      ),
+    ]);
+
+    return {
+      ok: true,
+      hideRankingLists: enabled && activeLevel >= 7,
+      canHideRankingLists: activeLevel >= 7,
+      requiredVipLevel: 7,
+    };
+  } catch (error) {
+    await db.rollback(transaction);
+    throw error;
+  }
 }
 
 export async function buyVipGrowth(db, uid, body, nowMs = Date.now()) {
@@ -297,6 +346,13 @@ export async function vipActions(request, env) {
     }
     if (action === "buyGrowth") {
       return json(request, env, await buyVipGrowth(db, decoded.sub, body));
+    }
+    if (action === "setHideRankingLists") {
+      return json(
+        request,
+        env,
+        await setHideRankingLists(db, decoded.sub, body),
+      );
     }
     throw new ApiError("invalid_action", 400);
   } catch (error) {
