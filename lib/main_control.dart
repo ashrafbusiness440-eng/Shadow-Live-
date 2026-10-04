@@ -1318,9 +1318,18 @@ class _RoomsPageState extends State<RoomsPage> {
   final roomTags=TextEditingController();
   bool busy=false,bypassLevelCapacity=false,hiddenOfficialRoom=false;
   bool giftsEnabled=true,pkEnabled=true,gamesEnabled=true,roomRocketEnabled=true;
+  bool ownerAbsoluteRoomAccess=true;
+  bool ownerAbsoluteLoading=true;
+  bool ownerAbsoluteAvailable=false;
+  bool ownerAbsoluteBusy=false;
   String officialType='official';
   Map<String,dynamic>? room;
   String? error;
+
+  @override void initState(){
+    super.initState();
+    unawaited(loadOwnerAbsoluteRoomAccess());
+  }
 
   @override void dispose(){
     publicId.dispose();reason.dispose();seats.dispose();moderators.dispose();hostUid.dispose();
@@ -1348,8 +1357,59 @@ class _RoomsPageState extends State<RoomsPage> {
     return data;
   }
 
+  Future<void> loadOwnerAbsoluteRoomAccess() async {
+    try{
+      final data=await post({'controlAction':'ownerAbsoluteRoomAccessState'});
+      if(!mounted)return;
+      setState((){
+        ownerAbsoluteRoomAccess=data['ownerAbsoluteRoomAccess']!=false;
+        ownerAbsoluteAvailable=true;
+        ownerAbsoluteLoading=false;
+      });
+    }catch(_){
+      if(!mounted)return;
+      setState((){
+        ownerAbsoluteAvailable=false;
+        ownerAbsoluteLoading=false;
+      });
+    }
+  }
+
+  Future<void> setOwnerAbsoluteRoomAccess(bool enabled) async {
+    if(ownerAbsoluteBusy)return;
+    setState(()=>ownerAbsoluteBusy=true);
+    try{
+      final user=controlAuth.currentUser;
+      if(user==null)throw Exception('forbidden');
+      final prefix=user.uid.length>=6?user.uid.substring(0,6):user.uid;
+      final key='ownerroom_'+DateTime.now().millisecondsSinceEpoch.toString()+'_'+prefix;
+      final data=await post({
+        'controlAction':'setOwnerAbsoluteRoomAccess',
+        'enabled':enabled,
+        'reason':'تغيير صلاحيات الغرف المطلقة للـOwner',
+        'idempotencyKey':key,
+      });
+      if(!mounted)return;
+      setState(()=>ownerAbsoluteRoomAccess=data['ownerAbsoluteRoomAccess']==true);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content:Text(ownerAbsoluteRoomAccess
+          ? 'تم تفعيل صلاحيات الغرف المطلقة للـOwner.'
+          : 'تم إيقاف صلاحيات الغرف المطلقة للـOwner.'),
+      ));
+    }catch(error){
+      if(!mounted)return;
+      final code=error.toString().replaceFirst('Exception: ','');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content:Text(message(code))),
+      );
+    }finally{
+      if(mounted)setState(()=>ownerAbsoluteBusy=false);
+    }
+  }
+
   String message(String code)=>switch(code){
     'forbidden'=>'لا تملك صلاحية manageRooms / globalRoomControl.',
+    'owner_required'=>'هذا الإعداد متاح لحساب Owner فقط.',
     'room_not_found'=>'لم يتم العثور على الغرفة.',
     'invalid_room_public_id'=>'Room ID غير صالح.',
     'invalid_room_level'=>'Level يجب أن يكون بين 1 و6.',
@@ -1675,6 +1735,20 @@ class _RoomsPageState extends State<RoomsPage> {
       const SizedBox(height:6),
       const Text('إنشاء وإدارة الغرف الرسمية + السعة اليدوية + الميزات — Room Level يبقى للغرف العادية والوكالات فقط. كل التعديلات الحساسة تمر عبر Backend وAudit Log.',style:TextStyle(color:Color(0xFFAAA3B8))),
       const SizedBox(height:12),
+      if(ownerAbsoluteLoading)
+        const Card(child:Padding(padding:EdgeInsets.all(16),child:LinearProgressIndicator()))
+      else if(ownerAbsoluteAvailable)
+        Card(child:SwitchListTile.adaptive(
+          key:const Key('owner-absolute-room-access-toggle'),
+          secondary:const Icon(Icons.security_rounded,color:Color(0xFFD7B85A)),
+          title:const Text('صلاحيات غرف مطلقة',style:TextStyle(fontWeight:FontWeight.w900)),
+          subtitle:const Text(
+            'خاص بالـOwner فقط. عند التفعيل يملك إدارة كاملة لأي غرفة؛ عند الإيقاف يتعامل حسب دوره الفعلي داخل الغرفة.',
+          ),
+          value:ownerAbsoluteRoomAccess,
+          onChanged:ownerAbsoluteBusy?null:setOwnerAbsoluteRoomAccess,
+        )),
+      if(ownerAbsoluteLoading||ownerAbsoluteAvailable) const SizedBox(height:12),
       SizedBox(width:double.infinity,child:FilledButton.icon(
         onPressed:busy?null:showCreateOfficialRoom,
         icon:const Icon(Icons.add_business_rounded),
