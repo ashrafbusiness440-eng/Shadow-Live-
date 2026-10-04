@@ -15,6 +15,18 @@ class RoomGhostState {
   final int requiredVipLevel;
 }
 
+class RoomHiddenEntryState {
+  const RoomHiddenEntryState({
+    required this.hiddenRoomEntry,
+    required this.canUseHiddenRoomEntry,
+    required this.requiredVipLevel,
+  });
+
+  final bool hiddenRoomEntry;
+  final bool canUseHiddenRoomEntry;
+  final int requiredVipLevel;
+}
+
 class PersonalRoomInfo {
   const PersonalRoomInfo({
     required this.roomId,
@@ -271,6 +283,23 @@ class RoomActionService {
       'enabled': enabled,
     });
     return body['ghostMode'] == true;
+  }
+
+  Future<RoomHiddenEntryState> loadHiddenEntryState() async {
+    final body = await _post({'action': 'roomHiddenEntryState'});
+    return RoomHiddenEntryState(
+      hiddenRoomEntry: body['hiddenRoomEntry'] == true,
+      canUseHiddenRoomEntry: body['canUseHiddenRoomEntry'] == true,
+      requiredVipLevel: (body['requiredVipLevel'] as num?)?.toInt() ?? 7,
+    );
+  }
+
+  Future<bool> setHiddenEntry(bool enabled) async {
+    final body = await _post({
+      'action': 'setRoomHiddenEntry',
+      'enabled': enabled,
+    });
+    return body['hiddenRoomEntry'] == true;
   }
 
   Future<void> closePersonalRoom(String roomId) async {

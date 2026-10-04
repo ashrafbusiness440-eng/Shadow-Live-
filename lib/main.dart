@@ -247,6 +247,9 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   bool _roomGhostMode = false;
   bool _canUseRoomGhostMode = false;
   int _roomGhostRequiredVipLevel = 5;
+  bool _roomHiddenEntry = false;
+  bool _canUseRoomHiddenEntry = false;
+  int _roomHiddenEntryRequiredVipLevel = 7;
   RoomInsights? _roomInsights;
   bool _loadingRoomInsights = false;
   bool _changingRoomFollow = false;
@@ -814,6 +817,21 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           _roomGhostMode = state.ghostMode;
           _canUseRoomGhostMode = state.canUseGhostMode;
           _roomGhostRequiredVipLevel = state.requiredVipLevel;
+        });
+      }
+    } catch (_) {
+      // Non-critical user preference; Room Menu must never wait on this.
+    }
+  }
+
+  Future<void> _refreshRoomHiddenEntry() async {
+    try {
+      final state = await _roomActions.loadHiddenEntryState();
+      if (mounted) {
+        setState(() {
+          _roomHiddenEntry = state.hiddenRoomEntry;
+          _canUseRoomHiddenEntry = state.canUseHiddenRoomEntry;
+          _roomHiddenEntryRequiredVipLevel = state.requiredVipLevel;
         });
       }
     } catch (_) {
@@ -4062,9 +4080,11 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     final owner = actualOwner ||
         (_roomModeratorState?.ownerAbsoluteRoomAccess ?? false);
     final ghostMode = _roomGhostMode;
+    final hiddenEntry = _roomHiddenEntry;
     if (!mounted) return;
-    // Open immediately; refresh this non-critical preference in parallel.
+    // Open immediately; refresh these non-critical preferences in parallel.
     unawaited(_refreshRoomGhostMode());
+    unawaited(_refreshRoomHiddenEntry());
 
     Widget sectionTitle(String label) => Padding(
           padding: const EdgeInsets.fromLTRB(4, 14, 4, 7),
@@ -4429,6 +4449,71 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         }
                       }
                     },
+                  ),
+                  const Divider(height: 1, color: Colors.white10),
+                  ListTile(
+                    leading: Icon(
+                      hiddenEntry
+                          ? Icons.login_rounded
+                          : Icons.door_front_door_outlined,
+                      color: hiddenEntry
+                          ? const Color(0xFFBFA5FF)
+                          : Colors.white54,
+                    ),
+                    title: const Text(
+                      'الدخول المخفي',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    subtitle: Text(
+                      !_canUseRoomHiddenEntry
+                          ? 'تفتح من VIP$_roomHiddenEntryRequiredVipLevel.'
+                          : hiddenEntry
+                              ? 'مفعّل — لا يظهر إشعار دخولك إلى الغرفة.'
+                              : 'متوقف — يظهر إشعار دخولك بشكل طبيعي.',
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 10,
+                      ),
+                    ),
+                    trailing: Switch(
+                      value: hiddenEntry,
+                      onChanged: null,
+                    ),
+                    onTap: !_canUseRoomHiddenEntry
+                        ? null
+                        : () async {
+                            try {
+                              final next =
+                                  await _roomActions.setHiddenEntry(!hiddenEntry);
+                              if (mounted) {
+                                setState(() => _roomHiddenEntry = next);
+                              }
+                              if (sheetContext.mounted) {
+                                Navigator.pop(sheetContext);
+                              }
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      next
+                                          ? 'تم تفعيل الدخول المخفي.'
+                                          : 'تم إيقاف الدخول المخفي.',
+                                    ),
+                                  ),
+                                );
+                              }
+                            } catch (_) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'تعذر تحديث الدخول المخفي حالياً.',
+                                    ),
+                                  ),
+                                );
+                              }
+                            }
+                          },
                   ),
                 ]),
 
