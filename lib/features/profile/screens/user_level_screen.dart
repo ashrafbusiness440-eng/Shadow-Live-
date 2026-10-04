@@ -35,6 +35,7 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
   bool _loading = true;
   bool _savingVisibility = false;
   String? _error;
+  int? _wealthPreviewSlice;
 
   @override
   void initState() {
@@ -69,6 +70,7 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
       if (!mounted) return;
       setState(() {
         _summary = summary;
+        _wealthPreviewSlice ??= _sliceFor(summary.wealth.level, 5);
         _loading = false;
       });
     } catch (_) {
@@ -203,7 +205,12 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
                   'LV31–35',
                 ],
                 currentSlice: _sliceFor(summary.wealth.level, 5),
-                footer: _wealthPrivileges(summary.wealth.level),
+                previewSlice: _wealthPreviewSlice,
+                onSliceSelected: (index) => setState(() => _wealthPreviewSlice = index),
+                footer: _wealthPrivilegesForSlice(
+                  _wealthPreviewSlice ?? _sliceFor(summary.wealth.level, 5),
+                  _sliceFor(summary.wealth.level, 5),
+                ),
                 canEditVisibility: summary.visibility.canEdit,
                 hiddenPreference: summary.visibility.hideWealthLevel,
               ),
@@ -290,6 +297,8 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
     required UserLevelSectionSummary data,
     required List<String> slices,
     required int currentSlice,
+    int? previewSlice,
+    ValueChanged<int>? onSliceSelected,
     required Widget footer,
     required bool canEditVisibility,
     required bool hiddenPreference,
@@ -326,7 +335,10 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
                   ),
                 ),
                 child: LevelAssetImage(
-                  assetKey: ShadowAssetKeys.levelMainBadge(metric, data.level),
+                  assetKey: ShadowAssetKeys.levelMainBadge(
+                    metric,
+                    _assetLevelForSlice(metric, previewSlice ?? currentSlice, data.level),
+                  ),
                   width: 78,
                   height: 78,
                   fallback: Icon(
@@ -338,13 +350,34 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
               ),
               const SizedBox(height: 12),
               Text(
-                title,
+                previewSlice != null && previewSlice >= 0
+                    ? slices[previewSlice]
+                    : title,
+                textDirection: previewSlice != null ? TextDirection.ltr : TextDirection.rtl,
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 22,
                   fontWeight: FontWeight.w900,
                 ),
               ),
+              if (previewSlice != null) ...[
+                const SizedBox(height: 5),
+                Text(
+                  previewSlice > currentSlice
+                      ? 'معاينة فقط — تُفتح عند الوصول إلى هذه الفئة'
+                      : previewSlice == currentSlice
+                          ? 'فئتك الحالية'
+                          : 'فئة تم فتحها',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: previewSlice > currentSlice
+                        ? Colors.white54
+                        : const Color(0xFFFFD54A),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
               const SizedBox(height: 4),
               Text(
                 subtitle,
@@ -412,7 +445,12 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
           ),
         ],
         const SizedBox(height: 14),
-        _sliceGrid(slices, currentSlice),
+        _sliceGrid(
+          slices,
+          currentSlice,
+          selected: previewSlice,
+          onSelected: onSliceSelected,
+        ),
         const SizedBox(height: 14),
         footer,
       ],
@@ -458,7 +496,13 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
     return ((level - 1) ~/ size).clamp(0, 6).toInt();
   }
 
-  Widget _sliceGrid(List<String> labels, int current) {
+  Widget _sliceGrid(
+    List<String> labels,
+    int current, {
+    int? selected,
+    ValueChanged<int>? onSelected,
+  }) {
+    final selectedIndex = selected ?? current;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -469,22 +513,34 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
-            'شارات الفئات',
-            style: TextStyle(
+          Text(
+            onSelected == null ? 'شارات الفئات' : 'استعرض جميع الفئات',
+            style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w900,
             ),
           ),
+          if (onSelected != null) ...[
+            const SizedBox(height: 5),
+            const Text(
+              'يمكنك معاينة شكل أي مستوى قبل الوصول إليه. القفل يمنع الاستخدام فقط ولا يمنع المشاهدة.',
+              style: TextStyle(
+                color: Colors.white54,
+                fontSize: 11,
+                height: 1.4,
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: labels.asMap().entries.map((entry) {
-              final active = entry.key == current;
-              return Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+              final active = entry.key == selectedIndex;
+              final unlocked = current >= 0 && entry.key <= current;
+              final chip = Container(
+                key: Key('level-tier-${entry.key}'),
+                padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
                 decoration: BoxDecoration(
                   color: active
                       ? const Color(0xFF3A2166)
@@ -500,9 +556,9 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      active
+                      unlocked
                           ? Icons.workspace_premium_rounded
-                          : Icons.shield_outlined,
+                          : Icons.lock_outline_rounded,
                       size: 16,
                       color: active
                           ? const Color(0xFFFFD54A)
@@ -521,6 +577,13 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
                     ),
                   ],
                 ),
+              );
+              if (onSelected == null) return chip;
+              return InkWell(
+                key: Key('level-tier-preview-${entry.key}'),
+                borderRadius: BorderRadius.circular(14),
+                onTap: () => onSelected(entry.key),
+                child: chip,
               );
             }).toList(),
           ),
@@ -550,63 +613,174 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
     );
   }
 
-  Widget _wealthPrivileges(int level) {
-    final items = <String>[
-      'شعار الثروة',
-      'إعلان الترقية',
-      'مؤثر الدخول',
-      'فقاعة الدردشة',
-      'إطار الصورة الشخصية',
+  int _assetLevelForSlice(String metric, int slice, int fallbackLevel) {
+    if (slice < 0) return fallbackLevel;
+    if (metric == 'wealth' || metric == 'attraction') {
+      return slice * 5 + 1;
+    }
+    if (metric == 'game' || metric == 'games') {
+      return slice * 3 + 1;
+    }
+    return fallbackLevel;
+  }
+
+  String _wealthBucketForSlice(int slice) {
+    final safe = slice.clamp(0, 6);
+    final start = safe * 5 + 1;
+    final end = start + 4;
+    return 'lv${start.toString().padLeft(2, '0')}_${end.toString().padLeft(2, '0')}';
+  }
+
+  Widget _wealthPrivilegesForSlice(int selectedSlice, int currentSlice) {
+    final safeSlice = selectedSlice.clamp(0, 6);
+    final previewLevel = safeSlice * 5 + 1;
+    final locked = currentSlice < safeSlice;
+    final bucket = _wealthBucketForSlice(safeSlice);
+
+    final items = <({String label, String suffix})>[
+      (label: 'شعار الثروة', suffix: 'wealthBadge'),
+      (label: 'إعلان الترقية', suffix: 'upgradeAnnouncement'),
+      (label: 'مؤثر الدخول', suffix: 'entryEffect'),
+      (label: 'فقاعة الدردشة', suffix: 'chatBubble'),
+      (label: 'إطار الصورة الشخصية', suffix: 'profileFrame'),
+      if (previewLevel >= 6)
+        (label: 'شريط الدعم', suffix: 'supportBar'),
+      if (previewLevel >= 11)
+        (label: 'تأثير إرسال هدية الامتياز', suffix: 'giftPrivilege'),
+      if (previewLevel >= 16)
+        (label: 'شريط الدخول', suffix: 'entryBar'),
+      if (previewLevel >= 21)
+        (label: 'المركبة', suffix: 'vehicle'),
     ];
-    if (level >= 6) items.add('شريط الدعم');
-    if (level >= 11) items.add('تأثير إرسال هدية الامتياز');
-    if (level >= 16) items.add('شريط الدخول');
-    if (level >= 21) items.add('المركبة');
-    if (level >= 26) items.add('نسخة بصرية أعلى لجميع الامتيازات');
-    if (level >= 31) items.add('أعلى نسخة بصرية ضمن الثروة');
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      key: const Key('wealth-privilege-preview'),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFF0C1728),
+        color: const Color(0xFF140D03),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(color: const Color(0x55FFD77A)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
-            'الامتيازات المفتوحة',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 10),
-          ...items.map(
-            (item) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.check_circle_rounded,
-                    size: 17,
-                    color: Color(0xFFFFD54A),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'الامتيازات',
+                  style: TextStyle(
+                    color: Color(0xFFFFD98A),
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
                   ),
-                  const SizedBox(width: 8),
+                ),
+              ),
+              if (locked)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: Colors.black26,
+                    borderRadius: BorderRadius.circular(99),
+                    border: Border.all(color: Colors.white12),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.lock_rounded, size: 13, color: Colors.white60),
+                      SizedBox(width: 4),
+                      Text(
+                        'معاينة',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: items.length,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              crossAxisSpacing: 9,
+              mainAxisSpacing: 12,
+              childAspectRatio: 0.86,
+            ),
+            itemBuilder: (context, index) {
+              final item = items[index];
+              final assetKey = 'levels.wealth.$bucket.${item.suffix}';
+              return Column(
+                children: [
                   Expanded(
-                    child: Text(
-                      item,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 12,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2B1A06),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0x44FFD77A)),
+                      ),
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          LevelAssetImage(
+                            assetKey: assetKey,
+                            fit: BoxFit.contain,
+                            fallback: const Icon(
+                              Icons.auto_awesome_rounded,
+                              color: Color(0xFFFFD54A),
+                              size: 34,
+                            ),
+                          ),
+                          if (locked)
+                            const Positioned(
+                              top: 2,
+                              left: 2,
+                              child: Icon(
+                                Icons.lock_outline_rounded,
+                                color: Colors.white54,
+                                size: 14,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                   ),
+                  const SizedBox(height: 7),
+                  Text(
+                    item.label,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFFFFE4AF),
+                      fontSize: 10.5,
+                      height: 1.25,
+                    ),
+                  ),
                 ],
+              );
+            },
+          ),
+          if (locked) ...[
+            const SizedBox(height: 10),
+            const Text(
+              'يمكنك مشاهدة هذه التصاميم الآن، لكنها لا تصبح قابلة للاستخدام إلا بعد فتح الفئة.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white54,
+                fontSize: 10.5,
+                height: 1.4,
               ),
             ),
-          ),
+          ],
         ],
       ),
     );
