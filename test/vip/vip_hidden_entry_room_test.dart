@@ -16,9 +16,11 @@ void main() {
     ).readAsStringSync();
 
     expect(mainSource.contains('إخفاء الوجود في الغرفة'), isTrue);
-    expect(mainSource.contains('الدخول المخفي'), isTrue);
-    expect(mainSource.contains('_roomHiddenEntryRequiredVipLevel = 7'), isTrue);
-    expect(mainSource.contains('_canUseRoomHiddenEntry'), isTrue);
+    // Hidden Entry is a VIP7 privacy entitlement and must not be toggled from
+    // the Room Menu. Its only user-facing toggle belongs in Privacy Settings.
+    expect(mainSource.contains('الدخول المخفي'), isFalse);
+    expect(mainSource.contains('_roomHiddenEntryRequiredVipLevel = 7'), isFalse);
+    expect(mainSource.contains('_canUseRoomHiddenEntry'), isFalse);
 
     expect(serviceSource.contains("'action': 'roomHiddenEntryState'"), isTrue);
     expect(serviceSource.contains("'action': 'setRoomHiddenEntry'"), isTrue);
