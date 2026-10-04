@@ -243,6 +243,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   bool _roomSoundEnabled = true;
   bool _effectSoundEnabled = true;
   bool _roomEffectsEnabled = true;
+  bool _roomGhostMode = false;
   RoomInsights? _roomInsights;
   bool _loadingRoomInsights = false;
   bool _changingRoomFollow = false;
@@ -683,6 +684,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         _bootstrapGames = snapshot.games;
       });
       _applyRoomSeatSafety(snapshot.seatState);
+      unawaited(_refreshRoomGhostMode());
     } catch (_) {
       // Voice/audio stay independent. The shared room snapshot stream keeps
       // seats/moderators live even when the non-critical bootstrap is blocked.
@@ -715,13 +717,23 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         if (!mounted) return;
         final onlineCount =
             (_voiceSession.roomArguments['onlineCount'] as num?)?.toInt();
+        final previousModeratorState = _roomModeratorState;
+        final globalRoomManage =
+            previousModeratorState?.globalRoomManage == true;
         final seatState = _roomSeatService.fromRoomData(
           roomId,
           data,
           onlineCountOverride: onlineCount,
+          globalManageMic: globalRoomManage,
         );
-        final moderatorState =
+        final rawModeratorState =
             _roomModeratorService.fromRoomData(roomId, data);
+        final moderatorState = rawModeratorState.copyWithPlatformAccess(
+          platformOwner: previousModeratorState?.platformOwner == true,
+          ownerAbsoluteRoomAccess:
+              previousModeratorState?.ownerAbsoluteRoomAccess == true,
+          globalRoomManage: globalRoomManage,
+        );
         setState(() {
           _roomArguments = <String, dynamic>{
             ..._roomArguments,
@@ -790,6 +802,15 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     }
   }
 
+
+  Future<void> _refreshRoomGhostMode() async {
+    try {
+      final value = await _roomActions.loadGhostMode();
+      if (mounted) setState(() => _roomGhostMode = value);
+    } catch (_) {
+      // Non-critical user preference; Room Menu must never wait on this.
+    }
+  }
 
   bool get _canManageMic =>
       _voiceSession.isOwner ||
@@ -3125,7 +3146,9 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
 
   Future<void> _showRoomSettingsSheet() async {
     final roomId = (_roomArguments['roomId'] ?? '').toString().trim();
-    if (roomId.isEmpty || !_voiceSession.isOwner) return;
+    final canEditRoomSettings = _voiceSession.isOwner ||
+        (_roomModeratorState?.ownerAbsoluteRoomAccess ?? false);
+    if (roomId.isEmpty || !canEditRoomSettings) return;
     final isAgencyRoom = _roomAgencyId.isNotEmpty;
 
     final nameController = TextEditingController(
@@ -4012,12 +4035,13 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   }
   Future<void> _showRoomMenu() async {
     final personal = (_roomArguments['roomType'] ?? '').toString() == 'personal';
-    final owner = _voiceSession.isOwner;
-    var ghostMode = false;
-    try {
-      ghostMode = await _roomActions.loadGhostMode();
-    } catch (_) {}
+    final actualOwner = _voiceSession.isOwner;
+    final owner = actualOwner ||
+        (_roomModeratorState?.ownerAbsoluteRoomAccess ?? false);
+    final ghostMode = _roomGhostMode;
     if (!mounted) return;
+    // Open immediately; refresh this non-critical preference in parallel.
+    unawaited(_refreshRoomGhostMode());
 
     Widget sectionTitle(String label) => Padding(
           padding: const EdgeInsets.fromLTRB(4, 14, 4, 7),
@@ -4349,6 +4373,9 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       try {
                         final next =
                             await _roomActions.setGhostMode(!ghostMode);
+                        if (mounted) {
+                          setState(() => _roomGhostMode = next);
+                        }
                         if (sheetContext.mounted) {
                           Navigator.pop(sheetContext);
                         }
@@ -4401,7 +4428,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       _leaveVoiceRoom();
                     },
                   ),
-                  if (personal && owner) ...[
+                  if (personal && actualOwner) ...[
                     const Divider(height: 1, color: Colors.white10),
                     ListTile(
                       leading: const Icon(

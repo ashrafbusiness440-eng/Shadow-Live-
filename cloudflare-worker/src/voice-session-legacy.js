@@ -383,11 +383,24 @@ function roomPermissions(user){
   const data=user||{};
   const capabilities=Array.isArray(data.capabilities)?data.capabilities:[];
   const role=clean(data.role);
+  const appOwner=role==="owner";
+  const ownerAbsoluteRoomAccess=appOwner&&data.ownerAbsoluteRoomAccess!==false;
   return {
-    appOwner:role==="owner",
-    manageRooms:role==="owner"||(data.adminEnabled===true&&(capabilities.includes("manageRooms")||capabilities.includes("manage_rooms"))),
-    hidden:role==="owner"||(data.adminEnabled===true&&capabilities.includes("canCreateHiddenRoom")),
-    manageIds:role==="owner"||(data.adminEnabled===true&&(capabilities.includes("manageIds")||capabilities.includes("manage_ids"))),
+    appOwner,
+    ownerAbsoluteRoomAccess,
+    manageRooms:ownerAbsoluteRoomAccess||(data.adminEnabled===true&&(capabilities.includes("manageRooms")||capabilities.includes("manage_rooms"))),
+    hidden:appOwner||(data.adminEnabled===true&&capabilities.includes("canCreateHiddenRoom")),
+    manageIds:ownerAbsoluteRoomAccess||(data.adminEnabled===true&&(capabilities.includes("manageIds")||capabilities.includes("manage_ids"))),
+  };
+}
+
+function absoluteRoomAccessAudit(room,actor,uid){
+  const permissions=roomPermissions(actor);
+  const actualOwner=!isOfficialRoom(room)&&roomOwnerUid(room)===uid;
+  if(!permissions.ownerAbsoluteRoomAccess||actualOwner)return {};
+  return {
+    authoritySource:"ownerAbsoluteRoomAccess",
+    absoluteRoomAccess:true,
   };
 }
 
@@ -551,20 +564,24 @@ async function roomModeratorState(db,uid,roomId){
     ? OFFICIAL_HOST_CAPABILITIES
     : [];
   const agencyCapabilities=agencyRoomManagementCapabilities(room,actor,uid);
+  const actualOwner=!isOfficialRoom(room)&&ownerUid===uid;
   return {
     ok:true,
     roomId,
     ownerUid,
     hostUid,
-    isOwner:!isOfficialRoom(room)&&ownerUid===uid,
+    isOwner:actualOwner,
     isHost:isOfficialRoom(room)&&hostUid===uid,
-    canManage:(!isOfficialRoom(room)&&ownerUid===uid)
+    platformOwner:global.appOwner,
+    ownerAbsoluteRoomAccess:global.ownerAbsoluteRoomAccess,
+    globalRoomManage:global.manageRooms,
+    canManage:actualOwner
       ||global.manageRooms
       ||hostCapabilities.length>0
       ||agencyCapabilities.length>0,
     limit:roomModeratorLimit(room),
     capabilities:ROOM_MODERATOR_CAPABILITIES,
-    myCapabilities:!isOfficialRoom(room)&&ownerUid===uid
+    myCapabilities:(actualOwner||global.manageRooms)
       ? ROOM_MODERATOR_CAPABILITIES
       : [...new Set([
           ...hostCapabilities,
@@ -641,6 +658,7 @@ async function setRoomModerator(db,uid,body){
     tx.create(auditRef,{
       action:enabled?(previous?"updateModerator":"addModerator"):"removeModerator",
       actorUid:uid,
+      ...absoluteRoomAccessAudit(room,actor,uid),
       targetUid,
       before:previous,
       after:enabled?(moderators.find(item=>item.uid===targetUid)||null):null,
@@ -1042,6 +1060,7 @@ async function updateRoomSettings(db,uid,body){
     tx.create(auditRef,{
       action:"updateRoomSettings",
       actorUid:uid,
+      ...absoluteRoomAccessAudit(room,user,uid),
       before:{
         name:clean(room.name||room.title),
         description:clean(room.description),
@@ -1102,6 +1121,7 @@ async function setRoomChatEnabled(db,uid,body){
     tx.create(auditRef,{
       action:"setRoomChatEnabled",
       actorUid:uid,
+      ...absoluteRoomAccessAudit(room,actor,uid),
       before:{chatEnabled:before},
       after:{chatEnabled:enabled},
       createdAt:FieldValue.serverTimestamp(),
@@ -1423,6 +1443,64 @@ async function controlRoomPolicy(db,uid,body){
 
   if(controlAction==="createOfficialRoom"){
     return createOfficialRoomFromControl(db,uid,body);
+  }
+
+  if(controlAction==="ownerAbsoluteRoomAccessState"){
+    if(!isOwner)throw new ApiError("owner_required",403);
+    return {ok:true,ownerAbsoluteRoomAccess:global.ownerAbsoluteRoomAccess};
+  }
+
+  if(controlAction==="setOwnerAbsoluteRoomAccess"){
+    if(!isOwner)throw new ApiError("owner_required",403);
+    const enabled=body.enabled===true;
+    const reason=clean(body.reason);
+    const operationId=clean(body.idempotencyKey);
+    if(reason.length<3||reason.length>160||!/^[A-Za-z0-9_-]{12,160}$/.test(operationId)){
+      throw new ApiError("invalid_request",400);
+    }
+    const actorRef=db.collection("users").doc(uid);
+    return db.runTransaction(async tx=>{
+      const opRef=db.collection("control_operations").doc(operationId);
+      const [opSnap,userSnap]=await Promise.all([tx.get(opRef),tx.get(actorRef)]);
+      if(opSnap.exists){
+        return {ok:true,code:"duplicate",operationId,...(opSnap.data()?.result||{})};
+      }
+      if(!userSnap.exists||clean(userSnap.data()?.role)!=="owner"){
+        throw new ApiError("owner_required",403);
+      }
+      const before=userSnap.data()?.ownerAbsoluteRoomAccess!==false;
+      const now=FieldValue.serverTimestamp();
+      tx.update(actorRef,{
+        ownerAbsoluteRoomAccess:enabled,
+        ownerAbsoluteRoomAccessUpdatedAt:now,
+        updatedAt:now,
+      });
+      const resultData={
+        ownerAbsoluteRoomAccess:enabled,
+        beforeOwnerAbsoluteRoomAccess:before,
+      };
+      tx.create(db.collection("admin_audit_logs").doc(),{
+        actorUid:uid,
+        action:"setOwnerAbsoluteRoomAccess",
+        targetType:"owner_room_access",
+        targetId:uid,
+        reason,
+        before:{ownerAbsoluteRoomAccess:before},
+        after:{ownerAbsoluteRoomAccess:enabled},
+        operationId,
+        createdAt:now,
+      });
+      tx.create(opRef,{
+        action:"setOwnerAbsoluteRoomAccess",
+        actorUid:uid,
+        targetType:"owner_room_access",
+        targetId:uid,
+        status:"completed",
+        result:resultData,
+        createdAt:now,
+      });
+      return {ok:true,code:"ok",operationId,...resultData};
+    });
   }
 
   if(!roomId&&roomPublicId){
@@ -1986,6 +2064,25 @@ async function roomSeatAction(db,uid,body){
       updatedAt:FieldValue.serverTimestamp(),
     });
 
+    const privilegedMicActions=new Set([
+      "setMicInviteOnly","inviteToMic","approveMicRequest","rejectMicRequest",
+      "muteTargetSeat","unmuteTargetSeat","removeFromMic",
+    ]);
+    if(privilegedMicActions.has(action)&&absoluteRoomAccessAudit(room,actor,uid).absoluteRoomAccess===true){
+      tx.create(
+        db.collection("room_audit_logs").doc(roomId).collection("items").doc(),
+        {
+          action:"ownerAbsoluteRoomAccess:"+action,
+          actorUid:uid,
+          targetUid:targetUid||null,
+          seatIndex:Number.isInteger(seatIndex)?seatIndex:null,
+          authoritySource:"ownerAbsoluteRoomAccess",
+          absoluteRoomAccess:true,
+          createdAt:FieldValue.serverTimestamp(),
+        },
+      );
+    }
+
     return {
       ok:true,
       roomId,
@@ -2146,6 +2243,7 @@ async function kickRoomUser(db,uid,body){
     tx.create(auditRef,{
       action:"kickRoomUser",
       actorUid:uid,
+      ...absoluteRoomAccessAudit(room,actor,uid),
       targetUid,
       after:{
         permanent,
@@ -2181,6 +2279,7 @@ async function unbanRoomUser(db,uid,body){
   batch.create(auditRef,{
     action:"unbanRoomUser",
     actorUid:uid,
+    ...absoluteRoomAccessAudit(room,actorSnap.data()||{},uid),
     targetUid,
     before:banSnap.exists?(banSnap.data()||{}):null,
     after:null,
@@ -3490,7 +3589,8 @@ async function roomBootstrap(db,decoded,body){
     ? OFFICIAL_HOST_CAPABILITIES
     : [];
   const agencyCapabilities=agencyRoomManagementCapabilities(room,actor,uid);
-  const myCapabilities=!official&&ownerUid===uid
+  const actualOwner=!official&&ownerUid===uid;
+  const myCapabilities=(actualOwner||global.manageRooms)
     ? ROOM_MODERATOR_CAPABILITIES
     : [...new Set([
         ...hostCapabilities,
@@ -3604,9 +3704,12 @@ async function roomBootstrap(db,decoded,body){
       roomId,
       ownerUid,
       hostUid,
-      isOwner:!official&&ownerUid===uid,
+      isOwner:actualOwner,
       isHost:official&&hostUid===uid,
-      canManage:(!official&&ownerUid===uid)
+      platformOwner:global.appOwner,
+      ownerAbsoluteRoomAccess:global.ownerAbsoluteRoomAccess,
+      globalRoomManage:global.manageRooms,
+      canManage:actualOwner
         ||global.manageRooms
         ||hostCapabilities.length>0
         ||agencyCapabilities.length>0,

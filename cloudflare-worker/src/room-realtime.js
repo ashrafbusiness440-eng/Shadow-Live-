@@ -91,7 +91,9 @@ function globalRoomManageAllowed(user = {}) {
     ? user.capabilities.map(clean)
     : [];
   const role = clean(user.role);
-  return role === "owner" ||
+  const ownerAbsoluteRoomAccess =
+    role === "owner" && user.ownerAbsoluteRoomAccess !== false;
+  return ownerAbsoluteRoomAccess ||
     (user.adminEnabled === true &&
       (capabilities.includes("manageRooms") ||
        capabilities.includes("manage_rooms")));
