@@ -85,10 +85,11 @@ export class RoomRealtimeObject extends DurableObject {
       );
   }
 
-  #presenceSnapshot(excludeConnectionId = "") {
+  #presenceSnapshot(excludeConnectionId = "", { includeGhost = false } = {}) {
     return presenceSnapshotFromAttachments(
       this.#presenceAttachments(excludeConnectionId),
       Date.now(),
+      { includeGhost },
     );
   }
 
@@ -259,6 +260,14 @@ export class RoomRealtimeObject extends DurableObject {
         participants,
       });
     }
+    if (url.pathname === "/presence/internal" && request.method === "GET") {
+      const participants = this.#presenceSnapshot("", { includeGhost: true });
+      return Response.json({
+        ok: true,
+        onlineCount: participants.length,
+        participants,
+      });
+    }
     if (url.pathname === "/presence/count" && request.method === "GET") {
       const onlineCount = this.#presenceSnapshot().length;
       recordRealtimeTelemetry(this.env, {
@@ -321,6 +330,7 @@ export class RoomRealtimeObject extends DurableObject {
     const chatEnabled = body.chatEnabled !== false;
     const canModerateChat = body.canModerateChat === true;
     const ghostMode = body.ghostMode === true;
+    const hiddenRoomEntry = body.hiddenRoomEntry === true;
     const vipLevel = Math.max(0, Math.min(10, Number(body.vipLevel || 0)));
     const entryEffectKey = String(body.entryEffectKey || "").trim();
     const mode = String(body.mode || "room") === "rocket_feed"
@@ -352,6 +362,7 @@ export class RoomRealtimeObject extends DurableObject {
       chatEnabled,
       canModerateChat,
       ghostMode,
+      hiddenRoomEntry,
       vipLevel,
       entryEffectKey,
       mode,
@@ -457,6 +468,7 @@ export class RoomRealtimeObject extends DurableObject {
       chatEnabled: record.chatEnabled !== false,
       canModerateChat: record.canModerateChat === true,
       ghostMode: record.ghostMode === true,
+      hiddenRoomEntry: record.hiddenRoomEntry === true,
       vipLevel: Math.max(0, Math.min(10, Number(record.vipLevel || 0))),
       entryEffectKey: String(record.entryEffectKey || ""),
       recentChat: [],
@@ -483,7 +495,7 @@ export class RoomRealtimeObject extends DurableObject {
       onlineCount,
     });
 
-    if (!alreadyPresent && record.ghostMode !== true) {
+    if (!alreadyPresent && record.hiddenRoomEntry !== true) {
       this.#broadcastEvent("room.presence_joined", {
         roomId,
         uid,
