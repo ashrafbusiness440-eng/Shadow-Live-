@@ -348,30 +348,80 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
           ),
           child: Column(
             children: [
-              Container(
-                width: 92,
-                height: 92,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: const Color(0xFF171D31),
-                  border: Border.all(
-                    color: const Color(0xFFFFD54A),
-                    width: 2,
+              Row(
+                children: [
+                  SizedBox(
+                    width: 44,
+                    child: onSliceSelected == null || slices.isEmpty
+                        ? const SizedBox.shrink()
+                        : IconButton(
+                            key: Key('level-preview-prev-$metric'),
+                            tooltip: 'الفئة السابقة',
+                            onPressed: () {
+                              final selected = (previewSlice ?? currentSlice).clamp(0, slices.length - 1);
+                              final next = selected <= 0 ? slices.length - 1 : selected - 1;
+                              onSliceSelected(next);
+                            },
+                            icon: const Icon(
+                              Icons.chevron_left_rounded,
+                              color: Color(0xFFFFD54A),
+                              size: 34,
+                            ),
+                          ),
                   ),
-                ),
-                child: LevelAssetImage(
-                  assetKey: ShadowAssetKeys.levelMainBadge(
-                    metric == 'games' ? 'game' : metric,
-                    _assetLevelForSlice(metric, previewSlice ?? currentSlice, data.level),
+                  Expanded(
+                    child: Center(
+                      child: Container(
+                        width: 132,
+                        height: 132,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: const Color(0xFF171D31),
+                          border: Border.all(
+                            color: const Color(0xFFFFD54A),
+                            width: 2,
+                          ),
+                        ),
+                        child: LevelAssetImage(
+                          assetKey: ShadowAssetKeys.levelMainBadge(
+                            metric == 'games' ? 'game' : metric,
+                            _assetLevelForSlice(
+                              metric,
+                              previewSlice ?? currentSlice,
+                              data.level,
+                            ),
+                          ),
+                          width: 116,
+                          height: 116,
+                          fallback: Icon(
+                            icon,
+                            size: 58,
+                            color: const Color(0xFFFFD54A),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
-                  width: 78,
-                  height: 78,
-                  fallback: Icon(
-                    icon,
-                    size: 48,
-                    color: const Color(0xFFFFD54A),
+                  SizedBox(
+                    width: 44,
+                    child: onSliceSelected == null || slices.isEmpty
+                        ? const SizedBox.shrink()
+                        : IconButton(
+                            key: Key('level-preview-next-$metric'),
+                            tooltip: 'الفئة التالية',
+                            onPressed: () {
+                              final selected = (previewSlice ?? currentSlice).clamp(0, slices.length - 1);
+                              final next = selected >= slices.length - 1 ? 0 : selected + 1;
+                              onSliceSelected(next);
+                            },
+                            icon: const Icon(
+                              Icons.chevron_right_rounded,
+                              color: Color(0xFFFFD54A),
+                              size: 34,
+                            ),
+                          ),
                   ),
-                ),
+                ],
               ),
               const SizedBox(height: 12),
               Text(
