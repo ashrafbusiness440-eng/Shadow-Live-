@@ -11,6 +11,13 @@ import {
   activeEffectiveVipLevelFromUser,
   vipPublicProfilePatch,
 } from "../../cloudflare-worker/src/vip-runtime.js";
+import {
+  activeHiddenRoomEntry,
+  activeRoomGhostMode,
+  canInspectHiddenRoomPresence,
+  canUseRoomGhostMode,
+  vipEntitlementsFromUser,
+} from "../../cloudflare-worker/src/vip-entitlements.js";
 
 const day = 24 * 60 * 60 * 1000;
 const base = Date.UTC(2026, 9, 1, 0, 0, 0);
@@ -201,4 +208,84 @@ test("public VIP patch mirrors effective state and expiry only", () => {
   assert.equal(patch.vipLevel, 7);
   assert.equal(patch.effectiveVipLevel, 7);
   assert.equal(patch.vipExpiresAt.getTime(), base + 7 * day);
+});
+
+
+test("VIP room entitlements use the approved split thresholds", () => {
+  const vip4 = {
+    effectiveVipLevel: 4,
+    vipExpiresAt: new Date(base + day),
+  };
+  const vip5 = {
+    effectiveVipLevel: 5,
+    vipExpiresAt: new Date(base + day),
+    roomGhostMode: true,
+    roomHiddenEntry: true,
+  };
+  const vip7 = {
+    effectiveVipLevel: 7,
+    vipExpiresAt: new Date(base + day),
+    roomGhostMode: true,
+    roomHiddenEntry: true,
+  };
+
+  assert.equal(vipEntitlementsFromUser(vip4, base).hideRoomPresence, false);
+  assert.equal(vipEntitlementsFromUser(vip5, base).hideRoomPresence, true);
+  assert.equal(vipEntitlementsFromUser(vip5, base).hiddenRoomEntry, false);
+  assert.equal(vipEntitlementsFromUser(vip7, base).hiddenRoomEntry, true);
+  assert.equal(activeRoomGhostMode(vip5, base), true);
+  assert.equal(activeHiddenRoomEntry(vip5, base), false);
+  assert.equal(activeHiddenRoomEntry(vip7, base), true);
+});
+
+test("expired VIP and legacy privacy flags cannot keep Ghost enabled", () => {
+  const expired = {
+    effectiveVipLevel: 10,
+    vipExpiresAt: new Date(base - 1),
+    roomGhostMode: true,
+    privacy: { ghostMode: true },
+  };
+  assert.equal(canUseRoomGhostMode(expired, base), false);
+  assert.equal(activeRoomGhostMode(expired, base), false);
+  assert.equal(
+    activeRoomGhostMode(
+      {
+        effectiveVipLevel: 5,
+        vipExpiresAt: new Date(base + day),
+        privacy: { ghostMode: true },
+      },
+      base,
+    ),
+    false,
+  );
+});
+
+test("Owner and delegated Safety/room-control roles retain hidden presence visibility", () => {
+  assert.equal(canUseRoomGhostMode({ role: "owner" }, base), true);
+  assert.equal(canInspectHiddenRoomPresence({ role: "owner" }), true);
+
+  assert.equal(
+    canInspectHiddenRoomPresence({
+      role: "admin",
+      adminEnabled: true,
+      capabilities: ["reviewReports"],
+    }),
+    true,
+  );
+  assert.equal(
+    canInspectHiddenRoomPresence({
+      role: "admin",
+      adminEnabled: true,
+      capabilities: ["globalRoomControl"],
+    }),
+    true,
+  );
+  assert.equal(
+    canInspectHiddenRoomPresence({
+      role: "admin",
+      adminEnabled: false,
+      capabilities: ["reviewReports"],
+    }),
+    false,
+  );
 });
