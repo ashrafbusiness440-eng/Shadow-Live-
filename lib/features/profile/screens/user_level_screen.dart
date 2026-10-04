@@ -361,7 +361,7 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
                 ),
                 child: LevelAssetImage(
                   assetKey: ShadowAssetKeys.levelMainBadge(
-                    metric,
+                    metric == 'games' ? 'game' : metric,
                     _assetLevelForSlice(metric, previewSlice ?? currentSlice, data.level),
                   ),
                   width: 78,
