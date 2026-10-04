@@ -1,0 +1,105 @@
+{
+  "batch": "G",
+  "metric": "game",
+  "publishedAt": "2026-10-04T05:55:00.196991Z",
+  "assets": [
+    {
+      "assetKey": "levels.game.lv01_03.mainBadge",
+      "fullPath": "assets/images/levels/game/lv01_03/game_lv01_03_main_badge.webp",
+      "width": 1024,
+      "height": 1024,
+      "contentSha": "5fb49f7f58529c5880c70131af8e13e9ec0bc101"
+    },
+    {
+      "assetKey": "levels.game.lv01_03.miniBadge",
+      "fullPath": "assets/images/levels/game/lv01_03/game_lv01_03_mini_badge.webp",
+      "width": 512,
+      "height": 256,
+      "contentSha": "609af57113179629314701b43bbefbbe90a4bd3f"
+    },
+    {
+      "assetKey": "levels.game.lv04_06.mainBadge",
+      "fullPath": "assets/images/levels/game/lv04_06/game_lv04_06_main_badge.webp",
+      "width": 1024,
+      "height": 1024,
+      "contentSha": "54e9feac8e80348feb3b4a2cafe970649ec2178c"
+    },
+    {
+      "assetKey": "levels.game.lv04_06.miniBadge",
+      "fullPath": "assets/images/levels/game/lv04_06/game_lv04_06_mini_badge.webp",
+      "width": 512,
+      "height": 256,
+      "contentSha": "147633532b24ba52378103c6889e0d236ad342b8"
+    },
+    {
+      "assetKey": "levels.game.lv07_09.mainBadge",
+      "fullPath": "assets/images/levels/game/lv07_09/game_lv07_09_main_badge.webp",
+      "width": 1024,
+      "height": 1024,
+      "contentSha": "83b97e9f262024a8854966e2d07bf16aecd3e7a1"
+    },
+    {
+      "assetKey": "levels.game.lv07_09.miniBadge",
+      "fullPath": "assets/images/levels/game/lv07_09/game_lv07_09_mini_badge.webp",
+      "width": 512,
+      "height": 256,
+      "contentSha": "7b1d90c43eed9a1a39409f602c38c00a6a8a36e6"
+    },
+    {
+      "assetKey": "levels.game.lv10_12.mainBadge",
+      "fullPath": "assets/images/levels/game/lv10_12/game_lv10_12_main_badge.webp",
+      "width": 1024,
+      "height": 1024,
+      "contentSha": "f2f7cac5ff7cdc67bad08f85f36a0665f4918ab8"
+    },
+    {
+      "assetKey": "levels.game.lv10_12.miniBadge",
+      "fullPath": "assets/images/levels/game/lv10_12/game_lv10_12_mini_badge.webp",
+      "width": 512,
+      "height": 256,
+      "contentSha": "3d294c45465f4b15f679fbc6f9840f4ff89631aa"
+    },
+    {
+      "assetKey": "levels.game.lv13_15.mainBadge",
+      "fullPath": "assets/images/levels/game/lv13_15/game_lv13_15_main_badge.webp",
+      "width": 1024,
+      "height": 1024,
+      "contentSha": "bba6ca5d02adcfb47f0b8d31e8596336ecebf134"
+    },
+    {
+      "assetKey": "levels.game.lv13_15.miniBadge",
+      "fullPath": "assets/images/levels/game/lv13_15/game_lv13_15_mini_badge.webp",
+      "width": 512,
+      "height": 256,
+      "contentSha": "d8e41af877986c861d51438d3a2eac4e863b5e58"
+    },
+    {
+      "assetKey": "levels.game.lv16_18.mainBadge",
+      "fullPath": "assets/images/levels/game/lv16_18/game_lv16_18_main_badge.webp",
+      "width": 1024,
+      "height": 1024,
+      "contentSha": "0cbc1f25a08458fa6553fd16edaf4a31433c487c"
+    },
+    {
+      "assetKey": "levels.game.lv16_18.miniBadge",
+      "fullPath": "assets/images/levels/game/lv16_18/game_lv16_18_mini_badge.webp",
+      "width": 512,
+      "height": 256,
+      "contentSha": "0d36768ef6879b1999f3e1ccb8fbbf9e370f3e07"
+    },
+    {
+      "assetKey": "levels.game.lv19_21.mainBadge",
+      "fullPath": "assets/images/levels/game/lv19_21/game_lv19_21_main_badge.webp",
+      "width": 1024,
+      "height": 1024,
+      "contentSha": "0321ab3d318b2de6faff32af5d278c4864534cd9"
+    },
+    {
+      "assetKey": "levels.game.lv19_21.miniBadge",
+      "fullPath": "assets/images/levels/game/lv19_21/game_lv19_21_mini_badge.webp",
+      "width": 512,
+      "height": 256,
+      "contentSha": "b09bbbca5a19994fe132b393b892ad6bc46297b0"
+    }
+  ]
+}
