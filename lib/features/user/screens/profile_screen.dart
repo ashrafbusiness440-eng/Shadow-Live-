@@ -687,7 +687,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               compact: true,
               onTap: _openLevel,
             ),
-          if (_num(profile, ['effectiveVipLevel', 'vipLevel']) > 0) ...[
+          if (_num(profile, ['effectiveVipLevel']) > 0) ...[
             const SizedBox(height: 8),
             InkWell(
               key: const Key('profile-vip-badge'),
@@ -702,7 +702,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   border: Border.all(color: const Color(0xFFFFD98A)),
                 ),
                 child: Text(
-                  'VIP${_num(profile, ['effectiveVipLevel', 'vipLevel'])}',
+                  'VIP${_num(profile, ['effectiveVipLevel'])}',
                   textDirection: TextDirection.ltr,
                   style: const TextStyle(
                     color: Color(0xFFFFD98A),
