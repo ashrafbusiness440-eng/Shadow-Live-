@@ -3,6 +3,18 @@ import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 
+class RoomGhostState {
+  const RoomGhostState({
+    required this.ghostMode,
+    required this.canUseGhostMode,
+    required this.requiredVipLevel,
+  });
+
+  final bool ghostMode;
+  final bool canUseGhostMode;
+  final int requiredVipLevel;
+}
+
 class PersonalRoomInfo {
   const PersonalRoomInfo({
     required this.roomId,
@@ -242,10 +254,16 @@ class RoomActionService {
     return body['chatEnabled'] == true;
   }
 
-  Future<bool> loadGhostMode() async {
+  Future<RoomGhostState> loadGhostState() async {
     final body = await _post({'action': 'roomGhostState'});
-    return body['ghostMode'] == true;
+    return RoomGhostState(
+      ghostMode: body['ghostMode'] == true,
+      canUseGhostMode: body['canUseGhostMode'] == true,
+      requiredVipLevel: (body['requiredVipLevel'] as num?)?.toInt() ?? 5,
+    );
   }
+
+  Future<bool> loadGhostMode() async => (await loadGhostState()).ghostMode;
 
   Future<bool> setGhostMode(bool enabled) async {
     final body = await _post({
