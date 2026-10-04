@@ -64,67 +64,13 @@ class ControlAssetStudioTemplate {
 
   bool allowsDirectory(String value) {
     var directory = value.trim().replaceAll('\\', '/');
-    directory = directory.replaceAll(RegExp(r'/+
-
-  bool allowsExtension(String value) =>
-      extensions.contains(value.trim().toLowerCase());
-
-  bool dimensionsMatch(int actualWidth, int actualHeight) {
-    if (width == null || height == null) return true;
-    return actualWidth == width && actualHeight == height;
-  }
-
-  String get dimensionsLabel =>
-      width == null || height == null ? 'غير مثبتة بعد' : '$width×$height';
-
-  String get transparencyLabel => switch (transparency) {
-        'required' => 'شفافية مطلوبة',
-        'forbidden' => 'بدون شفافية',
-        _ => 'الشفافية اختيارية',
-      };
-
-  String get motionLabel => switch (motion) {
-        'static' => 'ثابت',
-        'animated' => 'متحرك',
-        _ => 'ثابت أو متحرك',
-      };
-
-  String get extensionsLabel =>
-      extensions.map((e) => e.toUpperCase()).join(' / ');
-}), '');
+    directory = directory.replaceAll(RegExp(r'/+$'), '');
     if (directory.isEmpty ||
         directory.startsWith('/') ||
         directory.contains('//')) {
       return false;
     }
-    final safeSegment = RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,79}
-
-  bool allowsExtension(String value) =>
-      extensions.contains(value.trim().toLowerCase());
-
-  bool dimensionsMatch(int actualWidth, int actualHeight) {
-    if (width == null || height == null) return true;
-    return actualWidth == width && actualHeight == height;
-  }
-
-  String get dimensionsLabel =>
-      width == null || height == null ? 'غير مثبتة بعد' : '$width×$height';
-
-  String get transparencyLabel => switch (transparency) {
-        'required' => 'شفافية مطلوبة',
-        'forbidden' => 'بدون شفافية',
-        _ => 'الشفافية اختيارية',
-      };
-
-  String get motionLabel => switch (motion) {
-        'static' => 'ثابت',
-        'animated' => 'متحرك',
-        _ => 'ثابت أو متحرك',
-      };
-
-  String get extensionsLabel =>
-      extensions.map((e) => e.toUpperCase()).join(' / ');
-});
+    final safeSegment = RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$');
     final segments = directory.split('/');
     if (segments.any((segment) =>
         segment.isEmpty ||
@@ -134,34 +80,7 @@ class ControlAssetStudioTemplate {
       return false;
     }
     return directories.any((root) {
-      final normalizedRoot = root.trim().replaceAll(RegExp(r'/+
-
-  bool allowsExtension(String value) =>
-      extensions.contains(value.trim().toLowerCase());
-
-  bool dimensionsMatch(int actualWidth, int actualHeight) {
-    if (width == null || height == null) return true;
-    return actualWidth == width && actualHeight == height;
-  }
-
-  String get dimensionsLabel =>
-      width == null || height == null ? 'غير مثبتة بعد' : '$width×$height';
-
-  String get transparencyLabel => switch (transparency) {
-        'required' => 'شفافية مطلوبة',
-        'forbidden' => 'بدون شفافية',
-        _ => 'الشفافية اختيارية',
-      };
-
-  String get motionLabel => switch (motion) {
-        'static' => 'ثابت',
-        'animated' => 'متحرك',
-        _ => 'ثابت أو متحرك',
-      };
-
-  String get extensionsLabel =>
-      extensions.map((e) => e.toUpperCase()).join(' / ');
-}), '');
+      final normalizedRoot = root.trim().replaceAll(RegExp(r'/+$'), '');
       return directory == normalizedRoot ||
           directory.startsWith('$normalizedRoot/');
     });
