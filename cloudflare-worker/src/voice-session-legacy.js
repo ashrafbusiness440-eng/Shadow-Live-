@@ -2220,10 +2220,15 @@ async function kickRoomUser(db,uid,body){
   const auditRef=db.collection("room_audit_logs").doc(roomId).collection("items").doc();
 
   return db.runTransaction(async tx=>{
-    const [roomSnap,actorSnap]=await Promise.all([tx.get(roomRef),tx.get(actorRef)]);
+    const [roomSnap,actorSnap,targetSnap]=await Promise.all([
+      tx.get(roomRef),
+      tx.get(actorRef),
+      tx.get(targetRef),
+    ]);
     if(!roomSnap.exists)throw new ApiError("room_not_found",404);
     const room=roomSnap.data()||{};
     const actor=actorSnap.data()||{};
+    const target=targetSnap.data()||{};
     const permissions=roomPermissions(actor);
     const ownerUid=clean(room.ownerUid||room.ownerId||room.hostId);
     if(!canManageRoomAction(room,actor,uid,"moderateUsers"))throw new ApiError("forbidden",403);
