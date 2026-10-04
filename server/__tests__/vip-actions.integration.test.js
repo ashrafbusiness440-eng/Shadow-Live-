@@ -178,18 +178,27 @@ test("VIP7 Hide Lists preference is server-authoritative and expiry-aware", asyn
   await Promise.all([
     db.collection("users").doc(vip6).set({
       role: "user",
+      earnedVipLevel: 0,
+      adminGrantVipLevel: 6,
+      adminGrantExpiresAt: future,
       effectiveVipLevel: 6,
       vipExpiresAt: future,
       hideRankingLists: false,
     }),
     db.collection("users").doc(vip7).set({
       role: "user",
+      earnedVipLevel: 0,
+      adminGrantVipLevel: 7,
+      adminGrantExpiresAt: future,
       effectiveVipLevel: 7,
       vipExpiresAt: future,
       hideRankingLists: false,
     }),
     db.collection("users").doc(expired).set({
       role: "user",
+      earnedVipLevel: 0,
+      adminGrantVipLevel: 7,
+      adminGrantExpiresAt: past,
       effectiveVipLevel: 7,
       vipExpiresAt: past,
       hideRankingLists: true,
