@@ -16,7 +16,7 @@ export async function appAssets(request, env) {
     const cacheHeaders = { "Cache-Control": "public, max-age=60, s-maxage=300" };
 
     if (key) {
-      if (!/^[a-z0-9][a-z0-9._-]{2,119}$/.test(key)) {
+      if (!/^[a-z0-9][A-Za-z0-9._-]{2,119}$/.test(key)) {
         return json(request, env, { ok: false, code: "invalid_key" }, 400);
       }
       const asset = await readThroughConfigCache(
