@@ -1,11 +1,113 @@
 import { getApps, initializeApp, cert, getAuth, FieldValue, getFirestore, legacyEnv } from "../legacy-firebase-admin-shim.js";
+import { loadUserLevelPolicy, levelFromPoints } from "../user-level-policy.js";
 
 const ALLOWED_TYPES = new Set([
   "frame",
   "entrance",
   "voice_wave",
   "room_background",
+  "wealth_badge",
+  "upgrade_announcement",
+  "chat_bubble",
+  "support_bar",
+  "gift_privilege",
+  "entry_bar",
+  "vehicle",
 ]);
+
+const WEALTH_REWARD_SCHEMA_VERSION = 1;
+const PERMANENT_EXPIRES_AT_MS = 253402300799000;
+
+const WEALTH_BASE_PRIVILEGES = Object.freeze([
+  Object.freeze({ type: "wealth_badge", suffix: "wealthBadge", nameAr: "شعار الثروة" }),
+  Object.freeze({ type: "upgrade_announcement", suffix: "upgradeAnnouncement", nameAr: "إعلان الترقية" }),
+  Object.freeze({ type: "entrance", suffix: "entryEffect", nameAr: "مؤثر الدخول" }),
+  Object.freeze({ type: "chat_bubble", suffix: "chatBubble", nameAr: "فقاعة الدردشة" }),
+  Object.freeze({ type: "frame", suffix: "profileFrame", nameAr: "إطار الصورة الشخصية" }),
+]);
+
+function wealthBucket(index) {
+  const safeIndex = Math.max(0, Math.min(6, Number(index) || 0));
+  const start = safeIndex * 5 + 1;
+  const end = start + 4;
+  return {
+    start,
+    end,
+    key: `lv${String(start).padStart(2, "0")}_${String(end).padStart(2, "0")}`,
+  };
+}
+
+function wealthPrivilegesForBucket(index) {
+  const bucket = wealthBucket(index);
+  const privileges = [...WEALTH_BASE_PRIVILEGES];
+  if (bucket.start >= 6) {
+    privileges.push({ type: "support_bar", suffix: "supportBar", nameAr: "شريط الدعم" });
+  }
+  if (bucket.start >= 11) {
+    privileges.push({ type: "gift_privilege", suffix: "giftPrivilege", nameAr: "تأثير إرسال هدية الامتياز" });
+  }
+  if (bucket.start >= 16) {
+    privileges.push({ type: "entry_bar", suffix: "entryBar", nameAr: "شريط الدخول" });
+  }
+  if (bucket.start >= 21) {
+    privileges.push({ type: "vehicle", suffix: "vehicle", nameAr: "المركبة" });
+  }
+  return privileges.map((item) => ({
+    rewardId: `level_wealth_${bucket.key}_${item.suffix}`,
+    type: item.type,
+    nameAr: `${item.nameAr} LV${bucket.start}–${bucket.end}`,
+    assetKey: `levels.wealth.${bucket.key}.${item.suffix}`,
+    expiresAtMs: PERMANENT_EXPIRES_AT_MS,
+    permanent: true,
+    source: "level_wealth",
+    sourceLevelBucket: bucket.key,
+  }));
+}
+
+function wealthBucketIndexForLevel(level) {
+  const normalized = Number(level);
+  if (!Number.isInteger(normalized) || normalized <= 0) return -1;
+  return Math.min(6, Math.floor((normalized - 1) / 5));
+}
+
+async function syncWealthLevelRewards(db, uid, rootRef, root, user, policy) {
+  const wealthLevel = levelFromPoints(policy?.wealth || {}, user?.wealthPoints ?? 0);
+  const currentBucketIndex = wealthBucketIndexForLevel(wealthLevel);
+  if (currentBucketIndex < 0) return false;
+
+  const rootData = root.exists ? (root.data() || {}) : {};
+  const storedSchemaVersion = Number(rootData.wealthRewardSchemaVersion || 0);
+  const storedBucketIndex = Number.isInteger(Number(rootData.wealthRewardSyncedBucketIndex))
+    ? Number(rootData.wealthRewardSyncedBucketIndex)
+    : -1;
+
+  const schemaChanged = storedSchemaVersion !== WEALTH_REWARD_SCHEMA_VERSION;
+  const firstBucket = schemaChanged ? 0 : storedBucketIndex + 1;
+  if (firstBucket > currentBucketIndex) return false;
+
+  const batch = db.batch();
+  for (let index = firstBucket; index <= currentBucketIndex; index += 1) {
+    for (const reward of wealthPrivilegesForBucket(index)) {
+      const itemRef = rootRef.collection("items").doc(
+        rewardDocId(reward.type, reward.rewardId),
+      );
+      batch.set(itemRef, {
+        ...reward,
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+    }
+  }
+
+  batch.set(rootRef, {
+    wealthRewardSchemaVersion: WEALTH_REWARD_SCHEMA_VERSION,
+    wealthRewardSyncedBucketIndex: currentBucketIndex,
+    wealthRewardSyncedLevel: wealthLevel,
+    updatedAt: FieldValue.serverTimestamp(),
+  }, { merge: true });
+
+  await batch.commit();
+  return true;
+}
 
 function clean(value){return String(value??"").trim();}
 function safeType(value){
@@ -58,6 +160,7 @@ async function actor(req){
 function serializeReward(doc,nowMs){
   const data=doc.data()||{};
   const expiresAtMs=Math.max(0,Number(data.expiresAtMs||0));
+  const permanent=data.permanent===true;
   return {
     docId:doc.id,
     rewardId:clean(data.rewardId),
@@ -66,8 +169,9 @@ function serializeReward(doc,nowMs){
     assetKey:clean(data.assetKey)||defaultAssetKey(data.type,data.rewardId),
     imageUrl:clean(data.imageUrl),
     expiresAtMs,
-    active:data.active===true && expiresAtMs>nowMs,
-    expired:expiresAtMs>0 && expiresAtMs<=nowMs,
+    permanent,
+    active:data.active===true && (permanent || expiresAtMs>nowMs),
+    expired:!permanent && expiresAtMs>0 && expiresAtMs<=nowMs,
     source:clean(data.source),
     sourceExplosionId:clean(data.sourceExplosionId),
   };
@@ -75,10 +179,22 @@ function serializeReward(doc,nowMs){
 
 export async function listInventory(db,uid,nowMs=Date.now()){
   const rootRef=db.collection("user_rewards").doc(uid);
-  const [snapshot,root]=await Promise.all([
-    rootRef.collection("items").limit(100).get(),
+  const [root,userSnap,policy]=await Promise.all([
     rootRef.get(),
+    db.collection("users").doc(uid).get(),
+    loadUserLevelPolicy(db),
   ]);
+  if(userSnap.exists){
+    await syncWealthLevelRewards(
+      db,
+      uid,
+      rootRef,
+      root,
+      userSnap.data()||{},
+      policy,
+    );
+  }
+  const snapshot=await rootRef.collection("items").limit(200).get();
   const items=snapshot.docs.map((doc)=>serializeReward(doc,nowMs))
     .filter((item)=>ALLOWED_TYPES.has(item.type))
     .sort((a,b)=>{
@@ -158,7 +274,7 @@ export async function setActiveReward(db,uid,{type,rewardId,active}){
     if(clean(item.type)!==rewardType||clean(item.rewardId)!==id){
       throw Error("reward_not_owned");
     }
-    if(Number(item.expiresAtMs||0)<=nowMs) throw Error("reward_expired");
+    if(item.permanent!==true&&Number(item.expiresAtMs||0)<=nowMs) throw Error("reward_expired");
 
     const activeByType=rootSnap.exists&&rootSnap.data()?.activeByType
       ? {...rootSnap.data().activeByType}

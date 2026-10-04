@@ -24,11 +24,12 @@ class _MyItemsScreenState extends State<MyItemsScreen>
   String? _changingDocId;
   List<MyItemReward> _items = const [];
 
-  static const _types = <String>[
+  static const _sections = <String>[
     'frame',
     'entrance',
     'voice_wave',
     'room_background',
+    'level_privileges',
   ];
 
   static const _labels = <String>[
@@ -36,14 +37,33 @@ class _MyItemsScreenState extends State<MyItemsScreen>
     'الدخوليات',
     'الموجات الصوتية',
     'خلفيات الروم',
+    'امتيازات المستوى',
   ];
+
+  static const _levelPrivilegeTypes = <String>{
+    'wealth_badge',
+    'upgrade_announcement',
+    'chat_bubble',
+    'support_bar',
+    'gift_privilege',
+    'entry_bar',
+    'vehicle',
+  };
+
+  static int _sectionIndexForType(String? type) {
+    final normalized = type?.trim() ?? '';
+    if (_levelPrivilegeTypes.contains(normalized)) {
+      return _sections.indexOf('level_privileges');
+    }
+    return _sections.indexOf(normalized);
+  }
 
   @override
   void initState() {
     super.initState();
-    final initialIndex = _types.indexOf(widget.initialType ?? '');
+    final initialIndex = _sectionIndexForType(widget.initialType);
     _tabs = TabController(
-      length: _types.length,
+      length: _sections.length,
       vsync: this,
       initialIndex: initialIndex < 0 ? 0 : initialIndex,
     );
@@ -96,6 +116,20 @@ class _MyItemsScreenState extends State<MyItemsScreen>
         return 'موجة صوتية';
       case 'room_background':
         return 'خلفية روم';
+      case 'wealth_badge':
+        return 'شعار الثروة';
+      case 'upgrade_announcement':
+        return 'إعلان الترقية';
+      case 'chat_bubble':
+        return 'فقاعة الدردشة';
+      case 'support_bar':
+        return 'شريط الدعم';
+      case 'gift_privilege':
+        return 'تأثير إرسال هدية الامتياز';
+      case 'entry_bar':
+        return 'شريط الدخول';
+      case 'vehicle':
+        return 'المركبة';
       default:
         return 'مقتنى';
     }
@@ -111,12 +145,29 @@ class _MyItemsScreenState extends State<MyItemsScreen>
         return Icons.graphic_eq_rounded;
       case 'room_background':
         return Icons.wallpaper_rounded;
+      case 'wealth_badge':
+        return Icons.workspace_premium_rounded;
+      case 'upgrade_announcement':
+        return Icons.campaign_rounded;
+      case 'chat_bubble':
+        return Icons.chat_bubble_rounded;
+      case 'support_bar':
+        return Icons.star_rate_rounded;
+      case 'gift_privilege':
+        return Icons.card_giftcard_rounded;
+      case 'entry_bar':
+        return Icons.login_rounded;
+      case 'vehicle':
+        return Icons.directions_car_filled_rounded;
+      case 'level_privileges':
+        return Icons.auto_awesome_rounded;
       default:
         return Icons.inventory_2_rounded;
     }
   }
 
   String _remaining(MyItemReward item) {
+    if (item.permanent) return 'دائم';
     final seconds = item.remainingSeconds();
     if (seconds <= 0) return 'منتهية';
     final days = seconds ~/ 86400;
@@ -287,9 +338,13 @@ class _MyItemsScreenState extends State<MyItemsScreen>
     );
   }
 
-  Widget _tabBody(String type) {
+  Widget _tabBody(String section) {
     final items = _items
-        .where((item) => item.type == type)
+        .where(
+          (item) => section == 'level_privileges'
+              ? _levelPrivilegeTypes.contains(item.type)
+              : item.type == section,
+        )
         .toList(growable: false);
     if (items.isEmpty) {
       return Center(
@@ -299,7 +354,7 @@ class _MyItemsScreenState extends State<MyItemsScreen>
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                _icon(type),
+                _icon(section),
                 size: 56,
                 color: Colors.white24,
               ),
@@ -394,7 +449,7 @@ class _MyItemsScreenState extends State<MyItemsScreen>
                   )
                 : TabBarView(
                     controller: _tabs,
-                    children: _types.map(_tabBody).toList(),
+                    children: _sections.map(_tabBody).toList(),
                   ),
       ),
     );
