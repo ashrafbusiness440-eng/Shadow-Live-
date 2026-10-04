@@ -14,6 +14,7 @@ class MyItemReward {
     required this.expiresAtMs,
     required this.active,
     required this.expired,
+    this.permanent = false,
   });
 
   final String docId;
@@ -25,8 +26,10 @@ class MyItemReward {
   final int expiresAtMs;
   final bool active;
   final bool expired;
+  final bool permanent;
 
   int remainingSeconds([int? nowMs]) {
+    if (permanent) return 0;
     final now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
     final seconds = ((expiresAtMs - now) / 1000).ceil();
     if (seconds <= 0) return 0;
@@ -43,6 +46,7 @@ class MyItemReward {
         expiresAtMs: (data['expiresAtMs'] as num?)?.toInt() ?? 0,
         active: data['active'] == true,
         expired: data['expired'] == true,
+        permanent: data['permanent'] == true,
       );
 }
 
