@@ -139,6 +139,27 @@ test("legacy asset manager requests stay backward compatible", () => {
   assert.equal(result.legacy, true);
 });
 
+test("canonical level asset keys with camelCase suffixes stay valid end-to-end", () => {
+  const worker = source("cloudflare-worker/src/manage-app-asset.js");
+  const publicApi = source("cloudflare-worker/src/app-assets.js");
+  const controlPolicy = source("lib/admin/control_asset_policy.dart");
+
+  for (const key of [
+    "levels.game.lv01_03.mainBadge",
+    "levels.game.lv01_03.miniBadge",
+    "levels.wealth.lv01_05.wealthBadge",
+  ]) {
+    assert.match(key, /^[a-z0-9][A-Za-z0-9._-]{2,119}$/);
+  }
+  assert.equal(worker.includes("^[a-z0-9][A-Za-z0-9._-]{2,119}$"), true);
+  assert.equal(publicApi.includes("^[a-z0-9][A-Za-z0-9._-]{2,119}$"), true);
+  assert.equal(controlPolicy.includes("^[a-z0-9][A-Za-z0-9._-]{2,119}$"), true);
+
+  for (const invalid of ["Levels.game.badge", "levels/game/badge", "levels game badge"]) {
+    assert.doesNotMatch(invalid, /^[a-z0-9][A-Za-z0-9._-]{2,119}$/);
+  }
+});
+
 test("asset manager keeps bounded registry and explicit draft publish flow", () => {
   const worker = source("cloudflare-worker/src/manage-app-asset.js");
   const control = source("lib/admin/control_asset_manager_page.dart");
