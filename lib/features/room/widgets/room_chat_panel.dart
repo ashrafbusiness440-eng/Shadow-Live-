@@ -11,6 +11,7 @@ import '../../voice/services/voice_room_session_controller.dart';
 import '../../profile/screens/user_level_screen.dart';
 import '../../profile/widgets/quick_profile_sheet.dart';
 import '../../profile/widgets/user_level_badges.dart';
+import '../../vip/widgets/vip_avatar_frame.dart';
 
 class RoomChatPanel extends StatefulWidget {
   const RoomChatPanel({
@@ -982,25 +983,43 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
               InkWell(
                 onTap: () => _openChatQuickProfile(message),
                 customBorder: const CircleBorder(),
-                child: _senderAvatar(message),
+                child: VipAvatarFrame(
+                  vipLevel: message.vipLevel,
+                  avatarDiameter: 32,
+                  child: _senderAvatar(message),
+                ),
               ),
               const SizedBox(width: 8),
               Flexible(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    InkWell(
-                      onTap: () => _openChatQuickProfile(message),
-                      child: Text(
-                        message.displayName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFFBFA5FF),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w900,
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: InkWell(
+                            onTap: () => _openChatQuickProfile(message),
+                            child: Text(
+                              message.displayName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFFBFA5FF),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
+                        if (message.vipLevel > 0) ...[
+                          const SizedBox(width: 5),
+                          VipInlineBadge(
+                            vipLevel: message.vipLevel,
+                            micro: true,
+                          ),
+                        ],
+                      ],
                     ),
                     if (message.wealthLevel > 0 ||
                         message.attractionLevel > 0 ||
