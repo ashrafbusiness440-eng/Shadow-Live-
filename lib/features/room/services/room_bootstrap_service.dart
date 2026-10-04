@@ -79,6 +79,10 @@ class RoomBootstrapSnapshot {
                 .where((item) => item.uid.isNotEmpty)
                 .toList(growable: false)
             : const <RoomModerator>[],
+        platformOwner: moderator['platformOwner'] == true,
+        ownerAbsoluteRoomAccess:
+            moderator['ownerAbsoluteRoomAccess'] == true,
+        globalRoomManage: moderator['globalRoomManage'] == true,
       ),
       insights: RoomInsights.fromJson(insights),
       rocketState: RoomRocketState.fromMap(rocket),

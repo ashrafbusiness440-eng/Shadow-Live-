@@ -177,6 +177,7 @@ class RoomSeatService {
     Map<String, dynamic> data, {
     int? onlineCountOverride,
     bool exists = true,
+    bool globalManageMic = false,
   }) {
     final uid = _auth.currentUser?.uid ?? '';
     final rawBattle = data['starBattleState'];
@@ -271,7 +272,8 @@ class RoomSeatService {
       'starBattleActive': battle['status'] == 'active',
       'isOwner': isOwner,
       'isHost': isHost,
-      'canManageMic': isOwner || isHost || moderatorCanManageMic,
+      'canManageMic':
+          isOwner || isHost || moderatorCanManageMic || globalManageMic,
       'isActive': exists && data['isActive'] != false,
       if (onlineCountOverride != null)
         'onlineCount': onlineCountOverride,

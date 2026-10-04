@@ -38,6 +38,9 @@ class RoomModeratorState {
     required this.limit,
     required this.myCapabilities,
     required this.moderators,
+    this.platformOwner = false,
+    this.ownerAbsoluteRoomAccess = false,
+    this.globalRoomManage = false,
   });
 
   final String roomId;
@@ -45,8 +48,29 @@ class RoomModeratorState {
   final int limit;
   final Set<String> myCapabilities;
   final List<RoomModerator> moderators;
+  final bool platformOwner;
+  final bool ownerAbsoluteRoomAccess;
+  final bool globalRoomManage;
 
-  bool has(String capability) => isOwner || myCapabilities.contains(capability);
+  bool has(String capability) =>
+      isOwner || globalRoomManage || myCapabilities.contains(capability);
+
+  RoomModeratorState copyWithPlatformAccess({
+    required bool platformOwner,
+    required bool ownerAbsoluteRoomAccess,
+    required bool globalRoomManage,
+  }) {
+    return RoomModeratorState(
+      roomId: roomId,
+      isOwner: isOwner,
+      limit: limit,
+      myCapabilities: myCapabilities,
+      moderators: moderators,
+      platformOwner: platformOwner,
+      ownerAbsoluteRoomAccess: ownerAbsoluteRoomAccess,
+      globalRoomManage: globalRoomManage,
+    );
+  }
 }
 
 class RoomModeratorService {
