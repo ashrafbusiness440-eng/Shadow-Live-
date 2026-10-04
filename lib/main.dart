@@ -245,6 +245,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   bool _effectSoundEnabled = true;
   bool _roomEffectsEnabled = true;
   bool _roomGhostMode = false;
+  bool _canUseRoomGhostMode = false;
+  int _roomGhostRequiredVipLevel = 5;
   RoomInsights? _roomInsights;
   bool _loadingRoomInsights = false;
   bool _changingRoomFollow = false;
@@ -806,8 +808,14 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
 
   Future<void> _refreshRoomGhostMode() async {
     try {
-      final value = await _roomActions.loadGhostMode();
-      if (mounted) setState(() => _roomGhostMode = value);
+      final state = await _roomActions.loadGhostState();
+      if (mounted) {
+        setState(() {
+          _roomGhostMode = state.ghostMode;
+          _canUseRoomGhostMode = state.canUseGhostMode;
+          _roomGhostRequiredVipLevel = state.requiredVipLevel;
+        });
+      }
     } catch (_) {
       // Non-critical user preference; Room Menu must never wait on this.
     }
@@ -4366,13 +4374,15 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                           : Colors.white54,
                     ),
                     title: const Text(
-                      'الدخول الخفي',
+                      'إخفاء الوجود في الغرفة',
                       style: TextStyle(color: Colors.white),
                     ),
                     subtitle: Text(
-                      ghostMode
-                          ? 'مفعّل — لا يظهر إشعار دخولك.'
-                          : 'متوقف — يظهر دخولك بشكل طبيعي.',
+                      !_canUseRoomGhostMode
+                          ? 'تفتح من VIP$_roomGhostRequiredVipLevel.'
+                          : ghostMode
+                              ? 'مفعّل — لا يظهر وجودك للعامة داخل الغرفة.'
+                              : 'متوقف — يظهر وجودك للعامة بشكل طبيعي.',
                       style: const TextStyle(
                         color: Colors.white54,
                         fontSize: 10,
@@ -4382,7 +4392,9 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       value: ghostMode,
                       onChanged: null,
                     ),
-                    onTap: () async {
+                    onTap: !_canUseRoomGhostMode
+                        ? null
+                        : () async {
                       try {
                         final next =
                             await _roomActions.setGhostMode(!ghostMode);
@@ -4397,8 +4409,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                             SnackBar(
                               content: Text(
                                 next
-                                    ? 'تم تفعيل الدخول الخفي.'
-                                    : 'تم إيقاف الدخول الخفي.',
+                                    ? 'تم تفعيل إخفاء الوجود.'
+                                    : 'تم إيقاف إخفاء الوجود.',
                               ),
                             ),
                           );
@@ -4408,7 +4420,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               content: Text(
-                                'تعذر تحديث الدخول الخفي حالياً.',
+                                'تعذر تحديث إخفاء الوجود حالياً.',
                               ),
                             ),
                           );
