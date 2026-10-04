@@ -1,0 +1,50 @@
+{
+  "batch": "E",
+  "metric": "wealth",
+  "tier": "lv01_05",
+  "publishedAt": "2026-10-04T06:33:45.576607Z",
+  "assets": [
+    {
+      "assetKey": "levels.wealth.lv01_05.mainBadge",
+      "fullPath": "assets/images/levels/wealth/lv01_05/wealth_lv01_05_main_badge.webp",
+      "width": 1024,
+      "height": 1024,
+      "contentSha": "24c8ff22ba14b62a6b8908e1e2ead9a67fd536d6"
+    },
+    {
+      "assetKey": "levels.wealth.lv01_05.wealthBadge",
+      "fullPath": "assets/images/levels/wealth/lv01_05/wealth_lv01_05_wealth_badge.webp",
+      "width": 512,
+      "height": 256,
+      "contentSha": "fbaea8828f5970a28b47e715ee4812f90e270e98"
+    },
+    {
+      "assetKey": "levels.wealth.lv01_05.upgradeAnnouncement",
+      "fullPath": "assets/images/levels/wealth/lv01_05/wealth_lv01_05_upgrade_announcement.webp",
+      "width": 1536,
+      "height": 384,
+      "contentSha": "d29889d0b0dc47066f56f7956dfe3f0c37bee668"
+    },
+    {
+      "assetKey": "levels.wealth.lv01_05.entryEffect",
+      "fullPath": "assets/images/levels/wealth/lv01_05/wealth_lv01_05_entry_effect.webp",
+      "width": 1536,
+      "height": 512,
+      "contentSha": "bee0e86381bb3f65ae45d2c90572b3361bfeb9bd"
+    },
+    {
+      "assetKey": "levels.wealth.lv01_05.chatBubble",
+      "fullPath": "assets/images/levels/wealth/lv01_05/wealth_lv01_05_chat_bubble.webp",
+      "width": 1024,
+      "height": 512,
+      "contentSha": "cd4b0ad2bd42f8e56f0e526e3f56e030559a506e"
+    },
+    {
+      "assetKey": "levels.wealth.lv01_05.profileFrame",
+      "fullPath": "assets/images/levels/wealth/lv01_05/wealth_lv01_05_profile_frame.webp",
+      "width": 1024,
+      "height": 1024,
+      "contentSha": "cdb35fc86dff7e384728e6b6d388634b91ddf983"
+    }
+  ]
+}
