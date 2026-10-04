@@ -321,7 +321,7 @@ export class RoomRealtimeObject extends DurableObject {
     const chatEnabled = body.chatEnabled !== false;
     const canModerateChat = body.canModerateChat === true;
     const ghostMode = body.ghostMode === true;
-    const vipLevel = Math.max(0, Math.min(99, Number(body.vipLevel || 0)));
+    const vipLevel = Math.max(0, Math.min(10, Number(body.vipLevel || 0)));
     const entryEffectKey = String(body.entryEffectKey || "").trim();
     const mode = String(body.mode || "room") === "rocket_feed"
       ? "rocket_feed"
@@ -457,7 +457,7 @@ export class RoomRealtimeObject extends DurableObject {
       chatEnabled: record.chatEnabled !== false,
       canModerateChat: record.canModerateChat === true,
       ghostMode: record.ghostMode === true,
-      vipLevel: Math.max(0, Math.min(99, Number(record.vipLevel || 0))),
+      vipLevel: Math.max(0, Math.min(10, Number(record.vipLevel || 0))),
       entryEffectKey: String(record.entryEffectKey || ""),
       recentChat: [],
       reconnectAttempt,
@@ -495,7 +495,7 @@ export class RoomRealtimeObject extends DurableObject {
         gameLevel: Math.max(0, Math.min(21, Number(record.gameLevel || 0))),
         joinedAtMs,
         onlineCount,
-        vipLevel: Math.max(0, Math.min(99, Number(record.vipLevel || 0))),
+        vipLevel: Math.max(0, Math.min(10, Number(record.vipLevel || 0))),
         entryEffectKey: String(record.entryEffectKey || ""),
       });
     }
