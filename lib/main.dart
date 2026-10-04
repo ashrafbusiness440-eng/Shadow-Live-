@@ -1115,7 +1115,9 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                             content: Text(
                               code == 'owner_protected'
                                   ? 'لا يمكن طرد صاحب الغرفة.'
-                                  : 'تعذر طرد المستخدم حالياً.',
+                                  : code == 'vip_kick_protected'
+                                      ? 'هذا المستخدم محمي من الطرد بميزة VIP6+.'
+                                      : 'تعذر طرد المستخدم حالياً.',
                             ),
                           ),
                         );
