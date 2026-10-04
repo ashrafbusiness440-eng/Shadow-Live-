@@ -4219,5 +4219,6 @@ export {
   setRoomGhostMode,
   roomHiddenEntryState,
   setRoomHiddenEntry,
+  roomInsights,
   roomPresenceState,
 };
