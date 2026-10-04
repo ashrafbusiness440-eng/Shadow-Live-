@@ -1,0 +1,64 @@
+{
+  "batch": "E",
+  "metric": "wealth",
+  "tier": "lv11_15",
+  "publishedAt": "2026-10-04T08:23:44.357153Z",
+  "assets": [
+    {
+      "assetKey": "levels.wealth.lv11_15.mainBadge",
+      "fullPath": "assets/images/levels/wealth/lv11_15/wealth_lv11_15_main_badge.webp",
+      "width": 1024,
+      "height": 1024,
+      "contentSha": "0d1ec11482fd061b1e53fefe1be9c6befdfa5f44"
+    },
+    {
+      "assetKey": "levels.wealth.lv11_15.wealthBadge",
+      "fullPath": "assets/images/levels/wealth/lv11_15/wealth_lv11_15_wealth_badge.webp",
+      "width": 512,
+      "height": 256,
+      "contentSha": "4a965ecde897d57f9427eff3ad8ed94d63cdf9fd"
+    },
+    {
+      "assetKey": "levels.wealth.lv11_15.upgradeAnnouncement",
+      "fullPath": "assets/images/levels/wealth/lv11_15/wealth_lv11_15_upgrade_announcement.webp",
+      "width": 1536,
+      "height": 384,
+      "contentSha": "1b10dc021356da691db5f7f78d6eda0824e60daa"
+    },
+    {
+      "assetKey": "levels.wealth.lv11_15.entryEffect",
+      "fullPath": "assets/images/levels/wealth/lv11_15/wealth_lv11_15_entry_effect.webp",
+      "width": 1536,
+      "height": 512,
+      "contentSha": "6afa6021164b89903ee2797da6f9345584877af6"
+    },
+    {
+      "assetKey": "levels.wealth.lv11_15.chatBubble",
+      "fullPath": "assets/images/levels/wealth/lv11_15/wealth_lv11_15_chat_bubble.webp",
+      "width": 1024,
+      "height": 512,
+      "contentSha": "c664e8960291734d7e1dc922194b71c7fe42bda7"
+    },
+    {
+      "assetKey": "levels.wealth.lv11_15.profileFrame",
+      "fullPath": "assets/images/levels/wealth/lv11_15/wealth_lv11_15_profile_frame.webp",
+      "width": 1024,
+      "height": 1024,
+      "contentSha": "ef778423a6990264796124a3df3e174e06961378"
+    },
+    {
+      "assetKey": "levels.wealth.lv11_15.supportBar",
+      "fullPath": "assets/images/levels/wealth/lv11_15/wealth_lv11_15_support_bar.webp",
+      "width": 1536,
+      "height": 384,
+      "contentSha": "9f41a72e80b435fbf54c8eebe2471b017bc6efad"
+    },
+    {
+      "assetKey": "levels.wealth.lv11_15.giftPrivilege",
+      "fullPath": "assets/images/levels/wealth/lv11_15/wealth_lv11_15_gift_privilege.webp",
+      "width": 1024,
+      "height": 1024,
+      "contentSha": "0afdfed6770e37492f8164e86cec0b2814df545b"
+    }
+  ]
+}
