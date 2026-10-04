@@ -29,7 +29,16 @@ class SpecialIdPolicy {
     final max = maxDigitsForVip(vipLevel);
     if (min == null || max == null) return false;
     final normalized = normalize(value);
-    return RegExp('^[0-9]{$min,$max}$').hasMatch(normalized);
+    return RegExp('^[0-9]{$min,$max}' r'
+  }
+
+  static void validateForVip(String value, int vipLevel) {
+    if (!validForVip(value, vipLevel)) {
+      throw ArgumentError('Fancy ID غير صالح لمستوى VIP الحالي');
+    }
+  }
+}
+).hasMatch(normalized);
   }
 
   static void validateForVip(String value, int vipLevel) {
