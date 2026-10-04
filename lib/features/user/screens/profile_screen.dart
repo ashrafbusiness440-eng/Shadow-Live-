@@ -19,6 +19,7 @@ import '../../profile/services/reward_inventory_service.dart';
 import '../../room/widgets/cosmetic_effect_widgets.dart';
 import '../../agency/screens/agency_package_grant_page.dart';
 import '../../relationships/screens/relationships_page.dart';
+import '../../vip/screens/vip_screen.dart';
 import '../bloc/user_bloc.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -164,6 +165,14 @@ class _ProfileScreenState extends State<ProfileScreen>
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => UserLevelScreen(initialTabIndex: tabIndex),
+      ),
+    );
+  }
+
+  void _openVip() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const VipScreen(),
       ),
     );
   }
@@ -678,6 +687,31 @@ class _ProfileScreenState extends State<ProfileScreen>
               compact: true,
               onTap: _openLevel,
             ),
+          if (_num(profile, ['effectiveVipLevel']) > 0) ...[
+            const SizedBox(height: 8),
+            InkWell(
+              key: const Key('profile-vip-badge'),
+              onTap: _openVip,
+              borderRadius: BorderRadius.circular(99),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4B2A11),
+                  borderRadius: BorderRadius.circular(99),
+                  border: Border.all(color: const Color(0xFFFFD98A)),
+                ),
+                child: Text(
+                  'VIP${_num(profile, ['effectiveVipLevel'])}',
+                  textDirection: TextDirection.ltr,
+                  style: const TextStyle(
+                    color: Color(0xFFFFD98A),
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -885,7 +919,13 @@ class _ProfileScreenState extends State<ProfileScreen>
             );
           },
         ),
+        const SizedBox(height: 10),        _action(
+          Icons.diamond_rounded,
+          'VIP',
+          _openVip,
+        ),
         const SizedBox(height: 10),
+
         _action(
           Icons.favorite_rounded,
           'العلاقات',

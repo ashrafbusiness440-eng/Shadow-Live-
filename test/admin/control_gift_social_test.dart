@@ -8,5 +8,5 @@ void main(){
  test('room box thresholds',(){expect(RoomBoxPolicy.levelForCumulative(99999),0);expect(RoomBoxPolicy.levelForCumulative(100000),1);expect(RoomBoxPolicy.levelForCumulative(5000000),4);});
  test('mutual follow is friendship',(){expect(SocialPolicy.areFriends(aFollowsB:true,bFollowsA:true),isTrue);});
  test('one-way DM is limited to three unanswered',(){expect(SocialPolicy.canSend(senderFollowsRecipient:true,mutual:false,unansweredCount:2),isTrue);expect(SocialPolicy.canSend(senderFollowsRecipient:true,mutual:false,unansweredCount:3),isFalse);});
- test('VIP5 profile visit is hidden',(){expect(ProfileVisitPolicy.recordVisibleVisit(visitorVipLevel:5),isFalse);});
+ test('VIP8 profile visit stays visible and VIP9 visit is hidden',(){expect(ProfileVisitPolicy.recordVisibleVisit(visitorVipLevel:8),isTrue);expect(ProfileVisitPolicy.recordVisibleVisit(visitorVipLevel:9),isFalse);});
 }

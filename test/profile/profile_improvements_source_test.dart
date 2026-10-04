@@ -56,6 +56,14 @@ void main() {
     expect(ownProfile.contains("final moodEmoji = _text(profile, 'moodEmoji', '').trim();"), isTrue);
     expect(ownProfile.contains("final interests = profile['interests'] is List"), isTrue);
     expect(ownProfile.contains('UserLevelService()'), isFalse);
+    expect(
+      ownProfile.contains("_num(profile, ['effectiveVipLevel'])"),
+      isTrue,
+    );
+    expect(
+      ownProfile.contains("_num(profile, ['effectiveVipLevel', 'vipLevel'])"),
+      isFalse,
+    );
   });
 
 }

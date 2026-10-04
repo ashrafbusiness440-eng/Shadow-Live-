@@ -129,6 +129,9 @@ test("Agency ID copy actions stay available across member-facing Agency screens"
 test("Agency Room category and logo reuse bootstrap data without agency hot-path reads", () => {
   const main = source("lib/main.dart");
   const roomList = source("lib/screens/room/room_list_screen.dart");
+  const roomImageSource = source(
+    "lib/features/room/services/room_image_source.dart",
+  );
   const publicAgency = source(
     "lib/features/agency/screens/public_agency_page.dart",
   );
@@ -165,7 +168,23 @@ test("Agency Room category and logo reuse bootstrap data without agency hot-path
   assert.equal(voice.includes("agencyRoomImageUrl:"), true);
   assert.equal(voice.includes("agencyRoomImageObjectId:"), true);
   assert.equal(main.includes("String get _roomHeaderImageUrl"), true);
-  assert.equal(main.includes("_roomArguments['agencyRoomImageUrl']"), true);
+  assert.equal(
+    main.includes("roomSurfaceImageUrl(_roomArguments)"),
+    true,
+  );
+  assert.equal(
+    roomImageSource.includes("room['agencyRoomImageUrl']"),
+    true,
+  );
+  assert.equal(
+    roomImageSource.includes("room['roomImageUrl']"),
+    true,
+  );
+  assert.equal(
+    roomImageSource.includes("room['coverImageUrl']") &&
+      roomImageSource.includes("roomType == 'agency'"),
+    true,
+  );
   assert.equal(main.includes("NetworkImage(_roomHeaderImageUrl)"), true);
   assert.equal(voice.includes('category:roomType==="agency"?"وكالة"'), true);
   assert.equal(voice.includes("viewerAgencyId:clean(actor.agencyId)"), true);

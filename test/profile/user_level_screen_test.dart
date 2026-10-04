@@ -4,6 +4,23 @@ import 'package:voice_chat_room/features/profile/screens/user_level_screen.dart'
 import 'package:voice_chat_room/features/profile/services/user_level_service.dart';
 
 void main() {
+  Future<void> tapPreviewTier(WidgetTester tester, int tierIndex) async {
+    // The enlarged preview hero can place tier chips below the 600px test
+    // viewport. Move the only active vertical ListView first, then let
+    // ensureVisible finish positioning the requested chip.
+    await tester.drag(
+      find.byType(ListView).first,
+      const Offset(0, -260),
+    );
+    await tester.pumpAndSettle();
+
+    final tier = find.byKey(Key('level-tier-preview-$tierIndex'));
+    await tester.ensureVisible(tier);
+    await tester.pumpAndSettle();
+    await tester.tap(tier);
+    await tester.pumpAndSettle();
+  }
+
   const summary = UserLevelSummary(
     uid: 'user_1',
     policyVersion: 1,
@@ -60,7 +77,7 @@ void main() {
     await tester.tap(find.text('الجاذبية'));
     await tester.pumpAndSettle();
     expect(find.text('LV10'), findsOneWidget);
-    expect(find.text('رتبة بصرية'), findsOneWidget);
+    expect(find.text('شارة الجاذبية'), findsOneWidget);
 
     await tester.tap(find.text('الألعاب'));
     await tester.pumpAndSettle();
@@ -78,10 +95,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final lockedTier = find.byKey(const Key('level-tier-preview-6'));
-    await tester.ensureVisible(lockedTier);
-    await tester.tap(lockedTier);
-    await tester.pumpAndSettle();
+    await tapPreviewTier(tester, 6);
 
     expect(find.text('LV31–35'), findsWidgets);
     expect(find.text('معاينة فقط — تُفتح عند الوصول إلى هذه الفئة'), findsOneWidget);
@@ -105,10 +119,7 @@ void main() {
     await tester.tap(find.text('الجاذبية'));
     await tester.pumpAndSettle();
 
-    final lockedTier = find.byKey(const Key('level-tier-preview-6'));
-    await tester.ensureVisible(lockedTier);
-    await tester.tap(lockedTier);
-    await tester.pumpAndSettle();
+    await tapPreviewTier(tester, 6);
 
     expect(find.text('LV31–35'), findsWidgets);
     expect(find.text('معاينة فقط — تُفتح عند الوصول إلى هذه الفئة'), findsOneWidget);
@@ -127,10 +138,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final lockedTier = find.byKey(const Key('level-tier-preview-6'));
-    await tester.ensureVisible(lockedTier);
-    await tester.tap(lockedTier);
-    await tester.pumpAndSettle();
+    await tapPreviewTier(tester, 6);
 
     expect(find.text('LV19–21'), findsWidgets);
     expect(find.text('معاينة فقط — تُفتح عند الوصول إلى هذه الفئة'), findsOneWidget);
