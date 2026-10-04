@@ -7,6 +7,10 @@ import {
   applyVipGrowth,
   materializeVipState,
 } from "../../cloudflare-worker/src/vip-state.js";
+import {
+  activeEffectiveVipLevelFromUser,
+  vipPublicProfilePatch,
+} from "../../cloudflare-worker/src/vip-runtime.js";
 
 const day = 24 * 60 * 60 * 1000;
 const base = Date.UTC(2026, 9, 1, 0, 0, 0);
@@ -139,4 +143,62 @@ test("growth earned during admin grant still advances natural VIP state", () => 
   assert.equal(progressed.earnedVipLevel, 2);
   assert.equal(progressed.effectiveVipLevel, 7);
   assert.equal(progressed.growthPoints, 1292308);
+});
+
+
+test("public VIP projection expires without polling and never falls back to legacy vipLevel", () => {
+  const future = new Date(base + 5 * day);
+  const expired = new Date(base - day);
+
+  assert.equal(
+    activeEffectiveVipLevelFromUser(
+      {
+        effectiveVipLevel: 7,
+        vipLevel: 5,
+        vipExpiresAt: future,
+      },
+      base,
+    ),
+    7,
+  );
+
+  assert.equal(
+    activeEffectiveVipLevelFromUser(
+      {
+        effectiveVipLevel: 7,
+        vipLevel: 5,
+        vipExpiresAt: expired,
+      },
+      base,
+    ),
+    0,
+  );
+
+  assert.equal(
+    activeEffectiveVipLevelFromUser(
+      {
+        vipLevel: 5,
+        vipExpiresAt: future,
+      },
+      base,
+    ),
+    0,
+  );
+});
+
+test("public VIP patch mirrors effective state and expiry only", () => {
+  const state = {
+    earnedVipLevel: 3,
+    earnedVipExpiresAtMs: base + 30 * day,
+    adminGrantVipLevel: 7,
+    adminGrantExpiresAtMs: base + 7 * day,
+    effectiveVipLevel: 7,
+    effectiveVipSource: "admin_grant",
+    growthPoints: 3876923,
+    maintenancePoints: 0,
+  };
+  const patch = vipPublicProfilePatch(state, new Date(base));
+  assert.equal(patch.vipLevel, 7);
+  assert.equal(patch.effectiveVipLevel, 7);
+  assert.equal(patch.vipExpiresAt.getTime(), base + 7 * day);
 });
