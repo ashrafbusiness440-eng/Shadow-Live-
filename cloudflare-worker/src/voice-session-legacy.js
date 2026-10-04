@@ -3512,7 +3512,7 @@ async function enrichSupporterPublicMetadata(db,supporters,viewerUid){
           :[];
       byUid.set(userId,{
         publicId:clean(data.publicId),
-        vipLevel:Math.max(0,Math.min(99,Number(data.effectiveVipLevel??0)||0)),
+        vipLevel:vipEntitlementsFromUser(data,Date.now()).level,
         badges:rawBadges.map(clean).filter(Boolean).slice(0,12),
         ...levels,
       });
