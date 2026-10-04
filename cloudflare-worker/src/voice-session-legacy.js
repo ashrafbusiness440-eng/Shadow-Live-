@@ -1191,6 +1191,19 @@ function roomSeatCapacity(room){
   return (type==="agency"?agency:normal)[level-1];
 }
 
+function normalizeUidList(value){
+  if(!Array.isArray(value))return [];
+  const seen=new Set();
+  const result=[];
+  for(const raw of value){
+    const uid=clean(raw);
+    if(!uid||seen.has(uid))continue;
+    seen.add(uid);
+    result.push(uid);
+  }
+  return result;
+}
+
 function normalizeSeats(room){
   const source=Array.isArray(room.seats)?room.seats:[];
   const seats=[];
