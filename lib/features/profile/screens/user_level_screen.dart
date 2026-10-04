@@ -36,6 +36,8 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
   bool _savingVisibility = false;
   String? _error;
   int? _wealthPreviewSlice;
+  int? _attractionPreviewSlice;
+  int? _gamePreviewSlice;
 
   @override
   void initState() {
@@ -71,6 +73,10 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
       setState(() {
         _summary = summary;
         _wealthPreviewSlice ??= _sliceFor(summary.wealth.level, 5);
+        _attractionPreviewSlice ??= _sliceFor(summary.attraction.level, 5);
+        _gamePreviewSlice ??= summary.games.level <= 0
+            ? 0
+            : _sliceFor(summary.games.level, 3);
         _loading = false;
       });
     } catch (_) {
@@ -232,10 +238,14 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
                   'LV31–35',
                 ],
                 currentSlice: _sliceFor(summary.attraction.level, 5),
-                footer: const _InfoCard(
-                  title: 'رتبة بصرية',
-                  text:
-                      'مستوى الجاذبية شارات ورتب بصرية فقط، بدون امتيازات إضافية.',
+                previewSlice: _attractionPreviewSlice,
+                onSliceSelected: (index) =>
+                    setState(() => _attractionPreviewSlice = index),
+                footer: _rankPreview(
+                  metric: 'attraction',
+                  selectedSlice:
+                      _attractionPreviewSlice ?? _sliceFor(summary.attraction.level, 5),
+                  currentSlice: _sliceFor(summary.attraction.level, 5),
                 ),
                 canEditVisibility: summary.visibility.canEdit,
                 hiddenPreference: summary.visibility.hideAttractionLevel,
@@ -260,7 +270,22 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
                 currentSlice: summary.games.level <= 0
                     ? -1
                     : _sliceFor(summary.games.level, 3),
-                footer: _gameFooter(summary.games),
+                previewSlice: _gamePreviewSlice,
+                onSliceSelected: (index) =>
+                    setState(() => _gamePreviewSlice = index),
+                footer: Column(
+                  children: [
+                    _rankPreview(
+                      metric: 'game',
+                      selectedSlice: _gamePreviewSlice ?? 0,
+                      currentSlice: summary.games.level <= 0
+                          ? -1
+                          : _sliceFor(summary.games.level, 3),
+                    ),
+                    const SizedBox(height: 12),
+                    _gameFooter(summary.games),
+                  ],
+                ),
                 canEditVisibility: summary.visibility.canEdit,
                 hiddenPreference: summary.visibility.hideGameLevel,
               ),
@@ -336,7 +361,7 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
                 ),
                 child: LevelAssetImage(
                   assetKey: ShadowAssetKeys.levelMainBadge(
-                    metric,
+                    metric == 'games' ? 'game' : metric,
                     _assetLevelForSlice(metric, previewSlice ?? currentSlice, data.level),
                   ),
                   width: 78,
@@ -781,6 +806,107 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+
+  String _bucketForMetricSlice(String metric, int slice) {
+    final safe = slice.clamp(0, 6);
+    if (metric == 'game') {
+      final start = safe * 3 + 1;
+      final end = start + 2;
+      return 'lv${start.toString().padLeft(2, '0')}_${end.toString().padLeft(2, '0')}';
+    }
+    final start = safe * 5 + 1;
+    final end = start + 4;
+    return 'lv${start.toString().padLeft(2, '0')}_${end.toString().padLeft(2, '0')}';
+  }
+
+  Widget _rankPreview({
+    required String metric,
+    required int selectedSlice,
+    required int currentSlice,
+  }) {
+    final locked = currentSlice < selectedSlice;
+    final bucket = _bucketForMetricSlice(metric, selectedSlice);
+    final accent = metric == 'attraction'
+        ? const Color(0xFFFF4FD8)
+        : const Color(0xFF66D1FF);
+    final label = metric == 'attraction' ? 'شارة الجاذبية' : 'شارة الألعاب';
+    final suffix = 'miniBadge';
+    final key = 'levels.$metric.$bucket.$suffix';
+
+    return Container(
+      key: Key('${metric}-rank-preview'),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF140A1A),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: accent.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: accent,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              if (locked)
+                const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.lock_outline_rounded, size: 14, color: Colors.white54),
+                    SizedBox(width: 4),
+                    Text(
+                      'معاينة فقط',
+                      style: TextStyle(color: Colors.white60, fontSize: 10),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            height: 170,
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: const Color(0xFF220B27),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: LevelAssetImage(
+              assetKey: key,
+              fit: BoxFit.contain,
+              fallback: Icon(
+                metric == 'attraction'
+                    ? Icons.auto_awesome_rounded
+                    : Icons.sports_esports_rounded,
+                size: 54,
+                color: accent,
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            locked
+                ? 'يمكن مشاهدة شكل هذه الفئة الآن، وتُفتح عند الوصول إليها.'
+                : 'هذه الفئة متاحة لك للعرض.',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white60,
+              fontSize: 11,
+              height: 1.4,
+            ),
+          ),
         ],
       ),
     );
