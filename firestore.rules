@@ -159,6 +159,9 @@ service cloud.firestore {
         'earnedVipLevel',
         'effectiveVipLevel',
         'adminGrantVipLevel',
+        'earnedVipExpiresAt',
+        'adminGrantExpiresAt',
+        'effectiveVipSource',
         'vipGrowthPoints',
         'vipMaintenancePoints',
         'vipExpiresAt',
@@ -245,6 +248,9 @@ service cloud.firestore {
         && !('earnedVipLevel' in request.resource.data)
         && !('effectiveVipLevel' in request.resource.data)
         && !('adminGrantVipLevel' in request.resource.data)
+        && !('earnedVipExpiresAt' in request.resource.data)
+        && !('adminGrantExpiresAt' in request.resource.data)
+        && !('effectiveVipSource' in request.resource.data)
         && !('vipGrowthPoints' in request.resource.data)
         && !('vipMaintenancePoints' in request.resource.data)
         && !('vipExpiresAt' in request.resource.data)
