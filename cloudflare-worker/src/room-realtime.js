@@ -8,6 +8,7 @@ import {
 } from "./firebase-auth.js";
 import { firestoreQuotaResponse, json, readJson } from "./http.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
+import { activeEffectiveVipLevelFromUser } from "./vip-runtime.js";
 import {
   createAsyncLimiter,
   createAsyncTtlCache,
@@ -411,16 +412,9 @@ export async function roomRealtime(request, env) {
           ghostMode:
             profileData.roomGhostMode === true ||
             profileData.privacy?.ghostMode === true,
-          vipLevel: Math.max(
-            0,
-            Math.min(
-              99,
-              Number(
-                profileData.vipLevel ??
-                profileData.vip?.level ??
-                0,
-              ) || 0,
-            ),
+          vipLevel: activeEffectiveVipLevelFromUser(
+            profileData,
+            Date.now(),
           ),
           entryEffectKey: String(
             profileData.vipEntryEffectKey ||
