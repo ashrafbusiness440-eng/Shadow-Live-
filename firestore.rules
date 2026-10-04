@@ -210,8 +210,8 @@ service cloud.firestore {
     function publicProfileAuthoritativeFieldsMatch(userId) {
       let source = get(/databases/$(database)/documents/users/$(userId)).data;
       return request.resource.data.vipLevel == source.get('effectiveVipLevel', 0)
-        && request.resource.data.effectiveVipLevel == source.get('effectiveVipLevel', 0)
-        && request.resource.data.vipExpiresAt == source.get('vipExpiresAt', null)
+        && request.resource.data.get('effectiveVipLevel', 0) == source.get('effectiveVipLevel', 0)
+        && request.resource.data.get('vipExpiresAt', null) == source.get('vipExpiresAt', null)
         && request.resource.data.badges == source.get('publicBadges', []);
     }
 
