@@ -36,6 +36,7 @@ abstract final class VipEntitlementPolicy {
   static bool extendedValidity(int level) => level >= 7;
   static bool silentRoomEntry(int level) => level >= 7;
   static bool hideCurrentRoom(int level) => level >= 7;
+  static bool hideGamePkActivity(int level) => hideCurrentRoom(level);
   static bool audioWave(int level) => level >= 7;
 
   static bool profileVehicleDisplay(int level) => level >= 8;
@@ -53,6 +54,10 @@ abstract final class VipEntitlementPolicy {
   static bool extraVipBadge(int level) => level >= 10;
   static bool globalAppEntryBanner(int level) => level >= 10;
   static bool vipGiftDecoration(int level) => level >= 10;
+
+  // Legacy surface compatibility only. The new VIP1→10 spec has no
+  // hide-social-counts entitlement, so callers must never receive it.
+  static bool hideSocialCounts(int level) => false;
 
   static void validateLevel(int level) {
     if (level < minLevel || level > maxLevel) {
