@@ -7,6 +7,7 @@ import {loadUserLevelPolicy} from "./user-level-policy.js";
 import {summarizeUserLevelData} from "./user-level-summary.js";
 import {publicLevelMetadata} from "./user-level-visibility.js";
 import {
+  activeHiddenRoomEntry,
   activeRoomGhostMode,
   canInspectHiddenRoomPresence,
   canOverrideVipRoomProtection,
