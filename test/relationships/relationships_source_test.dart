@@ -3,6 +3,12 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('worker dispatch exposes relationships endpoint', () {
+    final worker = File('cloudflare-worker/src/index.js').readAsStringSync();
+    expect(worker.contains('"/api/relationships"'), isTrue);
+    expect(worker.contains('relationships(request, env)'), isTrue);
+  });
+
   test('relationships stay API-driven and off hot paths', () {
     final service = File(
       'lib/features/relationships/services/relationship_service.dart',
@@ -18,6 +24,7 @@ void main() {
     ).readAsStringSync();
 
     expect(service.contains('/relationships'), isTrue);
+    expect(service.contains('route_not_found'), isTrue);
     expect(service.contains('.snapshots()'), isFalse);
     expect(page.contains('.snapshots()'), isFalse);
     expect(page.contains('Timer.periodic'), isFalse);

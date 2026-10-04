@@ -301,6 +301,10 @@ String relationshipErrorMessage(Object error) {
       return 'العلاقة غير نشطة حالياً.';
     case 'forbidden':
       return 'لا تملك صلاحية تنفيذ هذا الإجراء.';
+    case 'route_not_found':
+      return 'خدمة العلاقات غير متاحة في إصدار الخادم الحالي. حدّث التطبيق أو أعد المحاولة لاحقاً.';
+    case 'relationships_failed':
+      return 'تعذر الوصول إلى خدمة العلاقات حالياً. أعد المحاولة.';
     default:
       return 'تعذر تنفيذ عملية العلاقة حالياً.';
   }

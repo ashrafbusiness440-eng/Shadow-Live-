@@ -158,6 +158,10 @@ async function dispatchRequest(request, env, ctx) {
     annotatePressureRequest(request, { action: "agencyPackages" });
     return agencyPackages(request, env);
   }
+  if (url.pathname === "/api/relationships") {
+    annotatePressureRequest(request, { action: "relationships" });
+    return relationships(request, env);
+  }
   if (url.pathname === "/api/user-level") {
     annotatePressureRequest(request, { action: "userLevelSummary" });
     return userLevelSummary(request, env);

@@ -309,3 +309,14 @@ test("relationship UI and control avoid polling and direct relationship Firestor
   assert.equal(control.includes("'types'"), true);
   assert.equal(control.includes("لا يمكن حذف نوع موجود"), true);
 });
+
+
+test("relationships API route is wired in Worker dispatch", () => {
+  const source = readFileSync(
+    new URL("../../cloudflare-worker/src/index.js", import.meta.url),
+    "utf8",
+  );
+  assert.equal(source.includes('url.pathname === "/api/relationships"'), true);
+  assert.equal(source.includes('return relationships(request, env);'), true);
+  assert.equal(source.includes('action: "relationships"'), true);
+});
