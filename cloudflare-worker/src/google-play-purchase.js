@@ -3,17 +3,23 @@ import { json, readJson } from "./http.js";
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { googleAccessTokenFromServiceAccount } from "./google-auth.js";
+import {
+  growthFromPaidRecharge,
+  loadVipPolicy,
+} from "./vip-policy.js";
+import { applyVipGrowth, materializeVipState } from "./vip-state.js";
+import { vipStateFromUser, vipUserPatch } from "./vip-runtime.js";
 
 const PLAY_SCOPE = "https://www.googleapis.com/auth/androidpublisher";
 
 const FALLBACK_PACKAGES = [
-  { id: "coins_099", productId: "shadow_coins_099", totalCoins: 11000, enabled: true },
-  { id: "coins_199", productId: "shadow_coins_199", totalCoins: 23000, enabled: true },
-  { id: "coins_499", productId: "shadow_coins_499", totalCoins: 60000, enabled: true },
-  { id: "coins_999", productId: "shadow_coins_999", totalCoins: 125000, enabled: true },
-  { id: "coins_2499", productId: "shadow_coins_2499", totalCoins: 330000, enabled: true },
-  { id: "coins_4999", productId: "shadow_coins_4999", totalCoins: 700000, enabled: true },
-  { id: "coins_9999", productId: "shadow_coins_9999", totalCoins: 1500000, enabled: true },
+  { id: "coins_099", productId: "shadow_coins_099", baseCoins: 9900, bonusCoins: 1100, totalCoins: 11000, enabled: true },
+  { id: "coins_199", productId: "shadow_coins_199", baseCoins: 19900, bonusCoins: 3100, totalCoins: 23000, enabled: true },
+  { id: "coins_499", productId: "shadow_coins_499", baseCoins: 49900, bonusCoins: 10100, totalCoins: 60000, enabled: true },
+  { id: "coins_999", productId: "shadow_coins_999", baseCoins: 99900, bonusCoins: 25100, totalCoins: 125000, enabled: true },
+  { id: "coins_2499", productId: "shadow_coins_2499", baseCoins: 249900, bonusCoins: 80100, totalCoins: 330000, enabled: true },
+  { id: "coins_4999", productId: "shadow_coins_4999", baseCoins: 499900, bonusCoins: 200100, totalCoins: 700000, enabled: true },
+  { id: "coins_9999", productId: "shadow_coins_9999", baseCoins: 999900, bonusCoins: 500100, totalCoins: 1500000, enabled: true },
 ];
 
 const clean = (value) => String(value ?? "").trim();
@@ -38,19 +44,28 @@ async function loadPackage(db, productId) {
   const snap = await db.get("system_config/recharge");
   const raw = snap.data?.packages;
   const packages = Array.isArray(raw)
-    ? raw.map((item) => ({
-        id: clean(item?.id),
-        productId: clean(item?.productId),
-        totalCoins:
-          Number(item?.baseCoins || 0) + Number(item?.bonusCoins || 0),
-        enabled: item?.enabled !== false,
-      }))
+    ? raw.map((item) => {
+        const baseCoins = Number(item?.baseCoins || 0);
+        const bonusCoins = Number(item?.bonusCoins || 0);
+        return {
+          id: clean(item?.id),
+          productId: clean(item?.productId),
+          baseCoins,
+          bonusCoins,
+          totalCoins: baseCoins + bonusCoins,
+          enabled: item?.enabled !== false,
+        };
+      })
     : FALLBACK_PACKAGES;
 
   const item = packages.find(
     (entry) =>
       entry.productId === productId &&
       entry.enabled === true &&
+      Number.isSafeInteger(entry.baseCoins) &&
+      entry.baseCoins > 0 &&
+      Number.isSafeInteger(entry.bonusCoins) &&
+      entry.bonusCoins >= 0 &&
       Number.isSafeInteger(entry.totalCoins) &&
       entry.totalCoins > 0,
   );
@@ -152,7 +167,7 @@ async function markConsumeState(db, hash, fields) {
   }
 }
 
-async function creditPurchase(
+export async function creditPurchase(
   db,
   uid,
   hash,
@@ -161,15 +176,15 @@ async function creditPurchase(
   rechargePackage,
   verified,
   quantity,
-  coinsToCredit,
 ) {
   for (let attempt = 0; attempt < 3; attempt++) {
     const transaction = await db.beginTransaction();
     try {
-      const [userSnap, purchaseSnap, lockSnap] = await Promise.all([
+      const [userSnap, purchaseSnap, lockSnap, vipPolicy] = await Promise.all([
         db.get(`users/${uid}`, transaction),
         db.get(`google_play_purchases/${hash}`, transaction),
         db.get("system_config/emergency_lock", transaction),
+        loadVipPolicy(db, { transaction, useCache: false }),
       ]);
 
       if (!userSnap.exists) throw new ApiError("user_not_found", 404);
@@ -188,17 +203,58 @@ async function creditPurchase(
         return {
           duplicate: true,
           coins: Number(purchaseSnap.data?.coins || 0),
+          baseCoins: Number(purchaseSnap.data?.baseCoins || 0),
+          bonusCoins: Number(purchaseSnap.data?.bonusCoins || 0),
+          vipGrowthPoints: Number(purchaseSnap.data?.vipGrowthPoints || 0),
+          vipLevel: Number(purchaseSnap.data?.vipLevel || 0),
           closingCoins: null,
         };
       }
 
       const user = userSnap.data || {};
       const openingCoins = Number(user.coins ?? user.balance ?? 0);
-      if (!Number.isFinite(openingCoins) || openingCoins < 0) {
+      if (!Number.isSafeInteger(openingCoins) || openingCoins < 0) {
         throw new ApiError("invalid_wallet_state", 400);
       }
-      const closingCoins = openingCoins + coinsToCredit;
+
+      const baseCoinsToCredit = rechargePackage.baseCoins * quantity;
+      const bonusCoinsToCredit = rechargePackage.bonusCoins * quantity;
+      const coinsToCredit = baseCoinsToCredit + bonusCoinsToCredit;
+      if (
+        !Number.isSafeInteger(baseCoinsToCredit) ||
+        baseCoinsToCredit <= 0 ||
+        !Number.isSafeInteger(bonusCoinsToCredit) ||
+        bonusCoinsToCredit < 0 ||
+        !Number.isSafeInteger(coinsToCredit)
+      ) {
+        throw new ApiError("invalid_recharge_package", 400);
+      }
+
       const now = new Date();
+      const nowMs = now.getTime();
+      const vipGrowthPoints = growthFromPaidRecharge(
+        vipPolicy,
+        baseCoinsToCredit,
+      );
+      if (vipGrowthPoints === null) {
+        throw new ApiError("invalid_vip_growth_award", 409);
+      }
+      const vipBefore = materializeVipState(
+        vipPolicy,
+        vipStateFromUser(user),
+        nowMs,
+      );
+      const vipAfter = applyVipGrowth(
+        vipPolicy,
+        vipBefore,
+        vipGrowthPoints,
+        nowMs,
+      );
+      if (!vipAfter) {
+        throw new ApiError("invalid_vip_state", 409);
+      }
+
+      const closingCoins = openingCoins + coinsToCredit;
 
       await db.commit(transaction, [
         db.writeUpdate(
@@ -206,8 +262,24 @@ async function creditPurchase(
           {
             coins: closingCoins,
             walletUpdatedAt: now,
+            ...vipUserPatch(vipAfter, now),
           },
-          ["coins", "walletUpdatedAt"],
+          [
+            "coins",
+            "walletUpdatedAt",
+            "earnedVipLevel",
+            "effectiveVipLevel",
+            "adminGrantVipLevel",
+            "earnedVipExpiresAt",
+            "adminGrantExpiresAt",
+            "effectiveVipSource",
+            "vipGrowthPoints",
+            "vipMaintenancePoints",
+            "vipLevel",
+            "vipExpiresAt",
+            "vipSource",
+            "vipUpdatedAt",
+          ],
         ),
         db.writeUpdate(
           `google_play_purchases/${hash}`,
@@ -218,7 +290,11 @@ async function creditPurchase(
             packageId: rechargePackage.id,
             packageName,
             quantity,
+            baseCoins: baseCoinsToCredit,
+            bonusCoins: bonusCoinsToCredit,
             coins: coinsToCredit,
+            vipGrowthPoints,
+            vipLevel: vipAfter.effectiveVipLevel,
             orderId: clean(verified.orderId),
             regionCode: clean(verified.regionCode),
             testPurchase: verified.testPurchaseContext != null,
@@ -245,11 +321,32 @@ async function creditPurchase(
           idempotencyKey: hash,
           createdAt: now,
         }),
+        db.writeCreate(`vip_growth_history/play_${hash}`, {
+          userId: uid,
+          eventType: "paid_recharge_growth",
+          source: "google_play",
+          deltaGrowthPoints: vipGrowthPoints,
+          growthPointsBefore: vipBefore.growthPoints,
+          growthPointsAfter: vipAfter.growthPoints,
+          earnedVipBefore: vipBefore.earnedVipLevel,
+          earnedVipAfter: vipAfter.earnedVipLevel,
+          effectiveVipAfter: vipAfter.effectiveVipLevel,
+          baseCoins: baseCoinsToCredit,
+          bonusCoinsExcluded: bonusCoinsToCredit,
+          purchaseId: hash,
+          productId,
+          packageId: rechargePackage.id,
+          createdAt: now,
+        }),
       ]);
 
       return {
         duplicate: false,
         coins: coinsToCredit,
+        baseCoins: baseCoinsToCredit,
+        bonusCoins: bonusCoinsToCredit,
+        vipGrowthPoints,
+        vipLevel: vipAfter.effectiveVipLevel,
         closingCoins,
       };
     } catch (error) {
@@ -305,6 +402,10 @@ export async function googlePlayPurchase(request, env) {
         code: "duplicate",
         purchaseId: hash,
         coins: Number(existing.data?.coins || 0),
+        baseCoins: Number(existing.data?.baseCoins || 0),
+        bonusCoins: Number(existing.data?.bonusCoins || 0),
+        vipGrowthPoints: Number(existing.data?.vipGrowthPoints || 0),
+        vipLevel: Number(existing.data?.vipLevel || 0),
       });
     }
 
@@ -335,8 +436,6 @@ export async function googlePlayPurchase(request, env) {
       Number.isSafeInteger(quantityRaw) && quantityRaw > 0 && quantityRaw <= 20
         ? quantityRaw
         : 1;
-    const coinsToCredit = rechargePackage.totalCoins * quantity;
-
     const result = await creditPurchase(
       db,
       decoded.sub,
@@ -346,7 +445,6 @@ export async function googlePlayPurchase(request, env) {
       rechargePackage,
       verified,
       quantity,
-      coinsToCredit,
     );
 
     let consumed = true;
@@ -371,6 +469,10 @@ export async function googlePlayPurchase(request, env) {
       code: result.duplicate ? "duplicate" : "ok",
       purchaseId: hash,
       coins: result.coins,
+      baseCoins: result.baseCoins,
+      bonusCoins: result.bonusCoins,
+      vipGrowthPoints: result.vipGrowthPoints,
+      vipLevel: result.vipLevel,
       balance: result.closingCoins,
       consumed,
     });
