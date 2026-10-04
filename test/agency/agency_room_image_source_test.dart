@@ -83,4 +83,32 @@ void main() {
     );
   });
 
+
+  test('agency room ignores owner and agency identity image fields on every surface', () {
+    final room = <String, dynamic>{
+      'roomType': 'agency',
+      'agencyLogoUrl': 'https://cdn.example/agency-logo.webp',
+      'agencyCoverUrl': 'https://cdn.example/agency-cover.webp',
+      'ownerPhotoUrl': 'https://cdn.example/owner.webp',
+      'profileImageUrl': 'https://cdn.example/profile.webp',
+      'coverImageUrl': 'https://cdn.example/legacy-cover.webp',
+      'imageUrl': 'https://cdn.example/legacy-image.webp',
+    };
+
+    expect(roomSurfaceImageUrl(room), isEmpty);
+
+    room['roomImageUrl'] = 'https://cdn.example/agency-room.webp';
+    expect(
+      roomSurfaceImageUrl(room),
+      'https://cdn.example/agency-room.webp',
+    );
+
+    room['agencyRoomImageUrl'] =
+        'https://cdn.example/agency-room-explicit.webp';
+    expect(
+      roomSurfaceImageUrl(room),
+      'https://cdn.example/agency-room-explicit.webp',
+    );
+  });
+
 }
