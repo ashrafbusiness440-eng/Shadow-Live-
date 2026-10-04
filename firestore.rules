@@ -330,6 +330,19 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    match /vip_operations/{operationId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /vip_growth_history/{entryId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /vip_audit_logs/{logId} {
+      allow read: if isOwner() || hasCapability('manageVipLevels');
+      allow create, update, delete: if false;
+    }
+
     match /wallet_private/{userId} {
       allow read, create, update, delete: if false;
     }
