@@ -138,6 +138,50 @@ void main() {
     expect(find.text('شارة الألعاب'), findsOneWidget);
   });
 
+  testWidgets('attraction arrows navigate into locked tiers', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: UserLevelScreen(
+          initialTabIndex: 1,
+          loadSummary: () async => summary,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Attraction level 10 starts at LV6–10. Move forward twice into locked tiers.
+    await tester.tap(find.byKey(const Key('level-preview-next-attraction')));
+    await tester.pumpAndSettle();
+    expect(find.text('LV11–15'), findsWidgets);
+    expect(find.text('معاينة فقط — تُفتح عند الوصول إلى هذه الفئة'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('level-preview-next-attraction')));
+    await tester.pumpAndSettle();
+    expect(find.text('LV16–20'), findsWidgets);
+  });
+
+  testWidgets('games arrows navigate into locked tiers without unlock', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: UserLevelScreen(
+          initialTabIndex: 2,
+          loadSummary: () async => summary,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Game level 1 starts at LV1–3. Arrow navigation must not be gated.
+    await tester.tap(find.byKey(const Key('level-preview-next-games')));
+    await tester.pumpAndSettle();
+    expect(find.text('LV4–6'), findsWidgets);
+    expect(find.text('معاينة فقط — تُفتح عند الوصول إلى هذه الفئة'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('level-preview-next-games')));
+    await tester.pumpAndSettle();
+    expect(find.text('LV7–9'), findsWidgets);
+  });
+
   testWidgets('level screen can open directly on the requested public section', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
