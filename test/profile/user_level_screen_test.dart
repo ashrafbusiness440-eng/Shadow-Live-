@@ -92,6 +92,52 @@ void main() {
     );
   });
 
+  testWidgets('attraction allows previewing locked visual tiers', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: UserLevelScreen(
+          loadSummary: () async => summary,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('الجاذبية'));
+    await tester.pumpAndSettle();
+
+    final lockedTier = find.byKey(const Key('level-tier-preview-6'));
+    await tester.ensureVisible(lockedTier);
+    await tester.tap(lockedTier);
+    await tester.pumpAndSettle();
+
+    expect(find.text('LV31–35'), findsWidgets);
+    expect(find.text('معاينة فقط — تُفتح عند الوصول إلى هذه الفئة'), findsOneWidget);
+    expect(find.byKey(const Key('attraction-rank-preview')), findsOneWidget);
+    expect(find.text('شارة الجاذبية'), findsOneWidget);
+  });
+
+  testWidgets('games allows previewing locked visual tiers', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: UserLevelScreen(
+          initialTabIndex: 2,
+          loadSummary: () async => summary,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final lockedTier = find.byKey(const Key('level-tier-preview-6'));
+    await tester.ensureVisible(lockedTier);
+    await tester.tap(lockedTier);
+    await tester.pumpAndSettle();
+
+    expect(find.text('LV19–21'), findsWidgets);
+    expect(find.text('معاينة فقط — تُفتح عند الوصول إلى هذه الفئة'), findsOneWidget);
+    expect(find.byKey(const Key('game-rank-preview')), findsOneWidget);
+    expect(find.text('شارة الألعاب'), findsOneWidget);
+  });
+
   testWidgets('level screen can open directly on the requested public section', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
