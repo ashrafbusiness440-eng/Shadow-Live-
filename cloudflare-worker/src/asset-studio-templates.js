@@ -190,6 +190,38 @@ function extensionOf(fileName) {
   return index > 0 && index < value.length - 1 ? value.slice(index + 1) : "";
 }
 
+function normalizeDirectory(value) {
+  let text = clean(value).replace(/\\/g, "/");
+  while (text.endsWith("/")) text = text.slice(0, -1);
+  return text;
+}
+
+function safeDirectoryWithinRoot(value, root) {
+  const directory = normalizeDirectory(value);
+  const normalizedRoot = normalizeDirectory(root);
+  if (
+    !directory ||
+    !normalizedRoot ||
+    directory.startsWith("/") ||
+    directory.includes("//")
+  ) {
+    return false;
+  }
+  const segments = directory.split("/");
+  if (
+    segments.some(
+      (segment) =>
+        !segment ||
+        segment === "." ||
+        segment === ".." ||
+        !/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(segment),
+    )
+  ) {
+    return false;
+  }
+  return directory === normalizedRoot || directory.startsWith(`${normalizedRoot}/`);
+}
+
 export function validateAssetStudioMetadata({
   studioVersion,
   assetType,
@@ -230,7 +262,11 @@ export function validateAssetStudioMetadata({
     return { ok: false, code: "invalid_asset_channels" };
   }
 
-  if (!template.directories.includes(clean(directory))) {
+  if (
+    !template.directories.some((root) =>
+      safeDirectoryWithinRoot(directory, root)
+    )
+  ) {
     return { ok: false, code: "template_directory_mismatch" };
   }
 
