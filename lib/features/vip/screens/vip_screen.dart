@@ -62,7 +62,7 @@ class _VipScreenState extends State<VipScreen> {
       if (!mounted) return;
       setState(() {
         _summary = summary;
-        _previewLevel = summary.effectiveVipLevel.clamp(1, 10);
+        _previewLevel = summary.effectiveVipLevel.clamp(1, 10).toInt();
         _loading = false;
       });
     } catch (error) {
@@ -152,7 +152,7 @@ class _VipScreenState extends State<VipScreen> {
       if (!mounted) return;
       setState(() {
         _summary = updated;
-        _previewLevel = updated.effectiveVipLevel.clamp(1, 10);
+        _previewLevel = updated.effectiveVipLevel.clamp(1, 10).toInt();
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -478,7 +478,8 @@ class _VipScreenState extends State<VipScreen> {
         : span <= 0
             ? 0.0
             : ((currentForProgress - summary.currentThreshold) / span)
-                .clamp(0.0, 1.0);
+                .clamp(0.0, 1.0)
+                .toDouble();
 
     return Container(
       padding: const EdgeInsets.all(16),
