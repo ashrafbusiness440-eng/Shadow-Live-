@@ -8,6 +8,7 @@ import '../../../shared/services/user_storage_service.dart';
 import '../../profile/screens/public_profile_screen.dart';
 import '../services/diary_service.dart';
 import '../widgets/diary_comments_sheet.dart';
+import '../widgets/diary_gifts_sheet.dart';
 
 class DiariesScreen extends StatefulWidget {
   const DiariesScreen({
@@ -366,6 +367,34 @@ class _DiariesScreenState extends State<DiariesScreen> {
           _replaceDiary(
             item.diaryId,
             (current) => current.copyWith(commentCount: count),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _openGifts(DiaryItem item) async {
+    await _recordView(item);
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF080B12),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => DiaryGiftsSheet(
+        diary: item,
+        service: _service,
+        onGuestAction: _guestAction,
+        onGiftTotalsChanged: (giftCount, giftCoins) {
+          if (!mounted) return;
+          _replaceDiary(
+            item.diaryId,
+            (current) => current.copyWith(
+              giftCount: giftCount,
+              giftCoins: giftCoins,
+            ),
           );
         },
       ),
@@ -815,7 +844,11 @@ class _DiariesScreenState extends State<DiariesScreen> {
                 item.commentCount,
                 onTap: () => _openComments(item),
               ),
-              _metric(Icons.card_giftcard_rounded, item.giftCount),
+              _metric(
+                Icons.card_giftcard_rounded,
+                item.giftCount,
+                onTap: () => _openGifts(item),
+              ),
               const Spacer(),
               _metric(Icons.visibility_outlined, item.viewCount),
             ],
