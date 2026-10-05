@@ -399,7 +399,7 @@ async function createDiary(db, uid, body) {
       if (!object.exists) throw new DiaryApiError("diary_image_not_found", 409);
       if (
         clean(object.data?.scope) !== "diary_image" ||
-        clean(object.data?.ownerUid) !== ownerUid ||
+        clean(object.data?.ownerUid) !== uid ||
         clean(object.data?.targetId) !== uid ||
         clean(object.data?.state) !== "active" ||
         !clean(object.data?.publicUrl)
