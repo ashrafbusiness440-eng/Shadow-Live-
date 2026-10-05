@@ -11,6 +11,7 @@ import { manageUserAccount, releaseExpiredSuspensions } from "./manage-user-acco
 import { controlUserDetails } from "./control-user-details.js";
 import { walletActions } from "./wallet-actions.js";
 import { vipActions } from "./vip-actions.js";
+import { profileVisits } from "./profile-visits.js";
 import { chatSafetyActions } from "./chat-safety-actions.js";
 import { storageHealth } from "./storage-health.js";
 import { systemHealth } from "./system-health.js";
@@ -105,6 +106,10 @@ async function dispatchRequest(request, env, ctx) {
   if (url.pathname === "/api/vip") {
     annotatePressureRequest(request, { action: "vip" });
     return vipActions(request, env);
+  }
+  if (url.pathname === "/api/profile-visits") {
+    annotatePressureRequest(request, { action: "profileVisits" });
+    return profileVisits(request, env);
   }
   if (url.pathname === "/api/chat-actions") {
     return chatSafetyActions(request, env);
