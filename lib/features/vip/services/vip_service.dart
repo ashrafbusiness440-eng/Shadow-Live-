@@ -22,6 +22,8 @@ class VipSummaryData {
     required this.paidRechargeGrowthPerCoin,
     this.canHideRankingLists = false,
     this.hideRankingLists = false,
+    this.canHideProfileVisits = false,
+    this.hideProfileVisits = false,
   });
 
   final int effectiveVipLevel;
@@ -41,6 +43,8 @@ class VipSummaryData {
   final int paidRechargeGrowthPerCoin;
   final bool canHideRankingLists;
   final bool hideRankingLists;
+  final bool canHideProfileVisits;
+  final bool hideProfileVisits;
 
   factory VipSummaryData.fromJson(Map<String, dynamic> json) {
     int value(String key) {
@@ -68,6 +72,8 @@ class VipSummaryData {
       paidRechargeGrowthPerCoin: value('paidRechargeGrowthPerCoin'),
       canHideRankingLists: json['canHideRankingLists'] == true,
       hideRankingLists: json['hideRankingLists'] == true,
+      canHideProfileVisits: json['canHideProfileVisits'] == true,
+      hideProfileVisits: json['hideProfileVisits'] == true,
     );
   }
 }
@@ -88,6 +94,25 @@ class VipHideListsState {
         hideRankingLists: json['hideRankingLists'] == true,
         canHideRankingLists: json['canHideRankingLists'] == true,
         requiredVipLevel: (json['requiredVipLevel'] as num?)?.toInt() ?? 7,
+      );
+}
+
+class VipHideProfileVisitsState {
+  const VipHideProfileVisitsState({
+    required this.hideProfileVisits,
+    required this.canHideProfileVisits,
+    required this.requiredVipLevel,
+  });
+
+  final bool hideProfileVisits;
+  final bool canHideProfileVisits;
+  final int requiredVipLevel;
+
+  factory VipHideProfileVisitsState.fromJson(Map<String, dynamic> json) =>
+      VipHideProfileVisitsState(
+        hideProfileVisits: json['hideProfileVisits'] == true,
+        canHideProfileVisits: json['canHideProfileVisits'] == true,
+        requiredVipLevel: (json['requiredVipLevel'] as num?)?.toInt() ?? 9,
       );
 }
 
@@ -163,6 +188,14 @@ class VipService {
       'enabled': enabled,
     });
     return VipHideListsState.fromJson(body);
+  }
+
+  Future<VipHideProfileVisitsState> setHideProfileVisits(bool enabled) async {
+    final body = await _post({
+      'action': 'setHideProfileVisits',
+      'enabled': enabled,
+    });
+    return VipHideProfileVisitsState.fromJson(body);
   }
 
   void close() {
