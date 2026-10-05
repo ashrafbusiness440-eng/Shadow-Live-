@@ -249,9 +249,13 @@ async function sendMessage(db, uid, body) {
     }
 
     const now = new Date();
-    const counts = { ...(conversationData.unreadCounts || {}) };
-    counts[uid] = 0;
-    counts[receiverId] = Number(counts[receiverId] || 0) + 1;
+    const counts = contextType === "chat"
+      ? { ...(conversationData.unreadCounts || {}) }
+      : {};
+    if (contextType === "chat") {
+      counts[uid] = 0;
+      counts[receiverId] = Number(counts[receiverId] || 0) + 1;
+    }
     const messageId = randomDocId("msg");
     const messagePath = `${conversationPath}/messages/${messageId}`;
     const writes = [
@@ -437,6 +441,10 @@ export async function sendGift(db, uid, body, options = {}) {
       throw new ApiError("blocked", 403);
     }
 
+    const financialContext = contextType === "diary"
+      ? { contextType: "diary", diaryId }
+      : { contextType: "chat", conversationId };
+
     const economyLock = lock.data || {};
     if (
       economyLock.enabled === true ||
@@ -608,8 +616,7 @@ export async function sendGift(db, uid, body, options = {}) {
             ownerOpeningDiamonds: agencyTargetSharePlan.ownerIsHost
               ? hostSalaryClosingDiamonds
               : agencyTargetSharePlan.ownerOpeningDiamonds,
-            contextType: "chat",
-            conversationId,
+            ...financialContext,
           },
         )
       : null;
@@ -622,8 +629,15 @@ export async function sendGift(db, uid, body, options = {}) {
     const giftName = clean(giftData.nameAr || "هدية");
     const imageUrl = clean(giftData.imageUrl);
     const assetKey = clean(giftData.assetKey || "gifts.placeholder.default");
-    const messageId = randomDocId("msg");
-    const messagePath = `${conversationPath}/messages/${messageId}`;
+    const senderName = clean(
+      senderData.displayName || senderData.username || "مستخدم Shadow Live",
+    );
+    const senderPublicId = clean(senderData.publicId);
+    const senderProfileImageUrl = clean(senderData.profileImageUrl);
+    const messageId = contextType === "chat" ? randomDocId("msg") : null;
+    const messagePath = contextType === "chat"
+      ? `${conversationPath}/messages/${messageId}`
+      : "";
     const transactionPath = `gift_transactions/${key}`;
     const ledgerPath = `financial_ledger/gift_${key}`;
     const earningsLedgerPath = `financial_ledger/gift_earnings_${key}`;
@@ -876,8 +890,7 @@ export async function sendGift(db, uid, body, options = {}) {
           targetId: receiverId,
           triggerUid: uid,
           agencyId,
-          contextType: "chat",
-          conversationId,
+          ...financialContext,
           sourceType: "gift",
           sourceId: key,
           month: agencyPeriods.month,
@@ -941,35 +954,78 @@ export async function sendGift(db, uid, body, options = {}) {
       );
     }
 
+    if (contextType === "chat") {
+      writes.push(
+        db.writeUpdate(
+          conversationPath,
+          {
+            lastMessage: `🎁 ${giftName} ×${quantity}`,
+            lastSenderId: uid,
+            updatedAt: now,
+            unreadCounts: counts,
+          },
+          ["lastMessage", "lastSenderId", "updatedAt", "unreadCounts"],
+        ),
+        db.writeCreate(messagePath, {
+          senderId: uid,
+          receiverId,
+          type: "gift",
+          giftId,
+          giftName,
+          quantity,
+          unitCoins,
+          totalCost,
+          imageUrl,
+          assetKey,
+          createdAt: now,
+        }),
+      );
+    } else {
+      const diaryMirrorPath = `users/${receiverId}/diaries/${diaryId}`;
+      writes.push(
+        db.writeUpdate(
+          diaryPath,
+          { lastGiftAt: now },
+          ["lastGiftAt"],
+          [
+            db.increment("giftCount", quantity),
+            db.increment("giftCoins", totalCost),
+          ],
+        ),
+        db.writeUpdate(
+          diaryMirrorPath,
+          { lastGiftAt: now },
+          ["lastGiftAt"],
+          [
+            db.increment("giftCount", quantity),
+            db.increment("giftCoins", totalCost),
+          ],
+        ),
+        db.writeCreate(`${diaryPath}/gifts/${key}`, {
+          giftOperationId: key,
+          diaryId,
+          senderId: uid,
+          senderName,
+          senderPublicId,
+          senderProfileImageUrl,
+          receiverId,
+          giftId,
+          giftName,
+          quantity,
+          unitCoins,
+          totalCost,
+          imageUrl,
+          assetKey,
+          createdAt: now,
+        }),
+      );
+    }
+
     writes.push(
-      db.writeUpdate(
-        conversationPath,
-        {
-          lastMessage: `🎁 ${giftName} ×${quantity}`,
-          lastSenderId: uid,
-          updatedAt: now,
-          unreadCounts: counts,
-        },
-        ["lastMessage", "lastSenderId", "updatedAt", "unreadCounts"],
-      ),
-      db.writeCreate(messagePath, {
-        senderId: uid,
-        receiverId,
-        type: "gift",
-        giftId,
-        giftName,
-        quantity,
-        unitCoins,
-        totalCost,
-        imageUrl,
-        assetKey,
-        createdAt: now,
-      }),
       db.writeCreate(transactionPath, {
         senderId: uid,
         receiverId,
-        contextType: "chat",
-        conversationId,
+        ...financialContext,
         giftId,
         giftName,
         quantity,
@@ -1035,6 +1091,7 @@ export async function sendGift(db, uid, body, options = {}) {
         sourceType: "gift",
         sourceId: key,
         actorUid: uid,
+        ...financialContext,
         idempotencyKey: key,
         createdAt: now,
       }),
@@ -1053,6 +1110,7 @@ export async function sendGift(db, uid, body, options = {}) {
     );
 
     const resultData = {
+      ...financialContext,
       giftId,
       giftName,
       quantity,
@@ -1093,7 +1151,7 @@ export async function sendGift(db, uid, body, options = {}) {
       db.writeCreate(opPath, {
         senderId: uid,
         receiverId,
-        conversationId,
+        ...financialContext,
         giftId,
         quantity,
         action: "sendGift",
