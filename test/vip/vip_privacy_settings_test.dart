@@ -20,11 +20,23 @@ void main() {
     expect(privacy.contains("'vip-privacy-hide-presence'"), isTrue);
     expect(privacy.contains("'vip-privacy-hidden-entry'"), isTrue);
     expect(privacy.contains("'vip-privacy-hide-ranking-lists'"), isTrue);
+    expect(privacy.contains("'vip-privacy-friends-only-messages'"), isTrue);
+    expect(privacy.contains("'vip-privacy-hide-profile-visits'"), isTrue);
+    expect(privacy.contains("'vip-privacy-hide-noble-level'"), isTrue);
+    expect(privacy.contains("'vip-privacy-hide-game-win-banner'"), isTrue);
+    expect(
+      privacy.contains("'vip-privacy-hide-bet-win-notification'"),
+      isTrue,
+    );
+    expect(privacy.contains("'vip-profile-visit-history'"), isTrue);
 
     expect(privacy.contains('_levels.updateVisibility('), isTrue);
     expect(privacy.contains('_rooms.setGhostMode(enabled)'), isTrue);
     expect(privacy.contains('_rooms.setHiddenEntry(enabled)'), isTrue);
     expect(privacy.contains('_vip.setHideRankingLists(enabled)'), isTrue);
+    expect(privacy.contains('_vip.setHideProfileVisits(enabled)'), isTrue);
+    expect(privacy.contains('_vip.setFriendsOnlyMessages(enabled)'), isTrue);
+    expect(privacy.contains('_vip.setVip4PrivacyPreference('), isTrue);
 
     // Privacy settings must reuse bounded server APIs. No Firestore listener,
     // direct user-document write, polling, or duplicated room hot-path IO.
