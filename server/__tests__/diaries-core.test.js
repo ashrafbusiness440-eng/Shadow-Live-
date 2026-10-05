@@ -1036,6 +1036,11 @@ test("diary report is deterministic and dedupes same reporter and target", async
   assert.equal(reports[0][1].reporterUid, "reporter");
   assert.equal(reports[0][1].reason, "spam");
   assert.equal(reports[0][1].status, "new");
+  assert.equal(reports[0][1].createdAtMs > 0, true);
+  assert.equal(
+    [...db.docs.keys()].filter((path) => path.startsWith("diary_reports/")).length,
+    1,
+  );
 
   const duplicate = await reportDiary(db, "reporter", {
     diaryId: "diary_report",
@@ -1080,6 +1085,11 @@ test("comment report links diary comment author owner and reporter", async () =>
   assert.equal(data.targetAuthorUid, "comment_author");
   assert.equal(data.reporterUid, "reporter");
   assert.equal(data.reason, "harassment_bullying");
+  assert.equal(data.evidence.text, "reported");
+  assert.equal(
+    [...db.docs.keys()].filter((path) => path.startsWith("diary_reports/")).length,
+    1,
+  );
 
   const duplicate = await reportComment(db, "reporter", {
     diaryId: "diary_comment_report",
@@ -1090,5 +1100,50 @@ test("comment report links diary comment author owner and reporter", async () =>
   assert.equal(
     [...db.docs.keys()].filter((path) => path.startsWith("reports/")).length,
     1,
+  );
+});
+
+
+test("cannot report own diary or own comment", async () => {
+  const db = new FakeDb({
+    "diaries/own_diary": {
+      diaryId: "own_diary",
+      ownerUid: "owner",
+      text: "mine",
+    },
+    "diaries/other_diary": {
+      diaryId: "other_diary",
+      ownerUid: "owner",
+    },
+    "diaries/other_diary/comments/own_comment": {
+      commentId: "own_comment",
+      diaryId: "other_diary",
+      authorUid: "commenter",
+      text: "mine too",
+    },
+  });
+
+  await assert.rejects(
+    () => reportDiary(db, "owner", {
+      diaryId: "own_diary",
+      reason: "spam",
+    }),
+    /cannot_report_own_content/,
+  );
+
+  await assert.rejects(
+    () => reportComment(db, "commenter", {
+      diaryId: "other_diary",
+      commentId: "own_comment",
+      reason: "spam",
+    }),
+    /cannot_report_own_content/,
+  );
+
+  assert.equal(
+    [...db.docs.keys()].some((path) =>
+      path.startsWith("reports/") || path.startsWith("diary_reports/")
+    ),
+    false,
   );
 });
