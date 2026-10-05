@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../profile/screens/public_profile_screen.dart';
 import '../services/diary_service.dart';
+import 'diary_mention_suggestions.dart';
 
 class DiaryCommentsSheet extends StatefulWidget {
   const DiaryCommentsSheet({
@@ -32,6 +35,11 @@ class _DiaryCommentsSheetState extends State<DiaryCommentsSheet> {
   String? _deletingId;
   Object? _error;
   late int _commentCount;
+  Timer? _mentionDebounce;
+  List<DiaryMentionCandidate> _mentionCandidates =
+      const <DiaryMentionCandidate>[];
+  bool _mentionLoading = false;
+  int _mentionRequest = 0;
 
   bool get _guest => FirebaseAuth.instance.currentUser?.isAnonymous == true;
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
@@ -45,8 +53,52 @@ class _DiaryCommentsSheetState extends State<DiaryCommentsSheet> {
 
   @override
   void dispose() {
+    _mentionDebounce?.cancel();
     _text.dispose();
     super.dispose();
+  }
+
+  void _commentChanged(String _) {
+    _mentionDebounce?.cancel();
+    final query = activeDiaryMentionQuery(_text);
+    if (query == null) {
+      if (_mentionCandidates.isNotEmpty || _mentionLoading) {
+        setState(() {
+          _mentionCandidates = const <DiaryMentionCandidate>[];
+          _mentionLoading = false;
+        });
+      }
+      return;
+    }
+
+    final request = ++_mentionRequest;
+    setState(() => _mentionLoading = true);
+    _mentionDebounce = Timer(const Duration(milliseconds: 250), () async {
+      try {
+        final items = await widget.service.searchMentions(query);
+        if (!mounted || request != _mentionRequest) return;
+        setState(() {
+          _mentionCandidates = items;
+          _mentionLoading = false;
+        });
+      } catch (_) {
+        if (!mounted || request != _mentionRequest) return;
+        setState(() {
+          _mentionCandidates = const <DiaryMentionCandidate>[];
+          _mentionLoading = false;
+        });
+      }
+    });
+  }
+
+  void _selectMention(DiaryMentionCandidate candidate) {
+    applyDiaryMention(_text, candidate);
+    _mentionDebounce?.cancel();
+    _mentionRequest += 1;
+    setState(() {
+      _mentionCandidates = const <DiaryMentionCandidate>[];
+      _mentionLoading = false;
+    });
   }
 
   Future<void> _load({required bool reset}) async {
@@ -368,24 +420,36 @@ class _DiaryCommentsSheetState extends State<DiaryCommentsSheet> {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Expanded(
-            child: TextField(
-              controller: _text,
-              enabled: !_sending,
-              maxLength: 200,
-              minLines: 1,
-              maxLines: 4,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                hintText: 'اكتب تعليق...',
-                hintStyle: const TextStyle(color: Colors.white38),
-                counterStyle: const TextStyle(color: Colors.white30),
-                filled: true,
-                fillColor: const Color(0xFF101522),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide.none,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: _text,
+                  enabled: !_sending,
+                  onChanged: _commentChanged,
+                  maxLength: 200,
+                  minLines: 1,
+                  maxLines: 4,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText: 'اكتب تعليق...',
+                    hintStyle: const TextStyle(color: Colors.white38),
+                    counterStyle: const TextStyle(color: Colors.white30),
+                    filled: true,
+                    fillColor: const Color(0xFF101522),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
                 ),
-              ),
+                DiaryMentionSuggestions(
+                  items: _mentionCandidates,
+                  loading: _mentionLoading,
+                  onSelected: _selectMention,
+                ),
+              ],
             ),
           ),
           const SizedBox(width: 8),
