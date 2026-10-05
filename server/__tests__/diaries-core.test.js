@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID, webcrypto } from "node:crypto";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
@@ -265,4 +266,48 @@ test("latest and user feeds stay bounded and expose cursors", async () => {
   const user = await listUser(db, { userId: "user_a", limit: 10 });
   assert.deepEqual(user.items.map((item) => item.diaryId), ["d1", "d3"]);
   assert.equal(user.hasMore, false);
+});
+
+
+test("reusing an idempotency key with different create content is rejected", async () => {
+  const db = new FakeDb(seedUser());
+  const key = op("conflict");
+  await createDiary(db, "user_a", {
+    text: "الأولى",
+    imageObjectIds: [],
+    idempotencyKey: key,
+  });
+  await assert.rejects(
+    () => createDiary(db, "user_a", {
+      text: "الثانية",
+      imageObjectIds: [],
+      idempotencyKey: key,
+    }),
+    /idempotency_conflict/,
+  );
+});
+
+test("diary core stays bounded and Firestore access is server-authoritative", () => {
+  const source = readFileSync(
+    new URL("../../cloudflare-worker/src/diaries.js", import.meta.url),
+    "utf8",
+  );
+  const rules = readFileSync(
+    new URL("../../firestore.rules", import.meta.url),
+    "utf8",
+  );
+  assert.equal(source.includes("MAX_PAGE_SIZE = 30"), true);
+  assert.equal(source.includes(".list("), false);
+  assert.equal(source.includes('db.runQuery("diaries"'), true);
+  for (const collection of [
+    "diaries",
+    "diary_operations",
+    "diary_image_links",
+    "diary_audit_logs",
+    "diary_comments",
+    "diary_likes",
+    "diary_view_keys",
+  ]) {
+    assert.equal(rules.includes(`match /${collection}/{`), true, collection);
+  }
 });
