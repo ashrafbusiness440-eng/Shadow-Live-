@@ -317,19 +317,21 @@ class _DiaryCommentsSheetState extends State<DiaryCommentsSheet> {
                         _timeLabel(item.createdAtMs),
                         style: const TextStyle(color: Colors.white38, fontSize: 10),
                       ),
-                      const SizedBox(width: 4),
-                      InkWell(
-                        borderRadius: BorderRadius.circular(18),
-                        onTap: () => _reportComment(item),
-                        child: const Padding(
-                          padding: EdgeInsets.all(4),
-                          child: Icon(
-                            Icons.flag_outlined,
-                            size: 17,
-                            color: Colors.white38,
+                      if (_guest || item.authorUid != _uid) ...[
+                        const SizedBox(width: 4),
+                        InkWell(
+                          borderRadius: BorderRadius.circular(18),
+                          onTap: () => _reportComment(item),
+                          child: const Padding(
+                            padding: EdgeInsets.all(4),
+                            child: Icon(
+                              Icons.flag_outlined,
+                              size: 17,
+                              color: Colors.white38,
+                            ),
                           ),
                         ),
-                      ),
+                      ],
                       if (_canDelete(item)) ...[
                         const SizedBox(width: 4),
                         InkWell(
