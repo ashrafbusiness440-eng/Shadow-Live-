@@ -21,6 +21,7 @@ const {
   createComment,
   listComments,
   deleteComment,
+  recordView,
   listLatest,
   listUser,
   listFollowing,
@@ -349,6 +350,42 @@ test("create operation is idempotent", async () => {
   const second = await createDiary(db, "user_a", body);
   assert.equal(second.code, "duplicate");
   assert.equal(second.diaryId, first.diaryId);
+});
+
+test("view counter deduplicates the same user for 24 hours and mirrors count", async () => {
+  const db = new FakeDb({ ...seedUser(), ...seedUser("viewer") });
+  const created = await createDiary(db, "user_a", {
+    text: "مشاهدة",
+    imageObjectIds: [],
+    idempotencyKey: op("view_diary"),
+  });
+
+  const first = await recordView(db, "viewer", { diaryId: created.diaryId });
+  assert.equal(first.counted, true);
+  assert.equal(first.viewCount, 1);
+  assert.equal(db.docs.get(`diaries/${created.diaryId}`)?.viewCount, 1);
+  assert.equal(
+    db.docs.get(`users/user_a/diaries/${created.diaryId}`)?.viewCount,
+    1,
+  );
+
+  const second = await recordView(db, "viewer", { diaryId: created.diaryId });
+  assert.equal(second.counted, false);
+  assert.equal(second.viewCount, 1);
+  assert.equal(db.docs.get(`diaries/${created.diaryId}`)?.viewCount, 1);
+
+  const keyPath = [...db.docs.keys()].find((path) =>
+    path.startsWith(`diary_view_keys/${created.diaryId}__`)
+  );
+  assert.ok(keyPath);
+  db.docs.set(keyPath, {
+    ...db.docs.get(keyPath),
+    nextEligibleAtMs: Date.now() - 1,
+  });
+
+  const third = await recordView(db, "viewer", { diaryId: created.diaryId });
+  assert.equal(third.counted, true);
+  assert.equal(third.viewCount, 2);
 });
 
 test("comment text enforces 200 chars and blocks links", () => {
