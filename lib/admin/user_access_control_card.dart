@@ -37,6 +37,8 @@ class OwnerUserAccessCard extends StatelessWidget {
     'viewHiddenUserLevels': 'عرض المستويات المخفية — Safety',
     'viewReports': 'عرض البلاغات',
     'reviewReports': 'مراجعة البلاغات',
+    'manageDiaries': 'حذف اليوميات من البلاغات',
+    'deleteDiaryComment': 'حذف تعليقات اليوميات من البلاغات',
     'muteUsers': 'كتم المستخدمين',
     'suspendUsers': 'تعليق الحسابات',
     'permanentBan': 'حظر دائم',
@@ -75,7 +77,8 @@ class OwnerUserAccessCard extends StatelessWidget {
       'viewDashboard', 'viewSystemHealth', 'viewUsers', 'manageUsers',
     ],
     'البلاغات والإشراف': [
-      'viewReports', 'reviewReports', 'muteUsers', 'suspendUsers', 'permanentBan',
+      'viewReports', 'reviewReports', 'manageDiaries', 'deleteDiaryComment',
+      'muteUsers', 'suspendUsers', 'permanentBan',
     ],
     'الغرف والـ IDs': [
       'manageRooms', 'globalRoomControl', 'canCreateHiddenRoom', 'manageIds', 'manageSpecialIds',
@@ -99,10 +102,11 @@ class OwnerUserAccessCard extends StatelessWidget {
 
   Set<String> _suggested(String role) => switch (role) {
     'moderator' => {'viewReports', 'muteUsers'},
-    'admin' => {'viewDashboard', 'viewUsers', 'viewReports', 'reviewReports', 'muteUsers', 'manageRooms'},
+    'admin' => {'viewDashboard', 'viewUsers', 'viewReports', 'reviewReports', 'deleteDiaryComment', 'muteUsers', 'manageRooms'},
     'super_admin' => {
       'viewDashboard', 'viewUsers', 'manageUsers', 'viewReports', 'reviewReports',
-      'muteUsers', 'suspendUsers', 'manageRooms', 'globalRoomControl',
+      'manageDiaries', 'deleteDiaryComment', 'muteUsers', 'suspendUsers',
+      'manageRooms', 'globalRoomControl',
       'manageAgencies', 'reviewAgencyApplications', 'manageAgencyMemberships',
       'manageAgencyManagers', 'suspendAgencies',
       'manageVip', 'manageIds', 'manageStore', 'manageGames', 'viewAuditLog',
