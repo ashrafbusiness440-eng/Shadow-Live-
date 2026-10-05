@@ -101,6 +101,25 @@ export async function recordProfileVisit(db, visitorUid, body, nowMs = Date.now(
           "lastVisitedAt",
         ],
       ),
+      db.writeUpdate(
+        `profile_visited/${visitorUid}/items/${targetUid}`,
+        {
+          ...target,
+          visitorUid,
+          hidden: true,
+          lastVisitedAt: now,
+        },
+        [
+          "uid",
+          "publicId",
+          "displayName",
+          "profileImageUrl",
+          "effectiveVipLevel",
+          "visitorUid",
+          "hidden",
+          "lastVisitedAt",
+        ],
+      ),
     ]);
     return { ok: true, recorded: true, hidden: true };
   }
