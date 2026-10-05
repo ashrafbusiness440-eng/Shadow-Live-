@@ -85,6 +85,8 @@ abstract final class AuthLoginConfigService {
   );
 
   static Future<AuthLoginConfig>? _cached;
+  static DateTime? _cachedAt;
+  static const _cacheTtl = Duration(seconds: 30);
 
   static Uri get _endpoint {
     final base = _apiBase.endsWith('/')
@@ -97,9 +99,20 @@ abstract final class AuthLoginConfigService {
     http.Client? client,
     bool refresh = false,
   }) {
-    if (refresh) _cached = null;
+    if (refresh) {
+      _cached = null;
+      _cachedAt = null;
+    }
     if (client != null) return _load(client);
-    return _cached ??= _load(http.Client(), closeClient: true);
+    final now = DateTime.now();
+    final cachedAt = _cachedAt;
+    if (_cached != null &&
+        cachedAt != null &&
+        now.difference(cachedAt) < _cacheTtl) {
+      return _cached!;
+    }
+    _cachedAt = now;
+    return _cached = _load(http.Client(), closeClient: true);
   }
 
   static Future<AuthLoginConfig> _load(
