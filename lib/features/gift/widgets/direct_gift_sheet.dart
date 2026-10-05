@@ -12,6 +12,8 @@ Future<void> showDirectGiftSheet(
   BuildContext context, {
   required String receiverId,
   required String receiverName,
+  String? diaryId,
+  void Function(int quantity, int totalCost)? onGiftSent,
 }) async {
   await showModalBottomSheet<void>(
     context: context,
@@ -23,6 +25,8 @@ Future<void> showDirectGiftSheet(
     builder: (_) => _DirectGiftSheet(
       receiverId: receiverId,
       receiverName: receiverName,
+      diaryId: diaryId,
+      onGiftSent: onGiftSent,
     ),
   );
 }
@@ -31,10 +35,14 @@ class _DirectGiftSheet extends StatefulWidget {
   const _DirectGiftSheet({
     required this.receiverId,
     required this.receiverName,
+    this.diaryId,
+    this.onGiftSent,
   });
 
   final String receiverId;
   final String receiverName;
+  final String? diaryId;
+  final void Function(int quantity, int totalCost)? onGiftSent;
 
   @override
   State<_DirectGiftSheet> createState() => _DirectGiftSheetState();
@@ -109,15 +117,18 @@ class _DirectGiftSheetState extends State<_DirectGiftSheet> {
     if (_sendingGiftId != null) return false;
     setState(() => _sendingGiftId = gift.id);
     try {
-      final conversationId = _conversationId();
-      await _ensureConversation(conversationId);
+      final diaryId = widget.diaryId?.trim() ?? '';
+      final conversationId = diaryId.isEmpty ? _conversationId() : '';
+      if (diaryId.isEmpty) {
+        await _ensureConversation(conversationId);
+      }
       final token = await FirebaseAuth.instance.currentUser?.getIdToken();
       if (token == null || token.isEmpty) throw StateError('not_signed_in');
       final key = [
         _uid,
         DateTime.now().microsecondsSinceEpoch.toString(),
         gift.id,
-        'profile',
+        diaryId.isEmpty ? 'profile' : 'diary',
       ].join('_');
       final response = await http.post(
         Uri.parse('$_apiBase/chat-actions'),
@@ -130,7 +141,8 @@ class _DirectGiftSheetState extends State<_DirectGiftSheet> {
           'receiverId': widget.receiverId,
           'giftId': gift.id,
           'quantity': _quantity,
-          'conversationId': conversationId,
+          if (diaryId.isEmpty) 'conversationId': conversationId,
+          if (diaryId.isNotEmpty) 'diaryId': diaryId,
           'idempotencyKey': key,
         }),
       );
@@ -140,6 +152,9 @@ class _DirectGiftSheetState extends State<_DirectGiftSheet> {
         if (decoded is Map<String, dynamic>) body = decoded;
       } catch (_) {}
       if (response.statusCode == 200 && body['ok'] == true) {
+        final totalCost =
+            (body['totalCost'] as num?)?.toInt() ?? gift.priceCoins * _quantity;
+        widget.onGiftSent?.call(_quantity, totalCost);
         _snack(
           'تم إرسال ${gift.nameAr} ×$_quantity إلى ${widget.receiverName}',
         );
