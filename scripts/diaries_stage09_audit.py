@@ -32,6 +32,7 @@ def main() -> int:
         rules = read("firestore.rules")
         core_tests = read("server/__tests__/diaries-core.test.js")
         gift_tests = read("server/__tests__/gift-transactions.integration.test.js")
+        lifecycle_tests = read("server/__tests__/diaries-lifecycle.integration.test.js")
         stage07_tests = read("server/__tests__/diary-moderation.test.js")
         flutter_ci = read(".github/workflows/flutter-ci.yml")
 
@@ -86,6 +87,10 @@ def main() -> int:
             require(needle in core_tests, f"missing Stage 09 core coverage: {needle}")
 
         require(
+            'test("diary lifecycle integration: create latest following report delete"' in lifecycle_tests,
+            "missing diary lifecycle Firestore integration coverage",
+        )
+        require(
             'test("diary gift reuses chat gift economy without creating chat side effects"' in gift_tests,
             "missing diary gift integration coverage",
         )
@@ -102,6 +107,7 @@ def main() -> int:
         for test_file in (
             "server/__tests__/diaries-core.test.js",
             "server/__tests__/gift-transactions.integration.test.js",
+            "server/__tests__/diaries-lifecycle.integration.test.js",
             "server/__tests__/diary-moderation.test.js",
         ):
             require(test_file in flutter_ci, f"Flutter CI does not run {test_file}")
