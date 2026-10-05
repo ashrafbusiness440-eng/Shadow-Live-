@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../agency/services/agency_membership_service.dart';
+import '../../diaries/screens/diaries_screen.dart';
 import '../../profile/screens/public_profile_screen.dart';
 import '../../relationships/services/relationship_service.dart';
 import '../services/notification_service.dart';
@@ -100,6 +101,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
             read: true,
             createdAt: item.createdAt,
             requestId: item.requestId,
+            diaryId: item.diaryId,
+            commentId: item.commentId,
             agencyId: item.agencyId,
             requestType: item.requestType,
             applicantUid: item.applicantUid,
@@ -112,6 +115,22 @@ class _NotificationsPageState extends State<NotificationsPage> {
           );
         });
       }
+    }
+
+    if ((item.diaryId?.isNotEmpty ?? false) &&
+        (item.type == 'diary_comment' ||
+            item.type == 'diary_mention' ||
+            item.type == 'diary_gift' ||
+            item.type == 'diary_like_aggregate')) {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => DiariesScreen(
+            initialDiaryId: item.diaryId,
+            openCommentsOnStart: item.commentId?.isNotEmpty ?? false,
+          ),
+        ),
+      );
+      return;
     }
 
     if (item.relationshipRequestAction &&
