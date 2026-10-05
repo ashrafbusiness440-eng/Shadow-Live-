@@ -14,6 +14,7 @@ import {
   diaryOrphanDeleteAt,
   DIARY_ORPHAN_DELETE_DELAY_MS,
   storageQueueObjectStillReferenced,
+  cleanupQueuedStorageObject,
   storageActivePointerId,
   runDeletedAccountStorageCleanup,
   authorizeAgencyLogoManagement,
