@@ -203,6 +203,7 @@ test("login header is a first-class Asset Studio surface with bundled fallback",
   assert.equal(manager.includes("auth_header.png"), true);
   assert.equal(registry.includes("authLoginHeader = 'auth.login.header'"), true);
   assert.equal(authChoice.includes("ShadowAssetKeys.authLoginHeader"), true);
+  assert.equal(authChoice.includes("refresh: true"), true);
   assert.equal(authChoice.includes("assets/images/auth_header.png"), true);
 });
 
