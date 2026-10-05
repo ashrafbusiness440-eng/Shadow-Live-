@@ -668,11 +668,13 @@ async function toggleLike(db, uid, body) {
         aggregateCount: likeCount,
         now,
       });
+      const notificationUpdate = { ...notificationData };
+      delete notificationUpdate.createdAt;
       writes.push(
         existingNotification.exists
           ? db.writeUpdate(
               notificationPath,
-              notificationData,
+              notificationUpdate,
               [
                 "type",
                 "category",
