@@ -136,7 +136,7 @@ async function runTransaction(db, body) {
   throw new ApiError("transaction_failed", 500);
 }
 
-async function sendMessage(db, uid, body) {
+export async function sendMessage(db, uid, body) {
   const receiverId = clean(body.receiverId);
   const conversationId = clean(body.conversationId);
   const message = clean(body.text);
