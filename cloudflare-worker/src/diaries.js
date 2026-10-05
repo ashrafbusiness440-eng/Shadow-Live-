@@ -7,6 +7,7 @@ const clean = (value) => String(value ?? "").trim();
 const MAX_TEXT_LENGTH = 500;
 const MAX_COMMENT_LENGTH = 200;
 const MAX_IMAGES = 2;
+const MAX_MENTIONS = 8;
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 30;
 const VIEW_DEDUPE_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -148,6 +149,134 @@ function publicAuthorSnapshot(user = {}, uid = "") {
   };
 }
 
+function normalizeSearchText(value) {
+  let text = String(value ?? "").toLowerCase();
+  const arabic = "٠١٢٣٤٥٦٧٨٩";
+  const persian = "۰۱۲۳۴۵۶۷۸۹";
+  for (let i = 0; i < 10; i += 1) {
+    text = text.split(arabic[i]).join(String(i)).split(persian[i]).join(String(i));
+  }
+  return text
+    .replace(/[\u064B-\u065F\u0670\u06D6-\u06ED]/g, "")
+    .replace(/ـ/g, "")
+    .replace(/[أإآٱ]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function mentionPublicIds(text) {
+  const ids = [];
+  const seen = new Set();
+  const source = clean(text);
+  for (const match of source.matchAll(/@([0-9]{3,12})/g)) {
+    const publicId = clean(match[1]);
+    if (!publicId || seen.has(publicId)) continue;
+    seen.add(publicId);
+    ids.push(publicId);
+    if (ids.length >= MAX_MENTIONS) break;
+  }
+  return ids;
+}
+
+async function resolveMentionTargets(db, text, transaction = null) {
+  const publicIds = mentionPublicIds(text);
+  if (publicIds.length === 0) return [];
+  const idSnaps = await Promise.all(
+    publicIds.map((publicId) => db.get(`public_ids/${publicId}`, transaction)),
+  );
+  const targets = [];
+  const seenUids = new Set();
+  for (let index = 0; index < publicIds.length; index += 1) {
+    const uid = clean(idSnaps[index]?.data?.uid);
+    if (!uid || seenUids.has(uid)) continue;
+    seenUids.add(uid);
+    targets.push({ uid, publicId: publicIds[index] });
+  }
+  return targets;
+}
+
+function diaryNotificationPath(kind, diaryId, recipientUid, suffix = "") {
+  const safeDiary = clean(diaryId).replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 120);
+  const safeRecipient = pathSafe(recipientUid).slice(0, 48);
+  const safeSuffix = clean(suffix).replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80);
+  return `notifications/${kind}_${safeDiary}_${safeRecipient}${safeSuffix ? "_" + safeSuffix : ""}`;
+}
+
+function diarySocialNotification({
+  type,
+  recipientUid,
+  diaryId,
+  commentId = null,
+  actorUid,
+  actorName,
+  actorPublicId,
+  title,
+  body,
+  aggregateCount = null,
+  now,
+}) {
+  return {
+    userId: recipientUid,
+    type,
+    category: "social",
+    title,
+    body,
+    read: false,
+    diaryId,
+    commentId,
+    actorUid,
+    actorName,
+    actorPublicId,
+    ...(aggregateCount == null ? {} : { aggregateCount }),
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+async function searchMentions(db, uid, body) {
+  const raw = clean(body.query);
+  const query = normalizeSearchText(raw);
+  if (!query || query.length > 40) return { ok: true, items: [] };
+
+  const results = new Map();
+  const addProfile = (profileUid, data = {}) => {
+    const targetUid = clean(profileUid);
+    if (!targetUid || targetUid === uid || results.has(targetUid)) return;
+    const publicId = clean(data.publicId);
+    if (!publicId) return;
+    results.set(targetUid, {
+      uid: targetUid,
+      displayName: clean(data.displayName || data.name || "مستخدم Shadow Live").slice(0, 80),
+      publicId: publicId.slice(0, 16),
+      profileImageUrl: clean(data.profileImageUrl).slice(0, 1000),
+      profileAvatarAsset: clean(data.profileAvatarAsset).slice(0, 500),
+    });
+  };
+
+  if (/^[0-9]{3,12}$/.test(query)) {
+    const exactId = await db.get(`public_ids/${query}`);
+    const exactUid = clean(exactId.data?.uid);
+    if (exactId.exists && exactUid && exactUid !== uid) {
+      const profile = await db.get(`public_profiles/${exactUid}`);
+      if (profile.exists) addProfile(exactUid, profile.data || {});
+    }
+  }
+
+  if (results.size < MAX_MENTIONS) {
+    const rows = await db.runQuery("public_profiles", {
+      filters: [{ field: "searchTokens", op: "array-contains", value: query }],
+      limit: MAX_MENTIONS + 1,
+    });
+    for (const row of rows) {
+      addProfile(row.id, row.data || {});
+      if (results.size >= MAX_MENTIONS) break;
+    }
+  }
+
+  return { ok: true, items: [...results.values()].slice(0, MAX_MENTIONS) };
+}
+
 function publicImageSnapshot(objectId, object = {}) {
   return {
     objectId,
@@ -259,6 +388,10 @@ async function createDiary(db, uid, body) {
     const now = new Date();
     const nowMs = Date.now();
     const author = publicAuthorSnapshot(user, uid);
+    const mentionTargets = await resolveMentionTargets(db, text, transaction);
+    const mentionedUids = mentionTargets
+      .map((target) => target.uid)
+      .filter((targetUid) => targetUid !== uid);
     const diary = {
       diaryId,
       ...author,
@@ -270,6 +403,7 @@ async function createDiary(db, uid, body) {
       giftCount: 0,
       giftCoins: 0,
       viewCount: 0,
+      mentionedUids,
       createdAt: now,
       createdAtMs: nowMs,
     };
@@ -294,6 +428,25 @@ async function createDiary(db, uid, body) {
         createdAt: now,
       }),
     ];
+    for (const target of mentionTargets) {
+      if (target.uid === uid) continue;
+      writes.push(
+        db.writeCreate(
+          diaryNotificationPath("diary_mention", diaryId, target.uid),
+          diarySocialNotification({
+            type: "diary_mention",
+            recipientUid: target.uid,
+            diaryId,
+            actorUid: uid,
+            actorName: author.ownerName,
+            actorPublicId: author.ownerPublicId,
+            title: "تمت الإشارة إليك في يومية",
+            body: `${author.ownerName || "مستخدم Shadow Live"} أشار إليك في يومية.`,
+            now,
+          }),
+        ),
+      );
+    }
     for (const image of images) {
       writes.push(
         db.writeCreate(`diary_image_links/${image.objectId}`, {
@@ -494,6 +647,50 @@ async function toggleLike(db, uid, body) {
       }),
     ];
 
+    if (liked && ownerUid !== uid) {
+      const notificationPath = diaryNotificationPath("diary_like", diaryId, ownerUid);
+      const [actor, existingNotification] = await Promise.all([
+        db.get(`users/${uid}`, transaction),
+        db.get(notificationPath, transaction),
+      ]);
+      const actorSnapshot = publicAuthorSnapshot(actor.data || {}, uid);
+      const notificationData = diarySocialNotification({
+        type: "diary_like_aggregate",
+        recipientUid: ownerUid,
+        diaryId,
+        actorUid: uid,
+        actorName: actorSnapshot.ownerName,
+        actorPublicId: actorSnapshot.ownerPublicId,
+        title: "إعجابات جديدة على يوميتك",
+        body: likeCount > 1
+          ? `${actorSnapshot.ownerName || "مستخدم Shadow Live"} وآخرون أعجبوا بيوميتك.`
+          : `${actorSnapshot.ownerName || "مستخدم Shadow Live"} أعجب بيوميتك.`,
+        aggregateCount: likeCount,
+        now,
+      });
+      writes.push(
+        existingNotification.exists
+          ? db.writeUpdate(
+              notificationPath,
+              notificationData,
+              [
+                "type",
+                "category",
+                "title",
+                "body",
+                "read",
+                "diaryId",
+                "actorUid",
+                "actorName",
+                "actorPublicId",
+                "aggregateCount",
+                "updatedAt",
+              ],
+            )
+          : db.writeCreate(notificationPath, notificationData),
+      );
+    }
+
     await db.commit(transaction, writes);
     return { ok: true, ...result };
   });
@@ -553,6 +750,10 @@ async function createComment(db, uid, body) {
     const now = new Date();
     const nowMs = Date.now();
     const author = publicAuthorSnapshot(user.data || {}, uid);
+    const mentionTargets = await resolveMentionTargets(db, text, transaction);
+    const mentionedUids = mentionTargets
+      .map((target) => target.uid)
+      .filter((targetUid) => targetUid !== uid);
     const comment = {
       commentId,
       diaryId,
@@ -562,6 +763,7 @@ async function createComment(db, uid, body) {
       authorProfileImageUrl: author.ownerProfileImageUrl,
       authorProfileAvatarAsset: author.ownerProfileAvatarAsset,
       text,
+      mentionedUids,
       createdAt: now,
       createdAtMs: nowMs,
     };
@@ -574,7 +776,7 @@ async function createComment(db, uid, body) {
       comment: normalizeComment(commentId, comment),
     };
 
-    await db.commit(transaction, [
+    const writes = [
       db.writeCreate(`diaries/${diaryId}/comments/${commentId}`, comment),
       db.writeUpdate(
         `diaries/${diaryId}`,
@@ -595,8 +797,50 @@ async function createComment(db, uid, body) {
         result,
         createdAt: now,
       }),
-    ]);
+    ];
 
+    if (ownerUid !== uid) {
+      writes.push(
+        db.writeCreate(
+          diaryNotificationPath("diary_comment", diaryId, ownerUid, commentId),
+          diarySocialNotification({
+            type: "diary_comment",
+            recipientUid: ownerUid,
+            diaryId,
+            commentId,
+            actorUid: uid,
+            actorName: author.ownerName,
+            actorPublicId: author.ownerPublicId,
+            title: "تعليق جديد على يوميتك",
+            body: `${author.ownerName || "مستخدم Shadow Live"} علّق على يوميتك.`,
+            now,
+          }),
+        ),
+      );
+    }
+
+    for (const target of mentionTargets) {
+      if (target.uid === uid || target.uid === ownerUid) continue;
+      writes.push(
+        db.writeCreate(
+          diaryNotificationPath("diary_mention", diaryId, target.uid, commentId),
+          diarySocialNotification({
+            type: "diary_mention",
+            recipientUid: target.uid,
+            diaryId,
+            commentId,
+            actorUid: uid,
+            actorName: author.ownerName,
+            actorPublicId: author.ownerPublicId,
+            title: "تمت الإشارة إليك في تعليق",
+            body: `${author.ownerName || "مستخدم Shadow Live"} أشار إليك في تعليق.`,
+            now,
+          }),
+        ),
+      );
+    }
+
+    await db.commit(transaction, writes);
     return { ok: true, ...result };
   });
 }
@@ -1054,6 +1298,9 @@ export async function diaries(request, env) {
       throw new DiaryApiError("guest_restricted", 403);
     }
 
+    if (action === "searchMentions") {
+      return json(request, env, await searchMentions(auth.db, auth.uid, body));
+    }
     if (action === "createDiary") {
       return json(request, env, await createDiary(auth.db, auth.uid, body));
     }
@@ -1101,6 +1348,9 @@ export const diaryCoreTestHooks = Object.freeze({
   normalizeDiary,
   normalizeComment,
   normalizeGiftEvent,
+  searchMentions,
+  mentionPublicIds,
+  resolveMentionTargets,
   parseCursor,
   makeCursor,
 });
