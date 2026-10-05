@@ -24,7 +24,7 @@ class _AccountLinkingScreenState extends State<AccountLinkingScreen> {
   }
 
   Future<void> _resolveLinkingPolicy() async {
-    final config = await AuthLoginConfigService.load();
+    final config = await AuthLoginConfigService.load(refresh: true);
     if (!mounted) return;
     if (config.optionalAccountLinking) {
       setState(() {
