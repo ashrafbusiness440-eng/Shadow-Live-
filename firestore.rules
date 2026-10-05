@@ -703,6 +703,10 @@ service cloud.firestore {
       allow read, create, update, delete: if false;
     }
 
+    match /users/{userId}/diaries/{diaryId} {
+      allow read, create, update, delete: if false;
+    }
+
     match /diary_operations/{operationId} {
       allow read, create, update, delete: if false;
     }
