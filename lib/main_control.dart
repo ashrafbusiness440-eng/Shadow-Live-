@@ -16,6 +16,7 @@ import 'admin/control_asset_manager_page.dart';
 import 'admin/auth_login_control_page.dart';
 import 'admin/control_relationship_types_page.dart';
 import 'admin/diary_reports_control_page.dart';
+import 'admin/admin_notifications_page.dart';
 import 'admin/economy_control_page.dart';
 import 'admin/games_control_page.dart';
 import 'admin/user_access_control_card.dart';
@@ -210,12 +211,40 @@ class ControlShell extends StatefulWidget {
 
 class _ControlShellState extends State<ControlShell> {
   late int index;
+  int inboxUnreadCount = 0;
+  bool inboxBadgeLoading = false;
 
   @override
   void initState() {
     super.initState();
     index = widget.initialNavIndex.clamp(0, 6);
+    _loadInboxBadge();
   }
+
+  Future<void> _loadInboxBadge() async {
+    if (inboxBadgeLoading || controlAuth.currentUser == null) return;
+    inboxBadgeLoading = true;
+    try {
+      final snapshot = await AdminInboxService.load();
+      if (!mounted) return;
+      setState(() => inboxUnreadCount = snapshot.unreadCount);
+    } catch (_) {
+      // The bell is supplemental; the rest of Shadow Control stays usable.
+    } finally {
+      inboxBadgeLoading = false;
+    }
+  }
+
+  Future<void> _openAdminInbox() async {
+    if (controlAuth.currentUser == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const AdminNotificationsPage(),
+      ),
+    );
+    await _loadInboxBadge();
+  }
+
   @override Widget build(BuildContext context) {
     final pages=[
       DashboardPage(onOpen:(i)=>setState(()=>index=i)),
@@ -234,6 +263,38 @@ class _ControlShellState extends State<ControlShell> {
           Text('بيئة تجريبية • Firebase متصل',style:TextStyle(fontSize:11,color:Color(0xFFD7B85A))),
         ]),
         actions:[
+          Stack(
+            clipBehavior:Clip.none,
+            children:[
+              IconButton(
+                tooltip:'إشعارات الإدارة',
+                onPressed:_openAdminInbox,
+                icon:const Icon(Icons.notifications_outlined),
+              ),
+              if(inboxUnreadCount>0)
+                Positioned(
+                  top:4,
+                  right:2,
+                  child:Container(
+                    constraints:const BoxConstraints(minWidth:18,minHeight:18),
+                    padding:const EdgeInsets.symmetric(horizontal:4),
+                    decoration:BoxDecoration(
+                      color:Colors.redAccent,
+                      borderRadius:BorderRadius.circular(10),
+                    ),
+                    alignment:Alignment.center,
+                    child:Text(
+                      inboxUnreadCount>99?'99+':inboxUnreadCount.toString(),
+                      style:const TextStyle(
+                        color:Colors.white,
+                        fontSize:10,
+                        fontWeight:FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
           IconButton(
             tooltip:'تسجيل الخروج',
             onPressed:() async {

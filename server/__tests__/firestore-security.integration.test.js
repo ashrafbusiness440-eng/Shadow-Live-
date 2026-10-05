@@ -1107,3 +1107,25 @@ test("diary collections reject all direct client access",async()=>{
     getDocs(query(collection(userDb,"diary_reports"),limit(1))),
   );
 });
+
+
+test("admin notification reads reject all direct client access",async()=>{
+  const readId="admin_uid__diary_report_test";
+  await env.withSecurityRulesDisabled(async context=>{
+    const adminDb=context.firestore();
+    await setDoc(doc(adminDb,"admin_notification_reads",readId),{
+      userId:"admin_uid",
+      key:"diary_report_test",
+      readAt:new Date(),
+    });
+  });
+
+  const userDb=phoneUserDb();
+  const ref=doc(userDb,"admin_notification_reads",readId);
+  await assertFails(getDoc(ref));
+  await assertFails(setDoc(ref,{readAt:new Date()},{merge:true}));
+  await assertFails(deleteDoc(ref));
+  await assertFails(
+    getDocs(query(collection(userDb,"admin_notification_reads"),limit(1))),
+  );
+});

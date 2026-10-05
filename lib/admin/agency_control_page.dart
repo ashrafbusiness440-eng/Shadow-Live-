@@ -11,7 +11,14 @@ import '../shared/widgets/country_selector.dart';
 import '../features/profile/screens/public_profile_screen.dart';
 
 class AgencyControlPage extends StatefulWidget {
-  const AgencyControlPage({super.key});
+  const AgencyControlPage({
+    super.key,
+    this.focusType,
+    this.focusId,
+  });
+
+  final String? focusType;
+  final String? focusId;
 
   @override
   State<AgencyControlPage> createState() => _AgencyControlPageState();
@@ -82,6 +89,23 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
     return body;
   }
 
+  List<Map<String, dynamic>> _prioritize(
+    List<Map<String, dynamic>> items,
+    String idField,
+    String expectedType,
+  ) {
+    final focusId = widget.focusId?.trim() ?? '';
+    if (focusId.isEmpty || widget.focusType != expectedType) return items;
+    final sorted = [...items];
+    sorted.sort((a, b) {
+      final aMatch = (a[idField] ?? '').toString() == focusId;
+      final bMatch = (b[idField] ?? '').toString() == focusId;
+      if (aMatch == bMatch) return 0;
+      return aMatch ? -1 : 1;
+    });
+    return sorted;
+  }
+
   Future<void> load() async {
     setState(() => loading = true);
     try {
@@ -127,11 +151,27 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
               5;
       if (!mounted) return;
       setState(() {
-        applications = rows;
+        applications = _prioritize(
+          rows,
+          'applicationId',
+          'agency_application',
+        );
         manualBlocks = blocks;
-        ownershipTransferRequests = transfers;
-        identityChangeRequests = identityChanges;
-        cooldownExceptionRequests = cooldownExceptions;
+        ownershipTransferRequests = _prioritize(
+          transfers,
+          'requestId',
+          'agency_ownership_transfer',
+        );
+        identityChangeRequests = _prioritize(
+          identityChanges,
+          'requestId',
+          'agency_identity_change',
+        );
+        cooldownExceptionRequests = _prioritize(
+          cooldownExceptions,
+          'requestId',
+          'agency_cooldown_exception',
+        );
         canDirectCreate = permissions['canDirectCreate'] == true;
         canManageExisting = permissions['canManageExisting'] == true;
         canTransferOwnership = permissions['canTransferOwnership'] == true;
