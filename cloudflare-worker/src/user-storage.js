@@ -1378,6 +1378,67 @@ export async function runDeletedAccountStorageCleanup(
   };
 }
 
+export async function cleanupQueuedStorageObject(
+  db,
+  bucket,
+  item,
+  nowMs = Date.now(),
+) {
+  const objectId = clean(item?.data?.objectId || item?.id);
+  const storageKey = clean(item?.data?.storageKey);
+  if (!objectId || !storageKey) {
+    throw new StorageApiError("invalid_storage_delete_queue_item", 500);
+  }
+
+  const stillReferenced = await storageQueueObjectStillReferenced(
+    db,
+    item.data,
+    objectId,
+  );
+  if (stillReferenced) {
+    const nextDeleteAt = replacementDeleteAt(nowMs);
+    await db.commit(null, [
+      db.writeUpdate(
+        `storage_delete_queue/${item.id}`,
+        {
+          deleteAfter: nextDeleteAt,
+          lastDeferredAt: new Date(nowMs),
+          deferReason: "still_referenced",
+        },
+        ["deleteAfter", "lastDeferredAt", "deferReason"],
+      ),
+    ]);
+    return { status: "deferred", objectId, nextDeleteAt };
+  }
+
+  await bucket.delete(storageKey);
+  const now = new Date(nowMs);
+  const scope = clean(item.data?.scope);
+  const cleanupWrites = [
+    db.writeDelete(`storage_objects/${objectId}`),
+    db.writeDelete(`storage_delete_queue/${item.id}`),
+    db.writeCreate(`storage_audit_logs/${auditId()}`, {
+      actorUid: "system",
+      action: scope === "diary_image"
+        ? "cleanupDiaryImage"
+        : "cleanupReplacedStorageObject",
+      objectId,
+      scope,
+      targetId: clean(item.data?.targetId),
+      sizeBytes: Number(item.data?.sizeBytes || 0),
+      reason: clean(item.data?.reason || "replaced"),
+      createdAt: now,
+    }),
+  ];
+  if (scope === "diary_image") {
+    cleanupWrites.push(
+      db.writeDelete(`diary_image_links/${objectId}`),
+    );
+  }
+  await db.commit(null, cleanupWrites);
+  return { status: "deleted", objectId };
+}
+
 export async function runDueStorageCleanup(
   env,
   {
@@ -1417,73 +1478,26 @@ export async function runDueStorageCleanup(
   let failed = 0;
   let deferred = 0;
   for (const item of due) {
-    const objectId = clean(item.data?.objectId || item.id);
-    const storageKey = clean(item.data?.storageKey);
-    if (!objectId || !storageKey) {
-      failed += 1;
-      continue;
-    }
-
     try {
-      const stillReferenced = await storageQueueObjectStillReferenced(
+      const result = await cleanupQueuedStorageObject(
         db,
-        item.data,
-        objectId,
+        bucket,
+        item,
+        nowMs,
       );
-      if (stillReferenced) {
-        const nextDeleteAt = replacementDeleteAt(nowMs);
-        await db.commit(null, [
-          db.writeUpdate(
-            `storage_delete_queue/${item.id}`,
-            {
-              deleteAfter: nextDeleteAt,
-              lastDeferredAt: new Date(nowMs),
-              deferReason: "still_referenced",
-            },
-            ["deleteAfter", "lastDeferredAt", "deferReason"],
-          ),
-        ]);
-        deferred += 1;
-        continue;
-      }
-
-      await bucket.delete(storageKey);
-      const now = new Date();
-      const cleanupWrites = [
-        db.writeDelete(`storage_objects/${objectId}`),
-        db.writeDelete(`storage_delete_queue/${item.id}`),
-        db.writeCreate(`storage_audit_logs/${auditId()}`, {
-          actorUid: "system",
-          action: clean(item.data?.scope) === "diary_image"
-            ? "cleanupDiaryImage"
-            : "cleanupReplacedStorageObject",
-          objectId,
-          scope: clean(item.data?.scope),
-          targetId: clean(item.data?.targetId),
-          sizeBytes: Number(item.data?.sizeBytes || 0),
-          reason: clean(item.data?.reason || "replaced"),
-          createdAt: now,
-        }),
-      ];
-      if (clean(item.data?.scope) === "diary_image") {
-        cleanupWrites.push(
-          db.writeDelete(`diary_image_links/${objectId}`),
-        );
-      }
-      await db.commit(null, cleanupWrites);
-      deleted += 1;
+      if (result.status === "deferred") deferred += 1;
+      if (result.status === "deleted") deleted += 1;
     } catch (error) {
       failed += 1;
       console.error(
         "R2 delayed storage cleanup failed",
         JSON.stringify({
-          objectId,
+          objectId: clean(item?.data?.objectId || item?.id),
           code: clean(error?.code || error?.message || "cleanup_failed").slice(0, 120),
         }),
       );
     }
   }
-
   remainingBudget = Math.max(0, remainingBudget - due.length);
   const expiredTickets = remainingBudget > 0
     ? await db.runQuery("storage_upload_tickets", {
