@@ -828,7 +828,7 @@ class _DiariesScreenState extends State<DiariesScreen> {
             _showFollowing
                 ? 'ما في يوميات جديدة من الأشخاص اللي بتتابعهم.'
                 : 'ما في يوميات منشورة لسه.',
-            style: const TextStyle(color: Colors.white50),
+            style: const TextStyle(color: Colors.white54),
           ),
         ),
       );
