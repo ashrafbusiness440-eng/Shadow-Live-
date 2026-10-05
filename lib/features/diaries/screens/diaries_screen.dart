@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -9,16 +10,21 @@ import '../../profile/screens/public_profile_screen.dart';
 import '../services/diary_service.dart';
 import '../widgets/diary_comments_sheet.dart';
 import '../widgets/diary_gifts_sheet.dart';
+import '../widgets/diary_mention_suggestions.dart';
 
 class DiariesScreen extends StatefulWidget {
   const DiariesScreen({
     super.key,
     this.title = 'يومياتي',
     this.onGuestAction,
+    this.initialDiaryId,
+    this.openCommentsOnStart = false,
   });
 
   final String title;
   final Future<void> Function()? onGuestAction;
+  final String? initialDiaryId;
+  final bool openCommentsOnStart;
 
   @override
   State<DiariesScreen> createState() => _DiariesScreenState();
@@ -58,6 +64,12 @@ class _DiariesScreenState extends State<DiariesScreen> {
   final Set<String> _likedDiaryIds = <String>{};
   final Set<String> _busyLikeIds = <String>{};
   final Set<String> _viewRecordedThisSession = <String>{};
+  Timer? _mentionDebounce;
+  List<DiaryMentionCandidate> _mentionCandidates =
+      const <DiaryMentionCandidate>[];
+  bool _mentionLoading = false;
+  int _mentionRequest = 0;
+  bool _initialDiaryOpened = false;
 
   bool get _guest => FirebaseAuth.instance.currentUser?.isAnonymous == true;
   bool get _signedIn => FirebaseAuth.instance.currentUser != null;
@@ -70,14 +82,84 @@ class _DiariesScreenState extends State<DiariesScreen> {
   void initState() {
     super.initState();
     _load(reset: true, following: false);
+    final initialDiaryId = widget.initialDiaryId?.trim() ?? '';
+    if (initialDiaryId.isNotEmpty) {
+      _loadInitialDiary(initialDiaryId);
+    }
   }
 
   @override
   void dispose() {
+    _mentionDebounce?.cancel();
     _text.dispose();
     _service.close();
     _storage.close();
     super.dispose();
+  }
+
+  void _composerChanged(String _) {
+    _mentionDebounce?.cancel();
+    final query = activeDiaryMentionQuery(_text);
+    if (query == null) {
+      if (_mentionCandidates.isNotEmpty || _mentionLoading) {
+        setState(() {
+          _mentionCandidates = const <DiaryMentionCandidate>[];
+          _mentionLoading = false;
+        });
+      }
+      return;
+    }
+
+    final request = ++_mentionRequest;
+    setState(() => _mentionLoading = true);
+    _mentionDebounce = Timer(const Duration(milliseconds: 250), () async {
+      try {
+        final items = await _service.searchMentions(query);
+        if (!mounted || request != _mentionRequest) return;
+        setState(() {
+          _mentionCandidates = items;
+          _mentionLoading = false;
+        });
+      } catch (_) {
+        if (!mounted || request != _mentionRequest) return;
+        setState(() {
+          _mentionCandidates = const <DiaryMentionCandidate>[];
+          _mentionLoading = false;
+        });
+      }
+    });
+  }
+
+  void _selectMention(DiaryMentionCandidate candidate) {
+    applyDiaryMention(_text, candidate);
+    _mentionDebounce?.cancel();
+    _mentionRequest += 1;
+    setState(() {
+      _mentionCandidates = const <DiaryMentionCandidate>[];
+      _mentionLoading = false;
+    });
+  }
+
+  Future<void> _loadInitialDiary(String diaryId) async {
+    try {
+      final item = await _service.getDiary(diaryId);
+      if (!mounted) return;
+      setState(() {
+        _latest = _merge(_latest, <DiaryItem>[item]);
+        _showFollowing = false;
+      });
+      if (widget.openCommentsOnStart && !_initialDiaryOpened) {
+        _initialDiaryOpened = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _openComments(item);
+        });
+      }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(diaryErrorMessage(error))),
+      );
+    }
   }
 
   Future<void> _guestAction() async {
@@ -268,7 +350,11 @@ class _DiariesScreenState extends State<DiariesScreen> {
 
       if (!mounted) return;
       _text.clear();
+      _mentionDebounce?.cancel();
+      _mentionRequest += 1;
       setState(() {
+        _mentionCandidates = const <DiaryMentionCandidate>[];
+        _mentionLoading = false;
         _pickedImages = const <_PickedDiaryImage>[];
         _commentsEnabled = true;
         _showFollowing = false;
@@ -548,6 +634,7 @@ class _DiariesScreenState extends State<DiariesScreen> {
           TextField(
             controller: _text,
             enabled: !_publishing,
+            onChanged: _composerChanged,
             maxLength: 500,
             minLines: 2,
             maxLines: 6,
@@ -563,6 +650,11 @@ class _DiariesScreenState extends State<DiariesScreen> {
                 borderSide: BorderSide.none,
               ),
             ),
+          ),
+          DiaryMentionSuggestions(
+            items: _mentionCandidates,
+            loading: _mentionLoading,
+            onSelected: _selectMention,
           ),
           if (_pickedImages.isNotEmpty) ...[
             const SizedBox(height: 4),

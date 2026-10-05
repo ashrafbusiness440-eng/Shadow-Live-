@@ -4,6 +4,34 @@ import 'dart:math';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 
+class DiaryMentionCandidate {
+  const DiaryMentionCandidate({
+    required this.uid,
+    required this.displayName,
+    required this.publicId,
+    required this.profileImageUrl,
+    required this.profileAvatarAsset,
+  });
+
+  final String uid;
+  final String displayName;
+  final String publicId;
+  final String profileImageUrl;
+  final String profileAvatarAsset;
+
+  factory DiaryMentionCandidate.fromMap(Map<String, dynamic> data) {
+    return DiaryMentionCandidate(
+      uid: (data['uid'] ?? '').toString().trim(),
+      displayName:
+          (data['displayName'] ?? 'مستخدم Shadow Live').toString().trim(),
+      publicId: (data['publicId'] ?? '').toString().trim(),
+      profileImageUrl: (data['profileImageUrl'] ?? '').toString().trim(),
+      profileAvatarAsset:
+          (data['profileAvatarAsset'] ?? '').toString().trim(),
+    );
+  }
+}
+
 class DiaryImageItem {
   const DiaryImageItem({
     required this.objectId,
@@ -417,6 +445,15 @@ class DiaryService {
     return body;
   }
 
+  Future<DiaryItem> getDiary(String diaryId) async {
+    final body = await _post('getDiary', <String, dynamic>{
+      'diaryId': diaryId.trim(),
+    });
+    final raw = body['diary'];
+    if (raw is! Map) throw const DiaryApiException('diary_not_found');
+    return DiaryItem.fromMap(Map<String, dynamic>.from(raw));
+  }
+
   Future<DiaryPage> listLatest({
     String? cursor,
     int limit = 20,
@@ -438,6 +475,25 @@ class DiaryService {
       if (cursor != null && cursor.trim().isNotEmpty) 'cursor': cursor.trim(),
     });
     return DiaryPage.fromMap(body);
+  }
+
+  Future<List<DiaryMentionCandidate>> searchMentions(String query) async {
+    if (isGuest) throw const DiaryApiException('guest_restricted');
+    final normalized = query.trim();
+    if (normalized.isEmpty) return const <DiaryMentionCandidate>[];
+    final body = await _post('searchMentions', <String, dynamic>{
+      'query': normalized,
+    });
+    final raw = body['items'];
+    if (raw is! List) return const <DiaryMentionCandidate>[];
+    return raw
+        .whereType<Map>()
+        .map((item) => DiaryMentionCandidate.fromMap(
+              Map<String, dynamic>.from(item),
+            ))
+        .where((item) => item.uid.isNotEmpty && item.publicId.isNotEmpty)
+        .take(8)
+        .toList(growable: false);
   }
 
   Future<DiaryLikeResult> toggleLike(String diaryId) async {
