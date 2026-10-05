@@ -11,6 +11,10 @@ import {
   isReplaceableStorageScope,
   replacementDeleteAt,
   REPLACEMENT_DELETE_DELAY_MS,
+  diaryOrphanDeleteAt,
+  DIARY_ORPHAN_DELETE_DELAY_MS,
+  storageQueueObjectStillReferenced,
+  cleanupQueuedStorageObject,
   storageActivePointerId,
   runDeletedAccountStorageCleanup,
   authorizeAgencyLogoManagement,
@@ -174,6 +178,141 @@ test("replaced profile and room media wait 24 hours before cleanup", () => {
   );
 });
 
+test("diary orphan media waits 24 hours before cleanup", () => {
+  const nowMs = 1_758_975_200_000;
+  assert.equal(DIARY_ORPHAN_DELETE_DELAY_MS, 24 * 60 * 60 * 1000);
+  assert.equal(
+    diaryOrphanDeleteAt(nowMs).getTime(),
+    nowMs + 24 * 60 * 60 * 1000,
+  );
+});
+
+test("diary cleanup safety defers linked images and allows pending cleanup", async () => {
+  const objectId = "6".repeat(32);
+  const linkedDb = {
+    async get(path) {
+      assert.equal(path, "diary_image_links/" + objectId);
+      return { exists: true, data: { state: "linked" } };
+    },
+  };
+  assert.equal(
+    await storageQueueObjectStillReferenced(
+      linkedDb,
+      { scope: "diary_image", targetId: "user_1" },
+      objectId,
+    ),
+    true,
+  );
+
+  const pendingDb = {
+    async get(path) {
+      assert.equal(path, "diary_image_links/" + objectId);
+      return { exists: true, data: { state: "pending_cleanup" } };
+    },
+  };
+  assert.equal(
+    await storageQueueObjectStillReferenced(
+      pendingDb,
+      { scope: "diary_image", targetId: "user_1" },
+      objectId,
+    ),
+    false,
+  );
+
+  const orphanDb = {
+    async get(path) {
+      assert.equal(path, "diary_image_links/" + objectId);
+      return { exists: false, data: null };
+    },
+  };
+  assert.equal(
+    await storageQueueObjectStillReferenced(
+      orphanDb,
+      { scope: "diary_image", targetId: "user_1" },
+      objectId,
+    ),
+    false,
+  );
+});
+
+test("queued linked diary image is deferred without deleting R2", async () => {
+  const objectId = "7".repeat(32);
+  const writes = [];
+  let bucketDeletes = 0;
+  const db = {
+    async get(path) {
+      assert.equal(path, "diary_image_links/" + objectId);
+      return { exists: true, data: { state: "linked" } };
+    },
+    writeUpdate(path, data, fields) { return { op: "update", path, data, fields }; },
+    writeDelete(path) { return { op: "delete", path }; },
+    writeCreate(path, data) { return { op: "create", path, data }; },
+    async commit(_tx, batch) { writes.push(...batch); },
+  };
+  const bucket = { async delete() { bucketDeletes += 1; } };
+  const result = await cleanupQueuedStorageObject(db, bucket, {
+    id: objectId,
+    data: {
+      objectId,
+      storageKey: "users/user_1/diaries/" + objectId + ".webp",
+      scope: "diary_image",
+      targetId: "user_1",
+      reason: "diary_orphan_timeout",
+    },
+  }, 10_000);
+  assert.equal(result.status, "deferred");
+  assert.equal(bucketDeletes, 0);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].op, "update");
+  assert.equal(writes[0].path, "storage_delete_queue/" + objectId);
+  assert.equal(writes[0].data.deferReason, "still_referenced");
+});
+test("queued pending diary image deletes R2 object queue link and writes audit", async () => {
+  const objectId = "8".repeat(32);
+  const writes = [];
+  const deletedKeys = [];
+  const db = {
+    async get(path) {
+      assert.equal(path, "diary_image_links/" + objectId);
+      return { exists: true, data: { state: "pending_cleanup" } };
+    },
+    writeUpdate(path, data, fields) { return { op: "update", path, data, fields }; },
+    writeDelete(path) { return { op: "delete", path }; },
+    writeCreate(path, data) { return { op: "create", path, data }; },
+    async commit(_tx, batch) { writes.push(...batch); },
+  };
+  const storageKey = "users/user_1/diaries/" + objectId + ".webp";
+  const bucket = { async delete(key) { deletedKeys.push(key); } };
+  const result = await cleanupQueuedStorageObject(db, bucket, {
+    id: objectId,
+    data: {
+      objectId,
+      storageKey,
+      scope: "diary_image",
+      targetId: "user_1",
+      ownerUid: "user_1",
+      sizeBytes: 1234,
+      reason: "diary_deleted",
+    },
+  }, 20_000);
+  assert.equal(result.status, "deleted");
+  assert.deepEqual(deletedKeys, [storageKey]);
+  assert.equal(writes.some((w) => w.op === "delete" && w.path === "storage_objects/" + objectId), true);
+  assert.equal(writes.some((w) => w.op === "delete" && w.path === "storage_delete_queue/" + objectId), true);
+  assert.equal(writes.some((w) => w.op === "delete" && w.path === "diary_image_links/" + objectId), true);
+  assert.equal(writes.some((w) => w.op === "create" && w.data?.action === "cleanupDiaryImage"), true);
+});
+test("diary upload and cleanup reuse the existing bounded storage queue", () => {
+  const source = fs.readFileSync(
+    new URL("../../cloudflare-worker/src/user-storage.js", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /reason:\s*"diary_orphan_timeout"/);
+  assert.match(source, /cleanupDiaryImage/);
+  assert.match(source, /diary_image_links/);
+  assert.match(source, /STORAGE_DELETE_BATCH_LIMIT = 25/);
+  assert.doesNotMatch(source, /bucket\.list\s*\(/);
+});
 test("replaceable media uses deterministic active pointers", () => {
   assert.equal(
     storageActivePointerId("profile_image", "user_1"),
