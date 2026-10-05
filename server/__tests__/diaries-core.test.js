@@ -28,6 +28,9 @@ const {
   listFollowing,
   searchMentions,
   mentionPublicIds,
+  reportDiary,
+  reportComment,
+  reportReason,
 } = diaryCoreTestHooks;
 
 class FakeDb {
@@ -997,4 +1000,95 @@ test("likes reuse one aggregate notification per diary owner", async () => {
   assert.equal(likeNotifications.length, 1);
   assert.equal(likeNotifications[0][1].userId, "owner");
   assert.equal(likeNotifications[0][1].aggregateCount, 1);
+});
+
+
+test("diary report reasons are fixed to the approved list", () => {
+  assert.equal(reportReason("abusive_content"), "abusive_content");
+  assert.equal(reportReason("harassment_bullying"), "harassment_bullying");
+  assert.equal(reportReason("spam"), "spam");
+  assert.equal(reportReason("inappropriate_image"), "inappropriate_image");
+  assert.equal(reportReason("impersonation"), "impersonation");
+  assert.equal(reportReason("other_violation"), "other_violation");
+  assert.throws(() => reportReason("custom_reason"), /invalid_report_reason/);
+});
+
+test("diary report is deterministic and dedupes same reporter and target", async () => {
+  const db = new FakeDb({
+    "diaries/diary_report": {
+      diaryId: "diary_report",
+      ownerUid: "owner",
+    },
+  });
+
+  const first = await reportDiary(db, "reporter", {
+    diaryId: "diary_report",
+    reason: "spam",
+  });
+  assert.equal(first.code, "created");
+
+  const reports = [...db.docs.entries()]
+    .filter(([path]) => path.startsWith("reports/"));
+  assert.equal(reports.length, 1);
+  assert.equal(reports[0][1].targetType, "diary");
+  assert.equal(reports[0][1].targetId, "diary_report");
+  assert.equal(reports[0][1].targetOwnerUid, "owner");
+  assert.equal(reports[0][1].reporterUid, "reporter");
+  assert.equal(reports[0][1].reason, "spam");
+  assert.equal(reports[0][1].status, "new");
+
+  const duplicate = await reportDiary(db, "reporter", {
+    diaryId: "diary_report",
+    reason: "abusive_content",
+  });
+  assert.equal(duplicate.code, "duplicate");
+  assert.equal(
+    [...db.docs.keys()].filter((path) => path.startsWith("reports/")).length,
+    1,
+  );
+});
+
+test("comment report links diary comment author owner and reporter", async () => {
+  const db = new FakeDb({
+    "diaries/diary_comment_report": {
+      diaryId: "diary_comment_report",
+      ownerUid: "owner",
+    },
+    "diaries/diary_comment_report/comments/comment_1": {
+      commentId: "comment_1",
+      diaryId: "diary_comment_report",
+      authorUid: "comment_author",
+      text: "reported",
+    },
+  });
+
+  const first = await reportComment(db, "reporter", {
+    diaryId: "diary_comment_report",
+    commentId: "comment_1",
+    reason: "harassment_bullying",
+  });
+  assert.equal(first.code, "created");
+
+  const reports = [...db.docs.entries()]
+    .filter(([path]) => path.startsWith("reports/"));
+  assert.equal(reports.length, 1);
+  const data = reports[0][1];
+  assert.equal(data.targetType, "diary_comment");
+  assert.equal(data.diaryId, "diary_comment_report");
+  assert.equal(data.commentId, "comment_1");
+  assert.equal(data.targetOwnerUid, "owner");
+  assert.equal(data.targetAuthorUid, "comment_author");
+  assert.equal(data.reporterUid, "reporter");
+  assert.equal(data.reason, "harassment_bullying");
+
+  const duplicate = await reportComment(db, "reporter", {
+    diaryId: "diary_comment_report",
+    commentId: "comment_1",
+    reason: "spam",
+  });
+  assert.equal(duplicate.code, "duplicate");
+  assert.equal(
+    [...db.docs.keys()].filter((path) => path.startsWith("reports/")).length,
+    1,
+  );
 });
