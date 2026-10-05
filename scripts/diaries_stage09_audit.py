@@ -50,7 +50,7 @@ def main() -> int:
         # Backend pressure/bounds.
         require("const MAX_PAGE_SIZE = 30" in backend, "diaries backend page cap changed")
         require("Math.min(MAX_PAGE_SIZE" in backend, "pageLimit is no longer capped")
-        require("MENTION_RESULT_LIMIT = 8" in backend, "mention result cap changed")
+        require("const MAX_MENTIONS = 8" in backend, "mention result cap changed")
         require("limit: limit + 1" in backend, "cursor pagination no longer uses bounded lookahead")
         require(".list(" not in backend, "unbounded Firestore list operation introduced")
         require("while (" not in backend and "for (;;)" not in backend, "unbounded loop introduced")
