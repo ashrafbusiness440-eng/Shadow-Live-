@@ -496,6 +496,32 @@ class DiaryService {
         .toList(growable: false);
   }
 
+  Future<bool> reportDiary({
+    required String diaryId,
+    required String reason,
+  }) async {
+    if (isGuest) throw const DiaryApiException('guest_restricted');
+    final body = await _post('reportDiary', <String, dynamic>{
+      'diaryId': diaryId.trim(),
+      'reason': reason.trim(),
+    });
+    return body['code'] == 'duplicate';
+  }
+
+  Future<bool> reportComment({
+    required String diaryId,
+    required String commentId,
+    required String reason,
+  }) async {
+    if (isGuest) throw const DiaryApiException('guest_restricted');
+    final body = await _post('reportComment', <String, dynamic>{
+      'diaryId': diaryId.trim(),
+      'commentId': commentId.trim(),
+      'reason': reason.trim(),
+    });
+    return body['code'] == 'duplicate';
+  }
+
   Future<DiaryLikeResult> toggleLike(String diaryId) async {
     if (isGuest) throw const DiaryApiException('guest_restricted');
     final body = await _post('toggleLike', <String, dynamic>{
@@ -612,6 +638,10 @@ String diaryErrorMessage(Object error) {
       return 'الحد الأقصى للنص 500 حرف.';
     case 'empty_comment':
       return 'اكتب تعليقاً قبل الإرسال.';
+    case 'invalid_report_reason':
+      return 'اختر سبباً صحيحاً للإبلاغ.';
+    case 'invalid_report_target':
+      return 'تعذر إرسال البلاغ لهذا المحتوى.';
     case 'comment_text_too_long':
       return 'الحد الأقصى للتعليق 200 حرف.';
     case 'comments_disabled':
