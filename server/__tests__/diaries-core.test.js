@@ -22,6 +22,7 @@ const {
   listComments,
   deleteComment,
   recordView,
+  listGiftEvents,
   listLatest,
   listUser,
   listFollowing,
@@ -96,8 +97,8 @@ class FakeDb {
       return rows.slice(0, Number(options.limit || 100));
     }
 
-    const commentMatch = /^diaries\/([^/]+)\/comments$/.exec(collectionPath);
-    if (commentMatch) {
+    const nestedDiaryMatch = /^diaries\/([^/]+)\/(comments|gifts)$/.exec(collectionPath);
+    if (nestedDiaryMatch) {
       let rows = [...this.docs.entries()]
         .filter(([path]) =>
           path.startsWith(collectionPath + "/") &&
@@ -386,6 +387,57 @@ test("view counter deduplicates the same user for 24 hours and mirrors count", a
   const third = await recordView(db, "viewer", { diaryId: created.diaryId });
   assert.equal(third.counted, true);
   assert.equal(third.viewCount, 2);
+});
+
+test("diary gift history stays bounded and cursor-stable", async () => {
+  const diaryId = "diary_gifts_test";
+  const db = new FakeDb({
+    [`diaries/${diaryId}`]: {
+      diaryId,
+      ownerUid: "user_a",
+      createdAtMs: 1,
+    },
+    [`diaries/${diaryId}/gifts/g3`]: {
+      giftOperationId: "g3",
+      diaryId,
+      senderId: "u3",
+      giftName: "هدية 3",
+      quantity: 1,
+      totalCost: 300,
+      createdAtMs: 300,
+    },
+    [`diaries/${diaryId}/gifts/g2`]: {
+      giftOperationId: "g2",
+      diaryId,
+      senderId: "u2",
+      giftName: "هدية 2",
+      quantity: 1,
+      totalCost: 200,
+      createdAtMs: 300,
+    },
+    [`diaries/${diaryId}/gifts/g1`]: {
+      giftOperationId: "g1",
+      diaryId,
+      senderId: "u1",
+      giftName: "هدية 1",
+      quantity: 1,
+      totalCost: 100,
+      createdAtMs: 200,
+    },
+  });
+
+  const first = await listGiftEvents(db, { diaryId, limit: 1 });
+  assert.equal(first.items.length, 1);
+  assert.equal(first.items[0].giftEventId, "g3");
+  assert.equal(first.nextCursor, "300|g3");
+  assert.equal(first.hasMore, true);
+
+  const second = await listGiftEvents(db, {
+    diaryId,
+    limit: 1,
+    cursor: first.nextCursor,
+  });
+  assert.equal(second.items[0].giftEventId, "g2");
 });
 
 test("comment text enforces 200 chars and blocks links", () => {
