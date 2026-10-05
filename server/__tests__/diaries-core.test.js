@@ -407,3 +407,29 @@ test("diary route and Firestore collections stay server-authoritative", () => {
   }
 });
 
+test("Firestore deployment keeps diary composite indexes live", () => {
+  const workflow = readFileSync(
+    new URL("../../.github/workflows/deploy-firestore-rules.yml", import.meta.url),
+    "utf8",
+  );
+  const firebaseConfig = JSON.parse(
+    readFileSync(new URL("../../firebase.json", import.meta.url), "utf8"),
+  );
+  const indexConfig = JSON.parse(
+    readFileSync(new URL("../../firestore.indexes.json", import.meta.url), "utf8"),
+  );
+
+  assert.equal(firebaseConfig?.firestore?.indexes, "firestore.indexes.json");
+  assert.equal(workflow.includes("'firestore.indexes.json'"), true);
+  assert.equal(workflow.includes("--only firestore:indexes"), true);
+  assert.equal(
+    (indexConfig.indexes || []).some((index) =>
+      index.collectionGroup === "diaries" &&
+      Array.isArray(index.fields) &&
+      index.fields.some((field) => field.fieldPath === "ownerUid") &&
+      index.fields.some((field) => field.fieldPath === "createdAtMs")
+    ),
+    true,
+  );
+});
+
