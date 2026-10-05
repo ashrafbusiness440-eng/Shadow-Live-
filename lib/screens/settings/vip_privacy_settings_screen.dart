@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../features/profile/services/user_level_service.dart';
 import '../../features/room/services/room_action_service.dart';
 import '../../features/vip/screens/vip_screen.dart';
+import '../../features/vip/screens/profile_visit_history_screen.dart';
 import '../../features/vip/services/vip_service.dart';
 
 class VipPrivacySettingsScreen extends StatefulWidget {
@@ -198,6 +199,8 @@ class _VipPrivacySettingsScreenState extends State<VipPrivacySettingsScreen> {
           paidRechargeGrowthPerCoin: current.paidRechargeGrowthPerCoin,
           canHideRankingLists: saved.canHideRankingLists,
           hideRankingLists: saved.hideRankingLists,
+          canHideProfileVisits: current.canHideProfileVisits,
+          hideProfileVisits: current.hideProfileVisits,
         );
         _saving = false;
       });
@@ -206,6 +209,54 @@ class _VipPrivacySettingsScreenState extends State<VipPrivacySettingsScreen> {
       setState(() => _saving = false);
       _message('تعذر تحديث إخفاء الترتيب حالياً.');
     }
+  }
+
+  Future<void> _saveHideProfileVisits(bool enabled) async {
+    final current = _vipSummary;
+    if (current == null || _saving) return;
+    if (!current.canHideProfileVisits) {
+      _openVip(9);
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      final saved = await _vip.setHideProfileVisits(enabled);
+      if (!mounted) return;
+      setState(() {
+        _vipSummary = VipSummaryData(
+          effectiveVipLevel: current.effectiveVipLevel,
+          effectiveVipSource: current.effectiveVipSource,
+          earnedVipLevel: current.earnedVipLevel,
+          adminGrantVipLevel: current.adminGrantVipLevel,
+          growthPoints: current.growthPoints,
+          maintenancePoints: current.maintenancePoints,
+          maintenanceRequired: current.maintenanceRequired,
+          currentThreshold: current.currentThreshold,
+          remainingToNext: current.remainingToNext,
+          maxGrowthPoints: current.maxGrowthPoints,
+          earnedVipExpiresAtMs: current.earnedVipExpiresAtMs,
+          adminGrantExpiresAtMs: current.adminGrantExpiresAtMs,
+          coins: current.coins,
+          purchaseGrowthPerCoin: current.purchaseGrowthPerCoin,
+          paidRechargeGrowthPerCoin: current.paidRechargeGrowthPerCoin,
+          canHideRankingLists: current.canHideRankingLists,
+          hideRankingLists: current.hideRankingLists,
+          canHideProfileVisits: saved.canHideProfileVisits,
+          hideProfileVisits: saved.hideProfileVisits,
+        );
+        _saving = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      _message('تعذر تحديث إخفاء زيارات الملف حالياً.');
+    }
+  }
+
+  void _openVisitHistory() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ProfileVisitHistoryScreen()),
+    );
   }
 
   void _message(String text) {
@@ -328,6 +379,41 @@ class _VipPrivacySettingsScreenState extends State<VipPrivacySettingsScreen> {
                 unlocked: vip.canHideRankingLists,
                 requiredVip: 7,
                 onChanged: _saveHideLists,
+              ),
+              _toggle(
+                keyName: 'vip-privacy-hide-profile-visits',
+                title: 'زيارة الملفات بشكل مخفي',
+                subtitle:
+                    'VIP9+ — لا تظهر زيارتك لصاحب الملف ولا تدخل عداد الزيارات المرئي.',
+                value: vip.hideProfileVisits,
+                unlocked: vip.canHideProfileVisits,
+                requiredVip: 9,
+                onChanged: _saveHideProfileVisits,
+              ),
+              ListTile(
+                key: const Key('vip-profile-visit-history'),
+                leading: const Icon(
+                  Icons.history_rounded,
+                  color: Color(0xFF8B5CF6),
+                ),
+                title: const Text(
+                  'سجل الزيارات',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                subtitle: const Text(
+                  'VIP1+ — من زار ملفي والملفات التي زرتها.',
+                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+                trailing: const Icon(
+                  Icons.chevron_left_rounded,
+                  color: Colors.white38,
+                ),
+                onTap: vip.effectiveVipLevel >= 1
+                    ? _openVisitHistory
+                    : () => _openVip(1),
               ),
             ],
           ),
