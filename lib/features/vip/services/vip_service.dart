@@ -26,6 +26,12 @@ class VipSummaryData {
     this.hideProfileVisits = false,
     this.canUseFriendsOnlyMessages = false,
     this.friendsOnlyMessages = false,
+    this.canHideNobleLevel = false,
+    this.hideNobleLevel = false,
+    this.canHideGameWinBanner = false,
+    this.hideGameWinBanner = false,
+    this.canHideBetWinNotification = false,
+    this.hideBetWinNotification = false,
   });
 
   final int effectiveVipLevel;
@@ -49,6 +55,12 @@ class VipSummaryData {
   final bool hideProfileVisits;
   final bool canUseFriendsOnlyMessages;
   final bool friendsOnlyMessages;
+  final bool canHideNobleLevel;
+  final bool hideNobleLevel;
+  final bool canHideGameWinBanner;
+  final bool hideGameWinBanner;
+  final bool canHideBetWinNotification;
+  final bool hideBetWinNotification;
 
   factory VipSummaryData.fromJson(Map<String, dynamic> json) {
     int value(String key) {
@@ -80,6 +92,64 @@ class VipSummaryData {
       hideProfileVisits: json['hideProfileVisits'] == true,
       canUseFriendsOnlyMessages: json['canUseFriendsOnlyMessages'] == true,
       friendsOnlyMessages: json['friendsOnlyMessages'] == true,
+      canHideNobleLevel: json['canHideNobleLevel'] == true,
+      hideNobleLevel: json['hideNobleLevel'] == true,
+      canHideGameWinBanner: json['canHideGameWinBanner'] == true,
+      hideGameWinBanner: json['hideGameWinBanner'] == true,
+      canHideBetWinNotification: json['canHideBetWinNotification'] == true,
+      hideBetWinNotification: json['hideBetWinNotification'] == true,
+    );
+  }
+
+  VipSummaryData copyWith({
+    bool? canHideRankingLists,
+    bool? hideRankingLists,
+    bool? canHideProfileVisits,
+    bool? hideProfileVisits,
+    bool? canUseFriendsOnlyMessages,
+    bool? friendsOnlyMessages,
+    bool? canHideNobleLevel,
+    bool? hideNobleLevel,
+    bool? canHideGameWinBanner,
+    bool? hideGameWinBanner,
+    bool? canHideBetWinNotification,
+    bool? hideBetWinNotification,
+  }) {
+    return VipSummaryData(
+      effectiveVipLevel: effectiveVipLevel,
+      effectiveVipSource: effectiveVipSource,
+      earnedVipLevel: earnedVipLevel,
+      adminGrantVipLevel: adminGrantVipLevel,
+      growthPoints: growthPoints,
+      maintenancePoints: maintenancePoints,
+      maintenanceRequired: maintenanceRequired,
+      currentThreshold: currentThreshold,
+      remainingToNext: remainingToNext,
+      maxGrowthPoints: maxGrowthPoints,
+      earnedVipExpiresAtMs: earnedVipExpiresAtMs,
+      adminGrantExpiresAtMs: adminGrantExpiresAtMs,
+      coins: coins,
+      purchaseGrowthPerCoin: purchaseGrowthPerCoin,
+      paidRechargeGrowthPerCoin: paidRechargeGrowthPerCoin,
+      canHideRankingLists:
+          canHideRankingLists ?? this.canHideRankingLists,
+      hideRankingLists: hideRankingLists ?? this.hideRankingLists,
+      canHideProfileVisits:
+          canHideProfileVisits ?? this.canHideProfileVisits,
+      hideProfileVisits: hideProfileVisits ?? this.hideProfileVisits,
+      canUseFriendsOnlyMessages:
+          canUseFriendsOnlyMessages ?? this.canUseFriendsOnlyMessages,
+      friendsOnlyMessages:
+          friendsOnlyMessages ?? this.friendsOnlyMessages,
+      canHideNobleLevel: canHideNobleLevel ?? this.canHideNobleLevel,
+      hideNobleLevel: hideNobleLevel ?? this.hideNobleLevel,
+      canHideGameWinBanner:
+          canHideGameWinBanner ?? this.canHideGameWinBanner,
+      hideGameWinBanner: hideGameWinBanner ?? this.hideGameWinBanner,
+      canHideBetWinNotification:
+          canHideBetWinNotification ?? this.canHideBetWinNotification,
+      hideBetWinNotification:
+          hideBetWinNotification ?? this.hideBetWinNotification,
     );
   }
 }
@@ -139,6 +209,28 @@ class VipFriendsOnlyMessagesState {
         canUseFriendsOnlyMessages:
             json['canUseFriendsOnlyMessages'] == true,
         requiredVipLevel: (json['requiredVipLevel'] as num?)?.toInt() ?? 1,
+      );
+}
+
+class VipPrivacyPreferenceState {
+  const VipPrivacyPreferenceState({
+    required this.field,
+    required this.enabled,
+    required this.canUse,
+    required this.requiredVipLevel,
+  });
+
+  final String field;
+  final bool enabled;
+  final bool canUse;
+  final int requiredVipLevel;
+
+  factory VipPrivacyPreferenceState.fromJson(Map<String, dynamic> json) =>
+      VipPrivacyPreferenceState(
+        field: (json['field'] ?? '').toString(),
+        enabled: json['enabled'] == true,
+        canUse: json['canUse'] == true,
+        requiredVipLevel: (json['requiredVipLevel'] as num?)?.toInt() ?? 4,
       );
 }
 
@@ -232,6 +324,18 @@ class VipService {
       'enabled': enabled,
     });
     return VipFriendsOnlyMessagesState.fromJson(body);
+  }
+
+  Future<VipPrivacyPreferenceState> setVip4PrivacyPreference({
+    required String field,
+    required bool enabled,
+  }) async {
+    final body = await _post({
+      'action': 'setVip4PrivacyPreference',
+      'field': field,
+      'enabled': enabled,
+    });
+    return VipPrivacyPreferenceState.fromJson(body);
   }
 
   void close() {
