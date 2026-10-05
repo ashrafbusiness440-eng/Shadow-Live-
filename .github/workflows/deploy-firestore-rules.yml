@@ -304,7 +304,6 @@ jobs:
             let pageToken = '';
             do {
               const url = new URL(parentUrl + '/indexes');
-              url.searchParams.set('pageSize', '200');
               if (pageToken) url.searchParams.set('pageToken', pageToken);
               const response = await fetch(url, { headers });
               const body = await response.json().catch(() => ({}));
