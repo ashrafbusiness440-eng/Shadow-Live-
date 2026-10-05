@@ -447,7 +447,7 @@ async function listUser(db, body) {
     items: visible.map((row) => normalizeDiary(row.id, row.data)),
     nextCursor:
       hasMore && visible.length
-        ? String(visible[visible.length - 1].data?.createdAtMs || "")
+        ? makeCursor(visible[visible.length - 1])
         : null,
     hasMore,
   };
