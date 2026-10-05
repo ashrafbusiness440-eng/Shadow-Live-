@@ -350,7 +350,11 @@ class _DiariesScreenState extends State<DiariesScreen> {
 
       if (!mounted) return;
       _text.clear();
+      _mentionDebounce?.cancel();
+      _mentionRequest += 1;
       setState(() {
+        _mentionCandidates = const <DiaryMentionCandidate>[];
+        _mentionLoading = false;
         _pickedImages = const <_PickedDiaryImage>[];
         _commentsEnabled = true;
         _showFollowing = false;
