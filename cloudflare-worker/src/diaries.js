@@ -86,13 +86,29 @@ function pageLimit(value) {
   return Math.max(1, Math.min(MAX_PAGE_SIZE, Math.trunc(raw)));
 }
 
-function cursorMs(value) {
-  if (value == null || value === "") return null;
-  const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+function parseCursor(value) {
+  const raw = clean(value);
+  if (!raw) return null;
+  const separator = raw.indexOf("|");
+  if (separator <= 0 || separator >= raw.length - 1) {
     throw new DiaryApiError("invalid_cursor", 400);
   }
-  return parsed;
+  const createdAtMs = Number(raw.slice(0, separator));
+  const diaryId = raw.slice(separator + 1);
+  if (!Number.isSafeInteger(createdAtMs) || createdAtMs <= 0) {
+    throw new DiaryApiError("invalid_cursor", 400);
+  }
+  assertSafeId(diaryId, "invalid_cursor");
+  return { createdAtMs, diaryId };
+}
+
+function makeCursor(row) {
+  const createdAtMs = Number(row?.data?.createdAtMs || 0);
+  const diaryId = clean(row?.id);
+  if (!Number.isSafeInteger(createdAtMs) || createdAtMs <= 0 || !diaryId) {
+    return null;
+  }
+  return `${createdAtMs}|${diaryId}`;
 }
 
 function publicAuthorSnapshot(user = {}, uid = "") {
@@ -379,11 +395,19 @@ async function setCommentsEnabled(db, uid, body) {
 
 async function listLatest(db, body) {
   const limit = pageLimit(body.limit);
-  const cursor = cursorMs(body.cursor);
+  const cursor = parseCursor(body.cursor);
   const rows = await db.runQuery("diaries", {
-    orderBy: [{ field: "createdAtMs", direction: "desc" }],
+    orderBy: [
+      { field: "createdAtMs", direction: "desc" },
+      { field: "__name__", direction: "desc" },
+    ],
     limit: limit + 1,
-    startAfter: cursor ? [{ value: cursor }] : [],
+    startAfter: cursor
+      ? [
+          { value: cursor.createdAtMs },
+          { referencePath: `diaries/${cursor.diaryId}` },
+        ]
+      : [],
   });
   const hasMore = rows.length > limit;
   const visible = rows.slice(0, limit);
@@ -392,7 +416,7 @@ async function listLatest(db, body) {
     items: visible.map((row) => normalizeDiary(row.id, row.data)),
     nextCursor:
       hasMore && visible.length
-        ? String(visible[visible.length - 1].data?.createdAtMs || "")
+        ? makeCursor(visible[visible.length - 1])
         : null,
     hasMore,
   };
@@ -401,12 +425,20 @@ async function listLatest(db, body) {
 async function listUser(db, body) {
   const userId = assertSafeId(body.userId, "invalid_user");
   const limit = pageLimit(body.limit);
-  const cursor = cursorMs(body.cursor);
+  const cursor = parseCursor(body.cursor);
   const rows = await db.runQuery("diaries", {
     filters: [{ field: "ownerUid", op: "==", value: userId }],
-    orderBy: [{ field: "createdAtMs", direction: "desc" }],
+    orderBy: [
+      { field: "createdAtMs", direction: "desc" },
+      { field: "__name__", direction: "desc" },
+    ],
     limit: limit + 1,
-    startAfter: cursor ? [{ value: cursor }] : [],
+    startAfter: cursor
+      ? [
+          { value: cursor.createdAtMs },
+          { referencePath: `diaries/${cursor.diaryId}` },
+        ]
+      : [],
   });
   const hasMore = rows.length > limit;
   const visible = rows.slice(0, limit);
@@ -483,4 +515,6 @@ export const diaryCoreTestHooks = Object.freeze({
   listLatest,
   listUser,
   normalizeDiary,
+  parseCursor,
+  makeCursor,
 });
