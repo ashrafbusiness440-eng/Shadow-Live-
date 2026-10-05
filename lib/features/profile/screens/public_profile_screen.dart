@@ -2,8 +2,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../core/assets/shadow_asset_registry.dart';
+import '../../auth/bloc/auth_bloc.dart';
+import '../../diaries/screens/diaries_screen.dart';
 import '../services/follow_service.dart';
 import '../services/profile_action_service.dart';
 import '../services/user_level_service.dart';
@@ -34,6 +37,33 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
   bool _sendingRelationship = false;
 
   bool get _isSelf => FirebaseAuth.instance.currentUser?.uid == widget.userId;
+  bool get _guest => FirebaseAuth.instance.currentUser?.isAnonymous == true;
+
+  Future<void> _guestAction() async {
+    if (!_guest || !mounted) return;
+    final shouldLogin = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('تسجيل الدخول'),
+        content: const Text(
+          'يمكنك مشاهدة الملف واليوميات كضيف، لكن يلزم تسجيل الدخول للتفاعل.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('لاحقاً'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('تسجيل الدخول'),
+          ),
+        ],
+      ),
+    );
+    if (shouldLogin == true && mounted) {
+      context.read<AuthBloc>().add(SignOutRequested());
+    }
+  }
 
   Future<void> _copyPublicId(String publicId) async {
     final value = publicId.trim();
@@ -48,7 +78,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 3, vsync: this);
+    _tabs = TabController(length: 4, vsync: this);
     _levelService = UserLevelService();
     _loadProfileFutures();
   }
@@ -276,6 +306,10 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
                                   onPressed: _changingFollow
                                       ? null
                                       : () async {
+                                          if (_guest) {
+                                            await _guestAction();
+                                            return;
+                                          }
                                           setState(() => _changingFollow = true);
                                           try {
                                             await _follow.setFollowing(widget.userId, !following);
@@ -314,12 +348,19 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
                           const SizedBox(width: 8),
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed: () => ProfileActionService.openChat(
-                                context,
-                                otherUid: widget.userId,
-                                otherName: name,
-                                otherPhoto: photo,
-                              ),
+                              onPressed: () async {
+                                if (_guest) {
+                                  await _guestAction();
+                                  return;
+                                }
+                                if (!context.mounted) return;
+                                ProfileActionService.openChat(
+                                  context,
+                                  otherUid: widget.userId,
+                                  otherName: name,
+                                  otherPhoto: photo,
+                                );
+                              },
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: const Color(0xFFFFD54A),
                                 side: const BorderSide(color: Colors.white70),
@@ -334,7 +375,13 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
                         ],
                         Expanded(
                           child: OutlinedButton.icon(
-                            onPressed: () => _showGiftInfo(name),
+                            onPressed: () async {
+                              if (_guest) {
+                                await _guestAction();
+                                return;
+                              }
+                              await _showGiftInfo(name);
+                            },
                             style: OutlinedButton.styleFrom(
                               foregroundColor: const Color(0xFFFFD54A),
                               side: const BorderSide(color: Colors.white70),
@@ -356,7 +403,13 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
                       child: OutlinedButton.icon(
                         onPressed: _sendingRelationship
                             ? null
-                            : () => _requestRelationship(name),
+                            : () async {
+                                if (_guest) {
+                                  await _guestAction();
+                                  return;
+                                }
+                                await _requestRelationship(name);
+                              },
                         style: OutlinedButton.styleFrom(
                           foregroundColor: const Color(0xFFFFD54A),
                           side: const BorderSide(color: Color(0xFF7B2DFF)),
@@ -383,6 +436,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
                       indicatorColor: const Color(0xFFFFD54A),
                       tabs: const [
                         Tab(text: 'حول'),
+                        Tab(text: 'يومياتي'),
                         Tab(text: 'الهدايا'),
                         Tab(text: 'الشارات'),
                       ],
@@ -399,6 +453,11 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
                     moodEmoji,
                     moodText,
                     interests,
+                  ),
+                  DiariesScreen(
+                    profileUserId: widget.userId,
+                    embedded: true,
+                    onGuestAction: _guestAction,
                   ),
                   _gifts(),
                   _badges(vip, badges),
