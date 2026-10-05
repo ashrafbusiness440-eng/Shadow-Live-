@@ -10,6 +10,7 @@ import '../../profile/screens/public_profile_screen.dart';
 import '../services/diary_service.dart';
 import '../widgets/diary_comments_sheet.dart';
 import '../widgets/diary_gifts_sheet.dart';
+import '../widgets/diary_report_sheet.dart';
 import '../widgets/diary_mention_suggestions.dart';
 
 class DiariesScreen extends StatefulWidget {
@@ -154,6 +155,36 @@ class _DiariesScreenState extends State<DiariesScreen> {
           if (mounted) _openComments(item);
         });
       }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(diaryErrorMessage(error))),
+      );
+    }
+  }
+
+  Future<void> _reportDiary(DiaryItem item) async {
+    if (_guest) {
+      await _guestAction();
+      return;
+    }
+    final reason = await showDiaryReportReasonSheet(context);
+    if (!mounted || reason == null) return;
+    try {
+      final duplicate = await _service.reportDiary(
+        diaryId: item.diaryId,
+        reason: reason,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            duplicate
+                ? 'سبق إرسال بلاغك عن هذه اليومية.'
+                : 'تم إرسال البلاغ للمراجعة.',
+          ),
+        ),
+      );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -895,6 +926,15 @@ class _DiariesScreenState extends State<DiariesScreen> {
                         ],
                       ),
                     ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'إبلاغ',
+                  onPressed: () => _reportDiary(item),
+                  icon: const Icon(
+                    Icons.flag_outlined,
+                    color: Colors.white38,
+                    size: 20,
                   ),
                 ),
               ],
