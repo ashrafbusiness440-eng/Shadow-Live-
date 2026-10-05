@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../shared/services/firebase_service.dart';
+import '../services/auth_login_config.dart';
 
 class AccountLinkingScreen extends StatefulWidget {
   const AccountLinkingScreen({super.key});
@@ -12,7 +13,31 @@ class AccountLinkingScreen extends StatefulWidget {
 class _AccountLinkingScreenState extends State<AccountLinkingScreen> {
   final FirebaseService _firebase = FirebaseService();
   bool _saving = false;
+  bool _checkingLinkingPolicy = true;
+  bool _linkingEnabled = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveLinkingPolicy();
+  }
+
+  Future<void> _resolveLinkingPolicy() async {
+    final config = await AuthLoginConfigService.load();
+    if (!mounted) return;
+    if (config.optionalAccountLinking) {
+      setState(() {
+        _linkingEnabled = true;
+        _checkingLinkingPolicy = false;
+      });
+      return;
+    }
+
+    setState(() => _linkingEnabled = false);
+    await _continueLater();
+    if (mounted) setState(() => _checkingLinkingPolicy = false);
+  }
 
   bool _isLinked(String providerId) {
     final user = FirebaseAuth.instance.currentUser;
@@ -94,8 +119,42 @@ class _AccountLinkingScreenState extends State<AccountLinkingScreen> {
     );
   }
 
+  Widget _disabledLinkingGate() {
+    return Scaffold(
+      backgroundColor: const Color(0xFF020711),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: _error == null
+              ? const CircularProgressIndicator()
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.error_outline_rounded,
+                        color: Colors.orangeAccent, size: 44),
+                    const SizedBox(height: 12),
+                    Text(
+                      _error!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white70),
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton(
+                      onPressed: _saving ? null : _resolveLinkingPolicy,
+                      child: const Text('إعادة المحاولة'),
+                    ),
+                  ],
+                ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_checkingLinkingPolicy || !_linkingEnabled) {
+      return _disabledLinkingGate();
+    }
     return Scaffold(
       backgroundColor: const Color(0xFF020711),
       body: Container(
