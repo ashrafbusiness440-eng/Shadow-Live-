@@ -10,6 +10,8 @@ class AppNotification {
     required this.read,
     required this.createdAt,
     required this.requestId,
+    required this.diaryId,
+    required this.commentId,
     required this.agencyId,
     required this.requestType,
     required this.applicantUid,
@@ -28,6 +30,8 @@ class AppNotification {
   final bool read;
   final DateTime? createdAt;
   final String? requestId;
+  final String? diaryId;
+  final String? commentId;
   final String? agencyId;
   final String? requestType;
   final String? applicantUid;
@@ -76,6 +80,8 @@ class AppNotification {
       read: data['read'] == true,
       createdAt: createdAt,
       requestId: _nullable(data['requestId']),
+      diaryId: _nullable(data['diaryId']),
+      commentId: _nullable(data['commentId']),
       agencyId: _nullable(data['agencyId']),
       requestType: _nullable(data['requestType']),
       applicantUid: _nullable(data['applicantUid'] ?? data['memberUid']),
