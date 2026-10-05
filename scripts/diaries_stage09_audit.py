@@ -55,8 +55,8 @@ def main() -> int:
         require("limit: limit + 1" in backend, "cursor pagination no longer uses bounded lookahead")
         require(".list(" not in backend, "unbounded Firestore list operation introduced")
         require("while (" not in backend and "for (;;)" not in backend, "unbounded loop introduced")
-        require("db.runQuery("diaries"" in backend, "latest/following bounded query missing")
-        require("db.runQuery("follows"" in backend, "following feed bounded follow query missing")
+        require('db.runQuery("diaries"' in backend, "latest/following bounded query missing")
+        require('db.runQuery("follows"' in backend, "following feed bounded follow query missing")
 
         # Moderation queue stays bounded.
         require("Math.min(30" in moderation, "moderation queue page cap changed")
