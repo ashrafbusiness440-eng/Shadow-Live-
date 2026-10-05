@@ -31,4 +31,21 @@ void main() {
     expect(config.providerEnabled('facebook'), isTrue);
     expect(config.optionalAccountLinking, isTrue);
   });
+
+  test('optional account linking controls the post-signup route', () {
+    expect(AuthLoginConfig.defaults.postSignupSetupStep, 'ready');
+    expect(AuthLoginConfig.defaults.postSignupRoute, '/account-ready');
+
+    const enabled = AuthLoginConfig(
+      email: true,
+      google: true,
+      guest: true,
+      phone: false,
+      facebook: false,
+      apple: false,
+      optionalAccountLinking: true,
+    );
+    expect(enabled.postSignupSetupStep, 'linking');
+    expect(enabled.postSignupRoute, '/account-linking');
+  });
 }
