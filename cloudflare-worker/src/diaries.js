@@ -8,6 +8,14 @@ const MAX_TEXT_LENGTH = 500;
 const MAX_COMMENT_LENGTH = 200;
 const MAX_IMAGES = 2;
 const MAX_MENTIONS = 8;
+const DIARY_REPORT_REASONS = Object.freeze({
+  abusive_content: "محتوى مسيء",
+  harassment_bullying: "تحرش/تنمر",
+  spam: "سبام",
+  inappropriate_image: "صورة غير مناسبة",
+  impersonation: "انتحال",
+  other_violation: "مخالفة أخرى",
+});
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 30;
 const VIEW_DEDUPE_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -54,6 +62,24 @@ function assertOperationKey(value) {
     throw new DiaryApiError("invalid_idempotency_key", 400);
   }
   return key;
+}
+
+function reportReason(value) {
+  const reason = clean(value);
+  if (!Object.prototype.hasOwnProperty.call(DIARY_REPORT_REASONS, reason)) {
+    throw new DiaryApiError("invalid_report_reason", 400);
+  }
+  return reason;
+}
+
+function diaryReportPath(targetType, diaryId, reporterUid, commentId = "") {
+  const diaryKey = pathSafe(diaryId).slice(0, 96);
+  const reporterKey = pathSafe(reporterUid).slice(0, 96);
+  if (targetType === "diary_comment") {
+    const commentKey = pathSafe(commentId).slice(0, 96);
+    return `reports/diary_comment_${diaryKey}_${commentKey}_${reporterKey}`;
+  }
+  return `reports/diary_${diaryKey}_${reporterKey}`;
 }
 
 export function diaryText(value) {
@@ -475,9 +501,12 @@ async function createDiary(db, uid, body) {
   });
 }
 
-async function deleteDiary(db, uid, body) {
+async function deleteDiary(db, uid, body, options = {}) {
   const diaryId = assertSafeId(body.diaryId, "invalid_diary_id");
   const operationKey = assertOperationKey(body.idempotencyKey);
+  const allowAnyOwner = options.allowAnyOwner === true;
+  const operationAction = clean(options.operationAction || "deleteDiary") || "deleteDiary";
+  const auditReason = clean(options.reason);
 
   return runTransaction(db, async (transaction) => {
     const operationPath = `diary_operations/${operationKey}`;
@@ -487,7 +516,7 @@ async function deleteDiary(db, uid, body) {
     ]);
     if (operation.exists) {
       if (
-        clean(operation.data?.action) !== "deleteDiary" ||
+        clean(operation.data?.action) !== operationAction ||
         clean(operation.data?.actorUid) !== uid ||
         clean(operation.data?.diaryId) !== diaryId
       ) {
@@ -497,7 +526,9 @@ async function deleteDiary(db, uid, body) {
       return { ok: true, code: "duplicate", diaryId };
     }
     if (!diary.exists) throw new DiaryApiError("diary_not_found", 404);
-    if (clean(diary.data?.ownerUid) !== uid) {
+    const ownerUid = clean(diary.data?.ownerUid);
+    if (!ownerUid) throw new DiaryApiError("invalid_diary_owner", 409);
+    if (!allowAnyOwner && ownerUid !== uid) {
       throw new DiaryApiError("forbidden", 403);
     }
 
@@ -515,18 +546,20 @@ async function deleteDiary(db, uid, body) {
     );
     const writes = [
       db.writeDelete(`diaries/${diaryId}`),
-      db.writeDelete(`users/${uid}/diaries/${diaryId}`),
+      db.writeDelete(`users/${ownerUid}/diaries/${diaryId}`),
       db.writeCreate(operationPath, {
-        action: "deleteDiary",
+        action: operationAction,
         actorUid: uid,
         diaryId,
         status: "completed",
         createdAt: now,
       }),
       db.writeCreate(`diary_audit_logs/${randomId("diaryaudit")}`, {
-        action: "deleteDiary",
+        action: operationAction,
         actorUid: uid,
+        ownerUid,
         diaryId,
+        reason: auditReason || null,
         createdAt: now,
       }),
     ];
@@ -566,9 +599,9 @@ async function deleteDiary(db, uid, body) {
         db.writeCreate(`storage_delete_queue/${objectId}`, {
           objectId,
           storageKey: clean(object.data?.storageKey),
-          ownerUid: uid,
+          ownerUid,
           scope: "diary_image",
-          targetId: clean(object.data?.targetId || uid),
+          targetId: clean(object.data?.targetId || ownerUid),
           sizeBytes: Number(object.data?.sizeBytes || 0),
           deleteAfter: now,
           reason: "diary_deleted",
@@ -881,10 +914,13 @@ async function listComments(db, body) {
   };
 }
 
-async function deleteComment(db, uid, body) {
+async function deleteComment(db, uid, body, options = {}) {
   const diaryId = assertSafeId(body.diaryId, "invalid_diary_id");
   const commentId = assertSafeId(body.commentId, "invalid_comment_id");
   const operationKey = assertOperationKey(body.idempotencyKey);
+  const allowAnyAuthor = options.allowAnyAuthor === true;
+  const operationAction = clean(options.operationAction || "deleteComment") || "deleteComment";
+  const auditReason = clean(options.reason);
 
   return runTransaction(db, async (transaction) => {
     const operationPath = `diary_operations/${operationKey}`;
@@ -897,7 +933,7 @@ async function deleteComment(db, uid, body) {
 
     if (operation.exists) {
       if (
-        clean(operation.data?.action) !== "deleteComment" ||
+        clean(operation.data?.action) !== operationAction ||
         clean(operation.data?.actorUid) !== uid ||
         clean(operation.data?.diaryId) !== diaryId ||
         clean(operation.data?.commentId) !== commentId
@@ -913,7 +949,7 @@ async function deleteComment(db, uid, body) {
 
     const ownerUid = clean(diary.data?.ownerUid);
     const authorUid = clean(comment.data?.authorUid);
-    if (uid !== ownerUid && uid !== authorUid) {
+    if (!allowAnyAuthor && uid !== ownerUid && uid !== authorUid) {
       throw new DiaryApiError("forbidden", 403);
     }
 
@@ -935,7 +971,7 @@ async function deleteComment(db, uid, body) {
         ["commentCount"],
       ),
       db.writeCreate(operationPath, {
-        action: "deleteComment",
+        action: operationAction,
         actorUid: uid,
         diaryId,
         commentId,
@@ -943,6 +979,20 @@ async function deleteComment(db, uid, body) {
         result,
         createdAt: now,
       }),
+      ...(allowAnyAuthor
+        ? [
+            db.writeCreate(`diary_audit_logs/${randomId("diaryaudit")}`, {
+              action: operationAction,
+              actorUid: uid,
+              ownerUid,
+              authorUid,
+              diaryId,
+              commentId,
+              reason: auditReason || null,
+              createdAt: now,
+            }),
+          ]
+        : []),
     ]);
 
     return { ok: true, ...result };
@@ -1077,6 +1127,132 @@ async function setCommentsEnabled(db, uid, body) {
       }),
     ]);
     return { ok: true, diaryId, commentsEnabled: enabled };
+  });
+}
+
+async function reportDiary(db, uid, body) {
+  const diaryId = assertSafeId(body.diaryId, "invalid_diary_id");
+  const reason = reportReason(body.reason);
+  const reportPath = diaryReportPath("diary", diaryId, uid);
+
+  return runTransaction(db, async (transaction) => {
+    const [existing, diary] = await Promise.all([
+      db.get(reportPath, transaction),
+      db.get(`diaries/${diaryId}`, transaction),
+    ]);
+    if (existing.exists) {
+      await db.rollback(transaction);
+      return {
+        ok: true,
+        code: "duplicate",
+        reportId: reportPath.split("/").pop(),
+        diaryId,
+      };
+    }
+    if (!diary.exists) throw new DiaryApiError("diary_not_found", 404);
+
+    const ownerUid = clean(diary.data?.ownerUid);
+    if (!ownerUid) throw new DiaryApiError("invalid_diary_owner", 409);
+    if (ownerUid === uid) throw new DiaryApiError("cannot_report_own_content", 409);
+    const now = new Date();
+    const nowMs = Date.now();
+    const reportId = reportPath.split("/").pop();
+    const report = {
+        reportId,
+        targetType: "diary",
+        targetId: diaryId,
+        diaryId,
+        commentId: null,
+        targetOwnerUid: ownerUid,
+        targetAuthorUid: ownerUid,
+        reporterUid: uid,
+        reason,
+        reasonLabel: DIARY_REPORT_REASONS[reason],
+        status: "new",
+        source: "diaries",
+        evidence: {
+          text: clean(diary.data?.text).slice(0, MAX_TEXT_LENGTH),
+          images: Array.isArray(diary.data?.images)
+            ? diary.data.images.slice(0, MAX_IMAGES).map((image) => ({
+                objectId: clean(image?.objectId),
+                publicUrl: clean(image?.publicUrl).slice(0, 1500),
+              }))
+            : [],
+        },
+        createdAt: now,
+        createdAtMs: nowMs,
+        updatedAt: now,
+      };
+    await db.commit(transaction, [
+      db.writeCreate(reportPath, report),
+      db.writeCreate(`diary_reports/${reportId}`, report),
+    ]);
+    return { ok: true, code: "created", reportId, diaryId };
+  });
+}
+
+async function reportComment(db, uid, body) {
+  const diaryId = assertSafeId(body.diaryId, "invalid_diary_id");
+  const commentId = assertSafeId(body.commentId, "invalid_comment_id");
+  const reason = reportReason(body.reason);
+  const reportPath = diaryReportPath("diary_comment", diaryId, uid, commentId);
+
+  return runTransaction(db, async (transaction) => {
+    const commentPath = `diaries/${diaryId}/comments/${commentId}`;
+    const [existing, diary, comment] = await Promise.all([
+      db.get(reportPath, transaction),
+      db.get(`diaries/${diaryId}`, transaction),
+      db.get(commentPath, transaction),
+    ]);
+    if (existing.exists) {
+      await db.rollback(transaction);
+      return {
+        ok: true,
+        code: "duplicate",
+        reportId: reportPath.split("/").pop(),
+        diaryId,
+        commentId,
+      };
+    }
+    if (!diary.exists) throw new DiaryApiError("diary_not_found", 404);
+    if (!comment.exists) throw new DiaryApiError("comment_not_found", 404);
+
+    const ownerUid = clean(diary.data?.ownerUid);
+    const authorUid = clean(comment.data?.authorUid);
+    if (!ownerUid || !authorUid) {
+      throw new DiaryApiError("invalid_report_target", 409);
+    }
+    if (authorUid === uid) throw new DiaryApiError("cannot_report_own_content", 409);
+    const now = new Date();
+    const nowMs = Date.now();
+    const reportId = reportPath.split("/").pop();
+    const report = {
+        reportId,
+        targetType: "diary_comment",
+        targetId: commentId,
+        diaryId,
+        commentId,
+        targetOwnerUid: ownerUid,
+        targetAuthorUid: authorUid,
+        reporterUid: uid,
+        reason,
+        reasonLabel: DIARY_REPORT_REASONS[reason],
+        status: "new",
+        source: "diaries",
+        evidence: {
+          text: clean(comment.data?.text).slice(0, MAX_COMMENT_LENGTH),
+          authorName: clean(comment.data?.authorName).slice(0, 80),
+          authorPublicId: clean(comment.data?.authorPublicId).slice(0, 16),
+        },
+        createdAt: now,
+        createdAtMs: nowMs,
+        updatedAt: now,
+      };
+    await db.commit(transaction, [
+      db.writeCreate(reportPath, report),
+      db.writeCreate(`diary_reports/${reportId}`, report),
+    ]);
+    return { ok: true, code: "created", reportId, diaryId, commentId };
   });
 }
 
@@ -1313,6 +1489,12 @@ export async function diaries(request, env) {
     if (action === "searchMentions") {
       return json(request, env, await searchMentions(auth.db, auth.uid, body));
     }
+    if (action === "reportDiary") {
+      return json(request, env, await reportDiary(auth.db, auth.uid, body));
+    }
+    if (action === "reportComment") {
+      return json(request, env, await reportComment(auth.db, auth.uid, body));
+    }
     if (action === "createDiary") {
       return json(request, env, await createDiary(auth.db, auth.uid, body));
     }
@@ -1364,6 +1546,13 @@ export const diaryCoreTestHooks = Object.freeze({
   searchMentions,
   mentionPublicIds,
   resolveMentionTargets,
+  reportDiary,
+  reportComment,
+  reportReason,
+  diaryReportPath,
+  DIARY_REPORT_REASONS,
   parseCursor,
   makeCursor,
 });
+
+export { deleteDiary, deleteComment };

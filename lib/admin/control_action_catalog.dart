@@ -8,6 +8,8 @@ abstract final class ControlActionCatalog {
   'viewUsers':ControlActionDefinition('viewUsers',ControlCapabilities.viewUsers),
   'manageRoom':ControlActionDefinition('manageRoom',ControlCapabilities.manageRooms),
   'reviewReport':ControlActionDefinition('reviewReport',ControlCapabilities.reviewReports),
+  'manageDiary':ControlActionDefinition('manageDiary',ControlCapabilities.manageDiaries,sensitive:true),
+  'deleteDiaryComment':ControlActionDefinition('deleteDiaryComment',ControlCapabilities.deleteDiaryComment,sensitive:true),
   'grantVip':ControlActionDefinition('grantVip',ControlCapabilities.manageVip,sensitive:true),
   'manageSpecialId':ControlActionDefinition('manageSpecialId',ControlCapabilities.manageSpecialIds,sensitive:true),
   'manageGames':ControlActionDefinition('manageGames',ControlCapabilities.manageGames,sensitive:true,financial:true),

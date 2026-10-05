@@ -1,6 +1,6 @@
 abstract final class ControlCapabilities {
   static const viewDashboard='viewDashboard', viewSystemHealth='viewSystemHealth', viewUsers='viewUsers', manageUsers='manageUsers';
-  static const viewReports='viewReports', reviewReports='reviewReports', muteUsers='muteUsers';
+  static const viewReports='viewReports', reviewReports='reviewReports', manageDiaries='manageDiaries', deleteDiaryComment='deleteDiaryComment', muteUsers='muteUsers';
   static const suspendUsers='suspendUsers', permanentBan='permanentBan', manageRooms='manageRooms', canCreateHiddenRoom='canCreateHiddenRoom';
   static const globalRoomControl='globalRoomControl', manageAgencies='manageAgencies';
   static const reviewAgencyApplications='reviewAgencyApplications', manageAgencyMemberships='manageAgencyMemberships';

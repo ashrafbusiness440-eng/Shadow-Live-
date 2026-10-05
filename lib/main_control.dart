@@ -15,6 +15,7 @@ import 'admin/control_firebase.dart';
 import 'admin/control_asset_manager_page.dart';
 import 'admin/auth_login_control_page.dart';
 import 'admin/control_relationship_types_page.dart';
+import 'admin/diary_reports_control_page.dart';
 import 'admin/economy_control_page.dart';
 import 'admin/games_control_page.dart';
 import 'admin/user_access_control_card.dart';
@@ -1275,7 +1276,7 @@ class _RolePolicyCard extends StatelessWidget {
   final String role; final bool adminEnabled; final List<String> capabilities;
   static const labels=<String,String>{
     'viewUsers':'عرض المستخدمين','manageUsers':'إدارة المستخدمين','manageRooms':'إدارة الغرف',
-    'reviewReports':'مراجعة البلاغات','manageEconomy':'إدارة الاقتصاد','manageGames':'إدارة الألعاب','manageWithdrawals':'إدارة السحب',
+    'reviewReports':'مراجعة البلاغات','manageDiaries':'حذف اليوميات من البلاغات','deleteDiaryComment':'حذف تعليقات اليوميات','manageEconomy':'إدارة الاقتصاد','manageGames':'إدارة الألعاب','manageWithdrawals':'إدارة السحب',
     'manageSettlements':'إدارة التسويات','manageRoles':'إدارة الأدوار','manageCapabilities':'إدارة الصلاحيات',
     'manageSystem':'إدارة النظام','manageIds':'إدارة IDs المستخدمين والغرف',
   };
@@ -2817,12 +2818,19 @@ class MorePage extends StatelessWidget {
               capabilities.contains('manageAgencyManagers')));
         final canManageSystem=isOwner||
             (adminEnabled&&capabilities.contains('manageSystem'));
+        final canOpenReports=isOwner||
+            (adminEnabled&&(
+              capabilities.contains('viewReports')||
+              capabilities.contains('reviewReports')||
+              capabilities.contains('manageDiaries')||
+              capabilities.contains('deleteDiaryComment')));
         final items=<ControlItem>[
           if(canOpenAgencies)
             const ControlItem('الوكالات','طلبات الإنشاء والمراجعة والإنشاء المباشر',Icons.apartment_outlined),
           if(canManageAgencyMembers)
             const ControlItem('إدارة أعضاء الوكالات','عرض الأعضاء والمديرين وتغيير الأدوار حسب Permission Matrix',Icons.groups_2_outlined),
-          const ControlItem('التقارير','واجهة جاهزة؛ القراءة الحقيقية تنتظر Rules محددة لـ reports بدل فتح Firestore بشكل واسع',Icons.flag_outlined),
+          if(canOpenReports)
+            const ControlItem('التقارير','بلاغات اليوميات والتعليقات عبر Worker bounded + مراجعة وحذف حسب الصلاحيات',Icons.flag_outlined),
           const ControlItem('VIP و IDs الخاصة','إدارة VIP والمعرّفات الخاصة',Icons.workspace_premium_outlined),
           if(isOwner)
             const ControlItem('استوديو الأصول','Shadow Asset Studio • Templates + Validation + Preview + Draft/Publish',Icons.auto_awesome_mosaic_outlined),
@@ -2850,6 +2858,7 @@ class ControlList extends StatelessWidget {
   Widget targetPage(ControlItem item) {
     if (item.title == 'الوكالات') return const AgencyControlPage();
     if (item.title == 'إدارة أعضاء الوكالات') return const AgencyManagementPage();
+    if (item.title == 'التقارير') return const DiaryReportsControlPage();
     if (item.title == 'سجل الإدارة') return const AuditLogPage();
     if (item.title == 'إعدادات النظام') return const SystemConfigPage();
     if (item.title == 'استوديو الأصول' || item.title == 'إدارة أصول التطبيق') return const ControlAssetManagerPage();
