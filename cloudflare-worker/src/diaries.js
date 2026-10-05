@@ -1078,6 +1078,13 @@ async function setCommentsEnabled(db, uid, body) {
   });
 }
 
+async function getDiary(db, body) {
+  const diaryId = assertSafeId(body.diaryId, "invalid_diary_id");
+  const diary = await db.get(`diaries/${diaryId}`);
+  if (!diary.exists) throw new DiaryApiError("diary_not_found", 404);
+  return { ok: true, diary: normalizeDiary(diaryId, diary.data || {}) };
+}
+
 async function listLatest(db, body) {
   const limit = pageLimit(body.limit);
   const cursor = parseCursor(body.cursor);
@@ -1273,6 +1280,9 @@ export async function diaries(request, env) {
     const action = clean(body.action);
     annotatePressureRequest(request, { action: `diaries_${action || "unknown"}` });
 
+    if (action === "getDiary") {
+      return json(request, env, await getDiary(auth.db, body));
+    }
     if (action === "listLatest") {
       return json(request, env, await listLatest(auth.db, body));
     }
@@ -1342,6 +1352,7 @@ export const diaryCoreTestHooks = Object.freeze({
   deleteComment,
   recordView,
   listGiftEvents,
+  getDiary,
   listLatest,
   listUser,
   listFollowing,
