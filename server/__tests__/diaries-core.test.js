@@ -521,7 +521,19 @@ test("Firestore deployment keeps diary composite indexes live", () => {
 
   assert.equal(firebaseConfig?.firestore?.indexes, "firestore.indexes.json");
   assert.equal(workflow.includes("'firestore.indexes.json'"), true);
-  assert.equal(workflow.includes("--only firestore:indexes"), true);
+  assert.equal(
+    workflow.includes("Deploy Firestore composite indexes through Admin API"),
+    true,
+  );
+  assert.equal(
+    workflow.includes("https://firestore.googleapis.com/v1/projects/"),
+    true,
+  );
+  assert.equal(workflow.includes("/collectionGroups/"), true);
+  assert.equal(workflow.includes("fieldSignature"), true);
+  assert.equal(workflow.includes("firebase-tools@"), false);
+  assert.equal(workflow.includes("--only firestore:indexes"), false);
+  assert.equal(workflow.includes("serviceusage.googleapis.com"), false);
   assert.equal(
     (indexConfig.indexes || []).some((index) =>
       index.collectionGroup === "diaries" &&
