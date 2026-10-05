@@ -1554,3 +1554,5 @@ export const diaryCoreTestHooks = Object.freeze({
   parseCursor,
   makeCursor,
 });
+
+export { deleteDiary, deleteComment };
