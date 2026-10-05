@@ -24,6 +24,15 @@ function randomId(prefix) {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, "")}`;
 }
 
+function pathSafe(value) {
+  const bytes = new TextEncoder().encode(clean(value));
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function diaryLikePath(diaryId, uid) {
+  return `diary_likes/${diaryId}__${pathSafe(uid)}`;
+}
+
 function assertSafeId(value, code = "invalid_id") {
   const id = clean(value);
   if (!id || id.length > 220 || id.includes("/") || id.includes("\\")) {
@@ -402,6 +411,76 @@ async function deleteDiary(db, uid, body) {
   });
 }
 
+async function toggleLike(db, uid, body) {
+  const diaryId = assertSafeId(body.diaryId, "invalid_diary_id");
+  const operationKey = assertOperationKey(body.idempotencyKey);
+
+  return runTransaction(db, async (transaction) => {
+    const operationPath = `diary_operations/${operationKey}`;
+    const likePath = diaryLikePath(diaryId, uid);
+    const [operation, diary, like] = await Promise.all([
+      db.get(operationPath, transaction),
+      db.get(`diaries/${diaryId}`, transaction),
+      db.get(likePath, transaction),
+    ]);
+
+    if (operation.exists) {
+      if (
+        clean(operation.data?.action) !== "toggleLike" ||
+        clean(operation.data?.actorUid) !== uid ||
+        clean(operation.data?.diaryId) !== diaryId
+      ) {
+        throw new DiaryApiError("idempotency_conflict", 409);
+      }
+      await db.rollback(transaction);
+      return { ok: true, code: "duplicate", ...(operation.data?.result || {}) };
+    }
+
+    if (!diary.exists) throw new DiaryApiError("diary_not_found", 404);
+    const ownerUid = clean(diary.data?.ownerUid);
+    if (!ownerUid) throw new DiaryApiError("invalid_diary_owner", 409);
+
+    const liked = !like.exists;
+    const currentCount = Math.max(0, Number(diary.data?.likeCount || 0));
+    const likeCount = liked
+      ? currentCount + 1
+      : Math.max(0, currentCount - 1);
+    const now = new Date();
+    const result = { diaryId, liked, likeCount };
+
+    const writes = [
+      liked
+        ? db.writeCreate(likePath, {
+            diaryId,
+            userUid: uid,
+            createdAt: now,
+          })
+        : db.writeDelete(likePath),
+      db.writeUpdate(
+        `diaries/${diaryId}`,
+        { likeCount },
+        ["likeCount"],
+      ),
+      db.writeUpdate(
+        `users/${ownerUid}/diaries/${diaryId}`,
+        { likeCount },
+        ["likeCount"],
+      ),
+      db.writeCreate(operationPath, {
+        action: "toggleLike",
+        actorUid: uid,
+        diaryId,
+        status: "completed",
+        result,
+        createdAt: now,
+      }),
+    ];
+
+    await db.commit(transaction, writes);
+    return { ok: true, ...result };
+  });
+}
+
 async function setCommentsEnabled(db, uid, body) {
   const diaryId = assertSafeId(body.diaryId, "invalid_diary_id");
   const enabled = body.enabled === true;
@@ -618,6 +697,9 @@ export async function diaries(request, env) {
     if (action === "setCommentsEnabled") {
       return json(request, env, await setCommentsEnabled(auth.db, auth.uid, body));
     }
+    if (action === "toggleLike") {
+      return json(request, env, await toggleLike(auth.db, auth.uid, body));
+    }
     throw new DiaryApiError("unsupported_action", 400);
   } catch (error) {
     const quota = firestoreQuotaResponse(request, env, error);
@@ -634,6 +716,7 @@ export const diaryCoreTestHooks = Object.freeze({
   createDiary,
   deleteDiary,
   setCommentsEnabled,
+  toggleLike,
   listLatest,
   listUser,
   listFollowing,
