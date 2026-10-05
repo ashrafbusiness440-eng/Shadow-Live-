@@ -149,7 +149,7 @@ export async function recordProfileVisit(db, visitorUid, body, nowMs = Date.now(
   return { ok: true, recorded: true, hidden: false };
 }
 
-async function profileVisitHistory(db, uid, body, nowMs = Date.now()) {
+export async function profileVisitHistory(db, uid, body, nowMs = Date.now()) {
   const actorUser = await loadActorState(db, uid);
   if (activeEffectiveVipLevelFromUser(actorUser, nowMs) < 1) {
     throw new ApiError("profile_visit_history_requires_vip1", 403);
@@ -177,7 +177,7 @@ async function profileVisitHistory(db, uid, body, nowMs = Date.now()) {
   };
 }
 
-async function inspectPrivateVisits(db, uid, body) {
+export async function inspectPrivateVisits(db, uid, body) {
   const actorUser = await loadActorState(db, uid);
   if (!canInspectPrivateVisits(actorUser)) {
     throw new ApiError("forbidden", 403);
