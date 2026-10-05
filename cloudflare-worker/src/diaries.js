@@ -275,6 +275,17 @@ async function createDiary(db, uid, body) {
           state: "linked",
           createdAt: now,
         }),
+        db.writeDelete(`storage_delete_queue/${image.objectId}`),
+        db.writeUpdate(
+          `storage_objects/${image.objectId}`,
+          {
+            state: "active",
+            linkedDiaryId: diaryId,
+            linkedAt: now,
+            updatedAt: now,
+          },
+          ["state", "linkedDiaryId", "linkedAt", "updatedAt"],
+        ),
       );
     }
 
@@ -310,7 +321,17 @@ async function deleteDiary(db, uid, body) {
     }
 
     const now = new Date();
-    const images = Array.isArray(diary.data?.images) ? diary.data.images : [];
+    const images = Array.isArray(diary.data?.images)
+      ? diary.data.images.slice(0, MAX_IMAGES)
+      : [];
+    const objectIds = images
+      .map((image) => clean(image?.objectId))
+      .filter((objectId) => OBJECT_ID_PATTERN.test(objectId));
+    const objectSnaps = await Promise.all(
+      objectIds.map((objectId) =>
+        db.get(`storage_objects/${objectId}`, transaction)
+      ),
+    );
     const writes = [
       db.writeDelete(`diaries/${diaryId}`),
       db.writeCreate(operationPath, {
@@ -327,9 +348,10 @@ async function deleteDiary(db, uid, body) {
         createdAt: now,
       }),
     ];
-    for (const image of images.slice(0, MAX_IMAGES)) {
-      const objectId = clean(image?.objectId);
-      if (!OBJECT_ID_PATTERN.test(objectId)) continue;
+    let queuedImages = 0;
+    for (let index = 0; index < objectIds.length; index += 1) {
+      const objectId = objectIds[index];
+      const object = objectSnaps[index];
       writes.push(
         db.writeUpdate(
           `diary_image_links/${objectId}`,
@@ -340,9 +362,41 @@ async function deleteDiary(db, uid, body) {
           ["state", "deletedAt"],
         ),
       );
+
+      if (
+        !object?.exists ||
+        clean(object.data?.scope) !== "diary_image" ||
+        clean(object.data?.ownerUid) !== uid
+      ) {
+        continue;
+      }
+
+      writes.push(
+        db.writeUpdate(
+          `storage_objects/${objectId}`,
+          {
+            state: "pending_delete",
+            pendingDeleteAt: now,
+            updatedAt: now,
+          },
+          ["state", "pendingDeleteAt", "updatedAt"],
+        ),
+        db.writeUpdate(`storage_delete_queue/${objectId}`, {
+          objectId,
+          storageKey: clean(object.data?.storageKey),
+          ownerUid: uid,
+          scope: "diary_image",
+          targetId: clean(object.data?.targetId || uid),
+          sizeBytes: Number(object.data?.sizeBytes || 0),
+          deleteAfter: now,
+          reason: "diary_deleted",
+          createdAt: now,
+        }),
+      );
+      queuedImages += 1;
     }
     await db.commit(transaction, writes);
-    return { ok: true, diaryId };
+    return { ok: true, diaryId, queuedImages };
   });
 }
 
