@@ -534,6 +534,7 @@ test("Firestore deployment keeps diary composite indexes live", () => {
   assert.equal(workflow.includes("firebase-tools@"), false);
   assert.equal(workflow.includes("--only firestore:indexes"), false);
   assert.equal(workflow.includes("serviceusage.googleapis.com"), false);
+  assert.equal(workflow.includes("pageSize', '200'"), false);
   assert.equal(
     (indexConfig.indexes || []).some((index) =>
       index.collectionGroup === "diaries" &&
