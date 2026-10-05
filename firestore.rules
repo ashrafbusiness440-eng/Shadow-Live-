@@ -888,7 +888,7 @@ service cloud.firestore {
               && request.resource.data.mimeType.matches('^image/(jpeg|png|webp)$')
               && request.resource.data.sizeBytes is int
               && request.resource.data.sizeBytes > 0
-              && request.resource.data.sizeBytes <= 8388608
+              && request.resource.data.sizeBytes <= 3145728
             )
           );
         allow update, delete: if false;
