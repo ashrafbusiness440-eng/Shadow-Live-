@@ -72,6 +72,14 @@ function assertNotEmpty(text, imageObjectIds) {
   }
 }
 
+function createSignature(text, imageObjectIds, commentsEnabled) {
+  return JSON.stringify({
+    text,
+    imageObjectIds,
+    commentsEnabled: commentsEnabled === true,
+  });
+}
+
 function pageLimit(value) {
   const raw = Number(value || DEFAULT_PAGE_SIZE);
   if (!Number.isFinite(raw)) return DEFAULT_PAGE_SIZE;
@@ -159,6 +167,7 @@ async function createDiary(db, uid, body) {
   const imageObjectIds = diaryImageIds(body.imageObjectIds);
   const commentsEnabled = body.commentsEnabled !== false;
   const operationKey = assertOperationKey(body.idempotencyKey);
+  const signature = createSignature(text, imageObjectIds, commentsEnabled);
   assertNotEmpty(text, imageObjectIds);
 
   return runTransaction(db, async (transaction) => {
@@ -167,7 +176,8 @@ async function createDiary(db, uid, body) {
     if (operation.exists) {
       if (
         clean(operation.data?.action) !== "createDiary" ||
-        clean(operation.data?.actorUid) !== uid
+        clean(operation.data?.actorUid) !== uid ||
+        clean(operation.data?.requestSignature) !== signature
       ) {
         throw new DiaryApiError("idempotency_conflict", 409);
       }
@@ -227,6 +237,7 @@ async function createDiary(db, uid, body) {
       db.writeCreate(operationPath, {
         action: "createDiary",
         actorUid: uid,
+        requestSignature: signature,
         diaryId,
         status: "completed",
         result,
@@ -334,7 +345,8 @@ async function setCommentsEnabled(db, uid, body) {
       if (
         clean(operation.data?.action) !== "setCommentsEnabled" ||
         clean(operation.data?.actorUid) !== uid ||
-        clean(operation.data?.diaryId) !== diaryId
+        clean(operation.data?.diaryId) !== diaryId ||
+        operation.data?.enabled !== enabled
       ) {
         throw new DiaryApiError("idempotency_conflict", 409);
       }
