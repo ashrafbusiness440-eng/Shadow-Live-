@@ -14,9 +14,9 @@ import {
 } from "./r2-presign.js";
 
 const MAX_PROFILE_BYTES = 2 * 1024 * 1024;
-const MAX_COVER_BYTES = 4 * 1024 * 1024;
-const MAX_CHAT_BYTES = 8 * 1024 * 1024;
-const MAX_DIARY_BYTES = 4 * 1024 * 1024;
+const MAX_COVER_BYTES = 3 * 1024 * 1024;
+const MAX_CHAT_BYTES = 3 * 1024 * 1024;
+const MAX_DIARY_BYTES = 3 * 1024 * 1024;
 const RATE_WINDOW_MS = 60_000;
 const UPLOAD_TICKET_TTL_MS = R2_PRESIGN_TTL_SECONDS * 1000;
 export const REPLACEMENT_DELETE_DELAY_MS = 24 * 60 * 60 * 1000;
