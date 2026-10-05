@@ -157,8 +157,12 @@ class _DiaryCommentsSheetState extends State<DiaryCommentsSheet> {
       );
       if (!mounted) return;
       _text.clear();
+      _mentionDebounce?.cancel();
+      _mentionRequest += 1;
       final comment = result.comment;
       setState(() {
+        _mentionCandidates = const <DiaryMentionCandidate>[];
+        _mentionLoading = false;
         if (comment != null) {
           _items = <DiaryCommentItem>[
             comment,
