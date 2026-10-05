@@ -20,6 +20,7 @@ const MAX_DIARY_BYTES = 3 * 1024 * 1024;
 const RATE_WINDOW_MS = 60_000;
 const UPLOAD_TICKET_TTL_MS = R2_PRESIGN_TTL_SECONDS * 1000;
 export const REPLACEMENT_DELETE_DELAY_MS = 24 * 60 * 60 * 1000;
+export const DIARY_ORPHAN_DELETE_DELAY_MS = 24 * 60 * 60 * 1000;
 export const STORAGE_DELETE_BATCH_LIMIT = 25;
 const REPLACEABLE_SCOPES = new Set([
   "profile_image",
@@ -81,6 +82,10 @@ export function isReplaceableStorageScope(scope) {
 
 export function replacementDeleteAt(nowMs = Date.now()) {
   return new Date(Number(nowMs) + REPLACEMENT_DELETE_DELAY_MS);
+}
+
+export function diaryOrphanDeleteAt(nowMs = Date.now()) {
+  return new Date(Number(nowMs) + DIARY_ORPHAN_DELETE_DELAY_MS);
 }
 
 export function storageActivePointerId(scope, targetId) {
@@ -694,6 +699,27 @@ async function confirmUpload(request, env, auth, body) {
       createdAt: now,
     }),
   ];
+  let diaryOrphanDeleteAtValue = null;
+  if (metadata.scope === "diary_image") {
+    if (!stablePublicUrl) {
+      if (transaction) await auth.db.rollback(transaction);
+      throw new StorageApiError("public_media_url_missing", 500);
+    }
+    diaryOrphanDeleteAtValue = diaryOrphanDeleteAt(now.getTime());
+    writes.push(
+      auth.db.writeCreate(`storage_delete_queue/${objectId}`, {
+        objectId,
+        storageKey: metadata.storageKey,
+        ownerUid: auth.uid,
+        scope: metadata.scope,
+        targetId: metadata.targetId,
+        sizeBytes: metadata.sizeBytes,
+        deleteAfter: diaryOrphanDeleteAtValue,
+        reason: "diary_orphan_timeout",
+        createdAt: now,
+      }),
+    );
+  }
   if (metadata.scope === "agency_logo") {
     if (!stablePublicUrl) {
       if (transaction) await auth.db.rollback(transaction);
@@ -870,16 +896,22 @@ async function confirmUpload(request, env, auth, body) {
     sizeBytes: metadata.sizeBytes,
     replacedObjectId: previous?.objectId || null,
     previousDeleteAtMs: previousDeleteAt?.getTime() || null,
+    orphanDeleteAtMs: diaryOrphanDeleteAtValue?.getTime() || null,
     publicUrl: stablePublicUrl,
   });
 }
 
-async function replacementObjectStillReferenced(
+export async function storageQueueObjectStillReferenced(
   db,
   queueItem,
   objectId,
 ) {
   const scope = clean(queueItem?.scope);
+  if (scope === "diary_image") {
+    const link = await db.get(`diary_image_links/${clean(objectId)}`);
+    return link.exists && clean(link.data?.state) === "linked";
+  }
+
   const targetId = clean(queueItem?.targetId);
   if (!targetId) return false;
 
@@ -1393,7 +1425,7 @@ export async function runDueStorageCleanup(
     }
 
     try {
-      const stillReferenced = await replacementObjectStillReferenced(
+      const stillReferenced = await storageQueueObjectStillReferenced(
         db,
         item.data,
         objectId,
@@ -1417,12 +1449,14 @@ export async function runDueStorageCleanup(
 
       await bucket.delete(storageKey);
       const now = new Date();
-      await db.commit(null, [
+      const cleanupWrites = [
         db.writeDelete(`storage_objects/${objectId}`),
         db.writeDelete(`storage_delete_queue/${item.id}`),
         db.writeCreate(`storage_audit_logs/${auditId()}`, {
           actorUid: "system",
-          action: "cleanupReplacedStorageObject",
+          action: clean(item.data?.scope) === "diary_image"
+            ? "cleanupDiaryImage"
+            : "cleanupReplacedStorageObject",
           objectId,
           scope: clean(item.data?.scope),
           targetId: clean(item.data?.targetId),
@@ -1430,7 +1464,13 @@ export async function runDueStorageCleanup(
           reason: clean(item.data?.reason || "replaced"),
           createdAt: now,
         }),
-      ]);
+      ];
+      if (clean(item.data?.scope) === "diary_image") {
+        cleanupWrites.push(
+          db.writeDelete(`diary_image_links/${objectId}`),
+        );
+      }
+      await db.commit(null, cleanupWrites);
       deleted += 1;
     } catch (error) {
       failed += 1;
