@@ -5,7 +5,7 @@ import '../services/diary_service.dart';
 String? activeDiaryMentionQuery(TextEditingController controller) {
   final selection = controller.selection;
   final cursor = selection.isValid
-      ? selection.extentOffset.clamp(0, controller.text.length)
+      ? selection.extentOffset.clamp(0, controller.text.length).toInt()
       : controller.text.length;
   final before = controller.text.substring(0, cursor);
   final match = RegExp(r'@([^\s@]{1,40})$').firstMatch(before);
@@ -19,7 +19,7 @@ void applyDiaryMention(
 ) {
   final selection = controller.selection;
   final cursor = selection.isValid
-      ? selection.extentOffset.clamp(0, controller.text.length)
+      ? selection.extentOffset.clamp(0, controller.text.length).toInt()
       : controller.text.length;
   final before = controller.text.substring(0, cursor);
   final match = RegExp(r'@([^\s@]{1,40})$').firstMatch(before);
