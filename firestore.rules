@@ -705,6 +705,10 @@ service cloud.firestore {
       match /comments/{commentId} {
         allow read, create, update, delete: if false;
       }
+
+      match /gifts/{giftEventId} {
+        allow read, create, update, delete: if false;
+      }
     }
 
     match /users/{userId}/diaries/{diaryId} {

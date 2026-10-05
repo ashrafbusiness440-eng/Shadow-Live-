@@ -950,6 +950,62 @@ async function listFollowing(db, uid, body) {
   };
 }
 
+function normalizeGiftEvent(id, data = {}) {
+  return {
+    giftEventId: id,
+    giftOperationId: clean(data.giftOperationId || id),
+    diaryId: clean(data.diaryId),
+    senderId: clean(data.senderId),
+    senderName: clean(data.senderName),
+    senderPublicId: clean(data.senderPublicId),
+    senderProfileImageUrl: clean(data.senderProfileImageUrl),
+    receiverId: clean(data.receiverId),
+    giftId: clean(data.giftId),
+    giftName: clean(data.giftName),
+    quantity: Math.max(1, Number(data.quantity || 1)),
+    unitCoins: Math.max(0, Number(data.unitCoins || 0)),
+    totalCost: Math.max(0, Number(data.totalCost || 0)),
+    imageUrl: clean(data.imageUrl),
+    assetKey: clean(data.assetKey),
+    createdAt: data.createdAt || null,
+    createdAtMs: Math.max(0, Number(data.createdAtMs || 0)),
+  };
+}
+
+async function listGiftEvents(db, body) {
+  const diaryId = assertSafeId(body.diaryId, "invalid_diary_id");
+  const limit = pageLimit(body.limit);
+  const cursor = parseCursor(body.cursor);
+  const diary = await db.get(`diaries/${diaryId}`);
+  if (!diary.exists) throw new DiaryApiError("diary_not_found", 404);
+
+  const collectionPath = `diaries/${diaryId}/gifts`;
+  const rows = await db.runQuery(collectionPath, {
+    orderBy: [
+      { field: "createdAtMs", direction: "desc" },
+      { field: "__name__", direction: "desc" },
+    ],
+    limit: limit + 1,
+    startAfter: cursor
+      ? [
+          { value: cursor.createdAtMs },
+          { referencePath: `${collectionPath}/${cursor.diaryId}` },
+        ]
+      : [],
+  });
+  const hasMore = rows.length > limit;
+  const visible = rows.slice(0, limit);
+  return {
+    ok: true,
+    items: visible.map((row) => normalizeGiftEvent(row.id, row.data)),
+    nextCursor:
+      hasMore && visible.length
+        ? makeCursor(visible[visible.length - 1])
+        : null,
+    hasMore,
+  };
+}
+
 async function authContext(request, env) {
   const decoded = await verifyFirebaseIdToken(request, env);
   const uid = clean(decoded?.sub);
@@ -984,6 +1040,9 @@ export async function diaries(request, env) {
     }
     if (action === "recordView") {
       return json(request, env, await recordView(auth.db, auth.uid, body));
+    }
+    if (action === "listGiftEvents") {
+      return json(request, env, await listGiftEvents(auth.db, body));
     }
 
     if (action === "listFollowing") {
@@ -1035,11 +1094,13 @@ export const diaryCoreTestHooks = Object.freeze({
   listComments,
   deleteComment,
   recordView,
+  listGiftEvents,
   listLatest,
   listUser,
   listFollowing,
   normalizeDiary,
   normalizeComment,
+  normalizeGiftEvent,
   parseCursor,
   makeCursor,
 });

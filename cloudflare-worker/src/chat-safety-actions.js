@@ -30,7 +30,9 @@ function chatGiftOperationConflicts(data = {}, expected = {}) {
   if (clean(data.action) && clean(data.action) !== "sendGift") return true;
   if (clean(data.senderId) && clean(data.senderId) !== clean(expected.senderId)) return true;
   if (clean(data.receiverId) && clean(data.receiverId) !== clean(expected.receiverId)) return true;
+  if (clean(data.contextType) && clean(data.contextType) !== clean(expected.contextType)) return true;
   if (clean(data.conversationId) && clean(data.conversationId) !== clean(expected.conversationId)) return true;
+  if (clean(data.diaryId) && clean(data.diaryId) !== clean(expected.diaryId)) return true;
   if (clean(data.giftId) && clean(data.giftId) !== clean(expected.giftId)) return true;
   if (data.quantity != null && Number(data.quantity) !== Number(expected.quantity)) return true;
   return false;
@@ -197,20 +199,25 @@ async function sendMessage(db, uid, body) {
       await db.rollback(transaction);
       return { ok: true, code: "duplicate", ...(op.data?.result || {}) };
     }
-    if (!sender.exists || !receiver.exists || !conversation.exists) {
+    if (!sender.exists || !receiver.exists || !contextDoc.exists) {
       throw new ApiError("not_found", 404);
     }
 
-    const conversationData = conversation.data || {};
-    const participants = Array.isArray(conversationData.participants)
-      ? conversationData.participants
-      : [];
-    if (
-      participants.length !== 2 ||
-      !participants.includes(uid) ||
-      !participants.includes(receiverId)
-    ) {
-      throw new ApiError("invalid_conversation", 409);
+    const contextData = contextDoc.data || {};
+    const conversationData = contextType === "chat" ? contextData : {};
+    if (contextType === "chat") {
+      const participants = Array.isArray(conversationData.participants)
+        ? conversationData.participants
+        : [];
+      if (
+        participants.length !== 2 ||
+        !participants.includes(uid) ||
+        !participants.includes(receiverId)
+      ) {
+        throw new ApiError("invalid_conversation", 409);
+      }
+    } else if (clean(contextData.ownerUid) !== receiverId) {
+      throw new ApiError("invalid_diary_receiver", 409);
     }
     if (outgoingBlock.exists || incomingBlock.exists) {
       throw new ApiError("blocked", 403);
@@ -242,9 +249,13 @@ async function sendMessage(db, uid, body) {
     }
 
     const now = new Date();
-    const counts = { ...(conversationData.unreadCounts || {}) };
-    counts[uid] = 0;
-    counts[receiverId] = Number(counts[receiverId] || 0) + 1;
+    const counts = contextType === "chat"
+      ? { ...(conversationData.unreadCounts || {}) }
+      : {};
+    if (contextType === "chat") {
+      counts[uid] = 0;
+      counts[receiverId] = Number(counts[receiverId] || 0) + 1;
+    }
     const messageId = randomDocId("msg");
     const messagePath = `${conversationPath}/messages/${messageId}`;
     const writes = [
@@ -326,6 +337,8 @@ export async function sendGift(db, uid, body, options = {}) {
   const receiverId = clean(body.receiverId);
   const giftId = clean(body.giftId);
   const conversationId = clean(body.conversationId);
+  const diaryId = clean(body.diaryId);
+  const contextType = diaryId ? "diary" : "chat";
   const key = clean(body.idempotencyKey);
   const quantity = Number(body.quantity || 1);
 
@@ -333,8 +346,8 @@ export async function sendGift(db, uid, body, options = {}) {
     !receiverId ||
     receiverId === uid ||
     !giftId ||
-    !conversationId ||
-    conversationId.includes("/") ||
+    (contextType === "chat" && (!conversationId || conversationId.includes("/"))) ||
+    (contextType === "diary" && (!diaryId || diaryId.includes("/") || conversationId)) ||
     ![1, 7, 77, 777].includes(quantity) ||
     !validKey(key)
   ) {
@@ -366,7 +379,9 @@ export async function sendGift(db, uid, body, options = {}) {
     const catalogPath = "system_config/gift_catalog";
     const economyPath = "system_config/gift_economy";
     const lockPath = "system_config/emergency_lock";
-    const conversationPath = `conversations/${conversationId}`;
+    const conversationPath = conversationId ? `conversations/${conversationId}` : "";
+    const diaryPath = diaryId ? `diaries/${diaryId}` : "";
+    const contextPath = contextType === "diary" ? diaryPath : conversationPath;
     const outgoingBlockPath = `user_blocks/${uid}/items/${receiverId}`;
     const incomingBlockPath = `user_blocks/${receiverId}/items/${uid}`;
 
@@ -377,7 +392,7 @@ export async function sendGift(db, uid, body, options = {}) {
       catalog,
       economy,
       lock,
-      conversation,
+      contextDoc,
       outgoingBlock,
       incomingBlock,
     ] = await Promise.all([
@@ -387,7 +402,7 @@ export async function sendGift(db, uid, body, options = {}) {
       db.get(catalogPath, transaction),
       db.get(economyPath, transaction),
       db.get(lockPath, transaction),
-      db.get(conversationPath, transaction),
+      db.get(contextPath, transaction),
       db.get(outgoingBlockPath, transaction),
       db.get(incomingBlockPath, transaction),
     ]);
@@ -396,7 +411,9 @@ export async function sendGift(db, uid, body, options = {}) {
       if (chatGiftOperationConflicts(op.data, {
         senderId: uid,
         receiverId,
+        contextType,
         conversationId,
+        diaryId,
         giftId,
         quantity,
       })) {
@@ -405,24 +422,33 @@ export async function sendGift(db, uid, body, options = {}) {
       await db.rollback(transaction);
       return { ok: true, code: "duplicate", ...(op.data?.result || {}) };
     }
-    if (!sender.exists || !receiver.exists || !conversation.exists) {
+    if (!sender.exists || !receiver.exists || !contextDoc.exists) {
       throw new ApiError("not_found", 404);
     }
 
-    const conversationData = conversation.data || {};
-    const participants = Array.isArray(conversationData.participants)
-      ? conversationData.participants
-      : [];
-    if (
-      participants.length !== 2 ||
-      !participants.includes(uid) ||
-      !participants.includes(receiverId)
-    ) {
-      throw new ApiError("invalid_conversation", 409);
+    const contextData = contextDoc.data || {};
+    const conversationData = contextType === "chat" ? contextData : {};
+    if (contextType === "chat") {
+      const participants = Array.isArray(conversationData.participants)
+        ? conversationData.participants
+        : [];
+      if (
+        participants.length !== 2 ||
+        !participants.includes(uid) ||
+        !participants.includes(receiverId)
+      ) {
+        throw new ApiError("invalid_conversation", 409);
+      }
+    } else if (clean(contextData.ownerUid) !== receiverId) {
+      throw new ApiError("invalid_diary_receiver", 409);
     }
     if (outgoingBlock.exists || incomingBlock.exists) {
       throw new ApiError("blocked", 403);
     }
+
+    const financialContext = contextType === "diary"
+      ? { contextType: "diary", diaryId }
+      : { contextType: "chat", conversationId };
 
     const economyLock = lock.data || {};
     if (
@@ -595,8 +621,7 @@ export async function sendGift(db, uid, body, options = {}) {
             ownerOpeningDiamonds: agencyTargetSharePlan.ownerIsHost
               ? hostSalaryClosingDiamonds
               : agencyTargetSharePlan.ownerOpeningDiamonds,
-            contextType: "chat",
-            conversationId,
+            ...financialContext,
           },
         )
       : null;
@@ -609,8 +634,15 @@ export async function sendGift(db, uid, body, options = {}) {
     const giftName = clean(giftData.nameAr || "هدية");
     const imageUrl = clean(giftData.imageUrl);
     const assetKey = clean(giftData.assetKey || "gifts.placeholder.default");
-    const messageId = randomDocId("msg");
-    const messagePath = `${conversationPath}/messages/${messageId}`;
+    const senderName = clean(
+      senderData.displayName || senderData.username || "مستخدم Shadow Live",
+    );
+    const senderPublicId = clean(senderData.publicId);
+    const senderProfileImageUrl = clean(senderData.profileImageUrl);
+    const messageId = contextType === "chat" ? randomDocId("msg") : null;
+    const messagePath = contextType === "chat"
+      ? `${conversationPath}/messages/${messageId}`
+      : "";
     const transactionPath = `gift_transactions/${key}`;
     const ledgerPath = `financial_ledger/gift_${key}`;
     const earningsLedgerPath = `financial_ledger/gift_earnings_${key}`;
@@ -619,9 +651,13 @@ export async function sendGift(db, uid, body, options = {}) {
     const userWeeklyPath = `gift_user_stats/${receiverId}/weekly/${periods.week}`;
     const userMonthlyPath = `gift_user_stats/${receiverId}/monthly/${periods.month}`;
     const showcasePath = `public_gift_showcases/${receiverId}/items/${giftId}`;
-    const counts = { ...(conversationData.unreadCounts || {}) };
-    counts[uid] = 0;
-    counts[receiverId] = Number(counts[receiverId] || 0) + 1;
+    const counts = contextType === "chat"
+      ? { ...(conversationData.unreadCounts || {}) }
+      : {};
+    if (contextType === "chat") {
+      counts[uid] = 0;
+      counts[receiverId] = Number(counts[receiverId] || 0) + 1;
+    }
 
     const writes = [
       db.writeUpdate(
@@ -849,6 +885,7 @@ export async function sendGift(db, uid, body, options = {}) {
           sourceId: key,
           actorUid: uid,
           counterpartyUid: uid,
+          ...financialContext,
           month: agencyPeriods.month,
           targetId: agencyTarget.reachedTarget?.id || "",
           targetProgressCoins: agencyTarget.progressCoins,
@@ -863,8 +900,7 @@ export async function sendGift(db, uid, body, options = {}) {
           targetId: receiverId,
           triggerUid: uid,
           agencyId,
-          contextType: "chat",
-          conversationId,
+          ...financialContext,
           sourceType: "gift",
           sourceId: key,
           month: agencyPeriods.month,
@@ -922,41 +958,87 @@ export async function sendGift(db, uid, body, options = {}) {
           sourceId: key,
           actorUid: uid,
           counterpartyUid: uid,
+          ...financialContext,
           idempotencyKey: key + "_earnings",
           createdAt: now,
         }),
       );
     }
 
+    if (contextType === "chat") {
+      writes.push(
+        db.writeUpdate(
+          conversationPath,
+          {
+            lastMessage: `🎁 ${giftName} ×${quantity}`,
+            lastSenderId: uid,
+            updatedAt: now,
+            unreadCounts: counts,
+          },
+          ["lastMessage", "lastSenderId", "updatedAt", "unreadCounts"],
+        ),
+        db.writeCreate(messagePath, {
+          senderId: uid,
+          receiverId,
+          type: "gift",
+          giftId,
+          giftName,
+          quantity,
+          unitCoins,
+          totalCost,
+          imageUrl,
+          assetKey,
+          createdAt: now,
+          createdAtMs: now.getTime(),
+        }),
+      );
+    } else {
+      const diaryMirrorPath = `users/${receiverId}/diaries/${diaryId}`;
+      writes.push(
+        db.writeUpdate(
+          diaryPath,
+          { lastGiftAt: now },
+          ["lastGiftAt"],
+          [
+            db.increment("giftCount", quantity),
+            db.increment("giftCoins", totalCost),
+          ],
+        ),
+        db.writeUpdate(
+          diaryMirrorPath,
+          { lastGiftAt: now },
+          ["lastGiftAt"],
+          [
+            db.increment("giftCount", quantity),
+            db.increment("giftCoins", totalCost),
+          ],
+        ),
+        db.writeCreate(`${diaryPath}/gifts/${key}`, {
+          giftOperationId: key,
+          diaryId,
+          senderId: uid,
+          senderName,
+          senderPublicId,
+          senderProfileImageUrl,
+          receiverId,
+          giftId,
+          giftName,
+          quantity,
+          unitCoins,
+          totalCost,
+          imageUrl,
+          assetKey,
+          createdAt: now,
+          createdAtMs: now.getTime(),
+        }),
+      );
+    }
+
     writes.push(
-      db.writeUpdate(
-        conversationPath,
-        {
-          lastMessage: `🎁 ${giftName} ×${quantity}`,
-          lastSenderId: uid,
-          updatedAt: now,
-          unreadCounts: counts,
-        },
-        ["lastMessage", "lastSenderId", "updatedAt", "unreadCounts"],
-      ),
-      db.writeCreate(messagePath, {
-        senderId: uid,
-        receiverId,
-        type: "gift",
-        giftId,
-        giftName,
-        quantity,
-        unitCoins,
-        totalCost,
-        imageUrl,
-        assetKey,
-        createdAt: now,
-      }),
       db.writeCreate(transactionPath, {
         senderId: uid,
         receiverId,
-        contextType: "chat",
-        conversationId,
+        ...financialContext,
         giftId,
         giftName,
         quantity,
@@ -1022,6 +1104,7 @@ export async function sendGift(db, uid, body, options = {}) {
         sourceType: "gift",
         sourceId: key,
         actorUid: uid,
+        ...financialContext,
         idempotencyKey: key,
         createdAt: now,
       }),
@@ -1040,6 +1123,7 @@ export async function sendGift(db, uid, body, options = {}) {
     );
 
     const resultData = {
+      ...financialContext,
       giftId,
       giftName,
       quantity,
@@ -1080,7 +1164,7 @@ export async function sendGift(db, uid, body, options = {}) {
       db.writeCreate(opPath, {
         senderId: uid,
         receiverId,
-        conversationId,
+        ...financialContext,
         giftId,
         quantity,
         action: "sendGift",
