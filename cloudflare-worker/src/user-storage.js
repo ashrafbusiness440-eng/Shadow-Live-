@@ -16,6 +16,7 @@ import {
 const MAX_PROFILE_BYTES = 2 * 1024 * 1024;
 const MAX_COVER_BYTES = 4 * 1024 * 1024;
 const MAX_CHAT_BYTES = 8 * 1024 * 1024;
+const MAX_DIARY_BYTES = 4 * 1024 * 1024;
 const RATE_WINDOW_MS = 60_000;
 const UPLOAD_TICKET_TTL_MS = R2_PRESIGN_TTL_SECONDS * 1000;
 export const REPLACEMENT_DELETE_DELAY_MS = 24 * 60 * 60 * 1000;
@@ -37,6 +38,7 @@ export const STORAGE_SCOPE_CONFIG = Object.freeze({
   agency_background: Object.freeze({ maxBytes: MAX_COVER_BYTES }),
   agency_room_image: Object.freeze({ maxBytes: MAX_COVER_BYTES }),
   chat_image: Object.freeze({ maxBytes: MAX_CHAT_BYTES }),
+  diary_image: Object.freeze({ maxBytes: MAX_DIARY_BYTES }),
 });
 
 const MIME_TO_EXT = Object.freeze({
@@ -113,6 +115,8 @@ export function buildStorageObjectKey({
       return `users/${safeUid}/profile/${safeObject}.${safeExt}`;
     case "profile_cover":
       return `users/${safeUid}/covers/${safeObject}.${safeExt}`;
+    case "diary_image":
+      return `users/${safeUid}/diaries/${safeObject}.${safeExt}`;
     case "room_cover":
       return `rooms/${safeTarget}/covers/${safeObject}.${safeExt}`;
     case "agency_logo":
@@ -269,7 +273,7 @@ export async function authorizeAgencyLogoManagement(
 }
 
 async function authorizeUpload(db, uid, scope, rawTargetId) {
-  if (scope === "profile_image" || scope === "profile_cover") {
+  if (scope === "profile_image" || scope === "profile_cover" || scope === "diary_image") {
     return { targetId: uid };
   }
 
@@ -348,6 +352,7 @@ async function authorizeRead(db, uid, metadata) {
   if (
     scope === "profile_image" ||
     scope === "profile_cover" ||
+    scope === "diary_image" ||
     scope === "room_cover" ||
     scope === "agency_logo" ||
     scope === "agency_background" ||
