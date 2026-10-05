@@ -646,9 +646,13 @@ export async function sendGift(db, uid, body, options = {}) {
     const userWeeklyPath = `gift_user_stats/${receiverId}/weekly/${periods.week}`;
     const userMonthlyPath = `gift_user_stats/${receiverId}/monthly/${periods.month}`;
     const showcasePath = `public_gift_showcases/${receiverId}/items/${giftId}`;
-    const counts = { ...(conversationData.unreadCounts || {}) };
-    counts[uid] = 0;
-    counts[receiverId] = Number(counts[receiverId] || 0) + 1;
+    const counts = contextType === "chat"
+      ? { ...(conversationData.unreadCounts || {}) }
+      : {};
+    if (contextType === "chat") {
+      counts[uid] = 0;
+      counts[receiverId] = Number(counts[receiverId] || 0) + 1;
+    }
 
     const writes = [
       db.writeUpdate(
@@ -876,6 +880,7 @@ export async function sendGift(db, uid, body, options = {}) {
           sourceId: key,
           actorUid: uid,
           counterpartyUid: uid,
+          ...financialContext,
           month: agencyPeriods.month,
           targetId: agencyTarget.reachedTarget?.id || "",
           targetProgressCoins: agencyTarget.progressCoins,
@@ -948,6 +953,7 @@ export async function sendGift(db, uid, body, options = {}) {
           sourceId: key,
           actorUid: uid,
           counterpartyUid: uid,
+          ...financialContext,
           idempotencyKey: key + "_earnings",
           createdAt: now,
         }),
@@ -978,6 +984,7 @@ export async function sendGift(db, uid, body, options = {}) {
           imageUrl,
           assetKey,
           createdAt: now,
+          createdAtMs: now.getTime(),
         }),
       );
     } else {
