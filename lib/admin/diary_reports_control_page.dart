@@ -57,7 +57,9 @@ class _DiaryReportItem {
 }
 
 class DiaryReportsControlPage extends StatefulWidget {
-  const DiaryReportsControlPage({super.key});
+  const DiaryReportsControlPage({super.key, this.initialReportId});
+
+  final String? initialReportId;
 
   @override
   State<DiaryReportsControlPage> createState() =>
@@ -162,6 +164,11 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
         for (final item in next) item.reportId: item,
       }.values.toList(growable: false)
         ..sort((a, b) {
+          final focusId = widget.initialReportId?.trim() ?? '';
+          if (focusId.isNotEmpty) {
+            if (a.reportId == focusId && b.reportId != focusId) return -1;
+            if (b.reportId == focusId && a.reportId != focusId) return 1;
+          }
           final time = b.createdAtMs.compareTo(a.createdAtMs);
           if (time != 0) return time;
           return b.reportId.compareTo(a.reportId);
@@ -406,7 +413,7 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
             ),
             const SizedBox(height: 6),
             const Text(
-              'القراءة bounded من Worker فقط. الحذف والقرارات الحساسة تتطلب صلاحية وRecent Auth وتُسجل في Audit Log.',
+              'راجع البلاغ واتخذ الإجراء المناسب.',
               style: TextStyle(color: Colors.white54),
             ),
             const SizedBox(height: 14),
