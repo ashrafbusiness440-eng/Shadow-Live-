@@ -16,6 +16,7 @@ const {
   createDiary,
   deleteDiary,
   setCommentsEnabled,
+  toggleLike,
   listLatest,
   listUser,
   listFollowing,
@@ -313,6 +314,73 @@ test("create operation is idempotent", async () => {
   const second = await createDiary(db, "user_a", body);
   assert.equal(second.code, "duplicate");
   assert.equal(second.diaryId, first.diaryId);
+});
+
+test("like toggle is one-per-user, reversible, mirrored, and idempotent", async () => {
+  const db = new FakeDb({ ...seedUser(), ...seedUser("user_b") });
+  const created = await createDiary(db, "user_a", {
+    text: "اختبار إعجاب",
+    imageObjectIds: [],
+    idempotencyKey: op("like_create"),
+  });
+
+  const first = await toggleLike(db, "user_b", {
+    diaryId: created.diaryId,
+    idempotencyKey: op("like_on"),
+  });
+  assert.equal(first.liked, true);
+  assert.equal(first.likeCount, 1);
+  assert.equal(db.docs.get(`diaries/${created.diaryId}`)?.likeCount, 1);
+  assert.equal(
+    db.docs.get(`users/user_a/diaries/${created.diaryId}`)?.likeCount,
+    1,
+  );
+
+  const duplicate = await toggleLike(db, "user_b", {
+    diaryId: created.diaryId,
+    idempotencyKey: op("like_on"),
+  });
+  assert.equal(duplicate.code, "duplicate");
+  assert.equal(duplicate.liked, true);
+  assert.equal(db.docs.get(`diaries/${created.diaryId}`)?.likeCount, 1);
+
+  const second = await toggleLike(db, "user_b", {
+    diaryId: created.diaryId,
+    idempotencyKey: op("like_off"),
+  });
+  assert.equal(second.liked, false);
+  assert.equal(second.likeCount, 0);
+  assert.equal(db.docs.get(`diaries/${created.diaryId}`)?.likeCount, 0);
+  assert.equal(
+    db.docs.get(`users/user_a/diaries/${created.diaryId}`)?.likeCount,
+    0,
+  );
+});
+
+test("like idempotency key cannot be reused for another diary", async () => {
+  const db = new FakeDb({ ...seedUser(), ...seedUser("user_b") });
+  const first = await createDiary(db, "user_a", {
+    text: "الأولى",
+    imageObjectIds: [],
+    idempotencyKey: op("like_conflict_create1"),
+  });
+  const second = await createDiary(db, "user_a", {
+    text: "الثانية",
+    imageObjectIds: [],
+    idempotencyKey: op("like_conflict_create2"),
+  });
+  const key = op("like_conflict");
+  await toggleLike(db, "user_b", {
+    diaryId: first.diaryId,
+    idempotencyKey: key,
+  });
+  await assert.rejects(
+    () => toggleLike(db, "user_b", {
+      diaryId: second.diaryId,
+      idempotencyKey: key,
+    }),
+    /idempotency_conflict/,
+  );
 });
 
 test("owner can toggle comments and delete; other users cannot", async () => {
