@@ -81,7 +81,8 @@ async function requireCapability(db, decoded, capability, { recentAuth = false }
     ? actor.capabilities.map(clean).filter(Boolean)
     : [];
   const owner = role === "owner" && enabled;
-  const allowed = owner || (enabled && capabilities.includes(capability));
+  const required = Array.isArray(capability) ? capability : [capability];
+  const allowed = owner || (enabled && required.some((item) => capabilities.includes(item)));
   if (!actorSnap.exists || !allowed) {
     throw new ModerationApiError("forbidden", 403);
   }
@@ -262,6 +263,18 @@ async function deleteDiaryTarget(db, actorUid, body) {
       reason,
     },
   );
+  await db.commit(null, [
+    db.writeCreate(`admin_audit_logs/diary_delete_${key}`, {
+      actorUid,
+      action: "moderatorDeleteDiary",
+      targetType: "diary",
+      targetId: diaryId,
+      reportId: reportId || null,
+      reason,
+      operationId: key,
+      createdAt: new Date(),
+    }),
+  ]);
   await markReportActioned(db, actorUid, reportId, reason, key);
   return { ok: true, code: result.code || "ok", ...result };
 }
@@ -286,6 +299,19 @@ async function deleteCommentTarget(db, actorUid, body) {
       reason,
     },
   );
+  await db.commit(null, [
+    db.writeCreate(`admin_audit_logs/diary_comment_delete_${key}`, {
+      actorUid,
+      action: "moderatorDeleteDiaryComment",
+      targetType: "diary_comment",
+      targetId: commentId,
+      diaryId,
+      reportId: reportId || null,
+      reason,
+      operationId: key,
+      createdAt: new Date(),
+    }),
+  ]);
   await markReportActioned(db, actorUid, reportId, reason, key);
   return { ok: true, code: result.code || "ok", ...result };
 }
@@ -304,7 +330,12 @@ export async function diaryModeration(request, env) {
     const db = firestoreClient(env);
 
     if (action === "listReports") {
-      await requireCapability(db, decoded, "viewReports");
+      await requireCapability(db, decoded, [
+        "viewReports",
+        "reviewReports",
+        "manageDiaries",
+        "deleteDiaryComment",
+      ]);
       return json(request, env, await listReports(db, body));
     }
     if (action === "reviewReport") {
