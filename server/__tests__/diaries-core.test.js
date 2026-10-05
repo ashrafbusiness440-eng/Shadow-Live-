@@ -18,6 +18,7 @@ const {
   setCommentsEnabled,
   listLatest,
   listUser,
+  listFollowing,
 } = diaryCoreTestHooks;
 
 class FakeDb {
@@ -74,13 +75,32 @@ class FakeDb {
   }
 
   async runQuery(collectionPath, options = {}) {
+    if (collectionPath === "follows") {
+      let rows = [...this.docs.entries()]
+        .filter(([path]) => /^follows\/[^/]+$/.test(path))
+        .map(([path, data]) => ({ id: path.split("/")[1], path, data: structuredClone(data) }));
+      for (const filter of options.filters || []) {
+        if (filter.op === "==") {
+          rows = rows.filter((row) => row.data?.[filter.field] === filter.value);
+        } else if (filter.op === "in") {
+          const allowed = new Set(Array.isArray(filter.value) ? filter.value : []);
+          rows = rows.filter((row) => allowed.has(row.data?.[filter.field]));
+        }
+      }
+      return rows.slice(0, Number(options.limit || 100));
+    }
+
     assert.equal(collectionPath, "diaries");
     const filter = (options.filters || []).find((item) => item.field === "ownerUid");
     let rows = [...this.docs.entries()]
       .filter(([path]) => /^diaries\/[^/]+$/.test(path))
       .map(([path, data]) => ({ id: path.split("/")[1], path, data: structuredClone(data) }));
     if (filter) rows = rows.filter((row) => row.data.ownerUid === filter.value);
-    rows.sort((a, b) => Number(b.data.createdAtMs || 0) - Number(a.data.createdAtMs || 0));
+    rows.sort((a, b) => {
+      const ms = Number(b.data.createdAtMs || 0) - Number(a.data.createdAtMs || 0);
+      if (ms !== 0) return ms;
+      return b.id.localeCompare(a.id);
+    });
     const cursorMs = options.startAfter?.[0]?.value;
     const cursorRef = options.startAfter?.[1]?.referencePath || "";
     if (cursorMs) {
@@ -313,6 +333,31 @@ test("owner can toggle comments and delete; other users cannot", async () => {
   });
   assert.equal(deleted.ok, true);
   assert.equal(db.docs.has(`diaries/${created.diaryId}`), false);
+});
+
+test("following feed filters a bounded latest window without per-user scans", async () => {
+  const db = new FakeDb({
+    "diaries/d4": { ownerUid: "user_b", text: "b newest", createdAtMs: 400 },
+    "diaries/d3": { ownerUid: "user_c", text: "c", createdAtMs: 300 },
+    "diaries/d2": { ownerUid: "user_b", text: "b older", createdAtMs: 200 },
+    "diaries/d1": { ownerUid: "user_d", text: "d", createdAtMs: 100 },
+    "follows/user_a__user_b": {
+      followerUid: "user_a",
+      followingUid: "user_b",
+    },
+  });
+
+  const first = await listFollowing(db, "user_a", { limit: 2 });
+  assert.deepEqual(first.items.map((item) => item.diaryId), ["d4"]);
+  assert.equal(first.hasMore, true);
+  assert.equal(first.nextCursor, "300|d3");
+
+  const second = await listFollowing(db, "user_a", {
+    limit: 2,
+    cursor: first.nextCursor,
+  });
+  assert.deepEqual(second.items.map((item) => item.diaryId), ["d2"]);
+  assert.equal(second.hasMore, false);
 });
 
 test("latest and user feeds stay bounded and expose cursors", async () => {
