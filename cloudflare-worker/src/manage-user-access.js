@@ -70,7 +70,7 @@ const ALLOWED_CAPABILITIES = new Set([
 ]);
 
 function normalizeCapabilities(value) {
-  if (!Array.isArray(value) || value.length > 40) throw new ApiError("invalid_request", 400);
+  if (!Array.isArray(value) || value.length > 48) throw new ApiError("invalid_request", 400);
   const next = [...new Set(value.map(clean).filter(Boolean))].sort();
   if (next.some((capability) => !ALLOWED_CAPABILITIES.has(capability))) {
     throw new ApiError("invalid_capability", 400);
