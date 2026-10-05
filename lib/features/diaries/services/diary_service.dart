@@ -157,7 +157,7 @@ class DiaryService {
   String _operationKey(String action) {
     final micros = DateTime.now().microsecondsSinceEpoch;
     final entropy = _random.nextInt(0x7fffffff);
-    return 'diary_${action}_${micros}_${entropy}';
+    return 'diary_$action_${micros}_$entropy';
   }
 
   Future<Map<String, dynamic>> _post(
