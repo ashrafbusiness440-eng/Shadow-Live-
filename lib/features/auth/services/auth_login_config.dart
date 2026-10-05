@@ -145,5 +145,5 @@ abstract final class AuthLoginConfigService {
   }
 
   static Future<bool> providerEnabled(String provider) async =>
-      (await load()).providerEnabled(provider);
+      (await load(refresh: true)).providerEnabled(provider);
 }
