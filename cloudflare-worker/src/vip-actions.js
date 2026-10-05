@@ -78,6 +78,8 @@ function summaryPayload(policy, state, user = {}) {
     paidRechargeGrowthPerCoin: policy.paidRechargeGrowthPerCoin,
     canHideRankingLists: currentLevel >= 7,
     hideRankingLists: currentLevel >= 7 && user.hideRankingLists === true,
+    canHideProfileVisits: currentLevel >= 9,
+    hideProfileVisits: currentLevel >= 9 && user.hideProfileVisits === true,
   };
 }
 
@@ -135,6 +137,51 @@ export async function setHideRankingLists(
       hideRankingLists: enabled && activeLevel >= 7,
       canHideRankingLists: activeLevel >= 7,
       requiredVipLevel: 7,
+    };
+  } catch (error) {
+    await db.rollback(transaction);
+    throw error;
+  }
+}
+
+export async function setHideProfileVisits(
+  db,
+  uid,
+  body,
+  nowMs = Date.now(),
+) {
+  if (typeof body?.enabled !== "boolean") {
+    throw new ApiError("invalid_hide_profile_visits_state", 400);
+  }
+
+  const transaction = await db.beginTransaction();
+  try {
+    const userSnap = await db.get(`users/${uid}`, transaction);
+    if (!userSnap.exists) throw new ApiError("user_not_found", 404);
+    const user = userSnap.data || {};
+    const enabled = body.enabled === true;
+    const activeLevel = activeEffectiveVipLevelFromUser(user, nowMs);
+    if (enabled && activeLevel < 9) {
+      throw new ApiError("hide_profile_visits_requires_vip9", 403);
+    }
+
+    const updatedAt = new Date(nowMs);
+    await db.commit(transaction, [
+      db.writeUpdate(
+        `users/${uid}`,
+        {
+          hideProfileVisits: enabled,
+          profileVisitVisibilityUpdatedAt: updatedAt,
+        },
+        ["hideProfileVisits", "profileVisitVisibilityUpdatedAt"],
+      ),
+    ]);
+
+    return {
+      ok: true,
+      hideProfileVisits: enabled && activeLevel >= 9,
+      canHideProfileVisits: activeLevel >= 9,
+      requiredVipLevel: 9,
     };
   } catch (error) {
     await db.rollback(transaction);
@@ -352,6 +399,13 @@ export async function vipActions(request, env) {
         request,
         env,
         await setHideRankingLists(db, decoded.sub, body),
+      );
+    }
+    if (action === "setHideProfileVisits") {
+      return json(
+        request,
+        env,
+        await setHideProfileVisits(db, decoded.sub, body),
       );
     }
     throw new ApiError("invalid_action", 400);
