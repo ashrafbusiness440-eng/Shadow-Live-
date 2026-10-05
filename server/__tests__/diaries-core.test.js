@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { randomUUID, webcrypto } from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -81,8 +82,17 @@ class FakeDb {
       .map(([path, data]) => ({ id: path.split("/")[1], path, data: structuredClone(data) }));
     if (filter) rows = rows.filter((row) => row.data.ownerUid === filter.value);
     rows.sort((a, b) => Number(b.data.createdAtMs || 0) - Number(a.data.createdAtMs || 0));
-    const cursor = options.startAfter?.[0]?.value;
-    if (cursor) rows = rows.filter((row) => Number(row.data.createdAtMs || 0) < Number(cursor));
+    const cursorMs = options.startAfter?.[0]?.value;
+    const cursorRef = options.startAfter?.[1]?.referencePath || "";
+    if (cursorMs) {
+      const cursorId = String(cursorRef).split("/").pop() || "";
+      rows = rows.filter((row) => {
+        const ms = Number(row.data.createdAtMs || 0);
+        if (ms < Number(cursorMs)) return true;
+        if (ms > Number(cursorMs)) return false;
+        return row.id < cursorId;
+      });
+    }
     return rows.slice(0, Number(options.limit || 100));
   }
 }
@@ -261,7 +271,7 @@ test("latest and user feeds stay bounded and expose cursors", async () => {
   const latest = await listLatest(db, { limit: 2 });
   assert.equal(latest.items.length, 2);
   assert.equal(latest.hasMore, true);
-  assert.equal(latest.nextCursor, "200");
+  assert.equal(latest.nextCursor, "200|d2");
 
   const user = await listUser(db, { userId: "user_a", limit: 10 });
   assert.deepEqual(user.items.map((item) => item.diaryId), ["d1", "d3"]);
@@ -311,3 +321,70 @@ test("diary core stays bounded and Firestore access is server-authoritative", ()
     assert.equal(rules.includes(`match /${collection}/{`), true, collection);
   }
 });
+
+test("same millisecond pagination is deterministic by diary id", async () => {
+  const db = new FakeDb({
+    "diaries/d3": { ownerUid: "user_a", text: "3", createdAtMs: 300 },
+    "diaries/d2": { ownerUid: "user_a", text: "2", createdAtMs: 300 },
+    "diaries/d1": { ownerUid: "user_a", text: "1", createdAtMs: 200 },
+  });
+
+  const first = await listLatest(db, { limit: 1 });
+  assert.equal(first.items.length, 1);
+  assert.equal(first.items[0].diaryId, "d3");
+  assert.equal(first.nextCursor, "300|d3");
+
+  const second = await listLatest(db, { limit: 1, cursor: first.nextCursor });
+  assert.equal(second.items.length, 1);
+  assert.equal(second.items[0].diaryId, "d2");
+});
+
+test("create idempotency key rejects a different payload", async () => {
+  const db = new FakeDb(seedUser());
+  const idempotencyKey = op("payload_conflict");
+  await createDiary(db, "user_a", {
+    text: "الأولى",
+    imageObjectIds: [],
+    idempotencyKey,
+  });
+  await assert.rejects(
+    () => createDiary(db, "user_a", {
+      text: "مختلفة",
+      imageObjectIds: [],
+      idempotencyKey,
+    }),
+    /idempotency_conflict/,
+  );
+});
+
+test("diary route and Firestore collections stay server-authoritative", () => {
+  const source = readFileSync(
+    new URL("../../cloudflare-worker/src/diaries.js", import.meta.url),
+    "utf8",
+  );
+  const worker = readFileSync(
+    new URL("../../cloudflare-worker/src/index.js", import.meta.url),
+    "utf8",
+  );
+  const rules = readFileSync(
+    new URL("../../firestore.rules", import.meta.url),
+    "utf8",
+  );
+
+  assert.equal(worker.includes('"/api/diaries"'), true);
+  assert.equal(source.includes("MAX_IMAGES = 2"), true);
+  assert.equal(source.includes("MAX_TEXT_LENGTH = 500"), true);
+  assert.equal(source.includes('field: "__name__"'), true);
+  for (const collection of [
+    "diaries",
+    "diary_operations",
+    "diary_image_links",
+    "diary_audit_logs",
+    "diary_comments",
+    "diary_likes",
+    "diary_view_keys",
+  ]) {
+    assert.equal(rules.includes(`match /${collection}/{`), true, collection);
+  }
+});
+
