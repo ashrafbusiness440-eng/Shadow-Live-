@@ -27,4 +27,18 @@ void main() {
     expect(item.type, 'system');
     expect(item.createdAt, isNull);
   });
+
+  test('notification parser preserves diary deep-link fields', () {
+    final item = AppNotification.fromMap('diary-notice', const {
+      'title': 'تعليق جديد',
+      'type': 'diary_comment',
+      'diaryId': 'diary_123',
+      'commentId': 'comment_456',
+      'read': false,
+    });
+
+    expect(item.diaryId, 'diary_123');
+    expect(item.commentId, 'comment_456');
+  });
+
 }
