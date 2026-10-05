@@ -36,6 +36,9 @@ void main() {
       'cloudflare-worker/src/diaries.js',
     ).readAsStringSync();
     final rules = File('firestore.rules').readAsStringSync();
+    final agencyShare = File(
+      'cloudflare-worker/src/agency-target-share.js',
+    ).readAsStringSync();
 
     expect(source.contains('const contextType = diaryId ? "diary" : "chat";'), isTrue);
     expect(source.contains('invalid_diary_receiver'), isTrue);
@@ -48,5 +51,12 @@ void main() {
     expect(diaries.contains('limit: limit + 1'), isTrue);
     expect(diaries.contains('.list('), isFalse);
     expect(rules.contains('match /gifts/{giftEventId}'), isTrue);
+
+    expect(agencyShare.contains('diaryId = null'), isTrue);
+    expect(agencyShare.contains('diaryId: clean(diaryId) || null'), isTrue);
+    expect(
+      agencyShare.contains('contextType: clean(contextType) || null'),
+      isTrue,
+    );
   });
 }
