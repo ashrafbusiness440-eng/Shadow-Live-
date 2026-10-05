@@ -1024,6 +1024,7 @@ export async function sendGift(db, uid, body, options = {}) {
           imageUrl,
           assetKey,
           createdAt: now,
+          createdAtMs: now.getTime(),
         }),
       );
     }
