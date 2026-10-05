@@ -65,6 +65,8 @@ class DiaryItem {
   DiaryItem copyWith({
     int? likeCount,
     int? commentCount,
+    int? giftCount,
+    int? giftCoins,
     int? viewCount,
     bool? commentsEnabled,
   }) {
@@ -80,8 +82,8 @@ class DiaryItem {
       commentsEnabled: commentsEnabled ?? this.commentsEnabled,
       likeCount: likeCount ?? this.likeCount,
       commentCount: commentCount ?? this.commentCount,
-      giftCount: giftCount,
-      giftCoins: giftCoins,
+      giftCount: giftCount ?? this.giftCount,
+      giftCoins: giftCoins ?? this.giftCoins,
       viewCount: viewCount ?? this.viewCount,
       createdAtMs: createdAtMs,
     );
@@ -251,6 +253,96 @@ class DiaryViewResult {
   final int viewCount;
 }
 
+class DiaryGiftEventItem {
+  const DiaryGiftEventItem({
+    required this.giftEventId,
+    required this.giftOperationId,
+    required this.diaryId,
+    required this.senderId,
+    required this.senderName,
+    required this.senderPublicId,
+    required this.senderProfileImageUrl,
+    required this.receiverId,
+    required this.giftId,
+    required this.giftName,
+    required this.quantity,
+    required this.unitCoins,
+    required this.totalCost,
+    required this.imageUrl,
+    required this.assetKey,
+    required this.createdAtMs,
+  });
+
+  final String giftEventId;
+  final String giftOperationId;
+  final String diaryId;
+  final String senderId;
+  final String senderName;
+  final String senderPublicId;
+  final String senderProfileImageUrl;
+  final String receiverId;
+  final String giftId;
+  final String giftName;
+  final int quantity;
+  final int unitCoins;
+  final int totalCost;
+  final String imageUrl;
+  final String assetKey;
+  final int createdAtMs;
+
+  factory DiaryGiftEventItem.fromMap(Map<String, dynamic> data) {
+    return DiaryGiftEventItem(
+      giftEventId: (data['giftEventId'] ?? '').toString().trim(),
+      giftOperationId: (data['giftOperationId'] ?? '').toString().trim(),
+      diaryId: (data['diaryId'] ?? '').toString().trim(),
+      senderId: (data['senderId'] ?? '').toString().trim(),
+      senderName: (data['senderName'] ?? 'مستخدم Shadow Live').toString().trim(),
+      senderPublicId: (data['senderPublicId'] ?? '').toString().trim(),
+      senderProfileImageUrl:
+          (data['senderProfileImageUrl'] ?? '').toString().trim(),
+      receiverId: (data['receiverId'] ?? '').toString().trim(),
+      giftId: (data['giftId'] ?? '').toString().trim(),
+      giftName: (data['giftName'] ?? 'هدية').toString().trim(),
+      quantity: (data['quantity'] as num?)?.toInt() ?? 1,
+      unitCoins: (data['unitCoins'] as num?)?.toInt() ?? 0,
+      totalCost: (data['totalCost'] as num?)?.toInt() ?? 0,
+      imageUrl: (data['imageUrl'] ?? '').toString().trim(),
+      assetKey: (data['assetKey'] ?? '').toString().trim(),
+      createdAtMs: (data['createdAtMs'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class DiaryGiftEventPage {
+  const DiaryGiftEventPage({
+    required this.items,
+    required this.nextCursor,
+    required this.hasMore,
+  });
+
+  final List<DiaryGiftEventItem> items;
+  final String? nextCursor;
+  final bool hasMore;
+
+  factory DiaryGiftEventPage.fromMap(Map<String, dynamic> data) {
+    final raw = data['items'];
+    final cursor = (data['nextCursor'] ?? '').toString().trim();
+    return DiaryGiftEventPage(
+      items: raw is List
+          ? raw
+              .whereType<Map>()
+              .map((item) => DiaryGiftEventItem.fromMap(
+                    Map<String, dynamic>.from(item),
+                  ))
+              .where((item) => item.giftEventId.isNotEmpty)
+              .toList(growable: false)
+          : const <DiaryGiftEventItem>[],
+      nextCursor: cursor.isEmpty ? null : cursor,
+      hasMore: data['hasMore'] == true,
+    );
+  }
+}
+
 class DiaryApiException implements Exception {
   const DiaryApiException(this.code);
   final String code;
@@ -415,6 +507,19 @@ class DiaryService {
       counted: body['counted'] == true,
       viewCount: (body['viewCount'] as num?)?.toInt() ?? 0,
     );
+  }
+
+  Future<DiaryGiftEventPage> listGiftEvents(
+    String diaryId, {
+    String? cursor,
+    int limit = 20,
+  }) async {
+    final body = await _post('listGiftEvents', <String, dynamic>{
+      'diaryId': diaryId.trim(),
+      'limit': limit,
+      if (cursor != null && cursor.trim().isNotEmpty) 'cursor': cursor.trim(),
+    });
+    return DiaryGiftEventPage.fromMap(body);
   }
 
   Future<String> createDiary({
