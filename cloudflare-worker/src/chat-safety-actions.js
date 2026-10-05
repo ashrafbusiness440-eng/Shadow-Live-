@@ -30,7 +30,9 @@ function chatGiftOperationConflicts(data = {}, expected = {}) {
   if (clean(data.action) && clean(data.action) !== "sendGift") return true;
   if (clean(data.senderId) && clean(data.senderId) !== clean(expected.senderId)) return true;
   if (clean(data.receiverId) && clean(data.receiverId) !== clean(expected.receiverId)) return true;
+  if (clean(data.contextType) && clean(data.contextType) !== clean(expected.contextType)) return true;
   if (clean(data.conversationId) && clean(data.conversationId) !== clean(expected.conversationId)) return true;
+  if (clean(data.diaryId) && clean(data.diaryId) !== clean(expected.diaryId)) return true;
   if (clean(data.giftId) && clean(data.giftId) !== clean(expected.giftId)) return true;
   if (data.quantity != null && Number(data.quantity) !== Number(expected.quantity)) return true;
   return false;
@@ -197,20 +199,25 @@ async function sendMessage(db, uid, body) {
       await db.rollback(transaction);
       return { ok: true, code: "duplicate", ...(op.data?.result || {}) };
     }
-    if (!sender.exists || !receiver.exists || !conversation.exists) {
+    if (!sender.exists || !receiver.exists || !contextDoc.exists) {
       throw new ApiError("not_found", 404);
     }
 
-    const conversationData = conversation.data || {};
-    const participants = Array.isArray(conversationData.participants)
-      ? conversationData.participants
-      : [];
-    if (
-      participants.length !== 2 ||
-      !participants.includes(uid) ||
-      !participants.includes(receiverId)
-    ) {
-      throw new ApiError("invalid_conversation", 409);
+    const contextData = contextDoc.data || {};
+    const conversationData = contextType === "chat" ? contextData : {};
+    if (contextType === "chat") {
+      const participants = Array.isArray(conversationData.participants)
+        ? conversationData.participants
+        : [];
+      if (
+        participants.length !== 2 ||
+        !participants.includes(uid) ||
+        !participants.includes(receiverId)
+      ) {
+        throw new ApiError("invalid_conversation", 409);
+      }
+    } else if (clean(contextData.ownerUid) !== receiverId) {
+      throw new ApiError("invalid_diary_receiver", 409);
     }
     if (outgoingBlock.exists || incomingBlock.exists) {
       throw new ApiError("blocked", 403);
@@ -326,6 +333,8 @@ export async function sendGift(db, uid, body, options = {}) {
   const receiverId = clean(body.receiverId);
   const giftId = clean(body.giftId);
   const conversationId = clean(body.conversationId);
+  const diaryId = clean(body.diaryId);
+  const contextType = diaryId ? "diary" : "chat";
   const key = clean(body.idempotencyKey);
   const quantity = Number(body.quantity || 1);
 
@@ -333,8 +342,8 @@ export async function sendGift(db, uid, body, options = {}) {
     !receiverId ||
     receiverId === uid ||
     !giftId ||
-    !conversationId ||
-    conversationId.includes("/") ||
+    (contextType === "chat" && (!conversationId || conversationId.includes("/"))) ||
+    (contextType === "diary" && (!diaryId || diaryId.includes("/") || conversationId)) ||
     ![1, 7, 77, 777].includes(quantity) ||
     !validKey(key)
   ) {
@@ -366,7 +375,9 @@ export async function sendGift(db, uid, body, options = {}) {
     const catalogPath = "system_config/gift_catalog";
     const economyPath = "system_config/gift_economy";
     const lockPath = "system_config/emergency_lock";
-    const conversationPath = `conversations/${conversationId}`;
+    const conversationPath = conversationId ? `conversations/${conversationId}` : "";
+    const diaryPath = diaryId ? `diaries/${diaryId}` : "";
+    const contextPath = contextType === "diary" ? diaryPath : conversationPath;
     const outgoingBlockPath = `user_blocks/${uid}/items/${receiverId}`;
     const incomingBlockPath = `user_blocks/${receiverId}/items/${uid}`;
 
@@ -377,7 +388,7 @@ export async function sendGift(db, uid, body, options = {}) {
       catalog,
       economy,
       lock,
-      conversation,
+      contextDoc,
       outgoingBlock,
       incomingBlock,
     ] = await Promise.all([
@@ -387,7 +398,7 @@ export async function sendGift(db, uid, body, options = {}) {
       db.get(catalogPath, transaction),
       db.get(economyPath, transaction),
       db.get(lockPath, transaction),
-      db.get(conversationPath, transaction),
+      db.get(contextPath, transaction),
       db.get(outgoingBlockPath, transaction),
       db.get(incomingBlockPath, transaction),
     ]);
@@ -396,7 +407,9 @@ export async function sendGift(db, uid, body, options = {}) {
       if (chatGiftOperationConflicts(op.data, {
         senderId: uid,
         receiverId,
+        contextType,
         conversationId,
+        diaryId,
         giftId,
         quantity,
       })) {
