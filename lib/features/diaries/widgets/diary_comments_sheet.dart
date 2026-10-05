@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../profile/screens/public_profile_screen.dart';
 import '../services/diary_service.dart';
 import 'diary_mention_suggestions.dart';
+import 'diary_report_sheet.dart';
 
 class DiaryCommentsSheet extends StatefulWidget {
   const DiaryCommentsSheet({
@@ -180,6 +181,30 @@ class _DiaryCommentsSheetState extends State<DiaryCommentsSheet> {
     }
   }
 
+  Future<void> _reportComment(DiaryCommentItem item) async {
+    if (_guest) {
+      await widget.onGuestAction();
+      return;
+    }
+    final reason = await showDiaryReportReasonSheet(context);
+    if (!mounted || reason == null) return;
+    try {
+      final duplicate = await widget.service.reportComment(
+        diaryId: widget.diary.diaryId,
+        commentId: item.commentId,
+        reason: reason,
+      );
+      if (!mounted) return;
+      _snack(
+        duplicate
+            ? 'سبق إرسال بلاغك عن هذا التعليق.'
+            : 'تم إرسال البلاغ للمراجعة.',
+      );
+    } catch (error) {
+      _snack(diaryErrorMessage(error));
+    }
+  }
+
   bool _canDelete(DiaryCommentItem item) {
     if (_uid.isEmpty || _guest) return false;
     return item.authorUid == _uid || widget.diary.ownerUid == _uid;
@@ -291,6 +316,19 @@ class _DiaryCommentsSheetState extends State<DiaryCommentsSheet> {
                       Text(
                         _timeLabel(item.createdAtMs),
                         style: const TextStyle(color: Colors.white38, fontSize: 10),
+                      ),
+                      const SizedBox(width: 4),
+                      InkWell(
+                        borderRadius: BorderRadius.circular(18),
+                        onTap: () => _reportComment(item),
+                        child: const Padding(
+                          padding: EdgeInsets.all(4),
+                          child: Icon(
+                            Icons.flag_outlined,
+                            size: 17,
+                            color: Colors.white38,
+                          ),
+                        ),
                       ),
                       if (_canDelete(item)) ...[
                         const SizedBox(width: 4),
