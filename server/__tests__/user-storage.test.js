@@ -35,13 +35,13 @@ test("storage MIME allowlist only accepts supported image formats", () => {
 
 test("storage size limits stay scope-specific", () => {
   assert.equal(storageMaxBytes("profile_image"), 2 * 1024 * 1024);
-  assert.equal(storageMaxBytes("profile_cover"), 4 * 1024 * 1024);
-  assert.equal(storageMaxBytes("room_cover"), 4 * 1024 * 1024);
+  assert.equal(storageMaxBytes("profile_cover"), 3 * 1024 * 1024);
+  assert.equal(storageMaxBytes("room_cover"), 3 * 1024 * 1024);
   assert.equal(storageMaxBytes("agency_logo"), 2 * 1024 * 1024);
-  assert.equal(storageMaxBytes("agency_background"), 4 * 1024 * 1024);
-  assert.equal(storageMaxBytes("agency_room_image"), 4 * 1024 * 1024);
-  assert.equal(storageMaxBytes("chat_image"), 8 * 1024 * 1024);
-  assert.equal(storageMaxBytes("diary_image"), 4 * 1024 * 1024);
+  assert.equal(storageMaxBytes("agency_background"), 3 * 1024 * 1024);
+  assert.equal(storageMaxBytes("agency_room_image"), 3 * 1024 * 1024);
+  assert.equal(storageMaxBytes("chat_image"), 3 * 1024 * 1024);
+  assert.equal(storageMaxBytes("diary_image"), 3 * 1024 * 1024);
 });
 
 test("storage payload validation rejects unsupported types and oversized files", () => {
