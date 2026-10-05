@@ -74,6 +74,7 @@ class _DiariesScreenState extends State<DiariesScreen> {
 
   bool get _guest => FirebaseAuth.instance.currentUser?.isAnonymous == true;
   bool get _signedIn => FirebaseAuth.instance.currentUser != null;
+  String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
   List<DiaryItem> get _items => _showFollowing ? _following : _latest;
   bool get _loading => _showFollowing ? _loadingFollowing : _loadingLatest;
   bool get _hasMore => _showFollowing ? _followingHasMore : _latestHasMore;
@@ -928,15 +929,16 @@ class _DiariesScreenState extends State<DiariesScreen> {
                     ],
                   ),
                 ),
-                IconButton(
-                  tooltip: 'إبلاغ',
-                  onPressed: () => _reportDiary(item),
-                  icon: const Icon(
-                    Icons.flag_outlined,
-                    color: Colors.white38,
-                    size: 20,
+                if (_guest || item.ownerUid != _uid)
+                  IconButton(
+                    tooltip: 'إبلاغ',
+                    onPressed: () => _reportDiary(item),
+                    icon: const Icon(
+                      Icons.flag_outlined,
+                      color: Colors.white38,
+                      size: 20,
+                    ),
                   ),
-                ),
               ],
             ),
           ),
