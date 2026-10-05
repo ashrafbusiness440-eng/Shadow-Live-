@@ -8,6 +8,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../screens/room/room_list_screen.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../chat/screens/chat_list_screen.dart';
+import '../../diaries/screens/diaries_screen.dart';
 import '../../home/screens/home_screen.dart';
 import '../../games/screens/games_hub_screen.dart';
 import '../../room/services/room_seat_service.dart';
@@ -170,16 +171,16 @@ class _MainShellScreenState extends State<MainShellScreen> {
     );
   }
 
-  final List<Widget> _pages = const [
-    HomeScreen(),
-    RoomListScreen(),
-    GamesHubScreen(),
-    ChatListScreen(),
-    _ComingSoonPage(
+  List<Widget> get _pages => [
+    const HomeScreen(),
+    const RoomListScreen(),
+    const GamesHubScreen(),
+    const ChatListScreen(),
+    DiariesScreen(
       title: 'يومياتي',
-      icon: Icons.auto_stories_rounded,
+      onGuestAction: _guestGuard,
     ),
-    ProfileScreen(),
+    const ProfileScreen(),
   ];
 
   bool get _guest =>
@@ -299,7 +300,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
   }
 
   void _changePage(int navIndex) {
-    if (_guest && (navIndex == 2 || navIndex == 3 || navIndex == 4)) {
+    if (_guest && (navIndex == 2 || navIndex == 3)) {
       _guestGuard();
       return;
     }
@@ -549,65 +550,6 @@ class _ShadowBottomNavigation extends StatelessWidget {
           ),
         );
       },
-    );
-  }
-}
-
-class _ComingSoonPage extends StatelessWidget {
-  const _ComingSoonPage({
-    required this.title,
-    required this.icon,
-  });
-
-  final String title;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF05060D),
-      body: SafeArea(
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 76,
-                height: 76,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: const Color(0xFF8A3DFF).withValues(alpha: .14),
-                  border: Border.all(
-                    color: const Color(0xFF8A3DFF).withValues(alpha: .35),
-                  ),
-                ),
-                child: Icon(
-                  icon,
-                  color: const Color(0xFFFFD54A),
-                  size: 38,
-                ),
-              ),
-              const SizedBox(height: 18),
-              Text(
-                title,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'سيتم تفعيل هذا القسم عند بدء مرحلته',
-                style: TextStyle(
-                  color: Colors.white54,
-                  fontSize: 13,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

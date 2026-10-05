@@ -227,25 +227,162 @@ jobs:
           }
           NODE
 
-      - name: Deploy Firestore composite indexes
+      - name: Deploy Firestore composite indexes through Admin API
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
+          import { sign } from 'node:crypto';
 
           let sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
           if (typeof sa === 'string') sa = JSON.parse(sa);
-          if (!sa.project_id || !sa.client_email || !sa.private_key) {
+          const projectId = sa.project_id;
+          const clientEmail = sa.client_email;
+          const privateKey = String(sa.private_key || '').replace(/\\n/g, '\n');
+          if (!projectId || !clientEmail || !privateKey) {
             throw new Error('invalid service account');
           }
 
-          fs.writeFileSync('/tmp/shadow-firebase-sa.json', JSON.stringify(sa));
-          fs.writeFileSync('/tmp/shadow-firebase-project-id', sa.project_id);
+          const b64url = (value) => Buffer.from(value)
+            .toString('base64')
+            .replace(/=/g, '')
+            .replace(/\+/g, '-')
+            .replace(/\//g, '_');
+
+          const now = Math.floor(Date.now() / 1000);
+          const header = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+          const payload = b64url(JSON.stringify({
+            iss: clientEmail,
+            scope: 'https://www.googleapis.com/auth/cloud-platform',
+            aud: 'https://oauth2.googleapis.com/token',
+            iat: now,
+            exp: now + 3600,
+          }));
+          const unsigned = header + '.' + payload;
+          const assertion = unsigned + '.' + b64url(
+            sign('RSA-SHA256', Buffer.from(unsigned), privateKey),
+          );
+
+          const oauth = await fetch('https://oauth2.googleapis.com/token', {
+            method: 'POST',
+            headers: { 'content-type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+              grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+              assertion,
+            }),
+          });
+          const oauthBody = await oauth.json().catch(() => ({}));
+          if (!oauth.ok || !oauthBody.access_token) {
+            throw new Error('oauth failed ' + oauth.status + ' ' + JSON.stringify(oauthBody));
+          }
+
+          const headers = {
+            authorization: 'Bearer ' + oauthBody.access_token,
+            'content-type': 'application/json',
+          };
+          const config = JSON.parse(fs.readFileSync('firestore.indexes.json', 'utf8'));
+          const desired = Array.isArray(config.indexes) ? config.indexes : [];
+
+          const fieldSignature = (fields) => (Array.isArray(fields) ? fields : [])
+            .filter((field) => String(field?.fieldPath || '') !== '__name__')
+            .map((field) => {
+              const path = String(field?.fieldPath || '');
+              const mode = field?.order
+                ? 'order:' + String(field.order)
+                : 'array:' + String(field?.arrayConfig || '');
+              return path + ':' + mode;
+            })
+            .join('|');
+
+          const indexSignature = (index) =>
+            String(index?.queryScope || 'COLLECTION') + '::' +
+            fieldSignature(index?.fields);
+
+          const listIndexes = async (parentUrl) => {
+            const indexes = [];
+            let pageToken = '';
+            do {
+              const url = new URL(parentUrl + '/indexes');
+              url.searchParams.set('pageSize', '200');
+              if (pageToken) url.searchParams.set('pageToken', pageToken);
+              const response = await fetch(url, { headers });
+              const body = await response.json().catch(() => ({}));
+              if (!response.ok) {
+                throw new Error(
+                  'index list failed ' + response.status + ' ' + JSON.stringify(body),
+                );
+              }
+              indexes.push(...(Array.isArray(body.indexes) ? body.indexes : []));
+              pageToken = String(body.nextPageToken || '');
+            } while (pageToken);
+            return indexes;
+          };
+
+          const byCollection = new Map();
+          for (const index of desired) {
+            const collectionGroup = String(index?.collectionGroup || '').trim();
+            if (!collectionGroup) throw new Error('missing collectionGroup in firestore.indexes.json');
+            if (!byCollection.has(collectionGroup)) byCollection.set(collectionGroup, []);
+            byCollection.get(collectionGroup).push(index);
+          }
+
+          for (const [collectionGroup, indexes] of byCollection.entries()) {
+            const parent =
+              'projects/' + projectId +
+              '/databases/(default)/collectionGroups/' + collectionGroup;
+            const parentUrl =
+              'https://firestore.googleapis.com/v1/projects/' +
+              encodeURIComponent(projectId) +
+              '/databases/(default)/collectionGroups/' +
+              encodeURIComponent(collectionGroup);
+            const existing = await listIndexes(parentUrl);
+            const existingSignatures = new Set(existing.map(indexSignature));
+
+            for (const desiredIndex of indexes) {
+              const signature = indexSignature(desiredIndex);
+              if (existingSignatures.has(signature)) {
+                const match = existing.find((item) => indexSignature(item) === signature);
+                console.log(
+                  'Firestore index already present:',
+                  match?.name || parent + '/indexes/<existing>',
+                  'state=' + String(match?.state || 'UNKNOWN'),
+                );
+                continue;
+              }
+
+              const body = {
+                queryScope: String(desiredIndex.queryScope || 'COLLECTION'),
+                fields: (desiredIndex.fields || []).map((field) => ({
+                  fieldPath: String(field.fieldPath || ''),
+                  ...(field.order ? { order: String(field.order) } : {}),
+                  ...(field.arrayConfig
+                    ? { arrayConfig: String(field.arrayConfig) }
+                    : {}),
+                })),
+              };
+              const response = await fetch(parentUrl + '/indexes', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(body),
+              });
+              const result = await response.json().catch(() => ({}));
+              if (!response.ok && response.status !== 409) {
+                throw new Error(
+                  'index create failed ' + response.status + ' ' + JSON.stringify(result),
+                );
+              }
+              if (response.status === 409) {
+                console.log('Firestore index already exists (race):', parent, signature);
+              } else {
+                console.log(
+                  'Firestore index creation accepted:',
+                  result.name || parent,
+                  signature,
+                );
+              }
+            }
+          }
+
+          console.log('Firestore composite index sync completed.');
           NODE
-
-          export GOOGLE_APPLICATION_CREDENTIALS=/tmp/shadow-firebase-sa.json
-          PROJECT_ID="$(cat /tmp/shadow-firebase-project-id)"
-          npx --yes firebase-tools@15.1.0 deploy             --only firestore:indexes             --project "$PROJECT_ID"             --non-interactive
-          rm -f /tmp/shadow-firebase-sa.json /tmp/shadow-firebase-project-id
-
