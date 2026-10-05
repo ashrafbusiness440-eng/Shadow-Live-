@@ -32,6 +32,7 @@ import { agencyPackages } from "./agency-packages.js";
 import { relationships } from "./relationships.js";
 import { diaries } from "./diaries.js";
 import { diaryModeration } from "./diary-moderation.js";
+import { adminInbox } from "./admin-inbox.js";
 import { userLevelSummary } from "./user-level-summary.js";
 import { configureLegacyEnv, getFirestore } from "./legacy-firebase-admin-shim.js";
 import { settleDueGameOperations } from "./legacy-games/game-runtime.js";
@@ -180,6 +181,10 @@ async function dispatchRequest(request, env, ctx) {
   if (url.pathname === "/api/diary-moderation") {
     annotatePressureRequest(request, { action: "diaryModeration" });
     return diaryModeration(request, env);
+  }
+  if (url.pathname === "/api/admin-inbox") {
+    annotatePressureRequest(request, { action: "adminInbox" });
+    return adminInbox(request, env);
   }
   if (url.pathname === "/api/user-level") {
     annotatePressureRequest(request, { action: "userLevelSummary" });
