@@ -24,6 +24,7 @@ class _AuthChoiceScreenState extends State<AuthChoiceScreen> {
     _configFuture = AuthLoginConfigService.load(refresh: true);
     _headerFuture = ShadowAssetRegistry.remoteUrl(
       ShadowAssetKeys.authLoginHeader,
+      refresh: true,
     );
   }
 
