@@ -186,3 +186,23 @@ test("asset manager keeps bounded registry and explicit draft publish flow", () 
   assert.equal(control.includes("Timer.periodic"), false);
   assert.equal(control.includes(".snapshots()"), false);
 });
+
+test("login header is a first-class Asset Studio surface with bundled fallback", () => {
+  const template = ASSET_STUDIO_TEMPLATES.find(
+    (item) => item.id === "auth_screen.base.v1",
+  );
+  assert.ok(template);
+  assert.equal(template.type, "auth_screen");
+  assert.deepEqual(template.directories, ["assets/images"]);
+
+  const manager = source("lib/admin/control_asset_manager_page.dart");
+  const registry = source("lib/core/assets/shadow_asset_registry.dart");
+  const authChoice = source("lib/features/onboarding/screens/auth_choice_screen.dart");
+
+  assert.equal(manager.includes("auth.login.header"), true);
+  assert.equal(manager.includes("auth_header.png"), true);
+  assert.equal(registry.includes("authLoginHeader = 'auth.login.header'"), true);
+  assert.equal(authChoice.includes("ShadowAssetKeys.authLoginHeader"), true);
+  assert.equal(authChoice.includes("assets/images/auth_header.png"), true);
+});
+

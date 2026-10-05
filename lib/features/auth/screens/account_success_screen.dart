@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../../../shared/services/firebase_service.dart';
+import '../services/auth_login_config.dart';
 
 class AccountSuccessScreen extends StatefulWidget {
   const AccountSuccessScreen({super.key});
@@ -16,9 +17,10 @@ class _AccountSuccessScreenState extends State<AccountSuccessScreen>{
   if(user==null){setState(()=>_continueError='انتهت جلسة تسجيل الدخول، سجّل الدخول من جديد');return;}
   setState((){_continuing=true;_continueError=null;});
   try{
-   await FirebaseService().updateSetupStep(user.uid,'linking').timeout(const Duration(seconds:12));
+   final config=await AuthLoginConfigService.load(refresh:true);
+   await FirebaseService().updateSetupStep(user.uid,config.postSignupSetupStep).timeout(const Duration(seconds:12));
    if(!mounted)return;
-   Navigator.of(context).pushReplacementNamed('/account-linking');
+   Navigator.of(context).pushReplacementNamed(config.postSignupRoute);
   }catch(_){
    if(mounted)setState(()=>_continueError='تعذر حفظ التقدم. تحقق من الاتصال وحاول مجدداً.');
   }finally{

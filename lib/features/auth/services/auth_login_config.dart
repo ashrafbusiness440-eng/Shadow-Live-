@@ -65,6 +65,12 @@ class AuthLoginConfig {
         _ => false,
       };
 
+  String get postSignupSetupStep =>
+      optionalAccountLinking ? 'linking' : 'ready';
+
+  String get postSignupRoute =>
+      optionalAccountLinking ? '/account-linking' : '/account-ready';
+
   Map<String, dynamic> toMap() => {
         'providers': {
           'email': email,
@@ -139,5 +145,5 @@ abstract final class AuthLoginConfigService {
   }
 
   static Future<bool> providerEnabled(String provider) async =>
-      (await load()).providerEnabled(provider);
+      (await load(refresh: true)).providerEnabled(provider);
 }
