@@ -241,9 +241,8 @@ class _AuthChoiceScreenState extends State<AuthChoiceScreen> {
           child: SafeArea(
             child: FutureBuilder<AuthLoginConfig>(
               future: _configFuture,
-              initialData: AuthLoginConfig.defaults,
               builder: (context, snapshot) {
-                final config = snapshot.data ?? AuthLoginConfig.defaults;
+                final config = snapshot.data;
                 return SingleChildScrollView(
                   padding: const EdgeInsets.all(24),
                   child: Column(
@@ -275,7 +274,13 @@ class _AuthChoiceScreenState extends State<AuthChoiceScreen> {
                         ),
                       ),
                       const SizedBox(height: 26),
-                      ..._providerButtons(context, config),
+                      if (config == null)
+                        const SizedBox(
+                          height: 54,
+                          child: Center(child: CircularProgressIndicator()),
+                        )
+                      else
+                        ..._providerButtons(context, config),
                     ],
                   ),
                 );
