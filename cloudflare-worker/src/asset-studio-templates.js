@@ -162,6 +162,13 @@ export const ASSET_STUDIO_TEMPLATES = Object.freeze([
     prompt: "VIP cosmetic for Shadow Live. Keep user identity, VIP number, IDs and stats dynamic unless the visual is a generic tier emblem.",
   }),
   template({
+    id: "auth_screen.base.v1",
+    type: "auth_screen",
+    labelAr: "صورة شاشة تسجيل الدخول",
+    directories: ["assets/images"],
+    prompt: "Shadow Live authentication screen hero artwork. Keep login buttons, provider labels, legal text, and all dynamic UI outside the artwork. Compose for a wide mobile header crop and preserve important subjects near the center.",
+  }),
+  template({
     id: "system_cosmetic.base.v1",
     type: "system_cosmetic",
     labelAr: "عنصر نظام رسمي",
