@@ -37,6 +37,7 @@ void main() {
     expect(source.contains('راجع البلاغ واتخذ الإجراء المناسب.'), isTrue);
     expect(source.contains('القراءة bounded من Worker فقط'), isFalse);
     expect(source.contains('final String? initialReportId;'), isTrue);
+    expect(source.contains("'getReport'"), isTrue);
   });
 
   test('agency control can prioritize notification target', () {
