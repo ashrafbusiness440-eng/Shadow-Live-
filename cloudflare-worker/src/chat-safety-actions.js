@@ -1031,6 +1031,24 @@ export async function sendGift(db, uid, body, options = {}) {
           createdAt: now,
           createdAtMs: now.getTime(),
         }),
+        db.writeCreate(`notifications/diary_gift_${key}`, {
+          userId: receiverId,
+          type: "diary_gift",
+          category: "social",
+          title: "هدية جديدة على يوميتك",
+          body: `${senderName || "مستخدم Shadow Live" أرسل لك ${giftName} ×${quantity}.`,
+          read: false,
+          diaryId,
+          actorUid: uid,
+          actorName: senderName,
+          actorPublicId: senderPublicId,
+          giftId,
+          giftName,
+          quantity,
+          totalCost,
+          createdAt: now,
+          updatedAt: now,
+        }),
       );
     }
 
