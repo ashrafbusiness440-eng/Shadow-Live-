@@ -35,12 +35,13 @@ test("storage MIME allowlist only accepts supported image formats", () => {
 
 test("storage size limits stay scope-specific", () => {
   assert.equal(storageMaxBytes("profile_image"), 2 * 1024 * 1024);
-  assert.equal(storageMaxBytes("profile_cover"), 4 * 1024 * 1024);
-  assert.equal(storageMaxBytes("room_cover"), 4 * 1024 * 1024);
+  assert.equal(storageMaxBytes("profile_cover"), 3 * 1024 * 1024);
+  assert.equal(storageMaxBytes("room_cover"), 3 * 1024 * 1024);
   assert.equal(storageMaxBytes("agency_logo"), 2 * 1024 * 1024);
-  assert.equal(storageMaxBytes("agency_background"), 4 * 1024 * 1024);
-  assert.equal(storageMaxBytes("agency_room_image"), 4 * 1024 * 1024);
-  assert.equal(storageMaxBytes("chat_image"), 8 * 1024 * 1024);
+  assert.equal(storageMaxBytes("agency_background"), 3 * 1024 * 1024);
+  assert.equal(storageMaxBytes("agency_room_image"), 3 * 1024 * 1024);
+  assert.equal(storageMaxBytes("chat_image"), 3 * 1024 * 1024);
+  assert.equal(storageMaxBytes("diary_image"), 3 * 1024 * 1024);
 });
 
 test("storage payload validation rejects unsupported types and oversized files", () => {
@@ -143,6 +144,17 @@ test("storage object keys follow canonical private prefixes", () => {
     }),
     `chat/conversation_9/user_1/${"c".repeat(32)}.png`,
   );
+
+  assert.equal(
+    buildStorageObjectKey({
+      scope: "diary_image",
+      uid: "user_1",
+      targetId: "user_1",
+      objectId: "6".repeat(32),
+      extension: "webp",
+    }),
+    `users/user_1/diaries/${"6".repeat(32)}.webp`,
+  );
 });
 
 test("replaced profile and room media wait 24 hours before cleanup", () => {
@@ -186,6 +198,7 @@ test("public media redirects only expose public R2 scopes", () => {
   assert.equal(isPublicMediaScope("agency_background"), true);
   assert.equal(isPublicMediaScope("agency_room_image"), true);
   assert.equal(isPublicMediaScope("chat_image"), false);
+  assert.equal(isPublicMediaScope("diary_image"), true);
 
   assert.equal(
     publicMediaStorageKey({
@@ -228,6 +241,15 @@ test("public media redirects only expose public R2 scopes", () => {
       filename: `${"7".repeat(32)}.webp`,
     }),
     `agencies/741201/room-image/${"7".repeat(32)}.webp`,
+  );
+
+  assert.equal(
+    publicMediaStorageKey({
+      scope: "diary_image",
+      targetId: "user_1",
+      filename: `${"6".repeat(32)}.webp`,
+    }),
+    `users/user_1/diaries/${"6".repeat(32)}.webp`,
   );
 
   assert.throws(

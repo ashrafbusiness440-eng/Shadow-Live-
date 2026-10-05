@@ -3,6 +3,149 @@ import 'dart:typed_data';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart' show compute;
+import 'package:image/image.dart' as img;
+
+
+const int userImageGlobalMaxBytes = 3 * 1024 * 1024;
+const int userImageMaxLongestSide = 2048;
+
+const Map<String, int> _userImageScopeMaxBytes = <String, int>{
+  'profile_image': 2 * 1024 * 1024,
+  'profile_cover': userImageGlobalMaxBytes,
+  'room_cover': userImageGlobalMaxBytes,
+  'agency_logo': 2 * 1024 * 1024,
+  'agency_background': userImageGlobalMaxBytes,
+  'agency_room_image': userImageGlobalMaxBytes,
+  'chat_image': userImageGlobalMaxBytes,
+  'diary_image': userImageGlobalMaxBytes,
+};
+
+class PreparedUserImage {
+  const PreparedUserImage({
+    required this.bytes,
+    required this.mimeType,
+    required this.originalBytes,
+    required this.wasProcessed,
+  });
+
+  final Uint8List bytes;
+  final String mimeType;
+  final int originalBytes;
+  final bool wasProcessed;
+}
+
+Future<PreparedUserImage> prepareUserImageForUpload({
+  required String scope,
+  required Uint8List bytes,
+  required String mimeType,
+}) async {
+  final limit = _userImageScopeMaxBytes[scope.trim()];
+  if (limit == null) {
+    return PreparedUserImage(
+      bytes: bytes,
+      mimeType: mimeType,
+      originalBytes: bytes.length,
+      wasProcessed: false,
+    );
+  }
+  if (bytes.isEmpty) throw StateError('empty_file');
+
+  final result = await compute(_prepareUserImageJob, <String, Object>{
+    'bytes': bytes,
+    'mimeType': mimeType.trim().toLowerCase(),
+    'maxBytes': limit,
+    'maxLongestSide': userImageMaxLongestSide,
+  });
+
+  return PreparedUserImage(
+    bytes: result['bytes']! as Uint8List,
+    mimeType: result['mimeType']! as String,
+    originalBytes: bytes.length,
+    wasProcessed: result['wasProcessed'] == true,
+  );
+}
+
+Map<String, Object> _prepareUserImageJob(Map<String, Object> input) {
+  final bytes = input['bytes']! as Uint8List;
+  final mimeType = input['mimeType']! as String;
+  final maxBytes = input['maxBytes']! as int;
+  final maxLongestSide = input['maxLongestSide']! as int;
+
+  final decoded = img.decodeImage(bytes);
+  if (decoded == null) throw StateError('image_decode_failed');
+  final baked = img.bakeOrientation(decoded);
+
+  final originalLongest =
+      baked.width > baked.height ? baked.width : baked.height;
+  if (bytes.length <= maxBytes && originalLongest <= maxLongestSide) {
+    return <String, Object>{
+      'bytes': bytes,
+      'mimeType': mimeType,
+      'wasProcessed': false,
+    };
+  }
+
+  img.Image resizeToLongest(img.Image source, int longest) {
+    if (source.width >= source.height) {
+      return img.copyResize(
+        source,
+        width: longest,
+        interpolation: img.Interpolation.cubic,
+      );
+    }
+    return img.copyResize(
+      source,
+      height: longest,
+      interpolation: img.Interpolation.cubic,
+    );
+  }
+
+  var working = baked;
+  if (originalLongest > maxLongestSide) {
+    working = resizeToLongest(working, maxLongestSide);
+  }
+
+  Uint8List? smallest;
+  const qualitySteps = <int>[86, 80, 74, 68, 62, 56];
+  const dimensionSteps = <int>[2048, 1800, 1600, 1440, 1280, 1120, 960];
+
+  for (final dimension in dimensionSteps) {
+    final currentLongest =
+        working.width > working.height ? working.width : working.height;
+    if (currentLongest > dimension) {
+      working = resizeToLongest(working, dimension);
+    }
+    for (final quality in qualitySteps) {
+      final encoded = img.encodeWebP(
+        working,
+        lossless: false,
+        quality: quality,
+        method: 4,
+        alphaQuality: 85,
+      );
+      if (smallest == null || encoded.length < smallest.length) {
+        smallest = encoded;
+      }
+      if (encoded.length <= maxBytes) {
+        return <String, Object>{
+          'bytes': encoded,
+          'mimeType': 'image/webp',
+          'wasProcessed': true,
+        };
+      }
+    }
+  }
+
+  if (smallest != null && smallest.length <= maxBytes) {
+    return <String, Object>{
+      'bytes': smallest,
+      'mimeType': 'image/webp',
+      'wasProcessed': true,
+    };
+  }
+  throw StateError('image_too_large_after_compression');
+}
 
 String detectSupportedImageMime(Uint8List bytes) {
   if (bytes.length >= 3 &&
@@ -135,12 +278,20 @@ class UserStorageService {
   }) async {
     if (bytes.isEmpty) throw StateError('empty_file');
 
+    final preparedImage = await prepareUserImageForUpload(
+      scope: scope,
+      bytes: bytes,
+      mimeType: mimeType,
+    );
+    final uploadBytes = preparedImage.bytes;
+    final uploadMimeType = preparedImage.mimeType;
+
     final token = await _token();
     final prepare = await _postAction(token, {
       'action': 'prepareUpload',
       'scope': scope,
-      'mimeType': mimeType,
-      'byteLength': bytes.length,
+      'mimeType': uploadMimeType,
+      'byteLength': uploadBytes.length,
       if (targetId != null && targetId.trim().isNotEmpty)
         'targetId': targetId.trim(),
       if (replaceObjectId != null && replaceObjectId.trim().isNotEmpty)
@@ -160,12 +311,12 @@ class UserStorageService {
         requiredHeaders[entry.key.toString()] = entry.value.toString();
       }
     }
-    requiredHeaders.putIfAbsent('content-type', () => mimeType);
+    requiredHeaders.putIfAbsent('content-type', () => uploadMimeType);
 
     final uploadResponse = await _client.put(
       Uri.parse(uploadUrl),
       headers: requiredHeaders,
-      body: bytes,
+      body: uploadBytes,
     ).timeout(const Duration(seconds: 45));
     if (uploadResponse.statusCode < 200 || uploadResponse.statusCode >= 300) {
       throw StateError('storage_direct_upload_failed');

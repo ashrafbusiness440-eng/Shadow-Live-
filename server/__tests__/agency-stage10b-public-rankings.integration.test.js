@@ -365,7 +365,19 @@ test("10-B ranking is single-field indexless and adds no Gift write operation", 
   const config = JSON.parse(
     fs.readFileSync("firestore.indexes.json", "utf8"),
   );
-  assert.deepEqual(config.indexes || [], []);
+  const indexes = Array.isArray(config.indexes) ? config.indexes : [];
+  const agencyRankingIndexes = indexes.filter((index) =>
+    String(index?.collectionGroup || "") === "agency_host_monthly" ||
+    (Array.isArray(index?.fields) &&
+      index.fields.some((field) =>
+        String(field?.fieldPath || "").includes("publicRankingKey")
+      ))
+  );
+  assert.deepEqual(
+    agencyRankingIndexes,
+    [],
+    "10-B must stay indexless without forbidding indexes owned by other features",
+  );
 
   const high = agencyPublicRankingKey({
     agencyId: "741299",

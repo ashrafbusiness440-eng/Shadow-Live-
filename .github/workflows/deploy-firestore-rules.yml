@@ -1,10 +1,11 @@
-name: Deploy Firestore Rules
+name: Deploy Firestore Rules + Indexes
 
 on:
   push:
     branches: [main]
     paths:
       - 'firestore.rules'
+      - 'firestore.indexes.json'
       - 'firebase.json'
       - '.firebaserc'
       - '.github/workflows/deploy-firestore-rules.yml'
@@ -225,3 +226,26 @@ jobs:
             console.log('Paused legacy Firebase settlement scheduler:', job.name);
           }
           NODE
+
+      - name: Deploy Firestore composite indexes
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+
+          let sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
+          if (typeof sa === 'string') sa = JSON.parse(sa);
+          if (!sa.project_id || !sa.client_email || !sa.private_key) {
+            throw new Error('invalid service account');
+          }
+
+          fs.writeFileSync('/tmp/shadow-firebase-sa.json', JSON.stringify(sa));
+          fs.writeFileSync('/tmp/shadow-firebase-project-id', sa.project_id);
+          NODE
+
+          export GOOGLE_APPLICATION_CREDENTIALS=/tmp/shadow-firebase-sa.json
+          PROJECT_ID="$(cat /tmp/shadow-firebase-project-id)"
+          npx --yes firebase-tools@15.1.0 deploy             --only firestore:indexes             --project "$PROJECT_ID"             --non-interactive
+          rm -f /tmp/shadow-firebase-sa.json /tmp/shadow-firebase-project-id
+

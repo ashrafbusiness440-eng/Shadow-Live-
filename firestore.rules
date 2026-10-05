@@ -697,6 +697,36 @@ service cloud.firestore {
       allow create, delete: if false;
     }
 
+    // Diaries are server-authoritative. App and Control surfaces use the
+    // bounded Cloudflare API; no direct client writes or collection scans.
+    match /diaries/{diaryId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /diary_operations/{operationId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /diary_image_links/{objectId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /diary_audit_logs/{logId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /diary_comments/{commentId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /diary_likes/{likeId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /diary_view_keys/{viewKey} {
+      allow read, create, update, delete: if false;
+    }
+
     // Relationships / CP are server-authoritative. Clients use the bounded
     // Cloudflare relationship API; no direct scans, listeners, or writes.
     match /relationship_requests/{requestId} {
@@ -858,7 +888,7 @@ service cloud.firestore {
               && request.resource.data.mimeType.matches('^image/(jpeg|png|webp)$')
               && request.resource.data.sizeBytes is int
               && request.resource.data.sizeBytes > 0
-              && request.resource.data.sizeBytes <= 8388608
+              && request.resource.data.sizeBytes <= 3145728
             )
           );
         allow update, delete: if false;

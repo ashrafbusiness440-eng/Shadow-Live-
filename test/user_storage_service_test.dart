@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as img;
 import 'package:voice_chat_room/shared/services/user_storage_service.dart';
 
 void main() {
@@ -32,5 +33,56 @@ void main() {
       () => detectSupportedImageMime(Uint8List.fromList([1, 2, 3, 4])),
       throwsStateError,
     );
+  });
+
+  test('UGC preprocessing keeps small valid images unchanged', () async {
+    final source = img.Image(width: 64, height: 64);
+    img.fill(source, color: img.ColorRgb8(30, 60, 90));
+    final bytes = img.encodePng(source);
+
+    final prepared = await prepareUserImageForUpload(
+      scope: 'diary_image',
+      bytes: bytes,
+      mimeType: 'image/png',
+    );
+
+    expect(prepared.wasProcessed, isFalse);
+    expect(prepared.mimeType, 'image/png');
+    expect(prepared.bytes, orderedEquals(bytes));
+  });
+
+  test('UGC preprocessing resizes large dimensions and emits bounded WebP', () async {
+    final source = img.Image(width: 2200, height: 1100);
+    img.fill(source, color: img.ColorRgb8(120, 80, 180));
+    final bytes = img.encodeJpg(source, quality: 95);
+
+    final prepared = await prepareUserImageForUpload(
+      scope: 'diary_image',
+      bytes: bytes,
+      mimeType: 'image/jpeg',
+    );
+
+    expect(prepared.wasProcessed, isTrue);
+    expect(prepared.mimeType, 'image/webp');
+    expect(prepared.bytes.length, lessThanOrEqualTo(userImageGlobalMaxBytes));
+
+    final decoded = img.decodeImage(prepared.bytes);
+    expect(decoded, isNotNull);
+    final longest = decoded!.width > decoded.height
+        ? decoded.width
+        : decoded.height;
+    expect(longest, lessThanOrEqualTo(userImageMaxLongestSide));
+  });
+
+  test('non-UGC scopes are not re-encoded by the upload preprocessor', () async {
+    final bytes = Uint8List.fromList(<int>[1, 2, 3, 4]);
+    final prepared = await prepareUserImageForUpload(
+      scope: 'system_asset',
+      bytes: bytes,
+      mimeType: 'application/octet-stream',
+    );
+
+    expect(prepared.wasProcessed, isFalse);
+    expect(prepared.bytes, orderedEquals(bytes));
   });
 }
