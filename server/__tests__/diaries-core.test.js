@@ -26,6 +26,8 @@ const {
   listLatest,
   listUser,
   listFollowing,
+  searchMentions,
+  mentionPublicIds,
 } = diaryCoreTestHooks;
 
 class FakeDb {
@@ -124,6 +126,25 @@ class FakeDb {
           if (ms > Number(cursorMs)) return false;
           return row.id < cursorId;
         });
+      }
+      return rows.slice(0, Number(options.limit || 100));
+    }
+
+    if (collectionPath === "public_profiles") {
+      let rows = [...this.docs.entries()]
+        .filter(([path]) => /^public_profiles\/[^/]+$/.test(path))
+        .map(([path, data]) => ({
+          id: path.split("/")[1],
+          path,
+          data: structuredClone(data),
+        }));
+      for (const filter of options.filters || []) {
+        if (filter.op === "array-contains") {
+          rows = rows.filter((row) =>
+            Array.isArray(row.data?.[filter.field]) &&
+            row.data[filter.field].includes(filter.value)
+          );
+        }
       }
       return rows.slice(0, Number(options.limit || 100));
     }
@@ -874,3 +895,106 @@ test("Firestore deployment keeps diaries indexless in production", () => {
   assert.equal(workflow.includes("pageSize', '200'"), false);
 });
 
+
+
+test("mentions extract unique bounded public IDs and search stays bounded", async () => {
+  assert.deepEqual(
+    mentionPublicIds("مرحبا @123 و @456 ثم @123"),
+    ["123", "456"],
+  );
+  assert.equal(
+    mentionPublicIds("@101 @102 @103 @104 @105 @106 @107 @108 @109").length,
+    8,
+  );
+
+  const db = new FakeDb({
+    ...seedUser("user_a"),
+    "public_ids/7777": { uid: "user_b" },
+    "public_profiles/user_b": {
+      displayName: "B User",
+      publicId: "7777",
+      searchTokens: ["b", "bu", "7777"],
+    },
+    "public_profiles/user_c": {
+      displayName: "Buddy",
+      publicId: "8888",
+      searchTokens: ["b", "bu"],
+    },
+  });
+  const exact = await searchMentions(db, "user_a", { query: "7777" });
+  assert.equal(exact.items.length, 1);
+  assert.equal(exact.items[0].uid, "user_b");
+
+  const prefix = await searchMentions(db, "user_a", { query: "bu" });
+  assert.equal(prefix.items.length, 2);
+  assert.equal(prefix.items.every((item) => item.uid !== "user_a"), true);
+});
+
+test("comment creates owner notification and mention notification without duplicates", async () => {
+  const db = new FakeDb({
+    ...seedUser("commenter"),
+    "users/owner": {
+      displayName: "Owner",
+      publicId: "1111",
+    },
+    "diaries/diary_notify": {
+      diaryId: "diary_notify",
+      ownerUid: "owner",
+      commentsEnabled: true,
+      commentCount: 0,
+    },
+    "users/owner/diaries/diary_notify": {
+      diaryId: "diary_notify",
+      ownerUid: "owner",
+      commentsEnabled: true,
+      commentCount: 0,
+    },
+    "public_ids/2222": { uid: "mentioned" },
+  });
+
+  const result = await createComment(db, "commenter", {
+    diaryId: "diary_notify",
+    text: "أهلا @2222",
+    idempotencyKey: op("notify_comment"),
+  });
+  assert.equal(result.commentCount, 1);
+
+  const notifications = [...db.docs.entries()]
+    .filter(([path]) => path.startsWith("notifications/"))
+    .map(([, data]) => data);
+  assert.equal(notifications.length, 2);
+  assert.equal(notifications.some((item) =>
+    item.type === "diary_comment" && item.userId === "owner"
+  ), true);
+  assert.equal(notifications.some((item) =>
+    item.type === "diary_mention" && item.userId === "mentioned"
+  ), true);
+});
+
+test("likes reuse one aggregate notification per diary owner", async () => {
+  const db = new FakeDb({
+    ...seedUser("liker"),
+    "diaries/diary_like_notify": {
+      diaryId: "diary_like_notify",
+      ownerUid: "owner",
+      likeCount: 0,
+    },
+    "users/owner/diaries/diary_like_notify": {
+      diaryId: "diary_like_notify",
+      ownerUid: "owner",
+      likeCount: 0,
+    },
+  });
+
+  const first = await toggleLike(db, "liker", {
+    diaryId: "diary_like_notify",
+    idempotencyKey: op("notify_like_1"),
+  });
+  assert.equal(first.liked, true);
+
+  const likeNotifications = [...db.docs.entries()]
+    .filter(([, data]) => data?.type === "diary_like_aggregate");
+  assert.equal(likeNotifications.length, 1);
+  assert.equal(likeNotifications[0][1].userId, "owner");
+  assert.equal(likeNotifications[0][1].aggregateCount, 1);
+});
