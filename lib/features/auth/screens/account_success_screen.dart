@@ -18,12 +18,9 @@ class _AccountSuccessScreenState extends State<AccountSuccessScreen>{
   setState((){_continuing=true;_continueError=null;});
   try{
    final config=await AuthLoginConfigService.load(refresh:true);
-   final linkingEnabled=config.optionalAccountLinking;
-   final nextStep=linkingEnabled?'linking':'ready';
-   final nextRoute=linkingEnabled?'/account-linking':'/account-ready';
-   await FirebaseService().updateSetupStep(user.uid,nextStep).timeout(const Duration(seconds:12));
+   await FirebaseService().updateSetupStep(user.uid,config.postSignupSetupStep).timeout(const Duration(seconds:12));
    if(!mounted)return;
-   Navigator.of(context).pushReplacementNamed(nextRoute);
+   Navigator.of(context).pushReplacementNamed(config.postSignupRoute);
   }catch(_){
    if(mounted)setState(()=>_continueError='تعذر حفظ التقدم. تحقق من الاتصال وحاول مجدداً.');
   }finally{
