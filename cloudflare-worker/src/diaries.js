@@ -381,7 +381,7 @@ async function deleteDiary(db, uid, body) {
           },
           ["state", "pendingDeleteAt", "updatedAt"],
         ),
-        db.writeUpdate(`storage_delete_queue/${objectId}`, {
+        db.writeCreate(`storage_delete_queue/${objectId}`, {
           objectId,
           storageKey: clean(object.data?.storageKey),
           ownerUid: uid,
