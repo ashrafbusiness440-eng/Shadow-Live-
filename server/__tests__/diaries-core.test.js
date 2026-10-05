@@ -321,6 +321,26 @@ test("diary core stays bounded and Firestore access is server-authoritative", ()
   }
 });
 
+test("user feed cursor includes diary id and paginates correctly", async () => {
+  const db = new FakeDb({
+    "diaries/u3": { ownerUid: "user_a", text: "3", createdAtMs: 300 },
+    "diaries/u2": { ownerUid: "user_a", text: "2", createdAtMs: 200 },
+    "diaries/u1": { ownerUid: "user_a", text: "1", createdAtMs: 100 },
+  });
+
+  const first = await listUser(db, { userId: "user_a", limit: 1 });
+  assert.equal(first.items[0].diaryId, "u3");
+  assert.equal(first.nextCursor, "300|u3");
+  assert.equal(first.hasMore, true);
+
+  const second = await listUser(db, {
+    userId: "user_a",
+    limit: 1,
+    cursor: first.nextCursor,
+  });
+  assert.equal(second.items[0].diaryId, "u2");
+});
+
 test("same millisecond pagination is deterministic by diary id", async () => {
   const db = new FakeDb({
     "diaries/d3": { ownerUid: "user_a", text: "3", createdAtMs: 300 },
