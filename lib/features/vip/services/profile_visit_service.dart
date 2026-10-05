@@ -28,8 +28,9 @@ class ProfileVisitItem {
       displayName:
           (json['displayName'] ?? 'مستخدم Shadow Live').toString().trim(),
       profileImageUrl: (json['profileImageUrl'] ?? '').toString().trim(),
-      effectiveVipLevel:
-          ((json['effectiveVipLevel'] as num?)?.toInt() ?? 0).clamp(0, 10),
+      effectiveVipLevel: ((json['effectiveVipLevel'] as num?)?.toInt() ?? 0)
+          .clamp(0, 10)
+          .toInt(),
       lastVisitedAt: rawDate.isEmpty ? null : DateTime.tryParse(rawDate),
     );
   }
