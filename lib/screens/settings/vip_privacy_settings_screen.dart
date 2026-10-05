@@ -301,6 +301,51 @@ class _VipPrivacySettingsScreenState extends State<VipPrivacySettingsScreen> {
     }
   }
 
+  Future<void> _saveVip4Privacy(String field, bool enabled) async {
+    final current = _vipSummary;
+    if (current == null || _saving) return;
+    final unlocked = switch (field) {
+      'hideNobleLevel' => current.canHideNobleLevel,
+      'hideGameWinBanner' => current.canHideGameWinBanner,
+      'hideBetWinNotification' => current.canHideBetWinNotification,
+      _ => false,
+    };
+    if (!unlocked) {
+      _openVip(4);
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      final saved = await _vip.setVip4PrivacyPreference(
+        field: field,
+        enabled: enabled,
+      );
+      if (!mounted) return;
+      setState(() {
+        _vipSummary = switch (saved.field) {
+          'hideNobleLevel' => current.copyWith(
+              canHideNobleLevel: saved.canUse,
+              hideNobleLevel: saved.enabled,
+            ),
+          'hideGameWinBanner' => current.copyWith(
+              canHideGameWinBanner: saved.canUse,
+              hideGameWinBanner: saved.enabled,
+            ),
+          'hideBetWinNotification' => current.copyWith(
+              canHideBetWinNotification: saved.canUse,
+              hideBetWinNotification: saved.enabled,
+            ),
+          _ => current,
+        };
+        _saving = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      _message('تعذر تحديث إعداد الخصوصية حالياً.');
+    }
+  }
+
   void _openVisitHistory() {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const ProfileVisitHistoryScreen()),
@@ -394,6 +439,16 @@ class _VipPrivacySettingsScreenState extends State<VipPrivacySettingsScreen> {
                 requiredVip: 3,
                 onChanged: (v) => _saveLevelVisibility('games', v),
               ),
+              _toggle(
+                keyName: 'vip-privacy-hide-noble-level',
+                title: 'إخفاء مستوى النبلاء',
+                subtitle:
+                    'VIP4+ — يخفي ظهور مستوى النبلاء فقط ولا يغيّر تقدمه.',
+                value: vip.hideNobleLevel,
+                unlocked: vip.canHideNobleLevel,
+                requiredVip: 4,
+                onChanged: (v) => _saveVip4Privacy('hideNobleLevel', v),
+              ),
             ],
           ),
           const SizedBox(height: 14),
@@ -409,6 +464,33 @@ class _VipPrivacySettingsScreenState extends State<VipPrivacySettingsScreen> {
                 unlocked: vip.canUseFriendsOnlyMessages,
                 requiredVip: 1,
                 onChanged: _saveFriendsOnlyMessages,
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _section(
+            title: 'الألعاب والإعلانات',
+            children: [
+              _toggle(
+                keyName: 'vip-privacy-hide-game-win-banner',
+                title: 'إخفاء شريط الفوز في الألعاب',
+                subtitle:
+                    'VIP4+ — يخفي إعلان الفوز العام فقط ولا يغير النتيجة أو الجائزة.',
+                value: vip.hideGameWinBanner,
+                unlocked: vip.canHideGameWinBanner,
+                requiredVip: 4,
+                onChanged: (v) => _saveVip4Privacy('hideGameWinBanner', v),
+              ),
+              _toggle(
+                keyName: 'vip-privacy-hide-bet-win-notification',
+                title: 'إخفاء إشعار الفوز بالرهان',
+                subtitle:
+                    'VIP4+ — يخفي إشعار الفوز العام فقط ولا يغير الربح أو الـLedger.',
+                value: vip.hideBetWinNotification,
+                unlocked: vip.canHideBetWinNotification,
+                requiredVip: 4,
+                onChanged: (v) =>
+                    _saveVip4Privacy('hideBetWinNotification', v),
               ),
             ],
           ),
