@@ -24,6 +24,8 @@ class VipSummaryData {
     this.hideRankingLists = false,
     this.canHideProfileVisits = false,
     this.hideProfileVisits = false,
+    this.canUseFriendsOnlyMessages = false,
+    this.friendsOnlyMessages = false,
   });
 
   final int effectiveVipLevel;
@@ -45,6 +47,8 @@ class VipSummaryData {
   final bool hideRankingLists;
   final bool canHideProfileVisits;
   final bool hideProfileVisits;
+  final bool canUseFriendsOnlyMessages;
+  final bool friendsOnlyMessages;
 
   factory VipSummaryData.fromJson(Map<String, dynamic> json) {
     int value(String key) {
@@ -74,6 +78,8 @@ class VipSummaryData {
       hideRankingLists: json['hideRankingLists'] == true,
       canHideProfileVisits: json['canHideProfileVisits'] == true,
       hideProfileVisits: json['hideProfileVisits'] == true,
+      canUseFriendsOnlyMessages: json['canUseFriendsOnlyMessages'] == true,
+      friendsOnlyMessages: json['friendsOnlyMessages'] == true,
     );
   }
 }
@@ -113,6 +119,26 @@ class VipHideProfileVisitsState {
         hideProfileVisits: json['hideProfileVisits'] == true,
         canHideProfileVisits: json['canHideProfileVisits'] == true,
         requiredVipLevel: (json['requiredVipLevel'] as num?)?.toInt() ?? 9,
+      );
+}
+
+class VipFriendsOnlyMessagesState {
+  const VipFriendsOnlyMessagesState({
+    required this.friendsOnlyMessages,
+    required this.canUseFriendsOnlyMessages,
+    required this.requiredVipLevel,
+  });
+
+  final bool friendsOnlyMessages;
+  final bool canUseFriendsOnlyMessages;
+  final int requiredVipLevel;
+
+  factory VipFriendsOnlyMessagesState.fromJson(Map<String, dynamic> json) =>
+      VipFriendsOnlyMessagesState(
+        friendsOnlyMessages: json['friendsOnlyMessages'] == true,
+        canUseFriendsOnlyMessages:
+            json['canUseFriendsOnlyMessages'] == true,
+        requiredVipLevel: (json['requiredVipLevel'] as num?)?.toInt() ?? 1,
       );
 }
 
@@ -196,6 +222,16 @@ class VipService {
       'enabled': enabled,
     });
     return VipHideProfileVisitsState.fromJson(body);
+  }
+
+  Future<VipFriendsOnlyMessagesState> setFriendsOnlyMessages(
+    bool enabled,
+  ) async {
+    final body = await _post({
+      'action': 'setFriendsOnlyMessages',
+      'enabled': enabled,
+    });
+    return VipFriendsOnlyMessagesState.fromJson(body);
   }
 
   void close() {
