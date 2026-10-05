@@ -701,6 +701,10 @@ service cloud.firestore {
     // bounded Cloudflare API; no direct client writes or collection scans.
     match /diaries/{diaryId} {
       allow read, create, update, delete: if false;
+
+      match /comments/{commentId} {
+        allow read, create, update, delete: if false;
+      }
     }
 
     match /users/{userId}/diaries/{diaryId} {
