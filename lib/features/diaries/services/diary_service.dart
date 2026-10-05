@@ -445,6 +445,15 @@ class DiaryService {
     return body;
   }
 
+  Future<DiaryItem> getDiary(String diaryId) async {
+    final body = await _post('getDiary', <String, dynamic>{
+      'diaryId': diaryId.trim(),
+    });
+    final raw = body['diary'];
+    if (raw is! Map) throw const DiaryApiException('diary_not_found');
+    return DiaryItem.fromMap(Map<String, dynamic>.from(raw));
+  }
+
   Future<DiaryPage> listLatest({
     String? cursor,
     int limit = 20,
