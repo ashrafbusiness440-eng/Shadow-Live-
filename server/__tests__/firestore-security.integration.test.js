@@ -1058,3 +1058,52 @@ test("relationship collections stay server-authoritative",async()=>{
     relationshipType:"cp",
   }));
 });
+
+
+test("diary collections reject all direct client access",async()=>{
+  const diaryId="rules_diary";
+  const reportId="rules_diary_report";
+  await env.withSecurityRulesDisabled(async context=>{
+    const adminDb=context.firestore();
+    await Promise.all([
+      setDoc(doc(adminDb,"diaries",diaryId),{
+        diaryId,
+        ownerUid:uid,
+        text:"server-only",
+        createdAtMs:1,
+      }),
+      setDoc(doc(adminDb,"users",uid,"diaries",diaryId),{
+        diaryId,
+        ownerUid:uid,
+        text:"server-only",
+        createdAtMs:1,
+      }),
+      setDoc(doc(adminDb,"diary_reports",reportId),{
+        reportId,
+        targetType:"diary",
+        diaryId,
+        reporterUid:otherUid,
+        status:"new",
+        createdAtMs:1,
+      }),
+    ]);
+  });
+
+  const userDb=phoneUserDb();
+  for (const ref of [
+    doc(userDb,"diaries",diaryId),
+    doc(userDb,"users",uid,"diaries",diaryId),
+    doc(userDb,"diary_reports",reportId),
+  ]) {
+    await assertFails(getDoc(ref));
+    await assertFails(setDoc(ref,{forged:true},{merge:true}));
+    await assertFails(deleteDoc(ref));
+  }
+
+  await assertFails(
+    getDocs(query(collection(userDb,"diaries"),limit(1))),
+  );
+  await assertFails(
+    getDocs(query(collection(userDb,"diary_reports"),limit(1))),
+  );
+});
