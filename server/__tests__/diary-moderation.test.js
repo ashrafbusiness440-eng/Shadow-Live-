@@ -5,6 +5,7 @@ import { diaryModerationTestHooks } from "../../cloudflare-worker/src/diary-mode
 
 const {
   listReports,
+  getReport,
   reviewReport,
   normalizeReport,
   parseCursor,
@@ -200,4 +201,21 @@ test("report normalization and cursor parsing stay strict", () => {
     reportId: "report_a",
   });
   assert.throws(() => parseCursor("bad"), /invalid_cursor/);
+});
+
+
+test("exact report lookup supports admin notification deep links", async () => {
+  const db = new FakeDb({
+    "diary_reports/report_exact": report("report_exact", 7000),
+  });
+
+  const result = await getReport(db, { reportId: "report_exact" });
+  assert.equal(result.ok, true);
+  assert.equal(result.item.reportId, "report_exact");
+  assert.equal(result.item.targetType, "diary");
+
+  await assert.rejects(
+    () => getReport(db, { reportId: "missing_report" }),
+    /report_not_found/,
+  );
 });
