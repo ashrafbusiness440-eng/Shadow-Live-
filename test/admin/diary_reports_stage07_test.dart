@@ -66,7 +66,7 @@ void main() {
     expect(moderation.contains('admin_audit_logs/diary_report_'), isTrue);
 
     expect(diaries.contains('cannot_report_own_content'), isTrue);
-    expect(diaries.contains('diary_reports/${reportId}'), isTrue);
+    expect(diaries.contains(r'diary_reports/${reportId}'), isTrue);
     expect(diaries.contains('createdAtMs: nowMs'), isTrue);
     expect(access.contains('"manageDiaries"'), isTrue);
     expect(access.contains('"deleteDiaryComment"'), isTrue);
