@@ -17,10 +17,14 @@ class DiariesScreen extends StatefulWidget {
     super.key,
     this.title = 'يومياتي',
     this.onGuestAction,
+    this.initialDiaryId,
+    this.openCommentsOnStart = false,
   });
 
   final String title;
   final Future<void> Function()? onGuestAction;
+  final String? initialDiaryId;
+  final bool openCommentsOnStart;
 
   @override
   State<DiariesScreen> createState() => _DiariesScreenState();
@@ -65,6 +69,7 @@ class _DiariesScreenState extends State<DiariesScreen> {
       const <DiaryMentionCandidate>[];
   bool _mentionLoading = false;
   int _mentionRequest = 0;
+  bool _initialDiaryOpened = false;
 
   bool get _guest => FirebaseAuth.instance.currentUser?.isAnonymous == true;
   bool get _signedIn => FirebaseAuth.instance.currentUser != null;
@@ -77,6 +82,10 @@ class _DiariesScreenState extends State<DiariesScreen> {
   void initState() {
     super.initState();
     _load(reset: true, following: false);
+    final initialDiaryId = widget.initialDiaryId?.trim() ?? '';
+    if (initialDiaryId.isNotEmpty) {
+      _loadInitialDiary(initialDiaryId);
+    }
   }
 
   @override
@@ -129,6 +138,28 @@ class _DiariesScreenState extends State<DiariesScreen> {
       _mentionCandidates = const <DiaryMentionCandidate>[];
       _mentionLoading = false;
     });
+  }
+
+  Future<void> _loadInitialDiary(String diaryId) async {
+    try {
+      final item = await _service.getDiary(diaryId);
+      if (!mounted) return;
+      setState(() {
+        _latest = _merge(_latest, <DiaryItem>[item]);
+        _showFollowing = false;
+      });
+      if (widget.openCommentsOnStart && !_initialDiaryOpened) {
+        _initialDiaryOpened = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _openComments(item);
+        });
+      }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(diaryErrorMessage(error))),
+      );
+    }
   }
 
   Future<void> _guestAction() async {
