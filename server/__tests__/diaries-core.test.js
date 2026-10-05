@@ -90,11 +90,20 @@ class FakeDb {
       return rows.slice(0, Number(options.limit || 100));
     }
 
-    assert.equal(collectionPath, "diaries");
+    const rootDiaries = collectionPath === "diaries";
+    const userDiaryMatch = /^users\/([^/]+)\/diaries$/.exec(collectionPath);
+    assert.equal(rootDiaries || userDiaryMatch != null, true, collectionPath);
     const filter = (options.filters || []).find((item) => item.field === "ownerUid");
     let rows = [...this.docs.entries()]
-      .filter(([path]) => /^diaries\/[^/]+$/.test(path))
-      .map(([path, data]) => ({ id: path.split("/")[1], path, data: structuredClone(data) }));
+      .filter(([path]) => rootDiaries
+        ? /^diaries\/[^/]+$/.test(path)
+        : path.startsWith(collectionPath + "/") &&
+          path.split("/").length === collectionPath.split("/").length + 1)
+      .map(([path, data]) => ({
+        id: path.split("/").pop(),
+        path,
+        data: structuredClone(data),
+      }));
     if (filter) rows = rows.filter((row) => row.data.ownerUid === filter.value);
     rows.sort((a, b) => {
       const ms = Number(b.data.createdAtMs || 0) - Number(a.data.createdAtMs || 0);
@@ -190,7 +199,10 @@ test("create accepts image-only diary and snapshots author without per-card prof
   });
   assert.equal(result.ok, true);
   const diary = db.docs.get(`diaries/${result.diaryId}`);
+  const mirror = db.docs.get(`users/user_a/diaries/${result.diaryId}`);
   assert.equal(diary.ownerUid, "user_a");
+  assert.equal(mirror?.diaryId, result.diaryId);
+  assert.equal(mirror?.ownerUid, "user_a");
   assert.equal(diary.ownerName, "USER_A");
   assert.equal(diary.images.length, 1);
   assert.equal(diary.likeCount, 0);
@@ -318,6 +330,10 @@ test("owner can toggle comments and delete; other users cannot", async () => {
   });
   assert.equal(toggled.commentsEnabled, false);
   assert.equal(db.docs.get(`diaries/${created.diaryId}`).commentsEnabled, false);
+  assert.equal(
+    db.docs.get(`users/user_a/diaries/${created.diaryId}`)?.commentsEnabled,
+    false,
+  );
 
   await assert.rejects(
     () => deleteDiary(db, "user_b", {
@@ -333,6 +349,10 @@ test("owner can toggle comments and delete; other users cannot", async () => {
   });
   assert.equal(deleted.ok, true);
   assert.equal(db.docs.has(`diaries/${created.diaryId}`), false);
+  assert.equal(
+    db.docs.has(`users/user_a/diaries/${created.diaryId}`),
+    false,
+  );
 });
 
 test("following feed filters a bounded latest window without per-user scans", async () => {
@@ -362,9 +382,11 @@ test("following feed filters a bounded latest window without per-user scans", as
 
 test("latest and user feeds stay bounded and expose cursors", async () => {
   const seed = {
-    "diaries/d1": { ownerUid: "user_a", text: "1", createdAtMs: 300 },
-    "diaries/d2": { ownerUid: "user_b", text: "2", createdAtMs: 200 },
-    "diaries/d3": { ownerUid: "user_a", text: "3", createdAtMs: 100 },
+    "diaries/d1": { diaryId: "d1", ownerUid: "user_a", text: "1", createdAtMs: 300 },
+    "diaries/d2": { diaryId: "d2", ownerUid: "user_b", text: "2", createdAtMs: 200 },
+    "diaries/d3": { diaryId: "d3", ownerUid: "user_a", text: "3", createdAtMs: 100 },
+    "users/user_a/diaries/d1": { diaryId: "d1", ownerUid: "user_a", text: "1", createdAtMs: 300 },
+    "users/user_a/diaries/d3": { diaryId: "d3", ownerUid: "user_a", text: "3", createdAtMs: 100 },
   };
   const db = new FakeDb(seed);
   const latest = await listLatest(db, { limit: 2 });
@@ -423,9 +445,9 @@ test("diary core stays bounded and Firestore access is server-authoritative", ()
 
 test("user feed cursor includes diary id and paginates correctly", async () => {
   const db = new FakeDb({
-    "diaries/u3": { ownerUid: "user_a", text: "3", createdAtMs: 300 },
-    "diaries/u2": { ownerUid: "user_a", text: "2", createdAtMs: 200 },
-    "diaries/u1": { ownerUid: "user_a", text: "1", createdAtMs: 100 },
+    "users/user_a/diaries/u3": { diaryId: "u3", ownerUid: "user_a", text: "3", createdAtMs: 300 },
+    "users/user_a/diaries/u2": { diaryId: "u2", ownerUid: "user_a", text: "2", createdAtMs: 200 },
+    "users/user_a/diaries/u1": { diaryId: "u1", ownerUid: "user_a", text: "1", createdAtMs: 100 },
   });
 
   const first = await listUser(db, { userId: "user_a", limit: 1 });
@@ -507,7 +529,7 @@ test("diary route and Firestore collections stay server-authoritative", () => {
   }
 });
 
-test("Firestore deployment keeps diary composite indexes live", () => {
+test("Firestore deployment keeps diaries indexless in production", () => {
   const workflow = readFileSync(
     new URL("../../.github/workflows/deploy-firestore-rules.yml", import.meta.url),
     "utf8",
@@ -518,31 +540,25 @@ test("Firestore deployment keeps diary composite indexes live", () => {
   const indexConfig = JSON.parse(
     readFileSync(new URL("../../firestore.indexes.json", import.meta.url), "utf8"),
   );
+  const source = readFileSync(
+    new URL("../../cloudflare-worker/src/diaries.js", import.meta.url),
+    "utf8",
+  );
+  const rules = readFileSync(
+    new URL("../../firestore.rules", import.meta.url),
+    "utf8",
+  );
 
   assert.equal(firebaseConfig?.firestore?.indexes, "firestore.indexes.json");
-  assert.equal(workflow.includes("'firestore.indexes.json'"), true);
+  assert.deepEqual(indexConfig.indexes || [], []);
+  assert.equal(source.includes('users/${userId}/diaries'), true);
+  assert.equal(source.includes('users/${uid}/diaries/${diaryId}'), true);
   assert.equal(
-    workflow.includes("Deploy Firestore composite indexes through Admin API"),
+    rules.includes("match /users/{userId}/diaries/{diaryId}"),
     true,
   );
-  assert.equal(
-    workflow.includes("https://firestore.googleapis.com/v1/projects/"),
-    true,
-  );
-  assert.equal(workflow.includes("/collectionGroups/"), true);
-  assert.equal(workflow.includes("fieldSignature"), true);
   assert.equal(workflow.includes("firebase-tools@"), false);
-  assert.equal(workflow.includes("--only firestore:indexes"), false);
   assert.equal(workflow.includes("serviceusage.googleapis.com"), false);
   assert.equal(workflow.includes("pageSize', '200'"), false);
-  assert.equal(
-    (indexConfig.indexes || []).some((index) =>
-      index.collectionGroup === "diaries" &&
-      Array.isArray(index.fields) &&
-      index.fields.some((field) => field.fieldPath === "ownerUid") &&
-      index.fields.some((field) => field.fieldPath === "createdAtMs")
-    ),
-    true,
-  );
 });
 
