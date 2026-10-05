@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../shared/services/user_storage_service.dart';
 import '../../profile/screens/public_profile_screen.dart';
 import '../services/diary_service.dart';
+import '../widgets/diary_comments_sheet.dart';
 
 class DiariesScreen extends StatefulWidget {
   const DiariesScreen({
@@ -53,6 +54,9 @@ class _DiariesScreenState extends State<DiariesScreen> {
   bool _publishing = false;
   bool _commentsEnabled = true;
   List<_PickedDiaryImage> _pickedImages = const <_PickedDiaryImage>[];
+  final Set<String> _likedDiaryIds = <String>{};
+  final Set<String> _busyLikeIds = <String>{};
+  final Set<String> _viewRecordedThisSession = <String>{};
 
   bool get _guest => FirebaseAuth.instance.currentUser?.isAnonymous == true;
   bool get _signedIn => FirebaseAuth.instance.currentUser != null;
@@ -281,6 +285,133 @@ class _DiariesScreenState extends State<DiariesScreen> {
     } finally {
       if (mounted) setState(() => _publishing = false);
     }
+  }
+
+  void _replaceDiary(
+    String diaryId,
+    DiaryItem Function(DiaryItem item) update,
+  ) {
+    setState(() {
+      _latest = _latest
+          .map((item) => item.diaryId == diaryId ? update(item) : item)
+          .toList(growable: false);
+      _following = _following
+          .map((item) => item.diaryId == diaryId ? update(item) : item)
+          .toList(growable: false);
+    });
+  }
+
+  Future<void> _toggleLike(DiaryItem item) async {
+    if (_guest || !_signedIn) {
+      await _guestAction();
+      return;
+    }
+    if (_busyLikeIds.contains(item.diaryId)) return;
+    setState(() => _busyLikeIds.add(item.diaryId));
+    try {
+      final result = await _service.toggleLike(item.diaryId);
+      if (!mounted) return;
+      setState(() {
+        if (result.liked) {
+          _likedDiaryIds.add(item.diaryId);
+        } else {
+          _likedDiaryIds.remove(item.diaryId);
+        }
+      });
+      _replaceDiary(
+        item.diaryId,
+        (current) => current.copyWith(likeCount: result.likeCount),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(diaryErrorMessage(error))),
+      );
+    } finally {
+      if (mounted) setState(() => _busyLikeIds.remove(item.diaryId));
+    }
+  }
+
+  Future<void> _recordView(DiaryItem item) async {
+    if (!_signedIn || _viewRecordedThisSession.contains(item.diaryId)) return;
+    _viewRecordedThisSession.add(item.diaryId);
+    try {
+      final result = await _service.recordView(item.diaryId);
+      if (!mounted) return;
+      _replaceDiary(
+        item.diaryId,
+        (current) => current.copyWith(viewCount: result.viewCount),
+      );
+    } catch (_) {
+      _viewRecordedThisSession.remove(item.diaryId);
+    }
+  }
+
+  Future<void> _openComments(DiaryItem item) async {
+    await _recordView(item);
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF080B12),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => DiaryCommentsSheet(
+        diary: item,
+        service: _service,
+        onGuestAction: _guestAction,
+        onCommentCountChanged: (count) {
+          if (!mounted) return;
+          _replaceDiary(
+            item.diaryId,
+            (current) => current.copyWith(commentCount: count),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _openImage(
+    DiaryItem item,
+    DiaryImageItem image,
+  ) async {
+    await _recordView(item);
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: .92),
+      builder: (dialogContext) => Dialog.fullscreen(
+        backgroundColor: Colors.black,
+        child: SafeArea(
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: InteractiveViewer(
+                  minScale: .8,
+                  maxScale: 4,
+                  child: Center(
+                    child: Image.network(
+                      image.publicUrl,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => _imageError(),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 8,
+                left: 8,
+                child: IconButton.filledTonal(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   String _timeLabel(int createdAtMs) {
@@ -661,19 +792,28 @@ class _DiariesScreenState extends State<DiariesScreen> {
           ],
           if (item.images.isNotEmpty) ...[
             const SizedBox(height: 12),
-            _networkImages(item.images),
+            _networkImages(item),
           ],
           const SizedBox(height: 12),
           Divider(color: Colors.white.withValues(alpha: .07), height: 1),
           const SizedBox(height: 10),
           Row(
             children: [
-              _metric(Icons.favorite_border_rounded, item.likeCount),
+              _metric(
+                _likedDiaryIds.contains(item.diaryId)
+                    ? Icons.favorite_rounded
+                    : Icons.favorite_border_rounded,
+                item.likeCount,
+                onTap: () => _toggleLike(item),
+                active: _likedDiaryIds.contains(item.diaryId),
+                busy: _busyLikeIds.contains(item.diaryId),
+              ),
               _metric(
                 item.commentsEnabled
                     ? Icons.chat_bubble_outline_rounded
                     : Icons.comments_disabled_outlined,
                 item.commentCount,
+                onTap: () => _openComments(item),
               ),
               _metric(Icons.card_giftcard_rounded, item.giftCount),
               const Spacer(),
@@ -685,16 +825,21 @@ class _DiariesScreenState extends State<DiariesScreen> {
     );
   }
 
-  Widget _networkImages(List<DiaryImageItem> images) {
+  Widget _networkImages(DiaryItem item) {
+    final images = item.images;
     if (images.length == 1) {
-      return ClipRRect(
+      return InkWell(
         borderRadius: BorderRadius.circular(16),
-        child: AspectRatio(
-          aspectRatio: 4 / 3,
-          child: Image.network(
-            images.first.publicUrl,
-            fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => _imageError(),
+        onTap: () => _openImage(item, images.first),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: AspectRatio(
+            aspectRatio: 4 / 3,
+            child: Image.network(
+              images.first.publicUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => _imageError(),
+            ),
           ),
         ),
       );
@@ -705,14 +850,18 @@ class _DiariesScreenState extends State<DiariesScreen> {
           Expanded(
             child: Padding(
               padding: EdgeInsets.only(left: i == 0 ? 6 : 0),
-              child: ClipRRect(
+              child: InkWell(
                 borderRadius: BorderRadius.circular(14),
-                child: AspectRatio(
-                  aspectRatio: 1,
-                  child: Image.network(
-                    images[i].publicUrl,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _imageError(),
+                onTap: () => _openImage(item, images[i]),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: AspectRatio(
+                    aspectRatio: 1,
+                    child: Image.network(
+                      images[i].publicUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _imageError(),
+                    ),
                   ),
                 ),
               ),
@@ -731,19 +880,48 @@ class _DiariesScreenState extends State<DiariesScreen> {
     );
   }
 
-  Widget _metric(IconData icon, int value) {
-    return Padding(
+  Widget _metric(
+    IconData icon,
+    int value, {
+    VoidCallback? onTap,
+    bool active = false,
+    bool busy = false,
+  }) {
+    final content = Padding(
       padding: const EdgeInsetsDirectional.only(end: 16),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 18, color: Colors.white38),
+          if (busy)
+            const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          else
+            Icon(
+              icon,
+              size: 18,
+              color: active ? const Color(0xFFFF5B73) : Colors.white38,
+            ),
           const SizedBox(width: 4),
           Text(
             _compact(value),
-            style: const TextStyle(color: Colors.white38, fontSize: 12),
+            style: TextStyle(
+              color: active ? const Color(0xFFFF8A9B) : Colors.white38,
+              fontSize: 12,
+            ),
           ),
         ],
+      ),
+    );
+    if (onTap == null) return content;
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: busy ? null : onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: content,
       ),
     );
   }
