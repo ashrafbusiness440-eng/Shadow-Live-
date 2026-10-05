@@ -201,6 +201,8 @@ class _VipPrivacySettingsScreenState extends State<VipPrivacySettingsScreen> {
           hideRankingLists: saved.hideRankingLists,
           canHideProfileVisits: current.canHideProfileVisits,
           hideProfileVisits: current.hideProfileVisits,
+          canUseFriendsOnlyMessages: current.canUseFriendsOnlyMessages,
+          friendsOnlyMessages: current.friendsOnlyMessages,
         );
         _saving = false;
       });
@@ -243,6 +245,8 @@ class _VipPrivacySettingsScreenState extends State<VipPrivacySettingsScreen> {
           hideRankingLists: current.hideRankingLists,
           canHideProfileVisits: saved.canHideProfileVisits,
           hideProfileVisits: saved.hideProfileVisits,
+          canUseFriendsOnlyMessages: current.canUseFriendsOnlyMessages,
+          friendsOnlyMessages: current.friendsOnlyMessages,
         );
         _saving = false;
       });
@@ -250,6 +254,50 @@ class _VipPrivacySettingsScreenState extends State<VipPrivacySettingsScreen> {
       if (!mounted) return;
       setState(() => _saving = false);
       _message('تعذر تحديث إخفاء زيارات الملف حالياً.');
+    }
+  }
+
+  Future<void> _saveFriendsOnlyMessages(bool enabled) async {
+    final current = _vipSummary;
+    if (current == null || _saving) return;
+    if (!current.canUseFriendsOnlyMessages) {
+      _openVip(1);
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      final saved = await _vip.setFriendsOnlyMessages(enabled);
+      if (!mounted) return;
+      setState(() {
+        _vipSummary = VipSummaryData(
+          effectiveVipLevel: current.effectiveVipLevel,
+          effectiveVipSource: current.effectiveVipSource,
+          earnedVipLevel: current.earnedVipLevel,
+          adminGrantVipLevel: current.adminGrantVipLevel,
+          growthPoints: current.growthPoints,
+          maintenancePoints: current.maintenancePoints,
+          maintenanceRequired: current.maintenanceRequired,
+          currentThreshold: current.currentThreshold,
+          remainingToNext: current.remainingToNext,
+          maxGrowthPoints: current.maxGrowthPoints,
+          earnedVipExpiresAtMs: current.earnedVipExpiresAtMs,
+          adminGrantExpiresAtMs: current.adminGrantExpiresAtMs,
+          coins: current.coins,
+          purchaseGrowthPerCoin: current.purchaseGrowthPerCoin,
+          paidRechargeGrowthPerCoin: current.paidRechargeGrowthPerCoin,
+          canHideRankingLists: current.canHideRankingLists,
+          hideRankingLists: current.hideRankingLists,
+          canHideProfileVisits: current.canHideProfileVisits,
+          hideProfileVisits: current.hideProfileVisits,
+          canUseFriendsOnlyMessages: saved.canUseFriendsOnlyMessages,
+          friendsOnlyMessages: saved.friendsOnlyMessages,
+        );
+        _saving = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      _message('تعذر تحديث خصوصية الرسائل حالياً.');
     }
   }
 
@@ -345,6 +393,22 @@ class _VipPrivacySettingsScreenState extends State<VipPrivacySettingsScreen> {
                 unlocked: levels.visibility.canEdit,
                 requiredVip: 3,
                 onChanged: (v) => _saveLevelVisibility('games', v),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _section(
+            title: 'الرسائل',
+            children: [
+              _toggle(
+                keyName: 'vip-privacy-friends-only-messages',
+                title: 'فقط الأصدقاء يمكنهم مراسلتي',
+                subtitle:
+                    'VIP1+ — يمنع الرسائل الجديدة من غير الأصدقاء مع استثناء النظام والإدارة.',
+                value: vip.friendsOnlyMessages,
+                unlocked: vip.canUseFriendsOnlyMessages,
+                requiredVip: 1,
+                onChanged: _saveFriendsOnlyMessages,
               ),
             ],
           ),
