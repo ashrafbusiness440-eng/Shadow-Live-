@@ -9,6 +9,7 @@ const MAX_COMMENT_LENGTH = 200;
 const MAX_IMAGES = 2;
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 30;
+const VIEW_DEDUPE_WINDOW_MS = 24 * 60 * 60 * 1000;
 const URL_PATTERN = /(?:https?:\/\/|www\.|\b[a-z0-9-]+\.(?:com|net|org|io|co|me|app|dev|gg|tv|ae|sa|sy)(?:\/|\b))/i;
 const OPERATION_KEY_PATTERN = /^[A-Za-z0-9_-]{12,220}$/;
 const OBJECT_ID_PATTERN = /^[a-f0-9]{32}$/;
@@ -32,6 +33,10 @@ function pathSafe(value) {
 
 function diaryLikePath(diaryId, uid) {
   return `diary_likes/${diaryId}__${pathSafe(uid)}`;
+}
+
+function diaryViewKeyPath(diaryId, uid) {
+  return `diary_view_keys/${diaryId}__${pathSafe(uid)}`;
 }
 
 function assertSafeId(value, code = "invalid_id") {
@@ -698,6 +703,85 @@ async function deleteComment(db, uid, body) {
   });
 }
 
+async function recordView(db, uid, body) {
+  const diaryId = assertSafeId(body.diaryId, "invalid_diary_id");
+
+  return runTransaction(db, async (transaction) => {
+    const viewPath = diaryViewKeyPath(diaryId, uid);
+    const [diary, viewKey] = await Promise.all([
+      db.get(`diaries/${diaryId}`, transaction),
+      db.get(viewPath, transaction),
+    ]);
+    if (!diary.exists) throw new DiaryApiError("diary_not_found", 404);
+
+    const ownerUid = clean(diary.data?.ownerUid);
+    if (!ownerUid) throw new DiaryApiError("invalid_diary_owner", 409);
+
+    const nowMs = Date.now();
+    const nextEligibleAtMs = Math.max(
+      0,
+      Number(viewKey.data?.nextEligibleAtMs || 0),
+    );
+    const currentCount = Math.max(0, Number(diary.data?.viewCount || 0));
+
+    if (viewKey.exists && nextEligibleAtMs > nowMs) {
+      await db.rollback(transaction);
+      return {
+        ok: true,
+        diaryId,
+        counted: false,
+        viewCount: currentCount,
+        nextEligibleAtMs,
+      };
+    }
+
+    const viewCount = currentCount + 1;
+    const nextAt = nowMs + VIEW_DEDUPE_WINDOW_MS;
+    const now = new Date();
+    const viewData = {
+      diaryId,
+      userUid: uid,
+      lastCountedAt: now,
+      lastCountedAtMs: nowMs,
+      nextEligibleAtMs: nextAt,
+    };
+
+    await db.commit(transaction, [
+      viewKey.exists
+        ? db.writeUpdate(
+            viewPath,
+            viewData,
+            [
+              "diaryId",
+              "userUid",
+              "lastCountedAt",
+              "lastCountedAtMs",
+              "nextEligibleAtMs",
+            ],
+          )
+        : db.writeCreate(viewPath, viewData),
+      db.writeUpdate(
+        `diaries/${diaryId}`,
+        { viewCount },
+        ["viewCount"],
+      ),
+      db.writeUpdate(
+        `users/${ownerUid}/diaries/${diaryId}`,
+        { viewCount },
+        ["viewCount"],
+      ),
+    ]);
+
+    return {
+      ok: true,
+      diaryId,
+      counted: true,
+      viewCount,
+      nextEligibleAtMs: nextAt,
+    };
+  });
+}
+
 async function setCommentsEnabled(db, uid, body) {
   const diaryId = assertSafeId(body.diaryId, "invalid_diary_id");
   const enabled = body.enabled === true;
@@ -898,6 +982,9 @@ export async function diaries(request, env) {
     if (action === "listComments") {
       return json(request, env, await listComments(auth.db, body));
     }
+    if (action === "recordView") {
+      return json(request, env, await recordView(auth.db, auth.uid, body));
+    }
 
     if (action === "listFollowing") {
       if (auth.guest) throw new DiaryApiError("guest_restricted", 403);
@@ -947,6 +1034,7 @@ export const diaryCoreTestHooks = Object.freeze({
   createComment,
   listComments,
   deleteComment,
+  recordView,
   listLatest,
   listUser,
   listFollowing,
