@@ -114,14 +114,25 @@ test("profile visits are bounded visible history and VIP9 hidden visits stay pri
     false,
   );
 
-  const privateVisit = await db
-    .collection("profile_visit_private")
-    .doc(target)
-    .collection("items")
-    .doc(hidden)
-    .get();
+  const [privateVisit, hiddenVisited] = await Promise.all([
+    db
+      .collection("profile_visit_private")
+      .doc(target)
+      .collection("items")
+      .doc(hidden)
+      .get(),
+    profileVisitHistory(
+      cloudflareDb,
+      hidden,
+      { mode: "visited" },
+      nowMs + 1000,
+    ),
+  ]);
   assert.equal(privateVisit.exists, true);
   assert.equal(privateVisit.data().hidden, true);
+  assert.equal(hiddenVisited.items.length, 1);
+  assert.equal(hiddenVisited.items[0].uid, target);
+  assert.equal(hiddenVisited.items[0].hidden, true);
 });
 
 test("profile visit history is unavailable below VIP1 and hide preference below VIP9", async () => {
