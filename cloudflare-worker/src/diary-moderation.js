@@ -111,6 +111,16 @@ function normalizeReport(id, data = {}) {
   };
 }
 
+async function getReport(db, body) {
+  const reportId = safeId(body.reportId, "invalid_report_id");
+  const report = await db.get(`diary_reports/${reportId}`);
+  if (!report.exists) throw new ModerationApiError("report_not_found", 404);
+  return {
+    ok: true,
+    item: normalizeReport(reportId, report.data || {}),
+  };
+}
+
 async function listReports(db, body) {
   const limit = pageLimit(body.limit);
   const cursor = parseCursor(body.cursor);
@@ -338,6 +348,15 @@ export async function diaryModeration(request, env) {
       ]);
       return json(request, env, await listReports(db, body));
     }
+    if (action === "getReport") {
+      await requireCapability(db, decoded, [
+        "viewReports",
+        "reviewReports",
+        "manageDiaries",
+        "deleteDiaryComment",
+      ]);
+      return json(request, env, await getReport(db, body));
+    }
     if (action === "reviewReport") {
       const actor = await requireCapability(db, decoded, "reviewReports", {
         recentAuth: true,
@@ -372,6 +391,7 @@ export async function diaryModeration(request, env) {
 
 export const diaryModerationTestHooks = Object.freeze({
   listReports,
+  getReport,
   reviewReport,
   deleteDiaryTarget,
   deleteCommentTarget,
