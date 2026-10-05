@@ -45,7 +45,11 @@ void main() {
     expect(source.contains('...financialContext'), isTrue);
     expect(source.contains('db.increment("giftCount", quantity)'), isTrue);
     expect(source.contains('db.increment("giftCoins", totalCost)'), isTrue);
-    expect(source.contains(r'diaries/${diaryId}/gifts/${key}'), isTrue);
+    expect(
+      source.contains(r'const diaryPath = diaryId ? `diaries/${diaryId}` : "";'),
+      isTrue,
+    );
+    expect(source.contains(r'${diaryPath}/gifts/${key}'), isTrue);
 
     expect(diaries.contains('async function listGiftEvents('), isTrue);
     expect(diaries.contains('limit: limit + 1'), isTrue);
