@@ -110,6 +110,7 @@ function imageObject(id, uid = "user_a") {
       targetId: uid,
       state: "active",
       publicUrl: `https://example.test/api/public-media/diary_image/${uid}/${id}.webp`,
+      storageKey: `users/${uid}/diaries/${id}.webp`,
       mimeType: "image/webp",
       sizeBytes: 1200,
     },
@@ -176,6 +177,60 @@ test("create accepts image-only diary and snapshots author without per-card prof
   assert.equal(diary.commentCount, 0);
   assert.equal(diary.viewCount, 0);
   assert.equal(db.docs.get(`diary_image_links/${imageId}`).state, "linked");
+});
+
+test("publishing claims an orphan upload and deletion re-queues its R2 object", async () => {
+  const imageId = "9".repeat(32);
+  const [objectPath, objectData] = imageObject(imageId);
+  const db = new FakeDb({
+    ...seedUser(),
+    [objectPath]: objectData,
+    [`storage_delete_queue/${imageId}`]: {
+      objectId: imageId,
+      storageKey: objectData.storageKey,
+      ownerUid: "user_a",
+      scope: "diary_image",
+      targetId: "user_a",
+      sizeBytes: objectData.sizeBytes,
+      deleteAfter: new Date(Date.now() + 60_000),
+      reason: "diary_orphan_timeout",
+    },
+  });
+
+  const created = await createDiary(db, "user_a", {
+    text: "مع صورة",
+    imageObjectIds: [imageId],
+    idempotencyKey: op("claim_orphan"),
+  });
+
+  assert.equal(db.docs.has(`storage_delete_queue/${imageId}`), false);
+  assert.equal(
+    db.docs.get(`diary_image_links/${imageId}`)?.state,
+    "linked",
+  );
+  assert.equal(
+    db.docs.get(`storage_objects/${imageId}`)?.linkedDiaryId,
+    created.diaryId,
+  );
+
+  const deleted = await deleteDiary(db, "user_a", {
+    diaryId: created.diaryId,
+    idempotencyKey: op("delete_with_image"),
+  });
+
+  assert.equal(deleted.queuedImages, 1);
+  assert.equal(
+    db.docs.get(`diary_image_links/${imageId}`)?.state,
+    "pending_cleanup",
+  );
+  assert.equal(
+    db.docs.get(`storage_objects/${imageId}`)?.state,
+    "pending_delete",
+  );
+  const queue = db.docs.get(`storage_delete_queue/${imageId}`);
+  assert.equal(queue?.reason, "diary_deleted");
+  assert.equal(queue?.storageKey, objectData.storageKey);
+  assert.equal(queue?.scope, "diary_image");
 });
 
 test("create rejects diary image owned by another account", async () => {
