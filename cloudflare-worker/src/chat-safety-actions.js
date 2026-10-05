@@ -422,20 +422,25 @@ export async function sendGift(db, uid, body, options = {}) {
       await db.rollback(transaction);
       return { ok: true, code: "duplicate", ...(op.data?.result || {}) };
     }
-    if (!sender.exists || !receiver.exists || !conversation.exists) {
+    if (!sender.exists || !receiver.exists || !contextDoc.exists) {
       throw new ApiError("not_found", 404);
     }
 
-    const conversationData = conversation.data || {};
-    const participants = Array.isArray(conversationData.participants)
-      ? conversationData.participants
-      : [];
-    if (
-      participants.length !== 2 ||
-      !participants.includes(uid) ||
-      !participants.includes(receiverId)
-    ) {
-      throw new ApiError("invalid_conversation", 409);
+    const contextData = contextDoc.data || {};
+    const conversationData = contextType === "chat" ? contextData : {};
+    if (contextType === "chat") {
+      const participants = Array.isArray(conversationData.participants)
+        ? conversationData.participants
+        : [];
+      if (
+        participants.length !== 2 ||
+        !participants.includes(uid) ||
+        !participants.includes(receiverId)
+      ) {
+        throw new ApiError("invalid_conversation", 409);
+      }
+    } else if (clean(contextData.ownerUid) !== receiverId) {
+      throw new ApiError("invalid_diary_receiver", 409);
     }
     if (outgoingBlock.exists || incomingBlock.exists) {
       throw new ApiError("blocked", 403);
