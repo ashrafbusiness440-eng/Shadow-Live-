@@ -465,6 +465,23 @@ class DiaryService {
     return DiaryPage.fromMap(body);
   }
 
+  Future<DiaryPage> listUser(
+    String userId, {
+    String? cursor,
+    int limit = 20,
+  }) async {
+    final normalizedUserId = userId.trim();
+    if (normalizedUserId.isEmpty) {
+      throw const DiaryApiException('invalid_user');
+    }
+    final body = await _post('listUser', <String, dynamic>{
+      'userId': normalizedUserId,
+      'limit': limit,
+      if (cursor != null && cursor.trim().isNotEmpty) 'cursor': cursor.trim(),
+    });
+    return DiaryPage.fromMap(body);
+  }
+
   Future<DiaryPage> listFollowing({
     String? cursor,
     int limit = 20,

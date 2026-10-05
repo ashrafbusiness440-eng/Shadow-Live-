@@ -3,9 +3,11 @@ import 'dart:typed_data';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../shared/services/user_storage_service.dart';
+import '../../auth/bloc/auth_bloc.dart';
 import '../../profile/screens/public_profile_screen.dart';
 import '../services/diary_service.dart';
 import '../widgets/diary_comments_sheet.dart';
@@ -20,12 +22,16 @@ class DiariesScreen extends StatefulWidget {
     this.onGuestAction,
     this.initialDiaryId,
     this.openCommentsOnStart = false,
+    this.profileUserId,
+    this.embedded = false,
   });
 
   final String title;
   final Future<void> Function()? onGuestAction;
   final String? initialDiaryId;
   final bool openCommentsOnStart;
+  final String? profileUserId;
+  final bool embedded;
 
   @override
   State<DiariesScreen> createState() => _DiariesScreenState();
@@ -49,14 +55,19 @@ class _DiariesScreenState extends State<DiariesScreen> {
 
   List<DiaryItem> _latest = const <DiaryItem>[];
   List<DiaryItem> _following = const <DiaryItem>[];
+  List<DiaryItem> _profileItems = const <DiaryItem>[];
   String? _latestCursor;
   String? _followingCursor;
+  String? _profileCursor;
   bool _latestHasMore = true;
   bool _followingHasMore = true;
+  bool _profileHasMore = true;
   bool _loadingLatest = false;
   bool _loadingFollowing = false;
+  bool _loadingProfile = false;
   Object? _latestError;
   Object? _followingError;
+  Object? _profileError;
 
   bool _showFollowing = false;
   bool _publishing = false;
@@ -75,10 +86,19 @@ class _DiariesScreenState extends State<DiariesScreen> {
   bool get _guest => FirebaseAuth.instance.currentUser?.isAnonymous == true;
   bool get _signedIn => FirebaseAuth.instance.currentUser != null;
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
-  List<DiaryItem> get _items => _showFollowing ? _following : _latest;
-  bool get _loading => _showFollowing ? _loadingFollowing : _loadingLatest;
-  bool get _hasMore => _showFollowing ? _followingHasMore : _latestHasMore;
-  Object? get _error => _showFollowing ? _followingError : _latestError;
+  bool get _profileMode => (widget.profileUserId?.trim().isNotEmpty ?? false);
+  List<DiaryItem> get _items => _profileMode
+      ? _profileItems
+      : (_showFollowing ? _following : _latest);
+  bool get _loading => _profileMode
+      ? _loadingProfile
+      : (_showFollowing ? _loadingFollowing : _loadingLatest);
+  bool get _hasMore => _profileMode
+      ? _profileHasMore
+      : (_showFollowing ? _followingHasMore : _latestHasMore);
+  Object? get _error => _profileMode
+      ? _profileError
+      : (_showFollowing ? _followingError : _latestError);
 
   @override
   void initState() {
@@ -200,9 +220,28 @@ class _DiariesScreenState extends State<DiariesScreen> {
       return;
     }
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('سجّل الدخول لاستخدام هذه الميزة.')),
+    final shouldLogin = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('تسجيل الدخول'),
+        content: const Text(
+          'يمكنك مشاهدة اليوميات العامة كضيف، لكن يلزم تسجيل الدخول للتفاعل.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('لاحقاً'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('تسجيل الدخول'),
+          ),
+        ],
+      ),
     );
+    if (shouldLogin == true && mounted) {
+      context.read<AuthBloc>().add(SignOutRequested());
+    }
   }
 
   Future<void> _load({
@@ -210,7 +249,37 @@ class _DiariesScreenState extends State<DiariesScreen> {
     bool? following,
   }) async {
     final targetFollowing = following ?? _showFollowing;
-    if (targetFollowing && _guest) return;
+    if (!_profileMode && targetFollowing && _guest) return;
+
+    if (_profileMode) {
+      if (_loadingProfile) return;
+      setState(() {
+        _loadingProfile = true;
+        if (reset) _profileError = null;
+      });
+      try {
+        final page = await _service.listUser(
+          widget.profileUserId!.trim(),
+          cursor: reset ? null : _profileCursor,
+        );
+        if (!mounted) return;
+        setState(() {
+          _profileItems = _merge(
+            reset ? const <DiaryItem>[] : _profileItems,
+            page.items,
+          );
+          _profileCursor = page.nextCursor;
+          _profileHasMore = page.hasMore;
+          _profileError = null;
+        });
+      } catch (error) {
+        if (!mounted) return;
+        setState(() => _profileError = error);
+      } finally {
+        if (mounted) setState(() => _loadingProfile = false);
+      }
+      return;
+    }
 
     if (targetFollowing ? _loadingFollowing : _loadingLatest) return;
     setState(() {
@@ -415,6 +484,9 @@ class _DiariesScreenState extends State<DiariesScreen> {
           .map((item) => item.diaryId == diaryId ? update(item) : item)
           .toList(growable: false);
       _following = _following
+          .map((item) => item.diaryId == diaryId ? update(item) : item)
+          .toList(growable: false);
+      _profileItems = _profileItems
           .map((item) => item.diaryId == diaryId ? update(item) : item)
           .toList(growable: false);
     });
@@ -1106,7 +1178,7 @@ class _DiariesScreenState extends State<DiariesScreen> {
   }
 
   Widget _feedBody() {
-    if (_showFollowing && _guest) {
+    if (!_profileMode && _showFollowing && _guest) {
       return Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
@@ -1170,9 +1242,11 @@ class _DiariesScreenState extends State<DiariesScreen> {
         padding: const EdgeInsets.symmetric(vertical: 48),
         child: Center(
           child: Text(
-            _showFollowing
-                ? 'ما في يوميات جديدة من الأشخاص اللي بتتابعهم.'
-                : 'ما في يوميات منشورة لسه.',
+            _profileMode
+                ? 'ما في يوميات منشورة لهذا المستخدم.'
+                : (_showFollowing
+                    ? 'ما في يوميات جديدة من الأشخاص اللي بتتابعهم.'
+                    : 'ما في يوميات منشورة لسه.'),
             style: const TextStyle(color: Colors.white54),
           ),
         ),
@@ -1212,6 +1286,7 @@ class _DiariesScreenState extends State<DiariesScreen> {
       child: Scaffold(
         backgroundColor: const Color(0xFF05060D),
         body: SafeArea(
+          top: !widget.embedded,
           bottom: false,
           child: RefreshIndicator(
             color: const Color(0xFF8A3DFF),
@@ -1219,33 +1294,60 @@ class _DiariesScreenState extends State<DiariesScreen> {
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 2),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          widget.title,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 24,
-                            fontWeight: FontWeight.w900,
+                if (!widget.embedded)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 2),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            widget.title,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 24,
+                              fontWeight: FontWeight.w900,
+                            ),
                           ),
                         ),
-                      ),
-                      IconButton(
-                        tooltip: 'تحديث',
-                        onPressed: _loading ? null : () => _load(reset: true),
-                        icon: const Icon(
-                          Icons.refresh_rounded,
-                          color: Colors.white70,
+                        IconButton(
+                          tooltip: 'تحديث',
+                          onPressed: _loading ? null : () => _load(reset: true),
+                          icon: const Icon(
+                            Icons.refresh_rounded,
+                            color: Colors.white70,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                _composer(),
-                _feedSelector(),
+                if (!_profileMode) _composer(),
+                if (!_profileMode) _feedSelector(),
+                if (_profileMode && widget.embedded)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
+                    child: Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'يوميات المستخدم',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'تحديث',
+                          onPressed: _loading ? null : () => _load(reset: true),
+                          icon: const Icon(
+                            Icons.refresh_rounded,
+                            color: Colors.white70,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 _feedBody(),
               ],
             ),
