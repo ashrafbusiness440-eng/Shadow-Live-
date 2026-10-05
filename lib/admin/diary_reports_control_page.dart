@@ -146,6 +146,20 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
       if (reset) _error = null;
     });
     try {
+      _DiaryReportItem? focused;
+      final focusId = widget.initialReportId?.trim() ?? '';
+      if (reset && focusId.isNotEmpty) {
+        try {
+          final focusedData = await _post('getReport', {'reportId': focusId});
+          if (focusedData['item'] is Map) {
+            focused = _DiaryReportItem.fromMap(
+              Map<String, dynamic>.from(focusedData['item'] as Map),
+            );
+          }
+        } catch (_) {
+          // If the report was already resolved/removed, fall back to the queue.
+        }
+      }
       final data = await _post('listReports', {
         'limit': 20,
         if (!reset && (_cursor?.isNotEmpty ?? false)) 'cursor': _cursor,
@@ -162,6 +176,8 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
       final merged = <String, _DiaryReportItem>{
         if (!reset) for (final item in _items) item.reportId: item,
         for (final item in next) item.reportId: item,
+        if (focused != null && focused.reportId.isNotEmpty)
+          focused.reportId: focused,
       }.values.toList(growable: false)
         ..sort((a, b) {
           final focusId = widget.initialReportId?.trim() ?? '';
