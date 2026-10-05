@@ -739,6 +739,10 @@ service cloud.firestore {
       allow read, create, update, delete: if false;
     }
 
+    match /diary_reports/{reportId} {
+      allow read, create, update, delete: if false;
+    }
+
     // Relationships / CP are server-authoritative. Clients use the bounded
     // Cloudflare relationship API; no direct scans, listeners, or writes.
     match /relationship_requests/{requestId} {
