@@ -1036,7 +1036,7 @@ export async function sendGift(db, uid, body, options = {}) {
           type: "diary_gift",
           category: "social",
           title: "هدية جديدة على يوميتك",
-          body: `${senderName || "مستخدم Shadow Live" أرسل لك ${giftName} ×${quantity}.`,
+          body: `${senderName || "مستخدم Shadow Live"} أرسل لك ${giftName} ×${quantity}.`,
           read: false,
           diaryId,
           actorUid: uid,
