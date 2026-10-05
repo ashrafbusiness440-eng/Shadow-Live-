@@ -138,10 +138,10 @@ class _DiaryGiftsSheetState extends State<DiaryGiftsSheet> {
         color: Color(0xFFFFD54A),
       );
     }
-    return FutureBuilder<String?>(
+    return FutureBuilder<Uri?>(
       future: ShadowAssetRegistry.remoteUrl(item.assetKey),
       builder: (context, snapshot) {
-        final url = snapshot.data?.trim() ?? '';
+        final url = snapshot.data?.toString().trim() ?? '';
         if (url.isEmpty) {
           return const Icon(
             Icons.card_giftcard_rounded,
