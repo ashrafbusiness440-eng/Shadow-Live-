@@ -3,9 +3,11 @@ import 'dart:typed_data';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../shared/services/user_storage_service.dart';
+import '../../auth/bloc/auth_bloc.dart';
 import '../../profile/screens/public_profile_screen.dart';
 import '../services/diary_service.dart';
 import '../widgets/diary_comments_sheet.dart';
@@ -218,9 +220,28 @@ class _DiariesScreenState extends State<DiariesScreen> {
       return;
     }
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('سجّل الدخول لاستخدام هذه الميزة.')),
+    final shouldLogin = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('تسجيل الدخول'),
+        content: const Text(
+          'يمكنك مشاهدة اليوميات العامة كضيف، لكن يلزم تسجيل الدخول للتفاعل.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('لاحقاً'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('تسجيل الدخول'),
+          ),
+        ],
+      ),
     );
+    if (shouldLogin == true && mounted) {
+      context.read<AuthBloc>().add(SignOutRequested());
+    }
   }
 
   Future<void> _load({
