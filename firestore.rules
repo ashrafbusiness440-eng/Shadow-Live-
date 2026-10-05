@@ -175,6 +175,8 @@ service cloud.firestore {
         'rankingVisibilityUpdatedAt',
         'hideProfileVisits',
         'profileVisitVisibilityUpdatedAt',
+        'friendsOnlyMessages',
+        'messagePrivacyUpdatedAt',
         'publicBadges',
         'totalGiftsSent',
         'totalGiftsReceived',
@@ -270,6 +272,8 @@ service cloud.firestore {
         && !('rankingVisibilityUpdatedAt' in request.resource.data)
         && !('hideProfileVisits' in request.resource.data)
         && !('profileVisitVisibilityUpdatedAt' in request.resource.data)
+        && !('friendsOnlyMessages' in request.resource.data)
+        && !('messagePrivacyUpdatedAt' in request.resource.data)
         && !('publicBadges' in request.resource.data)
         && !('totalGiftsSent' in request.resource.data)
         && !('totalGiftsReceived' in request.resource.data)
