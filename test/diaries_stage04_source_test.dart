@@ -41,8 +41,8 @@ void main() {
     expect(source.contains('async function createComment('), isTrue);
     expect(source.contains('async function deleteComment('), isTrue);
     expect(source.contains('async function recordView('), isTrue);
-    expect(source.contains('users/${ownerUid}/diaries/${diaryId}'), isTrue);
-    expect(source.contains('diaries/${diaryId}/comments/${commentId}'), isTrue);
+    expect(source.contains(r'users/${ownerUid}/diaries/${diaryId}'), isTrue);
+    expect(source.contains(r'diaries/${diaryId}/comments/${commentId}'), isTrue);
     expect(source.contains('.list('), isFalse);
     expect(
       rules.contains('match /comments/{commentId}'),
