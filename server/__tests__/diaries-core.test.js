@@ -17,6 +17,10 @@ const {
   deleteDiary,
   setCommentsEnabled,
   toggleLike,
+  diaryCommentText,
+  createComment,
+  listComments,
+  deleteComment,
   listLatest,
   listUser,
   listFollowing,
@@ -87,6 +91,37 @@ class FakeDb {
           const allowed = new Set(Array.isArray(filter.value) ? filter.value : []);
           rows = rows.filter((row) => allowed.has(row.data?.[filter.field]));
         }
+      }
+      return rows.slice(0, Number(options.limit || 100));
+    }
+
+    const commentMatch = /^diaries\/([^/]+)\/comments$/.exec(collectionPath);
+    if (commentMatch) {
+      let rows = [...this.docs.entries()]
+        .filter(([path]) =>
+          path.startsWith(collectionPath + "/") &&
+          path.split("/").length === collectionPath.split("/").length + 1
+        )
+        .map(([path, data]) => ({
+          id: path.split("/").pop(),
+          path,
+          data: structuredClone(data),
+        }));
+      rows.sort((a, b) => {
+        const ms = Number(b.data.createdAtMs || 0) - Number(a.data.createdAtMs || 0);
+        if (ms !== 0) return ms;
+        return b.id.localeCompare(a.id);
+      });
+      const cursorMs = options.startAfter?.[0]?.value;
+      const cursorRef = options.startAfter?.[1]?.referencePath || "";
+      if (cursorMs) {
+        const cursorId = String(cursorRef).split("/").pop() || "";
+        rows = rows.filter((row) => {
+          const ms = Number(row.data.createdAtMs || 0);
+          if (ms < Number(cursorMs)) return true;
+          if (ms > Number(cursorMs)) return false;
+          return row.id < cursorId;
+        });
       }
       return rows.slice(0, Number(options.limit || 100));
     }
@@ -314,6 +349,126 @@ test("create operation is idempotent", async () => {
   const second = await createDiary(db, "user_a", body);
   assert.equal(second.code, "duplicate");
   assert.equal(second.diaryId, first.diaryId);
+});
+
+test("comment text enforces 200 chars and blocks links", () => {
+  assert.equal(diaryCommentText(" تعليق بسيط "), "تعليق بسيط");
+  assert.throws(() => diaryCommentText(""), /empty_comment/);
+  assert.throws(() => diaryCommentText("x".repeat(201)), /comment_text_too_long/);
+  assert.throws(() => diaryCommentText("example.com"), /external_links_not_allowed/);
+});
+
+test("comments create/list/delete stay bounded and mirror counters", async () => {
+  const db = new FakeDb({
+    ...seedUser(),
+    ...seedUser("user_b"),
+    ...seedUser("user_c"),
+  });
+  const created = await createDiary(db, "user_a", {
+    text: "يومية للتعليقات",
+    imageObjectIds: [],
+    idempotencyKey: op("comment_diary"),
+  });
+
+  const comment = await createComment(db, "user_b", {
+    diaryId: created.diaryId,
+    text: "أول تعليق",
+    idempotencyKey: op("comment_create"),
+  });
+  assert.equal(comment.commentCount, 1);
+  assert.equal(comment.comment.authorUid, "user_b");
+  assert.equal(db.docs.get(`diaries/${created.diaryId}`)?.commentCount, 1);
+  assert.equal(
+    db.docs.get(`users/user_a/diaries/${created.diaryId}`)?.commentCount,
+    1,
+  );
+
+  const duplicate = await createComment(db, "user_b", {
+    diaryId: created.diaryId,
+    text: "أول تعليق",
+    idempotencyKey: op("comment_create"),
+  });
+  assert.equal(duplicate.code, "duplicate");
+  assert.equal(db.docs.get(`diaries/${created.diaryId}`)?.commentCount, 1);
+
+  const listed = await listComments(db, {
+    diaryId: created.diaryId,
+    limit: 10,
+  });
+  assert.equal(listed.items.length, 1);
+  assert.equal(listed.items[0].commentId, comment.commentId);
+
+  await assert.rejects(
+    () => deleteComment(db, "user_c", {
+      diaryId: created.diaryId,
+      commentId: comment.commentId,
+      idempotencyKey: op("comment_wrong_delete"),
+    }),
+    /forbidden/,
+  );
+
+  const deletedByOwner = await deleteComment(db, "user_a", {
+    diaryId: created.diaryId,
+    commentId: comment.commentId,
+    idempotencyKey: op("comment_owner_delete"),
+  });
+  assert.equal(deletedByOwner.commentCount, 0);
+  assert.equal(
+    db.docs.has(`diaries/${created.diaryId}/comments/${comment.commentId}`),
+    false,
+  );
+  assert.equal(db.docs.get(`diaries/${created.diaryId}`)?.commentCount, 0);
+});
+
+test("comments disabled blocks new comments without deleting existing data", async () => {
+  const db = new FakeDb({ ...seedUser(), ...seedUser("user_b") });
+  const created = await createDiary(db, "user_a", {
+    text: "تعليقات مغلقة",
+    imageObjectIds: [],
+    commentsEnabled: false,
+    idempotencyKey: op("comments_disabled_diary"),
+  });
+
+  await assert.rejects(
+    () => createComment(db, "user_b", {
+      diaryId: created.diaryId,
+      text: "لن يمر",
+      idempotencyKey: op("comments_disabled_create"),
+    }),
+    /comments_disabled/,
+  );
+});
+
+test("comment list cursor is deterministic without a composite index", async () => {
+  const diaryId = "diary_test";
+  const db = new FakeDb({
+    [`diaries/${diaryId}`]: {
+      diaryId,
+      ownerUid: "user_a",
+      createdAtMs: 1,
+      commentsEnabled: true,
+    },
+    [`diaries/${diaryId}/comments/c3`]: {
+      commentId: "c3", diaryId, authorUid: "user_a", text: "3", createdAtMs: 300,
+    },
+    [`diaries/${diaryId}/comments/c2`]: {
+      commentId: "c2", diaryId, authorUid: "user_a", text: "2", createdAtMs: 300,
+    },
+    [`diaries/${diaryId}/comments/c1`]: {
+      commentId: "c1", diaryId, authorUid: "user_a", text: "1", createdAtMs: 200,
+    },
+  });
+
+  const first = await listComments(db, { diaryId, limit: 1 });
+  assert.equal(first.items[0].commentId, "c3");
+  assert.equal(first.nextCursor, "300|c3");
+
+  const second = await listComments(db, {
+    diaryId,
+    limit: 1,
+    cursor: first.nextCursor,
+  });
+  assert.equal(second.items[0].commentId, "c2");
 });
 
 test("like toggle is one-per-user, reversible, mirrored, and idempotent", async () => {
