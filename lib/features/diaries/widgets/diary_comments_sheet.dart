@@ -31,6 +31,7 @@ class _DiaryCommentsSheetState extends State<DiaryCommentsSheet> {
   bool _sending = false;
   String? _deletingId;
   Object? _error;
+  late int _commentCount;
 
   bool get _guest => FirebaseAuth.instance.currentUser?.isAnonymous == true;
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
@@ -38,6 +39,7 @@ class _DiaryCommentsSheetState extends State<DiaryCommentsSheet> {
   @override
   void initState() {
     super.initState();
+    _commentCount = widget.diary.commentCount;
     _load(reset: true);
   }
 
@@ -112,6 +114,8 @@ class _DiaryCommentsSheetState extends State<DiaryCommentsSheet> {
           ];
         }
       });
+      _commentCount = result.commentCount;
+      _commentCount = result.commentCount;
       widget.onCommentCountChanged(result.commentCount);
     } catch (error) {
       _snack(diaryErrorMessage(error));
@@ -443,7 +447,7 @@ class _DiaryCommentsSheetState extends State<DiaryCommentsSheet> {
                       ),
                     ),
                     Text(
-                      widget.diary.commentCount.toString(),
+                      _commentCount.toString(),
                       style: const TextStyle(color: Colors.white54),
                     ),
                   ],
