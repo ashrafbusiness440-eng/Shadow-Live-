@@ -507,6 +507,62 @@ async function listUser(db, body) {
   };
 }
 
+async function listFollowing(db, uid, body) {
+  const limit = pageLimit(body.limit);
+  const cursor = parseCursor(body.cursor);
+  const rows = await db.runQuery("diaries", {
+    orderBy: [
+      { field: "createdAtMs", direction: "desc" },
+      { field: "__name__", direction: "desc" },
+    ],
+    limit: limit + 1,
+    startAfter: cursor
+      ? [
+          { value: cursor.createdAtMs },
+          { referencePath: `diaries/${cursor.diaryId}` },
+        ]
+      : [],
+  });
+
+  const hasMore = rows.length > limit;
+  const scanned = rows.slice(0, limit);
+  const ownerIds = [...new Set(
+    scanned
+      .map((row) => clean(row?.data?.ownerUid))
+      .filter((ownerUid) => ownerUid && ownerUid !== uid),
+  )];
+
+  let followedOwnerIds = new Set();
+  if (ownerIds.length) {
+    const follows = await db.runQuery("follows", {
+      filters: [
+        { field: "followerUid", op: "==", value: uid },
+        { field: "followingUid", op: "in", value: ownerIds },
+      ],
+      limit: ownerIds.length,
+    });
+    followedOwnerIds = new Set(
+      follows
+        .map((row) => clean(row?.data?.followingUid))
+        .filter(Boolean),
+    );
+  }
+
+  const visible = scanned.filter((row) =>
+    followedOwnerIds.has(clean(row?.data?.ownerUid))
+  );
+
+  return {
+    ok: true,
+    items: visible.map((row) => normalizeDiary(row.id, row.data)),
+    nextCursor:
+      hasMore && scanned.length
+        ? makeCursor(scanned[scanned.length - 1])
+        : null,
+    hasMore,
+  };
+}
+
 async function authContext(request, env) {
   const decoded = await verifyFirebaseIdToken(request, env);
   const uid = clean(decoded?.sub);
@@ -535,6 +591,11 @@ export async function diaries(request, env) {
     }
     if (action === "listUser") {
       return json(request, env, await listUser(auth.db, body));
+    }
+
+    if (action === "listFollowing") {
+      if (auth.guest) throw new DiaryApiError("guest_restricted", 403);
+      return json(request, env, await listFollowing(auth.db, auth.uid, body));
     }
 
     if (auth.guest) {
@@ -568,6 +629,7 @@ export const diaryCoreTestHooks = Object.freeze({
   setCommentsEnabled,
   listLatest,
   listUser,
+  listFollowing,
   normalizeDiary,
   parseCursor,
   makeCursor,
