@@ -11,6 +11,9 @@ import {
   isReplaceableStorageScope,
   replacementDeleteAt,
   REPLACEMENT_DELETE_DELAY_MS,
+  diaryOrphanDeleteAt,
+  DIARY_ORPHAN_DELETE_DELAY_MS,
+  storageQueueObjectStillReferenced,
   storageActivePointerId,
   runDeletedAccountStorageCleanup,
   authorizeAgencyLogoManagement,
@@ -174,6 +177,74 @@ test("replaced profile and room media wait 24 hours before cleanup", () => {
   );
 });
 
+test("diary orphan media waits 24 hours before cleanup", () => {
+  const nowMs = 1_758_975_200_000;
+  assert.equal(DIARY_ORPHAN_DELETE_DELAY_MS, 24 * 60 * 60 * 1000);
+  assert.equal(
+    diaryOrphanDeleteAt(nowMs).getTime(),
+    nowMs + 24 * 60 * 60 * 1000,
+  );
+});
+
+test("diary cleanup safety defers linked images and allows pending cleanup", async () => {
+  const objectId = "6".repeat(32);
+  const linkedDb = {
+    async get(path) {
+      assert.equal(path, "diary_image_links/" + objectId);
+      return { exists: true, data: { state: "linked" } };
+    },
+  };
+  assert.equal(
+    await storageQueueObjectStillReferenced(
+      linkedDb,
+      { scope: "diary_image", targetId: "user_1" },
+      objectId,
+    ),
+    true,
+  );
+
+  const pendingDb = {
+    async get(path) {
+      assert.equal(path, "diary_image_links/" + objectId);
+      return { exists: true, data: { state: "pending_cleanup" } };
+    },
+  };
+  assert.equal(
+    await storageQueueObjectStillReferenced(
+      pendingDb,
+      { scope: "diary_image", targetId: "user_1" },
+      objectId,
+    ),
+    false,
+  );
+
+  const orphanDb = {
+    async get(path) {
+      assert.equal(path, "diary_image_links/" + objectId);
+      return { exists: false, data: null };
+    },
+  };
+  assert.equal(
+    await storageQueueObjectStillReferenced(
+      orphanDb,
+      { scope: "diary_image", targetId: "user_1" },
+      objectId,
+    ),
+    false,
+  );
+});
+
+test("diary upload and cleanup reuse the existing bounded storage queue", () => {
+  const source = fs.readFileSync(
+    new URL("../../cloudflare-worker/src/user-storage.js", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /reason:\s*"diary_orphan_timeout"/);
+  assert.match(source, /cleanupDiaryImage/);
+  assert.match(source, /diary_image_links/);
+  assert.match(source, /STORAGE_DELETE_BATCH_LIMIT = 25/);
+  assert.doesNotMatch(source, /bucket\.list\s*\(/);
+});
 test("replaceable media uses deterministic active pointers", () => {
   assert.equal(
     storageActivePointerId("profile_image", "user_1"),
