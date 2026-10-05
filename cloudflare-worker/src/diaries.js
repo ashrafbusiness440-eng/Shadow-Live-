@@ -250,6 +250,7 @@ async function createDiary(db, uid, body) {
 
     const writes = [
       db.writeCreate(`diaries/${diaryId}`, diary),
+      db.writeCreate(`users/${uid}/diaries/${diaryId}`, diary),
       db.writeCreate(operationPath, {
         action: "createDiary",
         actorUid: uid,
@@ -334,6 +335,7 @@ async function deleteDiary(db, uid, body) {
     );
     const writes = [
       db.writeDelete(`diaries/${diaryId}`),
+      db.writeDelete(`users/${uid}/diaries/${diaryId}`),
       db.writeCreate(operationPath, {
         action: "deleteDiary",
         actorUid: uid,
@@ -434,6 +436,11 @@ async function setCommentsEnabled(db, uid, body) {
         { commentsEnabled: enabled },
         ["commentsEnabled"],
       ),
+      db.writeUpdate(
+        `users/${uid}/diaries/${diaryId}`,
+        { commentsEnabled: enabled },
+        ["commentsEnabled"],
+      ),
       db.writeCreate(operationPath, {
         action: "setCommentsEnabled",
         actorUid: uid,
@@ -480,8 +487,8 @@ async function listUser(db, body) {
   const userId = assertSafeId(body.userId, "invalid_user");
   const limit = pageLimit(body.limit);
   const cursor = parseCursor(body.cursor);
-  const rows = await db.runQuery("diaries", {
-    filters: [{ field: "ownerUid", op: "==", value: userId }],
+  const collectionPath = `users/${userId}/diaries`;
+  const rows = await db.runQuery(collectionPath, {
     orderBy: [
       { field: "createdAtMs", direction: "desc" },
       { field: "__name__", direction: "desc" },
@@ -490,7 +497,7 @@ async function listUser(db, body) {
     startAfter: cursor
       ? [
           { value: cursor.createdAtMs },
-          { referencePath: `diaries/${cursor.diaryId}` },
+          { referencePath: `${collectionPath}/${cursor.diaryId}` },
         ]
       : [],
   });
