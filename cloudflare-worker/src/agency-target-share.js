@@ -175,6 +175,7 @@ export function buildAgencyTargetSharePayoutWrites(
     contextType,
     roomId = null,
     conversationId = null,
+    diaryId = null,
   } = {},
 ) {
   if (!plan) {
@@ -274,6 +275,7 @@ export function buildAgencyTargetSharePayoutWrites(
       contextType: clean(contextType) || null,
       roomId: clean(roomId) || null,
       conversationId: clean(conversationId) || null,
+      diaryId: clean(diaryId) || null,
       idempotencyKey: "agency_target_share_" + opId,
       createdAt: now,
     }),
@@ -292,6 +294,10 @@ export function buildAgencyTargetSharePayoutWrites(
       agencyShareDiamonds: plan.shareDiamondsEarned,
       carryoverCoins: plan.remainderCoins,
       sourceId: opId,
+      contextType: clean(contextType) || null,
+      roomId: clean(roomId) || null,
+      conversationId: clean(conversationId) || null,
+      diaryId: clean(diaryId) || null,
       createdAt: now,
     }),
     db.writeCreate(notificationPath, {
