@@ -30,6 +30,7 @@ import { agencyHost } from "./agency-host.js";
 import { agencyOwner } from "./agency-owner.js";
 import { agencyPackages } from "./agency-packages.js";
 import { relationships } from "./relationships.js";
+import { diaries } from "./diaries.js";
 import { userLevelSummary } from "./user-level-summary.js";
 import { configureLegacyEnv, getFirestore } from "./legacy-firebase-admin-shim.js";
 import { settleDueGameOperations } from "./legacy-games/game-runtime.js";
@@ -170,6 +171,10 @@ async function dispatchRequest(request, env, ctx) {
   if (url.pathname === "/api/relationships") {
     annotatePressureRequest(request, { action: "relationships" });
     return relationships(request, env);
+  }
+  if (url.pathname === "/api/diaries") {
+    annotatePressureRequest(request, { action: "diaries" });
+    return diaries(request, env);
   }
   if (url.pathname === "/api/user-level") {
     annotatePressureRequest(request, { action: "userLevelSummary" });
