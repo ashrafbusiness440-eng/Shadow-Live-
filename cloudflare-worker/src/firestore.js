@@ -516,6 +516,7 @@ export function firestoreClient(env) {
             ">": "GREATER_THAN",
             ">=": "GREATER_THAN_OR_EQUAL",
             "array-contains": "ARRAY_CONTAINS",
+            "in": "IN",
           })[op] || "EQUAL",
           value: referencePath
             ? { referenceValue: documentName(referencePath) }
