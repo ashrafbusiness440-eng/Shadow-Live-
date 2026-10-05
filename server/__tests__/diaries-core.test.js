@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { randomUUID, webcrypto } from "node:crypto";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
