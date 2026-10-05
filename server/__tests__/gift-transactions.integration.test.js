@@ -333,6 +333,170 @@ test("chat gift uses the same monthly target salary and sharded accrual as room 
   assert.equal(accrualAfter.data().supportCoins,100000);
 });
 
+test("diary gift reuses chat gift economy without creating chat side effects",async()=>{
+  await seedSharedConfig();
+  const periods=periodKeys();
+  const suffix=Date.now().toString()+"_diary";
+  const senderId="sender_"+suffix;
+  const receiverId="receiver_"+suffix;
+  const diaryId="diary_"+suffix;
+  const agencyId="agency_"+suffix;
+  const key="diarygift_integration_"+suffix;
+  const accrualId=agencyAccrualDocId(agencyId,periods.month,key);
+
+  await Promise.all([
+    db.collection("users").doc(senderId).set({
+      coins:1000000,diamonds:0,role:"user",wealthPoints:700000,
+      displayName:"Sender",publicId:"12345678",
+    }),
+    db.collection("users").doc(receiverId).set({
+      coins:0,diamonds:0,role:"user",agencyId,attractionPoints:900000,
+      giftHostActivityMonth:periods.month,
+      giftHostQualifiedDays:0,
+      pendingAgencyGiftEarningCoins:0,
+      pendingGiftEarningCoins:0,
+    }),
+    db.collection("diaries").doc(diaryId).set({
+      diaryId,ownerUid:receiverId,giftCount:0,giftCoins:0,createdAtMs:1,
+    }),
+    db.collection("users").doc(receiverId).collection("diaries").doc(diaryId).set({
+      diaryId,ownerUid:receiverId,giftCount:0,giftCoins:0,createdAtMs:1,
+    }),
+    db.collection("users").doc("owner_"+agencyId).set({
+      coins:0,diamonds:0,role:"user",accountStatus:"active",
+    }),
+    db.collection("agencies").doc(agencyId).set({
+      agencyId,ownerUid:"owner_"+agencyId,status:"active",
+    }),
+    db.collection("agency_support_stats").doc(agencyId).collection("monthly").doc(periods.month).set({
+      activeHostIds:[],
+    }),
+  ]);
+
+  const body={
+    receiverId,giftId:"integration_gift",quantity:1,
+    diaryId,idempotencyKey:key,
+  };
+  const first=await sendChatGift(cloudflareDb,senderId,body);
+  assert.equal(first.ok,true);
+  assert.equal(first.code,"ok");
+  assert.equal(first.contextType,"diary");
+  assert.equal(first.diaryId,diaryId);
+  assert.equal(first.messageId,null);
+  assert.equal(first.totalCost,100000);
+  assert.equal(first.recipientShareCoins,50000);
+  assert.equal(first.agencyShareCoins,5000);
+  assert.equal(first.platformShareCoins,45000);
+  assert.equal(first.earningsStatus,"target_paid");
+  assert.equal(first.diamondsEarned,5);
+
+  const [
+    sender,receiver,transaction,ledger,earningsLedger,
+    accrual,hostMonth,diary,mirror,giftEvent,
+  ]=await Promise.all([
+    db.collection("users").doc(senderId).get(),
+    db.collection("users").doc(receiverId).get(),
+    db.collection("gift_transactions").doc(key).get(),
+    db.collection("financial_ledger").doc("gift_"+key).get(),
+    db.collection("financial_ledger").doc("gift_earnings_"+key).get(),
+    db.collection("agency_monthly_accrual_shards").doc(accrualId).get(),
+    db.collection("agency_host_monthly").doc(
+      agencyId+"__"+periods.month+"__"+receiverId,
+    ).get(),
+    db.collection("diaries").doc(diaryId).get(),
+    db.collection("users").doc(receiverId).collection("diaries").doc(diaryId).get(),
+    db.collection("diaries").doc(diaryId).collection("gifts").doc(key).get(),
+  ]);
+
+  assert.equal(sender.data().coins,900000);
+  assert.equal(sender.data().wealthPoints,800000);
+  assert.equal(receiver.data().diamonds,5);
+  assert.equal(receiver.data().attractionPoints,1000000);
+  assert.equal(receiver.data().agencyTargetProgressCoins,50000);
+
+  assert.equal(transaction.data().contextType,"diary");
+  assert.equal(transaction.data().diaryId,diaryId);
+  assert.equal(transaction.data().wealthPointsAwarded,100000);
+  assert.equal(transaction.data().attractionPointsAwarded,100000);
+  assert.equal(transaction.data().agencyId,agencyId);
+  assert.equal(transaction.data().recipientShareCoins,50000);
+  assert.equal(transaction.data().agencyShareCoins,5000);
+  assert.equal(transaction.data().platformShareCoins,45000);
+  assert.equal(transaction.data().settlementMode,"target_immediate");
+
+  assert.equal(ledger.data().delta,-100000);
+  assert.equal(ledger.data().contextType,"diary");
+  assert.equal(ledger.data().diaryId,diaryId);
+  assert.equal(earningsLedger.data().reason,"agency_target_salary");
+  assert.equal(earningsLedger.data().delta,5);
+  assert.equal(earningsLedger.data().contextType,"diary");
+  assert.equal(earningsLedger.data().diaryId,diaryId);
+
+  assert.equal(accrual.data().hostShareCoins,50000);
+  assert.equal(accrual.data().agencyShareCoins,5000);
+  assert.equal(hostMonth.data().salaryPaidDiamonds,5);
+
+  assert.equal(diary.data().giftCount,1);
+  assert.equal(diary.data().giftCoins,100000);
+  assert.equal(mirror.data().giftCount,1);
+  assert.equal(mirror.data().giftCoins,100000);
+  assert.equal(giftEvent.exists,true);
+  assert.equal(giftEvent.data().giftOperationId,key);
+  assert.equal(giftEvent.data().senderId,senderId);
+  assert.equal(giftEvent.data().receiverId,receiverId);
+  assert.equal(giftEvent.data().totalCost,100000);
+  assert.equal(Number.isSafeInteger(giftEvent.data().createdAtMs),true);
+
+  const duplicate=await sendChatGift(cloudflareDb,senderId,body);
+  assert.equal(duplicate.code,"duplicate");
+  const [senderAfter,diaryAfter,mirrorAfter,accrualAfter]=await Promise.all([
+    db.collection("users").doc(senderId).get(),
+    db.collection("diaries").doc(diaryId).get(),
+    db.collection("users").doc(receiverId).collection("diaries").doc(diaryId).get(),
+    db.collection("agency_monthly_accrual_shards").doc(accrualId).get(),
+  ]);
+  assert.equal(senderAfter.data().coins,900000);
+  assert.equal(diaryAfter.data().giftCount,1);
+  assert.equal(diaryAfter.data().giftCoins,100000);
+  assert.equal(mirrorAfter.data().giftCount,1);
+  assert.equal(accrualAfter.data().supportCoins,100000);
+});
+
+test("diary gift rejects a receiver who does not own the diary",async()=>{
+  await seedSharedConfig();
+  const suffix=Date.now().toString()+"_diary_owner";
+  const senderId="sender_"+suffix;
+  const receiverId="receiver_"+suffix;
+  const actualOwnerId="owner_"+suffix;
+  const diaryId="diary_"+suffix;
+  const key="diarygift_owner_guard_"+suffix;
+
+  await Promise.all([
+    db.collection("users").doc(senderId).set({
+      coins:1000000,diamonds:0,role:"user",
+    }),
+    db.collection("users").doc(receiverId).set({
+      coins:0,diamonds:0,role:"user",
+    }),
+    db.collection("users").doc(actualOwnerId).set({
+      coins:0,diamonds:0,role:"user",
+    }),
+    db.collection("diaries").doc(diaryId).set({
+      diaryId,ownerUid:actualOwnerId,giftCount:0,giftCoins:0,createdAtMs:1,
+    }),
+  ]);
+
+  await assert.rejects(
+    ()=>sendChatGift(cloudflareDb,senderId,{
+      receiverId,giftId:"integration_gift",quantity:1,
+      diaryId,idempotencyKey:key,
+    }),
+    /invalid_diary_receiver/,
+  );
+  const senderAfter=await db.collection("users").doc(senderId).get();
+  assert.equal(senderAfter.data().coins,1000000);
+});
+
 test("room gift is rejected when either user has blocked the other",async()=>{
   await seedSharedConfig();
   const suffix=Date.now().toString()+"_blocked";
