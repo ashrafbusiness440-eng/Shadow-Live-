@@ -235,6 +235,38 @@ test("diary cleanup safety defers linked images and allows pending cleanup", asy
   );
 });
 
+test("queued linked diary image is deferred without deleting R2", async () => {
+  const objectId = "7".repeat(32);
+  const writes = [];
+  let bucketDeletes = 0;
+  const db = {
+    async get(path) {
+      assert.equal(path, "diary_image_links/" + objectId);
+      return { exists: true, data: { state: "linked" } };
+    },
+    writeUpdate(path, data, fields) { return { op: "update", path, data, fields }; },
+    writeDelete(path) { return { op: "delete", path }; },
+    writeCreate(path, data) { return { op: "create", path, data }; },
+    async commit(_tx, batch) { writes.push(...batch); },
+  };
+  const bucket = { async delete() { bucketDeletes += 1; } };
+  const result = await cleanupQueuedStorageObject(db, bucket, {
+    id: objectId,
+    data: {
+      objectId,
+      storageKey: "users/user_1/diaries/" + objectId + ".webp",
+      scope: "diary_image",
+      targetId: "user_1",
+      reason: "diary_orphan_timeout",
+    },
+  }, 10_000);
+  assert.equal(result.status, "deferred");
+  assert.equal(bucketDeletes, 0);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].op, "update");
+  assert.equal(writes[0].path, "storage_delete_queue/" + objectId);
+  assert.equal(writes[0].data.deferReason, "still_referenced");
+});
 test("diary upload and cleanup reuse the existing bounded storage queue", () => {
   const source = fs.readFileSync(
     new URL("../../cloudflare-worker/src/user-storage.js", import.meta.url),
