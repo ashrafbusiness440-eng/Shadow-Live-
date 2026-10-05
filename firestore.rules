@@ -177,6 +177,12 @@ service cloud.firestore {
         'profileVisitVisibilityUpdatedAt',
         'friendsOnlyMessages',
         'messagePrivacyUpdatedAt',
+        'hideNobleLevel',
+        'nobleLevelVisibilityUpdatedAt',
+        'hideGameWinBanner',
+        'gameWinBannerVisibilityUpdatedAt',
+        'hideBetWinNotification',
+        'betWinNotificationVisibilityUpdatedAt',
         'publicBadges',
         'totalGiftsSent',
         'totalGiftsReceived',
@@ -274,6 +280,12 @@ service cloud.firestore {
         && !('profileVisitVisibilityUpdatedAt' in request.resource.data)
         && !('friendsOnlyMessages' in request.resource.data)
         && !('messagePrivacyUpdatedAt' in request.resource.data)
+        && !('hideNobleLevel' in request.resource.data)
+        && !('nobleLevelVisibilityUpdatedAt' in request.resource.data)
+        && !('hideGameWinBanner' in request.resource.data)
+        && !('gameWinBannerVisibilityUpdatedAt' in request.resource.data)
+        && !('hideBetWinNotification' in request.resource.data)
+        && !('betWinNotificationVisibilityUpdatedAt' in request.resource.data)
         && !('publicBadges' in request.resource.data)
         && !('totalGiftsSent' in request.resource.data)
         && !('totalGiftsReceived' in request.resource.data)
