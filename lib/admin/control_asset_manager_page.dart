@@ -78,6 +78,35 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     return null;
   }
 
+  void _selectAuthHeaderPreset() {
+    final matches =
+        _templates.where((e) => e.id == 'auth_screen.base.v1').toList();
+    setState(() {
+      _assetKey.text = 'auth.login.header';
+      _directory.text = 'assets/images';
+      _fileName.text = 'auth_header.png';
+      _reason.text = 'تحديث صورة شاشة تسجيل الدخول';
+      _mode = 'remote';
+      _selectedChannels
+        ..clear()
+        ..add('system');
+      _sourceBytes = null;
+      _bytes = null;
+      _mimeType = null;
+      _pickedName = null;
+      _conversionNote = null;
+      _preparedWidth = null;
+      _preparedHeight = null;
+      if (matches.isNotEmpty) {
+        _applyTemplate(matches.first);
+      } else {
+        _selectedTemplateId = 'auth_screen.base.v1';
+      }
+      _message =
+          'تم اختيار صورة شاشة الدخول. اختر الصورة الجديدة ثم اضغط نشر.';
+    });
+  }
+
   String _extensionOf(String value) {
     final name = value.trim().toLowerCase();
     final dot = name.lastIndexOf('.');
@@ -615,6 +644,42 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
           'لا يوجد AI Generator داخل Control؛ الاستوديو يعرض Prompt ومواصفات القالب فقط، '
           'والتوليد يتم خارجه ثم يرفع الناتج هنا.',
           style: TextStyle(color: Color(0xFFCBC5D6), height: 1.5),
+        ),
+        const SizedBox(height: 16),
+        Card(
+          color: const Color(0xFF111827),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'صورة شاشة تسجيل الدخول',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.asset(
+                    'assets/images/auth_header.png',
+                    height: 150,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'auth.login.header • assets/images/auth_header.png',
+                  style: TextStyle(color: Colors.white60),
+                ),
+                const SizedBox(height: 10),
+                FilledButton.icon(
+                  onPressed: _busy ? null : _selectAuthHeaderPreset,
+                  icon: const Icon(Icons.edit_outlined),
+                  label: const Text('تغيير هذه الصورة من Asset Studio'),
+                ),
+              ],
+            ),
+          ),
         ),
         const SizedBox(height: 16),
         Card(

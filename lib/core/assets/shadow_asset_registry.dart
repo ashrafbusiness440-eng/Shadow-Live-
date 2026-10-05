@@ -36,6 +36,7 @@ abstract final class ShadowAssetRegistry {
 }
 
 abstract final class ShadowAssetKeys {
+  static const authLoginHeader = 'auth.login.header';
   static const verifiedBadge = 'badge.verified';
   static const officialBadge = 'badge.official';
   static const supportTeamBadge = 'badge.support_team';
