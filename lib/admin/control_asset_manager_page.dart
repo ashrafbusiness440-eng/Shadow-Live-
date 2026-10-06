@@ -2219,6 +2219,37 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     );
   }
 
+  List<String> get _registryWarnings {
+    final warnings = <String>[];
+    final pathOwners = <String, List<String>>{};
+    for (final asset in _assets) {
+      final key = (asset['assetKey'] ?? '').toString().trim();
+      final source = _assetSource(asset);
+      final path =
+          (source['fullPath'] ?? asset['fullPath'] ?? '').toString().trim();
+      if (asset['published'] == true) {
+        if (path.isEmpty) {
+          warnings.add('$key منشور بدون مسار.');
+        }
+        if ((asset['rawUrl'] ?? '').toString().trim().isEmpty) {
+          warnings.add('$key منشور بدون Live URL.');
+        }
+      }
+      if (path.isNotEmpty) {
+        pathOwners.putIfAbsent(path, () => <String>[]).add(key);
+      }
+    }
+    for (final entry in pathOwners.entries) {
+      if (entry.value.length > 1) {
+        warnings.add(
+          'المسار ${entry.key} مستخدم بواسطة أكثر من Asset Key: '
+          '${entry.value.join(', ')}',
+        );
+      }
+    }
+    return warnings.take(8).toList(growable: false);
+  }
+
   Widget _registryItem(Map<String, dynamic> asset) {
     final published = asset['published'] == true;
     final draft = asset['draft'] is Map
@@ -2229,7 +2260,10 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     final key = (asset['assetKey'] ?? '').toString();
     final path =
         (source['fullPath'] ?? asset['fullPath'] ?? '').toString();
+    final fileName =
+        (source['fileName'] ?? asset['fileName'] ?? '').toString();
     final status = _assetStatusLabel(asset);
+    final favorite = _favoriteAssetKeys.contains(key);
     final statusColor = status == 'منشور'
         ? Colors.greenAccent
         : status == 'مسودة'
@@ -2245,71 +2279,210 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
         border: Border.all(color: Colors.white.withValues(alpha: .07)),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: const Color(0xFF9A6CFF).withValues(alpha: .12),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(
-              Icons.image_outlined,
-              color: Color(0xFFCDB7FF),
+          InkWell(
+            onTap: published ? () => _showAssetPreview(asset) : null,
+            borderRadius: BorderRadius.circular(12),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                _assetThumbnail(asset, size: 56),
+                if (published)
+                  const Positioned(
+                    right: -4,
+                    bottom: -4,
+                    child: CircleAvatar(
+                      radius: 9,
+                      backgroundColor: Color(0xFF15101F),
+                      child: Icon(
+                        Icons.zoom_in_rounded,
+                        size: 14,
+                        color: Color(0xFFCDB7FF),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 11),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  key.isEmpty ? 'أصل بدون مفتاح' : key,
-                  style: const TextStyle(fontWeight: FontWeight.w900),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        key.isEmpty ? 'أصل بدون مفتاح' : key,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        textDirection: TextDirection.ltr,
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      tooltip: favorite
+                          ? 'إزالة من المفضلة'
+                          : 'إضافة إلى المفضلة',
+                      onPressed: () => setState(() {
+                        if (favorite) {
+                          _favoriteAssetKeys.remove(key);
+                        } else {
+                          _favoriteAssetKeys.add(key);
+                        }
+                      }),
+                      icon: Icon(
+                        favorite
+                            ? Icons.star_rounded
+                            : Icons.star_border_rounded,
+                        color: favorite
+                            ? const Color(0xFFFFD54A)
+                            : Colors.white38,
+                        size: 20,
+                      ),
+                    ),
+                  ],
                 ),
+                if (fileName.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    fileName,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textDirection: TextDirection.ltr,
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 10.5,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 3),
                 Text(
                   path,
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   textDirection: TextDirection.ltr,
                   textAlign: TextAlign.right,
-                  style: const TextStyle(color: Colors.white54, fontSize: 10.5),
+                  style: const TextStyle(
+                    color: Colors.white54,
+                    fontSize: 10.5,
+                  ),
+                ),
+                const SizedBox(height: 7),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: statusColor.withValues(alpha: .10),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        status,
+                        style: TextStyle(
+                          color: statusColor,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    if (hasDraft)
+                      TextButton.icon(
+                        onPressed:
+                            _busy ? null : () => _publishAsset(asset),
+                        icon: const Icon(Icons.publish_outlined, size: 17),
+                        label: const Text('نشر'),
+                      ),
+                    PopupMenuButton<String>(
+                      tooltip: 'إجراءات الأصل',
+                      onSelected: (value) {
+                        switch (value) {
+                          case 'preview':
+                            _showAssetPreview(asset);
+                            break;
+                          case 'edit':
+                            _beginEditAsset(asset);
+                            break;
+                          case 'clone':
+                            _cloneAsset(asset);
+                            break;
+                          case 'copy':
+                            _copyAssetMetadata(asset);
+                            break;
+                          case 'favorite':
+                            setState(() {
+                              if (_favoriteAssetKeys.contains(key)) {
+                                _favoriteAssetKeys.remove(key);
+                              } else {
+                                _favoriteAssetKeys.add(key);
+                              }
+                            });
+                            break;
+                        }
+                      },
+                      itemBuilder: (_) => [
+                        if (published)
+                          const PopupMenuItem(
+                            value: 'preview',
+                            child: ListTile(
+                              leading: Icon(Icons.visibility_outlined),
+                              title: Text('معاينة الأصل'),
+                            ),
+                          ),
+                        const PopupMenuItem(
+                          value: 'edit',
+                          child: ListTile(
+                            leading: Icon(Icons.edit_outlined),
+                            title: Text('تعديل هذا الأصل'),
+                          ),
+                        ),
+                        const PopupMenuItem(
+                          value: 'clone',
+                          child: ListTile(
+                            leading: Icon(Icons.copy_all_rounded),
+                            title: Text('نسخ كأصل جديد'),
+                          ),
+                        ),
+                        const PopupMenuItem(
+                          value: 'copy',
+                          child: ListTile(
+                            leading: Icon(Icons.content_copy_rounded),
+                            title: Text('نسخ كل البيانات'),
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'favorite',
+                          child: ListTile(
+                            leading: Icon(
+                              favorite
+                                  ? Icons.star_rounded
+                                  : Icons.star_border_rounded,
+                            ),
+                            title: Text(
+                              favorite
+                                  ? 'إزالة من المفضلة'
+                                  : 'إضافة إلى المفضلة',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-            decoration: BoxDecoration(
-              color: statusColor.withValues(alpha: .10),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(
-              status,
-              style: TextStyle(
-                color: statusColor,
-                fontSize: 10.5,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-          if (hasDraft)
-            IconButton(
-              tooltip: 'نشر المسودة',
-              onPressed: _busy ? null : () => _publishAsset(asset),
-              icon: const Icon(Icons.publish_outlined),
-            )
-          else if (published)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 8),
-              child: Icon(
-                Icons.verified_rounded,
-                color: Colors.greenAccent,
-                size: 19,
-              ),
-            ),
         ],
       ),
     );
@@ -2317,6 +2490,8 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
 
   Widget _buildRegistry() {
     final visible = _visibleAssets;
+    final filtered = _filteredAssets;
+    final warnings = _registryWarnings;
     return _studioPanel(
       Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2337,17 +2512,80 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
             ],
           ),
           const Text(
-            'ابحث بالمفتاح أو المسار، ثم صفِّ النتائج حسب الحالة.',
+            'ابحث بالمفتاح أو الملف أو المسار، ثم صفِّ النتائج. الصور المصغرة محدودة الحجم للحفاظ على الأداء.',
             style: TextStyle(color: Colors.white60, fontSize: 11.5),
           ),
+          if (_recentAssetKeys.isNotEmpty ||
+              _favoriteAssetKeys.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 7,
+              runSpacing: 7,
+              children: [
+                ..._favoriteAssetKeys.take(4).map(
+                      (key) => ActionChip(
+                        avatar: const Icon(
+                          Icons.star_rounded,
+                          size: 16,
+                          color: Color(0xFFFFD54A),
+                        ),
+                        label: Text(
+                          key,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        onPressed: () {
+                          _assetSearch.text = key;
+                          setState(() {
+                            _debouncedSearch = key.toLowerCase();
+                            _visibleLimit = 24;
+                          });
+                        },
+                      ),
+                    ),
+                ..._recentAssetKeys
+                    .where((key) => !_favoriteAssetKeys.contains(key))
+                    .take(3)
+                    .map(
+                      (key) => ActionChip(
+                        avatar: const Icon(Icons.history_rounded, size: 16),
+                        label: Text(
+                          key,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        onPressed: () {
+                          _assetSearch.text = key;
+                          setState(() {
+                            _debouncedSearch = key.toLowerCase();
+                            _visibleLimit = 24;
+                          });
+                        },
+                      ),
+                    ),
+              ],
+            ),
+          ],
           const SizedBox(height: 11),
           TextField(
             controller: _assetSearch,
-            onChanged: (_) => setState(() {}),
-            decoration: const InputDecoration(
+            onChanged: _onSearchChanged,
+            onTap: () => _selectAll(_assetSearch),
+            decoration: InputDecoration(
               hintText: 'البحث في الأصول...',
-              prefixIcon: Icon(Icons.search_rounded),
-              border: OutlineInputBorder(),
+              prefixIcon: const Icon(Icons.search_rounded),
+              suffixIcon: _assetSearch.text.isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: 'مسح البحث',
+                      onPressed: () {
+                        _assetSearch.clear();
+                        setState(() {
+                          _debouncedSearch = '';
+                          _visibleLimit = 24;
+                        });
+                      },
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+              border: const OutlineInputBorder(),
             ),
           ),
           const SizedBox(height: 9),
@@ -2358,29 +2596,131 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                 ChoiceChip(
                   label: const Text('الكل'),
                   selected: _assetFilter == 'all',
-                  onSelected: (_) => setState(() => _assetFilter = 'all'),
+                  onSelected: (_) => setState(() {
+                    _assetFilter = 'all';
+                    _visibleLimit = 24;
+                  }),
                 ),
                 const SizedBox(width: 7),
                 ChoiceChip(
                   label: const Text('منشور'),
                   selected: _assetFilter == 'published',
-                  onSelected: (_) => setState(() => _assetFilter = 'published'),
+                  onSelected: (_) => setState(() {
+                    _assetFilter = 'published';
+                    _visibleLimit = 24;
+                  }),
                 ),
                 const SizedBox(width: 7),
                 ChoiceChip(
                   label: const Text('مسودة'),
                   selected: _assetFilter == 'draft',
-                  onSelected: (_) => setState(() => _assetFilter = 'draft'),
+                  onSelected: (_) => setState(() {
+                    _assetFilter = 'draft';
+                    _visibleLimit = 24;
+                  }),
                 ),
                 const SizedBox(width: 7),
                 ChoiceChip(
                   label: const Text('يحتاج مراجعة'),
                   selected: _assetFilter == 'review',
-                  onSelected: (_) => setState(() => _assetFilter = 'review'),
+                  onSelected: (_) => setState(() {
+                    _assetFilter = 'review';
+                    _visibleLimit = 24;
+                  }),
                 ),
               ],
             ),
           ),
+          const SizedBox(height: 9),
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  value: _assetTypeFilter,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'النوع',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                  items: [
+                    const DropdownMenuItem(
+                      value: 'all',
+                      child: Text('كل الأنواع'),
+                    ),
+                    ..._availableAssetTypes.map(
+                      (type) => DropdownMenuItem(
+                        value: type,
+                        child: Text(type),
+                      ),
+                    ),
+                  ],
+                  onChanged: (value) => setState(() {
+                    _assetTypeFilter = value ?? 'all';
+                    _visibleLimit = 24;
+                  }),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  value: _assetChannelFilter,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'القناة',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                  items: [
+                    const DropdownMenuItem(
+                      value: 'all',
+                      child: Text('كل القنوات'),
+                    ),
+                    ..._channels.map(
+                      (channel) => DropdownMenuItem(
+                        value: channel,
+                        child: Text(_channelLabel(channel)),
+                      ),
+                    ),
+                  ],
+                  onChanged: (value) => setState(() {
+                    _assetChannelFilter = value ?? 'all';
+                    _visibleLimit = 24;
+                  }),
+                ),
+              ),
+            ],
+          ),
+          if (warnings.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              leading: const Icon(
+                Icons.warning_amber_rounded,
+                color: Colors.orangeAccent,
+              ),
+              title: Text(
+                'ملاحظات السجل (${warnings.length})',
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+              children: warnings
+                  .map(
+                    (warning) => ListTile(
+                      dense: true,
+                      leading: const Icon(
+                        Icons.error_outline_rounded,
+                        size: 17,
+                        color: Colors.orangeAccent,
+                      ),
+                      title: Text(
+                        warning,
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                    ),
+                  )
+                  .toList(growable: false),
+            ),
+          ],
           const SizedBox(height: 12),
           if (_assets.isEmpty)
             Container(
@@ -2401,16 +2741,10 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                     'لا توجد أصول مسجلة بعد',
                     style: TextStyle(fontWeight: FontWeight.w800),
                   ),
-                  SizedBox(height: 3),
-                  Text(
-                    'سيظهر الأصل هنا مباشرة بعد أول حفظ أو نشر.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.white54, fontSize: 11.5),
-                  ),
                 ],
               ),
             )
-          else if (visible.isEmpty)
+          else if (filtered.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 20),
               child: Center(
@@ -2420,8 +2754,26 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                 ),
               ),
             )
-          else
+          else ...[
+            Text(
+              'عرض ${visible.length} من ${filtered.length}',
+              style: const TextStyle(
+                color: Colors.white54,
+                fontSize: 10.5,
+              ),
+            ),
+            const SizedBox(height: 8),
             ...visible.map(_registryItem),
+            if (visible.length < filtered.length)
+              OutlinedButton.icon(
+                onPressed: () => setState(
+                  () => _visibleLimit =
+                      (_visibleLimit + 24).clamp(24, filtered.length),
+                ),
+                icon: const Icon(Icons.expand_more_rounded),
+                label: const Text('عرض المزيد'),
+              ),
+          ],
         ],
       ),
     );
