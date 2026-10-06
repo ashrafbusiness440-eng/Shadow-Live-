@@ -243,6 +243,135 @@ async function assetVersionHistory(env, db, assetKey, asset, limit = 8) {
   return { commits, audit };
 }
 
+function parentDirectory(path) {
+  const value = normalizeDirectory(path);
+  const slash = value.lastIndexOf("/");
+  return slash > 0 ? value.slice(0, slash) : "";
+}
+
+function decodeGithubTextContent(body) {
+  const encoded = clean(body?.content).replace(/\s+/g, "");
+  if (!encoded) return "";
+  const bytes = decodeBase64(encoded);
+  return new TextDecoder().decode(bytes);
+}
+
+async function assetBatchManifest(env, db, assetKey, asset) {
+  const fullPath = clean(asset?.fullPath);
+  let directory = clean(asset?.directory);
+  if (!directory && fullPath.includes("/")) {
+    directory = fullPath.slice(0, fullPath.lastIndexOf("/"));
+  }
+  if (!directory) {
+    return {
+      sourcePath: null,
+      batch: null,
+      metric: null,
+      tier: null,
+      assets: [],
+    };
+  }
+
+  const { branch, repo } = assetRepoConfig(env);
+  const directories = [];
+  let cursor = directory;
+  for (let i = 0; i < 4 && cursor; i++) {
+    if (!directories.includes(cursor)) directories.push(cursor);
+    if (cursor === "assets/images" || cursor === "assets") break;
+    cursor = parentDirectory(cursor);
+  }
+
+  for (const dir of directories) {
+    const listing = await github(
+      env,
+      `https://api.github.com/repos/${repo}/contents/${encodePath(dir)}?ref=${encodeURIComponent(branch)}`,
+    );
+    const entries = Array.isArray(listing.body) ? listing.body : [];
+    const candidates = entries.filter((item) => {
+      const name = clean(item?.name).toUpperCase();
+      return item?.type === "file" && name.endsWith("PUBLISHED.JSON");
+    });
+
+    for (const candidate of candidates.slice(0, 6)) {
+      const file = await github(
+        env,
+        `https://api.github.com/repos/${repo}/contents/${encodePath(clean(candidate.path))}?ref=${encodeURIComponent(branch)}`,
+      );
+      let parsed = null;
+      try {
+        parsed = JSON.parse(decodeGithubTextContent(file.body));
+      } catch {
+        parsed = null;
+      }
+      const declared = Array.isArray(parsed?.assets) ? parsed.assets : [];
+      if (!declared.some((item) => clean(item?.assetKey) === assetKey)) {
+        continue;
+      }
+
+      const limited = declared.slice(0, 40);
+      const metadata = await Promise.all(
+        limited.map(async (item) => {
+          const key = clean(item?.assetKey);
+          if (!validKey(key)) return null;
+          const current = await db.get(`app_asset_registry/${key}`);
+          const data = current.data || {};
+          return {
+            assetKey: key,
+            fullPath: clean(item?.fullPath || data.fullPath),
+            width: Number(item?.width || data?.templateSpecs?.width || 0) || null,
+            height: Number(item?.height || data?.templateSpecs?.height || 0) || null,
+            contentSha: clean(item?.contentSha || data.contentSha) || null,
+            published: current.exists && data.published === true,
+            hasDraft: current.exists && data.hasDraft === true,
+            status: clean(data.status) || (current.exists ? "registered" : "missing"),
+            assetType: clean(data.assetType),
+            templateId: clean(data.templateId),
+            channels: Array.isArray(data.channels) ? data.channels : [],
+            mode: data.mode === "bundled" ? "bundled" : "remote",
+            fileName: clean(data.fileName) ||
+              clean(item?.fullPath).split("/").pop() ||
+              "",
+            directory: clean(data.directory) ||
+              parentDirectory(clean(item?.fullPath)),
+          };
+        }),
+      );
+
+      return {
+        sourcePath: clean(candidate.path),
+        batch: clean(parsed?.batch) || null,
+        metric: clean(parsed?.metric) || null,
+        tier: clean(parsed?.tier) || null,
+        publishedAt: parsed?.publishedAt || null,
+        assets: metadata.filter(Boolean),
+      };
+    }
+  }
+
+  return {
+    sourcePath: null,
+    batch: null,
+    metric: null,
+    tier: null,
+    assets: [{
+      assetKey,
+      fullPath,
+      width: Number(asset?.templateSpecs?.width || 0) || null,
+      height: Number(asset?.templateSpecs?.height || 0) || null,
+      contentSha: clean(asset?.contentSha) || null,
+      published: asset?.published === true,
+      hasDraft: asset?.hasDraft === true,
+      status: clean(asset?.status) || "registered",
+      assetType: clean(asset?.assetType),
+      templateId: clean(asset?.templateId),
+      channels: Array.isArray(asset?.channels) ? asset.channels : [],
+      mode: asset?.mode === "bundled" ? "bundled" : "remote",
+      fileName: clean(asset?.fileName),
+      directory,
+    }],
+  };
+}
+
 async function assetUsageMap(env, assetKey, asset) {
   const { repo } = assetRepoConfig(env);
   const query = encodeURIComponent(`"${assetKey}" repo:${repo}`);
@@ -671,6 +800,19 @@ export async function manageAppAsset(request, env) {
             ok: true,
             asset,
             usage: await assetUsageMap(env, detailKey, asset),
+          });
+        }
+        if (include === "manifest") {
+          phase = "manifest";
+          return json(request, env, {
+            ok: true,
+            asset,
+            manifest: await assetBatchManifest(
+              env,
+              db,
+              detailKey,
+              asset,
+            ),
           });
         }
         return json(request, env, { ok: true, asset });
