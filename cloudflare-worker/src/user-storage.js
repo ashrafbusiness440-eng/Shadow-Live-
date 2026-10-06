@@ -755,6 +755,49 @@ async function confirmUpload(request, env, auth, body) {
       }),
     );
   }
+  if (metadata.scope === "profile_avatar_animation") {
+    if (!stablePublicUrl) {
+      if (transaction) await auth.db.rollback(transaction);
+      throw new StorageApiError("public_media_url_missing", 500);
+    }
+    const publicProfile = await auth.db.get(
+      `public_profiles/${auth.uid}`,
+      transaction,
+    );
+    writes.push(
+      auth.db.writeUpdate(
+        `users/${auth.uid}`,
+        {
+          profileAvatarAnimationUrl: stablePublicUrl,
+          profileAvatarAnimationObjectId: objectId,
+          updatedAt: now,
+        },
+        [
+          "profileAvatarAnimationUrl",
+          "profileAvatarAnimationObjectId",
+          "updatedAt",
+        ],
+      ),
+    );
+    if (publicProfile.exists) {
+      writes.push(
+        auth.db.writeUpdate(
+          `public_profiles/${auth.uid}`,
+          {
+            profileAvatarAnimationUrl: stablePublicUrl,
+            profileAvatarAnimationObjectId: objectId,
+            updatedAt: now,
+          },
+          [
+            "profileAvatarAnimationUrl",
+            "profileAvatarAnimationObjectId",
+            "updatedAt",
+          ],
+        ),
+      );
+    }
+  }
+
   if (metadata.scope === "agency_logo") {
     if (!stablePublicUrl) {
       if (transaction) await auth.db.rollback(transaction);
