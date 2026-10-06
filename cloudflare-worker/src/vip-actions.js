@@ -304,7 +304,8 @@ export async function setVip4PrivacyPreference(
     }
 
     const updatedAtField = VIP4_PRIVACY_FIELDS[field];
-    await db.commit(transaction, [
+    const activeEnabled = enabled && activeLevel >= 4;
+    const writes = [
       db.writeUpdate(
         `users/${uid}`,
         {
@@ -313,12 +314,28 @@ export async function setVip4PrivacyPreference(
         },
         [field, updatedAtField],
       ),
-    ]);
+    ];
+    if (field === "hideNobleLevel") {
+      // The Nobles feature owns its own runtime. We only project the privacy
+      // decision into the existing public-profile snapshot so its real
+      // consumer can honor it without another listener or duplicate surface.
+      writes.push(
+        db.writeUpdate(
+          `public_profiles/${uid}`,
+          {
+            hideNobleLevel: activeEnabled,
+            updatedAt: new Date(nowMs),
+          },
+          ["hideNobleLevel", "updatedAt"],
+        ),
+      );
+    }
+    await db.commit(transaction, writes);
 
     return {
       ok: true,
       field,
-      enabled: enabled && activeLevel >= 4,
+      enabled: activeEnabled,
       canUse: activeLevel >= 4,
       requiredVipLevel: 4,
     };
