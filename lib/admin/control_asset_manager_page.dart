@@ -897,6 +897,55 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
         ),
       );
     }
+    if (type == 'badge' ||
+        type == 'vip_cosmetic' ||
+        type == 'agency_cosmetic' ||
+        type == 'event_cosmetic') {
+      return Container(
+        height: 190,
+        color: const Color(0xFF07111F),
+        alignment: Alignment.center,
+        padding: const EdgeInsets.all(16),
+        child: Container(
+          width: 275,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFF171025),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white12),
+          ),
+          child: Row(
+            children: [
+              SizedBox(width: 72, height: 72, child: image()),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'معاينة داخل بطاقة المستوى',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 13,
+                      ),
+                    ),
+                    SizedBox(height: 5),
+                    Text(
+                      'المستوى الحالي',
+                      style: TextStyle(
+                        color: Colors.white60,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     if (type.contains('chat')) {
       return Container(
         height: 150,
@@ -913,6 +962,81 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                 'معاينة رسالة داخل الغرفة',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.white, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    if (type == 'entrance') {
+      return Container(
+        height: 190,
+        color: const Color(0xFF07111F),
+        alignment: Alignment.center,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Positioned.fill(
+              child: Opacity(
+                opacity: .16,
+                child: Container(color: const Color(0xFF5A3A8C)),
+              ),
+            ),
+            SizedBox(width: 250, height: 125, child: image()),
+            const Positioned(
+              bottom: 14,
+              child: Text(
+                'معاينة تأثير الدخول إلى الغرفة',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    if (type == 'audio_wave' || type == 'mic_effect') {
+      return Container(
+        height: 190,
+        color: const Color(0xFF07111F),
+        alignment: Alignment.center,
+        child: SizedBox(
+          width: 150,
+          height: 150,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              image(),
+              const Center(
+                child: CircleAvatar(
+                  radius: 30,
+                  backgroundColor: Color(0xFF34204F),
+                  child: Icon(Icons.mic_rounded, color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (type == 'name_effect') {
+      return Container(
+        height: 150,
+        color: const Color(0xFF07111F),
+        alignment: Alignment.center,
+        padding: const EdgeInsets.all(22),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            SizedBox(width: 260, height: 95, child: image()),
+            const Text(
+              'اسم المستخدم',
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+                fontSize: 18,
               ),
             ),
           ],
@@ -975,7 +1099,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
               children: [
                 const Expanded(child: Text('معاينة الأصل المنشور')),
                 IconButton(
-                  tooltip: 'تحديث مباشر وتجاوز الكاش',
+                  tooltip: 'تحديث المعاينة من المصدر',
                   onPressed: raw.isEmpty
                       ? null
                       : () => setDialogState(
@@ -1028,7 +1152,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                         ),
                         ButtonSegment(
                           value: true,
-                          label: Text('داخل السياق'),
+                          label: Text('داخل التطبيق'),
                           icon: Icon(Icons.phone_android_rounded),
                         ),
                       ],
@@ -1056,6 +1180,16 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                 onPressed: () => _copyAssetMetadata(asset),
                 icon: const Icon(Icons.copy_all_rounded),
                 label: const Text('نسخ البيانات'),
+              ),
+              TextButton.icon(
+                onPressed: (asset['rawUrl'] ?? '').toString().trim().isEmpty
+                    ? null
+                    : () => _copyText(
+                          (asset['rawUrl'] ?? '').toString(),
+                          'رابط النسخة المنشورة',
+                        ),
+                icon: const Icon(Icons.link_rounded),
+                label: const Text('نسخ رابط النسخة'),
               ),
               FilledButton(
                 onPressed: () {
