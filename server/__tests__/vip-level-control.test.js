@@ -11,6 +11,7 @@ import {
 const {
   normalizeAllowedVipGrantLevels,
   vipControlAccess,
+  searchVipUsers,
   updateAdminVipGrant,
 } = vipLevelControlInternals;
 
@@ -32,6 +33,7 @@ class FakeDb {
     );
     this.commits = [];
     this.rollbacks = 0;
+    this.queries = [];
   }
 
   async beginTransaction() {
@@ -48,7 +50,8 @@ class FakeDb {
     return { exists: true, data: clone(this.docs.get(path)) };
   }
 
-  async runQuery() {
+  async runQuery(collectionPath, options = {}) {
+    this.queries.push({ collectionPath, options: clone(options) });
     return [];
   }
 
@@ -172,6 +175,40 @@ test("07-A allowed VIP grant levels are normalized and bounded", () => {
   assert.deepEqual(normalizeAllowedVipGrantLevels([0, 1]), []);
   assert.deepEqual(normalizeAllowedVipGrantLevels([11]), []);
   assert.deepEqual(normalizeAllowedVipGrantLevels("1,2"), []);
+});
+
+test("07-A VIP search is bounded and skips unnecessary profile queries", async () => {
+  const ownerUid = "owner_search";
+  const targetUid = "target_search";
+  const db = new FakeDb({
+    ["users/" + ownerUid]: user({ role: "owner" }),
+    ["users/" + targetUid]: user({
+      publicId: "12345678",
+      displayName: "Target",
+    }),
+  });
+
+  const direct = await searchVipUsers(
+    db,
+    payload(ownerUid),
+    { query: targetUid },
+  );
+  assert.equal(direct.results.length, 1);
+  assert.equal(direct.results[0].uid, targetUid);
+  assert.equal(db.queries.length, 0);
+
+  const miss = new FakeDb({
+    ["users/" + ownerUid]: user({ role: "owner" }),
+  });
+  const empty = await searchVipUsers(
+    miss,
+    payload(ownerUid),
+    { query: "missing user" },
+  );
+  assert.deepEqual(empty.results, []);
+  assert.equal(miss.queries.length, 1);
+  assert.equal(miss.queries[0].collectionPath, "public_profiles");
+  assert.equal(miss.queries[0].options.limit, 20);
 });
 
 test("07-A Owner can grant VIP10 to own account and natural VIP keeps running", async () => {
