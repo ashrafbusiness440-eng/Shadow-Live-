@@ -2722,6 +2722,9 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                           case 'clone':
                             _cloneAsset(asset);
                             break;
+                          case 'insights':
+                            _showAssetInsights(asset);
+                            break;
                           case 'copy':
                             _copyAssetMetadata(asset);
                             break;
@@ -2757,6 +2760,13 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                           child: ListTile(
                             leading: Icon(Icons.copy_all_rounded),
                             title: Text('نسخ كأصل جديد'),
+                          ),
+                        ),
+                        const PopupMenuItem(
+                          value: 'insights',
+                          child: ListTile(
+                            leading: Icon(Icons.account_tree_outlined),
+                            title: Text('الاستخدام وسجل النسخ'),
                           ),
                         ),
                         const PopupMenuItem(
