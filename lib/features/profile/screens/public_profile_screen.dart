@@ -607,7 +607,16 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
             ],
           ),
           const SizedBox(height: 11),
-          Text(name, style: const TextStyle(color: Colors.white, fontSize: 25, fontWeight: FontWeight.w900)),
+          VipStyledName(
+            vipLevel: vip,
+            name: name,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 25,
+              fontWeight: FontWeight.w900,
+            ),
+            textAlign: TextAlign.center,
+          ),
           const SizedBox(height: 4),
           Row(
             mainAxisSize: MainAxisSize.min,
