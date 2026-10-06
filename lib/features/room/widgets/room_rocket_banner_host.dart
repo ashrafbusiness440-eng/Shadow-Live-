@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../../../services/navigation_service.dart';
 import '../../voice/services/voice_room_session_controller.dart';
 import '../services/room_rocket_service.dart';
+import '../../vip/services/vip_service.dart';
 
 class RoomRocketBannerHost extends StatefulWidget {
   const RoomRocketBannerHost({
@@ -22,13 +23,19 @@ class RoomRocketBannerHost extends StatefulWidget {
 
 class _RoomRocketBannerHostState extends State<RoomRocketBannerHost> {
   final RoomRocketService _service = RoomRocketService();
+  final VipService _vipService = VipService();
   final VoiceRoomSessionController _voice =
       VoiceRoomSessionController.instance;
 
   StreamSubscription<List<RoomRocketEvent>>? _subscription;
+  StreamSubscription<List<GlobalAppEvent>>? _globalSubscription;
+  StreamSubscription<User?>? _vipAuthSubscription;
   Timer? _timer;
   List<RoomRocketEvent> _events = const [];
+  List<GlobalAppEvent> _globalEvents = const [];
   RoomRocketEvent? _active;
+  GlobalAppEvent? _globalActive;
+  String _lastVip10PromptUid = '';
   final Set<String> _registered = <String>{};
   static const int _maxNetworkAttempts = 4;
 
@@ -54,6 +61,23 @@ class _RoomRocketBannerHostState extends State<RoomRocketBannerHost> {
       },
       onError: (_) {},
     );
+    _globalSubscription = _service.watchGlobalEvents().listen(
+      (events) {
+        _globalEvents = events;
+        _refreshGlobal();
+      },
+      onError: (_) {},
+    );
+    _vipAuthSubscription = FirebaseAuth.instance.authStateChanges().listen(
+      (user) {
+        if (user == null || user.isAnonymous) {
+          _lastVip10PromptUid = '';
+          return;
+        }
+        unawaited(_checkVip10EntryPrompt(user));
+      },
+      onError: (_) {},
+    );
     _timer = Timer.periodic(
       const Duration(milliseconds: 250),
       (_) => _refresh(),
@@ -64,12 +88,95 @@ class _RoomRocketBannerHostState extends State<RoomRocketBannerHost> {
   void dispose() {
     _timer?.cancel();
     _subscription?.cancel();
+    _globalSubscription?.cancel();
+    _vipAuthSubscription?.cancel();
     _voice.removeListener(_onVoiceChanged);
     _service.close();
+    _vipService.close();
     super.dispose();
   }
 
   void _onVoiceChanged() => _refresh();
+  Future<void> _checkVip10EntryPrompt(User user) async {
+    if (_lastVip10PromptUid == user.uid) return;
+    _lastVip10PromptUid = user.uid;
+    try {
+      final state = await _vipService.loadVip10GlobalEntryState();
+      if (!mounted ||
+          !state.eligible ||
+          state.alreadyPublished ||
+          FirebaseAuth.instance.currentUser?.uid != user.uid) {
+        return;
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_showVip10EntryPrompt());
+      });
+    } catch (_) {
+      // VIP prompt must never delay login or app navigation.
+    }
+  }
+
+  Future<void> _showVip10EntryPrompt() async {
+    final context = NavigationService.navigatorKey.currentContext;
+    if (context == null || !mounted) return;
+    final publish = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          backgroundColor: const Color(0xFF111321),
+          title: const Text(
+            'دخول VIP10',
+            style: TextStyle(color: Color(0xFFFFD54A)),
+          ),
+          content: const Text(
+            'هل تريد نشر شريط دخولك العام الآن؟ يمكن نشره مرة واحدة فقط اليوم.',
+            style: TextStyle(color: Colors.white70),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('بدون نشر'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('نشر'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (publish != true) return;
+    try {
+      await _vipService.publishVip10GlobalEntry();
+    } catch (_) {
+      final current = NavigationService.navigatorKey.currentContext;
+      if (current != null && current.mounted) {
+        ScaffoldMessenger.of(current).showSnackBar(
+          const SnackBar(
+            content: Text('تعذر نشر شريط VIP10 حالياً.'),
+          ),
+        );
+      }
+    }
+  }
+
+  void _refreshGlobal() {
+    if (!mounted) return;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final active = _globalEvents
+        .where((event) =>
+            event.kind == 'vip10_global_entry' && event.activeAt(nowMs))
+        .toList()
+      ..sort((a, b) => a.startsAtMs.compareTo(b.startsAtMs));
+    final next = active.isEmpty ? null : active.first;
+    if (_globalActive?.id != next?.id) {
+      setState(() => _globalActive = next);
+    } else if (next != null) {
+      setState(() {});
+    }
+  }
+
 
   void _refresh() {
     if (!mounted) return;
@@ -340,10 +447,24 @@ class _RoomRocketBannerHostState extends State<RoomRocketBannerHost> {
   @override
   Widget build(BuildContext context) {
     final event = _active;
+    final global = _globalActive;
     return Stack(
       children: [
         widget.child,
-        if (event != null)
+        if (global != null)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                child: _Vip10GlobalBanner(event: global),
+              ),
+            ),
+          )
+        else if (event != null)
           Positioned(
             top: 0,
             left: 0,
@@ -360,6 +481,101 @@ class _RoomRocketBannerHostState extends State<RoomRocketBannerHost> {
             ),
           ),
       ],
+    );
+  }
+}
+
+class _Vip10GlobalBanner extends StatelessWidget {
+  const _Vip10GlobalBanner({required this.event});
+
+  final GlobalAppEvent event;
+
+  @override
+  Widget build(BuildContext context) {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final seconds = math.max(0, ((event.endsAtMs - nowMs) / 1000).ceil());
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          height: 70,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [
+                Color(0xFF4A0707),
+                Color(0xFF15101E),
+                Color(0xFF7A451B),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0xCCFFD54A)),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x66000000),
+                blurRadius: 18,
+                offset: Offset(0, 7),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 23,
+                backgroundColor: const Color(0xFF25183F),
+                backgroundImage: event.profileImageUrl.isEmpty
+                    ? null
+                    : NetworkImage(event.profileImageUrl),
+                child: event.profileImageUrl.isEmpty
+                    ? const Icon(Icons.person_rounded, color: Colors.white70)
+                    : null,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      event.displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const Text(
+                      'دخل التطبيق • VIP10',
+                      textDirection: TextDirection.rtl,
+                      style: TextStyle(
+                        color: Color(0xFFFFD54A),
+                        fontWeight: FontWeight.w900,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.workspace_premium_rounded,
+                color: Color(0xFFFFD54A),
+                size: 28,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '${seconds}s',
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

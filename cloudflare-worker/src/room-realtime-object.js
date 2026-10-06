@@ -28,6 +28,13 @@ import {
   rocketFeedRetainUntilMs,
   rocketFeedStorageKey,
 } from "./room-rocket-feed.js";
+import {
+  GLOBAL_APP_FEED_MAX_EVENTS,
+  GLOBAL_APP_FEED_STORAGE_PREFIX,
+  globalAppFeedRetainUntilMs,
+  globalAppFeedStorageKey,
+  normalizeGlobalAppFeedEvent,
+} from "./global-app-feed.js";
 
 const TICKET_PREFIX = "ticket:";
 const CUSTOMER_SERVICE_MIC_SCHEDULE_PREFIX = "cs_mic:";
@@ -151,6 +158,60 @@ export class RoomRealtimeObject extends DurableObject {
       .sort((a, b) => Number(a.startsAtMs || 0) - Number(b.startsAtMs || 0))
       .slice(-ROCKET_FEED_MAX_EVENTS);
   }
+
+  async #globalFeedRecentEvents(nowMs = Date.now()) {
+    const records = await this.ctx.storage.list({
+      prefix: GLOBAL_APP_FEED_STORAGE_PREFIX,
+      limit: GLOBAL_APP_FEED_MAX_EVENTS,
+    });
+    return Array.from(records.values())
+      .map((record) => record?.event)
+      .map((event) => normalizeGlobalAppFeedEvent(event, nowMs))
+      .filter(Boolean)
+      .filter((event) => Number(event.startsAtMs || 0) <= nowMs)
+      .sort((a, b) => Number(a.startsAtMs || 0) - Number(b.startsAtMs || 0))
+      .slice(-GLOBAL_APP_FEED_MAX_EVENTS);
+  }
+
+  async #publishGlobalEvents(request) {
+    const body = await request.json().catch(() => ({}));
+    const nowMs = Date.now();
+    const events = Array.isArray(body.events)
+      ? body.events
+          .map((event) => normalizeGlobalAppFeedEvent(event, nowMs))
+          .filter(Boolean)
+          .slice(0, GLOBAL_APP_FEED_MAX_EVENTS)
+      : [];
+    if (events.length === 0) {
+      return Response.json({ ok: true, stored: 0, delivered: 0 });
+    }
+
+    let stored = 0;
+    let delivered = 0;
+    for (const event of events) {
+      const key = globalAppFeedStorageKey(event.eventId);
+      if (!key) continue;
+      const retainUntilMs = globalAppFeedRetainUntilMs(event);
+      await this.ctx.storage.put(key, { event, retainUntilMs });
+      stored += 1;
+      if (event.startsAtMs <= nowMs && event.endsAtMs > nowMs) {
+        delivered += this.#broadcastEvent("app.global_event", event);
+      }
+    }
+
+    const records = await this.ctx.storage.list({
+      prefix: GLOBAL_APP_FEED_STORAGE_PREFIX,
+      limit: GLOBAL_APP_FEED_MAX_EVENTS,
+    });
+    const expired = [];
+    for (const [key, record] of records) {
+      if (Number(record?.retainUntilMs || 0) <= nowMs) expired.push(key);
+    }
+    if (expired.length) await this.ctx.storage.delete(expired);
+
+    return Response.json({ ok: true, stored, delivered });
+  }
+
 
   async #processRocketFeed(nowMs = Date.now()) {
     const records = await this.ctx.storage.list({
@@ -297,6 +358,9 @@ export class RoomRealtimeObject extends DurableObject {
     if (url.pathname === "/rocket/publish" && request.method === "POST") {
       return this.#publishRocketEvents(request);
     }
+    if (url.pathname === "/global/publish" && request.method === "POST") {
+      return this.#publishGlobalEvents(request);
+    }
     if (url.pathname === "/game/register" && request.method === "POST") {
       return this.#registerGameSchedules(request);
     }
@@ -422,7 +486,10 @@ export class RoomRealtimeObject extends DurableObject {
         reconnectAttempt,
       });
       this.ctx.acceptWebSocket(server, [`uid:${uid}`, "feed:rocket"]);
-      const recentEvents = await this.#rocketFeedRecentEvents(connectedAtMs);
+      const [recentEvents, recentGlobalEvents] = await Promise.all([
+        this.#rocketFeedRecentEvents(connectedAtMs),
+        this.#globalFeedRecentEvents(connectedAtMs),
+      ]);
       safeSend(
         server,
         realtimeEnvelope("server.ready", {
@@ -430,6 +497,7 @@ export class RoomRealtimeObject extends DurableObject {
           feed: "rocket",
           connectionId,
           recentEvents,
+          recentGlobalEvents,
         }),
       );
       recordRealtimeTelemetry(this.env, {

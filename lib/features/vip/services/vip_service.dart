@@ -234,6 +234,29 @@ class VipPrivacyPreferenceState {
       );
 }
 
+class Vip10GlobalEntryState {
+  const Vip10GlobalEntryState({
+    required this.eligible,
+    required this.effectiveVipLevel,
+    required this.alreadyPublished,
+    required this.dayKey,
+  });
+
+  final bool eligible;
+  final int effectiveVipLevel;
+  final bool alreadyPublished;
+  final String dayKey;
+
+  factory Vip10GlobalEntryState.fromJson(Map<String, dynamic> json) =>
+      Vip10GlobalEntryState(
+        eligible: json['eligible'] == true,
+        effectiveVipLevel:
+            (json['effectiveVipLevel'] as num?)?.toInt() ?? 0,
+        alreadyPublished: json['alreadyPublished'] == true,
+        dayKey: (json['dayKey'] ?? '').toString(),
+      );
+}
+
 class VipService {
   VipService({
     http.Client? client,
@@ -336,6 +359,18 @@ class VipService {
       'enabled': enabled,
     });
     return VipPrivacyPreferenceState.fromJson(body);
+  }
+
+  Future<Vip10GlobalEntryState> loadVip10GlobalEntryState() async {
+    return Vip10GlobalEntryState.fromJson(
+      await _post({'action': 'vip10GlobalEntryState'}),
+    );
+  }
+
+  Future<Vip10GlobalEntryState> publishVip10GlobalEntry() async {
+    return Vip10GlobalEntryState.fromJson(
+      await _post({'action': 'publishVip10GlobalEntry'}),
+    );
   }
 
   void close() {

@@ -19,6 +19,7 @@ import {
   vipStateFromUser,
   vipUserPatch,
 } from "./vip-runtime.js";
+import { publishGlobalAppEvents } from "./room-realtime.js";
 
 const clean = (value) => String(value ?? "").trim();
 
@@ -299,6 +300,119 @@ export async function setVip4PrivacyPreference(
   }
 }
 
+function riyadhDayKey(nowMs = Date.now()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Riyadh",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(nowMs));
+}
+
+export async function vip10GlobalEntryState(
+  db,
+  uid,
+  nowMs = Date.now(),
+) {
+  const userSnap = await db.get(`users/${uid}`);
+  if (!userSnap.exists) throw new ApiError("user_not_found", 404);
+  const user = userSnap.data || {};
+  const level = activeEffectiveVipLevelFromUser(user, nowMs);
+  const dayKey = riyadhDayKey(nowMs);
+  return {
+    ok: true,
+    eligible: level >= 10,
+    effectiveVipLevel: level,
+    dayKey,
+    alreadyPublished:
+      level >= 10 && clean(user.vip10GlobalEntryDayKey) === dayKey,
+  };
+}
+
+export async function publishVip10GlobalEntry(
+  db,
+  env,
+  uid,
+  nowMs = Date.now(),
+) {
+  const transaction = await db.beginTransaction();
+  let event;
+  try {
+    const userSnap = await db.get(`users/${uid}`, transaction);
+    if (!userSnap.exists) throw new ApiError("user_not_found", 404);
+    const user = userSnap.data || {};
+    const level = activeEffectiveVipLevelFromUser(user, nowMs);
+    if (level < 10) throw new ApiError("vip10_required", 403);
+
+    const dayKey = riyadhDayKey(nowMs);
+    if (clean(user.vip10GlobalEntryDayKey) === dayKey) {
+      await db.rollback(transaction);
+      return {
+        ok: true,
+        code: "already_published_today",
+        alreadyPublished: true,
+        dayKey,
+      };
+    }
+
+    const startsAtMs = nowMs;
+    const endsAtMs = nowMs + 12_000;
+    const eventId = `vip10_entry_${uid}_${dayKey.replace(/-/g, "")}`;
+    event = {
+      eventId,
+      kind: "vip10_global_entry",
+      startsAtMs,
+      endsAtMs,
+      uid,
+      displayName: clean(user.displayName || user.username) || "مستخدم Shadow Live",
+      profileImageUrl: clean(user.profileImageUrl),
+      publicId: clean(user.publicId),
+      vipLevel: 10,
+      assetKey: clean(user.vip10GlobalEntryAssetKey) || "vip/10/global_entry_banner",
+    };
+
+    await db.commit(transaction, [
+      db.writeUpdate(
+        `users/${uid}`,
+        {
+          vip10GlobalEntryDayKey: dayKey,
+          vip10GlobalEntryPublishedAt: new Date(nowMs),
+        },
+        ["vip10GlobalEntryDayKey", "vip10GlobalEntryPublishedAt"],
+      ),
+      db.writeCreate(
+        `vip_audit_logs/${eventId}`,
+        {
+          actorUid: uid,
+          targetUserId: uid,
+          action: "publishVip10GlobalEntry",
+          dayKey,
+          eventId,
+          createdAt: new Date(nowMs),
+        },
+      ),
+    ]);
+  } catch (error) {
+    await db.rollback(transaction);
+    throw error;
+  }
+
+  const broadcast = await publishGlobalAppEvents(env, [event], nowMs).catch(() => ({
+    ok: false,
+    shards: 0,
+    events: 0,
+  }));
+
+  return {
+    ok: true,
+    code: broadcast.ok ? "published" : "committed_broadcast_deferred",
+    alreadyPublished: true,
+    dayKey: riyadhDayKey(nowMs),
+    event,
+    realtimeShards: Number(broadcast.shards || 0),
+  };
+}
+
 export async function buyVipGrowth(db, uid, body, nowMs = Date.now()) {
   const requestedGrowthPoints = asPositiveInt(body.growthPoints);
   const key = operationKey(body.idempotencyKey);
@@ -530,6 +644,20 @@ export async function vipActions(request, env) {
         request,
         env,
         await setVip4PrivacyPreference(db, decoded.sub, body),
+      );
+    }
+    if (action === "vip10GlobalEntryState") {
+      return json(
+        request,
+        env,
+        await vip10GlobalEntryState(db, decoded.sub),
+      );
+    }
+    if (action === "publishVip10GlobalEntry") {
+      return json(
+        request,
+        env,
+        await publishVip10GlobalEntry(db, env, decoded.sub),
       );
     }
     throw new ApiError("invalid_action", 400);
