@@ -165,6 +165,9 @@ test("asset manager keeps bounded registry and explicit draft publish flow", () 
   const control = source("lib/admin/control_asset_manager_page.dart");
 
   assert.equal(worker.includes('limit: 100'), true);
+  assert.equal(worker.includes('recent_auth_required'), false);
+  assert.equal(worker.includes('actor.role !== "owner"'), true);
+  assert.equal(worker.includes('actor.adminEnabled !== true'), true);
   assert.equal(worker.includes('action === "publish"'), true);
   assert.equal(worker.includes('"saveAppAssetDraft"'), true);
   assert.equal(worker.includes("asset-studio/drafts/"), true);
