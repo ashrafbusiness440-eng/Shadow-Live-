@@ -68,6 +68,7 @@ function summaryPayload(policy, state, user = {}) {
     effectiveVipSource: state.effectiveVipSource,
     earnedVipLevel: earnedLevel,
     adminGrantVipLevel: state.adminGrantVipLevel,
+    trialVipLevel: state.trialVipLevel,
     growthPoints: state.growthPoints,
     maintenancePoints: state.maintenancePoints,
     maintenanceRequired:
@@ -77,6 +78,7 @@ function summaryPayload(policy, state, user = {}) {
     maxGrowthPoints: progress.maxGrowthPoints,
     earnedVipExpiresAtMs: state.earnedVipExpiresAtMs,
     adminGrantExpiresAtMs: state.adminGrantExpiresAtMs,
+    trialVipExpiresAtMs: state.trialVipExpiresAtMs,
     validityDays:
       earnedLevel > 0 ? vipValidityDays(policy, earnedLevel) : null,
     currentThreshold:
