@@ -3899,8 +3899,14 @@ async function roomBootstrap(db,decoded,body){
     }
   }
 
+  const actorVipEntitlements=vipEntitlementsFromUser(actor,Date.now());
   const roomData={
     ...roomResponse(roomId,room),
+    selfVipLevel:actorVipEntitlements.level,
+    canUseVipEmoji:actorVipEntitlements.exclusiveEmoji,
+    vipCustomerService:actorVipEntitlements.vipCustomerService,
+    exclusiveCustomerService:actorVipEntitlements.exclusiveCustomerService,
+    levelGuarantee:actorVipEntitlements.levelGuarantee,
     viewerAgencyId:clean(actor.agencyId),
     viewerAgencyRole:clean(actor.agencyRole),
     onlineCount,
