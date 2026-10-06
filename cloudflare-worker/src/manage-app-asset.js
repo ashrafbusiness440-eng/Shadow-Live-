@@ -153,45 +153,198 @@ async function verifyOwner(request, env) {
   return { decoded, db };
 }
 
+function assetMatchesListFilters(asset, {
+  query = "",
+  status = "all",
+  type = "all",
+  channel = "all",
+  family = "",
+  level = "",
+  updatedAfter = "",
+  updatedBefore = "",
+} = {}) {
+  const draft = asset?.draft && typeof asset.draft === "object"
+    ? asset.draft
+    : {};
+  const hasDraft = asset?.hasDraft === true && Object.keys(draft).length > 0;
+  const source = hasDraft ? draft : asset;
+  const published = asset?.published === true;
+  const normalizedStatus = clean(asset?.status).toLowerCase();
+  const assetType = clean(source?.assetType || asset?.assetType);
+  const channels = Array.isArray(source?.channels || asset?.channels)
+    ? (source?.channels || asset?.channels).map((item) => clean(item))
+    : [];
+  const assetKey = clean(asset?.assetKey);
+  const fullPath = clean(source?.fullPath || asset?.fullPath);
+  const fileName = clean(source?.fileName || asset?.fileName);
+  const templateId = clean(source?.templateId || asset?.templateId);
+
+  const statusOk = status === "published"
+    ? published
+    : status === "draft"
+      ? hasDraft
+      : status === "review"
+        ? normalizedStatus.includes("review") ||
+          normalizedStatus.includes("pending")
+        : true;
+  if (!statusOk) return false;
+  if (type !== "all" && assetType !== type) return false;
+  if (channel !== "all" && !channels.includes(channel)) return false;
+
+  const familyNeedle = clean(family).toLowerCase();
+  if (familyNeedle) {
+    const familyHaystack = `${assetKey} ${fullPath} ${templateId}`.toLowerCase();
+    if (!familyHaystack.includes(familyNeedle)) return false;
+  }
+
+  const levelNeedle = clean(level).toLowerCase();
+  if (levelNeedle) {
+    const levelHaystack = `${assetKey} ${fullPath} ${fileName}`.toLowerCase();
+    if (!levelHaystack.includes(levelNeedle)) return false;
+  }
+
+  const updatedAt = new Date(asset?.updatedAt || 0);
+  if (clean(updatedAfter)) {
+    const after = new Date(updatedAfter);
+    if (!Number.isNaN(after.getTime()) &&
+        (Number.isNaN(updatedAt.getTime()) || updatedAt < after)) {
+      return false;
+    }
+  }
+  if (clean(updatedBefore)) {
+    const before = new Date(updatedBefore);
+    if (!Number.isNaN(before.getTime()) &&
+        (Number.isNaN(updatedAt.getTime()) || updatedAt > before)) {
+      return false;
+    }
+  }
+
+  const q = clean(query).toLowerCase();
+  if (!q) return true;
+  const haystack = [
+    assetKey,
+    fullPath,
+    fileName,
+    assetType,
+    templateId,
+    ...channels,
+  ].join(" ").toLowerCase();
+  return haystack.includes(q);
+}
+
+function registryCursor(updatedAt, id) {
+  const timestamp = clean(updatedAt);
+  const date = timestamp ? new Date(timestamp) : null;
+  if (!date || Number.isNaN(date.getTime()) || !clean(id)) return [];
+  return [
+    date,
+    { referencePath: `app_asset_registry/${clean(id)}` },
+  ];
+}
+
 async function listAssets(
   db,
-  { limit = 100, cursorUpdatedAt = "", cursorId = "" } = {},
+  {
+    limit = 100,
+    cursorUpdatedAt = "",
+    cursorId = "",
+    query = "",
+    status = "all",
+    type = "all",
+    channel = "all",
+    family = "",
+    level = "",
+    updatedAfter = "",
+    updatedBefore = "",
+  } = {},
 ) {
   const boundedLimit = Math.max(12, Math.min(100, Number(limit || 60)));
-  const cursorTimestamp = clean(cursorUpdatedAt);
-  const cursorDate = cursorTimestamp ? new Date(cursorTimestamp) : null;
-  const startAfter =
-    cursorDate &&
-    !Number.isNaN(cursorDate.getTime()) &&
-    clean(cursorId)
-      ? [
-          cursorDate,
-          { referencePath: `app_asset_registry/${clean(cursorId)}` },
-        ]
-      : [];
-  const docs = await db.runQuery("app_asset_registry", {
-    orderBy: [
-      { field: "updatedAt", direction: "desc" },
-      { field: "__name__", direction: "desc" },
-    ],
-    limit: boundedLimit,
-    startAfter,
-  });
-  const assets = docs.map((doc) => ({
-    assetKey: doc.id,
-    ...(doc.data || {}),
-    updatedAt: doc.data?.updatedAt || null,
-  }));
-  const last = docs.length ? docs[docs.length - 1] : null;
+  const filters = {
+    query: clean(query),
+    status: clean(status) || "all",
+    type: clean(type) || "all",
+    channel: clean(channel) || "all",
+    family: clean(family),
+    level: clean(level),
+    updatedAfter: clean(updatedAfter),
+    updatedBefore: clean(updatedBefore),
+  };
+  const hasFilters = Boolean(
+    filters.query ||
+    filters.family ||
+    filters.level ||
+    filters.updatedAfter ||
+    filters.updatedBefore ||
+    filters.status !== "all" ||
+    filters.type !== "all" ||
+    filters.channel !== "all"
+  );
+
+  let startAfter = registryCursor(cursorUpdatedAt, cursorId);
+  const assets = [];
+  let scanned = 0;
+  let nextCursor = null;
+  let exhausted = false;
+  const maxPages = hasFilters ? 3 : 1;
+
+  for (let page = 0; page < maxPages && assets.length < boundedLimit; page++) {
+    const docs = await db.runQuery("app_asset_registry", {
+      orderBy: [
+        { field: "updatedAt", direction: "desc" },
+        { field: "__name__", direction: "desc" },
+      ],
+      limit: boundedLimit,
+      startAfter,
+    });
+
+    if (!docs.length) {
+      exhausted = true;
+      break;
+    }
+
+    for (let index = 0; index < docs.length; index++) {
+      const doc = docs[index];
+      scanned++;
+      const asset = {
+        assetKey: doc.id,
+        ...(doc.data || {}),
+        updatedAt: doc.data?.updatedAt || null,
+      };
+      if (assetMatchesListFilters(asset, filters)) {
+        assets.push(asset);
+      }
+
+      const isLastDoc = index === docs.length - 1;
+      const reachedResultLimit = assets.length >= boundedLimit;
+      if (reachedResultLimit || isLastDoc) {
+        nextCursor = {
+          updatedAt: doc.data?.updatedAt || null,
+          id: doc.id,
+        };
+      }
+      if (reachedResultLimit) break;
+    }
+
+    if (assets.length >= boundedLimit) break;
+    if (docs.length < boundedLimit) {
+      exhausted = true;
+      break;
+    }
+    const last = docs[docs.length - 1];
+    startAfter = registryCursor(last.data?.updatedAt, last.id);
+    if (!startAfter.length) {
+      exhausted = true;
+      break;
+    }
+  }
+
   return {
     assets,
-    nextCursor:
-      docs.length === boundedLimit && last
-        ? {
-            updatedAt: last.data?.updatedAt || null,
-            id: last.id,
-          }
-        : null,
+    nextCursor: exhausted ? null : nextCursor,
+    scannedCount: scanned,
+    filtered: hasFilters,
+    scanLimitReached:
+      hasFilters && !exhausted && assets.length < boundedLimit,
   };
 }
 
@@ -827,6 +980,14 @@ export async function manageAppAsset(request, env) {
         limit: Number(url.searchParams.get("limit") || 60),
         cursorUpdatedAt: clean(url.searchParams.get("cursorUpdatedAt")),
         cursorId: clean(url.searchParams.get("cursorId")),
+        query: clean(url.searchParams.get("q")),
+        status: clean(url.searchParams.get("status")) || "all",
+        type: clean(url.searchParams.get("type")) || "all",
+        channel: clean(url.searchParams.get("channel")) || "all",
+        family: clean(url.searchParams.get("family")),
+        level: clean(url.searchParams.get("level")),
+        updatedAfter: clean(url.searchParams.get("updatedAfter")),
+        updatedBefore: clean(url.searchParams.get("updatedBefore")),
       });
       return json(request, env, {
         ok: true,
@@ -835,6 +996,9 @@ export async function manageAppAsset(request, env) {
         templates: publicAssetStudioTemplates(),
         assets: page.assets,
         nextCursor: page.nextCursor,
+        scannedCount: page.scannedCount,
+        filtered: page.filtered,
+        scanLimitReached: page.scanLimitReached,
       });
     }
 
