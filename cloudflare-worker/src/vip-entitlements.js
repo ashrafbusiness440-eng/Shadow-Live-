@@ -51,30 +51,52 @@ export function vipCosmeticsFromUser(user = {}, nowMs = Date.now()) {
 }
 
 export const VIP_ENTITLEMENT_LEVELS = Object.freeze({
+  mainBadge: 1,
+  chatBubble: 2,
+  profileFrame: 3,
+  animatedAvatar: 4,
+  vipGiftVisual: 4,
+  dataCard: 5,
+  profileBackground: 5,
   hideOnlineStatus: 5,
   hideRoomPresence: 5,
   kickProtection: 6,
   hiddenRoomEntry: 7,
   hideRankingLists: 7,
+  voiceWave: 7,
   entryStrip: 8,
   roomEntryBroadcast: 9,
   hideProfileVisits: 9,
+  profileDecoration: 9,
   muteProtection: 10,
+  nameEffect: 10,
+  premiumGiftVisual: 10,
 });
 
 export function vipEntitlementsFromUser(user = {}, nowMs = Date.now()) {
   const level = activeEffectiveVipLevelFromUser(user, nowMs);
   return {
     level,
+    mainBadge: level >= VIP_ENTITLEMENT_LEVELS.mainBadge,
+    chatBubble: level >= VIP_ENTITLEMENT_LEVELS.chatBubble,
+    profileFrame: level >= VIP_ENTITLEMENT_LEVELS.profileFrame,
+    animatedAvatar: level >= VIP_ENTITLEMENT_LEVELS.animatedAvatar,
+    vipGiftVisual: level >= VIP_ENTITLEMENT_LEVELS.vipGiftVisual,
+    dataCard: level >= VIP_ENTITLEMENT_LEVELS.dataCard,
+    profileBackground: level >= VIP_ENTITLEMENT_LEVELS.profileBackground,
     hideOnlineStatus: level >= VIP_ENTITLEMENT_LEVELS.hideOnlineStatus,
     hideRoomPresence: level >= VIP_ENTITLEMENT_LEVELS.hideRoomPresence,
     kickProtection: level >= VIP_ENTITLEMENT_LEVELS.kickProtection,
     hiddenRoomEntry: level >= VIP_ENTITLEMENT_LEVELS.hiddenRoomEntry,
     hideRankingLists: level >= VIP_ENTITLEMENT_LEVELS.hideRankingLists,
+    voiceWave: level >= VIP_ENTITLEMENT_LEVELS.voiceWave,
     entryStrip: level >= VIP_ENTITLEMENT_LEVELS.entryStrip,
     roomEntryBroadcast: level >= VIP_ENTITLEMENT_LEVELS.roomEntryBroadcast,
     hideProfileVisits: level >= VIP_ENTITLEMENT_LEVELS.hideProfileVisits,
+    profileDecoration: level >= VIP_ENTITLEMENT_LEVELS.profileDecoration,
     muteProtection: level >= VIP_ENTITLEMENT_LEVELS.muteProtection,
+    nameEffect: level >= VIP_ENTITLEMENT_LEVELS.nameEffect,
+    premiumGiftVisual: level >= VIP_ENTITLEMENT_LEVELS.premiumGiftVisual,
   };
 }
 
@@ -148,4 +170,28 @@ export function activeHideRankingLists(user = {}, nowMs = Date.now()) {
     user.hideRankingLists === true &&
     canUseRankingListHiding(user, nowMs)
   );
+}
+
+
+export function vipCosmeticAssetKeysFromUser(user = {}, nowMs = Date.now()) {
+  const entitlements = vipEntitlementsFromUser(user, nowMs);
+  const level = entitlements.level;
+  const key = (suffix) => level > 0 ? `vip.v${level}.${suffix}` : "";
+  return {
+    level,
+    mainBadgeAssetKey: entitlements.mainBadge ? key("mainBadge") : "",
+    chatBubbleAssetKey: entitlements.chatBubble ? key("chatBubble") : "",
+    profileFrameAssetKey: entitlements.profileFrame ? key("profileFrame") : "",
+    giftVisualAssetKey: entitlements.vipGiftVisual ? key("giftVisual") : "",
+    dataCardAssetKey: entitlements.dataCard ? key("dataCard") : "",
+    profileBackgroundAssetKey:
+      entitlements.profileBackground ? key("profileBackground") : "",
+    voiceWaveAssetKey: entitlements.voiceWave ? key("audioWave") : "",
+    entryStripAssetKey: entitlements.entryStrip ? key("entryStrip") : "",
+    profileDecorationAssetKey:
+      entitlements.profileDecoration ? key("profileDecoration") : "",
+    nameEffectAssetKey: entitlements.nameEffect ? key("nameEffect") : "",
+    premiumGiftVisualAssetKey:
+      entitlements.premiumGiftVisual ? key("giftVisual") : "",
+  };
 }
