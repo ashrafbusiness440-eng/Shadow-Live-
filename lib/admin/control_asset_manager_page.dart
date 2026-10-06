@@ -45,6 +45,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
   int? _preparedWidth;
   int? _preparedHeight;
   bool? _preparedHasAlpha;
+  int? _preparedFrameCount;
   List<ControlAssetStudioTemplate> _templates = const [];
   List<String> _channels = const [
     'store',
@@ -173,6 +174,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     _preparedWidth = null;
     _preparedHeight = null;
     _preparedHasAlpha = null;
+    _preparedFrameCount = null;
   }
 
   void _startNewAsset() {
@@ -665,6 +667,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
           _preparedHeight = decoded.height;
           _preparedHasAlpha = _imageHasRealTransparency(decoded);
           _preparedAnimated = true;
+          _preparedFrameCount = decoded.numFrames;
           _conversionNote =
               'تم الحفاظ على Animation الأصلية • '
               '${decoded.width}×${decoded.height} • '
@@ -697,6 +700,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
             ? false
             : _imageHasRealTransparency(prepared);
         _preparedAnimated = false;
+        _preparedFrameCount = 1;
         _conversionNote =
             'تجهيز تلقائي حسب اسم الملف → ${_formatLabel(extension)} • '
             '${prepared.width}×${prepared.height} • '
@@ -723,6 +727,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
         _sourceBytes = sourceBytes;
         _pickedName = file.name;
         _preparedAnimated = false;
+        _preparedFrameCount = null;
         _fileName.text = outputName;
         _hasUnsavedChanges = true;
         _lastSuccess = null;
@@ -3432,6 +3437,14 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                     size: 16,
                   ),
                   label: Text(_preparedAnimated ? 'متحرك' : 'ثابت'),
+                ),
+                Chip(
+                  avatar: const Icon(Icons.photo_library_outlined, size: 16),
+                  label: Text(
+                    _preparedFrameCount == null
+                        ? 'الإطارات: —'
+                        : 'الإطارات: $_preparedFrameCount',
+                  ),
                 ),
                 Chip(
                   avatar: Icon(
