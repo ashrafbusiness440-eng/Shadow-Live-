@@ -234,6 +234,60 @@ class VipPrivacyPreferenceState {
       );
 }
 
+class VipTrialCardItem {
+  const VipTrialCardItem({
+    required this.cardId,
+    required this.status,
+    required this.trialVipLevel,
+    required this.durationDays,
+    required this.recipientUid,
+    required this.available,
+  });
+
+  final String cardId;
+  final String status;
+  final int trialVipLevel;
+  final int durationDays;
+  final String recipientUid;
+  final bool available;
+
+  factory VipTrialCardItem.fromJson(Map<String, dynamic> json) =>
+      VipTrialCardItem(
+        cardId: (json['cardId'] ?? '').toString(),
+        status: (json['status'] ?? '').toString(),
+        trialVipLevel: (json['trialVipLevel'] as num?)?.toInt() ?? 5,
+        durationDays: (json['durationDays'] as num?)?.toInt() ?? 7,
+        recipientUid: (json['recipientUid'] ?? '').toString(),
+        available: json['available'] == true,
+      );
+}
+
+class VipTrialCardGiftResult {
+  const VipTrialCardGiftResult({
+    required this.cardId,
+    required this.recipientUid,
+    required this.trialVipLevel,
+    required this.durationDays,
+    required this.trialVipExpiresAtMs,
+  });
+
+  final String cardId;
+  final String recipientUid;
+  final int trialVipLevel;
+  final int durationDays;
+  final int trialVipExpiresAtMs;
+
+  factory VipTrialCardGiftResult.fromJson(Map<String, dynamic> json) =>
+      VipTrialCardGiftResult(
+        cardId: (json['cardId'] ?? '').toString(),
+        recipientUid: (json['recipientUid'] ?? '').toString(),
+        trialVipLevel: (json['trialVipLevel'] as num?)?.toInt() ?? 5,
+        durationDays: (json['durationDays'] as num?)?.toInt() ?? 7,
+        trialVipExpiresAtMs:
+            (json['trialVipExpiresAtMs'] as num?)?.toInt() ?? 0,
+      );
+}
+
 class VipService {
   VipService({
     http.Client? client,
@@ -336,6 +390,32 @@ class VipService {
       'enabled': enabled,
     });
     return VipPrivacyPreferenceState.fromJson(body);
+  }
+
+  Future<List<VipTrialCardItem>> loadTrialCards() async {
+    final body = await _post({'action': 'trialCards'});
+    final raw = body['items'];
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map>()
+        .map((item) => VipTrialCardItem.fromJson(
+              Map<String, dynamic>.from(item),
+            ))
+        .where((item) => item.cardId.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  Future<VipTrialCardGiftResult> giftTrialCard({
+    required String cardId,
+    required String recipientId,
+  }) async {
+    return VipTrialCardGiftResult.fromJson(
+      await _post({
+        'action': 'giftTrialCard',
+        'cardId': cardId,
+        'recipientId': recipientId,
+      }),
+    );
   }
 
   void close() {
