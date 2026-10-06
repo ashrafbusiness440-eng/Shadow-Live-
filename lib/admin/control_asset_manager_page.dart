@@ -1874,20 +1874,55 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     }
   }
 
+  Widget _healthLine(
+    String label,
+    bool ok, {
+    required String okText,
+    required String badText,
+  }) {
+    final color = ok ? Colors.greenAccent : Colors.orangeAccent;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            ok ? Icons.check_circle_rounded : Icons.warning_amber_rounded,
+            color: color,
+            size: 16,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              '$label: ${ok ? okText : badText}',
+              style: TextStyle(
+                color: ok ? Colors.white70 : Colors.orangeAccent,
+                fontSize: 10.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _showAssetInsights(Map<String, dynamic> asset) async {
     final key = (asset['assetKey'] ?? '').toString().trim();
     if (key.isEmpty) return;
     setState(() => _busy = true);
     Map<String, dynamic>? historyBody;
     Map<String, dynamic>? usageBody;
+    Map<String, dynamic>? healthBody;
     String? error;
     try {
       final results = await Future.wait([
         _loadAssetInsight(key, 'history'),
         _loadAssetInsight(key, 'usage'),
+        _loadAssetInsight(key, 'health'),
       ]);
       historyBody = results[0];
       usageBody = results[1];
+      healthBody = results[2];
     } catch (e) {
       error = e.toString();
     } finally {
@@ -1922,6 +1957,24 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                 ),
           )
         : <Map<String, dynamic>>[];
+    final health = healthBody?['health'] is Map
+        ? Map<String, dynamic>.from(healthBody!['health'] as Map)
+        : <String, dynamic>{};
+    final filesWithoutRegistry = health['filesWithoutRegistry'] is List
+        ? (health['filesWithoutRegistry'] as List)
+            .map((e) => e.toString())
+            .toList(growable: false)
+        : <String>[];
+    final duplicatePathKeys = health['duplicatePathKeys'] is List
+        ? (health['duplicatePathKeys'] as List)
+            .map((e) => e.toString())
+            .toList(growable: false)
+        : <String>[];
+    final duplicateFunctionKeys = health['duplicateFunctionKeys'] is List
+        ? (health['duplicateFunctionKeys'] as List)
+            .map((e) => e.toString())
+            .toList(growable: false)
+        : <String>[];
 
     await showDialog<void>(
       context: context,
@@ -1939,6 +1992,75 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                         key,
                         textDirection: TextDirection.ltr,
                         style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(11),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: .035),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.white10),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const Text(
+                              'تشخيص الأصل',
+                              style: TextStyle(fontWeight: FontWeight.w900),
+                            ),
+                            const SizedBox(height: 7),
+                            _healthLine(
+                              'الملف موجود',
+                              health['fileExists'] == true,
+                              okText: 'نعم',
+                              badText: 'لا — الملف غير موجود',
+                            ),
+                            _healthLine(
+                              'استخدام مباشر',
+                              health['unusedDirectly'] != true,
+                              okText:
+                                  '${health['directUsageCount'] ?? 0} مكان',
+                              badText:
+                                  'لا يوجد استخدام مباشر ظاهر',
+                            ),
+                            _healthLine(
+                              'تكرار نفس المسار',
+                              duplicatePathKeys.isEmpty,
+                              okText: 'لا يوجد',
+                              badText:
+                                  duplicatePathKeys.join(' • '),
+                            ),
+                            _healthLine(
+                              'تشابه قوي بنفس القالب والاستخدام',
+                              duplicateFunctionKeys.isEmpty,
+                              okText: 'لا يوجد',
+                              badText:
+                                  duplicateFunctionKeys.join(' • '),
+                            ),
+                            if (filesWithoutRegistry.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              const Text(
+                                'ملفات موجودة في نفس المجلد بدون تسجيل:',
+                                style: TextStyle(
+                                  color: Colors.orangeAccent,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 11,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              ...filesWithoutRegistry.take(8).map(
+                                    (path) => SelectableText(
+                                      path,
+                                      textDirection: TextDirection.ltr,
+                                      style: const TextStyle(
+                                        color: Colors.white60,
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                  ),
+                            ],
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 14),
                       Text(
@@ -2004,6 +2126,38 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                                 ),
                               ),
                             ),
+                      const Divider(height: 20),
+                      ExpansionTile(
+                        tilePadding: EdgeInsets.zero,
+                        title: const Text(
+                          'تفاصيل متقدمة',
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        children: [
+                          if ((asset['contentSha'] ?? '').toString().isNotEmpty)
+                            ListTile(
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('بصمة النسخة الحالية'),
+                              subtitle: SelectableText(
+                                (asset['contentSha'] ?? '').toString(),
+                                textDirection: TextDirection.ltr,
+                                style: const TextStyle(fontSize: 9.5),
+                              ),
+                            ),
+                          if (commits.length >= 2)
+                            ListTile(
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('النسخة السابقة في سجل الملفات'),
+                              subtitle: SelectableText(
+                                (commits[1]['sha'] ?? '').toString(),
+                                textDirection: TextDirection.ltr,
+                                style: const TextStyle(fontSize: 9.5),
+                              ),
+                            ),
+                        ],
+                      ),
                       const Divider(height: 26),
                       Text(
                         'سجل التعديلات (${audit.length})',
