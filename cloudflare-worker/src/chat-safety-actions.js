@@ -21,6 +21,7 @@ import {
   realtimeUserPresentFromNamespace,
 } from "./room-presence-authority.js";
 import { giftLevelPointAwards, safeAddUserLevelPoints } from "./user-level-policy.js";
+import { activeEffectiveVipLevelFromUser } from "./vip-runtime.js";
 
 const clean = (value) => String(value ?? "").trim();
 const validKey = (value) => /^[A-Za-z0-9_-]{12,220}$/.test(clean(value));
@@ -135,7 +136,7 @@ async function runTransaction(db, body) {
   throw new ApiError("transaction_failed", 500);
 }
 
-async function sendMessage(db, uid, body) {
+export async function sendMessage(db, uid, body) {
   const receiverId = clean(body.receiverId);
   const conversationId = clean(body.conversationId);
   const message = clean(body.text);
@@ -199,25 +200,20 @@ async function sendMessage(db, uid, body) {
       await db.rollback(transaction);
       return { ok: true, code: "duplicate", ...(op.data?.result || {}) };
     }
-    if (!sender.exists || !receiver.exists || !contextDoc.exists) {
+    if (!sender.exists || !receiver.exists || !conversation.exists) {
       throw new ApiError("not_found", 404);
     }
 
-    const contextData = contextDoc.data || {};
-    const conversationData = contextType === "chat" ? contextData : {};
-    if (contextType === "chat") {
-      const participants = Array.isArray(conversationData.participants)
-        ? conversationData.participants
-        : [];
-      if (
-        participants.length !== 2 ||
-        !participants.includes(uid) ||
-        !participants.includes(receiverId)
-      ) {
-        throw new ApiError("invalid_conversation", 409);
-      }
-    } else if (clean(contextData.ownerUid) !== receiverId) {
-      throw new ApiError("invalid_diary_receiver", 409);
+    const conversationData = conversation.data || {};
+    const participants = Array.isArray(conversationData.participants)
+      ? conversationData.participants
+      : [];
+    if (
+      participants.length !== 2 ||
+      !participants.includes(uid) ||
+      !participants.includes(receiverId)
+    ) {
+      throw new ApiError("invalid_conversation", 409);
     }
     if (outgoingBlock.exists || incomingBlock.exists) {
       throw new ApiError("blocked", 403);
@@ -235,10 +231,28 @@ async function sendMessage(db, uid, body) {
 
     const mutual = outgoingFollow.exists && incomingFollow.exists;
     const senderData = sender.data || {};
+    const receiverData = receiver.data || {};
     const assignedModerator =
       clean(conversationData.customerServiceModeratorUid) === uid &&
       clean(senderData.role) === "moderator";
 
+    const senderCapabilities = new Set(
+      Array.isArray(senderData.capabilities)
+        ? senderData.capabilities.map(clean).filter(Boolean)
+        : [],
+    );
+    const privilegedSender =
+      clean(senderData.role) === "owner" ||
+      (senderData.adminEnabled === true &&
+        (senderCapabilities.has("manageUsers") ||
+          senderCapabilities.has("reviewReports")));
+    const receiverVip = activeEffectiveVipLevelFromUser(receiverData, nowMs);
+    const friendsOnly =
+      receiverVip >= 1 && receiverData.friendsOnlyMessages === true;
+
+    if (friendsOnly && !mutual && !assignedModerator && !privilegedSender) {
+      throw new ApiError("friends_only_messages", 403);
+    }
     if (!mutual && !assignedModerator && !outgoingFollow.exists) {
       throw new ApiError("follow_required", 403);
     }
@@ -249,13 +263,9 @@ async function sendMessage(db, uid, body) {
     }
 
     const now = new Date();
-    const counts = contextType === "chat"
-      ? { ...(conversationData.unreadCounts || {}) }
-      : {};
-    if (contextType === "chat") {
-      counts[uid] = 0;
-      counts[receiverId] = Number(counts[receiverId] || 0) + 1;
-    }
+    const counts = { ...(conversationData.unreadCounts || {}) };
+    counts[uid] = 0;
+    counts[receiverId] = Number(counts[receiverId] || 0) + 1;
     const messageId = randomDocId("msg");
     const messagePath = `${conversationPath}/messages/${messageId}`;
     const writes = [

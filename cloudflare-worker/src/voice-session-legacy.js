@@ -1847,7 +1847,7 @@ async function roomSeatState(db,uid,roomId){
   };
 }
 
-async function roomSeatAction(db,uid,body){
+export async function roomSeatAction(db,uid,body){
   const roomId=clean(body.roomId);
   const action=clean(body.seatAction);
   const targetUid=clean(body.targetUid);
@@ -2054,6 +2054,36 @@ async function roomSeatAction(db,uid,body){
       if(targetSeatIndex<0)throw new ApiError("speaker_seat_required",403);
       const targetSeat=seats[targetSeatIndex];
       if(action==="muteTargetSeat"){
+        const targetSnap=await tx.get(db.collection("users").doc(targetUid));
+        const targetUser=targetSnap.data()||{};
+        const muteProtected=vipEntitlementsFromUser(
+          targetUser,
+          Date.now(),
+        ).muteProtection;
+        const protectionOverride=canOverrideVipRoomProtection(actor);
+        if(muteProtected&&!protectionOverride){
+          throw new ApiError("vip_mute_protected",403);
+        }
+        if(muteProtected&&protectionOverride){
+          tx.create(
+            db.collection("room_audit_logs").doc(roomId).collection("items").doc(),
+            {
+              action:"vipMuteProtectionOverride",
+              actorUid:uid,
+              targetUid,
+              before:{muted:targetSeat.muted===true},
+              after:{
+                muted:true,
+                vipMuteProtection:true,
+                vipProtectionOverride:true,
+              },
+              authoritySource:clean(actor.role)==="owner"
+                ?"appOwner"
+                :"authorizedSafety",
+              createdAt:FieldValue.serverTimestamp(),
+            },
+          );
+        }
         if(targetSeat.muted===false){
           await recordMicActivity(tx,db,targetUid,targetSeat);
         }

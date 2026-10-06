@@ -78,6 +78,17 @@ function summaryPayload(policy, state, user = {}) {
     paidRechargeGrowthPerCoin: policy.paidRechargeGrowthPerCoin,
     canHideRankingLists: currentLevel >= 7,
     hideRankingLists: currentLevel >= 7 && user.hideRankingLists === true,
+    canHideProfileVisits: currentLevel >= 9,
+    hideProfileVisits: currentLevel >= 9 && user.hideProfileVisits === true,
+    canUseFriendsOnlyMessages: currentLevel >= 1,
+    friendsOnlyMessages: currentLevel >= 1 && user.friendsOnlyMessages === true,
+    canHideNobleLevel: currentLevel >= 4,
+    hideNobleLevel: currentLevel >= 4 && user.hideNobleLevel === true,
+    canHideGameWinBanner: currentLevel >= 4,
+    hideGameWinBanner: currentLevel >= 4 && user.hideGameWinBanner === true,
+    canHideBetWinNotification: currentLevel >= 4,
+    hideBetWinNotification:
+      currentLevel >= 4 && user.hideBetWinNotification === true,
   };
 }
 
@@ -135,6 +146,152 @@ export async function setHideRankingLists(
       hideRankingLists: enabled && activeLevel >= 7,
       canHideRankingLists: activeLevel >= 7,
       requiredVipLevel: 7,
+    };
+  } catch (error) {
+    await db.rollback(transaction);
+    throw error;
+  }
+}
+
+export async function setHideProfileVisits(
+  db,
+  uid,
+  body,
+  nowMs = Date.now(),
+) {
+  if (typeof body?.enabled !== "boolean") {
+    throw new ApiError("invalid_hide_profile_visits_state", 400);
+  }
+
+  const transaction = await db.beginTransaction();
+  try {
+    const userSnap = await db.get(`users/${uid}`, transaction);
+    if (!userSnap.exists) throw new ApiError("user_not_found", 404);
+    const user = userSnap.data || {};
+    const enabled = body.enabled === true;
+    const activeLevel = activeEffectiveVipLevelFromUser(user, nowMs);
+    if (enabled && activeLevel < 9) {
+      throw new ApiError("hide_profile_visits_requires_vip9", 403);
+    }
+
+    const updatedAt = new Date(nowMs);
+    await db.commit(transaction, [
+      db.writeUpdate(
+        `users/${uid}`,
+        {
+          hideProfileVisits: enabled,
+          profileVisitVisibilityUpdatedAt: updatedAt,
+        },
+        ["hideProfileVisits", "profileVisitVisibilityUpdatedAt"],
+      ),
+    ]);
+
+    return {
+      ok: true,
+      hideProfileVisits: enabled && activeLevel >= 9,
+      canHideProfileVisits: activeLevel >= 9,
+      requiredVipLevel: 9,
+    };
+  } catch (error) {
+    await db.rollback(transaction);
+    throw error;
+  }
+}
+
+export async function setFriendsOnlyMessages(
+  db,
+  uid,
+  body,
+  nowMs = Date.now(),
+) {
+  if (typeof body?.enabled !== "boolean") {
+    throw new ApiError("invalid_friends_only_messages_state", 400);
+  }
+
+  const transaction = await db.beginTransaction();
+  try {
+    const userSnap = await db.get(`users/${uid}`, transaction);
+    if (!userSnap.exists) throw new ApiError("user_not_found", 404);
+    const user = userSnap.data || {};
+    const enabled = body.enabled === true;
+    const activeLevel = activeEffectiveVipLevelFromUser(user, nowMs);
+    if (enabled && activeLevel < 1) {
+      throw new ApiError("friends_only_messages_requires_vip1", 403);
+    }
+
+    const updatedAt = new Date(nowMs);
+    await db.commit(transaction, [
+      db.writeUpdate(
+        `users/${uid}`,
+        {
+          friendsOnlyMessages: enabled,
+          messagePrivacyUpdatedAt: updatedAt,
+        },
+        ["friendsOnlyMessages", "messagePrivacyUpdatedAt"],
+      ),
+    ]);
+
+    return {
+      ok: true,
+      friendsOnlyMessages: enabled && activeLevel >= 1,
+      canUseFriendsOnlyMessages: activeLevel >= 1,
+      requiredVipLevel: 1,
+    };
+  } catch (error) {
+    await db.rollback(transaction);
+    throw error;
+  }
+}
+
+const VIP4_PRIVACY_FIELDS = Object.freeze({
+  hideNobleLevel: "nobleLevelVisibilityUpdatedAt",
+  hideGameWinBanner: "gameWinBannerVisibilityUpdatedAt",
+  hideBetWinNotification: "betWinNotificationVisibilityUpdatedAt",
+});
+
+export async function setVip4PrivacyPreference(
+  db,
+  uid,
+  body,
+  nowMs = Date.now(),
+) {
+  const field = clean(body?.field);
+  if (!Object.prototype.hasOwnProperty.call(VIP4_PRIVACY_FIELDS, field)) {
+    throw new ApiError("invalid_vip4_privacy_field", 400);
+  }
+  if (typeof body?.enabled !== "boolean") {
+    throw new ApiError("invalid_vip4_privacy_state", 400);
+  }
+
+  const transaction = await db.beginTransaction();
+  try {
+    const userSnap = await db.get(`users/${uid}`, transaction);
+    if (!userSnap.exists) throw new ApiError("user_not_found", 404);
+    const user = userSnap.data || {};
+    const activeLevel = activeEffectiveVipLevelFromUser(user, nowMs);
+    const enabled = body.enabled === true;
+    if (enabled && activeLevel < 4) {
+      throw new ApiError("vip4_privacy_requires_vip4", 403);
+    }
+
+    const updatedAtField = VIP4_PRIVACY_FIELDS[field];
+    await db.commit(transaction, [
+      db.writeUpdate(
+        `users/${uid}`,
+        {
+          [field]: enabled,
+          [updatedAtField]: new Date(nowMs),
+        },
+        [field, updatedAtField],
+      ),
+    ]);
+
+    return {
+      ok: true,
+      field,
+      enabled: enabled && activeLevel >= 4,
+      canUse: activeLevel >= 4,
+      requiredVipLevel: 4,
     };
   } catch (error) {
     await db.rollback(transaction);
@@ -352,6 +509,27 @@ export async function vipActions(request, env) {
         request,
         env,
         await setHideRankingLists(db, decoded.sub, body),
+      );
+    }
+    if (action === "setHideProfileVisits") {
+      return json(
+        request,
+        env,
+        await setHideProfileVisits(db, decoded.sub, body),
+      );
+    }
+    if (action === "setFriendsOnlyMessages") {
+      return json(
+        request,
+        env,
+        await setFriendsOnlyMessages(db, decoded.sub, body),
+      );
+    }
+    if (action === "setVip4PrivacyPreference") {
+      return json(
+        request,
+        env,
+        await setVip4PrivacyPreference(db, decoded.sub, body),
       );
     }
     throw new ApiError("invalid_action", 400);

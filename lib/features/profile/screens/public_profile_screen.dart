@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -14,6 +16,7 @@ import 'user_level_screen.dart';
 import '../../gift/widgets/direct_gift_sheet.dart';
 import '../../relationships/services/relationship_service.dart';
 import '../../vip/utils/vip_public_state.dart';
+import '../../vip/services/profile_visit_service.dart';
 import '../../vip/widgets/vip_avatar_frame.dart';
 import '../widgets/registry_badge.dart';
 import '../widgets/user_level_badges.dart';
@@ -31,6 +34,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
   final _follow = FollowService();
   final _relationships = RelationshipService();
   late final UserLevelService _levelService;
+  late final ProfileVisitService _profileVisits;
   late Future<DocumentSnapshot<Map<String, dynamic>>> _profileFuture;
   late Future<UserLevelSummary> _levelFuture;
   bool _changingFollow = false;
@@ -80,7 +84,9 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
     super.initState();
     _tabs = TabController(length: 4, vsync: this);
     _levelService = UserLevelService();
+    _profileVisits = ProfileVisitService();
     _loadProfileFutures();
+    unawaited(_recordVisit());
   }
 
   void _loadProfileFutures() {
@@ -96,11 +102,22 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
     super.didUpdateWidget(oldWidget);
     if (oldWidget.userId != widget.userId) {
       _loadProfileFutures();
+      unawaited(_recordVisit());
+    }
+  }
+
+  Future<void> _recordVisit() async {
+    if (_isSelf || _guest) return;
+    try {
+      await _profileVisits.record(widget.userId);
+    } catch (_) {
+      // Visit tracking must never block or degrade profile rendering.
     }
   }
 
   @override
   void dispose() {
+    _profileVisits.close();
     _levelService.close();
     _tabs.dispose();
     super.dispose();
