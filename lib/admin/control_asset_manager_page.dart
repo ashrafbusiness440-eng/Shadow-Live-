@@ -702,6 +702,347 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     } catch (_) {}
   }
 
+  Widget _assetThumbnail(
+    Map<String, dynamic> asset, {
+    double size = 52,
+    bool bypassCache = false,
+  }) {
+    final url = _assetLiveUrl(asset, bypassCache: bypassCache);
+    if (url.isEmpty) {
+      return Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: const Color(0xFF9A6CFF).withValues(alpha: .12),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Icon(
+          Icons.image_not_supported_outlined,
+          color: Color(0xFFCDB7FF),
+        ),
+      );
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: size,
+        height: size,
+        color: Colors.black26,
+        child: Image.network(
+          url,
+          fit: BoxFit.contain,
+          cacheWidth: (size * 2).round(),
+          cacheHeight: (size * 2).round(),
+          gaplessPlayback: true,
+          filterQuality: FilterQuality.medium,
+          loadingBuilder: (context, child, progress) => progress == null
+              ? child
+              : const Center(
+                  child: SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+          errorBuilder: (_, __, ___) => const Icon(
+            Icons.broken_image_outlined,
+            color: Colors.orangeAccent,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _contextPreview(
+    String imageUrl, {
+    Uint8List? memoryBytes,
+    String? assetType,
+  }) {
+    Widget image({BoxFit fit = BoxFit.contain}) {
+      if (memoryBytes != null) {
+        return Image.memory(memoryBytes, fit: fit);
+      }
+      return Image.network(
+        imageUrl,
+        fit: fit,
+        gaplessPlayback: true,
+        errorBuilder: (_, __, ___) => const Icon(
+          Icons.broken_image_outlined,
+          color: Colors.orangeAccent,
+        ),
+      );
+    }
+
+    final type = (assetType ?? _selectedTemplate?.type ?? '').toLowerCase();
+    if (type.contains('frame')) {
+      return Container(
+        height: 210,
+        alignment: Alignment.center,
+        color: const Color(0xFF07111F),
+        child: SizedBox(
+          width: 155,
+          height: 155,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              const Padding(
+                padding: EdgeInsets.all(23),
+                child: CircleAvatar(
+                  backgroundColor: Color(0xFF39265A),
+                  child: Icon(
+                    Icons.person_rounded,
+                    size: 55,
+                    color: Colors.white70,
+                  ),
+                ),
+              ),
+              image(),
+            ],
+          ),
+        ),
+      );
+    }
+    if (type.contains('chat')) {
+      return Container(
+        height: 150,
+        color: const Color(0xFF07111F),
+        padding: const EdgeInsets.all(18),
+        alignment: Alignment.center,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            SizedBox(width: 260, height: 90, child: image(fit: BoxFit.fill)),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 35),
+              child: Text(
+                'معاينة رسالة داخل الغرفة',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    if (type.contains('background') || type.contains('room')) {
+      return Container(
+        height: 190,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          color: const Color(0xFF07111F),
+        ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            image(fit: BoxFit.cover),
+            const Align(
+              alignment: Alignment.bottomCenter,
+              child: Padding(
+                padding: EdgeInsets.all(12),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    CircleAvatar(radius: 18, child: Icon(Icons.mic, size: 17)),
+                    CircleAvatar(radius: 18, child: Icon(Icons.mic, size: 17)),
+                    CircleAvatar(radius: 18, child: Icon(Icons.mic, size: 17)),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return Container(
+      height: 190,
+      color: Colors.black26,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(12),
+      child: image(),
+    );
+  }
+
+  Future<void> _showAssetPreview(Map<String, dynamic> asset) async {
+    var refreshNonce = _previewRefreshNonce;
+    var contextMode = false;
+    final source = _assetSource(asset);
+    final type = (source['assetType'] ?? asset['assetType'] ?? '').toString();
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) {
+          final raw = (asset['rawUrl'] ?? '').toString().trim();
+          final url = raw.isEmpty
+              ? ''
+              : '$raw${raw.contains('?') ? '&' : '?'}studioRefresh=$refreshNonce';
+          return AlertDialog(
+            title: Row(
+              children: [
+                const Expanded(child: Text('معاينة الأصل المنشور')),
+                IconButton(
+                  tooltip: 'تحديث مباشر وتجاوز الكاش',
+                  onPressed: raw.isEmpty
+                      ? null
+                      : () => setDialogState(
+                            () => refreshNonce =
+                                DateTime.now().microsecondsSinceEpoch,
+                          ),
+                  icon: const Icon(Icons.refresh_rounded),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: 430,
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (url.isEmpty)
+                      const SizedBox(
+                        height: 170,
+                        child: Center(
+                          child: Text('لا توجد نسخة منشورة للمعاينة.'),
+                        ),
+                      )
+                    else if (contextMode)
+                      _contextPreview(url, assetType: type)
+                    else
+                      Container(
+                        constraints: const BoxConstraints(maxHeight: 360),
+                        color: Colors.black26,
+                        padding: const EdgeInsets.all(10),
+                        child: Image.network(
+                          url,
+                          fit: BoxFit.contain,
+                          gaplessPlayback: true,
+                          errorBuilder: (_, __, ___) => const SizedBox(
+                            height: 150,
+                            child: Center(
+                              child: Text('تعذر تحميل المعاينة الحالية.'),
+                            ),
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 10),
+                    SegmentedButton<bool>(
+                      segments: const [
+                        ButtonSegment(
+                          value: false,
+                          label: Text('الأصل'),
+                          icon: Icon(Icons.image_outlined),
+                        ),
+                        ButtonSegment(
+                          value: true,
+                          label: Text('داخل السياق'),
+                          icon: Icon(Icons.phone_android_rounded),
+                        ),
+                      ],
+                      selected: {contextMode},
+                      onSelectionChanged: (value) =>
+                          setDialogState(() => contextMode = value.first),
+                    ),
+                    const SizedBox(height: 12),
+                    SelectableText(
+                      (asset['assetKey'] ?? '').toString(),
+                      textDirection: TextDirection.ltr,
+                    ),
+                    const SizedBox(height: 5),
+                    SelectableText(
+                      (source['fullPath'] ?? asset['fullPath'] ?? '').toString(),
+                      textDirection: TextDirection.ltr,
+                      style: const TextStyle(color: Colors.white60, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton.icon(
+                onPressed: () => _copyAssetMetadata(asset),
+                icon: const Icon(Icons.copy_all_rounded),
+                label: const Text('نسخ البيانات'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                  _beginEditAsset(asset);
+                },
+                child: const Text('تعديل هذا الأصل'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    if (mounted && refreshNonce != _previewRefreshNonce) {
+      setState(() => _previewRefreshNonce = refreshNonce);
+    }
+  }
+
+  Future<bool> _confirmPublishImpact() async {
+    if (!_isEditing) return true;
+    final template = _selectedTemplate;
+    return await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('تأكيد استبدال الأصل الحي'),
+            content: Text(
+              'سيتم استبدال الأصل تحت نفس Asset Key بدون إنشاء مفتاح جديد.\n\n'
+              'Asset Key: ${_assetKey.text.trim()}\n'
+              'النوع: ${template?.labelAr ?? template?.type ?? 'غير محدد'}\n'
+              'قنوات الاستخدام: ${_selectedChannels.map(_channelLabel).join(' • ')}\n\n'
+              'أي مكان يستخدم هذا المفتاح سيقرأ النسخة الجديدة بعد تحديث الكاش.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('إلغاء'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('نعم، استبدل الأصل'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  Future<bool> _verifyPublishedAsset(
+    String assetKey,
+    String expectedSha,
+  ) async {
+    await _loadAssets();
+    Map<String, dynamic>? live;
+    for (final asset in _assets) {
+      if ((asset['assetKey'] ?? '').toString() == assetKey) {
+        live = asset;
+        break;
+      }
+    }
+    if (live == null ||
+        live['published'] != true ||
+        (live['contentSha'] ?? '').toString() != expectedSha) {
+      return false;
+    }
+    final rawUrl = (live['rawUrl'] ?? '').toString().trim();
+    if (rawUrl.isEmpty) return false;
+    try {
+      final separator = rawUrl.contains('?') ? '&' : '?';
+      final response = await http.get(
+        Uri.parse(
+          '$rawUrl${separator}verify=${DateTime.now().microsecondsSinceEpoch}',
+        ),
+        headers: const {'cache-control': 'no-cache'},
+      );
+      return response.statusCode >= 200 &&
+          response.statusCode < 300 &&
+          response.bodyBytes.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
   String? _validate() {
     if (_bytes == null || _mimeType == null) return 'اختر صورة أولاً.';
     final template = _selectedTemplate;
