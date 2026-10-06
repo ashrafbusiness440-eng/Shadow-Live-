@@ -2347,6 +2347,36 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
               ),
             ),
           ],
+          if (_isEditing) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _batchBusy || _busy || _editingAsset == null
+                        ? null
+                        : () => _runBatchUpload(_editingAsset!),
+                    icon: _batchBusy
+                        ? const SizedBox(
+                            width: 17,
+                            height: 17,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.collections_outlined),
+                    label: const Text('Batch لنفس الدفعة'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _busy ? null : _openNextManifestAsset,
+                    icon: const Icon(Icons.skip_next_rounded),
+                    label: const Text('الأصل التالي'),
+                  ),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 14),
           DropdownButtonFormField<String>(
             value: template?.id,
@@ -2911,6 +2941,12 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                           icon: const Icon(Icons.copy_rounded),
                           label: const Text('نسخ المفتاح'),
                         ),
+                        if (_isEditing)
+                          OutlinedButton.icon(
+                            onPressed: _busy ? null : _openNextManifestAsset,
+                            icon: const Icon(Icons.skip_next_rounded),
+                            label: const Text('الأصل التالي'),
+                          ),
                       ],
                     ),
                   ],
@@ -3200,6 +3236,9 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                           case 'insights':
                             _showAssetInsights(asset);
                             break;
+                          case 'batch':
+                            _runBatchUpload(asset);
+                            break;
                           case 'copy':
                             _copyAssetMetadata(asset);
                             break;
@@ -3245,6 +3284,13 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                           ),
                         ),
                         const PopupMenuItem(
+                          value: 'batch',
+                          child: ListTile(
+                            leading: Icon(Icons.collections_outlined),
+                            title: Text('Batch Upload لنفس الدفعة'),
+                          ),
+                        ),
+                        const PopupMenuItem(
                           value: 'copy',
                           child: ListTile(
                             leading: Icon(Icons.content_copy_rounded),
@@ -3273,6 +3319,129 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBatchProgress() {
+    if (_batchResults.isEmpty && _batchProgressLabel == null) {
+      return const SizedBox.shrink();
+    }
+    Color stateColor(String state) => switch (state) {
+          'Verified' => Colors.greenAccent,
+          'Published' => Colors.lightBlueAccent,
+          'Uploading' => Colors.amberAccent,
+          'Failed' => Colors.redAccent,
+          'Ready' => const Color(0xFFC4A7FF),
+          _ => Colors.white38,
+        };
+
+    return _studioPanel(
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.collections_outlined,
+                color: Color(0xFFD7B85A),
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Batch Progress',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              if (!_batchBusy)
+                IconButton(
+                  tooltip: 'إخفاء النتائج',
+                  onPressed: () => setState(() {
+                    _batchResults = const [];
+                    _batchProgressLabel = null;
+                  }),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+            ],
+          ),
+          if (_batchProgressLabel != null) ...[
+            const SizedBox(height: 5),
+            Text(
+              _batchProgressLabel!,
+              style: const TextStyle(color: Colors.white60, fontSize: 11.5),
+            ),
+          ],
+          if (_batchBusy) ...[
+            const SizedBox(height: 8),
+            const LinearProgressIndicator(minHeight: 3),
+          ],
+          const SizedBox(height: 10),
+          ..._batchResults.map((item) {
+            final state = (item['batchState'] ?? 'Missing').toString();
+            final color = stateColor(state);
+            return Container(
+              margin: const EdgeInsets.only(bottom: 7),
+              padding: const EdgeInsets.all(9),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: .05),
+                borderRadius: BorderRadius.circular(11),
+                border: Border.all(color: color.withValues(alpha: .15)),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    state == 'Verified'
+                        ? Icons.verified_rounded
+                        : state == 'Failed'
+                            ? Icons.error_outline_rounded
+                            : state == 'Uploading'
+                                ? Icons.sync_rounded
+                                : Icons.circle_outlined,
+                    color: color,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          (item['assetKey'] ?? '').toString(),
+                          textDirection: TextDirection.ltr,
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 10.5,
+                          ),
+                        ),
+                        if ((item['note'] ?? '').toString().isNotEmpty)
+                          Text(
+                            (item['note'] ?? '').toString(),
+                            style: const TextStyle(
+                              color: Colors.white54,
+                              fontSize: 9.5,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    state,
+                    style: TextStyle(
+                      color: color,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 10,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
         ],
       ),
     );
@@ -3747,6 +3916,11 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
           if (_showStudioForm) ...[
             const SizedBox(height: 15),
             _buildStudioForm(),
+          ],
+          if (_batchResults.isNotEmpty ||
+              _batchProgressLabel != null) ...[
+            const SizedBox(height: 15),
+            _buildBatchProgress(),
           ],
           const SizedBox(height: 15),
           _buildRegistry(),
