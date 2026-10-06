@@ -243,6 +243,21 @@ test("asset studio UX exposes safe replace, preview, history and batch guardrail
   assert.equal(control.includes("cacheHeight:"), true);
   assert.equal(control.includes("PopScope("), true);
   assert.equal(control.includes("readOnly: _isEditing && !_unlockIdentityFields"), true);
+  assert.equal(control.includes("_imageHasRealTransparency"), true);
+  assert.equal(control.includes("_validatePreparedMedia"), true);
+  assert.equal(control.includes("خيارات إضافية"), true);
+  assert.equal(control.includes("_openLastSuccessAsset"), true);
+  assert.equal(control.includes("_applyRegistryFilters"), true);
+  assert.equal(control.includes("updatedAfter"), true);
+
+  assert.equal(worker.includes("assetMatchesListFilters"), true);
+  assert.equal(worker.includes("registryCursor"), true);
+  assert.equal(worker.includes("new Date(cursorUpdatedAt"), false);
+  assert.equal(worker.includes('url.searchParams.get("q")'), true);
+  assert.equal(worker.includes('url.searchParams.get("family")'), true);
+  assert.equal(worker.includes('url.searchParams.get("level")'), true);
+  assert.equal(worker.includes('url.searchParams.get("updatedAfter")'), true);
+  assert.equal(worker.includes("maxPages = hasFilters ? 3 : 1"), true);
 });
 
 test("login header is a first-class Asset Studio surface with bundled fallback", () => {
