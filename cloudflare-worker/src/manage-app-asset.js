@@ -158,10 +158,14 @@ async function listAssets(
   { limit = 100, cursorUpdatedAt = "", cursorId = "" } = {},
 ) {
   const boundedLimit = Math.max(12, Math.min(100, Number(limit || 60)));
+  const cursorTimestamp = clean(cursorUpdatedAt);
+  const cursorDate = cursorTimestamp ? new Date(cursorTimestamp) : null;
   const startAfter =
-    clean(cursorUpdatedAt) && clean(cursorId)
+    cursorDate &&
+    !Number.isNaN(cursorDate.getTime()) &&
+    clean(cursorId)
       ? [
-          clean(cursorUpdatedAt),
+          cursorDate,
           { referencePath: `app_asset_registry/${clean(cursorId)}` },
         ]
       : [];
