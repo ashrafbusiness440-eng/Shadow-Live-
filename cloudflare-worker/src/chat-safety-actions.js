@@ -22,6 +22,7 @@ import {
 } from "./room-presence-authority.js";
 import { giftLevelPointAwards, safeAddUserLevelPoints } from "./user-level-policy.js";
 import { activeEffectiveVipLevelFromUser } from "./vip-runtime.js";
+import { vipCosmeticAssetKey } from "./vip-entitlements.js";
 import { vipCosmeticsFromUser } from "./vip-entitlements.js";
 
 const clean = (value) => String(value ?? "").trim();
@@ -248,6 +249,7 @@ export async function sendMessage(db, uid, body) {
         (senderCapabilities.has("manageUsers") ||
           senderCapabilities.has("reviewReports")));
     const senderVipCosmetics = vipCosmeticsFromUser(senderData, nowMs);
+    const senderVip = activeEffectiveVipLevelFromUser(senderData, nowMs);
     const receiverVip = activeEffectiveVipLevelFromUser(receiverData, nowMs);
     const friendsOnly =
       receiverVip >= 1 && receiverData.friendsOnlyMessages === true;
@@ -491,6 +493,14 @@ export async function sendGift(db, uid, body, options = {}) {
 
     const senderData = sender.data || {};
     const receiverData = receiver.data || {};
+    const senderVip = activeEffectiveVipLevelFromUser(
+      senderData,
+      now.getTime(),
+    );
+    const vipGiftVisualKey = vipCosmeticAssetKey(
+      senderVip,
+      "giftVisual",
+    );
     const levelPointAwards = giftLevelPointAwards({
       nominalCoins: totalCost,
       paidCoins: totalCost,
@@ -1046,6 +1056,8 @@ export async function sendGift(db, uid, body, options = {}) {
           totalCost,
           imageUrl,
           assetKey,
+          vipLevel: senderVip,
+          vipGiftVisualKey,
           createdAt: now,
           createdAtMs: now.getTime(),
         }),
