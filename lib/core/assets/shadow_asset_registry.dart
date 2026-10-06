@@ -69,7 +69,18 @@ abstract final class ShadowAssetKeys {
 
   static String canonicalizeVipAssetKey(String raw) {
     final key = raw.trim();
-    final match = RegExp(r'^vip\\.vip(10|[1-9])\\.([A-Za-z0-9_-]+)
+    final match = RegExp(r'^vip\.vip(10|[1-9])\.([A-Za-z0-9_-]+)$')
+        .firstMatch(key);
+    if (match == null) return key;
+    final level = match.group(1)!;
+    final suffix = switch (match.group(2)!) {
+      'mainEmblem' => 'mainBadge',
+      'badgeMini' => 'miniBadge',
+      final value => value,
+    };
+    return 'vip.v$level.$suffix';
+  }
+
   static List<String> vipBatchHKeys(int level) {
     final value = level.clamp(1, 10).toInt();
     return <String>[
