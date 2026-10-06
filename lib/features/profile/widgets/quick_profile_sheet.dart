@@ -11,6 +11,7 @@ import '../../gift/widgets/direct_gift_sheet.dart';
 import '../../vip/utils/vip_public_state.dart';
 import '../../vip/widgets/vip_avatar_frame.dart';
 import '../../vip/widgets/vip_profile_avatar.dart';
+import '../../vip/widgets/vip_profile_identity.dart';
 import '../services/follow_service.dart';
 import '../services/profile_action_service.dart';
 import '../services/user_level_service.dart';
@@ -244,7 +245,10 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
             final provider = _avatar(data);
             final isSelf = _isSelf;
 
-            return SingleChildScrollView(
+            return VipProfileIdentitySurface(
+              vipLevel: vip,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+              child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -295,7 +299,12 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                     onTap: _openFull,
                     child: Column(
                       children: [
-                        Text(name, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
+                        VipStyledName(
+                          vipLevel: vip,
+                          name: name,
+                          style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900),
+                          textAlign: TextAlign.center,
+                        ),
                         const SizedBox(height: 4),
                         Row(
                           mainAxisSize: MainAxisSize.min,
@@ -479,7 +488,7 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                   TextButton.icon(onPressed: _openFull, icon: const Icon(Icons.open_in_new_rounded), label: const Text('عرض الملف الشخصي الكامل')),
                 ],
               ),
-            );
+            ));
           },
         ),
       ),
