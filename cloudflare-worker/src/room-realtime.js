@@ -217,10 +217,14 @@ export async function publishGlobalRocketEvents(env, rawEvents = []) {
   };
 }
 
-export async function publishGlobalAppEvents(env, rawEvents = []) {
+export async function publishGlobalAppEvents(
+  env,
+  rawEvents = [],
+  nowMs = Date.now(),
+) {
   const events = Array.isArray(rawEvents)
     ? rawEvents
-        .map((event) => normalizeGlobalAppFeedEvent(event))
+        .map((event) => normalizeGlobalAppFeedEvent(event, nowMs))
         .filter(Boolean)
         .slice(0, 20)
     : [];
