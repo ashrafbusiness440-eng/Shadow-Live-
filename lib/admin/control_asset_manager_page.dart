@@ -58,6 +58,9 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
   String _assetFilter = 'all';
   String _assetTypeFilter = 'all';
   String _assetChannelFilter = 'all';
+  String _assetFamilyFilter = '';
+  String _assetLevelFilter = '';
+  String _assetUpdatedWindow = 'all';
   String _debouncedSearch = '';
   Timer? _searchDebounce;
   bool _showStudioForm = false;
@@ -73,6 +76,8 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
   String? _registryCursorId;
   bool _hasMoreRegistry = true;
   bool _loadingMoreRegistry = false;
+  bool _registryScanLimitReached = false;
+  int _registryRequestGeneration = 0;
   final Set<String> _favoriteAssetKeys = <String>{};
   final List<String> _recentAssetKeys = <String>[];
   Map<String, dynamic>? _activeManifest;
@@ -684,23 +689,60 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     if (_loadingMoreRegistry) return;
     if (append && !_hasMoreRegistry) return;
 
+    final requestGeneration = append
+        ? _registryRequestGeneration
+        : ++_registryRequestGeneration;
+
     if (append && mounted) {
       setState(() => _loadingMoreRegistry = true);
     }
 
     try {
       final params = <String, String>{'limit': '60'};
+      if (_debouncedSearch.isNotEmpty) {
+        params['q'] = _debouncedSearch;
+      }
+      if (_assetFilter != 'all') params['status'] = _assetFilter;
+      if (_assetTypeFilter != 'all') params['type'] = _assetTypeFilter;
+      if (_assetChannelFilter != 'all') {
+        params['channel'] = _assetChannelFilter;
+      }
+      if (_assetFamilyFilter.trim().isNotEmpty) {
+        params['family'] = _assetFamilyFilter.trim().toLowerCase();
+      }
+      if (_assetLevelFilter.trim().isNotEmpty) {
+        params['level'] = _assetLevelFilter.trim().toLowerCase();
+      }
+      if (_assetUpdatedWindow != 'all') {
+        final days = switch (_assetUpdatedWindow) {
+          '7d' => 7,
+          '30d' => 30,
+          '90d' => 90,
+          _ => 0,
+        };
+        if (days > 0) {
+          params['updatedAfter'] = DateTime.now()
+              .toUtc()
+              .subtract(Duration(days: days))
+              .toIso8601String();
+        }
+      }
       if (append &&
           _registryCursorUpdatedAt != null &&
           _registryCursorId != null) {
         params['cursorUpdatedAt'] = _registryCursorUpdatedAt!;
         params['cursorId'] = _registryCursorId!;
       }
+
       final uri = _endpoint.replace(queryParameters: params);
       final response = await http.get(
         uri,
         headers: {'authorization': 'Bearer ${await _token()}'},
       );
+
+      if (!append && requestGeneration != _registryRequestGeneration) {
+        return;
+      }
 
       final decoded =
           response.body.isEmpty ? <String, dynamic>{} : jsonDecode(response.body);
@@ -714,7 +756,9 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
         final nextCursor = body['nextCursor'] is Map
             ? Map<String, dynamic>.from(body['nextCursor'] as Map)
             : <String, dynamic>{};
-        if (mounted) {
+
+        if (mounted &&
+            (append || requestGeneration == _registryRequestGeneration)) {
           final templates = rawTemplates is List
               ? rawTemplates
                   .whereType<Map>()
@@ -738,6 +782,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                   .map((e) => Map<String, dynamic>.from(e))
                   .toList(growable: false)
               : <Map<String, dynamic>>[];
+
           setState(() {
             _studioVersion =
                 (body['studioVersion'] as num?)?.toInt() ?? _studioVersion;
@@ -765,6 +810,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                     : (nextCursor['id'] ?? '').toString();
             _hasMoreRegistry =
                 _registryCursorUpdatedAt != null && _registryCursorId != null;
+            _registryScanLimitReached = body['scanLimitReached'] == true;
             if (!append) _visibleLimit = 24;
             if (_selectedTemplate == null && _templates.isNotEmpty) {
               final badge = _templates
@@ -782,18 +828,22 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
             }
           });
         }
-      } else if (mounted) {
+      } else if (mounted &&
+          (append || requestGeneration == _registryRequestGeneration)) {
         setState(() {
           _message =
               'تعذر تحديث سجل الأصول: ${body['code'] ?? response.statusCode}';
         });
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted &&
+          (append || requestGeneration == _registryRequestGeneration)) {
         setState(() => _message = 'تعذر تحديث سجل الأصول: $e');
       }
     } finally {
-      if (mounted) setState(() => _loadingMoreRegistry = false);
+      if (mounted && append) {
+        setState(() => _loadingMoreRegistry = false);
+      }
     }
   }
 
