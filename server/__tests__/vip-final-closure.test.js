@@ -53,6 +53,9 @@ test("Batch H runtime is remote cached and Asset Studio preserves animation", ()
   assert.equal(manager.includes("Animated Preview"), true);
   assert.equal(manager.includes("تم الحفاظ على Animation الأصلية"), true);
   assert.equal(registry.includes("vipBatchHKeys"), true);
+  assert.equal(registry.includes("canonicalizeVipAssetKey"), true);
+  assert.equal(registry.includes("'mainEmblem' => 'mainBadge'"), true);
+  assert.equal(registry.includes("'badgeMini' => 'miniBadge'"), true);
   assert.equal(registry.includes("vipEntryStrip(value)"), true);
   assert.equal(registry.includes("vipFancyIdPlate(value)"), true);
   assert.equal(registry.includes("vipEmojiPack(value)"), true);
