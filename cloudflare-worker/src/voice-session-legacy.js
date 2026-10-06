@@ -1686,6 +1686,22 @@ async function controlRoomPolicy(db,uid,body){
             roomBackgroundUpdatedBy:uid,
             updatedAt:now,
           };
+    }else if(controlAction==="setCustomerServiceVipMode"){
+      if(!canGlobal)throw new ApiError("global_room_control_required",403);
+      if(before.type!=="customer_service"){
+        throw new ApiError("customer_service_room_required",409);
+      }
+      const minVipLevel=Number(body.customerServiceMinVipLevel);
+      if(![1,4].includes(minVipLevel)){
+        throw new ApiError("invalid_customer_service_vip_level",400);
+      }
+      patch={
+        customerServiceMinVipLevel:minVipLevel,
+        customerServiceMode:minVipLevel>=4?"exclusive_1to1":"vip_standard",
+        customerServiceVipModeUpdatedAt:now,
+        customerServiceVipModeUpdatedBy:uid,
+        updatedAt:now,
+      };
     }else if(controlAction==="setRoomFeatures"){
       if(!canGlobal)throw new ApiError("global_room_control_required",403);
       if(!before.official)throw new ApiError("official_room_required",409);
