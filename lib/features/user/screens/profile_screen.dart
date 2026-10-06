@@ -595,14 +595,15 @@ class _ProfileScreenState extends State<ProfileScreen>
             ),
           ),
           const SizedBox(height: 10),
-          Text(
-            name,
-            textAlign: TextAlign.center,
+          VipStyledName(
+            vipLevel: _num(profile, ['effectiveVipLevel']),
+            name: name,
             style: const TextStyle(
               color: Colors.white,
               fontSize: 24,
               fontWeight: FontWeight.w900,
             ),
+            textAlign: TextAlign.center,
           ),
           const SizedBox(height: 7),
           Wrap(
