@@ -217,7 +217,7 @@ test("asset studio UX exposes safe replace, preview, history and batch guardrail
   }
 
   for (const expected of [
-    "Replace In Place",
+    "استبدال نفس الأصل",
     "_assetThumbnail",
     "_showAssetPreview",
     "_contextPreview",
