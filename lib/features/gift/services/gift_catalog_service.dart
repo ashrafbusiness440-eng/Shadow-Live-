@@ -14,6 +14,7 @@ class GiftCatalogItem {
     required this.sortOrder,
     required this.assetKey,
     required this.localPlaceholder,
+    this.minVipLevel = 0,
   });
 
   final String id;
@@ -25,6 +26,10 @@ class GiftCatalogItem {
   final int sortOrder;
   final String assetKey;
   final String localPlaceholder;
+  final int minVipLevel;
+
+  int get effectiveMinVipLevel =>
+      minVipLevel > 0 ? minVipLevel : (category == 'vip' ? 4 : 0);
 
   factory GiftCatalogItem.fromMap(Map<String, dynamic> map) {
     return GiftCatalogItem(
@@ -39,6 +44,8 @@ class GiftCatalogItem {
       localPlaceholder: (map['localPlaceholder'] ??
               'assets/images/gifts/gift_placeholder.webp')
           .toString(),
+      minVipLevel: (map['minVipLevel'] as num?)?.toInt() ??
+          ((map['category'] ?? '').toString() == 'vip' ? 4 : 0),
     );
   }
 
@@ -52,6 +59,7 @@ class GiftCatalogItem {
         'sortOrder': sortOrder,
         'assetKey': assetKey,
         'localPlaceholder': localPlaceholder,
+        'minVipLevel': effectiveMinVipLevel,
       };
 }
 

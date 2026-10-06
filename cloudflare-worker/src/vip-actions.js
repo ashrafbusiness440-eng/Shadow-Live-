@@ -358,6 +358,50 @@ function summaryPayload(policy, state, user = {}, nowMs = Date.now()) {
   };
 }
 
+function vipLifecycleHistoryWrites(db, uid, state) {
+  const events = Array.isArray(state?.lifecycleEvents)
+    ? state.lifecycleEvents.slice(0, 12)
+    : [];
+  return events.map((event, index) => {
+    const cycleEndMs = Number(event.cycleEndMs || 0);
+    const oldLevel = Number(event.oldVipLevel || 0);
+    const newLevel = Number(event.newVipLevel || 0);
+    const growthBefore = Number(
+      event.growthPointsBefore ?? event.growthPointsAfter ?? state.growthPoints ?? 0,
+    );
+    const growthAfter = Number(
+      event.growthPointsAfter ?? state.growthPoints ?? 0,
+    );
+    const eventId =
+      uid +
+      "__lifecycle_" +
+      String(cycleEndMs) +
+      "_" +
+      String(index) +
+      "_" +
+      String(oldLevel) +
+      "_" +
+      String(newLevel);
+    return db.writeCreate(`vip_growth_history/${eventId}`, {
+      userId: uid,
+      eventType: String(event.eventType || "vip_lifecycle"),
+      triggerType: String(event.triggerType || "maintenance_cycle"),
+      source: "vip_lifecycle",
+      deltaGrowthPoints: growthAfter - growthBefore,
+      growthPointsBefore: growthBefore,
+      growthPointsAfter: growthAfter,
+      earnedVipBefore: oldLevel,
+      earnedVipAfter: newLevel,
+      effectiveVipAfter: Number(state.effectiveVipLevel || newLevel || 0),
+      maintenanceRequired: Number(event.maintenanceRequired || 0),
+      maintenancePointsBefore: Number(event.maintenancePointsBefore || 0),
+      cycleEndMs,
+      nextExpiryMs: Number(event.nextExpiryMs || 0),
+      createdAt: new Date(cycleEndMs),
+    });
+  });
+}
+
 export async function vipSummary(db, uid, nowMs = Date.now()) {
   const [userSnap, policy] = await Promise.all([
     db.get(`users/${uid}`),
@@ -365,12 +409,90 @@ export async function vipSummary(db, uid, nowMs = Date.now()) {
   ]);
   if (!userSnap.exists) throw new ApiError("user_not_found", 404);
   const user = userSnap.data || {};
-  const state = materializeVipState(
+  const preview = materializeVipState(
     policy,
     vipStateFromUser(user),
     nowMs,
+    { collectEvents: true },
   );
-  return summaryPayload(policy, state, user, nowMs);
+  if (!Array.isArray(preview.lifecycleEvents) || preview.lifecycleEvents.length === 0) {
+    return summaryPayload(policy, preview, user, nowMs);
+  }
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const transaction = await db.beginTransaction();
+    try {
+      const [freshUserSnap, publicProfileSnap, freshPolicy] = await Promise.all([
+        db.get(`users/${uid}`, transaction),
+        db.get(`public_profiles/${uid}`, transaction),
+        loadVipPolicy(db, { transaction, useCache: false }),
+      ]);
+      if (!freshUserSnap.exists) throw new ApiError("user_not_found", 404);
+      const freshUser = freshUserSnap.data || {};
+      const freshState = materializeVipState(
+        freshPolicy,
+        vipStateFromUser(freshUser),
+        nowMs,
+        { collectEvents: true },
+      );
+      const lifecycleWrites = vipLifecycleHistoryWrites(db, uid, freshState);
+      if (lifecycleWrites.length === 0) {
+        await db.rollback(transaction);
+        return summaryPayload(freshPolicy, freshState, freshUser, nowMs);
+      }
+      const now = new Date(nowMs);
+      const writes = [
+        db.writeUpdate(
+          `users/${uid}`,
+          vipUserPatch(freshState, now),
+          [
+            "earnedVipLevel",
+            "effectiveVipLevel",
+            "adminGrantVipLevel",
+            "trialVipLevel",
+            "earnedVipExpiresAt",
+            "adminGrantExpiresAt",
+            "trialVipExpiresAt",
+            "effectiveVipSource",
+            "vipGrowthPoints",
+            "vipMaintenancePoints",
+            "vipLevel",
+            "vipExpiresAt",
+            "vipSource",
+            "vipUpdatedAt",
+          ],
+        ),
+        ...(publicProfileSnap.exists
+          ? [
+              db.writeUpdate(
+                `public_profiles/${uid}`,
+                vipPublicProfilePatch(freshState, now),
+                [
+                  "vipLevel",
+                  "effectiveVipLevel",
+                  "vipExpiresAt",
+                  "updatedAt",
+                ],
+              ),
+            ]
+          : []),
+        ...lifecycleWrites,
+      ];
+      await db.commit(transaction, writes);
+      return summaryPayload(freshPolicy, freshState, freshUser, nowMs);
+    } catch (error) {
+      await db.rollback(transaction);
+      if (error instanceof ApiError) throw error;
+      if (
+        (error?.message === "ABORTED" || error?.status === 409) &&
+        attempt < 2
+      ) {
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new ApiError("transaction_failed", 500);
 }
 
 export async function setHideRankingLists(

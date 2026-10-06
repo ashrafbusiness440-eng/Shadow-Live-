@@ -52,10 +52,17 @@ export function vipCosmeticsFromUser(user = {}, nowMs = Date.now()) {
 
 export const VIP_ENTITLEMENT_LEVELS = Object.freeze({
   mainBadge: 1,
+  vipCustomerService: 1,
+  priorityOnlineList: 2,
+  unlimitedGreetings: 2,
   chatBubble: 2,
   profileFrame: 3,
   animatedAvatar: 4,
   vipGiftVisual: 4,
+  vipGifts: 4,
+  exclusiveCustomerService: 4,
+  levelGuarantee: 4,
+  exclusiveEmoji: 4,
   hideNobleLevel: 4,
   hideGameWinBanner: 4,
   hideBetWinNotification: 4,
@@ -81,10 +88,23 @@ export function vipEntitlementsFromUser(user = {}, nowMs = Date.now()) {
   return {
     level,
     mainBadge: level >= VIP_ENTITLEMENT_LEVELS.mainBadge,
+    vipCustomerService:
+      level >= VIP_ENTITLEMENT_LEVELS.vipCustomerService,
+    priorityOnlineList:
+      level >= VIP_ENTITLEMENT_LEVELS.priorityOnlineList,
+    unlimitedGreetings:
+      level >= VIP_ENTITLEMENT_LEVELS.unlimitedGreetings,
     chatBubble: level >= VIP_ENTITLEMENT_LEVELS.chatBubble,
     profileFrame: level >= VIP_ENTITLEMENT_LEVELS.profileFrame,
     animatedAvatar: level >= VIP_ENTITLEMENT_LEVELS.animatedAvatar,
     vipGiftVisual: level >= VIP_ENTITLEMENT_LEVELS.vipGiftVisual,
+    vipGifts: level >= VIP_ENTITLEMENT_LEVELS.vipGifts,
+    exclusiveCustomerService:
+      level >= VIP_ENTITLEMENT_LEVELS.exclusiveCustomerService,
+    levelGuarantee:
+      level >= VIP_ENTITLEMENT_LEVELS.levelGuarantee,
+    exclusiveEmoji:
+      level >= VIP_ENTITLEMENT_LEVELS.exclusiveEmoji,
     hideNobleLevel: level >= VIP_ENTITLEMENT_LEVELS.hideNobleLevel,
     hideGameWinBanner: level >= VIP_ENTITLEMENT_LEVELS.hideGameWinBanner,
     hideBetWinNotification:

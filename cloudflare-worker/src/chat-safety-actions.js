@@ -260,7 +260,13 @@ export async function sendMessage(db, uid, body) {
     }
 
     const unanswered = Math.max(0, Number(senderLimit.data?.unansweredCount || 0));
-    if (!mutual && !assignedModerator && unanswered >= 3) {
+    const unlimitedGreetings = senderVip >= 2;
+    if (
+      !mutual &&
+      !assignedModerator &&
+      !unlimitedGreetings &&
+      unanswered >= 3
+    ) {
       throw new ApiError("message_limit_reached", 429);
     }
 
@@ -310,7 +316,7 @@ export async function sendMessage(db, uid, body) {
           updatedAt: now,
         }, ["unansweredCount", "updatedAt"]),
       );
-    } else {
+    } else if (!unlimitedGreetings) {
       writes.push(
         db.writeUpdate(senderLimitPath, {
           unansweredCount: unanswered + 1,
@@ -327,7 +333,11 @@ export async function sendMessage(db, uid, body) {
       messageId,
       mutual,
       assignedCustomerServiceModerator: assignedModerator,
-      remaining: mutual || assignedModerator ? null : Math.max(0, 2 - unanswered),
+      unlimitedGreetings,
+      remaining:
+        mutual || assignedModerator || unlimitedGreetings
+          ? null
+          : Math.max(0, 2 - unanswered),
     };
     writes.push(
       db.writeCreate(opPath, {
@@ -372,14 +382,14 @@ export async function sendGift(db, uid, body, options = {}) {
     {id:"coffee",nameAr:"قهوة",priceCoins:300,enabled:true,assetKey:"gifts.placeholder.default"},
     {id:"heart",nameAr:"قلب",priceCoins:500,enabled:true,assetKey:"gifts.placeholder.default"},
     {id:"chocolate",nameAr:"شوكولا",priceCoins:1000,enabled:true,assetKey:"gifts.placeholder.default"},
-    {id:"crown",nameAr:"تاج",priceCoins:2500,enabled:true,assetKey:"gifts.placeholder.default"},
-    {id:"ring",nameAr:"خاتم ألماس",priceCoins:5000,enabled:true,assetKey:"gifts.placeholder.default"},
-    {id:"sports_car",nameAr:"سيارة رياضية",priceCoins:10000,enabled:true,assetKey:"gifts.placeholder.default"},
-    {id:"yacht",nameAr:"يخت فاخر",priceCoins:25000,enabled:true,assetKey:"gifts.placeholder.default"},
-    {id:"private_jet",nameAr:"طائرة خاصة",priceCoins:50000,enabled:true,assetKey:"gifts.placeholder.default"},
-    {id:"castle",nameAr:"قصر ملكي",priceCoins:100000,enabled:true,assetKey:"gifts.placeholder.default"},
-    {id:"golden_dragon",nameAr:"التنين الذهبي",priceCoins:250000,enabled:true,assetKey:"gifts.placeholder.default"},
-    {id:"galaxy",nameAr:"مجرة شادو",priceCoins:500000,enabled:true,assetKey:"gifts.placeholder.default"},
+    {id:"crown",category:"vip",minVipLevel:4,nameAr:"تاج",priceCoins:2500,enabled:true,assetKey:"gifts.placeholder.default"},
+    {id:"ring",category:"vip",minVipLevel:4,nameAr:"خاتم ألماس",priceCoins:5000,enabled:true,assetKey:"gifts.placeholder.default"},
+    {id:"sports_car",category:"vip",minVipLevel:4,nameAr:"سيارة رياضية",priceCoins:10000,enabled:true,assetKey:"gifts.placeholder.default"},
+    {id:"yacht",category:"vip",minVipLevel:4,nameAr:"يخت فاخر",priceCoins:25000,enabled:true,assetKey:"gifts.placeholder.default"},
+    {id:"private_jet",category:"vip",minVipLevel:4,nameAr:"طائرة خاصة",priceCoins:50000,enabled:true,assetKey:"gifts.placeholder.default"},
+    {id:"castle",category:"vip",minVipLevel:4,nameAr:"قصر ملكي",priceCoins:100000,enabled:true,assetKey:"gifts.placeholder.default"},
+    {id:"golden_dragon",category:"vip",minVipLevel:4,nameAr:"التنين الذهبي",priceCoins:250000,enabled:true,assetKey:"gifts.placeholder.default"},
+    {id:"galaxy",category:"vip",minVipLevel:4,nameAr:"مجرة شادو",priceCoins:500000,enabled:true,assetKey:"gifts.placeholder.default"},
   ];
 
   return runTransaction(db, async (transaction) => {
@@ -495,6 +505,20 @@ export async function sendGift(db, uid, body, options = {}) {
       senderData,
       now.getTime(),
     );
+    const requiredGiftVipLevel = (() => {
+      const explicit = Number(giftData.minVipLevel);
+      if (
+        Number.isSafeInteger(explicit) &&
+        explicit >= 0 &&
+        explicit <= 10
+      ) {
+        return explicit;
+      }
+      return clean(giftData.category) === "vip" ? 4 : 0;
+    })();
+    if (requiredGiftVipLevel > 0 && senderVip < requiredGiftVipLevel) {
+      throw new ApiError("vip_gift_requires_level", 403);
+    }
     const vipGiftVisualKey = vipCosmeticAssetKey(
       senderVip,
       "giftVisual",
@@ -1169,6 +1193,8 @@ export async function sendGift(db, uid, body, options = {}) {
       ...financialContext,
       giftId,
       giftName,
+      requiredVipLevel: requiredGiftVipLevel,
+      senderVipLevel: senderVip,
       quantity,
       totalCost,
       messageId,

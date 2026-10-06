@@ -121,6 +121,7 @@ class _RoomGiftSheetState extends State<_RoomGiftSheet> {
         'receiver_not_in_room' => 'المستخدم غادر الروم.',
         'sender_not_in_room' => 'تعذر تأكيد وجودك داخل الروم.',
         'gift_inactive' => 'هذه الهدية متوقفة حالياً.',
+        'vip_gift_requires_level' => 'هذه هدية VIP وتتطلب مستوى VIP أعلى.',
         'emergency_locked' => 'عمليات الهدايا متوقفة مؤقتاً.',
         _ => 'تعذر إرسال الهدية حالياً.',
       };
@@ -393,6 +394,18 @@ class _RoomGiftSheetState extends State<_RoomGiftSheet> {
                                               fontWeight: FontWeight.w800,
                                             ),
                                           ),
+                                          if (gift.effectiveMinVipLevel > 0)
+                                            Text(
+                                              'VIP' +
+                                                  gift.effectiveMinVipLevel
+                                                      .toString() +
+                                                  '+',
+                                              style: const TextStyle(
+                                                color: Color(0xFFFFD54A),
+                                                fontSize: 9,
+                                                fontWeight: FontWeight.w900,
+                                              ),
+                                            ),
                                           const SizedBox(height: 3),
                                           Text(
                                             '🪙 ' + total.toString(),

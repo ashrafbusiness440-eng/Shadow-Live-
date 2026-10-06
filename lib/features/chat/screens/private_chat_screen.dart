@@ -583,6 +583,18 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                                             fontWeight: FontWeight.w800,
                                           ),
                                         ),
+                                        if (gift.effectiveMinVipLevel > 0)
+                                          Text(
+                                            'VIP' +
+                                                gift.effectiveMinVipLevel
+                                                    .toString() +
+                                                '+',
+                                            style: const TextStyle(
+                                              color: Color(0xFFFFD54A),
+                                              fontSize: 9,
+                                              fontWeight: FontWeight.w900,
+                                            ),
+                                          ),
                                         const SizedBox(height: 3),
                                         Text(
                                           '🪙 ' +
@@ -636,6 +648,8 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
         _snack('رصيد العملات غير كافٍ لإرسال الهدية.');
       } else if (body['code'] == 'blocked') {
         _snack('لا يمكن إرسال هدية بينكما حالياً بسبب إعدادات الحظر.');
+      } else if (body['code'] == 'vip_gift_requires_level') {
+        _snack('هذه هدية VIP وتتطلب مستوى VIP أعلى.');
       } else {
         _snack('تعذر إرسال الهدية حالياً.');
       }

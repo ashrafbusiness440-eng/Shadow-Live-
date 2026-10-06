@@ -87,6 +87,14 @@ async function cachedCatalogState(db) {
   );
 }
 
+function giftMinVipLevel(item = {}) {
+  const explicit = Number(item.minVipLevel);
+  if (Number.isSafeInteger(explicit) && explicit >= 0 && explicit <= 10) {
+    return explicit;
+  }
+  return clean(item.category) === "vip" ? 4 : 0;
+}
+
 function publicCatalog(config) {
   const raw = Array.isArray(config?.gifts) ? config.gifts : [];
   return raw
@@ -99,6 +107,7 @@ function publicCatalog(config) {
       enabled: item.enabled !== false,
       featured: item.featured === true,
       sortOrder: Number(item.sortOrder || 0),
+      minVipLevel: giftMinVipLevel(item),
       assetKey: clean(item.assetKey || "gifts.placeholder.default"),
       localPlaceholder: clean(
         item.localPlaceholder || "assets/images/gifts/gift_placeholder.webp",
@@ -127,6 +136,11 @@ function validateGifts(raw) {
     const category = clean(item?.category);
     const enabled = item?.enabled !== false;
     const featured = item?.featured === true;
+    const rawMinVipLevel = Number(item?.minVipLevel ?? (category === "vip" ? 4 : 0));
+    const minVipLevel =
+      Number.isSafeInteger(rawMinVipLevel) && rawMinVipLevel >= 0 && rawMinVipLevel <= 10
+        ? rawMinVipLevel
+        : -1;
     const assetKey = clean(item?.assetKey || "gifts.placeholder.default");
     const localPlaceholder = clean(
       item?.localPlaceholder || "assets/images/gifts/gift_placeholder.webp",
@@ -145,6 +159,7 @@ function validateGifts(raw) {
       throw Error("invalid_gift_price");
     }
     if (!CATEGORIES.has(category)) throw Error("invalid_gift_category");
+    if (minVipLevel < 0) throw Error("invalid_gift_vip_level");
     if (!/^[a-z0-9][a-z0-9._-]{2,119}$/.test(assetKey)) {
       throw Error("invalid_asset_key");
     }
@@ -162,6 +177,7 @@ function validateGifts(raw) {
       category,
       enabled,
       featured,
+      minVipLevel,
       sortOrder: index,
       assetKey,
       localPlaceholder,
@@ -230,6 +246,7 @@ export async function handler(req, res) {
             giftCount: gifts.length,
             enabledCount: gifts.filter((gift) => gift.enabled).length,
             featuredCount: gifts.filter((gift) => gift.featured).length,
+            vipOnlyCount: gifts.filter((gift) => gift.minVipLevel > 0).length,
           },
           createdAt: FieldValue.serverTimestamp(),
         });
@@ -254,6 +271,7 @@ export async function handler(req, res) {
               "invalid_gift_name",
               "invalid_gift_price",
               "invalid_gift_category",
+              "invalid_gift_vip_level",
               "invalid_asset_key",
               "invalid_placeholder_path",
               "invalid_action",

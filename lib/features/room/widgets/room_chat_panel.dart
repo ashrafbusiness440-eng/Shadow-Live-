@@ -126,6 +126,15 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
     }
   }
 
+
+  String _vipEmojiGlyph(String token) => switch (token) {
+        'vip_star' => '🌟',
+        'vip_crown' => '👑',
+        'vip_diamond' => '💎',
+        'vip_shadow' => '✨',
+        _ => '',
+      };
+
   TextSpan _messageSpan(String text) {
     final parts = text.split(RegExp(r'(@[^\s]+)'));
     final matches =
@@ -483,10 +492,49 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
                       ),
                     ],
                     const SizedBox(height: 5),
-                    RichText(
-                      text: _messageSpan(message.text),
-                      textDirection: TextDirection.rtl,
-                    ),
+                    if (message.vipEmojiToken.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [
+                              Color(0xFF3C2366),
+                              Color(0xFF17111F),
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: const Color(0xFFFFD54A)
+                                .withValues(alpha: .72),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              _vipEmojiGlyph(message.vipEmojiToken),
+                              style: const TextStyle(fontSize: 22),
+                            ),
+                            const SizedBox(width: 5),
+                            const Text(
+                              'VIP Emoji',
+                              style: TextStyle(
+                                color: Color(0xFFFFE9A6),
+                                fontSize: 9,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    else
+                      RichText(
+                        text: _messageSpan(message.text),
+                        textDirection: TextDirection.rtl,
+                      ),
                   ],
                 ),
               ),
@@ -749,6 +797,14 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
 
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
+  String _feedVipEmojiGlyph(String token) => switch (token) {
+        'vip_star' => '🌟',
+        'vip_crown' => '👑',
+        'vip_diamond' => '💎',
+        'vip_shadow' => '✨',
+        _ => '',
+      };
+
   Widget _senderAvatar(RoomChatMessage message) {
     final url = message.profileImageUrl.trim();
     if (url.isEmpty) {
@@ -910,6 +966,7 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
         'systemKind': message.systemKind,
         'vipLevel': message.vipLevel,
         'entryEffectKey': message.entryEffectKey,
+        'vipEmojiToken': message.vipEmojiToken,
         'giftName': message.giftName,
         'assetKey': message.giftAssetKey,
         'imageUrl': message.giftImageUrl,
@@ -1164,14 +1221,35 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
                           horizontal: 8,
                           vertical: 6,
                         ),
-                        child: Text(
-                          message.text,
-                          textDirection: TextDirection.rtl,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                          ),
-                        ),
+                        child: message.vipEmojiToken.isNotEmpty
+                            ? Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    _feedVipEmojiGlyph(
+                                      message.vipEmojiToken,
+                                    ),
+                                    style: const TextStyle(fontSize: 22),
+                                  ),
+                                  const SizedBox(width: 5),
+                                  const Text(
+                                    'VIP Emoji',
+                                    style: TextStyle(
+                                      color: Color(0xFFFFE9A6),
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : Text(
+                                message.text,
+                                textDirection: TextDirection.rtl,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                ),
+                              ),
                       ),
                     ),
                   ],
@@ -1256,8 +1334,13 @@ class _RoomChatComposerState extends State<RoomChatComposer> {
   String? _mentionUid;
   int _lastIntentRevision = -1;
   bool _sending = false;
+  String? _vipEmojiToken;
 
   bool get _canSend => widget.chatEnabled || widget.isOwner;
+  int get _selfVipLevel =>
+      (_session.roomArguments['selfVipLevel'] as num?)?.toInt() ?? 0;
+  bool get _canUseVipEmoji =>
+      _session.roomArguments['canUseVipEmoji'] == true || _selfVipLevel >= 4;
 
   @override
   void initState() {
@@ -1337,9 +1420,11 @@ class _RoomChatComposerState extends State<RoomChatComposer> {
         replySenderUid: reply?.senderUid,
         mentionUids:
             mentionUid == null ? const [] : <String>[mentionUid],
+        vipEmojiToken: _vipEmojiToken,
       );
       if (!mounted) return;
       _controller.clear();
+      _vipEmojiToken = null;
       _session.clearRoomChatComposerIntent();
       _focusNode.requestFocus();
     } on StateError catch (error) {
@@ -1347,15 +1432,102 @@ class _RoomChatComposerState extends State<RoomChatComposer> {
       final code = error.message.toString();
       final message = code == 'rate_limited'
           ? 'أرسلت رسائل بسرعة كبيرة.'
-          : code == 'room_chat_disabled'
-              ? 'دردشة الغرفة متوقفة حالياً.'
-              : 'تعذر إرسال الرسالة حالياً.';
+          : code == 'vip4_emoji_required'
+              ? 'الإيموجي الحصري متاح من VIP4.'
+              : code == 'room_chat_disabled'
+                  ? 'دردشة الغرفة متوقفة حالياً.'
+                  : 'تعذر إرسال الرسالة حالياً.';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message)),
       );
     } finally {
       if (mounted) setState(() => _sending = false);
     }
+  }
+
+
+  Future<void> _pickVipEmoji() async {
+    if (!_canUseVipEmoji || !_canSend) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('الإيموجي الحصري متاح من VIP4.')),
+      );
+      return;
+    }
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: const Color(0xFF0D111B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (sheetContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'إيموجي VIP الحصري',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: const [
+                    ('vip_star', '🌟'),
+                    ('vip_crown', '👑'),
+                    ('vip_diamond', '💎'),
+                    ('vip_shadow', '✨'),
+                  ].map((item) => InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () => Navigator.pop(sheetContext, item.$1),
+                    child: Container(
+                      width: 62,
+                      height: 62,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1A1326),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: const Color(0xFFFFD54A)
+                              .withValues(alpha: .45),
+                        ),
+                      ),
+                      child: Text(
+                        item.$2,
+                        style: const TextStyle(fontSize: 28),
+                      ),
+                    ),
+                  )).toList(),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (selected == null || !mounted) return;
+    const glyph = {
+      'vip_star': '🌟',
+      'vip_crown': '👑',
+      'vip_diamond': '💎',
+      'vip_shadow': '✨',
+    };
+    setState(() {
+      _vipEmojiToken = selected;
+      _controller.text = glyph[selected] ?? '✨';
+      _controller.selection = TextSelection.collapsed(
+        offset: _controller.text.length,
+      );
+    });
+    _focusNode.requestFocus();
   }
 
   @override
@@ -1418,13 +1590,16 @@ class _RoomChatComposerState extends State<RoomChatComposer> {
             child: Row(
               children: [
                 IconButton(
-                  tooltip: 'السمايلات',
-                  onPressed:
-                      _canSend ? () => _focusNode.requestFocus() : null,
+                  tooltip: _canUseVipEmoji
+                      ? 'إيموجي VIP الحصري'
+                      : 'الإيموجي الحصري من VIP4',
+                  onPressed: _canSend ? _pickVipEmoji : null,
                   visualDensity: VisualDensity.compact,
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.sentiment_satisfied_alt_rounded,
-                    color: Colors.white60,
+                    color: _canUseVipEmoji
+                        ? const Color(0xFFFFD54A)
+                        : Colors.white38,
                     size: 20,
                   ),
                 ),

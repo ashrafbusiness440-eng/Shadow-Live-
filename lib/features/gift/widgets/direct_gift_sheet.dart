@@ -170,6 +170,9 @@ class _DirectGiftSheetState extends State<_DirectGiftSheet> {
         case 'gift_inactive':
           _snack('هذه الهدية متوقفة حالياً.');
           break;
+        case 'vip_gift_requires_level':
+          _snack('هذه هدية VIP وتتطلب مستوى VIP أعلى.');
+          break;
         case 'emergency_locked':
           _snack('عمليات الهدايا متوقفة مؤقتاً.');
           break;
@@ -376,6 +379,18 @@ class _DirectGiftSheetState extends State<_DirectGiftSheet> {
                                                       FontWeight.w800,
                                                 ),
                                               ),
+                                              if (gift.effectiveMinVipLevel > 0)
+                                                Text(
+                                                  'VIP' +
+                                                      gift.effectiveMinVipLevel
+                                                          .toString() +
+                                                      '+',
+                                                  style: const TextStyle(
+                                                    color: Color(0xFFFFD54A),
+                                                    fontSize: 9,
+                                                    fontWeight: FontWeight.w900,
+                                                  ),
+                                                ),
                                               Text(
                                                 '🪙 ${gift.priceCoins * _quantity}',
                                                 style: const TextStyle(

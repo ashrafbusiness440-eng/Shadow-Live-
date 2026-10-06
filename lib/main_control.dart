@@ -1391,6 +1391,7 @@ class _RoomsPageState extends State<RoomsPage> {
   final roomTags=TextEditingController();
   bool busy=false,bypassLevelCapacity=false,hiddenOfficialRoom=false;
   bool giftsEnabled=true,pkEnabled=true,gamesEnabled=true,roomRocketEnabled=true;
+  int customerServiceMinVipLevel=1;
   bool ownerAbsoluteRoomAccess=true;
   bool ownerAbsoluteLoading=true;
   bool ownerAbsoluteAvailable=false;
@@ -1498,6 +1499,8 @@ class _RoomsPageState extends State<RoomsPage> {
     'room_public_id_exhausted'=>'تعذر حجز Room ID تلقائيًا. حاول مرة أخرى.',
     'official_room_required'=>'هذا التعديل متاح فقط للغرف الرسمية أو الإدارية.',
     'customer_service_capacity_fixed'=>'سعة خدمة العملاء ثابتة على 5 مداخل و2 إدارة.',
+    'customer_service_room_required'=>'هذا الإعداد خاص بغرف خدمة العملاء.',
+    'invalid_customer_service_vip_level'=>'مسار خدمة العملاء يجب أن يكون VIP1+ أو VIP4+.',
     'invalid_room_background_asset'=>'Asset Key لخلفية الغرفة غير صالح.',
     'invalid_room_background_url'=>'رابط خلفية الغرفة غير صالح.',
     _=>'تعذر تنفيذ العملية: '+code,
@@ -1525,6 +1528,9 @@ class _RoomsPageState extends State<RoomsPage> {
     pkEnabled=features['pkEnabled']!=false;
     gamesEnabled=features['gamesEnabled']!=false;
     roomRocketEnabled=features['roomRocketEnabled']!=false;
+    customerServiceMinVipLevel=
+        (policy['customerServiceMinVipLevel'] as num?)?.toInt()??1;
+    if(customerServiceMinVipLevel!=4)customerServiceMinVipLevel=1;
     hiddenOfficialRoom=(data['visibility']??'public').toString()=='hidden';
     bypassLevelCapacity=overrides['bypassLevelCapacity']==true;
   }
@@ -1595,6 +1601,7 @@ class _RoomsPageState extends State<RoomsPage> {
     final coverController=TextEditingController();
     final tagsController=TextEditingController();
     var officialType='official';
+    var createCustomerServiceMinVipLevel=1;
     var hidden=false;
     var createGiftsEnabled=true;
     var createPkEnabled=true;
@@ -1650,6 +1657,7 @@ class _RoomsPageState extends State<RoomsPage> {
                     createRoomRocketEnabled=!customerService;
                     createSeatsController.text=customerService?'5':'8';
                     createModeratorsController.text=customerService?'2':'3';
+                    if(!customerService)createCustomerServiceMinVipLevel=1;
                   });
                 },
               ),
@@ -1704,14 +1712,38 @@ class _RoomsPageState extends State<RoomsPage> {
                 value:createRoomRocketEnabled,
                 onChanged:creating?null:(v)=>setSheetState(()=>createRoomRocketEnabled=v),
               ),
-              if(officialType=='customer_service')
+              if(officialType=='customer_service') ...[
+                DropdownButtonFormField<int>(
+                  value:createCustomerServiceMinVipLevel,
+                  decoration:const InputDecoration(
+                    labelText:'مسار VIP لخدمة العملاء',
+                    border:OutlineInputBorder(),
+                  ),
+                  items:const[
+                    DropdownMenuItem(
+                      value:1,
+                      child:Text('VIP1+ — خدمة عملاء VIP'),
+                    ),
+                    DropdownMenuItem(
+                      value:4,
+                      child:Text('VIP4+ — قناة حصرية 1-to-1'),
+                    ),
+                  ],
+                  onChanged:creating?null:(v){
+                    if(v!=null)setSheetState(
+                      ()=>createCustomerServiceMinVipLevel=v,
+                    );
+                  },
+                ),
+                const SizedBox(height:8),
                 const Padding(
                   padding:EdgeInsets.only(bottom:8),
                   child:Text(
-                    'خدمة العملاء تبدأ بهذه الميزات مقفلة افتراضيًا ويمكن تفعيل كل ميزة بشكل مستقل.',
+                    'VIP4+ الحصري يسمح بعميل واحد فقط على مايكات العملاء في نفس الوقت؛ مقاعد الإدارة تبقى مستقلة.',
                     style:TextStyle(color:Color(0xFFAAA3B8),fontSize:12),
                   ),
                 ),
+              ],
               SwitchListTile(
                 contentPadding:EdgeInsets.zero,
                 title:const Text('غرفة مخفية'),
@@ -1734,6 +1766,8 @@ class _RoomsPageState extends State<RoomsPage> {
                       'publicId':roomIdController.text.trim(),
                       'hostUid':createHostController.text.trim(),
                       'officialType':officialType,
+                      'customerServiceMinVipLevel':
+                          createCustomerServiceMinVipLevel,
                       'seats':int.tryParse(createSeatsController.text.trim()),
                       'moderators':int.tryParse(createModeratorsController.text.trim()),
                       'category':categoryController.text.trim(),
@@ -2075,6 +2109,48 @@ class _RoomsPageState extends State<RoomsPage> {
               onChanged:busy?null:(v)=>setState(()=>hiddenOfficialRoom=v),
             ),
             const Divider(height:28),
+            if(officialType=='customer_service') ...[
+              const Text(
+                'مسار VIP لخدمة العملاء',
+                style:TextStyle(fontSize:17,fontWeight:FontWeight.w900),
+              ),
+              const SizedBox(height:8),
+              DropdownButtonFormField<int>(
+                value:customerServiceMinVipLevel,
+                decoration:const InputDecoration(
+                  border:OutlineInputBorder(),
+                ),
+                items:const[
+                  DropdownMenuItem(
+                    value:1,
+                    child:Text('VIP1+ — خدمة عملاء VIP'),
+                  ),
+                  DropdownMenuItem(
+                    value:4,
+                    child:Text('VIP4+ — قناة حصرية 1-to-1'),
+                  ),
+                ],
+                onChanged:busy?null:(v){
+                  if(v!=null)setState(()=>customerServiceMinVipLevel=v);
+                },
+              ),
+              const SizedBox(height:8),
+              SizedBox(
+                width:double.infinity,
+                child:OutlinedButton.icon(
+                  onPressed:busy?null:()=>execute(
+                    'setCustomerServiceVipMode',
+                    extra:{
+                      'customerServiceMinVipLevel':
+                          customerServiceMinVipLevel,
+                    },
+                  ),
+                  icon:const Icon(Icons.support_agent_rounded),
+                  label:const Text('حفظ مسار خدمة العملاء VIP'),
+                ),
+              ),
+              const Divider(height:28),
+            ],
             const Text('ميزات الغرفة',style:TextStyle(fontSize:17,fontWeight:FontWeight.w900)),
             SwitchListTile(
               contentPadding:EdgeInsets.zero,
