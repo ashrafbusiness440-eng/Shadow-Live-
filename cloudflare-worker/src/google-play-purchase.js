@@ -14,6 +14,8 @@ import {
   vipUserPatch,
 } from "./vip-runtime.js";
 import { vip10TrialCardGrantWrites } from "./vip-trial-cards.js";
+import { vipUpgradeBroadcastEvent } from "./vip-upgrade-broadcast.js";
+import { publishGlobalAppEvents } from "./room-realtime.js";
 
 const PLAY_SCOPE = "https://www.googleapis.com/auth/androidpublisher";
 
@@ -262,6 +264,14 @@ export async function creditPurchase(
       }
 
       const closingCoins = openingCoins + coinsToCredit;
+      const upgradeBroadcastEvent = vipUpgradeBroadcastEvent(
+        uid,
+        user,
+        vipBefore,
+        vipAfter,
+        "play_" + hash,
+        nowMs,
+      );
       const trialGrant = vip10TrialCardGrantWrites(
         db,
         uid,
@@ -383,6 +393,7 @@ export async function creditPurchase(
         vipGrowthPoints,
         vipLevel: vipAfter.effectiveVipLevel,
         trialCardsGranted: trialGrant.cardIds,
+        upgradeBroadcastEvent,
         closingCoins,
       };
     } catch (error) {
@@ -483,6 +494,16 @@ export async function googlePlayPurchase(request, env) {
       quantity,
     );
 
+    let upgradeBroadcastPublished = false;
+    if (!result.duplicate && result.upgradeBroadcastEvent) {
+      const broadcast = await publishGlobalAppEvents(
+        env,
+        [result.upgradeBroadcastEvent],
+        result.upgradeBroadcastEvent.startsAtMs,
+      ).catch(() => ({ ok: false }));
+      upgradeBroadcastPublished = broadcast.ok === true;
+    }
+
     let consumed = true;
     try {
       await consumePurchase(env, packageName, productId, purchaseToken);
@@ -511,6 +532,7 @@ export async function googlePlayPurchase(request, env) {
       vipLevel: result.vipLevel,
       balance: result.closingCoins,
       consumed,
+      upgradeBroadcastPublished,
     });
   } catch (error) {
     if (error instanceof ApiError) {
