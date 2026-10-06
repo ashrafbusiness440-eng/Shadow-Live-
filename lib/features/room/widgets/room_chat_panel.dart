@@ -12,6 +12,8 @@ import '../../profile/screens/user_level_screen.dart';
 import '../../profile/widgets/quick_profile_sheet.dart';
 import '../../profile/widgets/user_level_badges.dart';
 import '../../vip/widgets/vip_avatar_frame.dart';
+import '../../vip/utils/vip_cosmetic_policy.dart';
+import '../../vip/widgets/vip_cosmetic_asset.dart';
 
 class RoomChatPanel extends StatefulWidget {
   const RoomChatPanel({
@@ -913,24 +915,29 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Align(
           alignment: AlignmentDirectional.centerStart,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
+          child: VipCosmeticSurface(
+            assetKey: isGift
+                ? VipCosmeticPolicy.giftVisualKey(message.vipLevel)
+                : '',
+            borderRadius: BorderRadius.circular(12),
+            assetOpacity: .28,
+            fallbackDecoration: BoxDecoration(
               color: isGift
                   ? const Color(0xFFFFD54A).withValues(alpha: .12)
                   : vipEntry
                       ? const Color(0xFF8A3DFF).withValues(alpha: .18)
                       : Colors.white.withValues(alpha: .04),
-              borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: isGift
                     ? const Color(0xFFFFD54A).withValues(alpha: .35)
                     : Colors.white10,
               ),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
                 Icon(
                   isGift
                       ? Icons.card_giftcard_rounded
@@ -953,7 +960,8 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
                     ),
                   ),
                 ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -1004,14 +1012,31 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
                               message.displayName,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Color(0xFFBFA5FF),
+                              style: TextStyle(
+                                color: VipCosmeticPolicy.nameColor(
+                                  message.vipLevel,
+                                  mine: false,
+                                ),
                                 fontSize: 11,
                                 fontWeight: FontWeight.w900,
                               ),
                             ),
                           ),
                         ),
+                        if (VipCosmeticPolicy.nameEffectKey(
+                              message.vipLevel,
+                            ).isNotEmpty) ...[
+                          const SizedBox(width: 4),
+                          SizedBox.square(
+                            dimension: 17,
+                            child: VipCosmeticAssetLayer(
+                              assetKey: VipCosmeticPolicy.nameEffectKey(
+                                message.vipLevel,
+                              ),
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                        ],
                         if (message.vipLevel > 0) ...[
                           const SizedBox(width: 5),
                           VipInlineBadge(
@@ -1036,12 +1061,27 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
                       ),
                     ],
                     const SizedBox(height: 3),
-                    Text(
-                      message.text,
-                      textDirection: TextDirection.rtl,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
+                    VipCosmeticSurface(
+                      assetKey:
+                          VipCosmeticPolicy.chatBubbleKey(message.vipLevel),
+                      borderRadius: BorderRadius.circular(12),
+                      assetOpacity: .32,
+                      fallbackDecoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: .035),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 6,
+                        ),
+                        child: Text(
+                          message.text,
+                          textDirection: TextDirection.rtl,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                          ),
+                        ),
                       ),
                     ),
                   ],
