@@ -181,8 +181,10 @@ test("asset manager keeps bounded registry and explicit draft publish flow", () 
   assert.equal(control.includes("'نشر'"), true);
   assert.equal(control.includes("'channels': _selectedChannels"), true);
   assert.equal(control.includes("'templateId': template.id"), true);
-  assert.equal(control.includes("R2 الخاص فقط"), true);
-  assert.equal(control.includes("النسخة الحية مستمرة + مسودة جديدة جاهزة"), true);
+  assert.equal(control.includes("حفظ المسودة لا يغيّر النسخة الحية"), true);
+  assert.equal(control.includes("التحديث الفعلي يتم عند النشر"), true);
+  assert.equal(control.includes("سجل الأصول"), true);
+  assert.equal(control.includes("البحث في الأصول"), true);
   assert.equal(control.includes("Timer.periodic"), false);
   assert.equal(control.includes(".snapshots()"), false);
 });
