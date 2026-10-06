@@ -734,7 +734,7 @@ async function confirmUpload(request, env, auth, body) {
       replacedObjectId: previous?.objectId || null,
       createdAt: now,
     }),
-  ];
+  );
   let diaryOrphanDeleteAtValue = null;
   if (metadata.scope === "diary_image") {
     if (!stablePublicUrl) {
@@ -1726,7 +1726,55 @@ async function deleteObject(request, env, auth) {
   await authorizeDelete(auth.db, auth.uid, metadata);
 
   const now = new Date();
-  const writes = [
+  const writes = [];
+  if (clean(metadata.scope) === "profile_avatar_animation") {
+    const [user, publicProfile] = await Promise.all([
+      auth.db.get(`users/${auth.uid}`),
+      auth.db.get(`public_profiles/${auth.uid}`),
+    ]);
+    if (
+      user.exists &&
+      clean(user.data?.profileAvatarAnimationObjectId) === metadata.objectId
+    ) {
+      writes.push(
+        auth.db.writeUpdate(
+          `users/${auth.uid}`,
+          {
+            profileAvatarAnimationUrl: "",
+            profileAvatarAnimationObjectId: "",
+            updatedAt: now,
+          },
+          [
+            "profileAvatarAnimationUrl",
+            "profileAvatarAnimationObjectId",
+            "updatedAt",
+          ],
+        ),
+      );
+    }
+    if (
+      publicProfile.exists &&
+      clean(publicProfile.data?.profileAvatarAnimationObjectId) ===
+        metadata.objectId
+    ) {
+      writes.push(
+        auth.db.writeUpdate(
+          `public_profiles/${auth.uid}`,
+          {
+            profileAvatarAnimationUrl: "",
+            profileAvatarAnimationObjectId: "",
+            updatedAt: now,
+          },
+          [
+            "profileAvatarAnimationUrl",
+            "profileAvatarAnimationObjectId",
+            "updatedAt",
+          ],
+        ),
+      );
+    }
+  }
+  writes.push(
     auth.db.writeDelete(`storage_objects/${metadata.objectId}`),
     auth.db.writeDelete(`storage_delete_queue/${metadata.objectId}`),
     auth.db.writeCreate(`storage_audit_logs/${auditId()}`, {
