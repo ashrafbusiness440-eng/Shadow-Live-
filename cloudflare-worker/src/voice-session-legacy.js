@@ -1966,7 +1966,12 @@ export async function roomSeatAction(db,uid,body){
       micInviteOnly=body.enabled===true;
       if(!micInviteOnly)requests=[];
     }else if(action==="requestMic"){
-      if(!requests.includes(uid))requests.push(uid);
+      if(!requests.includes(uid)){
+        const actorVip=vipEntitlementsFromUser(actor,Date.now()).level;
+        requests=actorVip>=2
+          ? [uid,...requests.filter(id=>id!==uid)]
+          : [...requests,uid];
+      }
     }else if(action==="cancelMicRequest"){
       requests=requests.filter(id=>id!==uid);
     }else if(action==="inviteToMic"){
@@ -3861,6 +3866,30 @@ async function roomBootstrap(db,decoded,body){
   const hostUid=roomHostUid(room);
   const official=isOfficialRoom(room);
   const global=roomPermissions(actor);
+  const actorVipEntitlements=vipEntitlementsFromUser(actor,Date.now());
+  const customerServiceRoom=
+    clean(room.roomType||room.type)==="customer_service";
+  const customerServiceStaff=canManageRoomAction(
+    room,
+    actor,
+    uid,
+    "moderateChat",
+  );
+  const customerServiceMinVipLevel=customerServiceRoom
+    ? Math.max(1,Math.min(10,Number(room.customerServiceMinVipLevel||1)))
+    : 0;
+  if(
+    customerServiceRoom&&
+    !customerServiceStaff&&
+    actorVipEntitlements.level<customerServiceMinVipLevel
+  ){
+    throw new ApiError(
+      customerServiceMinVipLevel>=4
+        ?"vip4_customer_service_required"
+        :"vip1_customer_service_required",
+      403,
+    );
+  }
   const myModerator=roomModeratorEntry(room,uid);
   const hostCapabilities=official&&hostUid===uid
     ? OFFICIAL_HOST_CAPABILITIES
@@ -3946,7 +3975,6 @@ async function roomBootstrap(db,decoded,body){
     }
   }
 
-  const actorVipEntitlements=vipEntitlementsFromUser(actor,Date.now());
   const roomData={
     ...roomResponse(roomId,room),
     selfVipLevel:actorVipEntitlements.level,
