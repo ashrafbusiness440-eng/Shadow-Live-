@@ -34,6 +34,7 @@ const REPLACEABLE_SCOPES = new Set([
 
 export const STORAGE_SCOPE_CONFIG = Object.freeze({
   profile_image: Object.freeze({ maxBytes: MAX_PROFILE_BYTES }),
+  profile_avatar_animation: Object.freeze({ maxBytes: MAX_PROFILE_BYTES }),
   profile_cover: Object.freeze({ maxBytes: MAX_COVER_BYTES }),
   room_cover: Object.freeze({ maxBytes: MAX_COVER_BYTES }),
   agency_logo: Object.freeze({ maxBytes: MAX_PROFILE_BYTES }),
@@ -120,6 +121,8 @@ export function buildStorageObjectKey({
   switch (clean(scope)) {
     case "profile_image":
       return `users/${safeUid}/profile/${safeObject}.${safeExt}`;
+    case "profile_avatar_animation":
+      return `users/${safeUid}/profile-animation/${safeObject}.${safeExt}`;
     case "profile_cover":
       return `users/${safeUid}/covers/${safeObject}.${safeExt}`;
     case "diary_image":
@@ -150,8 +153,11 @@ export function validateStoragePayload({
 
   const extension = storageExtensionForMime(mimeType);
   if (!extension) throw new StorageApiError("invalid_file_type", 400);
-  if (extension === "gif" && normalizedScope !== "profile_image") {
+  if (extension === "gif" && normalizedScope !== "profile_avatar_animation") {
     throw new StorageApiError("gif_profile_only", 400);
+  }
+  if (normalizedScope === "profile_avatar_animation" && extension !== "gif") {
+    throw new StorageApiError("animated_avatar_gif_required", 400);
   }
 
   const size = Number(byteLength || 0);
@@ -292,7 +298,12 @@ async function authorizeVipAnimatedProfileImage(db, uid, nowMs = Date.now()) {
 }
 
 async function authorizeUpload(db, uid, scope, rawTargetId) {
-  if (scope === "profile_image" || scope === "profile_cover" || scope === "diary_image") {
+  if (
+    scope === "profile_image" ||
+    scope === "profile_avatar_animation" ||
+    scope === "profile_cover" ||
+    scope === "diary_image"
+  ) {
     return { targetId: uid };
   }
 
@@ -370,6 +381,7 @@ async function authorizeRead(db, uid, metadata) {
   const scope = clean(metadata.scope);
   if (
     scope === "profile_image" ||
+    scope === "profile_avatar_animation" ||
     scope === "profile_cover" ||
     scope === "diary_image" ||
     scope === "room_cover" ||
@@ -442,7 +454,7 @@ async function prepareUpload(request, env, auth, body) {
     scope,
     rawTargetId,
   );
-  if (validated.extension === "gif") {
+  if (scope === "profile_avatar_animation") {
     await authorizeVipAnimatedProfileImage(auth.db, auth.uid);
   }
 
@@ -548,7 +560,7 @@ async function confirmUpload(request, env, auth, body) {
     throw new StorageApiError("forbidden", 403);
   }
   if (
-    clean(ticket.scope) === "profile_image" &&
+    clean(ticket.scope) === "profile_avatar_animation" &&
     clean(ticket.mimeType).toLowerCase() === "image/gif"
   ) {
     await authorizeVipAnimatedProfileImage(auth.db, auth.uid);
@@ -1139,14 +1151,55 @@ async function accountDeletionReferenceWrites({
   const targetId = clean(item?.data?.targetId);
   const writes = [];
 
-  if (scope === "profile_image" || scope === "profile_cover") {
+  if (
+    scope === "profile_image" ||
+    scope === "profile_avatar_animation" ||
+    scope === "profile_cover"
+  ) {
     const userId = targetId || ownerUid;
     const [user, publicProfile] = await Promise.all([
       db.get(`users/${userId}`),
       db.get(`public_profiles/${userId}`),
     ]);
 
-    if (scope === "profile_image") {
+    if (scope === "profile_avatar_animation") {
+      if (
+        user.exists &&
+        clean(user.data?.profileAvatarAnimationObjectId) === objectId
+      ) {
+        writes.push(
+          db.writeUpdate(
+            `users/${userId}`,
+            {
+              profileAvatarAnimationUrl: "",
+              profileAvatarAnimationObjectId: "",
+            },
+            [
+              "profileAvatarAnimationUrl",
+              "profileAvatarAnimationObjectId",
+            ],
+          ),
+        );
+      }
+      if (
+        publicProfile.exists &&
+        clean(publicProfile.data?.profileAvatarAnimationObjectId) === objectId
+      ) {
+        writes.push(
+          db.writeUpdate(
+            `public_profiles/${userId}`,
+            {
+              profileAvatarAnimationUrl: "",
+              profileAvatarAnimationObjectId: "",
+            },
+            [
+              "profileAvatarAnimationUrl",
+              "profileAvatarAnimationObjectId",
+            ],
+          ),
+        );
+      }
+    } else if (scope === "profile_image") {
       if (
         user.exists &&
         clean(user.data?.profileImageObjectId) === objectId
