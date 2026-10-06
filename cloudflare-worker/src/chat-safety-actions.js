@@ -260,7 +260,13 @@ export async function sendMessage(db, uid, body) {
     }
 
     const unanswered = Math.max(0, Number(senderLimit.data?.unansweredCount || 0));
-    if (!mutual && !assignedModerator && unanswered >= 3) {
+    const unlimitedGreetings = senderVip >= 2;
+    if (
+      !mutual &&
+      !assignedModerator &&
+      !unlimitedGreetings &&
+      unanswered >= 3
+    ) {
       throw new ApiError("message_limit_reached", 429);
     }
 
@@ -310,7 +316,7 @@ export async function sendMessage(db, uid, body) {
           updatedAt: now,
         }, ["unansweredCount", "updatedAt"]),
       );
-    } else {
+    } else if (!unlimitedGreetings) {
       writes.push(
         db.writeUpdate(senderLimitPath, {
           unansweredCount: unanswered + 1,
@@ -327,7 +333,11 @@ export async function sendMessage(db, uid, body) {
       messageId,
       mutual,
       assignedCustomerServiceModerator: assignedModerator,
-      remaining: mutual || assignedModerator ? null : Math.max(0, 2 - unanswered),
+      unlimitedGreetings,
+      remaining:
+        mutual || assignedModerator || unlimitedGreetings
+          ? null
+          : Math.max(0, 2 - unanswered),
     };
     writes.push(
       db.writeCreate(opPath, {
