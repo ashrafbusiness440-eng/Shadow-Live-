@@ -64,8 +64,15 @@ export function effectiveVipState(state, nowMs = Date.now()) {
   };
 }
 
-export function materializeVipState(policy, inputState, nowMs = Date.now()) {
+export function materializeVipState(
+  policy,
+  inputState,
+  nowMs = Date.now(),
+  options = {},
+) {
   const now = safeInt(nowMs, Date.now());
+  const collectEvents = options?.collectEvents === true;
+  const lifecycleEvents = [];
   let earnedVipLevel = level(inputState?.earnedVipLevel);
   let earnedVipExpiresAtMs = safeInt(inputState?.earnedVipExpiresAtMs, 0);
   let adminGrantVipLevel = level(inputState?.adminGrantVipLevel);
@@ -97,27 +104,73 @@ export function materializeVipState(policy, inputState, nowMs = Date.now()) {
       vipMaintenanceThreshold(policy, earnedVipLevel) ?? Number.MAX_SAFE_INTEGER;
 
     if (maintenancePoints >= required) {
+      const maintenancePointsBefore = maintenancePoints;
+      const oldLevel = earnedVipLevel;
       maintenancePoints = 0;
       const days = vipValidityDays(policy, earnedVipLevel);
       earnedVipExpiresAtMs =
         days == null ? 0 : futureExpiry(cycleEnd, days) ?? 0;
+      if (collectEvents) {
+        lifecycleEvents.push({
+          eventType: "vip_renewal",
+          triggerType: "maintenance_cycle",
+          cycleEndMs: cycleEnd,
+          oldVipLevel: oldLevel,
+          newVipLevel: earnedVipLevel,
+          growthPointsAfter: growthPoints,
+          maintenanceRequired: required,
+          maintenancePointsBefore,
+          nextExpiryMs: earnedVipExpiresAtMs,
+        });
+      }
       continue;
     }
 
     const downgraded = vipDowngradeState(policy, earnedVipLevel);
     if (!downgraded) break;
+    const oldLevel = earnedVipLevel;
+    const maintenancePointsBefore = maintenancePoints;
+    const growthPointsBefore = growthPoints;
     earnedVipLevel = downgraded.level;
     growthPoints = downgraded.growthPoints;
     maintenancePoints = 0;
 
     if (earnedVipLevel <= 0) {
       earnedVipExpiresAtMs = 0;
+      if (collectEvents) {
+        lifecycleEvents.push({
+          eventType: "vip_downgrade",
+          triggerType: "maintenance_cycle",
+          cycleEndMs: cycleEnd,
+          oldVipLevel: oldLevel,
+          newVipLevel: 0,
+          growthPointsBefore,
+          growthPointsAfter: growthPoints,
+          maintenanceRequired: required,
+          maintenancePointsBefore,
+          nextExpiryMs: 0,
+        });
+      }
       break;
     }
 
     const days = vipValidityDays(policy, earnedVipLevel);
     earnedVipExpiresAtMs =
       days == null ? 0 : futureExpiry(cycleEnd, days) ?? 0;
+    if (collectEvents) {
+      lifecycleEvents.push({
+        eventType: "vip_downgrade",
+        triggerType: "maintenance_cycle",
+        cycleEndMs: cycleEnd,
+        oldVipLevel: oldLevel,
+        newVipLevel: earnedVipLevel,
+        growthPointsBefore,
+        growthPointsAfter: growthPoints,
+        maintenanceRequired: required,
+        maintenancePointsBefore,
+        nextExpiryMs: earnedVipExpiresAtMs,
+      });
+    }
   }
 
   const base = {
@@ -131,10 +184,13 @@ export function materializeVipState(policy, inputState, nowMs = Date.now()) {
     maintenancePoints,
     expiryMaterializationSteps: steps,
   };
-  return {
+  const result = {
     ...base,
     ...effectiveVipState(base, now),
   };
+  return collectEvents
+    ? { ...result, lifecycleEvents }
+    : result;
 }
 
 export function applyVipGrowth(
