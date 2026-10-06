@@ -54,5 +54,8 @@ test("Batch H runtime is remote cached and Asset Studio preserves animation", ()
   assert.equal(manager.includes("تم الحفاظ على Animation الأصلية"), true);
   assert.equal(registry.includes("vipBatchHKeys"), true);
   assert.equal(registry.includes("vipEntryStrip(value)"), true);
+  assert.equal(registry.includes("vipFancyIdPlate(value)"), true);
+  assert.equal(registry.includes("vipEmojiPack(value)"), true);
+  assert.equal(registry.includes("vipDynamicFx(value)"), true);
   assert.equal(registry.toLowerCase().includes("vehicle"), false);
 });
