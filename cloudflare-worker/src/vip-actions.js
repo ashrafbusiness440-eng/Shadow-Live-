@@ -90,6 +90,24 @@ function summaryPayload(policy, state, user = {}) {
     canHideBetWinNotification: currentLevel >= 4,
     hideBetWinNotification:
       currentLevel >= 4 && user.hideBetWinNotification === true,
+    canCustomizeVipFrame: currentLevel >= 6,
+    vipProfileFrameLevel:
+      currentLevel >= 3
+        ? Math.max(
+            3,
+            Math.min(
+              currentLevel,
+              Number(user.vipProfileFrameLevel || currentLevel) || currentLevel,
+            ),
+          )
+        : 0,
+    frameCustomizationChangedAtMs:
+      timestampToEpochMs(user.frameCustomizationChangedAt),
+    nextFrameCustomizationAtMs:
+      timestampToEpochMs(user.frameCustomizationChangedAt) > 0
+        ? timestampToEpochMs(user.frameCustomizationChangedAt) +
+          VIP_FRAME_CUSTOMIZATION_COOLDOWN_MS
+        : 0,
   };
 }
 
