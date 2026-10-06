@@ -186,7 +186,9 @@ test("user requests 7-day exception and Shadow Owner approves it through review 
     new Date("2026-10-05T22:00:00.000Z"),
   );
 
-  const before = await getMyAgencyJoinEligibility(db, targetUid);
+  const before = await getMyAgencyJoinEligibility(db, targetUid, {
+    nowMs: now.getTime(),
+  });
   assert.equal(before.canRequestJoin, false);
   assert.equal(before.cooldown.active, true);
   assert.equal(before.cooldown.exceptionRequest, null);
@@ -208,7 +210,9 @@ test("user requests 7-day exception and Shadow Owner approves it through review 
     true,
   );
 
-  const eligibility = await getMyAgencyJoinEligibility(db, targetUid);
+  const eligibility = await getMyAgencyJoinEligibility(db, targetUid, {
+    nowMs: now.getTime(),
+  });
   assert.equal(eligibility.cooldown.exceptionRequest.status, "pending");
 
   const reviewed = await reviewAgencyCooldownException(
@@ -241,7 +245,9 @@ test("user requests 7-day exception and Shadow Owner approves it through review 
   assert.equal(requestDoc.data().status, "accepted");
   assert.equal(notification.data().mandatory, true);
 
-  const after = await getMyAgencyJoinEligibility(db, targetUid);
+  const after = await getMyAgencyJoinEligibility(db, targetUid, {
+    nowMs: new Date("2026-09-29T02:05:00.000Z").getTime(),
+  });
   assert.equal(after.cooldown.active, false);
   assert.equal(after.canRequestJoin, true);
 });
