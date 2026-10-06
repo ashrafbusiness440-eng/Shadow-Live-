@@ -165,6 +165,207 @@ async function listAssets(db) {
   }));
 }
 
+function assetRepoConfig(env) {
+  return {
+    branch: clean(env.GITHUB_ASSET_BRANCH) || DEFAULT_BRANCH,
+    repo: clean(env.GITHUB_ASSET_REPO) || `${OWNER}/${REPO}`,
+  };
+}
+
+async function assetVersionHistory(env, db, assetKey, asset, limit = 8) {
+  const fullPath = clean(asset?.fullPath);
+  const { branch, repo } = assetRepoConfig(env);
+  let commits = [];
+
+  if (fullPath) {
+    const url =
+      `https://api.github.com/repos/${repo}/commits?` +
+      `path=${encodeURIComponent(fullPath)}&sha=${encodeURIComponent(branch)}&per_page=${Math.max(2, Math.min(12, Number(limit || 8)))}`;
+    const response = await github(env, url);
+    commits = Array.isArray(response.body)
+      ? response.body.map((item) => ({
+          sha: clean(item?.sha),
+          message: clean(item?.commit?.message),
+          date: clean(item?.commit?.committer?.date || item?.commit?.author?.date),
+          author: clean(item?.commit?.author?.name || item?.author?.login),
+          htmlUrl: clean(item?.html_url),
+        })).filter((item) => item.sha)
+      : [];
+  }
+
+  const audits = await db.runQuery("admin_audit_logs", {
+    filters: [{ field: "targetId", op: "==", value: assetKey }],
+    limit: 20,
+  });
+  const audit = audits
+    .map((doc) => ({ id: doc.id, ...(doc.data || {}) }))
+    .filter((item) => clean(item.targetType) === "app_asset")
+    .sort((a, b) =>
+      clean(b.createdAt).localeCompare(clean(a.createdAt))
+    )
+    .slice(0, 12)
+    .map((item) => ({
+      id: item.id,
+      action: clean(item.action),
+      actorUid: clean(item.actorUid),
+      reason: clean(item.reason),
+      createdAt: item.createdAt || null,
+      before: item.before || null,
+      after: item.after || null,
+    }));
+
+  return { commits, audit };
+}
+
+async function assetUsageMap(env, assetKey, asset) {
+  const { repo } = assetRepoConfig(env);
+  const query = encodeURIComponent(`"${assetKey}" repo:${repo}`);
+  const response = await github(
+    env,
+    `https://api.github.com/search/code?q=${query}&per_page=20`,
+  );
+  const items = Array.isArray(response.body?.items)
+    ? response.body.items
+        .map((item) => ({
+          path: clean(item?.path),
+          htmlUrl: clean(item?.html_url),
+          repository: clean(item?.repository?.full_name),
+        }))
+        .filter((item) => item.path)
+    : [];
+  return {
+    assetKey,
+    assetType: clean(asset?.assetType),
+    channels: Array.isArray(asset?.channels) ? asset.channels : [],
+    references: items,
+    truncated: Number(response.body?.total_count || 0) > items.length,
+    totalReferences: Number(response.body?.total_count || 0),
+  };
+}
+
+async function rollbackPreviousAssetVersion({
+  env,
+  db,
+  decoded,
+  assetKey,
+  reason,
+  idempotencyKey,
+  operationPath,
+}) {
+  const registryPath = `app_asset_registry/${assetKey}`;
+  const current = await db.get(registryPath);
+  if (!current.exists) throw new ApiError("asset_not_found", 404);
+  const data = current.data || {};
+  if (data.published !== true || !clean(data.fullPath)) {
+    throw new ApiError("asset_not_published", 409);
+  }
+
+  const { branch, repo } = assetRepoConfig(env);
+  const fullPath = clean(data.fullPath);
+  const commitsResponse = await github(
+    env,
+    `https://api.github.com/repos/${repo}/commits?path=${encodeURIComponent(fullPath)}&sha=${encodeURIComponent(branch)}&per_page=12`,
+  );
+  const commits = Array.isArray(commitsResponse.body)
+    ? commitsResponse.body
+    : [];
+  if (commits.length < 2) throw new ApiError("asset_history_not_found", 404);
+
+  const currentCommitSha = clean(data.commitSha);
+  let currentIndex = currentCommitSha
+    ? commits.findIndex((item) => clean(item?.sha) === currentCommitSha)
+    : 0;
+  if (currentIndex < 0) currentIndex = 0;
+  const previous = commits[currentIndex + 1];
+  const previousSha = clean(previous?.sha);
+  if (!previousSha) throw new ApiError("asset_history_not_found", 404);
+
+  const contentsUrl =
+    `https://api.github.com/repos/${repo}/contents/${encodePath(fullPath)}`;
+  const previousFile = await github(
+    env,
+    `${contentsUrl}?ref=${encodeURIComponent(previousSha)}`,
+  );
+  const encoded = clean(previousFile.body?.content).replace(/\s+/g, "");
+  if (!encoded) throw new ApiError("asset_history_content_missing", 409);
+  const bytes = decodeBase64(encoded);
+  if (!bytes.length || bytes.length > MAX_BYTES) {
+    throw new ApiError("asset_history_content_invalid", 409);
+  }
+
+  const restored = await writeFinalAssetToGithub(env, {
+    assetKey,
+    directory: clean(data.directory),
+    fileName: clean(data.fileName),
+    bytes,
+    reason: `Rollback: ${reason}`,
+  });
+
+  const now = new Date();
+  const patch = {
+    contentSha: restored.contentSha,
+    commitSha: restored.commitSha || null,
+    rawUrl: restored.rawUrl,
+    byteSize: bytes.length,
+    replaced: true,
+    published: true,
+    status: "published",
+    hasDraft: false,
+    draft: null,
+    publishedBy: decoded.sub,
+    publishedAt: now,
+    updatedBy: decoded.sub,
+    updatedAt: now,
+  };
+  const result = {
+    assetKey,
+    fullPath,
+    contentSha: restored.contentSha,
+    commitSha: restored.commitSha,
+    rawUrl: restored.rawUrl,
+    rolledBackFrom: currentCommitSha || null,
+    restoredFrom: previousSha,
+    published: true,
+    status: "published",
+  };
+  const auditId = crypto.randomUUID().replace(/-/g, "");
+
+  await db.commit(null, [
+    db.writeUpdate(registryPath, patch, Object.keys(patch)),
+    db.writeCreate(`admin_audit_logs/${auditId}`, {
+      actorUid: decoded.sub,
+      action: "rollbackAppAsset",
+      targetType: "app_asset",
+      targetId: assetKey,
+      reason,
+      before: {
+        contentSha: data.contentSha || null,
+        commitSha: currentCommitSha || null,
+        fullPath,
+      },
+      after: {
+        contentSha: restored.contentSha,
+        commitSha: restored.commitSha || null,
+        restoredFrom: previousSha,
+        fullPath,
+      },
+      operationId: idempotencyKey,
+      createdAt: now,
+    }),
+    db.writeCreate(operationPath, {
+      action: "rollbackAppAsset",
+      actorUid: decoded.sub,
+      targetId: assetKey,
+      status: "completed",
+      result,
+      createdAt: now,
+    }),
+  ]);
+
+  invalidateAssetCaches(assetKey);
+  return result;
+}
+
 async function sha1Blob(bytes) {
   const header = new TextEncoder().encode(`blob ${bytes.length}\0`);
   const merged = new Uint8Array(header.length + bytes.length);
@@ -218,7 +419,7 @@ function templateSpecs(template) {
 
 async function writeFinalAssetToGithub(
   env,
-  { assetKey, directory, fileName, bytes },
+  { assetKey, directory, fileName, bytes, reason = "" },
 ) {
   const fullPath = `${directory}/${fileName}`;
   const branch = clean(env.GITHUB_ASSET_BRANCH) || DEFAULT_BRANCH;
@@ -244,7 +445,8 @@ async function writeFinalAssetToGithub(
     downloadUrl = existing.body?.download_url || null;
   } else {
     const payload = {
-      message: `Asset ${replaced ? "replace" : "add"}: ${assetKey} (${fullPath})`,
+      message: `Asset ${replaced ? "replace" : "add"}: ${assetKey} (${fullPath})` +
+        (clean(reason) ? ` — ${clean(reason).slice(0, 120)}` : ""),
       content: encodeBase64(bytes),
       branch,
       ...(existingSha ? { sha: existingSha } : {}),
@@ -314,6 +516,7 @@ async function publishAsset({
     directory: clean(draft.directory),
     fileName: clean(draft.fileName),
     bytes,
+    reason,
   });
 
   const now = new Date();
@@ -418,6 +621,35 @@ export async function manageAppAsset(request, env) {
     const { decoded, db } = await verifyOwner(request, env);
 
     if (request.method === "GET") {
+      const url = new URL(request.url);
+      const detailKey = clean(url.searchParams.get("assetKey"));
+      const include = clean(url.searchParams.get("include"));
+
+      if (detailKey) {
+        if (!validKey(detailKey)) throw new ApiError("invalid_request", 400);
+        const current = await db.get(`app_asset_registry/${detailKey}`);
+        if (!current.exists) throw new ApiError("asset_not_found", 404);
+        const asset = { assetKey: detailKey, ...(current.data || {}) };
+
+        if (include === "history") {
+          phase = "history";
+          return json(request, env, {
+            ok: true,
+            asset,
+            history: await assetVersionHistory(env, db, detailKey, asset),
+          });
+        }
+        if (include === "usage") {
+          phase = "usage";
+          return json(request, env, {
+            ok: true,
+            asset,
+            usage: await assetUsageMap(env, detailKey, asset),
+          });
+        }
+        return json(request, env, { ok: true, asset });
+      }
+
       phase = "list";
       return json(request, env, {
         ok: true,
@@ -452,6 +684,20 @@ export async function manageAppAsset(request, env) {
     if (action === "publish") {
       phase = "publish";
       const result = await publishAsset({
+        env,
+        db,
+        decoded,
+        assetKey,
+        reason,
+        idempotencyKey,
+        operationPath,
+      });
+      return json(request, env, { ok: true, code: "ok", ...result });
+    }
+
+    if (action === "rollback_previous") {
+      phase = "rollback";
+      const result = await rollbackPreviousAssetVersion({
         env,
         db,
         decoded,
