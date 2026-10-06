@@ -21,6 +21,12 @@ import {
   vipUserPatch,
 } from "./vip-runtime.js";
 import { publishGlobalAppEvents } from "./room-realtime.js";
+import {
+  giftVipTrialCard,
+  listVipTrialCards,
+  redeemVipTrialCard,
+  vip10TrialCardGrantWrites,
+} from "./vip-trial-cards.js";
 
 const clean = (value) => String(value ?? "").trim();
 
@@ -62,6 +68,7 @@ function summaryPayload(policy, state, user = {}) {
     effectiveVipSource: state.effectiveVipSource,
     earnedVipLevel: earnedLevel,
     adminGrantVipLevel: state.adminGrantVipLevel,
+    trialVipLevel: state.trialVipLevel,
     growthPoints: state.growthPoints,
     maintenancePoints: state.maintenancePoints,
     maintenanceRequired:
@@ -71,6 +78,7 @@ function summaryPayload(policy, state, user = {}) {
     maxGrowthPoints: progress.maxGrowthPoints,
     earnedVipExpiresAtMs: state.earnedVipExpiresAtMs,
     adminGrantExpiresAtMs: state.adminGrantExpiresAtMs,
+    trialVipExpiresAtMs: state.trialVipExpiresAtMs,
     validityDays:
       earnedLevel > 0 ? vipValidityDays(policy, earnedLevel) : null,
     currentThreshold:
@@ -589,6 +597,15 @@ export async function buyVipGrowth(db, uid, body, nowMs = Date.now()) {
       if (!afterState) throw new ApiError("invalid_vip_state", 409);
 
       const closingCoins = openingCoins - coinCost;
+      const trialGrant = vip10TrialCardGrantWrites(
+        db,
+        uid,
+        user,
+        policy,
+        beforeState,
+        afterState,
+        nowMs,
+      );
       const result = {
         growthPointsPurchased: requestedGrowthPoints,
         coinsSpent: coinCost,
@@ -596,8 +613,9 @@ export async function buyVipGrowth(db, uid, body, nowMs = Date.now()) {
         vip: summaryPayload(
           policy,
           afterState,
-          { ...user, coins: closingCoins },
+          { ...user, coins: closingCoins, ...trialGrant.userPatch },
         ),
+        trialCardsGranted: trialGrant.cardIds,
       };
 
       await db.commit(transaction, [
@@ -607,6 +625,7 @@ export async function buyVipGrowth(db, uid, body, nowMs = Date.now()) {
             coins: closingCoins,
             walletUpdatedAt: now,
             ...vipUserPatch(afterState, now),
+            ...trialGrant.userPatch,
           },
           [
             "coins",
@@ -614,8 +633,10 @@ export async function buyVipGrowth(db, uid, body, nowMs = Date.now()) {
             "earnedVipLevel",
             "effectiveVipLevel",
             "adminGrantVipLevel",
+            "trialVipLevel",
             "earnedVipExpiresAt",
             "adminGrantExpiresAt",
+            "trialVipExpiresAt",
             "effectiveVipSource",
             "vipGrowthPoints",
             "vipMaintenancePoints",
@@ -623,6 +644,7 @@ export async function buyVipGrowth(db, uid, body, nowMs = Date.now()) {
             "vipExpiresAt",
             "vipSource",
             "vipUpdatedAt",
+            ...Object.keys(trialGrant.userPatch),
           ],
         ),
         ...(publicProfileSnap.exists
@@ -684,6 +706,7 @@ export async function buyVipGrowth(db, uid, body, nowMs = Date.now()) {
           result,
           createdAt: now,
         }),
+        ...trialGrant.writes,
       ]);
 
       return { ok: true, code: "ok", operationId: key, ...result };
@@ -770,6 +793,43 @@ export async function vipActions(request, env) {
         env,
         await publishVip10GlobalEntry(db, env, decoded.sub),
       );
+    }
+    if (action === "listTrialCards") {
+      return json(request, env, await listVipTrialCards(db, decoded.sub));
+    }
+    if (action === "giftTrialCard") {
+      try {
+        return json(
+          request,
+          env,
+          await giftVipTrialCard(db, decoded.sub, body),
+        );
+      } catch (error) {
+        const code = clean(error?.message);
+        const status =
+          code === "mutual_follow_required" ? 403 :
+          code === "trial_card_unavailable" ? 409 :
+          code === "vip_trial_inventory_limit" ? 409 :
+          code === "not_found" ? 404 :
+          400;
+        throw new ApiError(code || "trial_card_gift_failed", status);
+      }
+    }
+    if (action === "redeemTrialCard") {
+      try {
+        return json(
+          request,
+          env,
+          await redeemVipTrialCard(db, decoded.sub, body),
+        );
+      } catch (error) {
+        const code = clean(error?.message);
+        const status =
+          code === "trial_card_unavailable" ? 409 :
+          code === "not_found" ? 404 :
+          400;
+        throw new ApiError(code || "trial_card_redeem_failed", status);
+      }
     }
     throw new ApiError("invalid_action", 400);
   } catch (error) {
