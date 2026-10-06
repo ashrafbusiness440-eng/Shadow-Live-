@@ -13,7 +13,7 @@ void main() {
     expect(vip.contains('عرض المركبات'), isFalse);
     expect(vip.contains('vipVehicle('), isFalse);
     expect(registry.contains('vipVehicle('), isFalse);
-    expect(registry.contains("vip.v$level.vehicle"), isFalse);
+    expect(registry.contains("vip.v\$level.vehicle"), isFalse);
 
     expect(vip.contains('/38'), isTrue);
   });
