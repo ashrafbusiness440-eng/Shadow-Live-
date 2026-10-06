@@ -2608,7 +2608,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
         usageTruncated = usage['truncated'] == true;
       }
     } catch (_) {
-      // Impact lookup is advisory. Publishing still requires explicit approval.
+      // The impact lookup is advisory. Explicit approval is still required.
     }
 
     if (!mounted) return false;
@@ -2617,20 +2617,135 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
         : _selectedChannels.map(_channelLabel).join(' • ');
     final usageText = directUsageCount == 0
         ? 'لم يظهر استخدام مباشر داخل الملفات، وقد يكون الربط تلقائيًا.'
-        : 'يعتمد عليه $directUsageCount مكان مباشر داخل المشروع'
+        : 'يعتمد عليه $directUsageCount مكان مباشر'
             '${usageTruncated ? ' أو أكثر' : ''}.';
+    final currentUrl = _assetLiveUrl(_editingAsset);
+    final hasNewPreview = _bytes != null;
 
     return await showDialog<bool>(
           context: context,
           builder: (dialogContext) => AlertDialog(
             title: const Text('تأكيد استبدال الأصل الحالي'),
-            content: Text(
-              'سيتم استبدال الأصل نفسه بدون تغيير الربط.\n\n'
-              'مفتاح الأصل: ${_assetKey.text.trim()}\n'
-              'النوع: ${template?.labelAr ?? template?.type ?? 'غير محدد'}\n'
-              'أماكن الاستخدام: $channelsText\n'
-              '$usageText\n\n'
-              'كل مكان يستخدم هذا الأصل سيظهر فيه التصميم الجديد بعد تحديث النسخة المحفوظة.',
+            content: SizedBox(
+              width: 520,
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'سيتم استبدال الأصل نفسه بدون تغيير الربط.',
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 10),
+                    if (currentUrl.isNotEmpty || hasNewPreview) ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              children: [
+                                const Text(
+                                  'الحالي',
+                                  style: TextStyle(
+                                    color: Colors.white60,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                                const SizedBox(height: 5),
+                                Container(
+                                  height: 135,
+                                  decoration: BoxDecoration(
+                                    color: Colors.black26,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  padding: const EdgeInsets.all(8),
+                                  child: currentUrl.isEmpty
+                                      ? const Center(
+                                          child: Text('لا توجد معاينة'),
+                                        )
+                                      : Image.network(
+                                          currentUrl,
+                                          fit: BoxFit.contain,
+                                          gaplessPlayback: true,
+                                          errorBuilder: (_, __, ___) =>
+                                              const Icon(
+                                            Icons.broken_image_outlined,
+                                            color: Colors.orangeAccent,
+                                          ),
+                                        ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              children: [
+                                const Text(
+                                  'الجديد',
+                                  style: TextStyle(
+                                    color: Colors.greenAccent,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                                const SizedBox(height: 5),
+                                Container(
+                                  height: 135,
+                                  decoration: BoxDecoration(
+                                    color: Colors.black26,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  padding: const EdgeInsets.all(8),
+                                  child: _bytes == null
+                                      ? const Center(
+                                          child: Text('لا توجد معاينة'),
+                                        )
+                                      : Image.memory(
+                                          _bytes!,
+                                          fit: BoxFit.contain,
+                                        ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    Text(
+                      'مفتاح الأصل: ${_assetKey.text.trim()}',
+                      textDirection: TextDirection.rtl,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'النوع: ${template?.labelAr ?? template?.type ?? 'غير محدد'}',
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'أماكن الاستخدام المحددة: ${_selectedChannels.length}',
+                    ),
+                    if (_selectedChannels.isNotEmpty)
+                      Text(
+                        channelsText,
+                        style: const TextStyle(
+                          color: Colors.white60,
+                          fontSize: 11,
+                        ),
+                      ),
+                    const SizedBox(height: 4),
+                    Text(usageText),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'بعد النشر، كل مكان يستخدم هذا الأصل سيظهر فيه التصميم الجديد بعد تحديث النسخة المحفوظة.',
+                      style: TextStyle(
+                        color: Colors.orangeAccent,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
             actions: [
               TextButton(
@@ -2744,7 +2859,6 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
   }
 
   Future<void> _upload({required bool publish}) async {
-    if (publish && !await _confirmPublishImpact()) return;
     if (_sourceBytes != null) {
       setState(() {
         _busy = true;
@@ -2770,6 +2884,10 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
         _busy = false;
         _message = error;
       });
+      return;
+    }
+    if (publish && !await _confirmPublishImpact()) {
+      if (mounted) setState(() => _busy = false);
       return;
     }
     setState(() {
