@@ -20,6 +20,7 @@ class RoomChatMessage {
     required this.systemKind,
     required this.vipLevel,
     required this.entryEffectKey,
+    required this.vipEmojiToken,
     required this.giftName,
     required this.giftAssetKey,
     required this.giftImageUrl,
@@ -45,6 +46,7 @@ class RoomChatMessage {
   final String systemKind;
   final int vipLevel;
   final String entryEffectKey;
+  final String vipEmojiToken;
   final String giftName;
   final String giftAssetKey;
   final String giftImageUrl;
@@ -79,6 +81,7 @@ class RoomChatMessage {
       systemKind: (data['systemKind'] ?? '').toString(),
       vipLevel: (data['vipLevel'] as num?)?.toInt() ?? 0,
       entryEffectKey: (data['entryEffectKey'] ?? '').toString(),
+      vipEmojiToken: (data['vipEmojiToken'] ?? '').toString(),
       giftName: (data['giftName'] ?? '').toString(),
       giftAssetKey: (data['assetKey'] ?? '').toString(),
       giftImageUrl: (data['imageUrl'] ?? '').toString(),
