@@ -26,12 +26,17 @@ after(async () => {
 
 async function seedPolicy() {
   await adminDb.collection("system_config").doc("vip").set({
-    levels: Array.from({ length: 10 }, (_, i) => ({
-      level: i + 1,
-      growthRequired: (i + 1) * 1000,
-      maintenanceRequired: (i + 1) * 100,
-      validityDays: i + 1 >= 7 ? 60 : 30,
-    })),
+    growthThresholds: [
+      100, 200, 300, 400, 500, 600, 700, 800, 900, 1000,
+    ],
+    maintenanceThresholds: [
+      100, 200, 300, 400, 500, 600, 700, 800, 900, 1000,
+    ],
+    validityDays: [30, 30, 30, 30, 30, 30, 60, 60, 60, 60],
+    downgradeRetentionBps: [
+      0, 0, 0, 8800, 8500, 7500, 5900, 5000, 5000, 4500,
+    ],
+    maxGrowthPoints: 2000,
     purchasedGrowthPerCoin: 3,
     paidRechargeGrowthPerCoin: 1,
   });
@@ -80,7 +85,7 @@ test("VIP10 maintenance threshold grants exactly 3 trial cards once per cycle", 
       adminGrantExpiresAtMs: 0,
       trialVipLevel: 0,
       trialVipExpiresAtMs: 0,
-      growthPoints: 10000,
+      growthPoints: 1000,
       maintenancePoints: 999,
     },
     nowMs,
