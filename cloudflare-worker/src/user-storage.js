@@ -1786,7 +1786,7 @@ async function deleteObject(request, env, auth) {
       sizeBytes: Number(metadata.sizeBytes || 0),
       createdAt: now,
     }),
-  ];
+  );
 
   if (isReplaceableStorageScope(metadata.scope)) {
     const pointerPath = storageActivePointerPath(
