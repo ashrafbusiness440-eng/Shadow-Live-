@@ -38,6 +38,7 @@ class _VipInformationCenterScreenState
   late final bool _ownsService;
 
   final List<VipHistoryEvent> _history = <VipHistoryEvent>[];
+  final TextEditingController _manualGrowth = TextEditingController();
   bool _historyLoaded = false;
   bool _historyLoading = false;
   bool _buying = false;
@@ -59,6 +60,7 @@ class _VipInformationCenterScreenState
   void dispose() {
     _tabs.removeListener(_tabChanged);
     _tabs.dispose();
+    _manualGrowth.dispose();
     if (_ownsService) _service.close();
     super.dispose();
   }
@@ -181,8 +183,113 @@ class _VipInformationCenterScreenState
         '${two(date.hour)}:${two(date.minute)}';
   }
 
+  String _remainingValidityLabel() {
+    final expiresAt = _summary.effectiveVipExpiresAtMs;
+    final serverNow = _summary.serverNowMs;
+    if (expiresAt <= 0 || serverNow <= 0) return '—';
+    final remainingMs = expiresAt - serverNow;
+    if (remainingMs <= 0) return 'منتهية';
+    const minuteMs = 60 * 1000;
+    const hourMs = 60 * minuteMs;
+    const dayMs = 24 * hourMs;
+    if (remainingMs >= dayMs) {
+      return '${remainingMs ~/ dayMs} يوم';
+    }
+    if (remainingMs >= hourMs) {
+      return '${remainingMs ~/ hourMs} ساعة';
+    }
+    if (remainingMs >= minuteMs) {
+      return '${remainingMs ~/ minuteMs} دقيقة';
+    }
+    return 'أقل من دقيقة';
+  }
+
+  int _historyValidityDays(int level) {
+    final levels = _summary.policy?.levels ?? const <VipPolicyLevel>[];
+    for (final item in levels) {
+      if (item.level == level) return item.validityDays;
+    }
+    return 0;
+  }
+
+  Future<void> _buyManualGrowth() async {
+    if (_buying) return;
+    final growth = int.tryParse(_manualGrowth.text.trim());
+    final ratio = _summary.purchaseGrowthPerCoin;
+    if (growth == null || growth <= 0 || ratio <= 0 || growth % ratio != 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'أدخل عدد Growth موجب ويقبل القسمة على نسبة الشراء الحالية 1:$ratio.',
+          ),
+        ),
+      );
+      return;
+    }
+    final coins = growth ~/ ratio;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('تأكيد شراء نقاط VIP'),
+        content: Text(
+          'شراء ${formatCompactAmount(growth)} Growth مقابل '
+          '${formatCompactAmount(coins)} Coins؟',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('شراء'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _buying = true);
+    try {
+      final buyer = widget.buyGrowth ?? _service.buyGrowth;
+      final updated = await buyer(
+        growthPoints: growth,
+        idempotencyKey:
+            'vip_manual_${DateTime.now().microsecondsSinceEpoch}',
+      );
+      if (!mounted) return;
+      setState(() {
+        _summary = updated;
+        _manualGrowth.clear();
+      });
+      widget.onSummaryChanged?.call(updated);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'تمت إضافة ${formatCompactAmount(growth)} نقطة نمو VIP.',
+          ),
+        ),
+      );
+      if (_historyLoaded) await _loadHistory(reset: true);
+    } catch (error) {
+      if (!mounted) return;
+      final raw = error.toString();
+      final message = raw.contains('insufficient_coins')
+          ? 'رصيد Coins غير كافٍ.'
+          : 'تعذر شراء نقاط VIP حاليًا.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } finally {
+      if (mounted) setState(() => _buying = false);
+    }
+  }
+
   String _eventTitle(VipHistoryEvent event) {
     switch (event.eventType) {
+      case 'vip_upgrade':
+        return 'ترقية مستوى VIP';
+      case 'vip_downgrade':
+        return 'هبوط مستوى VIP';
       case 'growth_purchase':
         return 'شراء نقاط نمو VIP';
       case 'paid_recharge_growth':
@@ -203,11 +310,12 @@ class _VipInformationCenterScreenState
   }
 
   String _eventSubtitle(VipHistoryEvent event) {
-    if (event.eventType == 'growth_purchase') {
+    if (event.source == 'growth' && event.triggerType == 'growth_purchase') {
       return '+${formatCompactAmount(event.deltaGrowthPoints)} Growth • '
           '-${formatCompactAmount(event.coinCost)} Coins';
     }
-    if (event.eventType == 'paid_recharge_growth') {
+    if (event.source == 'growth' &&
+        event.triggerType == 'paid_recharge_growth') {
       return '+${formatCompactAmount(event.deltaGrowthPoints)} Growth من '
           '${formatCompactAmount(event.baseCoins)} Base Coins'
           ' • Bonus المستبعد ${formatCompactAmount(event.bonusCoinsExcluded)}';
@@ -242,7 +350,7 @@ class _VipInformationCenterScreenState
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               const Text(
-                'نقاط النمو',
+                'نقاط النمو للعضوية المميزة',
                 style: TextStyle(
                   fontSize: 19,
                   fontWeight: FontWeight.w900,
@@ -261,6 +369,36 @@ class _VipInformationCenterScreenState
               const SizedBox(height: 8),
               LinearProgressIndicator(value: progress),
               const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: <Widget>[
+                  Chip(
+                    label: Text(
+                      'VIP الحالي: VIP${_summary.effectiveVipLevel}',
+                    ),
+                  ),
+                  Chip(
+                    label: Text(
+                      'المتبقي: ${_remainingValidityLabel()}',
+                    ),
+                  ),
+                  Chip(
+                    label: Text(
+                      'المحافظة: '
+                      '${formatCompactAmount(_summary.maintenancePoints)} / '
+                      '${formatCompactAmount(_summary.maintenanceRequired)}',
+                    ),
+                  ),
+                  Chip(
+                    label: Text(
+                      'للترقية: '
+                      '${formatCompactAmount(_summary.remainingToNext)}',
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
               Text(
                 'الشحن المدفوع: 1 Coin = '
                 '${_summary.paidRechargeGrowthPerCoin} Growth من Base Coins فقط.',
@@ -275,14 +413,89 @@ class _VipInformationCenterScreenState
                 'Bonus Coins والمكافآت المجانية لا تضيف Growth تلقائيًا.',
                 style: TextStyle(color: Colors.white60),
               ),
-              const SizedBox(height: 12),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        _panel(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              const Text(
+                'شراء',
+                style: TextStyle(
+                  color: Color(0xFFFFD98A),
+                  fontWeight: FontWeight.w900,
+                  fontSize: 17,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'رصيدك: ${formatCompactAmount(_summary.coins)} Coins',
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                key: const Key('vip-manual-growth-input'),
+                controller: _manualGrowth,
+                keyboardType: TextInputType.number,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  labelText: 'VIP Growth Points',
+                  helperText: _manualGrowth.text.trim().isEmpty
+                      ? '1 Coin = ${_summary.purchaseGrowthPerCoin} Growth'
+                      : (() {
+                          final points =
+                              int.tryParse(_manualGrowth.text.trim()) ?? 0;
+                          final ratio = _summary.purchaseGrowthPerCoin;
+                          final coins = ratio > 0 ? points ~/ ratio : 0;
+                          return 'التكلفة: ${formatCompactAmount(coins)} Coins';
+                        })(),
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              FilledButton(
+                key: const Key('vip-manual-growth-buy'),
+                onPressed: _buying ? null : _buyManualGrowth,
+                child: const Text('شراء'),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        _panel(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              const Text(
+                'إعادة الشحن',
+                style: TextStyle(
+                  color: Color(0xFFFFD98A),
+                  fontWeight: FontWeight.w900,
+                  fontSize: 17,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Coins من الشحن المدفوع تمنح Growth من Base Coins فقط بنسبة '
+                '1:${_summary.paidRechargeGrowthPerCoin}.',
+              ),
+              const SizedBox(height: 10),
               FilledButton.icon(
                 key: const Key('vip-open-recharge'),
                 onPressed: _openRecharge,
                 icon: const Icon(Icons.account_balance_wallet_outlined),
-                label: const Text('شحن Coins'),
+                label: const Text('انتقل للشحن'),
               ),
             ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        _panel(
+          child: Text(
+            'الحد الأقصى الحالي لنقاط VIP: '
+            '${formatCompactAmount(_summary.maxGrowthPoints)}. '
+            'السيرفر يمنع تجاوز هذا السقف.',
           ),
         ),
         const SizedBox(height: 12),
@@ -391,7 +604,18 @@ class _VipInformationCenterScreenState
                   style: const TextStyle(fontWeight: FontWeight.w800),
                 ),
                 subtitle: Text(
-                  '${_eventSubtitle(event)}\n${_dateText(event.createdAtMs)}',
+                  (() {
+                    final validity = _historyValidityDays(event.level);
+                    final parts = <String>[
+                      _eventSubtitle(event),
+                      if (validity > 0) 'مدة المستوى: $validity يوم',
+                      if (event.growthPointsAfter > 0)
+                        'Growth بعد الحدث: '
+                            '${formatCompactAmount(event.growthPointsAfter)}',
+                      _dateText(event.createdAtMs),
+                    ];
+                    return parts.join('\n');
+                  })(),
                 ),
                 isThreeLine: true,
               ),
@@ -420,9 +644,33 @@ class _VipInformationCenterScreenState
       padding: const EdgeInsets.all(14),
       children: <Widget>[
         _panel(
-          child: const Text(
-            'هذه القواعد معروضة من الـVIP Policy الحية نفسها. لا توجد معادلة UI منفصلة عن السيرفر.',
-            style: TextStyle(color: Colors.white70),
+          child: const Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Text(
+                'ما هو VIP؟',
+                style: TextStyle(
+                  color: Color(0xFFFFD98A),
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              SizedBox(height: 6),
+              Text(
+                'VIP نظام عضوية وهوية خاصة تُفتح بتراكم نقاط النمو، وتزداد الامتيازات مع ارتفاع المستوى.',
+              ),
+              SizedBox(height: 12),
+              Text(
+                'كيف يمكن الحصول على نقاط النمو؟',
+                style: TextStyle(
+                  color: Color(0xFFFFD98A),
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              SizedBox(height: 6),
+              Text(
+                'الشحن المدفوع يحتسب Base Coins فقط بنسبة 1:1 حسب السياسة الحية، والشراء من رصيد Coins يحتسب بالنسبة الحية المعروضة في تبويب نقاط النمو. Bonus Coins لا تدخل تلقائيًا.',
+              ),
+            ],
           ),
         ),
         const SizedBox(height: 12),
@@ -441,8 +689,7 @@ class _VipInformationCenterScreenState
                 DataColumn(label: Text('VIP')),
                 DataColumn(label: Text('Growth')),
                 DataColumn(label: Text('Maintenance')),
-                DataColumn(label: Text('الصلاحية')),
-                DataColumn(label: Text('احتفاظ بعد الفشل')),
+                DataColumn(label: Text('نسبة التدهور')),
               ],
               rows: levels
                   .map(
@@ -455,7 +702,6 @@ class _VipInformationCenterScreenState
                         DataCell(
                           Text(formatCompactAmount(level.maintenanceRequired)),
                         ),
-                        DataCell(Text('${level.validityDays} يوم')),
                         DataCell(
                           Text(
                             level.level <= 3
@@ -471,21 +717,36 @@ class _VipInformationCenterScreenState
           ),
         const SizedBox(height: 12),
         _panel(
-          child: const Column(
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              Text(
-                'قواعد أساسية',
+              const Text(
+                'فترة الصلاحية وما يحدث بعدها',
                 style: TextStyle(
                   color: Color(0xFFFFD98A),
                   fontWeight: FontWeight.w900,
                 ),
               ),
-              SizedBox(height: 8),
-              Text('• VIP الطبيعي يعتمد على Growth Points والـMaintenance والصلاحية.'),
-              Text('• المنحة الإدارية والبطاقة التجريبية مصادر مستقلة ولا تمسح التقدم الطبيعي.'),
-              Text('• انتهاء مصدر مؤقت يعيد Effective VIP إلى أعلى مصدر فعال فعليًا.'),
-              Text('• VIP1–VIP6 وVIP7–VIP10 تعرض مدتها من جدول السياسة الحية أعلاه.'),
+              const SizedBox(height: 8),
+              const Text(
+                'عند الترقية تبدأ دورة صلاحية جديدة كاملة للمستوى الجديد. عند نهاية الدورة، إذا تحققت نقاط المحافظة يجدد نفس المستوى وتبدأ دورة جديدة. إذا فشلت المحافظة ينخفض المستوى درجة واحدة.',
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'VIP1→VIP3: هبوط مستوى واحد فقط. VIP4→VIP10: هبوط مستوى واحد مع الاحتفاظ بنسبة التقدم المعروضة في الجدول، وفق نفس vipDowngradeState الموجود في السيرفر.',
+                style: TextStyle(color: Colors.white70),
+              ),
+              const SizedBox(height: 10),
+              ...levels.map(
+                (level) => Text(
+                  'VIP${level.level}: صلاحية ${level.validityDays} يوم',
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'المنحة الإدارية والبطاقة التجريبية مصادر مستقلة؛ انتهاؤهما يعيد Effective VIP إلى أعلى مصدر طبيعي/فعال بدون حذف Growth.',
+                style: TextStyle(color: Colors.white60),
+              ),
             ],
           ),
         ),
@@ -507,8 +768,8 @@ class _VipInformationCenterScreenState
               controller: _tabs,
               tabs: const <Tab>[
                 Tab(text: 'نقاط النمو', icon: Icon(Icons.trending_up_rounded)),
-                Tab(text: 'السجل', icon: Icon(Icons.history_rounded)),
-                Tab(text: 'قواعد VIP', icon: Icon(Icons.rule_rounded)),
+                Tab(text: 'التفاصيل', icon: Icon(Icons.history_rounded)),
+                Tab(text: 'شرح قواعد VIP', icon: Icon(Icons.rule_rounded)),
               ],
             ),
           ),
