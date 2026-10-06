@@ -1243,6 +1243,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
       'width': width,
       'height': height,
       'animated': animated,
+      'hasAlpha': decoded.numChannels == 4,
     };
   }
 
@@ -1371,6 +1372,30 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
             throw StateError(
               'بيانات Template/Channels غير مكتملة في Registry.',
             );
+          }
+          final template = _templates
+              .where((item) => item.id == templateId)
+              .cast<ControlAssetStudioTemplate?>()
+              .firstWhere(
+                (item) => item != null,
+                orElse: () => null,
+              );
+          if (template == null) {
+            throw StateError('Template غير محمل في الاستديو.');
+          }
+          final hasAlpha = prepared['hasAlpha'] == true;
+          final animated = prepared['animated'] == true;
+          if (template.transparency == 'required' && !hasAlpha) {
+            throw StateError('الأصل يحتاج شفافية Alpha.');
+          }
+          if (template.transparency == 'forbidden' && hasAlpha) {
+            throw StateError('الشفافية غير مسموحة لهذا الأصل.');
+          }
+          if (template.motion == 'static' && animated) {
+            throw StateError('هذا الأصل يجب أن يكون ثابتًا.');
+          }
+          if (template.motion == 'animated' && !animated) {
+            throw StateError('هذا الأصل يجب أن يكون متحركًا.');
           }
 
           final response = await http.post(
@@ -3764,6 +3789,20 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                 ),
                 icon: const Icon(Icons.expand_more_rounded),
                 label: const Text('عرض المزيد'),
+              ),
+            if (visible.length >= filtered.length && _hasMoreRegistry)
+              OutlinedButton.icon(
+                onPressed: _loadingMoreRegistry
+                    ? null
+                    : () => _loadAssets(append: true),
+                icon: _loadingMoreRegistry
+                    ? const SizedBox(
+                        width: 17,
+                        height: 17,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.cloud_download_outlined),
+                label: const Text('تحميل صفحة إضافية من السجل'),
               ),
           ],
         ],
