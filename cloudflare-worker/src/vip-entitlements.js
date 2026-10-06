@@ -2,6 +2,54 @@ import { activeEffectiveVipLevelFromUser } from "./vip-runtime.js";
 
 const clean = (value) => String(value ?? "").trim();
 
+export const VIP_COSMETIC_LEVELS = Object.freeze({
+  mainBadge: 1,
+  chatBubble: 2,
+  styledName: 2,
+  profileFrame: 3,
+  giftVisual: 4,
+  profileBackground: 5,
+  dataCard: 5,
+  audioWave: 7,
+  entryStrip: 8,
+  profileDecoration: 9,
+  nameEffect: 10,
+});
+
+const VIP_COSMETIC_SUFFIX = Object.freeze({
+  mainBadge: "mainBadge",
+  chatBubble: "chatBubble",
+  profileFrame: "profileFrame",
+  giftVisual: "giftVisual",
+  profileBackground: "profileBackground",
+  dataCard: "dataCard",
+  audioWave: "audioWave",
+  entryStrip: "entryStrip",
+  profileDecoration: "profileDecoration",
+  nameEffect: "nameEffect",
+});
+
+export function vipCosmeticAssetKey(levelValue, kind) {
+  const level = Math.max(0, Math.min(10, Number(levelValue || 0) || 0));
+  const minLevel = Number(VIP_COSMETIC_LEVELS[kind] || 0);
+  const suffix = VIP_COSMETIC_SUFFIX[kind];
+  if (!suffix || minLevel <= 0 || level < minLevel) return "";
+  return `vip.v${level}.${suffix}`;
+}
+
+export function vipCosmeticsFromUser(user = {}, nowMs = Date.now()) {
+  const level = activeEffectiveVipLevelFromUser(user, nowMs);
+  const keys = {};
+  for (const kind of Object.keys(VIP_COSMETIC_SUFFIX)) {
+    keys[kind] = vipCosmeticAssetKey(level, kind);
+  }
+  return {
+    level,
+    styledName: level >= VIP_COSMETIC_LEVELS.styledName,
+    keys,
+  };
+}
+
 export const VIP_ENTITLEMENT_LEVELS = Object.freeze({
   hideOnlineStatus: 5,
   hideRoomPresence: 5,
