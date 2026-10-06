@@ -797,6 +797,14 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
 
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
+  String _feedVipEmojiGlyph(String token) => switch (token) {
+        'vip_star' => '🌟',
+        'vip_crown' => '👑',
+        'vip_diamond' => '💎',
+        'vip_shadow' => '✨',
+        _ => '',
+      };
+
   Widget _senderAvatar(RoomChatMessage message) {
     final url = message.profileImageUrl.trim();
     if (url.isEmpty) {
@@ -1213,14 +1221,35 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
                           horizontal: 8,
                           vertical: 6,
                         ),
-                        child: Text(
-                          message.text,
-                          textDirection: TextDirection.rtl,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                          ),
-                        ),
+                        child: message.vipEmojiToken.isNotEmpty
+                            ? Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    _feedVipEmojiGlyph(
+                                      message.vipEmojiToken,
+                                    ),
+                                    style: const TextStyle(fontSize: 22),
+                                  ),
+                                  const SizedBox(width: 5),
+                                  const Text(
+                                    'VIP Emoji',
+                                    style: TextStyle(
+                                      color: Color(0xFFFFE9A6),
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : Text(
+                                message.text,
+                                textDirection: TextDirection.rtl,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                ),
+                              ),
                       ),
                     ),
                   ],
