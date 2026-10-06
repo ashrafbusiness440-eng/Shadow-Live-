@@ -2919,12 +2919,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
           ),
           const SizedBox(height: 12),
           FilledButton.icon(
-            onPressed: _busy
-                ? null
-                : () => setState(() {
-                      _showStudioForm = true;
-                      _message = null;
-                    }),
+            onPressed: _busy ? null : _startNewAsset,
             icon: const Icon(Icons.add_circle_outline_rounded),
             label: const Padding(
               padding: EdgeInsets.symmetric(vertical: 13),
@@ -2983,7 +2978,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
               ),
               children: const [
                 Text(
-                  'Owner-only • Recent Auth • Templates/Channels • Validation • '
+                  'Owner-only • Templates/Channels • Validation • '
                   'R2 Drafts • Publish-only GitHub Commit • Idempotency • '
                   'Firestore Registry • Audit Log. لا Polling ولا Reads على Room/Gift hot paths.',
                   style: TextStyle(color: Colors.white60, height: 1.45),
@@ -3010,27 +3005,51 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     if (uid == null) {
       return const Scaffold(body: Center(child: Text('سجّل الدخول أولاً')));
     }
-    return Scaffold(
-      appBar: AppBar(title: const Text('Shadow Asset Studio')),
-      body: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        future: controlFirestore.collection('users').doc(uid).get(),
-        builder: (context, snapshot) {
-          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-          final data = snapshot.data?.data();
-          if (data?['role'] != 'owner') {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.lock_outline, size: 58, color: Colors.orangeAccent),
-                  SizedBox(height: 12),
-                  Text('هذه الصفحة متاحة لحساب Owner فقط', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
-                ]),
-              ),
-            );
-          }
-          return _ownerBody();
-        },
+    return PopScope(
+      canPop: !_hasUnsavedChanges,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop || !_hasUnsavedChanges) return;
+        if (await _confirmDiscardChanges() && context.mounted) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(title: const Text('Shadow Asset Studio')),
+        body: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          future: controlFirestore.collection('users').doc(uid).get(),
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            final data = snapshot.data?.data();
+            if (data?['role'] != 'owner') {
+              return const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.lock_outline,
+                        size: 58,
+                        color: Colors.orangeAccent,
+                      ),
+                      SizedBox(height: 12),
+                      Text(
+                        'هذه الصفحة متاحة لحساب Owner فقط',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+            return _ownerBody();
+          },
+        ),
       ),
     );
   }
