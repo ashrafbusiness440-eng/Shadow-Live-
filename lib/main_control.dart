@@ -1349,7 +1349,7 @@ class _RolePolicyCard extends StatelessWidget {
     'reviewReports':'مراجعة البلاغات','manageDiaries':'حذف اليوميات من البلاغات','deleteDiaryComment':'حذف تعليقات اليوميات','manageEconomy':'إدارة الاقتصاد','manageGames':'إدارة الألعاب','manageWithdrawals':'إدارة السحب',
     'manageSettlements':'إدارة التسويات','manageRoles':'إدارة الأدوار','manageCapabilities':'إدارة الصلاحيات',
     'manageSystem':'إدارة النظام','manageIds':'إدارة IDs المستخدمين والغرف',
-    'manageVipLevels':'إدارة مستويات VIP',
+    'manageVipLevels':'إدارة مستويات VIP','manageVipPolicy':'إدارة إعدادات وعروض VIP',
   };
   @override Widget build(BuildContext context){
     final isOwner=role=='owner';
@@ -2898,7 +2898,7 @@ class MorePage extends StatelessWidget {
         final canOpenVip=isOwner||
             (adminEnabled&&capabilities.contains('manageVipLevels'));
         final canOpenVipInformation=isOwner||
-            (adminEnabled&&capabilities.contains('manageVip'));
+            (adminEnabled&&capabilities.contains('manageVipPolicy'));
         final canOpenIds=isOwner||
             (adminEnabled&&(
               capabilities.contains('manageIds')||
