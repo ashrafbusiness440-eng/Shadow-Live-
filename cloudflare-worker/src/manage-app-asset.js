@@ -153,16 +153,42 @@ async function verifyOwner(request, env) {
   return { decoded, db };
 }
 
-async function listAssets(db) {
+async function listAssets(
+  db,
+  { limit = 100, cursorUpdatedAt = "", cursorId = "" } = {},
+) {
+  const boundedLimit = Math.max(12, Math.min(100, Number(limit || 60)));
+  const startAfter =
+    clean(cursorUpdatedAt) && clean(cursorId)
+      ? [
+          clean(cursorUpdatedAt),
+          { referencePath: `app_asset_registry/${clean(cursorId)}` },
+        ]
+      : [];
   const docs = await db.runQuery("app_asset_registry", {
-    orderBy: [{ field: "updatedAt", direction: "desc" }],
-    limit: 100,
+    orderBy: [
+      { field: "updatedAt", direction: "desc" },
+      { field: "__name__", direction: "desc" },
+    ],
+    limit: boundedLimit,
+    startAfter,
   });
-  return docs.map((doc) => ({
+  const assets = docs.map((doc) => ({
     assetKey: doc.id,
     ...(doc.data || {}),
     updatedAt: doc.data?.updatedAt || null,
   }));
+  const last = docs.length ? docs[docs.length - 1] : null;
+  return {
+    assets,
+    nextCursor:
+      docs.length === boundedLimit && last
+        ? {
+            updatedAt: last.data?.updatedAt || null,
+            id: last.id,
+          }
+        : null,
+  };
 }
 
 function assetRepoConfig(env) {
@@ -651,12 +677,18 @@ export async function manageAppAsset(request, env) {
       }
 
       phase = "list";
+      const page = await listAssets(db, {
+        limit: Number(url.searchParams.get("limit") || 60),
+        cursorUpdatedAt: clean(url.searchParams.get("cursorUpdatedAt")),
+        cursorId: clean(url.searchParams.get("cursorId")),
+      });
       return json(request, env, {
         ok: true,
         studioVersion: ASSET_STUDIO_VERSION,
         channels: [...ASSET_STUDIO_CHANNELS],
         templates: publicAssetStudioTemplates(),
-        assets: await listAssets(db),
+        assets: page.assets,
+        nextCursor: page.nextCursor,
       });
     }
 
@@ -891,6 +923,7 @@ export async function manageAppAsset(request, env) {
       directory,
       fileName,
       bytes,
+      reason,
     });
 
     phase = "registry";
