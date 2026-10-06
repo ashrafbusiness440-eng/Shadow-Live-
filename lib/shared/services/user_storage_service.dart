@@ -12,6 +12,7 @@ const int userImageMaxLongestSide = 2048;
 
 const Map<String, int> _userImageScopeMaxBytes = <String, int>{
   'profile_image': 2 * 1024 * 1024,
+  'profile_avatar_animation': 2 * 1024 * 1024,
   'profile_cover': userImageGlobalMaxBytes,
   'room_cover': userImageGlobalMaxBytes,
   'agency_logo': 2 * 1024 * 1024,
@@ -53,7 +54,7 @@ Future<PreparedUserImage> prepareUserImageForUpload({
 
   final normalizedMime = mimeType.trim().toLowerCase();
   if (normalizedMime == 'image/gif') {
-    if (scope.trim() != 'profile_image') {
+    if (scope.trim() != 'profile_avatar_animation') {
       throw StateError('gif_profile_only');
     }
     if (bytes.length > limit) {
