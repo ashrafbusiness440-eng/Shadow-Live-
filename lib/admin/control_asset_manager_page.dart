@@ -74,6 +74,10 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
   bool _loadingMoreRegistry = false;
   final Set<String> _favoriteAssetKeys = <String>{};
   final List<String> _recentAssetKeys = <String>[];
+  Map<String, dynamic>? _activeManifest;
+  List<Map<String, dynamic>> _batchResults = const [];
+  String? _batchProgressLabel;
+  bool _batchBusy = false;
 
   @override
   void dispose() {
@@ -468,8 +472,16 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
         _ => 'application/octet-stream',
       };
 
-  img.Image _prepareDimensions(img.Image decoded) {
-    final directory = ControlAssetPolicy.normalizeDirectory(_directory.text);
+  img.Image _prepareDimensions(img.Image decoded) =>
+      _prepareDimensionsForDirectory(
+        decoded,
+        ControlAssetPolicy.normalizeDirectory(_directory.text),
+      );
+
+  img.Image _prepareDimensionsForDirectory(
+    img.Image decoded,
+    String directory,
+  ) {
     if (directory == 'assets/images/gifts') {
       return img.copyResizeCropSquare(
         decoded,
