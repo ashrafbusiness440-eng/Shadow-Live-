@@ -1792,6 +1792,187 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     );
   }
 
+  Future<void> _showPreparedPreview() async {
+    if (_bytes == null) {
+      if (_editingAsset != null) {
+        await _showAssetPreview(_editingAsset!);
+      } else if (mounted) {
+        setState(() => _message = 'اختر صورة أولًا لعرض المعاينة.');
+      }
+      return;
+    }
+    final template = _selectedTemplate;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('معاينة قبل النشر'),
+        content: SizedBox(
+          width: 430,
+          child: SingleChildScrollView(
+            child: Column(
+              children: [
+                _contextPreview(
+                  '',
+                  memoryBytes: _bytes,
+                  assetType: template?.type,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  '${template?.labelAr ?? template?.type ?? 'أصل'} • '
+                  '${_preparedWidth ?? '—'}×${_preparedHeight ?? '—'}',
+                  style: const TextStyle(
+                    color: Colors.white60,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('إغلاق'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showSmartPresetPicker() async {
+    if (_assets.isEmpty) {
+      setState(() => _message = 'سجل الأصول فارغ حاليًا.');
+      return;
+    }
+    var query = '';
+    final selected = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF100B17),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) {
+          final items = _assets.where((asset) {
+            if (query.isEmpty) return true;
+            final source = _assetSource(asset);
+            final haystack = <String>[
+              (asset['assetKey'] ?? '').toString(),
+              (source['fileName'] ?? asset['fileName'] ?? '').toString(),
+              (source['fullPath'] ?? asset['fullPath'] ?? '').toString(),
+            ].join(' ').toLowerCase();
+            return haystack.contains(query);
+          }).take(60).toList(growable: false);
+          return SafeArea(
+            child: FractionallySizedBox(
+              heightFactor: .82,
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  children: [
+                    const Text(
+                      'Smart Preset — اختر أصلًا معروفًا',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      autofocus: true,
+                      onChanged: (value) => setSheetState(
+                        () => query = value.trim().toLowerCase(),
+                      ),
+                      decoration: const InputDecoration(
+                        hintText: 'Asset Key / File / Path',
+                        prefixIcon: Icon(Icons.search_rounded),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: items.length,
+                        itemBuilder: (_, index) {
+                          final asset = items[index];
+                          final source = _assetSource(asset);
+                          return ListTile(
+                            leading: _assetThumbnail(asset, size: 44),
+                            title: Text(
+                              (asset['assetKey'] ?? '').toString(),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              textDirection: TextDirection.ltr,
+                            ),
+                            subtitle: Text(
+                              (source['fileName'] ?? asset['fileName'] ?? '')
+                                  .toString(),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textDirection: TextDirection.ltr,
+                            ),
+                            onTap: () => Navigator.pop(sheetContext, asset),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    if (selected != null && mounted) {
+      _beginEditAsset(selected);
+      setState(() => _message =
+          'تم تعبئة البيانات تلقائيًا من الأصل المعروف.');
+    }
+  }
+
+  Widget _buildStickyStudioActions() {
+    return Material(
+      color: const Color(0xFF100B17),
+      elevation: 12,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+          child: Row(
+            children: [
+              IconButton.filledTonal(
+                tooltip: 'معاينة',
+                onPressed: _busy ? null : _showPreparedPreview,
+                icon: const Icon(Icons.visibility_outlined),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _busy ? null : () => _upload(publish: false),
+                  icon: const Icon(Icons.save_outlined),
+                  label: const Text('مسودة'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: _busy ? null : () => _upload(publish: true),
+                  icon: _busy
+                      ? const SizedBox(
+                          width: 17,
+                          height: 17,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.publish_outlined),
+                  label: Text(_busy ? 'جارٍ...' : 'نشر'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<bool> _confirmPublishImpact() async {
     if (!_isEditing) return true;
     final template = _selectedTemplate;
@@ -3057,32 +3238,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
             ),
             const SizedBox(height: 10),
           ],
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _busy ? null : () => _upload(publish: false),
-                  icon: const Icon(Icons.save_outlined),
-                  label: const Text('حفظ مسودة'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: _busy ? null : () => _upload(publish: true),
-                  icon: _busy
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.publish_outlined),
-                  label: Text(_busy ? 'جارٍ التنفيذ...' : 'نشر'),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 7),
+          const SizedBox(height: 4),
           const Text(
             'حفظ المسودة لا يغيّر النسخة الحية. التحديث الفعلي يتم عند النشر.',
             textAlign: TextAlign.center,
@@ -4051,6 +4207,8 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
       },
       child: Scaffold(
         appBar: AppBar(title: const Text('Shadow Asset Studio')),
+        bottomNavigationBar:
+            _showStudioForm ? _buildStickyStudioActions() : null,
         body: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
           future: controlFirestore.collection('users').doc(uid).get(),
           builder: (context, snapshot) {
