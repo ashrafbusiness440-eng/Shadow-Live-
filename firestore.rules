@@ -187,6 +187,8 @@ service cloud.firestore {
         'fancyIdAssignmentId',
         'fancyIdExpiresAt',
         'fancyIdUpdatedAt',
+        'vipProfileFrameLevel',
+        'frameCustomizationChangedAt',
         'publicBadges',
         'totalGiftsSent',
         'totalGiftsReceived',
@@ -294,6 +296,8 @@ service cloud.firestore {
         && !('fancyIdAssignmentId' in request.resource.data)
         && !('fancyIdExpiresAt' in request.resource.data)
         && !('fancyIdUpdatedAt' in request.resource.data)
+        && !('vipProfileFrameLevel' in request.resource.data)
+        && !('frameCustomizationChangedAt' in request.resource.data)
         && !('publicBadges' in request.resource.data)
         && !('totalGiftsSent' in request.resource.data)
         && !('totalGiftsReceived' in request.resource.data)
