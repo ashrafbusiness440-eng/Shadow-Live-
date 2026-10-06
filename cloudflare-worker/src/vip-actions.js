@@ -60,6 +60,214 @@ async function actor(request, env) {
   return decoded;
 }
 
+const VIP_HISTORY_PAGE_SIZE = 20;
+const VIP_HISTORY_MAX_PAGE_SIZE = 20;
+
+function vipPolicyPayload(policy) {
+  return {
+    maxLevel: 10,
+    maxGrowthPoints: Number(policy.maxGrowthPoints || 0),
+    paidRechargeGrowthPerCoin: Number(policy.paidRechargeGrowthPerCoin || 1),
+    purchasedGrowthPerCoin: Number(policy.purchasedGrowthPerCoin || 3),
+    levels: Array.from({ length: 10 }, (_, index) => ({
+      level: index + 1,
+      growthRequirement: Number(policy.growthThresholds?.[index] || 0),
+      maintenanceRequired: Number(policy.maintenanceThresholds?.[index] || 0),
+      validityDays: Number(policy.validityDays?.[index] || 0),
+      downgradeRetentionBps: Number(policy.downgradeRetentionBps?.[index] || 0),
+    })),
+    quickPurchaseOffers: (Array.isArray(policy.quickPurchaseOffers)
+      ? policy.quickPurchaseOffers
+      : []
+    )
+      .filter((item) => item?.enabled !== false)
+      .map((item) => ({
+        id: clean(item.id),
+        labelAr: clean(item.labelAr),
+        growthPoints: Number(item.growthPoints || 0),
+        baseCoinCost: Number(item.baseCoinCost || 0),
+        finalCoinCost: Number(item.finalCoinCost || 0),
+        discountBps: Number(item.discountBps || 0),
+        sortOrder: Number(item.sortOrder || 0),
+      })),
+  };
+}
+
+function encodeHistoryCursor(value) {
+  const raw = JSON.stringify(value || {});
+  return btoa(raw)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+function decodeHistoryCursor(value) {
+  const token = clean(value);
+  if (!token) return { growth: null, audit: null };
+  if (!/^[A-Za-z0-9_-]{1,1200}$/.test(token)) {
+    throw new ApiError("invalid_history_cursor", 400);
+  }
+  try {
+    const padded = token.replace(/-/g, "+").replace(/_/g, "/") +
+      "=".repeat((4 - token.length % 4) % 4);
+    const parsed = JSON.parse(atob(padded));
+    const cursor = (item) => {
+      if (!item || typeof item !== "object") return null;
+      const createdAtMs = Number(item.createdAtMs || 0);
+      const path = clean(item.path);
+      if (
+        !Number.isSafeInteger(createdAtMs) ||
+        createdAtMs <= 0 ||
+        !/^[A-Za-z0-9_./-]{1,400}$/.test(path)
+      ) {
+        return null;
+      }
+      return { createdAtMs, path };
+    };
+    return {
+      growth: cursor(parsed.growth),
+      audit: cursor(parsed.audit),
+    };
+  } catch (_) {
+    throw new ApiError("invalid_history_cursor", 400);
+  }
+}
+
+function historyRowCursor(row) {
+  const createdAtMs = timestampToEpochMs(row?.data?.createdAt);
+  return createdAtMs > 0 && clean(row?.path)
+    ? { createdAtMs, path: clean(row.path) }
+    : null;
+}
+
+function mapGrowthHistoryRow(row) {
+  const data = row?.data || {};
+  const createdAtMs = timestampToEpochMs(data.createdAt);
+  if (createdAtMs <= 0) return null;
+  return {
+    source: "growth",
+    sourcePath: clean(row.path),
+    eventType: clean(data.eventType || "growth"),
+    level: Number(data.effectiveVipAfter || data.earnedVipAfter || 0),
+    earnedVipBefore: Number(data.earnedVipBefore || 0),
+    earnedVipAfter: Number(data.earnedVipAfter || 0),
+    effectiveVipAfter: Number(data.effectiveVipAfter || 0),
+    deltaGrowthPoints: Number(data.deltaGrowthPoints || 0),
+    growthPointsBefore: Number(data.growthPointsBefore || 0),
+    growthPointsAfter: Number(data.growthPointsAfter || 0),
+    coinCost: Number(data.coinCost || 0),
+    baseCoins: Number(data.baseCoins || 0),
+    bonusCoinsExcluded: Number(data.bonusCoinsExcluded || 0),
+    createdAtMs,
+  };
+}
+
+function mapAuditHistoryRow(row) {
+  const data = row?.data || {};
+  const action = clean(data.action);
+  if (!action || action === "buyVipGrowth") return null;
+  const createdAtMs = timestampToEpochMs(data.createdAt || data.timestamp);
+  if (createdAtMs <= 0) return null;
+  return {
+    source: "audit",
+    sourcePath: clean(row.path),
+    eventType: action,
+    level: Number(
+      data.newVipLevel ||
+      data.newAdminGrantVipLevel ||
+      data.vipLevel ||
+      data.trialVipLevel ||
+      0
+    ),
+    oldVipLevel: Number(data.oldVipLevel || data.oldAdminGrantVipLevel || 0),
+    newVipLevel: Number(data.newVipLevel || data.newAdminGrantVipLevel || 0),
+    growthPoints: Number(data.growthPoints || 0),
+    coinsSpent: Number(data.coinsSpent || 0),
+    trialExpiresAtMs: timestampToEpochMs(data.trialExpiresAt),
+    adminGrantExpiresAtMs: timestampToEpochMs(data.adminGrantExpiresAt),
+    createdAtMs,
+  };
+}
+
+export async function vipHistory(db, uid, body = {}) {
+  const requested = Number(body.pageSize || VIP_HISTORY_PAGE_SIZE);
+  const pageSize = Number.isSafeInteger(requested)
+    ? Math.max(1, Math.min(VIP_HISTORY_MAX_PAGE_SIZE, requested))
+    : VIP_HISTORY_PAGE_SIZE;
+  const cursor = decodeHistoryCursor(body.cursor);
+  const sourceLimit = pageSize + 1;
+
+  const startAfter = (item) => item
+    ? [{ value: new Date(item.createdAtMs) }, { referencePath: item.path }]
+    : [];
+
+  const [growthRows, auditRows] = await Promise.all([
+    db.runQuery("vip_growth_history", {
+      filters: [{ field: "userId", op: "==", value: uid }],
+      orderBy: [
+        { field: "createdAt", direction: "desc" },
+        { field: "__name__", direction: "desc" },
+      ],
+      limit: sourceLimit,
+      startAfter: startAfter(cursor.growth),
+    }),
+    db.runQuery("vip_audit_logs", {
+      filters: [{ field: "targetUserId", op: "==", value: uid }],
+      orderBy: [
+        { field: "createdAt", direction: "desc" },
+        { field: "__name__", direction: "desc" },
+      ],
+      limit: sourceLimit,
+      startAfter: startAfter(cursor.audit),
+    }),
+  ]);
+
+  const candidates = [
+    ...growthRows.map((row) => ({
+      source: "growth",
+      row,
+      event: mapGrowthHistoryRow(row),
+    })),
+    ...auditRows.map((row) => ({
+      source: "audit",
+      row,
+      event: mapAuditHistoryRow(row),
+    })),
+  ]
+    .filter((item) => item.event)
+    .sort((a, b) =>
+      b.event.createdAtMs - a.event.createdAtMs ||
+      b.event.sourcePath.localeCompare(a.event.sourcePath)
+    );
+
+  const selected = candidates.slice(0, pageSize);
+  let growthCursor = cursor.growth;
+  let auditCursor = cursor.audit;
+  for (const item of selected) {
+    const next = historyRowCursor(item.row);
+    if (!next) continue;
+    if (item.source === "growth") growthCursor = next;
+    if (item.source === "audit") auditCursor = next;
+  }
+
+  const consumedGrowth = selected.filter((item) => item.source === "growth").length;
+  const consumedAudit = selected.filter((item) => item.source === "audit").length;
+  const hasMore =
+    candidates.length > selected.length ||
+    growthRows.length > consumedGrowth ||
+    auditRows.length > consumedAudit;
+
+  return {
+    ok: true,
+    events: selected.map((item) => item.event),
+    nextCursor: hasMore && selected.length
+      ? encodeHistoryCursor({ growth: growthCursor, audit: auditCursor })
+      : null,
+    hasMore: hasMore && selected.length > 0,
+    pageSize,
+  };
+}
+
 function summaryPayload(policy, state, user = {}) {
   const progress = vipProgress(policy, state.growthPoints);
   const currentLevel = state.effectiveVipLevel;
@@ -87,6 +295,7 @@ function summaryPayload(policy, state, user = {}) {
     coins: Math.max(0, Number(user.coins ?? user.balance ?? 0) || 0),
     purchaseGrowthPerCoin: policy.purchasedGrowthPerCoin,
     paidRechargeGrowthPerCoin: policy.paidRechargeGrowthPerCoin,
+    policy: vipPolicyPayload(policy),
     canHideRankingLists: currentLevel >= 7,
     hideRankingLists: currentLevel >= 7 && user.hideRankingLists === true,
     canHideProfileVisits: currentLevel >= 9,
@@ -768,6 +977,9 @@ export async function vipActions(request, env) {
         ok: true,
         ...(await vipSummary(db, decoded.sub)),
       });
+    }
+    if (action === "history") {
+      return json(request, env, await vipHistory(db, decoded.sub, body));
     }
     if (action === "buyGrowth") {
       const result = await buyVipGrowth(db, decoded.sub, body);
