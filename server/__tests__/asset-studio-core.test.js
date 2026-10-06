@@ -241,6 +241,8 @@ test("asset studio UX exposes safe replace, preview, history and batch guardrail
   assert.equal(control.includes("Future<void>.delayed(Duration.zero)"), true);
   assert.equal(control.includes("cacheWidth:"), true);
   assert.equal(control.includes("cacheHeight:"), true);
+  assert.equal(control.includes("ListView.builder("), true);
+  assert.equal(control.includes("cacheExtent: 180"), true);
   assert.equal(control.includes("PopScope("), true);
   assert.equal(control.includes("readOnly: _isEditing && !_unlockIdentityFields"), true);
   assert.equal(control.includes("_imageHasRealTransparency"), true);
