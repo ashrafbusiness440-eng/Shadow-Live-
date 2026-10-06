@@ -83,6 +83,8 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
   int _registryRequestGeneration = 0;
   final Set<String> _favoriteAssetKeys = <String>{};
   final List<String> _recentAssetKeys = <String>[];
+  final Set<String> _favoriteTemplateIds = <String>{};
+  final List<String> _recentTemplateIds = <String>[];
   Map<String, dynamic>? _activeManifest;
   List<Map<String, dynamic>> _batchResults = const [];
   String? _batchProgressLabel;
@@ -164,6 +166,35 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     }
   }
 
+  void _recordRecentTemplate(String id) {
+    final value = id.trim();
+    if (value.isEmpty) return;
+    _recentTemplateIds.remove(value);
+    _recentTemplateIds.insert(0, value);
+    if (_recentTemplateIds.length > 6) {
+      _recentTemplateIds.removeRange(6, _recentTemplateIds.length);
+    }
+  }
+
+  void _toggleFavoriteTemplate(String id) {
+    final value = id.trim();
+    if (value.isEmpty) return;
+    setState(() {
+      if (_favoriteTemplateIds.contains(value)) {
+        _favoriteTemplateIds.remove(value);
+      } else {
+        _favoriteTemplateIds.add(value);
+      }
+    });
+  }
+
+  ControlAssetStudioTemplate? _templateById(String id) {
+    for (final template in _templates) {
+      if (template.id == id) return template;
+    }
+    return null;
+  }
+
   void _resetPreparedFile() {
     _sourceBytes = null;
     _bytes = null;
@@ -207,6 +238,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
       if (templateId.isNotEmpty &&
           _templates.any((template) => template.id == templateId)) {
         _selectedTemplateId = templateId;
+        _recordRecentTemplate(templateId);
       }
       _selectedChannels
         ..clear()
@@ -467,6 +499,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
 
   void _applyTemplate(ControlAssetStudioTemplate template) {
     _selectedTemplateId = template.id;
+    _recordRecentTemplate(template.id);
     final currentDirectory = ControlAssetPolicy.normalizeDirectory(_directory.text);
     if (!template.allowsDirectory(currentDirectory) && template.directories.isNotEmpty) {
       _directory.text = template.directories.first;
@@ -3476,6 +3509,85 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                     });
                   },
           ),
+          if (template != null ||
+              _favoriteTemplateIds.isNotEmpty ||
+              _recentTemplateIds.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                if (template != null)
+                  IconButton(
+                    tooltip: _favoriteTemplateIds.contains(template.id)
+                        ? 'إزالة القالب من المفضلة'
+                        : 'إضافة القالب إلى المفضلة',
+                    onPressed: _busy
+                        ? null
+                        : () => _toggleFavoriteTemplate(template.id),
+                    icon: Icon(
+                      _favoriteTemplateIds.contains(template.id)
+                          ? Icons.star_rounded
+                          : Icons.star_border_rounded,
+                      color: _favoriteTemplateIds.contains(template.id)
+                          ? const Color(0xFFFFD54A)
+                          : Colors.white38,
+                    ),
+                  ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        ..._favoriteTemplateIds.take(4).map((id) {
+                          final item = _templateById(id);
+                          if (item == null) return const SizedBox.shrink();
+                          return Padding(
+                            padding: const EdgeInsets.only(left: 6),
+                            child: ActionChip(
+                              avatar: const Icon(
+                                Icons.star_rounded,
+                                size: 15,
+                                color: Color(0xFFFFD54A),
+                              ),
+                              label: Text(item.labelAr),
+                              onPressed: _busy
+                                  ? null
+                                  : () => setState(() {
+                                        _applyTemplate(item);
+                                        _message = null;
+                                      }),
+                            ),
+                          );
+                        }),
+                        ..._recentTemplateIds
+                            .where((id) => !_favoriteTemplateIds.contains(id))
+                            .take(3)
+                            .map((id) {
+                          final item = _templateById(id);
+                          if (item == null) return const SizedBox.shrink();
+                          return Padding(
+                            padding: const EdgeInsets.only(left: 6),
+                            child: ActionChip(
+                              avatar: const Icon(
+                                Icons.history_rounded,
+                                size: 15,
+                              ),
+                              label: Text(item.labelAr),
+                              onPressed: _busy
+                                  ? null
+                                  : () => setState(() {
+                                        _applyTemplate(item);
+                                        _message = null;
+                                      }),
+                            ),
+                          );
+                        }),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
           if (template != null) ...[
             const SizedBox(height: 8),
             ExpansionTile(
