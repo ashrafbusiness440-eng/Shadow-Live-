@@ -56,6 +56,9 @@ export const VIP_ENTITLEMENT_LEVELS = Object.freeze({
   profileFrame: 3,
   animatedAvatar: 4,
   vipGiftVisual: 4,
+  hideNobleLevel: 4,
+  hideGameWinBanner: 4,
+  hideBetWinNotification: 4,
   dataCard: 5,
   profileBackground: 5,
   hideOnlineStatus: 5,
@@ -82,6 +85,10 @@ export function vipEntitlementsFromUser(user = {}, nowMs = Date.now()) {
     profileFrame: level >= VIP_ENTITLEMENT_LEVELS.profileFrame,
     animatedAvatar: level >= VIP_ENTITLEMENT_LEVELS.animatedAvatar,
     vipGiftVisual: level >= VIP_ENTITLEMENT_LEVELS.vipGiftVisual,
+    hideNobleLevel: level >= VIP_ENTITLEMENT_LEVELS.hideNobleLevel,
+    hideGameWinBanner: level >= VIP_ENTITLEMENT_LEVELS.hideGameWinBanner,
+    hideBetWinNotification:
+      level >= VIP_ENTITLEMENT_LEVELS.hideBetWinNotification,
     dataCard: level >= VIP_ENTITLEMENT_LEVELS.dataCard,
     profileBackground: level >= VIP_ENTITLEMENT_LEVELS.profileBackground,
     hideOnlineStatus: level >= VIP_ENTITLEMENT_LEVELS.hideOnlineStatus,
@@ -97,6 +104,22 @@ export function vipEntitlementsFromUser(user = {}, nowMs = Date.now()) {
     muteProtection: level >= VIP_ENTITLEMENT_LEVELS.muteProtection,
     nameEffect: level >= VIP_ENTITLEMENT_LEVELS.nameEffect,
     premiumGiftVisual: level >= VIP_ENTITLEMENT_LEVELS.premiumGiftVisual,
+  };
+}
+
+export function vip4PrivacyPreferencesFromUser(
+  user = {},
+  nowMs = Date.now(),
+) {
+  const entitlements = vipEntitlementsFromUser(user, nowMs);
+  return {
+    hideNobleLevel:
+      entitlements.hideNobleLevel && user.hideNobleLevel === true,
+    hideGameWinBanner:
+      entitlements.hideGameWinBanner && user.hideGameWinBanner === true,
+    hideBetWinNotification:
+      entitlements.hideBetWinNotification &&
+      user.hideBetWinNotification === true,
   };
 }
 
