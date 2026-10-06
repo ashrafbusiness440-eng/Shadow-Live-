@@ -62,6 +62,13 @@ async function actor(request, env) {
 
 const VIP_HISTORY_PAGE_SIZE = 20;
 const VIP_HISTORY_MAX_PAGE_SIZE = 20;
+const VIP_HISTORY_AUDIT_ACTIONS = Object.freeze([
+  "grantVip10TrialCards",
+  "giftVipTrialCard",
+  "redeemVipTrialCard",
+  "publishVip10GlobalEntry",
+  "manageVipLevels",
+]);
 
 function vipPolicyPayload(policy) {
   return {
@@ -212,7 +219,10 @@ export async function vipHistory(db, uid, body = {}) {
       startAfter: startAfter(cursor.growth),
     }),
     db.runQuery("vip_audit_logs", {
-      filters: [{ field: "targetUserId", op: "==", value: uid }],
+      filters: [
+        { field: "targetUserId", op: "==", value: uid },
+        { field: "action", op: "in", value: VIP_HISTORY_AUDIT_ACTIONS },
+      ],
       orderBy: [
         { field: "createdAt", direction: "desc" },
         { field: "__name__", direction: "desc" },
