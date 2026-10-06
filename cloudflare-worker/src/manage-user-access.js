@@ -22,6 +22,7 @@ const LEVEL_CAPABILITIES = new Set([
   "manageWealthLevel",
   "manageAttractionLevel",
   "manageGameLevel",
+  "manageVipLevels",
 ]);
 
 const ALLOWED_CAPABILITIES = new Set([
@@ -55,6 +56,7 @@ const ALLOWED_CAPABILITIES = new Set([
   "manageAgencyPackages",
   "grantAgencyPackage",
   "manageVip",
+  "manageVipLevels",
   "manageSpecialIds",
   "manageIds",
   "manageStore",
@@ -78,6 +80,17 @@ function normalizeCapabilities(value) {
   return next;
 }
 
+function normalizeAllowedVipGrantLevels(value) {
+  if (!Array.isArray(value) || value.length > 10) {
+    throw new ApiError("invalid_vip_grant_levels", 400);
+  }
+  const levels = value.map(Number);
+  if (levels.some((level) => !Number.isInteger(level) || level < 1 || level > 10)) {
+    throw new ApiError("invalid_vip_grant_levels", 400);
+  }
+  return [...new Set(levels)].sort((a, b) => a - b);
+}
+
 async function execute(db, actorPayload, body) {
   const actorUid = clean(actorPayload?.sub);
   const targetUid = clean(body.targetUid);
@@ -91,6 +104,13 @@ async function execute(db, actorPayload, body) {
   ) {
     throw new ApiError("invalid_level_capability_role", 400);
   }
+  const hasRequestedVipGrantLevels = Object.prototype.hasOwnProperty.call(
+    body,
+    "allowedVipGrantLevels",
+  );
+  const requestedVipGrantLevels = hasRequestedVipGrantLevels
+    ? normalizeAllowedVipGrantLevels(body.allowedVipGrantLevels)
+    : null;
   const reason = clean(body.reason);
   const key = clean(body.idempotencyKey);
 
@@ -109,7 +129,7 @@ async function execute(db, actorPayload, body) {
       if (actorSnap.exists) {
         assertUserDocumentSessionState(actorPayload, actor);
       }
-      if (!actorSnap.exists || actor.role !== "owner" || actor.adminEnabled !== true) {
+      if (!actorSnap.exists || actor.role !== "owner") {
         await db.rollback(transaction);
         throw new ApiError("forbidden", 403);
       }
@@ -138,12 +158,33 @@ async function execute(db, actorPayload, body) {
       const beforeCapabilities = Array.isArray(target.capabilities)
         ? [...new Set(target.capabilities.map(clean).filter(Boolean))].sort()
         : [];
+      const beforeAllowedVipGrantLevels = (() => {
+        const raw = Array.isArray(target.allowedVipGrantLevels)
+          ? target.allowedVipGrantLevels
+          : [];
+        const levels = raw.map(Number).filter(
+          (level) => Number.isInteger(level) && level >= 1 && level <= 10,
+        );
+        return [...new Set(levels)].sort((a, b) => a - b);
+      })();
+      const vipRoleAllowed = role === "admin" || role === "super_admin";
+      const hasVipCapability =
+        vipRoleAllowed && capabilities.includes("manageVipLevels");
+      const allowedVipGrantLevels = hasVipCapability
+        ? (requestedVipGrantLevels ?? beforeAllowedVipGrantLevels)
+        : [];
       const before = {
         role: clean(target.role || "user") || "user",
         adminEnabled: target.adminEnabled === true,
         capabilities: beforeCapabilities,
+        allowedVipGrantLevels: beforeAllowedVipGrantLevels,
       };
-      const after = { role, adminEnabled, capabilities };
+      const after = {
+        role,
+        adminEnabled,
+        capabilities,
+        allowedVipGrantLevels,
+      };
       const beforeSet = new Set(beforeCapabilities);
       const afterSet = new Set(capabilities);
       const capabilityChanges = [...new Set([
@@ -165,13 +206,20 @@ async function execute(db, actorPayload, body) {
         role,
         adminEnabled,
         capabilities,
+        allowedVipGrantLevels,
       };
 
       await db.commit(transaction, [
         db.writeUpdate(
           `users/${targetUid}`,
-          { role, adminEnabled, capabilities, updatedAt },
-          ["role", "adminEnabled", "capabilities", "updatedAt"],
+          { role, adminEnabled, capabilities, allowedVipGrantLevels, updatedAt },
+          [
+            "role",
+            "adminEnabled",
+            "capabilities",
+            "allowedVipGrantLevels",
+            "updatedAt",
+          ],
         ),
         db.writeCreate(`admin_audit_logs/admin_${key}`, {
           actorUid,
@@ -182,6 +230,11 @@ async function execute(db, actorPayload, body) {
           before,
           after,
           capabilityChanges,
+          actorId: actorUid,
+          targetAdminId: targetUid,
+          oldAllowedLevels: beforeAllowedVipGrantLevels,
+          newAllowedLevels: allowedVipGrantLevels,
+          timestamp: updatedAt,
           operationId: key,
           createdAt: updatedAt,
         }),
@@ -250,6 +303,9 @@ export async function manageUserAccess(request, env) {
     }
 
     normalizeCapabilities(body.capabilities);
+    if (Object.prototype.hasOwnProperty.call(body, "allowedVipGrantLevels")) {
+      normalizeAllowedVipGrantLevels(body.allowedVipGrantLevels);
+    }
     const result = await execute(firestoreClient(env), decoded, body);
     return json(request, env, result, 200);
   } catch (error) {
@@ -269,4 +325,5 @@ export async function manageUserAccess(request, env) {
 export const manageUserAccessInternals = Object.freeze({
   execute,
   normalizeCapabilities,
+  normalizeAllowedVipGrantLevels,
 });
