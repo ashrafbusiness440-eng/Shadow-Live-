@@ -233,7 +233,7 @@ class _VipInformationCenterScreenState
     final policy = _summary.policy;
     final offers = policy?.quickPurchaseOffers ?? const <VipQuickPurchaseOffer>[];
     final max = _summary.maxGrowthPoints <= 0 ? 1 : _summary.maxGrowthPoints;
-    final progress = (_summary.growthPoints / max).clamp(0.0, 1.0);
+    final progress = (_summary.growthPoints / max).clamp(0.0, 1.0).toDouble();
     return ListView(
       padding: const EdgeInsets.all(14),
       children: <Widget>[
