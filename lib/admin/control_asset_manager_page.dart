@@ -983,6 +983,311 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     }
   }
 
+  Future<Map<String, dynamic>> _loadAssetInsight(
+    String assetKey,
+    String include,
+  ) async {
+    final uri = _endpoint.replace(
+      queryParameters: {
+        'assetKey': assetKey,
+        'include': include,
+      },
+    );
+    final response = await http.get(
+      uri,
+      headers: {'authorization': 'Bearer ${await _token()}'},
+    );
+    final decoded =
+        response.body.isEmpty ? <String, dynamic>{} : jsonDecode(response.body);
+    final body = decoded is Map<String, dynamic>
+        ? decoded
+        : <String, dynamic>{};
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        body['ok'] != true) {
+      throw StateError(
+        'تعذر تحميل $include: ${body['code'] ?? response.statusCode}',
+      );
+    }
+    return body;
+  }
+
+  Future<void> _rollbackPreviousVersion(
+    Map<String, dynamic> asset,
+    BuildContext dialogContext,
+  ) async {
+    final key = (asset['assetKey'] ?? '').toString().trim();
+    if (key.isEmpty || _busy) return;
+    final confirmed = await showDialog<bool>(
+          context: dialogContext,
+          builder: (confirmContext) => AlertDialog(
+            title: const Text('استرجاع النسخة السابقة؟'),
+            content: Text(
+              'سيتم نشر النسخة السابقة من $key تحت نفس المفتاح والمسار. '
+              'النسخة الحالية ستبقى محفوظة في Git history ويمكن الرجوع لها لاحقًا.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(confirmContext, false),
+                child: const Text('إلغاء'),
+              ),
+              FilledButton.icon(
+                onPressed: () => Navigator.pop(confirmContext, true),
+                icon: const Icon(Icons.history_rounded),
+                label: const Text('استرجاع'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed) return;
+
+    Navigator.pop(dialogContext);
+    setState(() {
+      _busy = true;
+      _message = 'جارٍ استرجاع النسخة السابقة والتحقق منها...';
+    });
+    try {
+      final response = await http.post(
+        _endpoint,
+        headers: {
+          'authorization': 'Bearer ${await _token()}',
+          'content-type': 'application/json',
+        },
+        body: jsonEncode({
+          'action': 'rollback_previous',
+          'assetKey': key,
+          'reason': 'استرجاع النسخة السابقة من Shadow Asset Studio',
+          'idempotencyKey':
+              'asset_rollback_${DateTime.now().microsecondsSinceEpoch}',
+        }),
+      );
+      final decoded = response.body.isEmpty
+          ? <String, dynamic>{}
+          : jsonDecode(response.body);
+      final body = decoded is Map<String, dynamic>
+          ? decoded
+          : <String, dynamic>{};
+      if (response.statusCode >= 200 &&
+          response.statusCode < 300 &&
+          body['ok'] == true) {
+        final sha = (body['contentSha'] ?? '').toString();
+        final verified =
+            sha.isNotEmpty ? await _verifyPublishedAsset(key, sha) : false;
+        if (!mounted) return;
+        setState(() {
+          _message = verified
+              ? 'تم استرجاع النسخة السابقة والتحقق من النسخة الحية.'
+              : 'تم الاسترجاع، لكن التحقق الحي لم يكتمل.';
+          _lastSuccess = {
+            'assetKey': key,
+            'fullPath': body['fullPath'],
+            'status': 'published',
+            'verified': verified,
+            'replaced': true,
+            'rawUrl': body['rawUrl'],
+            'contentSha': body['contentSha'],
+          };
+        });
+      } else {
+        final code = (body['code'] ?? 'http_${response.statusCode}').toString();
+        setState(() {
+          _message = switch (code) {
+            'asset_history_not_found' =>
+              'لا توجد نسخة سابقة متاحة لهذا الأصل.',
+            'asset_history_content_missing' =>
+              'تعذر قراءة ملف النسخة السابقة من Git history.',
+            'asset_not_published' =>
+              'الأصل ليس منشورًا حاليًا ولا يمكن عمل Rollback.',
+            _ => 'تعذر استرجاع النسخة السابقة: $code',
+          };
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _message = 'تعذر استرجاع النسخة السابقة: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _showAssetInsights(Map<String, dynamic> asset) async {
+    final key = (asset['assetKey'] ?? '').toString().trim();
+    if (key.isEmpty) return;
+    setState(() => _busy = true);
+    Map<String, dynamic>? historyBody;
+    Map<String, dynamic>? usageBody;
+    String? error;
+    try {
+      final results = await Future.wait([
+        _loadAssetInsight(key, 'history'),
+        _loadAssetInsight(key, 'usage'),
+      ]);
+      historyBody = results[0];
+      usageBody = results[1];
+    } catch (e) {
+      error = e.toString();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+    if (!mounted) return;
+
+    final history = historyBody?['history'] is Map
+        ? Map<String, dynamic>.from(historyBody!['history'] as Map)
+        : <String, dynamic>{};
+    final commits = history['commits'] is List
+        ? List<Map<String, dynamic>>.from(
+            (history['commits'] as List).whereType<Map>().map(
+                  (e) => Map<String, dynamic>.from(e),
+                ),
+          )
+        : <Map<String, dynamic>>[];
+    final audit = history['audit'] is List
+        ? List<Map<String, dynamic>>.from(
+            (history['audit'] as List).whereType<Map>().map(
+                  (e) => Map<String, dynamic>.from(e),
+                ),
+          )
+        : <Map<String, dynamic>>[];
+    final usage = usageBody?['usage'] is Map
+        ? Map<String, dynamic>.from(usageBody!['usage'] as Map)
+        : <String, dynamic>{};
+    final refs = usage['references'] is List
+        ? List<Map<String, dynamic>>.from(
+            (usage['references'] as List).whereType<Map>().map(
+                  (e) => Map<String, dynamic>.from(e),
+                ),
+          )
+        : <Map<String, dynamic>>[];
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('استخدام الأصل وسجل النسخ'),
+        content: SizedBox(
+          width: 520,
+          child: error != null
+              ? Text(error!)
+              : SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SelectableText(
+                        key,
+                        textDirection: TextDirection.ltr,
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        'أماكن الاستخدام الفعلية في الكود (${usage['totalReferences'] ?? refs.length})',
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                      const SizedBox(height: 6),
+                      if (refs.isEmpty)
+                        const Text(
+                          'لم يُعثر على مرجع نصي مباشر. قد يكون الاستخدام ديناميكيًا عبر Registry.',
+                          style: TextStyle(color: Colors.white60, fontSize: 11),
+                        )
+                      else
+                        ...refs.take(12).map(
+                              (ref) => ListTile(
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                leading: const Icon(
+                                  Icons.code_rounded,
+                                  size: 18,
+                                ),
+                                title: SelectableText(
+                                  (ref['path'] ?? '').toString(),
+                                  textDirection: TextDirection.ltr,
+                                  style: const TextStyle(fontSize: 11),
+                                ),
+                              ),
+                            ),
+                      const Divider(height: 26),
+                      Text(
+                        'Version History (${commits.length})',
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                      if (commits.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 6),
+                          child: Text(
+                            'لا يوجد Git history متاح لهذا الملف.',
+                            style: TextStyle(color: Colors.white60),
+                          ),
+                        )
+                      else
+                        ...commits.take(8).toList().asMap().entries.map(
+                              (entry) => ListTile(
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                leading: CircleAvatar(
+                                  radius: 12,
+                                  child: Text(
+                                    '${entry.key + 1}',
+                                    style: const TextStyle(fontSize: 9),
+                                  ),
+                                ),
+                                title: Text(
+                                  (entry.value['message'] ?? '').toString(),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 11),
+                                ),
+                                subtitle: Text(
+                                  (entry.value['date'] ?? '').toString(),
+                                  style: const TextStyle(fontSize: 9.5),
+                                ),
+                              ),
+                            ),
+                      const Divider(height: 26),
+                      Text(
+                        'Audit Log (${audit.length})',
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                      ...audit.take(8).map(
+                            (item) => ListTile(
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              leading: const Icon(
+                                Icons.receipt_long_outlined,
+                                size: 18,
+                              ),
+                              title: Text(
+                                (item['reason'] ?? item['action'] ?? '')
+                                    .toString(),
+                                style: const TextStyle(fontSize: 11),
+                              ),
+                              subtitle: Text(
+                                '${item['createdAt'] ?? ''} • ${item['actorUid'] ?? ''}',
+                                style: const TextStyle(fontSize: 9.5),
+                              ),
+                            ),
+                          ),
+                    ],
+                  ),
+                ),
+        ),
+        actions: [
+          if (commits.length >= 2)
+            OutlinedButton.icon(
+              onPressed: _busy
+                  ? null
+                  : () => _rollbackPreviousVersion(asset, dialogContext),
+              icon: const Icon(Icons.history_rounded),
+              label: const Text('استرجاع النسخة السابقة'),
+            ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('إغلاق'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<bool> _confirmPublishImpact() async {
     if (!_isEditing) return true;
     final template = _selectedTemplate;
