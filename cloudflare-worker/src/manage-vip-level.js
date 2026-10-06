@@ -173,16 +173,29 @@ export async function searchVipUsers(db, payload, body) {
     if (registry.exists && mappedUid) uidCandidates.push(mappedUid);
   }
 
-  const profileRows = await db.runQuery("public_profiles", {
-    filters: [{ field: "searchTokens", op: "array-contains", value: query }],
-    limit: 20,
-  }).catch(() => []);
-  for (const row of profileRows) {
-    const uid = clean(row.id);
-    if (uid) uidCandidates.push(uid);
+  if (uidCandidates.length === 0) {
+    const profileRows = await db.runQuery("public_profiles", {
+      filters: [{ field: "searchTokens", op: "array-contains", value: query }],
+      limit: 20,
+    }).catch(() => []);
+    for (const row of profileRows) {
+      const uid = clean(row.id);
+      if (uid) uidCandidates.push(uid);
+    }
   }
 
   const unique = [...new Set(uidCandidates)].slice(0, 20);
+  if (unique.length === 0) {
+    return {
+      ok: true,
+      code: "ok",
+      query: rawQuery,
+      results: [],
+      isOwner: access.isOwner,
+      allowedVipGrantLevels: [...access.allowedVipGrantLevels],
+    };
+  }
+
   const nowMs = Date.now();
   const [policy, snaps] = await Promise.all([
     loadVipPolicy(db),
