@@ -3128,7 +3128,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                 'الحد: ${(template.maxBytes / 1000000).toStringAsFixed(1)} ميغابايت'),
             const SizedBox(height: 10),
             const Text(
-              'Prompt / الوصف الجاهز',
+              'الوصف الجاهز',
               style: TextStyle(
                 color: Color(0xFFD7B85A),
                 fontWeight: FontWeight.w800,
