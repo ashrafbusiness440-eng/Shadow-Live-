@@ -42,6 +42,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
   String? _selectedTemplateId = 'badge.base.v1';
   int? _preparedWidth;
   int? _preparedHeight;
+  bool? _preparedHasAlpha;
   List<ControlAssetStudioTemplate> _templates = const [];
   List<String> _channels = const [
     'store',
@@ -162,6 +163,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     _preparedAnimated = false;
     _preparedWidth = null;
     _preparedHeight = null;
+    _preparedHasAlpha = null;
   }
 
   void _startNewAsset() {
@@ -604,6 +606,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
           _mimeType = _mimeForExtension(extension);
           _preparedWidth = decoded.width;
           _preparedHeight = decoded.height;
+          _preparedHasAlpha = decoded.numChannels == 4;
           _preparedAnimated = true;
           _conversionNote =
               'تم الحفاظ على Animation الأصلية • '
@@ -633,6 +636,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
         _mimeType = _mimeForExtension(extension);
         _preparedWidth = prepared.width;
         _preparedHeight = prepared.height;
+        _preparedHasAlpha = prepared.numChannels == 4;
         _preparedAnimated = false;
         _conversionNote =
             'تجهيز تلقائي حسب اسم الملف → ${_formatLabel(extension)} • '
@@ -1854,10 +1858,26 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     }
     final width = _preparedWidth;
     final height = _preparedHeight;
-    if (width != null && height != null && !template.dimensionsMatch(width, height)) {
+    if (width != null &&
+        height != null &&
+        !template.dimensionsMatch(width, height)) {
       return 'أبعاد الملف لا تطابق Template: ${template.dimensionsLabel}.';
     }
-    if (_reason.text.trim().length < 3) return 'اكتب سببًا مختصرًا للتغيير.';
+    if (template.transparency == 'required' && _preparedHasAlpha != true) {
+      return 'هذا Template يحتاج خلفية شفافة (Alpha).';
+    }
+    if (template.transparency == 'forbidden' && _preparedHasAlpha == true) {
+      return 'هذا Template لا يسمح بالشفافية.';
+    }
+    if (template.motion == 'static' && _preparedAnimated) {
+      return 'هذا Template يقبل أصلًا ثابتًا فقط.';
+    }
+    if (template.motion == 'animated' && !_preparedAnimated) {
+      return 'هذا Template يحتاج أصلًا متحركًا.';
+    }
+    if (_reason.text.trim().length < 3) {
+      return 'اكتب سببًا مختصرًا للتغيير.';
+    }
     return null;
   }
 
@@ -2533,6 +2553,19 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                     size: 16,
                   ),
                   label: Text(_preparedAnimated ? 'متحرك' : 'ثابت'),
+                ),
+                Chip(
+                  avatar: Icon(
+                    _preparedHasAlpha == true
+                        ? Icons.layers_outlined
+                        : Icons.crop_square_rounded,
+                    size: 16,
+                  ),
+                  label: Text(
+                    _preparedHasAlpha == true
+                        ? 'شفافية Alpha'
+                        : 'بدون Alpha',
+                  ),
                 ),
                 Chip(
                   avatar: const Icon(Icons.sd_storage_outlined, size: 16),
