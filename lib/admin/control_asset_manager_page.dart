@@ -1144,14 +1144,24 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
         return;
       }
 
+      final ordered = <Map<String, dynamic>>[
+        for (var offset = 1; offset < assets.length; offset++)
+          assets[(index + offset) % assets.length],
+      ];
       Map<String, dynamic>? nextSpec;
-      for (var offset = 1; offset < assets.length; offset++) {
-        final candidate = assets[(index + offset) % assets.length];
-        if ((candidate['assetKey'] ?? '').toString().trim().isNotEmpty) {
+      for (final candidate in ordered) {
+        final key = (candidate['assetKey'] ?? '').toString().trim();
+        if (key.isEmpty) continue;
+        if (candidate['published'] != true || candidate['hasDraft'] == true) {
           nextSpec = candidate;
           break;
         }
       }
+      nextSpec ??= ordered.cast<Map<String, dynamic>?>().firstWhere(
+            (candidate) =>
+                (candidate?['assetKey'] ?? '').toString().trim().isNotEmpty,
+            orElse: () => null,
+          );
       if (nextSpec == null) return;
       final nextKey = (nextSpec['assetKey'] ?? '').toString().trim();
       final nextAsset = await _fetchAssetByKey(nextKey);
