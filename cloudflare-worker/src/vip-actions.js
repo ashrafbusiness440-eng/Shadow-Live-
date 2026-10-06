@@ -151,13 +151,22 @@ function mapGrowthHistoryRow(row) {
   const data = row?.data || {};
   const createdAtMs = timestampToEpochMs(data.createdAt);
   if (createdAtMs <= 0) return null;
+  const triggerType = clean(data.eventType || "growth");
+  const earnedVipBefore = Number(data.earnedVipBefore || 0);
+  const earnedVipAfter = Number(data.earnedVipAfter || 0);
+  const eventType = earnedVipAfter > earnedVipBefore
+    ? "vip_upgrade"
+    : earnedVipAfter < earnedVipBefore
+      ? "vip_downgrade"
+      : triggerType;
   return {
     source: "growth",
     sourcePath: clean(row.path),
-    eventType: clean(data.eventType || "growth"),
-    level: Number(data.effectiveVipAfter || data.earnedVipAfter || 0),
-    earnedVipBefore: Number(data.earnedVipBefore || 0),
-    earnedVipAfter: Number(data.earnedVipAfter || 0),
+    eventType,
+    triggerType,
+    level: Number(data.effectiveVipAfter || earnedVipAfter || 0),
+    earnedVipBefore,
+    earnedVipAfter,
     effectiveVipAfter: Number(data.effectiveVipAfter || 0),
     deltaGrowthPoints: Number(data.deltaGrowthPoints || 0),
     growthPointsBefore: Number(data.growthPointsBefore || 0),
@@ -278,7 +287,7 @@ export async function vipHistory(db, uid, body = {}) {
   };
 }
 
-function summaryPayload(policy, state, user = {}) {
+function summaryPayload(policy, state, user = {}, nowMs = Date.now()) {
   const progress = vipProgress(policy, state.growthPoints);
   const currentLevel = state.effectiveVipLevel;
   const earnedLevel = state.earnedVipLevel;
@@ -305,6 +314,15 @@ function summaryPayload(policy, state, user = {}) {
     coins: Math.max(0, Number(user.coins ?? user.balance ?? 0) || 0),
     purchaseGrowthPerCoin: policy.purchasedGrowthPerCoin,
     paidRechargeGrowthPerCoin: policy.paidRechargeGrowthPerCoin,
+    serverNowMs: Number(nowMs),
+    effectiveVipExpiresAtMs:
+      state.effectiveVipSource === "progression"
+        ? state.earnedVipExpiresAtMs
+        : state.effectiveVipSource === "admin_grant"
+          ? state.adminGrantExpiresAtMs
+          : state.effectiveVipSource === "trial_card"
+            ? state.trialVipExpiresAtMs
+            : 0,
     policy: vipPolicyPayload(policy),
     canHideRankingLists: currentLevel >= 7,
     hideRankingLists: currentLevel >= 7 && user.hideRankingLists === true,
@@ -352,7 +370,7 @@ export async function vipSummary(db, uid, nowMs = Date.now()) {
     vipStateFromUser(user),
     nowMs,
   );
-  return summaryPayload(policy, state, user);
+  return summaryPayload(policy, state, user, nowMs);
 }
 
 export async function setHideRankingLists(
@@ -859,6 +877,7 @@ export async function buyVipGrowth(db, uid, body, nowMs = Date.now()) {
           policy,
           afterState,
           { ...user, coins: closingCoins, ...trialGrant.userPatch },
+          nowMs,
         ),
         trialCardsGranted: trialGrant.cardIds,
         upgradeBroadcastEvent,
