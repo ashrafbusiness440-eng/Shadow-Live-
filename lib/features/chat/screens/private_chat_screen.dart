@@ -14,6 +14,9 @@ import '../../main/screens/main_shell_screen.dart';
 import '../../profile/services/follow_service.dart';
 import '../../profile/widgets/quick_profile_sheet.dart';
 import '../services/chat_safety_service.dart';
+import '../../vip/utils/vip_cosmetic_policy.dart';
+import '../../vip/widgets/vip_cosmetic_asset.dart';
+import '../../vip/utils/vip_public_state.dart';
 
 class PrivateChatScreen extends StatefulWidget {
   final String conversationId;
@@ -715,6 +718,9 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   Widget _messageBubble(Map<String, dynamic> data) {
     final mine = data['senderId'] == _uid;
     final type = (data['type'] ?? 'text').toString();
+    final vipLevel = type == 'image'
+        ? 0
+        : ((data['vipLevel'] ?? data['senderVipLevel']) as num?)?.toInt() ?? 0;
     Widget content;
     EdgeInsets padding = const EdgeInsets.symmetric(horizontal: 14, vertical: 9);
     if (type == 'image') {
@@ -869,23 +875,58 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     } else {
       content = Text((data['text'] ?? '').toString(), style: const TextStyle(color: Colors.white, height: 1.35));
     }
+    final cosmeticKey = type == 'gift'
+        ? ((data['vipGiftVisualKey'] ?? '').toString().trim().isNotEmpty
+            ? (data['vipGiftVisualKey'] ?? '').toString().trim()
+            : VipCosmeticPolicy.giftVisualKey(vipLevel))
+        : type == 'text'
+            ? VipCosmeticPolicy.chatBubbleKey(vipLevel)
+            : '';
     return Align(
       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         constraints: const BoxConstraints(maxWidth: 300),
         margin: const EdgeInsets.only(bottom: 8),
-        padding: padding,
-        decoration: BoxDecoration(
-          color: mine ? const Color(0xFF6D27D9) : const Color(0xFF151925),
+        child: VipCosmeticSurface(
+          assetKey: cosmeticKey,
           borderRadius: BorderRadius.circular(18),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            content,
-            const SizedBox(height: 4),
-            Text(_time(data['createdAt']), style: const TextStyle(color: Colors.white54, fontSize: 9)),
-          ],
+          assetOpacity: type == 'gift' ? .28 : .34,
+          fallbackDecoration: BoxDecoration(
+            color: mine ? const Color(0xFF6D27D9) : const Color(0xFF151925),
+          ),
+          child: Padding(
+            padding: padding,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                content,
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (vipLevel > 0 && type != 'image') ...[
+                      Icon(
+                        Icons.workspace_premium_rounded,
+                        size: 11,
+                        color: VipCosmeticPolicy.nameColor(
+                          vipLevel,
+                          mine: mine,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                    ],
+                    Text(
+                      _time(data['createdAt']),
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 9,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -1043,6 +1084,8 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                   final data = snapshot.data?.data();
                   final provider = _avatarProvider(data);
                   final name = (data?['displayName'] ?? widget.otherName).toString();
+                  final currentVip =
+                      data == null ? 0 : effectivePublicVipLevel(data);
                   return InkWell(
                     onTap: _openProfile,
                     borderRadius: BorderRadius.circular(12),
@@ -1064,7 +1107,14 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                               name,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                color: VipCosmeticPolicy.nameColor(
+                                  currentVip,
+                                  mine: false,
+                                ),
+                              ),
                             ),
                           ),
                         ],
