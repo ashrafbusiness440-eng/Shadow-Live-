@@ -4433,7 +4433,18 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
               ),
             ),
             const SizedBox(height: 8),
-            ...visible.map(_registryItem),
+            SizedBox(
+              height: visible.length <= 3
+                  ? (visible.length * 165.0).clamp(165.0, 495.0)
+                  : 560,
+              child: ListView.builder(
+                primary: false,
+                itemCount: visible.length,
+                cacheExtent: 180,
+                itemBuilder: (context, index) =>
+                    _registryItem(visible[index]),
+              ),
+            ),
             if (visible.length < filtered.length)
               OutlinedButton.icon(
                 onPressed: () => setState(
