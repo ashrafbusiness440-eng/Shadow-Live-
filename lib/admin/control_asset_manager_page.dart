@@ -254,7 +254,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
       _lastFailedPublishIntent = null;
       _lastSuccess = null;
       _operationId = null;
-      _message = 'تم نسخ إعدادات الأصل. غيّر Asset Key واسم الملف واختر صورة جديدة.';
+      _message = 'تم نسخ إعدادات الأصل. غيّر مفتاح الأصل واسم الملف واختر صورة جديدة.';
     });
   }
 
@@ -305,7 +305,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
           builder: (dialogContext) => AlertDialog(
             title: const Text('فتح الحقول الحساسة؟'),
             content: const Text(
-              'تغيير Asset Key أو المسار أو اسم الملف قد يفصل الأصل عن الأماكن المرتبطة به. استخدمه فقط إذا كنت تقصد نقل الأصل.',
+              'تغيير مفتاح الأصل أو المسار أو اسم الملف قد يفصل الأصل عن الأماكن المرتبطة به. استخدمه فقط إذا كنت تقصد نقل الأصل.',
             ),
             actions: [
               TextButton(
@@ -337,10 +337,10 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
   Future<void> _copyAssetMetadata(Map<String, dynamic> asset) async {
     final source = _assetSource(asset);
     final text = <String>[
-      'Asset Key: ${asset['assetKey'] ?? ''}',
+      'مفتاح الأصل: ${asset['assetKey'] ?? ''}',
       'Path: ${source['fullPath'] ?? asset['fullPath'] ?? ''}',
       'File: ${source['fileName'] ?? asset['fileName'] ?? ''}',
-      'Template: ${source['templateId'] ?? asset['templateId'] ?? ''}',
+      'القالب: ${source['templateId'] ?? asset['templateId'] ?? ''}',
       'Channels: ${((source['channels'] ?? asset['channels']) as List?)?.join(', ') ?? ''}',
       'رابط النسخة المنشورة: ${asset['rawUrl'] ?? ''}',
       'بصمة النسخة: ${asset['contentSha'] ?? ''}',
@@ -596,7 +596,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
       if (longest > 2048 || sourceBytes.length > ControlAssetPolicy.maxBytes) {
         if (mounted && updateMessage) {
           setState(() => _message =
-              'الملف المتحرك أكبر من حدود Asset Studio. استخدم نسخة أصغر مع نفس الامتداد.');
+              'الملف المتحرك أكبر من الحد المسموح في الاستديو. استخدم نسخة أصغر مع نفس الصيغة.');
         }
         return false;
       }
@@ -1171,7 +1171,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
       if (!mounted) return;
       if (nextAsset == null) {
         setState(() => _message =
-            'الأصل التالي $nextKey موجود في الـManifest لكنه غير مسجل بعد.');
+            'الأصل التالي $nextKey موجود في سجل الدفعة لكنه غير مسجل بعد.');
         return;
       }
       _beginEditAsset(nextAsset);
@@ -1404,7 +1404,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
           final hasAlpha = prepared['hasAlpha'] == true;
           final animated = prepared['animated'] == true;
           if (template.transparency == 'required' && !hasAlpha) {
-            throw StateError('الأصل يحتاج شفافية Alpha.');
+            throw StateError('الأصل يحتاج خلفية شفافة.');
           }
           if (template.transparency == 'forbidden' && hasAlpha) {
             throw StateError('الشفافية غير مسموحة لهذا الأصل.');
@@ -1436,7 +1436,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
               'contentBase64':
                   base64Encode(prepared['bytes'] as Uint8List),
               'mode': item['mode'] == 'bundled' ? 'bundled' : 'remote',
-              'reason': 'Batch replace from Shadow Asset Studio',
+              'reason': 'استبدال مجموعة من استديو الأصول',
               'idempotencyKey':
                   'asset_batch_${DateTime.now().microsecondsSinceEpoch}_$i',
             }),
@@ -1487,10 +1487,10 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
             results.where((item) => item['batchState'] == 'Failed').length;
         setState(() {
           _batchProgressLabel =
-              'انتهت الدفعة • Verified $verified • Failed $failed';
+              'انتهت الدفعة • تم التأكد من $verified • تعذر $failed';
           _message = failed == 0
               ? 'انتهى رفع المجموعة بدون أخطاء في الملفات المطابقة.'
-              : 'انتهى Batch Upload مع $failed ملف يحتاج مراجعة.';
+              : 'انتهى رفع المجموعة ويوجد $failed ملف يحتاج مراجعة.';
         });
       }
     } catch (e) {
@@ -1546,7 +1546,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
             title: const Text('استرجاع النسخة السابقة؟'),
             content: Text(
               'سيتم نشر النسخة السابقة من $key تحت نفس المفتاح والمسار. '
-              'النسخة الحالية ستبقى محفوظة في Git history ويمكن الرجوع لها لاحقًا.',
+              'النسخة الحالية ستبقى محفوظة في سجل النسخ ويمكن الرجوع لها لاحقًا.',
             ),
             actions: [
               TextButton(
@@ -1579,7 +1579,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
         body: jsonEncode({
           'action': 'rollback_previous',
           'assetKey': key,
-          'reason': 'استرجاع النسخة السابقة من Shadow Asset Studio',
+          'reason': 'استرجاع النسخة السابقة من استديو الأصول',
           'idempotencyKey':
               'asset_rollback_${DateTime.now().microsecondsSinceEpoch}',
         }),
@@ -1618,7 +1618,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
             'asset_history_not_found' =>
               'لا توجد نسخة سابقة متاحة لهذا الأصل.',
             'asset_history_content_missing' =>
-              'تعذر قراءة ملف النسخة السابقة من Git history.',
+              'تعذر قراءة ملف النسخة السابقة من سجل النسخ.',
             'asset_not_published' =>
               'الأصل ليس منشورًا حاليًا ولا يمكن عمل Rollback.',
             _ => 'تعذر استرجاع النسخة السابقة: $code',
@@ -1708,7 +1708,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                       const SizedBox(height: 6),
                       if (refs.isEmpty)
                         const Text(
-                          'لم يُعثر على مرجع نصي مباشر. قد يكون الاستخدام ديناميكيًا عبر Registry.',
+                          'لم يُعثر على استخدام مباشر داخل الملفات. قد يكون الربط يتم تلقائيًا عبر سجل الأصول.',
                           style: TextStyle(color: Colors.white60, fontSize: 11),
                         )
                       else
@@ -1736,7 +1736,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                         const Padding(
                           padding: EdgeInsets.only(top: 6),
                           child: Text(
-                            'لا يوجد Git history متاح لهذا الملف.',
+                            'لا يوجد سجل نسخ متاح لهذا الملف.',
                             style: TextStyle(color: Colors.white60),
                           ),
                         )
@@ -1999,8 +1999,8 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
           builder: (dialogContext) => AlertDialog(
             title: const Text('تأكيد استبدال الأصل الحي'),
             content: Text(
-              'سيتم استبدال الأصل تحت نفس Asset Key بدون إنشاء مفتاح جديد.\n\n'
-              'Asset Key: ${_assetKey.text.trim()}\n'
+              'سيتم استبدال الأصل تحت نفس مفتاح الأصل بدون إنشاء مفتاح جديد.\n\n'
+              'مفتاح الأصل: ${_assetKey.text.trim()}\n'
               'النوع: ${template?.labelAr ?? template?.type ?? 'غير محدد'}\n'
               'قنوات الاستخدام: ${_selectedChannels.map(_channelLabel).join(' • ')}\n\n'
               'أي مكان يستخدم هذا المفتاح سيقرأ النسخة الجديدة بعد تحديث الكاش.',
@@ -2058,7 +2058,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
   String? _validate() {
     if (_bytes == null || _mimeType == null) return 'اختر صورة أولاً.';
     final template = _selectedTemplate;
-    if (template == null) return 'اختر Template من Asset Studio أولاً.';
+    if (template == null) return 'اختر قالبًا من الاستديو أولًا.';
     if (_selectedChannels.isEmpty) return 'اختر قناة استخدام واحدة على الأقل.';
     if (!ControlAssetPolicy.assetKeyAllowed(_assetKey.text)) {
       return 'مفتاح الاستخدام يجب أن يكون مثل vip.badge.3 وبأحرف إنجليزية صغيرة.';
@@ -2071,21 +2071,21 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     }
     final directory = ControlAssetPolicy.normalizeDirectory(_directory.text);
     if (!template.allowsDirectory(directory)) {
-      return 'المسار لا يطابق Template المختار.';
+      return 'المسار لا يطابق القالب المختار.';
     }
     final extension = _extensionOf(_fileName.text);
     if (!template.allowsExtension(extension)) {
-      return 'صيغة الملف لا تطابق Template المختار.';
+      return 'صيغة الملف لا تطابق القالب المختار.';
     }
     if (_bytes!.length > template.maxBytes) {
-      return 'حجم الملف أكبر من حد Template المختار.';
+      return 'حجم الملف أكبر من الحد المسموح للقالب المختار.';
     }
     final width = _preparedWidth;
     final height = _preparedHeight;
     if (width != null &&
         height != null &&
         !template.dimensionsMatch(width, height)) {
-      return 'أبعاد الملف لا تطابق Template: ${template.dimensionsLabel}.';
+      return 'أبعاد الملف لا تطابق القالب: ${template.dimensionsLabel}.';
     }
     if (template.transparency == 'required' && _preparedHasAlpha != true) {
       return 'هذا القالب يحتاج خلفية شفافة.';
@@ -2211,14 +2211,14 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
           _lastFailedPublishIntent = publish;
           _message = switch (code) {
           'recent_auth_required' => 'يلزم تسجيل الدخول من جديد قبل رفع الأصول.',
-          'forbidden' => 'هذه الصفحة والإجراء متاحان لحساب Owner فقط.',
-          'github_not_configured' => 'GitHub Asset Token غير مضاف إلى Backend بعد.',
+          'forbidden' => 'هذه الصفحة والإجراء متاحان لحساب المالك فقط.',
+          'github_not_configured' => 'إعداد خدمة رفع الملفات غير مكتمل بعد.',
           'invalid_request' => 'تحقق من المسار والاسم والحجم ونوع الملف.',
-          'invalid_asset_template' => 'النوع وTemplate غير متطابقين.',
+          'invalid_asset_template' => 'نوع الأصل والقالب غير متطابقين.',
           'invalid_asset_channels' => 'اختر قناة استخدام واحدة على الأقل.',
-          'template_directory_mismatch' => 'المسار لا يطابق Template المختار.',
-          'template_extension_mismatch' => 'صيغة الملف لا تطابق Template المختار.',
-          'template_size_mismatch' => 'حجم الملف لا يطابق Template المختار.',
+          'template_directory_mismatch' => 'المسار لا يطابق القالب المختار.',
+          'template_extension_mismatch' => 'صيغة الملف لا تطابق القالب المختار.',
+          'template_size_mismatch' => 'حجم الملف لا يطابق القالب المختار.',
           'r2_not_configured' => 'تخزين R2 الخاص بالمسودات غير متاح حاليًا.',
           _ => 'تعذر رفع الصورة: $code',
           };
@@ -2282,14 +2282,14 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
       } else {
         final code = '${body['code'] ?? 'http_${response.statusCode}'}';
         setState(() => _message = switch (code) {
-              'asset_not_found' => 'المسودة غير موجودة في Registry.',
+              'asset_not_found' => 'المسودة غير موجودة في سجل الأصول.',
               'asset_draft_not_found' => 'لا توجد مسودة جاهزة للنشر.',
               'asset_draft_missing' => 'ملف المسودة غير موجود في R2.',
               'asset_draft_invalid' => 'ملف المسودة غير صالح.',
               'asset_draft_mismatch' => 'ملف المسودة لا يطابق النسخة المسجلة.',
               'recent_auth_required' =>
                 'يلزم تسجيل الدخول من جديد قبل نشر الأصول.',
-              'forbidden' => 'النشر متاح لحساب Owner فقط.',
+              'forbidden' => 'النشر متاح لحساب المالك فقط.',
               _ => 'تعذر نشر الأصل: $code',
             });
       }
@@ -2927,7 +2927,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
             const Padding(
               padding: EdgeInsets.only(bottom: 10),
               child: Text(
-                'Asset Key والمسار واسم الملف مقفلة للحماية من كسر الربط.',
+                'مفتاح الأصل والمسار واسم الملف مقفلة للحماية من كسر الربط.',
                 style: TextStyle(color: Colors.white54, fontSize: 10.5),
               ),
             ),
@@ -3280,7 +3280,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
           warnings.add('$key منشور بدون مسار.');
         }
         if ((asset['rawUrl'] ?? '').toString().trim().isEmpty) {
-          warnings.add('$key منشور بدون Live URL.');
+          warnings.add('$key منشور لكن رابط النسخة الحالية غير متوفر.');
         }
       }
       if (path.isNotEmpty) {
@@ -3290,7 +3290,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     for (final entry in pathOwners.entries) {
       if (entry.value.length > 1) {
         warnings.add(
-          'المسار ${entry.key} مستخدم بواسطة أكثر من Asset Key: '
+          'المسار ${entry.key} مستخدم بواسطة أكثر من مفتاح الأصل: '
           '${entry.value.join(', ')}',
         );
       }
@@ -3569,6 +3569,16 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
           'Ready' => const Color(0xFFC4A7FF),
           _ => Colors.white38,
         };
+    String stateLabel(String state) => switch (state) {
+          'Verified' => 'تم التأكد',
+          'Published' => 'منشور',
+          'Draft' => 'مسودة',
+          'Uploading' => 'جارٍ الرفع',
+          'Failed' => 'تعذر',
+          'Ready' => 'جاهز',
+          'Missing' => 'غير موجود',
+          _ => state,
+        };
 
     return _studioPanel(
       Column(
@@ -3611,7 +3621,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
           if (_batchResults.isNotEmpty) ...[
             const SizedBox(height: 4),
             Text(
-              '${_batchResults.where((item) => item['batchState'] == 'Verified').length}/${_batchResults.length} Verified',
+              'تم التأكد من ${_batchResults.where((item) => item['batchState'] == 'Verified').length} من أصل ${_batchResults.length}',
               style: const TextStyle(
                 color: Colors.greenAccent,
                 fontSize: 10.5,
@@ -3675,7 +3685,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    state,
+                    stateLabel(state),
                     style: TextStyle(
                       color: color,
                       fontWeight: FontWeight.w900,
@@ -4020,7 +4030,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Text(
-                            'إدارة أصول Shadow Live',
+                            'إدارة أصول شادو لايف',
                             style: TextStyle(
                               fontSize: 23,
                               fontWeight: FontWeight.w900,
@@ -4286,7 +4296,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                       ),
                       SizedBox(height: 12),
                       Text(
-                        'هذه الصفحة متاحة لحساب Owner فقط',
+                        'هذه الصفحة متاحة لحساب المالك فقط',
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w800,
