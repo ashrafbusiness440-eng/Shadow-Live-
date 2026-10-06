@@ -410,7 +410,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
   Future<String> _token() async {
     final token = await controlAuth.currentUser?.getIdToken(true);
     if (token == null || token.trim().isEmpty) {
-      throw StateError('تعذر الحصول على جلسة Firebase.');
+      throw StateError('تعذر التحقق من جلسة الدخول.');
     }
     return token;
   }
@@ -668,7 +668,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
           _conversionNote =
               'تم الحفاظ على Animation الأصلية • '
               '${decoded.width}×${decoded.height} • '
-              '${(sourceBytes.length / 1024).toStringAsFixed(1)} KB';
+              '${(sourceBytes.length / 1024).toStringAsFixed(1)} كيلوبايت';
           if (updateMessage) _message = null;
         });
       }
@@ -680,7 +680,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     if (encoded == null) {
       if (mounted && updateMessage) {
         setState(() => _message =
-            'تعذر تجهيز ${_formatLabel(extension)} تحت حد 2.5 MB. جرّب WebP أو صورة أصغر.');
+            'تعذر تجهيز ${_formatLabel(extension)} تحت حد 2.5 ميغابايت. جرّب WebP أو صورة أصغر.');
       }
       return false;
     }
@@ -700,7 +700,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
         _conversionNote =
             'تجهيز تلقائي حسب اسم الملف → ${_formatLabel(extension)} • '
             '${prepared.width}×${prepared.height} • '
-            '${sourceKb.toStringAsFixed(1)} KB → ${outputKb.toStringAsFixed(1)} KB';
+            '${sourceKb.toStringAsFixed(1)} كيلوبايت → ${outputKb.toStringAsFixed(1)} كيلوبايت';
         if (updateMessage) _message = null;
       });
     }
@@ -2584,7 +2584,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
           'assetKey': key,
           'reason': _reason.text.trim().length >= 3
               ? _reason.text.trim()
-              : 'نشر أصل من Shadow Asset Studio',
+              : 'نشر أصل من استديو الأصول',
           'idempotencyKey':
               'asset_publish_${DateTime.now().microsecondsSinceEpoch}',
         }),
@@ -2648,7 +2648,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
             ),
             const SizedBox(height: 4),
             Text('الصيغ: ${template.extensionsLabel}  •  '
-                'الحد: ${(template.maxBytes / 1000000).toStringAsFixed(1)} MB'),
+                'الحد: ${(template.maxBytes / 1000000).toStringAsFixed(1)} ميغابايت'),
             const SizedBox(height: 10),
             const Text(
               'Prompt / الوصف الجاهز',
@@ -3045,7 +3045,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                                   ' • الحد ' +
                                   (template.maxBytes / 1000000)
                                       .toStringAsFixed(1) +
-                                  ' MB',
+                                  ' ميغابايت',
                           style: const TextStyle(
                             color: Colors.white60,
                             fontSize: 11.5,
@@ -3116,7 +3116,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                 Chip(
                   avatar: const Icon(Icons.sd_storage_outlined, size: 16),
                   label: Text(
-                    '${(_bytes!.length / 1024).toStringAsFixed(1)} KB',
+                    '${(_bytes!.length / 1024).toStringAsFixed(1)} كيلوبايت',
                   ),
                 ),
                 Chip(
