@@ -148,6 +148,7 @@ export async function giftVipTrialCard(
   db,
   senderUid,
   body,
+  policy,
   nowMs = Date.now(),
 ) {
   const cardId = clean(body?.cardId);
@@ -201,7 +202,7 @@ export async function giftVipTrialCard(
     }
 
     const current = materializeVipState(
-      null,
+      policy,
       vipStateFromUser(recipientUser),
       nowMs,
     );
