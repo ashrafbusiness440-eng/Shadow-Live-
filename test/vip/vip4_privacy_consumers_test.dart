@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shadow_live/features/vip/utils/vip_public_state.dart';
+import 'package:voice_chat_room/features/vip/utils/vip_public_state.dart';
 
 void main() {
   test('06-H public Noble privacy requires active VIP4+', () {
