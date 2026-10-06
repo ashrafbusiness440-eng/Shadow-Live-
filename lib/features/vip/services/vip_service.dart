@@ -9,6 +9,7 @@ class VipSummaryData {
     required this.effectiveVipSource,
     required this.earnedVipLevel,
     required this.adminGrantVipLevel,
+    this.trialVipLevel = 0,
     required this.growthPoints,
     required this.maintenancePoints,
     required this.maintenanceRequired,
@@ -17,6 +18,7 @@ class VipSummaryData {
     required this.maxGrowthPoints,
     required this.earnedVipExpiresAtMs,
     required this.adminGrantExpiresAtMs,
+    this.trialVipExpiresAtMs = 0,
     required this.coins,
     required this.purchaseGrowthPerCoin,
     required this.paidRechargeGrowthPerCoin,
@@ -42,6 +44,7 @@ class VipSummaryData {
   final String effectiveVipSource;
   final int earnedVipLevel;
   final int adminGrantVipLevel;
+  final int trialVipLevel;
   final int growthPoints;
   final int maintenancePoints;
   final int maintenanceRequired;
@@ -50,6 +53,7 @@ class VipSummaryData {
   final int maxGrowthPoints;
   final int earnedVipExpiresAtMs;
   final int adminGrantExpiresAtMs;
+  final int trialVipExpiresAtMs;
   final int coins;
   final int purchaseGrowthPerCoin;
   final int paidRechargeGrowthPerCoin;
@@ -83,6 +87,7 @@ class VipSummaryData {
           (json['effectiveVipSource'] ?? 'none').toString().trim(),
       earnedVipLevel: value('earnedVipLevel').clamp(0, 10).toInt(),
       adminGrantVipLevel: value('adminGrantVipLevel').clamp(0, 10).toInt(),
+      trialVipLevel: value('trialVipLevel').clamp(0, 10).toInt(),
       growthPoints: value('growthPoints'),
       maintenancePoints: value('maintenancePoints'),
       maintenanceRequired: value('maintenanceRequired'),
@@ -91,6 +96,7 @@ class VipSummaryData {
       maxGrowthPoints: value('maxGrowthPoints'),
       earnedVipExpiresAtMs: value('earnedVipExpiresAtMs'),
       adminGrantExpiresAtMs: value('adminGrantExpiresAtMs'),
+      trialVipExpiresAtMs: value('trialVipExpiresAtMs'),
       coins: value('coins'),
       purchaseGrowthPerCoin: value('purchaseGrowthPerCoin'),
       paidRechargeGrowthPerCoin: value('paidRechargeGrowthPerCoin'),
@@ -114,6 +120,8 @@ class VipSummaryData {
   }
 
   VipSummaryData copyWith({
+    int? trialVipLevel,
+    int? trialVipExpiresAtMs,
     bool? canHideRankingLists,
     bool? hideRankingLists,
     bool? canHideProfileVisits,
@@ -136,6 +144,7 @@ class VipSummaryData {
       effectiveVipSource: effectiveVipSource,
       earnedVipLevel: earnedVipLevel,
       adminGrantVipLevel: adminGrantVipLevel,
+      trialVipLevel: trialVipLevel ?? this.trialVipLevel,
       growthPoints: growthPoints,
       maintenancePoints: maintenancePoints,
       maintenanceRequired: maintenanceRequired,
@@ -144,6 +153,8 @@ class VipSummaryData {
       maxGrowthPoints: maxGrowthPoints,
       earnedVipExpiresAtMs: earnedVipExpiresAtMs,
       adminGrantExpiresAtMs: adminGrantExpiresAtMs,
+      trialVipExpiresAtMs:
+          trialVipExpiresAtMs ?? this.trialVipExpiresAtMs,
       coins: coins,
       purchaseGrowthPerCoin: purchaseGrowthPerCoin,
       paidRechargeGrowthPerCoin: paidRechargeGrowthPerCoin,
@@ -310,6 +321,59 @@ class VipFrameCustomizationState {
   }
 }
 
+class VipTrialCard {
+  const VipTrialCard({
+    required this.cardId,
+    required this.vipLevel,
+    required this.durationDays,
+    required this.source,
+    required this.originalOwnerUid,
+  });
+
+  final String cardId;
+  final int vipLevel;
+  final int durationDays;
+  final String source;
+  final String originalOwnerUid;
+
+  factory VipTrialCard.fromJson(Map<String, dynamic> json) => VipTrialCard(
+        cardId: (json['cardId'] ?? '').toString(),
+        vipLevel: (json['vipLevel'] as num?)?.toInt() ?? 5,
+        durationDays: (json['durationDays'] as num?)?.toInt() ?? 7,
+        source: (json['source'] ?? '').toString(),
+        originalOwnerUid: (json['originalOwnerUid'] ?? '').toString(),
+      );
+}
+
+class VipTrialRedeemState {
+  const VipTrialRedeemState({
+    required this.trialVipLevel,
+    required this.trialVipExpiresAtMs,
+    required this.effectiveVipLevel,
+    required this.effectiveVipSource,
+  });
+
+  final int trialVipLevel;
+  final int trialVipExpiresAtMs;
+  final int effectiveVipLevel;
+  final String effectiveVipSource;
+
+  factory VipTrialRedeemState.fromJson(Map<String, dynamic> json) {
+    int value(String key) {
+      final raw = json[key];
+      if (raw is num) return raw.toInt();
+      return int.tryParse(raw?.toString() ?? '') ?? 0;
+    }
+
+    return VipTrialRedeemState(
+      trialVipLevel: value('trialVipLevel'),
+      trialVipExpiresAtMs: value('trialVipExpiresAtMs'),
+      effectiveVipLevel: value('effectiveVipLevel'),
+      effectiveVipSource: (json['effectiveVipSource'] ?? '').toString(),
+    );
+  }
+}
+
 class VipService {
   VipService({
     http.Client? client,
@@ -432,6 +496,39 @@ class VipService {
       'frameLevel': frameLevel,
     });
     return VipFrameCustomizationState.fromJson(body);
+  }
+
+  Future<List<VipTrialCard>> listTrialCards() async {
+    final body = await _post({'action': 'listTrialCards'});
+    final raw = body['cards'];
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map>()
+        .map((item) => VipTrialCard.fromJson(
+              Map<String, dynamic>.from(item),
+            ))
+        .where((card) => card.cardId.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  Future<void> giftTrialCard({
+    required String cardId,
+    required String recipientUid,
+  }) async {
+    await _post({
+      'action': 'giftTrialCard',
+      'cardId': cardId,
+      'recipientUid': recipientUid,
+    });
+  }
+
+  Future<VipTrialRedeemState> redeemTrialCard(String cardId) async {
+    return VipTrialRedeemState.fromJson(
+      await _post({
+        'action': 'redeemTrialCard',
+        'cardId': cardId,
+      }),
+    );
   }
 
   void close() {
