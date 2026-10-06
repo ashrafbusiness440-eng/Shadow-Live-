@@ -142,11 +142,6 @@ async function verifyOwner(request, env) {
   const decoded = await verifyFirebaseIdToken(request, env, {
     checkUserState: false,
   });
-  const authAge = Math.floor(Date.now() / 1000) - Number(decoded.auth_time || 0);
-  if (!Number.isFinite(authAge) || authAge > 1800) {
-    throw new ApiError("recent_auth_required", 401);
-  }
-
   const db = firestoreClient(env);
   const user = await db.get(`users/${decoded.sub}`);
   const actor = user.data || {};
