@@ -419,6 +419,38 @@ export async function roomRealtime(request, env) {
       const profileData = user.data || {};
       const levelMetadata = roomUserLevelMetadata(levelPolicy, uid, profileData);
       const vipCosmetics = vipCosmeticsFromUser(profileData, Date.now());
+      const roomType = clean(roomData.roomType || roomData.type || "personal");
+      const customerServiceMinVipLevel =
+        roomType === "customer_service"
+          ? Math.max(
+              1,
+              Math.min(10, Number(roomData.customerServiceMinVipLevel || 1)),
+            )
+          : 0;
+      const customerServiceStaff = canModerateRoomChat(
+        roomData,
+        profileData,
+        uid,
+      );
+      if (
+        roomType === "customer_service" &&
+        !customerServiceStaff &&
+        vipCosmetics.level < customerServiceMinVipLevel
+      ) {
+        return json(
+          request,
+          env,
+          {
+            ok: false,
+            code:
+              customerServiceMinVipLevel >= 4
+                ? "vip4_customer_service_required"
+                : "vip1_customer_service_required",
+            requiredVipLevel: customerServiceMinVipLevel,
+          },
+          403,
+        );
+      }
       if (user.exists) {
         assertUserDocumentSessionState(payload, profileData);
       }
