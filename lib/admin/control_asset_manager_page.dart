@@ -1373,13 +1373,13 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
               'بيانات Template/Channels غير مكتملة في Registry.',
             );
           }
-          final template = _templates
-              .where((item) => item.id == templateId)
-              .cast<ControlAssetStudioTemplate?>()
-              .firstWhere(
-                (item) => item != null,
-                orElse: () => null,
-              );
+          ControlAssetStudioTemplate? template;
+          for (final candidate in _templates) {
+            if (candidate.id == templateId) {
+              template = candidate;
+              break;
+            }
+          }
           if (template == null) {
             throw StateError('Template غير محمل في الاستديو.');
           }
