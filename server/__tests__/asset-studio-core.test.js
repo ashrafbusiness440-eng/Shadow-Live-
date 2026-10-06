@@ -276,6 +276,9 @@ test("asset studio UX exposes safe replace, preview, history and batch guardrail
   assert.equal(control.includes("الإطارات:"), true);
   assert.equal(control.includes("_aspectRatioLabel"), true);
   assert.equal(control.includes("التناسب:"), true);
+  assert.equal(control.includes("_favoriteTemplateIds"), true);
+  assert.equal(control.includes("_recentTemplateIds"), true);
+  assert.equal(control.includes("إضافة القالب إلى المفضلة"), true);
   assert.equal(control.includes("أماكن الاستخدام المحددة:"), true);
 });
 
