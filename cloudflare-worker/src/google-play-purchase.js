@@ -6,6 +6,7 @@ import { googleAccessTokenFromServiceAccount } from "./google-auth.js";
 import {
   growthFromPaidRecharge,
   loadVipPolicy,
+  vipMaintenanceThreshold,
 } from "./vip-policy.js";
 import { applyVipGrowth, materializeVipState } from "./vip-state.js";
 import {
@@ -13,6 +14,7 @@ import {
   vipStateFromUser,
   vipUserPatch,
 } from "./vip-runtime.js";
+import { vip10MaintenanceTrialCardWrites } from "./vip-trial-cards.js";
 
 const PLAY_SCOPE = "https://www.googleapis.com/auth/androidpublisher";
 
@@ -260,6 +262,14 @@ export async function creditPurchase(
         throw new ApiError("invalid_vip_state", 409);
       }
 
+      const trialAward = vip10MaintenanceTrialCardWrites(
+        db,
+        uid,
+        vipBefore,
+        vipAfter,
+        vipMaintenanceThreshold(vipPolicy, 10),
+        nowMs,
+      );
       const closingCoins = openingCoins + coinsToCredit;
 
       await db.commit(transaction, [
@@ -276,8 +286,10 @@ export async function creditPurchase(
             "earnedVipLevel",
             "effectiveVipLevel",
             "adminGrantVipLevel",
+            "trialVipLevel",
             "earnedVipExpiresAt",
             "adminGrantExpiresAt",
+            "trialVipExpiresAt",
             "effectiveVipSource",
             "vipGrowthPoints",
             "vipMaintenancePoints",
@@ -341,6 +353,7 @@ export async function creditPurchase(
           idempotencyKey: hash,
           createdAt: now,
         }),
+        ...trialAward.writes,
         db.writeCreate(`vip_growth_history/play_${hash}`, {
           userId: uid,
           eventType: "paid_recharge_growth",
@@ -367,6 +380,7 @@ export async function creditPurchase(
         bonusCoins: bonusCoinsToCredit,
         vipGrowthPoints,
         vipLevel: vipAfter.effectiveVipLevel,
+        trialCardsAwarded: trialAward.count,
         closingCoins,
       };
     } catch (error) {
