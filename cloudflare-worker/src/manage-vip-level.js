@@ -306,13 +306,28 @@ export async function updateAdminVipGrant(db, payload, body, nowMs = Date.now())
         vipStateFromUser(target),
         nowMs,
       );
+      const currentAdminGrantLevel = Number(
+        beforeState.adminGrantVipLevel || 0,
+      );
+      if (mode === "grant" && currentAdminGrantLevel > 0) {
+        await db.rollback(transaction);
+        throw new ApiError("admin_vip_grant_exists", 409);
+      }
+      if (mode === "change" && currentAdminGrantLevel < 1) {
+        await db.rollback(transaction);
+        throw new ApiError("admin_vip_grant_missing", 409);
+      }
       if (!access.isOwner) {
         const allowed = new Set(access.allowedVipGrantLevels);
-        const levelToAuthorize =
-          mode === "remove"
-            ? Number(beforeState.adminGrantVipLevel || 0)
-            : requestedLevel;
-        if (levelToAuthorize < 1 || !allowed.has(levelToAuthorize)) {
+        if (
+          (mode === "grant" && !allowed.has(requestedLevel)) ||
+          (mode === "change" &&
+            (!allowed.has(currentAdminGrantLevel) ||
+              !allowed.has(requestedLevel))) ||
+          (mode === "remove" &&
+            (currentAdminGrantLevel < 1 ||
+              !allowed.has(currentAdminGrantLevel)))
+        ) {
           await db.rollback(transaction);
           throw new ApiError("vip_level_not_allowed", 403);
         }
