@@ -23,6 +23,7 @@ const LEVEL_CAPABILITIES = new Set([
   "manageAttractionLevel",
   "manageGameLevel",
   "manageVipLevels",
+  "manageVipPolicy",
 ]);
 
 const ALLOWED_CAPABILITIES = new Set([
@@ -57,6 +58,7 @@ const ALLOWED_CAPABILITIES = new Set([
   "grantAgencyPackage",
   "manageVip",
   "manageVipLevels",
+  "manageVipPolicy",
   "manageSpecialIds",
   "manageIds",
   "manageStore",
