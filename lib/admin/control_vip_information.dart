@@ -105,7 +105,7 @@ class _VipInformationControlPageState
         row.dispose();
       }
       setState(() {
-        _purchaseGrowthPerCoin = ratio.clamp(1, 100);
+        _purchaseGrowthPerCoin = ratio.clamp(1, 100).toInt();
         _offers
           ..clear()
           ..addAll(loaded);
