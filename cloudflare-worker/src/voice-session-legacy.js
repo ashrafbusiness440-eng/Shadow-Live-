@@ -1795,11 +1795,22 @@ export async function announceRoomEntrance(db,uid,roomId){
     throw new ApiError("room_unavailable",404);
   }
 
-  const cosmetics=await activeCosmetics(db,uid,["entrance"]);
-  const entrance=cosmetics.entrance;
-  if(!entrance)return {ok:true,announced:false,roomId};
+  const [cosmetics,userSnap,profileSnap]=await Promise.all([
+    activeCosmetics(db,uid,["entrance"]),
+    db.collection("users").doc(uid).get(),
+    db.collection("public_profiles").doc(uid).get(),
+  ]);
+  const entrance=cosmetics.entrance||{};
+  const user=userSnap.data()||{};
+  const vipCosmetics=vipCosmeticsFromUser(user,Date.now());
+  const hasRewardEntrance=
+    clean(entrance.assetKey).length>0||clean(entrance.imageUrl).length>0;
+  const hasVipRoomEntrance=
+    vipCosmetics.level>=9&&clean(vipCosmetics.keys.entryStrip).length>0;
+  if(!hasRewardEntrance&&!hasVipRoomEntrance){
+    return {ok:true,announced:false,roomId};
+  }
 
-  const profileSnap=await db.collection("public_profiles").doc(uid).get();
   const profile=profileSnap.data()||{};
   const eventAtMs=Date.now();
   const event={
@@ -1807,10 +1818,14 @@ export async function announceRoomEntrance(db,uid,roomId){
     uid,
     displayName:clean(profile.displayName||profile.username||"مستخدم Shadow Live"),
     profileImageUrl:clean(profile.profileImageUrl),
-    rewardId:clean(entrance.rewardId),
-    assetKey:clean(entrance.assetKey),
-    imageUrl:clean(entrance.imageUrl),
-    rewardExpiresAtMs:Number(entrance.expiresAtMs||0),
+    rewardId:hasRewardEntrance?clean(entrance.rewardId):"vip_room_entry",
+    assetKey:hasRewardEntrance
+      ?clean(entrance.assetKey)
+      :clean(vipCosmetics.keys.entryStrip),
+    imageUrl:hasRewardEntrance?clean(entrance.imageUrl):"",
+    rewardExpiresAtMs:hasRewardEntrance
+      ?Number(entrance.expiresAtMs||0)
+      :timestampToEpochMs(user.vipExpiresAt),
     eventAtMs,
   };
   const delivered=await broadcastRoomRealtimeEvent(
