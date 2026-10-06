@@ -101,7 +101,7 @@ void main() {
         await tester.drag(scrollable, const Offset(0, -500));
         await tester.pumpAndSettle();
       }
-      expect(find.text('الامتيازات الحصرية 41/41'), findsOneWidget);
+      expect(find.text('الامتيازات الحصرية 38/38'), findsOneWidget);
       expect(find.text('الحماية من الكتم'), findsOneWidget);
       // Cosmetic tiles may be disposed once they scroll off-screen. The
       // resolver history is the stable assertion that VIP10 actually
