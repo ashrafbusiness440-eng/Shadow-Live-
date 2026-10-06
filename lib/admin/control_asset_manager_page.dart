@@ -4435,8 +4435,10 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
             const SizedBox(height: 8),
             SizedBox(
               height: visible.length <= 3
-                  ? (visible.length * 165.0).clamp(165.0, 495.0)
-                  : 560,
+                  ? (visible.length * 165.0)
+                      .clamp(165.0, 495.0)
+                      .toDouble()
+                  : 560.0,
               child: ListView.builder(
                 primary: false,
                 itemCount: visible.length,
