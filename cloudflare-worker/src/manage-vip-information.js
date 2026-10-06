@@ -38,7 +38,7 @@ export function canManageVipInformation(actor = {}) {
   if (actor.adminEnabled !== true) return false;
   const role = clean(actor.role);
   if (role !== "admin" && role !== "super_admin") return false;
-  return actorCapabilities(actor).has("manageVip");
+  return actorCapabilities(actor).has("manageVipPolicy");
 }
 
 function publicOffers(policy) {
