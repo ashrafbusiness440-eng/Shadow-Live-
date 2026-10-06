@@ -25,6 +25,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
   final _directory = TextEditingController(text: 'assets/images/vip');
   final _fileName = TextEditingController(text: 'vip_1.webp');
   final _reason = TextEditingController(text: 'تحديث أصل التطبيق من Shadow Control');
+  final _assetSearch = TextEditingController();
 
   Uint8List? _bytes;
   Uint8List? _sourceBytes;
@@ -51,6 +52,8 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
   ];
   final Set<String> _selectedChannels = {'vip'};
   List<Map<String, dynamic>> _assets = const [];
+  String _assetFilter = 'all';
+  bool _showStudioForm = false;
 
   @override
   void dispose() {
@@ -58,6 +61,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     _directory.dispose();
     _fileName.dispose();
     _reason.dispose();
+    _assetSearch.dispose();
     super.dispose();
   }
 
@@ -666,404 +670,960 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     );
   }
 
-  Widget _ownerBody() {
+
+  int get _publishedCount =>
+      _assets.where((asset) => asset['published'] == true).length;
+
+  int get _draftCount =>
+      _assets.where((asset) => asset['hasDraft'] == true).length;
+
+  List<Map<String, dynamic>> get _visibleAssets {
+    final query = _assetSearch.text.trim().toLowerCase();
+    return _assets.where((asset) {
+      final published = asset['published'] == true;
+      final hasDraft = asset['hasDraft'] == true;
+      final status = (asset['status'] ?? '').toString().toLowerCase();
+      final matchesFilter = switch (_assetFilter) {
+        'published' => published,
+        'draft' => hasDraft,
+        'review' => status.contains('review') || status.contains('pending'),
+        _ => true,
+      };
+      if (!matchesFilter) return false;
+      if (query.isEmpty) return true;
+      final draft = asset['draft'] is Map
+          ? Map<String, dynamic>.from(asset['draft'] as Map)
+          : <String, dynamic>{};
+      final source = hasDraft ? draft : asset;
+      final haystack = <String>[
+        (asset['assetKey'] ?? '').toString(),
+        (source['fullPath'] ?? asset['fullPath'] ?? '').toString(),
+        (source['assetType'] ?? asset['assetType'] ?? '').toString(),
+      ].join(' ').toLowerCase();
+      return haystack.contains(query);
+    }).toList(growable: false);
+  }
+
+  String _assetStatusLabel(Map<String, dynamic> asset) {
+    if (asset['hasDraft'] == true) return 'مسودة';
+    if (asset['published'] == true) return 'منشور';
+    final status = (asset['status'] ?? '').toString().toLowerCase();
+    if (status.contains('review') || status.contains('pending')) {
+      return 'يحتاج مراجعة';
+    }
+    return 'غير محدد';
+  }
+
+  Widget _studioStep(
+    int number,
+    IconData icon,
+    String label, {
+    bool active = false,
+  }) {
+    final accent =
+        active ? const Color(0xFFD7B85A) : const Color(0xFFC4A7FF);
+    return SizedBox(
+      width: 86,
+      child: Column(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: accent.withValues(alpha: .12),
+              border: Border.all(color: accent.withValues(alpha: .55)),
+            ),
+            child: Icon(icon, color: accent, size: 22),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            number.toString(),
+            style: TextStyle(
+              color: accent,
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _studioPanel(Widget child, {EdgeInsetsGeometry? padding}) {
+    return Container(
+      padding: padding ?? const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF171222),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: const Color(0xFF8B5CF6).withValues(alpha: .22),
+        ),
+      ),
+      child: child,
+    );
+  }
+
+  Widget _statTile(
+    IconData icon,
+    String value,
+    String label,
+    Color accent,
+  ) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+        decoration: BoxDecoration(
+          color: accent.withValues(alpha: .08),
+          borderRadius: BorderRadius.circular(15),
+          border: Border.all(color: accent.withValues(alpha: .24)),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: accent, size: 21),
+            const SizedBox(height: 5),
+            Text(
+              value,
+              style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: accent, fontSize: 10.5),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStudioForm() {
     final template = _selectedTemplate;
     final validation = _bytes == null ? null : _validate();
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        const Row(
-          children: [
-            Icon(Icons.auto_awesome_mosaic_outlined,
-                color: Color(0xFFD7B85A), size: 30),
-            SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'Shadow Asset Studio',
-                style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900),
+    return _studioPanel(
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.add_photo_alternate_outlined,
+                color: Color(0xFFD7B85A),
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'إضافة أو تعديل أصل',
+                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900),
+                ),
+              ),
+              IconButton(
+                tooltip: 'إغلاق النموذج',
+                onPressed:
+                    _busy ? null : () => setState(() => _showStudioForm = false),
+                icon: const Icon(Icons.close_rounded),
+              ),
+            ],
+          ),
+          const Text(
+            'اختر القالب، ارفع الصورة، ثم راجع البيانات قبل الحفظ أو النشر.',
+            style: TextStyle(color: Colors.white60, height: 1.45),
+          ),
+          const SizedBox(height: 14),
+          DropdownButtonFormField<String>(
+            value: template?.id,
+            isExpanded: true,
+            decoration: const InputDecoration(
+              labelText: 'نوع الأصل / القالب',
+              prefixIcon: Icon(Icons.dashboard_customize_outlined),
+              border: OutlineInputBorder(),
+            ),
+            items: _templates
+                .map(
+                  (item) => DropdownMenuItem(
+                    value: item.id,
+                    child: Text(item.labelAr),
+                  ),
+                )
+                .toList(growable: false),
+            onChanged: _busy
+                ? null
+                : (value) {
+                    if (value == null) return;
+                    final selected =
+                        _templates.where((item) => item.id == value).toList();
+                    if (selected.isEmpty) return;
+                    setState(() {
+                      _applyTemplate(selected.first);
+                      _message = null;
+                    });
+                  },
+          ),
+          if (template != null) ...[
+            const SizedBox(height: 8),
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              title: const Text(
+                'مواصفات القالب',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+              subtitle: Text(
+                template.dimensionsLabel +
+                    ' • ' +
+                    template.extensionsLabel +
+                    ' • ' +
+                    template.motionLabel,
+                style: const TextStyle(fontSize: 11.5),
+              ),
+              children: [_templateGuide(template)],
+            ),
+          ],
+          const SizedBox(height: 10),
+          InkWell(
+            onTap: _busy || template == null ? null : _pickImage,
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              padding: const EdgeInsets.all(15),
+              decoration: BoxDecoration(
+                color: const Color(0xFF21172E),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: const Color(0xFF9A6CFF).withValues(alpha: .42),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 50,
+                    height: 50,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFF9A6CFF).withValues(alpha: .15),
+                    ),
+                    child: const Icon(
+                      Icons.cloud_upload_outlined,
+                      color: Color(0xFFCDB7FF),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          _pickedName == null
+                              ? 'اختر صورة الأصل'
+                              : 'تغيير الملف الحالي',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          template == null
+                              ? 'اختر القالب أولاً'
+                              : 'الصيغ: ' +
+                                  template.extensionsLabel +
+                                  ' • الحد ' +
+                                  (template.maxBytes / 1000000)
+                                      .toStringAsFixed(1) +
+                                  ' MB',
+                          style: const TextStyle(
+                            color: Colors.white60,
+                            fontSize: 11.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.chevron_left_rounded, color: Colors.white54),
+                ],
               ),
             ),
-            Chip(label: Text('OWNER ONLY')),
+          ),
+          if (_conversionNote != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _conversionNote!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.greenAccent,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
           ],
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'Template → Upload → Validation → Preview → Save Draft / Publish. '
-          'لا يوجد AI Generator داخل Control؛ الاستوديو يعرض Prompt ومواصفات القالب فقط، '
-          'والتوليد يتم خارجه ثم يرفع الناتج هنا.',
-          style: TextStyle(color: Color(0xFFCBC5D6), height: 1.5),
-        ),
-        const SizedBox(height: 16),
-        Card(
-          color: const Color(0xFF111827),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+          if (_bytes != null) ...[
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(15),
+              child: Container(
+                height: 180,
+                color: Colors.black26,
+                padding: const EdgeInsets.all(8),
+                child: Image.memory(_bytes!, fit: BoxFit.contain),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
               children: [
-                const Text(
-                  'صورة شاشة تسجيل الدخول',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                Icon(
+                  validation == null
+                      ? Icons.verified_rounded
+                      : Icons.error_outline_rounded,
+                  size: 19,
+                  color: validation == null
+                      ? Colors.greenAccent
+                      : Colors.orangeAccent,
                 ),
-                const SizedBox(height: 8),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.asset(
-                    'assets/images/auth_header.png',
-                    height: 150,
-                    fit: BoxFit.cover,
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Text(
+                    validation == null
+                        ? 'الملف جاهز للحفظ أو النشر'
+                        : validation,
+                    style: const TextStyle(fontSize: 11.5),
                   ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'auth.login.header • assets/images/auth_header.png',
-                  style: TextStyle(color: Colors.white60),
-                ),
-                const SizedBox(height: 10),
-                FilledButton.icon(
-                  onPressed: _busy ? null : _selectAuthHeaderPreset,
-                  icon: const Icon(Icons.edit_outlined),
-                  label: const Text('تغيير هذه الصورة من Asset Studio'),
                 ),
               ],
             ),
+          ],
+          const SizedBox(height: 18),
+          const Text(
+            'معلومات الأصل',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
           ),
-        ),
-        const SizedBox(height: 16),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                DropdownButtonFormField<String>(
-                  value: template?.id,
-                  decoration: const InputDecoration(
-                    labelText: 'Asset Type / Template',
-                    border: OutlineInputBorder(),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _directory,
+            enabled: !_busy,
+            onChanged: (_) => setState(_syncGiftFileNameFromAssetKey),
+            decoration: const InputDecoration(
+              labelText: 'المسار داخل المشروع',
+              prefixIcon: Icon(Icons.folder_outlined),
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _fileName,
+            enabled: !_busy,
+            onEditingComplete: () async {
+              FocusScope.of(context).unfocus();
+              if (_sourceBytes == null) return;
+              setState(() {
+                _busy = true;
+                _message = 'جارٍ تجهيز الملف...';
+              });
+              await _convertSelectedToTarget();
+              if (mounted) setState(() => _busy = false);
+            },
+            decoration: const InputDecoration(
+              labelText: 'اسم الملف',
+              prefixIcon: Icon(Icons.insert_drive_file_outlined),
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _assetKey,
+            enabled: !_busy,
+            onChanged: (_) => setState(_syncGiftFileNameFromAssetKey),
+            decoration: const InputDecoration(
+              labelText: 'Asset Key',
+              prefixIcon: Icon(Icons.link_rounded),
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'طريقة الاستخدام',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: ChoiceChip(
+                  selected: _mode == 'remote',
+                  label: const SizedBox(
+                    width: double.infinity,
+                    child: Text(
+                      'Remote + Cached\nتحميل من الخادم مع التخزين المؤقت',
+                      textAlign: TextAlign.center,
+                    ),
                   ),
-                  items: _templates
+                  onSelected: _busy
+                      ? null
+                      : (_) => setState(() => _mode = 'remote'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ChoiceChip(
+                  selected: _mode == 'bundled',
+                  label: const SizedBox(
+                    width: double.infinity,
+                    child: Text(
+                      'محلي\nيدخل في Build التطبيق',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  onSelected: _busy
+                      ? null
+                      : (_) => setState(() => _mode = 'bundled'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            title: const Text(
+              'قنوات الاستخدام',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+            subtitle: Text(
+              _selectedChannels.map(_channelLabel).join(' • '),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11.5),
+            ),
+            children: [
+              Align(
+                alignment: Alignment.centerRight,
+                child: Wrap(
+                  spacing: 7,
+                  runSpacing: 7,
+                  children: _channels
                       .map(
-                        (item) => DropdownMenuItem(
-                          value: item.id,
-                          child: Text('${item.labelAr} • ${item.type}'),
+                        (channel) => FilterChip(
+                          label: Text(_channelLabel(channel)),
+                          selected: _selectedChannels.contains(channel),
+                          onSelected: _busy
+                              ? null
+                              : (selected) {
+                                  setState(() {
+                                    if (selected) {
+                                      _selectedChannels.add(channel);
+                                    } else {
+                                      _selectedChannels.remove(channel);
+                                    }
+                                  });
+                                },
                         ),
                       )
                       .toList(growable: false),
-                  onChanged: _busy
-                      ? null
-                      : (value) {
-                          if (value == null) return;
-                          final selected =
-                              _templates.where((e) => e.id == value).toList();
-                          if (selected.isEmpty) return;
-                          setState(() {
-                            _applyTemplate(selected.first);
-                            _message = null;
-                          });
-                        },
                 ),
-                if (template != null) ...[
-                  const SizedBox(height: 12),
-                  _templateGuide(template),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Channels / قنوات الاستخدام',
-                    style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _reason,
+            enabled: !_busy,
+            maxLength: 200,
+            decoration: const InputDecoration(
+              labelText: 'سبب التغيير',
+              hintText: 'مثال: تحديث التصميم أو تحسين الجودة',
+              prefixIcon: Icon(Icons.edit_note_rounded),
+              border: OutlineInputBorder(),
+            ),
+          ),
+          if (_message != null) ...[
+            Container(
+              padding: const EdgeInsets.all(11),
+              decoration: BoxDecoration(
+                color: const Color(0xFFD7B85A).withValues(alpha: .08),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.info_outline_rounded,
+                    color: Color(0xFFD7B85A),
+                    size: 18,
                   ),
-                  const SizedBox(height: 7),
-                  Wrap(
-                    spacing: 7,
-                    runSpacing: 7,
-                    children: _channels
-                        .map(
-                          (channel) => FilterChip(
-                            label: Text(_channelLabel(channel)),
-                            selected: _selectedChannels.contains(channel),
-                            onSelected: _busy
-                                ? null
-                                : (selected) {
-                                    setState(() {
-                                      if (selected) {
-                                        _selectedChannels.add(channel);
-                                      } else {
-                                        _selectedChannels.remove(channel);
-                                      }
-                                    });
-                                  },
-                          ),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Text(
+                      _message!,
+                      style: const TextStyle(fontSize: 11.5),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _busy ? null : () => _upload(publish: false),
+                  icon: const Icon(Icons.save_outlined),
+                  label: const Text('حفظ مسودة'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: _busy ? null : () => _upload(publish: true),
+                  icon: _busy
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                        .toList(growable: false),
-                  ),
-                ],
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _directory,
-                  enabled: !_busy,
-                  onChanged: (_) => setState(_syncGiftFileNameFromAssetKey),
-                  decoration: InputDecoration(
-                    labelText: 'المسار داخل المشروع',
-                    helperText: template == null || template.directories.isEmpty
-                        ? 'استخدم مسارًا آمنًا تحت أحد الجذور المعتمدة.'
-                        : 'الجذور المسموحة: ${template.directories.join(' • ')} — يمكن إضافة مجلدات فرعية آمنة.',
-                    border: const OutlineInputBorder(),
-                  ),
+                      : const Icon(Icons.publish_outlined),
+                  label: Text(_busy ? 'جارٍ التنفيذ...' : 'نشر'),
                 ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _fileName,
-                  onEditingComplete: () async {
-                    FocusScope.of(context).unfocus();
-                    if (_sourceBytes != null) {
-                      setState(() {
-                        _busy = true;
-                        _message = 'جارٍ التحويل حسب امتداد اسم الملف...';
-                      });
-                      await _convertSelectedToTarget();
-                      if (mounted) setState(() => _busy = false);
-                    }
-                  },
-                  decoration: const InputDecoration(
-                    labelText: 'اسم الملف',
-                    hintText: 'vip_badge_1.webp',
-                    helperText:
-                        'الصيغة يجب أن تكون من الصيغ المسموحة في Template المختار.',
-                    border: OutlineInputBorder(),
-                  ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          const Text(
+            'حفظ المسودة لا يغيّر النسخة الحية. التحديث الفعلي يتم عند النشر.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white54, fontSize: 10.5),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _registryItem(Map<String, dynamic> asset) {
+    final published = asset['published'] == true;
+    final draft = asset['draft'] is Map
+        ? Map<String, dynamic>.from(asset['draft'] as Map)
+        : <String, dynamic>{};
+    final hasDraft = asset['hasDraft'] == true && draft.isNotEmpty;
+    final source = hasDraft ? draft : asset;
+    final key = (asset['assetKey'] ?? '').toString();
+    final path =
+        (source['fullPath'] ?? asset['fullPath'] ?? '').toString();
+    final status = _assetStatusLabel(asset);
+    final statusColor = status == 'منشور'
+        ? Colors.greenAccent
+        : status == 'مسودة'
+            ? Colors.amberAccent
+            : const Color(0xFFC4A7FF);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 9),
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: const Color(0xFF15101F),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: Colors.white.withValues(alpha: .07)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: const Color(0xFF9A6CFF).withValues(alpha: .12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.image_outlined,
+              color: Color(0xFFCDB7FF),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  key.isEmpty ? 'أصل بدون مفتاح' : key,
+                  style: const TextStyle(fontWeight: FontWeight.w900),
                 ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _assetKey,
-                  onChanged: (_) => setState(_syncGiftFileNameFromAssetKey),
-                  decoration: const InputDecoration(
-                    labelText: 'Asset Key',
-                    hintText: 'vip.badge.1',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  value: _mode,
-                  decoration: const InputDecoration(
-                    labelText: 'طريقة الاستخدام',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: const [
-                    DropdownMenuItem(
-                      value: 'remote',
-                      child: Text('Remote + Cached — المفضل للأصول التجميلية'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'bundled',
-                      child: Text('Bundled — يدخل في Build التطبيق القادم'),
-                    ),
-                  ],
-                  onChanged:
-                      _busy ? null : (v) => setState(() => _mode = v ?? 'remote'),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _reason,
-                  decoration: const InputDecoration(
-                    labelText: 'سبب التغيير',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                OutlinedButton.icon(
-                  onPressed: _busy || template == null ? null : _pickImage,
-                  icon: const Icon(Icons.upload_file_outlined),
-                  label: Text(
-                    _pickedName == null
-                        ? 'اختيار ملف للقالب'
-                        : 'تغيير الملف: $_pickedName',
-                  ),
-                ),
-                if (_conversionNote != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    _conversionNote!,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.greenAccent,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-                if (_bytes != null) ...[
-                  const SizedBox(height: 12),
-                  Container(
-                    height: 220,
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      color: Colors.black26,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    padding: const EdgeInsets.all(8),
-                    child: Image.memory(_bytes!, fit: BoxFit.contain),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '${_preparedAnimated ? 'Animated Preview' : 'Preview'} • '
-                    '${(_bytes!.length / 1024).toStringAsFixed(1)} KB'
-                    ' • ${_preparedWidth ?? '—'}×${_preparedHeight ?? '—'}',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.white60),
-                  ),
-                  const SizedBox(height: 8),
-                  ListTile(
-                    dense: true,
-                    leading: Icon(
-                      validation == null
-                          ? Icons.verified_outlined
-                          : Icons.error_outline,
-                      color: validation == null
-                          ? Colors.greenAccent
-                          : Colors.orangeAccent,
-                    ),
-                    title: Text(
-                      validation == null
-                          ? 'Validation ناجح — جاهز للحفظ أو النشر'
-                          : validation,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 14),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  alignment: WrapAlignment.center,
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: _busy ? null : () => _upload(publish: false),
-                      icon: const Icon(Icons.save_outlined),
-                      label: const Text('حفظ مسودة'),
-                    ),
-                    FilledButton.icon(
-                      onPressed: _busy ? null : () => _upload(publish: true),
-                      icon: _busy
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child:
-                                  CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.publish_outlined),
-                      label: Text(_busy ? 'جارٍ التنفيذ...' : 'نشر'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'حفظ المسودة يستخدم R2 الخاص فقط ولا يعمل Commit أو Deploy. '
-                  'إذا كان الأصل منشورًا، تبقى النسخة الحية كما هي حتى تضغط «نشر».',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                const SizedBox(height: 3),
+                Text(
+                  path,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textDirection: TextDirection.ltr,
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(color: Colors.white54, fontSize: 10.5),
                 ),
               ],
             ),
           ),
-        ),
-        if (_message != null) ...[
-          const SizedBox(height: 10),
-          Card(
-            child: ListTile(
-              leading:
-                  const Icon(Icons.info_outline, color: Color(0xFFD7B85A)),
-              title: Text(_message!),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+            decoration: BoxDecoration(
+              color: statusColor.withValues(alpha: .10),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              status,
+              style: TextStyle(
+                color: statusColor,
+                fontSize: 10.5,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
+          if (hasDraft)
+            IconButton(
+              tooltip: 'نشر المسودة',
+              onPressed: _busy ? null : () => _publishAsset(asset),
+              icon: const Icon(Icons.publish_outlined),
+            )
+          else if (published)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8),
+              child: Icon(
+                Icons.verified_rounded,
+                color: Colors.greenAccent,
+                size: 19,
+              ),
+            ),
         ],
-        const SizedBox(height: 18),
-        Row(
-          children: [
-            const Expanded(
-              child: Text(
-                'Asset Registry',
-                style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900),
-              ),
-            ),
-            const Text('Bounded ≤100',
-                style: TextStyle(color: Colors.white54, fontSize: 11)),
-            IconButton(onPressed: _busy ? null : _loadAssets, icon: const Icon(Icons.refresh)),
-          ],
-        ),
-        if (_assets.isEmpty)
-          const Card(
-            child: ListTile(
-              title: Text('لا توجد أصول مسجلة بعد'),
-              subtitle: Text('اضغط تحديث بعد أول عملية حفظ أو نشر.'),
-            ),
-          )
-        else
-          ..._assets.map((a) {
-            final published = a['published'] == true;
-            final draft = a['draft'] is Map
-                ? Map<String, dynamic>.from(a['draft'] as Map)
-                : <String, dynamic>{};
-            final hasDraft = a['hasDraft'] == true && draft.isNotEmpty;
-            final source = hasDraft ? draft : a;
-            final channels = source['channels'] is List
-                ? (source['channels'] as List)
-                    .map((e) => e.toString())
-                    .join(', ')
-                : '';
-            final type =
-                '${source['assetType'] ?? a['assetType'] ?? 'legacy'}';
-            final status = '${a['status'] ??
-                (published ? 'published' : (hasDraft ? 'draft' : 'unknown'))}';
-            return Card(
-              child: ListTile(
-                leading: Icon(
-                  hasDraft
-                      ? Icons.edit_note_rounded
-                      : (published
-                          ? Icons.public_rounded
-                          : Icons.drafts_outlined),
-                  color: hasDraft
-                      ? Colors.orangeAccent
-                      : (published
-                          ? Colors.greenAccent
-                          : Colors.white54),
+      ),
+    );
+  }
+
+  Widget _buildRegistry() {
+    final visible = _visibleAssets;
+    return _studioPanel(
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'سجل الأصول',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
                 ),
-                title: Text('${a['assetKey'] ?? ''}'),
-                subtitle: Text(
-                  '${source['fullPath'] ?? a['fullPath'] ?? ''}\n'
-                  '$type • $status • ${source['mode'] ?? a['mode'] ?? ''}'
-                  '${published && hasDraft ? '\nالنسخة الحية مستمرة + مسودة جديدة جاهزة' : ''}'
-                  '${channels.isEmpty ? '' : '\n$channels'}',
-                ),
-                isThreeLine: true,
-                trailing: hasDraft
-                    ? IconButton(
-                        tooltip: 'نشر المسودة',
-                        onPressed: _busy ? null : () => _publishAsset(a),
-                        icon: const Icon(Icons.publish_outlined),
-                      )
-                    : (published
-                        ? const Icon(
-                            Icons.verified_rounded,
-                            color: Colors.greenAccent,
-                          )
-                        : null),
               ),
-            );
-          }),
-        const SizedBox(height: 12),
-        const Card(
-          child: ListTile(
-            leading:
-                Icon(Icons.security_outlined, color: Color(0xFFD7B85A)),
-            title: Text('حماية Asset Studio'),
-            subtitle: Text(
-              'Owner-only + Recent Auth + Templates/Channels + Validation + '
-              'R2 Drafts + Publish-only GitHub Commit + Idempotency + Firestore Registry + Audit Log. '
-              'لا Polling ولا Reads على Room/Gift hot paths.',
+              IconButton(
+                tooltip: 'تحديث السجل',
+                onPressed: _busy ? null : _loadAssets,
+                icon: const Icon(Icons.refresh_rounded),
+              ),
+            ],
+          ),
+          const Text(
+            'ابحث بالمفتاح أو المسار، ثم صفِّ النتائج حسب الحالة.',
+            style: TextStyle(color: Colors.white60, fontSize: 11.5),
+          ),
+          const SizedBox(height: 11),
+          TextField(
+            controller: _assetSearch,
+            onChanged: (_) => setState(() {}),
+            decoration: const InputDecoration(
+              hintText: 'البحث في الأصول...',
+              prefixIcon: Icon(Icons.search_rounded),
+              border: OutlineInputBorder(),
             ),
           ),
-        ),
-      ],
+          const SizedBox(height: 9),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                ChoiceChip(
+                  label: const Text('الكل'),
+                  selected: _assetFilter == 'all',
+                  onSelected: (_) => setState(() => _assetFilter = 'all'),
+                ),
+                const SizedBox(width: 7),
+                ChoiceChip(
+                  label: const Text('منشور'),
+                  selected: _assetFilter == 'published',
+                  onSelected: (_) => setState(() => _assetFilter = 'published'),
+                ),
+                const SizedBox(width: 7),
+                ChoiceChip(
+                  label: const Text('مسودة'),
+                  selected: _assetFilter == 'draft',
+                  onSelected: (_) => setState(() => _assetFilter = 'draft'),
+                ),
+                const SizedBox(width: 7),
+                ChoiceChip(
+                  label: const Text('يحتاج مراجعة'),
+                  selected: _assetFilter == 'review',
+                  onSelected: (_) => setState(() => _assetFilter = 'review'),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (_assets.isEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 12),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: .03),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Column(
+                children: [
+                  Icon(
+                    Icons.inventory_2_outlined,
+                    color: Colors.white38,
+                    size: 36,
+                  ),
+                  SizedBox(height: 7),
+                  Text(
+                    'لا توجد أصول مسجلة بعد',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  SizedBox(height: 3),
+                  Text(
+                    'سيظهر الأصل هنا مباشرة بعد أول حفظ أو نشر.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white54, fontSize: 11.5),
+                  ),
+                ],
+              ),
+            )
+          else if (visible.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 20),
+              child: Center(
+                child: Text(
+                  'لا توجد نتائج مطابقة.',
+                  style: TextStyle(color: Colors.white54),
+                ),
+              ),
+            )
+          else
+            ...visible.map(_registryItem),
+        ],
+      ),
+    );
+  }
+
+  Widget _ownerBody() {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          _studioPanel(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.auto_awesome_mosaic_outlined,
+                      color: Color(0xFFD7B85A),
+                      size: 30,
+                    ),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            'إدارة أصول Shadow Live',
+                            style: TextStyle(
+                              fontSize: 23,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          SizedBox(height: 5),
+                          Text(
+                            'ارفع وعدّل وانشر أصول التطبيق من مكان واحد وبخطوات واضحة.',
+                            style: TextStyle(
+                              color: Colors.white60,
+                              height: 1.45,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 15),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _studioStep(
+                        1,
+                        Icons.dashboard_customize_outlined,
+                        'القالب',
+                        active: true,
+                      ),
+                      _studioStep(2, Icons.cloud_upload_outlined, 'الرفع'),
+                      _studioStep(3, Icons.verified_user_outlined, 'التحقق'),
+                      _studioStep(4, Icons.visibility_outlined, 'المعاينة'),
+                      _studioStep(5, Icons.publish_outlined, 'الحفظ أو النشر'),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          _studioPanel(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.star_rounded, color: Color(0xFFD7B85A)),
+                    SizedBox(width: 7),
+                    Text(
+                      'الأصل المحدد',
+                      style: TextStyle(
+                        color: Color(0xFFD7B85A),
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(15),
+                  child: Image.asset(
+                    'assets/images/auth_header.png',
+                    height: 145,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                const SizedBox(height: 11),
+                const Text(
+                  'صورة شاشة تسجيل الدخول',
+                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'الصورة المعروضة في أعلى شاشة تسجيل الدخول.',
+                  style: TextStyle(color: Colors.white60),
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: .18),
+                    borderRadius: BorderRadius.circular(11),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.link_rounded, size: 17, color: Colors.white54),
+                      SizedBox(width: 7),
+                      Expanded(
+                        child: Text(
+                          'auth.login.header',
+                          textDirection: TextDirection.ltr,
+                          textAlign: TextAlign.right,
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 11),
+                FilledButton.icon(
+                  onPressed: _busy
+                      ? null
+                      : () {
+                          _selectAuthHeaderPreset();
+                          setState(() => _showStudioForm = true);
+                        },
+                  icon: const Icon(Icons.edit_outlined),
+                  label: const Text('تعديل هذا الأصل'),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: _busy
+                ? null
+                : () => setState(() {
+                      _showStudioForm = true;
+                      _message = null;
+                    }),
+            icon: const Icon(Icons.add_circle_outline_rounded),
+            label: const Padding(
+              padding: EdgeInsets.symmetric(vertical: 13),
+              child: Text(
+                'إضافة أصل جديد',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _statTile(
+                Icons.inventory_2_outlined,
+                _assets.length.toString(),
+                'إجمالي الأصول',
+                const Color(0xFFC4A7FF),
+              ),
+              const SizedBox(width: 7),
+              _statTile(
+                Icons.verified_rounded,
+                _publishedCount.toString(),
+                'منشورة',
+                Colors.greenAccent,
+              ),
+              const SizedBox(width: 7),
+              _statTile(
+                Icons.schedule_rounded,
+                _draftCount.toString(),
+                'مسودات',
+                Colors.amberAccent,
+              ),
+            ],
+          ),
+          if (_showStudioForm) ...[
+            const SizedBox(height: 15),
+            _buildStudioForm(),
+          ],
+          const SizedBox(height: 15),
+          _buildRegistry(),
+          const SizedBox(height: 12),
+          _studioPanel(
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              leading: const Icon(
+                Icons.security_outlined,
+                color: Color(0xFFD7B85A),
+              ),
+              title: const Text(
+                'معلومات الحماية',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
+              subtitle: const Text(
+                'تفاصيل تقنية — افتحها فقط عند الحاجة',
+                style: TextStyle(color: Colors.white54, fontSize: 11.5),
+              ),
+              children: const [
+                Text(
+                  'Owner-only • Recent Auth • Templates/Channels • Validation • '
+                  'R2 Drafts • Publish-only GitHub Commit • Idempotency • '
+                  'Firestore Registry • Audit Log. لا Polling ولا Reads على Room/Gift hot paths.',
+                  style: TextStyle(color: Colors.white60, height: 1.45),
+                ),
+              ],
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+          ),
+          const SizedBox(height: 24),
+        ],
+      ),
     );
   }
 
