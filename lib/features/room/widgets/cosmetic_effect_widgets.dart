@@ -164,66 +164,88 @@ class _WealthLv2630FrameFxPainter extends CustomPainter {
     final t = animation.value;
     final pulse = (math.sin(t * math.pi * 2) + 1) / 2;
     final radius = shortest * .405;
-    final outerRect = Rect.fromCircle(
-      center: center,
-      radius: shortest * .46,
-    );
+    final ringRect = Rect.fromCircle(center: center, radius: radius);
+    final startAngle = -math.pi / 2 + (t * math.pi * 2);
+    const sweepAngle = math.pi * .34;
 
-    final glow = Paint()
+    // Low-cost warm aura that gently breathes behind the metal.
+    final aura = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = shortest * .03
-      ..color = const Color(0xFFFFB52E).withValues(
-        alpha: .08 + (.05 * pulse),
+      ..strokeWidth = shortest * .034
+      ..color = const Color(0xFFFFA51F).withValues(
+        alpha: .055 + (.035 * pulse),
       )
       ..maskFilter = MaskFilter.blur(
         BlurStyle.normal,
-        shortest * .028,
+        shortest * .030,
       );
-    canvas.drawCircle(center, radius, glow);
+    canvas.drawCircle(center, radius, aura);
 
-    final sweep = Paint()
+    // A narrow specular highlight travels around the metal edge. Two strokes
+    // create a bright polished-gold core with a soft halo while keeping the
+    // transparent avatar center untouched.
+    final specularHalo = Paint()
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
-      ..strokeWidth = shortest * .018
-      ..shader = SweepGradient(
-        colors: [
-          Colors.transparent,
-          Colors.transparent,
-          const Color(0x00FFD36A),
-          const Color(0xAAFFD36A),
-          const Color(0xEEFFF2C4),
-          const Color(0x88FFB52E),
-          Colors.transparent,
-        ],
-        stops: const [0, .60, .72, .80, .86, .92, 1],
-        transform: GradientRotation(t * math.pi * 2),
-      ).createShader(outerRect);
-    canvas.drawCircle(center, radius, sweep);
+      ..strokeWidth = shortest * .040
+      ..color = const Color(0xFFFFC34A).withValues(alpha: .26)
+      ..maskFilter = MaskFilter.blur(
+        BlurStyle.normal,
+        shortest * .022,
+      );
+    canvas.drawArc(
+      ringRect,
+      startAngle,
+      sweepAngle,
+      false,
+      specularHalo,
+    );
 
-    final sparkleAngles = <double>[
-      -math.pi / 2,
-      -math.pi * .72,
-      -math.pi * .28,
-      math.pi * .72,
-      math.pi * .28,
-    ];
-    for (var i = 0; i < sparkleAngles.length; i++) {
-      final angle = sparkleAngles[i];
-      final phase = (t + i * .17) % 1.0;
-      final alpha =
-          .18 + .72 * math.pow(math.sin(phase * math.pi), 2).toDouble();
-      final sparkleRadius = radius * (i == 0 ? .98 : 1.03);
-      final point = Offset(
-        center.dx + math.cos(angle) * sparkleRadius,
-        center.dy + math.sin(angle) * sparkleRadius,
-      );
-      _drawSparkle(
-        canvas,
-        point,
-        shortest * (i == 0 ? .024 : .018),
-        alpha,
-      );
-    }
+    final specularCore = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = shortest * .016
+      ..shader = SweepGradient(
+        colors: const [
+          Color(0x00FFF1B8),
+          Color(0x99FFD36A),
+          Color(0xFFFFF7DC),
+          Color(0xFFFFE7A0),
+          Color(0x00FFD36A),
+        ],
+        stops: [0, .20, .50, .78, 1],
+        transform: GradientRotation(startAngle),
+      ).createShader(ringRect);
+    canvas.drawArc(
+      ringRect,
+      startAngle,
+      sweepAngle,
+      false,
+      specularCore,
+    );
+
+    // Keep sparkles sparse so the motion reads clearly over an already bright
+    // raster frame. One follows the specular sweep, one accents the crown.
+    final leadingAngle = startAngle + sweepAngle * .70;
+    final leadingPoint = Offset(
+      center.dx + math.cos(leadingAngle) * radius,
+      center.dy + math.sin(leadingAngle) * radius,
+    );
+    _drawSparkle(
+      canvas,
+      leadingPoint,
+      shortest * .025,
+      .62 + (.30 * pulse),
+    );
+
+    final crownPhase =
+        math.pow(math.sin(((t + .18) % 1.0) * math.pi), 2).toDouble();
+    _drawSparkle(
+      canvas,
+      Offset(center.dx, center.dy - shortest * .455),
+      shortest * .021,
+      .18 + (.62 * crownPhase),
+    );
   }
 
   void _drawSparkle(
@@ -232,12 +254,17 @@ class _WealthLv2630FrameFxPainter extends CustomPainter {
     double radius,
     double alpha,
   ) {
+    final glow = Paint()
+      ..color = const Color(0xFFFFE6A3).withValues(alpha: alpha * .38)
+      ..maskFilter = MaskFilter.blur(BlurStyle.normal, radius * .75);
+    canvas.drawCircle(center, radius * .82, glow);
+
     final paint = Paint()
-      ..color = const Color(0xFFFFF4C8).withValues(alpha: alpha)
-      ..strokeWidth = math.max(1.0, radius * .18).toDouble()
+      ..color = const Color(0xFFFFF8E7).withValues(alpha: alpha)
+      ..strokeWidth = math.max(1.0, radius * .16).toDouble()
       ..strokeCap = StrokeCap.round;
 
-    canvas.drawCircle(center, radius * .20, paint);
+    canvas.drawCircle(center, radius * .16, paint);
     canvas.drawLine(
       Offset(center.dx - radius, center.dy),
       Offset(center.dx + radius, center.dy),
