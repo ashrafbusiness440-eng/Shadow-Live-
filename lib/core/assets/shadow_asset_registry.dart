@@ -55,7 +55,6 @@ abstract final class ShadowAssetKeys {
   static String vipChatBubble(int level) => 'vip.v$level.chatBubble';
   static String vipProfileFrame(int level) => 'vip.v$level.profileFrame';
   static String vipProfileBackground(int level) => 'vip.v$level.profileBackground';
-  static String vipVehicle(int level) => 'vip.v$level.vehicle';
   static String vipAudioWave(int level) => 'vip.v$level.audioWave';
   static String vipEntryStrip(int level) => 'vip.v$level.entryStrip';
   static String vipDataCard(int level) => 'vip.v$level.dataCard';
