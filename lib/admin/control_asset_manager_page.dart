@@ -1338,31 +1338,62 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
   int get _draftCount =>
       _assets.where((asset) => asset['hasDraft'] == true).length;
 
-  List<Map<String, dynamic>> get _visibleAssets {
-    final query = _assetSearch.text.trim().toLowerCase();
+  List<Map<String, dynamic>> get _filteredAssets {
+    final query = _debouncedSearch;
     return _assets.where((asset) {
       final published = asset['published'] == true;
       final hasDraft = asset['hasDraft'] == true;
       final status = (asset['status'] ?? '').toString().toLowerCase();
-      final matchesFilter = switch (_assetFilter) {
+      final matchesStatus = switch (_assetFilter) {
         'published' => published,
         'draft' => hasDraft,
         'review' => status.contains('review') || status.contains('pending'),
         _ => true,
       };
-      if (!matchesFilter) return false;
+      if (!matchesStatus) return false;
+
+      final source = _assetSource(asset);
+      final type =
+          (source['assetType'] ?? asset['assetType'] ?? '').toString();
+      if (_assetTypeFilter != 'all' && type != _assetTypeFilter) {
+        return false;
+      }
+
+      final rawChannels = source['channels'] ?? asset['channels'];
+      final channels = rawChannels is List
+          ? rawChannels.map((e) => e.toString()).toSet()
+          : <String>{};
+      if (_assetChannelFilter != 'all' &&
+          !channels.contains(_assetChannelFilter)) {
+        return false;
+      }
+
       if (query.isEmpty) return true;
-      final draft = asset['draft'] is Map
-          ? Map<String, dynamic>.from(asset['draft'] as Map)
-          : <String, dynamic>{};
-      final source = hasDraft ? draft : asset;
       final haystack = <String>[
         (asset['assetKey'] ?? '').toString(),
         (source['fullPath'] ?? asset['fullPath'] ?? '').toString(),
-        (source['assetType'] ?? asset['assetType'] ?? '').toString(),
+        (source['fileName'] ?? asset['fileName'] ?? '').toString(),
+        type,
+        (source['templateId'] ?? asset['templateId'] ?? '').toString(),
+        channels.join(' '),
       ].join(' ').toLowerCase();
       return haystack.contains(query);
     }).toList(growable: false);
+  }
+
+  List<Map<String, dynamic>> get _visibleAssets =>
+      _filteredAssets.take(_visibleLimit).toList(growable: false);
+
+  List<String> get _availableAssetTypes {
+    final result = <String>{};
+    for (final asset in _assets) {
+      final source = _assetSource(asset);
+      final type =
+          (source['assetType'] ?? asset['assetType'] ?? '').toString().trim();
+      if (type.isNotEmpty) result.add(type);
+    }
+    final list = result.toList()..sort();
+    return list;
   }
 
   String _assetStatusLabel(Map<String, dynamic> asset) {
