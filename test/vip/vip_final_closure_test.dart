@@ -28,12 +28,24 @@ void main() {
     }
 
     expect(
+      ShadowAssetKeys.vipBatchHKeys(3),
+      contains(ShadowAssetKeys.vipFancyIdPlate(3)),
+    );
+    expect(
+      ShadowAssetKeys.vipBatchHKeys(4),
+      contains(ShadowAssetKeys.vipEmojiPack(4)),
+    );
+    expect(
       ShadowAssetKeys.vipBatchHKeys(8),
       contains(ShadowAssetKeys.vipEntryStrip(8)),
     );
     expect(
       ShadowAssetKeys.vipBatchHKeys(10),
       contains(ShadowAssetKeys.vipGlobalEntryBanner(10)),
+    );
+    expect(
+      ShadowAssetKeys.vipBatchHKeys(10),
+      contains(ShadowAssetKeys.vipDynamicFx(10)),
     );
   });
 
