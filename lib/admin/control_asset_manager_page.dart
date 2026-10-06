@@ -2253,11 +2253,15 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
 
   Future<void> _showSmartPresetPicker() async {
     if (_assets.isEmpty) {
+      await _loadAssets();
+    }
+    if (!mounted || _assets.isEmpty) {
       setState(() => _message = 'سجل الأصول فارغ حاليًا.');
       return;
     }
+
     var query = '';
-    final selected = await showModalBottomSheet<Map<String, dynamic>>(
+    final seed = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF100B17),
@@ -2273,6 +2277,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
             ].join(' ').toLowerCase();
             return haystack.contains(query);
           }).take(60).toList(growable: false);
+
           return SafeArea(
             child: FractionallySizedBox(
               heightFactor: .82,
@@ -2281,10 +2286,19 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                 child: Column(
                   children: [
                     const Text(
-                      'اختر أصلًا جاهزًا لتعبئة المعلومات تلقائيًا',
+                      'اختر مجموعة من السجل الرسمي',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'اختر أي أصل من المجموعة، وبعدها يعرض الاستديو كل عناصر الدفعة الرسمية.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white60,
+                        fontSize: 11,
                       ),
                     ),
                     const SizedBox(height: 10),
@@ -2334,10 +2348,175 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
         },
       ),
     );
-    if (selected != null && mounted) {
-      _beginEditAsset(selected);
-      setState(() => _message =
-          'تم تعبئة المعلومات تلقائيًا من الأصل الذي اخترته.');
+    if (seed == null || !mounted) return;
+
+    setState(() {
+      _busy = true;
+      _message = 'جارٍ قراءة سجل الدفعة الرسمي...';
+    });
+
+    Map<String, dynamic> manifest;
+    try {
+      manifest = await _loadManifestForAsset(seed);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _message = 'تعذر قراءة سجل الدفعة: $e';
+        });
+      }
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _busy = false);
+
+    final specs = manifest['assets'] is List
+        ? (manifest['assets'] as List)
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList(growable: false)
+        : <Map<String, dynamic>>[];
+
+    Map<String, dynamic>? selectedSpec;
+    if (specs.length <= 1) {
+      selectedSpec = specs.isEmpty
+          ? <String, dynamic>{
+              'assetKey': seed['assetKey'],
+              'fullPath': seed['fullPath'],
+            }
+          : specs.first;
+    } else {
+      selectedSpec =
+          await showModalBottomSheet<Map<String, dynamic>>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: const Color(0xFF100B17),
+        builder: (sheetContext) => SafeArea(
+          child: FractionallySizedBox(
+            heightFactor: .82,
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'عناصر الدفعة ${manifest['batch'] ?? ''}',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  if ((manifest['metric'] ?? '').toString().isNotEmpty)
+                    Text(
+                      '${manifest['metric']} '
+                      '${manifest['tier'] ?? ''}',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white60,
+                        fontSize: 11,
+                      ),
+                    ),
+                  const SizedBox(height: 10),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: specs.length,
+                      itemBuilder: (_, index) {
+                        final spec = specs[index];
+                        final published = spec['published'] == true;
+                        final hasDraft = spec['hasDraft'] == true;
+                        final width = spec['width'];
+                        final height = spec['height'];
+                        final statusLabel = hasDraft
+                            ? 'مسودة'
+                            : published
+                                ? 'منشور'
+                                : 'غير مكتمل';
+                        return ListTile(
+                          leading: Icon(
+                            published && !hasDraft
+                                ? Icons.check_circle_rounded
+                                : hasDraft
+                                    ? Icons.edit_note_rounded
+                                    : Icons.radio_button_unchecked_rounded,
+                            color: published && !hasDraft
+                                ? Colors.greenAccent
+                                : hasDraft
+                                    ? Colors.amberAccent
+                                    : Colors.white38,
+                          ),
+                          title: Text(
+                            (spec['assetKey'] ?? '').toString(),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            textDirection: TextDirection.ltr,
+                          ),
+                          subtitle: Text(
+                            [
+                              if (width != null && height != null)
+                                '$width×$height',
+                              statusLabel,
+                              (spec['fileName'] ?? '').toString(),
+                            ].where((e) => e.toString().trim().isNotEmpty).join(
+                                  ' • ',
+                                ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          onTap: () =>
+                              Navigator.pop(sheetContext, spec),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (selectedSpec == null || !mounted) return;
+    final key = (selectedSpec['assetKey'] ?? '').toString().trim();
+    if (key.isEmpty) return;
+
+    setState(() {
+      _busy = true;
+      _message = 'جارٍ تعبئة معلومات الأصل...';
+    });
+    try {
+      final selectedAsset = await _fetchAssetByKey(key);
+      if (!mounted) return;
+      if (selectedAsset == null) {
+        setState(() {
+          _message =
+              'هذا العنصر موجود في سجل الدفعة لكنه غير مسجل بالكامل بعد. '
+              'يجب تسجيله أولًا حتى لا نخمن معلومات الربط.';
+        });
+        return;
+      }
+
+      _beginEditAsset(selectedAsset);
+      final width = selectedSpec['width'];
+      final height = selectedSpec['height'];
+      final template = _selectedTemplate;
+      setState(() {
+        _activeManifest = manifest;
+        _message = [
+          'تمت تعبئة المعلومات من سجل الدفعة الرسمي.',
+          if (width != null && height != null)
+            'المقاس المطلوب: $width×$height.',
+          if (template != null && template.prompt.trim().isNotEmpty)
+            'الوصف الجاهز موجود داخل مواصفات القالب.',
+        ].join(' ');
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _message = 'تعذر فتح الأصل الجاهز: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
