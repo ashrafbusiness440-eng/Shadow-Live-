@@ -89,6 +89,14 @@ async function assertRoomPresence(
   return "legacy_room_presence";
 }
 
+function giftMinVipLevel(gift = {}) {
+  const explicit = Number(gift.minVipLevel);
+  if (Number.isSafeInteger(explicit) && explicit >= 0 && explicit <= 10) {
+    return explicit;
+  }
+  return clean(gift.category) === "vip" ? 4 : 0;
+}
+
 function randomDocId(prefix) {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, "")}`;
 }
@@ -314,6 +322,15 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     const gift = rawCatalog.find((item) => clean(item?.id) === giftId);
     if (!gift) throw new ApiError("gift_not_found", 404);
     if (gift.enabled === false) throw new ApiError("gift_inactive", 409);
+
+    const senderVip = vipCosmeticsFromUser(
+      senderSnap.data || {},
+      nowMs,
+    ).level;
+    const requiredVipLevel = giftMinVipLevel(gift);
+    if (requiredVipLevel > 0 && senderVip < requiredVipLevel) {
+      throw new ApiError("vip_gift_requires_level", 403);
+    }
 
     const unitCoins = Number(gift.priceCoins || 0);
     if (!Number.isSafeInteger(unitCoins) || unitCoins <= 0) {
