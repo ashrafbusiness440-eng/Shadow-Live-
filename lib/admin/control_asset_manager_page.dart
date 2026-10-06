@@ -2771,32 +2771,48 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     String assetKey,
     String expectedSha,
   ) async {
-    await _loadAssets();
-    Map<String, dynamic>? live;
-    for (final asset in _assets) {
-      if ((asset['assetKey'] ?? '').toString() == assetKey) {
-        live = asset;
-        break;
-      }
-    }
-    if (live == null ||
-        live['published'] != true ||
-        (live['contentSha'] ?? '').toString() != expectedSha) {
-      return false;
-    }
-    final rawUrl = (live['rawUrl'] ?? '').toString().trim();
-    if (rawUrl.isEmpty) return false;
     try {
-      final separator = rawUrl.contains('?') ? '&' : '?';
+      final uri = _endpoint.replace(
+        queryParameters: {'assetKey': assetKey},
+      );
       final response = await http.get(
+        uri,
+        headers: {'authorization': 'Bearer ${await _token()}'},
+      );
+      final decoded = response.body.isEmpty
+          ? <String, dynamic>{}
+          : jsonDecode(response.body);
+      final body = decoded is Map<String, dynamic>
+          ? decoded
+          : <String, dynamic>{};
+      final asset = body['asset'] is Map
+          ? Map<String, dynamic>.from(body['asset'] as Map)
+          : <String, dynamic>{};
+
+      if (response.statusCode < 200 ||
+          response.statusCode >= 300 ||
+          body['ok'] != true ||
+          asset['published'] != true ||
+          (asset['contentSha'] ?? '').toString() != expectedSha) {
+        return false;
+      }
+
+      final rawUrl = (asset['rawUrl'] ?? '').toString().trim();
+      if (rawUrl.isEmpty) return false;
+      final separator = rawUrl.contains('?') ? '&' : '?';
+      final liveResponse = await http.get(
         Uri.parse(
           '$rawUrl${separator}verify=${DateTime.now().microsecondsSinceEpoch}',
         ),
         headers: const {'cache-control': 'no-cache'},
       );
-      return response.statusCode >= 200 &&
-          response.statusCode < 300 &&
-          response.bodyBytes.isNotEmpty;
+      final verified = liveResponse.statusCode >= 200 &&
+          liveResponse.statusCode < 300 &&
+          liveResponse.bodyBytes.isNotEmpty;
+      if (verified) {
+        unawaited(_loadAssets());
+      }
+      return verified;
     } catch (_) {
       return false;
     }
