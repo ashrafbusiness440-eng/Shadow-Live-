@@ -119,6 +119,7 @@ class RoomChatService {
     String? replyPreview,
     String? replySenderUid,
     List<String> mentionUids = const [],
+    String? vipEmojiToken,
   }) async {
     final activeRoomId = _session.roomId.trim();
     if (!_session.active ||
@@ -132,6 +133,7 @@ class RoomChatService {
       replyPreview: replyPreview,
       replySenderUid: replySenderUid,
       mentionUids: mentionUids,
+      vipEmojiToken: vipEmojiToken,
     );
   }
 
