@@ -679,7 +679,7 @@ class _VipScreenState extends State<VipScreen> {
             children: [
               Expanded(
                 child: Text(
-                  'الامتيازات الحصرية ${benefits.length}/41',
+                  'الامتيازات الحصرية ${benefits.length}/38',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 17,
@@ -838,13 +838,6 @@ class _VipScreenState extends State<VipScreen> {
         ),
       ]);
     }
-    if (level >= 6) {
-      items.add(_VipCosmetic(
-        'المركبة',
-        ShadowAssetKeys.vipVehicle(level),
-        Icons.directions_car_filled_rounded,
-      ));
-    }
     if (level >= 7) {
       items.add(_VipCosmetic(
         'الموجة الصوتية',
@@ -908,7 +901,7 @@ class _VipScreenState extends State<VipScreen> {
         'هدايا مخصصة',
         'خلفية شخصية',
       ],
-      6: ['مركبة حصرية', 'الحماية من الطرد', 'تخصيص إطار الصورة الحصري'],
+      6: ['الحماية من الطرد', 'تخصيص إطار الصورة الحصري'],
       7: [
         'تمديد فترة الصلاحية',
         'الإخفاء عند دخول الغرفة',
@@ -916,9 +909,7 @@ class _VipScreenState extends State<VipScreen> {
         'موجة صوتية',
       ],
       8: [
-        'عرض المركبات على صفحة الملف الشخصية',
         'شريط دخول',
-        'مركبة خاصة',
       ],
       9: [
         'إخفاء الزيارات',
