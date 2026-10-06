@@ -4,6 +4,7 @@ const PUBLIC_MEDIA_CACHE_SECONDS = 300;
 
 const PUBLIC_SCOPES = new Set([
   "profile_image",
+  "profile_avatar_animation",
   "profile_cover",
   "diary_image",
   "room_cover",
@@ -12,11 +13,12 @@ const PUBLIC_SCOPES = new Set([
   "agency_room_image",
 ]);
 
-const FILE_PATTERN = /^([a-f0-9]{32})\.(jpg|png|webp)$/;
+const FILE_PATTERN = /^([a-f0-9]{32})\.(jpg|png|webp|gif)$/;
 const MIME_BY_EXT = Object.freeze({
   jpg: "image/jpeg",
   png: "image/png",
   webp: "image/webp",
+  gif: "image/gif",
 });
 
 const clean = (value) => String(value ?? "").trim();
@@ -87,6 +89,8 @@ export function publicMediaStorageKey({ scope, targetId, filename }) {
   switch (normalizedScope) {
     case "profile_image":
       return `users/${encodedTarget}/profile/${canonicalFile}`;
+    case "profile_avatar_animation":
+      return `users/${encodedTarget}/profile-animation/${canonicalFile}`;
     case "profile_cover":
       return `users/${encodedTarget}/covers/${canonicalFile}`;
     case "diary_image":
@@ -118,7 +122,7 @@ export function publicMediaUrl(
 
   const id = clean(objectId).toLowerCase();
   const ext = clean(extension).toLowerCase();
-  if (!/^[a-f0-9]{32}$/.test(id) || !/^(jpg|png|webp)$/.test(ext)) {
+  if (!/^[a-f0-9]{32}$/.test(id) || !/^(jpg|png|webp|gif)$/.test(ext)) {
     return null;
   }
 

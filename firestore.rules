@@ -192,6 +192,8 @@ service cloud.firestore {
         'vip10TrialCardsGrantedAt',
         'vipProfileFrameLevel',
         'frameCustomizationChangedAt',
+        'profileAvatarAnimationUrl',
+        'profileAvatarAnimationObjectId',
         'publicBadges',
         'totalGiftsSent',
         'totalGiftsReceived',
@@ -233,6 +235,8 @@ service cloud.firestore {
       return request.resource.data.vipLevel == source.get('effectiveVipLevel', 0)
         && request.resource.data.get('effectiveVipLevel', 0) == source.get('effectiveVipLevel', 0)
         && request.resource.data.get('vipExpiresAt', null) == source.get('vipExpiresAt', null)
+        && request.resource.data.get('profileAvatarAnimationUrl', '') == source.get('profileAvatarAnimationUrl', '')
+        && request.resource.data.get('profileAvatarAnimationObjectId', '') == source.get('profileAvatarAnimationObjectId', '')
         && request.resource.data.badges == source.get('publicBadges', []);
     }
 
@@ -301,6 +305,8 @@ service cloud.firestore {
         && !('betWinNotificationVisibilityUpdatedAt' in request.resource.data)
         && !('vip10GlobalEntryDayKey' in request.resource.data)
         && !('vip10GlobalEntryPublishedAt' in request.resource.data)
+        && !('profileAvatarAnimationUrl' in request.resource.data)
+        && !('profileAvatarAnimationObjectId' in request.resource.data)
         && !('publicBadges' in request.resource.data)
         && !('totalGiftsSent' in request.resource.data)
         && !('totalGiftsReceived' in request.resource.data)
@@ -635,6 +641,7 @@ service cloud.firestore {
         && publicProfileAuthoritativeFieldsMatch(userId)
         && request.resource.data.keys().hasOnly([
           'uid','displayName','username','publicId','searchTokens','profileImageUrl','profileImageObjectId','profileAvatarAsset',
+          'profileAvatarAnimationUrl','profileAvatarAnimationObjectId',
           'coverImageUrl','coverImageObjectId','bio','location','moodEmoji','moodText','interests','vipLevel','effectiveVipLevel','vipExpiresAt','badges','isOnline','createdAt','updatedAt'
         ]);
       allow delete: if false;

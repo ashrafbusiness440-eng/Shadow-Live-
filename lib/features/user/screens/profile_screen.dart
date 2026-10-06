@@ -20,6 +20,7 @@ import '../../room/widgets/cosmetic_effect_widgets.dart';
 import '../../agency/screens/agency_package_grant_page.dart';
 import '../../relationships/screens/relationships_page.dart';
 import '../../vip/screens/vip_screen.dart';
+import '../../vip/widgets/vip_profile_avatar.dart';
 import '../bloc/user_bloc.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -211,15 +212,8 @@ class _ProfileScreenState extends State<ProfileScreen>
     return 0;
   }
 
-  ImageProvider? _avatar(Map<String, dynamic> profile) {
-    final url = profile['profileImageUrl'] ?? profile['avatarUrl'];
-    if (url is String && url.isNotEmpty) return NetworkImage(url);
-
-    final asset = profile['profileAvatarAsset'];
-    if (asset is String && asset.isNotEmpty) return AssetImage(asset);
-
-    return null;
-  }
+  ImageProvider? _avatar(Map<String, dynamic> profile) =>
+      effectiveProfileAvatarProvider(profile);
 
   List<String> _ids(Map<String, dynamic> profile) {
     final result = <String>[];

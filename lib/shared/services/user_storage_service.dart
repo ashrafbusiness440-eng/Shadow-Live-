@@ -12,6 +12,7 @@ const int userImageMaxLongestSide = 2048;
 
 const Map<String, int> _userImageScopeMaxBytes = <String, int>{
   'profile_image': 2 * 1024 * 1024,
+  'profile_avatar_animation': 2 * 1024 * 1024,
   'profile_cover': userImageGlobalMaxBytes,
   'room_cover': userImageGlobalMaxBytes,
   'agency_logo': 2 * 1024 * 1024,
@@ -50,6 +51,22 @@ Future<PreparedUserImage> prepareUserImageForUpload({
     );
   }
   if (bytes.isEmpty) throw StateError('empty_file');
+
+  final normalizedMime = mimeType.trim().toLowerCase();
+  if (normalizedMime == 'image/gif') {
+    if (scope.trim() != 'profile_avatar_animation') {
+      throw StateError('gif_profile_only');
+    }
+    if (bytes.length > limit) {
+      throw StateError('image_too_large_after_compression');
+    }
+    return PreparedUserImage(
+      bytes: bytes,
+      mimeType: 'image/gif',
+      originalBytes: bytes.length,
+      wasProcessed: false,
+    );
+  }
 
   final result = await compute(_prepareUserImageJob, <String, Object>{
     'bytes': bytes,
@@ -164,6 +181,15 @@ String detectSupportedImageMime(Uint8List bytes) {
       bytes[6] == 0x1A &&
       bytes[7] == 0x0A) {
     return 'image/png';
+  }
+  if (bytes.length >= 6 &&
+      bytes[0] == 0x47 &&
+      bytes[1] == 0x49 &&
+      bytes[2] == 0x46 &&
+      bytes[3] == 0x38 &&
+      (bytes[4] == 0x37 || bytes[4] == 0x39) &&
+      bytes[5] == 0x61) {
+    return 'image/gif';
   }
   if (bytes.length >= 12 &&
       bytes[0] == 0x52 &&

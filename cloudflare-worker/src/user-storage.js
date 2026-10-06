@@ -1,3 +1,4 @@
+import { activeEffectiveVipLevelFromUser } from "./vip-runtime.js";
 import {
   firestoreQuotaResponse,
   json,
@@ -24,6 +25,7 @@ export const DIARY_ORPHAN_DELETE_DELAY_MS = 24 * 60 * 60 * 1000;
 export const STORAGE_DELETE_BATCH_LIMIT = 25;
 const REPLACEABLE_SCOPES = new Set([
   "profile_image",
+  "profile_avatar_animation",
   "profile_cover",
   "room_cover",
   "agency_logo",
@@ -33,6 +35,7 @@ const REPLACEABLE_SCOPES = new Set([
 
 export const STORAGE_SCOPE_CONFIG = Object.freeze({
   profile_image: Object.freeze({ maxBytes: MAX_PROFILE_BYTES }),
+  profile_avatar_animation: Object.freeze({ maxBytes: MAX_PROFILE_BYTES }),
   profile_cover: Object.freeze({ maxBytes: MAX_COVER_BYTES }),
   room_cover: Object.freeze({ maxBytes: MAX_COVER_BYTES }),
   agency_logo: Object.freeze({ maxBytes: MAX_PROFILE_BYTES }),
@@ -46,6 +49,7 @@ const MIME_TO_EXT = Object.freeze({
   "image/jpeg": "jpg",
   "image/png": "png",
   "image/webp": "webp",
+  "image/gif": "gif",
 });
 
 const rateState = new Map();
@@ -111,13 +115,15 @@ export function buildStorageObjectKey({
   const safeTarget = encodedSegment(targetId);
   const safeObject = encodedSegment(objectId);
   const safeExt = clean(extension).toLowerCase();
-  if (!/^(jpg|png|webp)$/.test(safeExt)) {
+  if (!/^(jpg|png|webp|gif)$/.test(safeExt)) {
     throw new StorageApiError("invalid_file_type", 400);
   }
 
   switch (clean(scope)) {
     case "profile_image":
       return `users/${safeUid}/profile/${safeObject}.${safeExt}`;
+    case "profile_avatar_animation":
+      return `users/${safeUid}/profile-animation/${safeObject}.${safeExt}`;
     case "profile_cover":
       return `users/${safeUid}/covers/${safeObject}.${safeExt}`;
     case "diary_image":
@@ -148,6 +154,12 @@ export function validateStoragePayload({
 
   const extension = storageExtensionForMime(mimeType);
   if (!extension) throw new StorageApiError("invalid_file_type", 400);
+  if (extension === "gif" && normalizedScope !== "profile_avatar_animation") {
+    throw new StorageApiError("gif_profile_only", 400);
+  }
+  if (normalizedScope === "profile_avatar_animation" && extension !== "gif") {
+    throw new StorageApiError("animated_avatar_gif_required", 400);
+  }
 
   const size = Number(byteLength || 0);
   if (!Number.isSafeInteger(size) || size <= 0 || size > config.maxBytes) {
@@ -277,8 +289,22 @@ export async function authorizeAgencyLogoManagement(
   return { targetId, agency: agency.data || {} };
 }
 
+async function authorizeVipAnimatedProfileImage(db, uid, nowMs = Date.now()) {
+  const user = await db.get(`users/${uid}`);
+  if (!user.exists) throw new StorageApiError("user_not_found", 404);
+  if (activeEffectiveVipLevelFromUser(user.data || {}, nowMs) < 4) {
+    throw new StorageApiError("vip4_required_for_animated_avatar", 403);
+  }
+  return true;
+}
+
 async function authorizeUpload(db, uid, scope, rawTargetId) {
-  if (scope === "profile_image" || scope === "profile_cover" || scope === "diary_image") {
+  if (
+    scope === "profile_image" ||
+    scope === "profile_avatar_animation" ||
+    scope === "profile_cover" ||
+    scope === "diary_image"
+  ) {
     return { targetId: uid };
   }
 
@@ -356,6 +382,7 @@ async function authorizeRead(db, uid, metadata) {
   const scope = clean(metadata.scope);
   if (
     scope === "profile_image" ||
+    scope === "profile_avatar_animation" ||
     scope === "profile_cover" ||
     scope === "diary_image" ||
     scope === "room_cover" ||
@@ -428,6 +455,9 @@ async function prepareUpload(request, env, auth, body) {
     scope,
     rawTargetId,
   );
+  if (scope === "profile_avatar_animation") {
+    await authorizeVipAnimatedProfileImage(auth.db, auth.uid);
+  }
 
   let previous = null;
   let effectiveReplaceObjectId = "";
@@ -529,6 +559,12 @@ async function confirmUpload(request, env, auth, body) {
 
   if (clean(ticket.ownerUid) !== auth.uid) {
     throw new StorageApiError("forbidden", 403);
+  }
+  if (
+    clean(ticket.scope) === "profile_avatar_animation" &&
+    clean(ticket.mimeType).toLowerCase() === "image/gif"
+  ) {
+    await authorizeVipAnimatedProfileImage(auth.db, auth.uid);
   }
   if (clean(ticket.scope) === "room_cover") {
     await authorizeRoomCoverManagement(
@@ -720,6 +756,49 @@ async function confirmUpload(request, env, auth, body) {
       }),
     );
   }
+  if (metadata.scope === "profile_avatar_animation") {
+    if (!stablePublicUrl) {
+      if (transaction) await auth.db.rollback(transaction);
+      throw new StorageApiError("public_media_url_missing", 500);
+    }
+    const publicProfile = await auth.db.get(
+      `public_profiles/${auth.uid}`,
+      transaction,
+    );
+    writes.push(
+      auth.db.writeUpdate(
+        `users/${auth.uid}`,
+        {
+          profileAvatarAnimationUrl: stablePublicUrl,
+          profileAvatarAnimationObjectId: objectId,
+          updatedAt: now,
+        },
+        [
+          "profileAvatarAnimationUrl",
+          "profileAvatarAnimationObjectId",
+          "updatedAt",
+        ],
+      ),
+    );
+    if (publicProfile.exists) {
+      writes.push(
+        auth.db.writeUpdate(
+          `public_profiles/${auth.uid}`,
+          {
+            profileAvatarAnimationUrl: stablePublicUrl,
+            profileAvatarAnimationObjectId: objectId,
+            updatedAt: now,
+          },
+          [
+            "profileAvatarAnimationUrl",
+            "profileAvatarAnimationObjectId",
+            "updatedAt",
+          ],
+        ),
+      );
+    }
+  }
+
   if (metadata.scope === "agency_logo") {
     if (!stablePublicUrl) {
       if (transaction) await auth.db.rollback(transaction);
@@ -922,6 +1001,10 @@ export async function storageQueueObjectStillReferenced(
       documentPath = `users/${targetId}`;
       field = "profileImageObjectId";
       break;
+    case "profile_avatar_animation":
+      documentPath = `users/${targetId}`;
+      field = "profileAvatarAnimationObjectId";
+      break;
     case "profile_cover":
       documentPath = `users/${targetId}`;
       field = "coverImageObjectId";
@@ -1116,14 +1199,55 @@ async function accountDeletionReferenceWrites({
   const targetId = clean(item?.data?.targetId);
   const writes = [];
 
-  if (scope === "profile_image" || scope === "profile_cover") {
+  if (
+    scope === "profile_image" ||
+    scope === "profile_avatar_animation" ||
+    scope === "profile_cover"
+  ) {
     const userId = targetId || ownerUid;
     const [user, publicProfile] = await Promise.all([
       db.get(`users/${userId}`),
       db.get(`public_profiles/${userId}`),
     ]);
 
-    if (scope === "profile_image") {
+    if (scope === "profile_avatar_animation") {
+      if (
+        user.exists &&
+        clean(user.data?.profileAvatarAnimationObjectId) === objectId
+      ) {
+        writes.push(
+          db.writeUpdate(
+            `users/${userId}`,
+            {
+              profileAvatarAnimationUrl: "",
+              profileAvatarAnimationObjectId: "",
+            },
+            [
+              "profileAvatarAnimationUrl",
+              "profileAvatarAnimationObjectId",
+            ],
+          ),
+        );
+      }
+      if (
+        publicProfile.exists &&
+        clean(publicProfile.data?.profileAvatarAnimationObjectId) === objectId
+      ) {
+        writes.push(
+          db.writeUpdate(
+            `public_profiles/${userId}`,
+            {
+              profileAvatarAnimationUrl: "",
+              profileAvatarAnimationObjectId: "",
+            },
+            [
+              "profileAvatarAnimationUrl",
+              "profileAvatarAnimationObjectId",
+            ],
+          ),
+        );
+      }
+    } else if (scope === "profile_image") {
       if (
         user.exists &&
         clean(user.data?.profileImageObjectId) === objectId
@@ -1602,7 +1726,55 @@ async function deleteObject(request, env, auth) {
   await authorizeDelete(auth.db, auth.uid, metadata);
 
   const now = new Date();
-  const writes = [
+  const writes = [];
+  if (clean(metadata.scope) === "profile_avatar_animation") {
+    const [user, publicProfile] = await Promise.all([
+      auth.db.get(`users/${auth.uid}`),
+      auth.db.get(`public_profiles/${auth.uid}`),
+    ]);
+    if (
+      user.exists &&
+      clean(user.data?.profileAvatarAnimationObjectId) === metadata.objectId
+    ) {
+      writes.push(
+        auth.db.writeUpdate(
+          `users/${auth.uid}`,
+          {
+            profileAvatarAnimationUrl: "",
+            profileAvatarAnimationObjectId: "",
+            updatedAt: now,
+          },
+          [
+            "profileAvatarAnimationUrl",
+            "profileAvatarAnimationObjectId",
+            "updatedAt",
+          ],
+        ),
+      );
+    }
+    if (
+      publicProfile.exists &&
+      clean(publicProfile.data?.profileAvatarAnimationObjectId) ===
+        metadata.objectId
+    ) {
+      writes.push(
+        auth.db.writeUpdate(
+          `public_profiles/${auth.uid}`,
+          {
+            profileAvatarAnimationUrl: "",
+            profileAvatarAnimationObjectId: "",
+            updatedAt: now,
+          },
+          [
+            "profileAvatarAnimationUrl",
+            "profileAvatarAnimationObjectId",
+            "updatedAt",
+          ],
+        ),
+      );
+    }
+  }
+  writes.push(
     auth.db.writeDelete(`storage_objects/${metadata.objectId}`),
     auth.db.writeDelete(`storage_delete_queue/${metadata.objectId}`),
     auth.db.writeCreate(`storage_audit_logs/${auditId()}`, {
@@ -1614,7 +1786,7 @@ async function deleteObject(request, env, auth) {
       sizeBytes: Number(metadata.sizeBytes || 0),
       createdAt: now,
     }),
-  ];
+  );
 
   if (isReplaceableStorageScope(metadata.scope)) {
     const pointerPath = storageActivePointerPath(

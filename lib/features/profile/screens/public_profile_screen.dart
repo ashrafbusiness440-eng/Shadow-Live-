@@ -18,6 +18,7 @@ import '../../relationships/services/relationship_service.dart';
 import '../../vip/utils/vip_public_state.dart';
 import '../../vip/services/profile_visit_service.dart';
 import '../../vip/widgets/vip_avatar_frame.dart';
+import '../../vip/widgets/vip_profile_avatar.dart';
 import '../widgets/registry_badge.dart';
 import '../widgets/user_level_badges.dart';
 
@@ -174,13 +175,8 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
     super.dispose();
   }
 
-  ImageProvider? _avatar(Map<String, dynamic> data) {
-    final photo = (data['profileImageUrl'] ?? '').toString().trim();
-    final asset = (data['profileAvatarAsset'] ?? '').toString().trim();
-    if (photo.isNotEmpty) return NetworkImage(photo);
-    if (asset.isNotEmpty) return AssetImage(asset);
-    return null;
-  }
+  ImageProvider? _avatar(Map<String, dynamic> data) =>
+      effectiveProfileAvatarProvider(data);
 
   Future<void> _showGiftInfo(String name) => showDirectGiftSheet(
         context,

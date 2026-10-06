@@ -33,12 +33,13 @@ test("storage MIME allowlist only accepts supported image formats", () => {
   assert.equal(storageExtensionForMime("image/jpeg"), "jpg");
   assert.equal(storageExtensionForMime("image/png"), "png");
   assert.equal(storageExtensionForMime("image/webp"), "webp");
-  assert.equal(storageExtensionForMime("image/gif"), "");
+  assert.equal(storageExtensionForMime("image/gif"), "gif");
   assert.equal(storageExtensionForMime("application/pdf"), "");
 });
 
 test("storage size limits stay scope-specific", () => {
   assert.equal(storageMaxBytes("profile_image"), 2 * 1024 * 1024);
+  assert.equal(storageMaxBytes("profile_avatar_animation"), 2 * 1024 * 1024);
   assert.equal(storageMaxBytes("profile_cover"), 3 * 1024 * 1024);
   assert.equal(storageMaxBytes("room_cover"), 3 * 1024 * 1024);
   assert.equal(storageMaxBytes("agency_logo"), 2 * 1024 * 1024);
@@ -69,7 +70,21 @@ test("storage payload validation rejects unsupported types and oversized files",
       mimeType: "image/gif",
       byteLength: 1024,
     }),
-    /invalid_file_type/,
+    /gif_profile_only/,
+  );
+
+  assert.deepEqual(
+    validateStoragePayload({
+      scope: "profile_avatar_animation",
+      mimeType: "image/gif",
+      byteLength: 1024,
+    }),
+    {
+      scope: "profile_avatar_animation",
+      mimeType: "image/gif",
+      extension: "gif",
+      maxBytes: 2 * 1024 * 1024,
+    },
   );
 
   assert.throws(
@@ -1094,4 +1109,17 @@ test("agency logo storage stays owner-authorized audited and delayed-replacement
   assert.equal(source.includes("logoObjectId"), true);
   assert.equal(source.includes("transferDeletedAccountAgencyLogoOwnership"), true);
   assert.equal(source.includes("REPLACEMENT_DELETE_DELAY_MS"), true);
+});
+
+
+test("VIP4 animated avatar storage is isolated and entitlement-gated", () => {
+  const source = fs.readFileSync(
+    new URL("../../cloudflare-worker/src/user-storage.js", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /profile_avatar_animation/);
+  assert.match(source, /image\/gif/);
+  assert.match(source, /vip4_required_for_animated_avatar/);
+  assert.match(source, /activeEffectiveVipLevelFromUser/);
+  assert.match(source, /profileAvatarAnimationObjectId/);
 });
