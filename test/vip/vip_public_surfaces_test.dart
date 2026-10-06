@@ -108,7 +108,8 @@ void main() {
     expect(roomChat.contains('VipAvatarFrame('), isTrue);
 
     expect(
-      roomRealtime.contains('activeEffectiveVipLevelFromUser('),
+      roomRealtime.contains('vipCosmeticsFromUser(profileData, DateTime.now().millisecondsSinceEpoch)') ||
+          roomRealtime.contains('vipCosmeticsFromUser(profileData, Date.now())'),
       isTrue,
     );
     expect(roomRealtime.contains('profileData.vipLevel ??'), isFalse);
