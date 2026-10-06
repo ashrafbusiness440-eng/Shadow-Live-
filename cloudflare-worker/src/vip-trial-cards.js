@@ -152,7 +152,8 @@ export async function giftVipTrialCard(
   nowMs = Date.now(),
 ) {
   const cardId = clean(body?.cardId);
-  const recipientUid = clean(body?.recipientUid);
+  const resolution = body?.recipientResolution || {};
+  const recipientUid = clean(resolution?.uid || body?.recipientUid);
   if (!cardId || cardId.length > 220) {
     throw new TrialCardError("invalid_trial_card", 400);
   }
@@ -163,6 +164,19 @@ export async function giftVipTrialCard(
   const transaction = await db.beginTransaction();
   try {
     const path = cardPath(senderUid, cardId);
+    const resolutionSource = clean(resolution?.source);
+    const resolutionId = clean(
+      resolutionSource === "fancy"
+        ? resolution?.fancyId
+        : resolution?.publicId,
+    );
+    const mappingPath =
+      resolutionSource === "fancy" && resolutionId
+        ? `fancy_id_active/${resolutionId}`
+        : resolutionSource === "basic" && resolutionId
+          ? `public_ids/${resolutionId}`
+          : "";
+
     const [
       cardSnap,
       senderUserSnap,
@@ -170,6 +184,7 @@ export async function giftVipTrialCard(
       recipientProfileSnap,
       forwardFollow,
       reverseFollow,
+      identityMappingSnap,
     ] = await Promise.all([
       db.get(path, transaction),
       db.get(`users/${senderUid}`, transaction),
@@ -177,6 +192,9 @@ export async function giftVipTrialCard(
       db.get(`public_profiles/${recipientUid}`, transaction),
       db.get(`follows/${senderUid}__${recipientUid}`, transaction),
       db.get(`follows/${recipientUid}__${senderUid}`, transaction),
+      mappingPath
+        ? db.get(mappingPath, transaction)
+        : Promise.resolve(null),
     ]);
 
     if (!cardSnap.exists) {
@@ -192,6 +210,39 @@ export async function giftVipTrialCard(
     if (!senderUserSnap.exists || !recipientUserSnap.exists) {
       throw new TrialCardError("user_not_found", 404);
     }
+
+    if (mappingPath) {
+      if (!identityMappingSnap?.exists ||
+          clean(identityMappingSnap.data?.uid) !== recipientUid) {
+        throw new TrialCardError("recipient_id_stale", 409);
+      }
+      if (resolutionSource === "fancy") {
+        const assignmentId = clean(resolution?.assignmentId);
+        const assignmentVersion = Number(resolution?.assignmentVersion || 0);
+        const mappedAssignmentId = clean(
+          identityMappingSnap.data?.assignmentId,
+        );
+        const mappedVersion = Number(
+          identityMappingSnap.data?.assignmentVersion || 0,
+        );
+        const mappedExpiresAt = identityMappingSnap.data?.expiresAt;
+        const mappedExpiresAtMs =
+          mappedExpiresAt instanceof Date
+            ? mappedExpiresAt.getTime()
+            : typeof mappedExpiresAt?.toMillis === "function"
+              ? mappedExpiresAt.toMillis()
+              : Date.parse(String(mappedExpiresAt || ""));
+        if (
+          mappedAssignmentId !== assignmentId ||
+          mappedVersion !== assignmentVersion ||
+          !Number.isFinite(mappedExpiresAtMs) ||
+          mappedExpiresAtMs <= nowMs
+        ) {
+          throw new TrialCardError("recipient_id_stale", 409);
+        }
+      }
+    }
+
     if (!forwardFollow.exists || !reverseFollow.exists) {
       throw new TrialCardError("friend_required", 403);
     }
