@@ -230,8 +230,8 @@ test("asset studio UX exposes safe replace, preview, history and batch guardrail
     "_verifyPublishedAsset",
     "_confirmDiscardChanges",
     "_unlockIdentity",
-    "Batch Upload",
-    "Smart Preset",
+    "رفع مجموعة",
+    "اختيار أصل جاهز",
   ]) {
     assert.equal(control.includes(expected), true, expected);
   }
