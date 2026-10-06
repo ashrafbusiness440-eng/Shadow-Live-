@@ -1078,6 +1078,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
   }
 
   Future<void> _upload({required bool publish}) async {
+    if (publish && !await _confirmPublishImpact()) return;
     if (_sourceBytes != null) {
       setState(() {
         _busy = true;
@@ -1125,7 +1126,8 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
         'contentBase64': base64Encode(_bytes!),
         'mode': _mode,
         'reason': _reason.text.trim(),
-        'idempotencyKey': 'asset_${DateTime.now().microsecondsSinceEpoch}',
+        'idempotencyKey': _operationId ??=
+            'asset_${DateTime.now().microsecondsSinceEpoch}',
       };
       final response = await http.post(
         _endpoint,
@@ -1141,15 +1143,45 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
         final replaced = body['replaced'] == true;
         final path = body['fullPath'] ?? '';
         final status = '${body['status'] ?? (publish ? 'published' : 'draft')}';
-        setState(() => _message = status == 'published'
-            ? (replaced
-                ? 'تم التحقق ونشر النسخة الجديدة بنجاح: $path'
-                : 'تم التحقق ونشر الأصل بنجاح: $path')
-            : 'تم التحقق وحفظ الأصل كمسودة: $path');
-        await _loadAssets();
+        final assetKey = (body['assetKey'] ?? canonicalAssetKey).toString();
+        final contentSha = (body['contentSha'] ?? '').toString();
+        var verified = false;
+        if (status == 'published' && contentSha.isNotEmpty) {
+          if (mounted) {
+            setState(() => _message = 'تم النشر، جارٍ التحقق من النسخة الحية...');
+          }
+          verified = await _verifyPublishedAsset(assetKey, contentSha);
+        } else {
+          await _loadAssets();
+        }
+        if (!mounted) return;
+        setState(() {
+          _hasUnsavedChanges = false;
+          _lastFailedPublishIntent = null;
+          _operationId = null;
+          _lastSuccess = {
+            'assetKey': assetKey,
+            'fullPath': path,
+            'status': status,
+            'verified': verified,
+            'replaced': replaced,
+            'rawUrl': body['rawUrl'],
+            'contentSha': contentSha,
+          };
+          _message = status == 'published'
+              ? (verified
+                  ? (replaced
+                      ? 'تم استبدال الأصل والتحقق من النسخة الحية.'
+                      : 'تم نشر الأصل والتحقق من النسخة الحية.')
+                  : 'تم النشر، لكن التحقق المباشر من الملف الحي لم يكتمل.')
+              : 'تم حفظ الأصل كمسودة بدون تغيير النسخة الحية.';
+          _recordRecent(assetKey);
+        });
       } else {
         final code = '${body['code'] ?? 'http_${response.statusCode}'}';
-        setState(() => _message = switch (code) {
+        setState(() {
+          _lastFailedPublishIntent = publish;
+          _message = switch (code) {
           'recent_auth_required' => 'يلزم تسجيل الدخول من جديد قبل رفع الأصول.',
           'forbidden' => 'هذه الصفحة والإجراء متاحان لحساب Owner فقط.',
           'github_not_configured' => 'GitHub Asset Token غير مضاف إلى Backend بعد.',
@@ -1161,10 +1193,14 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
           'template_size_mismatch' => 'حجم الملف لا يطابق Template المختار.',
           'r2_not_configured' => 'تخزين R2 الخاص بالمسودات غير متاح حاليًا.',
           _ => 'تعذر رفع الصورة: $code',
+          };
         });
       }
     } catch (e) {
-      setState(() => _message = 'تعذر رفع الصورة: $e');
+      setState(() {
+        _lastFailedPublishIntent = publish;
+        _message = 'تعذر رفع الصورة: $e';
+      });
     } finally {
       if (mounted) setState(() => _busy = false);
     }
