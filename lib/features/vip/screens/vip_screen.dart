@@ -7,6 +7,7 @@ import '../../../utils/compact_number.dart';
 import '../../profile/widgets/level_asset_image.dart';
 import '../services/vip_service.dart';
 import 'vip_fancy_id_screen.dart';
+import 'vip_information_center_screen.dart';
 import 'vip_trial_cards_screen.dart';
 
 typedef VipSummaryLoader = Future<VipSummaryData> Function();
@@ -290,49 +291,21 @@ class _VipScreenState extends State<VipScreen> {
   }
 
   void _openInfo() {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: const Color(0xFF0B1020),
-      isScrollControlled: true,
-      builder: (context) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: const SafeArea(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(18, 16, 18, 24),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'مركز معلومات VIP',
-                    style: TextStyle(
-                      color: Color(0xFFFFD98A),
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  SizedBox(height: 16),
-                  _VipInfoBlock(
-                    title: 'نقاط النمو',
-                    text:
-                        'الشحن المدفوع يضيف نقاط نمو من Base Coins فقط بنسبة 1:1. ويمكن شراء نقاط نمو من رصيد Coins بنسبة 1 Coin = 3 نقاط. Bonus Coins لا تضيف نموًا تلقائيًا.',
-                  ),
-                  SizedBox(height: 12),
-                  _VipInfoBlock(
-                    title: 'التفاصيل',
-                    text:
-                        'VIP1 إلى VIP6 صلاحيتها 30 يومًا، وVIP7 إلى VIP10 صلاحيتها 60 يومًا. الترقية تبدأ دورة صلاحية جديدة كاملة للمستوى الجديد.',
-                  ),
-                  SizedBox(height: 12),
-                  _VipInfoBlock(
-                    title: 'قواعد VIP',
-                    text:
-                        'يمكن استعراض VIP1 إلى VIP10 وكل أشكالها حتى قبل الوصول إليها. القفل يمنع استخدام الامتياز فقط، ولا يمنع مشاهدة التصميم. المنحة الإدارية طبقة مؤقتة ولا توقف تقدم VIP الطبيعي.',
-                  ),
-                ],
-              ),
-            ),
-          ),
+    final summary = _summary;
+    if (summary == null) return;
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => VipInformationCenterScreen(
+          summary: summary,
+          service: _service,
+          buyGrowth: widget.buyGrowth ?? _service?.buyGrowth,
+          onSummaryChanged: (updated) {
+            if (!mounted) return;
+            setState(() {
+              _summary = updated;
+              _previewLevel = updated.effectiveVipLevel.clamp(1, 10).toInt();
+            });
+          },
         ),
       ),
     );
