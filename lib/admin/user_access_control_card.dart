@@ -15,12 +15,14 @@ class OwnerUserAccessCard extends StatelessWidget {
     required this.targetRole,
     required this.adminEnabled,
     required this.capabilities,
+    required this.allowedVipGrantLevels,
   });
 
   final String uid;
   final String targetRole;
   final bool adminEnabled;
   final List<String> capabilities;
+  final List<int> allowedVipGrantLevels;
 
   static const roleLabels = <String, String>{
     'user': 'User — مستخدم',
@@ -57,7 +59,8 @@ class OwnerUserAccessCard extends StatelessWidget {
     'manageWealthLevel': 'إدارة مستوى الثروة فقط',
     'manageAttractionLevel': 'إدارة مستوى الجاذبية فقط',
     'manageGameLevel': 'إدارة مستوى الألعاب فقط',
-    'manageVip': 'إدارة VIP',
+    'manageVip': 'إدارة VIP القديمة — توافق فقط',
+    'manageVipLevels': 'إدارة مستويات VIP',
     'manageSpecialIds': 'إدارة IDs المميزة',
     'manageIds': 'إدارة IDs المستخدمين والغرف',
     'manageStore': 'إدارة المتجر',
@@ -95,6 +98,9 @@ class OwnerUserAccessCard extends StatelessWidget {
       'viewHiddenUserLevels',
       'manageUserLevels', 'manageWealthLevel', 'manageAttractionLevel', 'manageGameLevel',
     ],
+    'VIP': [
+      'manageVipLevels',
+    ],
     'الإدارة العامة': [
       'manageVip', 'manageStore', 'manageCampaigns', 'manageRoles', 'viewAuditLog', 'emergencyLock',
     ],
@@ -123,7 +129,7 @@ class OwnerUserAccessCard extends StatelessWidget {
           : controlFirestore.collection('users').doc(current.uid).get(),
       builder: (context, snapshot) {
         final actor = snapshot.data?.data();
-        final actorIsOwner = actor?['role'] == 'owner' && actor?['adminEnabled'] == true;
+        final actorIsOwner = actor?['role'] == 'owner';
         final protectedOwner = targetRole == 'owner';
 
         return Card(
@@ -170,6 +176,9 @@ class OwnerUserAccessCard extends StatelessWidget {
     var selectedRole = roleLabels.containsKey(targetRole) ? targetRole : 'user';
     var enabled = adminEnabled;
     final selected = capabilities.where(capabilityLabels.containsKey).toSet();
+    final allowedVipLevels = allowedVipGrantLevels
+        .where((level) => level >= 1 && level <= 10)
+        .toSet();
     final reason = TextEditingController(text: 'تحديث الدور والصلاحيات من Shadow Control');
     var saving = false;
     String? error;
@@ -203,6 +212,7 @@ class OwnerUserAccessCard extends StatelessWidget {
                   'role': selectedRole,
                   'adminEnabled': enabled,
                   'capabilities': selected.toList()..sort(),
+                  'allowedVipGrantLevels': allowedVipLevels.toList()..sort(),
                   'reason': reason.text.trim(),
                   'idempotencyKey': key,
                 }),
@@ -227,7 +237,8 @@ class OwnerUserAccessCard extends StatelessWidget {
                 'owner_protected' => 'حساب الـOwner محمي.',
                 'forbidden' => 'هذه العملية متاحة للـOwner فقط.',
                 'invalid_capability' => 'توجد صلاحية غير معتمدة في الطلب.',
-                'invalid_level_capability_role' => 'صلاحيات المستوى يمكن منحها فقط لـ Admin أو Super Admin.',
+                'invalid_level_capability_role' => 'صلاحيات المستوى وVIP يمكن منحها فقط لـ Admin أو Super Admin.',
+                'invalid_vip_grant_levels' => 'قائمة مستويات VIP المسموحة غير صالحة.',
                 'not_found' => 'الحساب المستهدف غير موجود.',
                 _ => 'تعذر حفظ التعديل: $code',
               };
@@ -262,7 +273,9 @@ class OwnerUserAccessCard extends StatelessWidget {
                               'manageWealthLevel',
                               'manageAttractionLevel',
                               'manageGameLevel',
+                              'manageVipLevels',
                             });
+                            allowedVipLevels.clear();
                           }
                         });
                       }
@@ -302,6 +315,7 @@ class OwnerUserAccessCard extends StatelessWidget {
                         'manageWealthLevel',
                         'manageAttractionLevel',
                         'manageGameLevel',
+                        'manageVipLevels',
                       }.contains(capability);
                       final levelRoleAllowed =
                           selectedRole == 'admin' || selectedRole == 'super_admin';
@@ -327,10 +341,46 @@ class OwnerUserAccessCard extends StatelessWidget {
                                       selected.add(capability);
                                     } else {
                                       selected.remove(capability);
+                                      if (capability == 'manageVipLevels') {
+                                        allowedVipLevels.clear();
+                                      }
                                     }
                                   }),
                       );
                     }),
+                    const Divider(),
+                  ],
+                  if (selected.contains('manageVipLevels')) ...[
+                    const Text(
+                      'مستويات VIP المسموحة لهذا الإداري',
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'الصلاحية وحدها لا تكفي. إذا بقيت القائمة فارغة فلن يستطيع منح أي مستوى.',
+                      style: TextStyle(color: Color(0xFFAAA3B8), fontSize: 12),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: List<Widget>.generate(10, (index) {
+                        final level = index + 1;
+                        return FilterChip(
+                          label: Text('VIP$level'),
+                          selected: allowedVipLevels.contains(level),
+                          onSelected: saving
+                              ? null
+                              : (value) => setSheetState(() {
+                                    if (value) {
+                                      allowedVipLevels.add(level);
+                                    } else {
+                                      allowedVipLevels.remove(level);
+                                    }
+                                  }),
+                        );
+                      }),
+                    ),
                     const Divider(),
                   ],
                   TextField(

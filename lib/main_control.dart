@@ -22,6 +22,7 @@ import 'admin/games_control_page.dart';
 import 'admin/user_access_control_card.dart';
 import 'admin/system_health_card.dart';
 import 'admin/control_user_level.dart';
+import 'admin/control_vip_level.dart';
 
 
 Future<void> main() async {
@@ -728,6 +729,13 @@ class UserReadOnlyPage extends StatelessWidget {
           targetRole:t(data['role']??'user'),
           adminEnabled:data['adminEnabled']==true,
           capabilities:caps,
+          allowedVipGrantLevels:data['allowedVipGrantLevels'] is List
+              ? (data['allowedVipGrantLevels'] as List)
+                  .map((e)=>int.tryParse('$e'))
+                  .whereType<int>()
+                  .where((e)=>e>=1&&e<=10)
+                  .toList()
+              : const <int>[],
         ),
         const SizedBox(height:10),
         _OwnerAccountActionsCard(
@@ -1340,6 +1348,7 @@ class _RolePolicyCard extends StatelessWidget {
     'reviewReports':'مراجعة البلاغات','manageDiaries':'حذف اليوميات من البلاغات','deleteDiaryComment':'حذف تعليقات اليوميات','manageEconomy':'إدارة الاقتصاد','manageGames':'إدارة الألعاب','manageWithdrawals':'إدارة السحب',
     'manageSettlements':'إدارة التسويات','manageRoles':'إدارة الأدوار','manageCapabilities':'إدارة الصلاحيات',
     'manageSystem':'إدارة النظام','manageIds':'إدارة IDs المستخدمين والغرف',
+    'manageVipLevels':'إدارة مستويات VIP',
   };
   @override Widget build(BuildContext context){
     final isOwner=role=='owner';
@@ -2885,6 +2894,12 @@ class MorePage extends StatelessWidget {
               capabilities.contains('reviewReports')||
               capabilities.contains('manageDiaries')||
               capabilities.contains('deleteDiaryComment')));
+        final canOpenVip=isOwner||
+            (adminEnabled&&capabilities.contains('manageVipLevels'));
+        final canOpenIds=isOwner||
+            (adminEnabled&&(
+              capabilities.contains('manageIds')||
+              capabilities.contains('manageSpecialIds')));
         final items=<ControlItem>[
           if(canOpenAgencies)
             const ControlItem('الوكالات','طلبات الإنشاء والمراجعة والإنشاء المباشر',Icons.apartment_outlined),
@@ -2892,7 +2907,10 @@ class MorePage extends StatelessWidget {
             const ControlItem('إدارة أعضاء الوكالات','عرض الأعضاء والمديرين وتغيير الأدوار حسب Permission Matrix',Icons.groups_2_outlined),
           if(canOpenReports)
             const ControlItem('التقارير','بلاغات اليوميات والتعليقات عبر Worker bounded + مراجعة وحذف حسب الصلاحيات',Icons.flag_outlined),
-          const ControlItem('VIP و IDs الخاصة','إدارة VIP والمعرّفات الخاصة',Icons.workspace_premium_outlined),
+          if(canOpenVip)
+            const ControlItem('إدارة VIP','بحث المستخدم ومنح/تغيير/سحب VIP حسب الصلاحيات',Icons.workspace_premium_outlined),
+          if(canOpenIds)
+            const ControlItem('IDs الخاصة','إدارة المعرّفات الخاصة',Icons.badge_outlined),
           if(isOwner)
             const ControlItem('استوديو الأصول','Shadow Asset Studio • Templates + Validation + Preview + Draft/Publish',Icons.auto_awesome_mosaic_outlined),
           if(canManageSystem)
@@ -2925,6 +2943,7 @@ class ControlList extends StatelessWidget {
     if (item.title == 'استوديو الأصول' || item.title == 'إدارة أصول التطبيق') return const ControlAssetManagerPage();
     if (item.title == 'العلاقات / CP') return const ControlRelationshipTypesPage();
     if (item.title == 'تسجيل الدخول والربط') return const AuthLoginControlPage();
+    if (item.title == 'إدارة VIP') return const VipLevelControlPage();
     return DetailPage(item:item);
   }
 
