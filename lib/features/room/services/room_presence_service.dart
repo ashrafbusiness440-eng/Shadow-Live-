@@ -11,6 +11,8 @@ class RoomPresenceUser {
     required this.uid,
     required this.displayName,
     required this.profileImageUrl,
+    required this.vipLevel,
+    required this.vipOnlinePriority,
     required this.joinedAtMs,
     required this.lastSeenAtMs,
   });
@@ -18,6 +20,8 @@ class RoomPresenceUser {
   final String uid;
   final String displayName;
   final String profileImageUrl;
+  final int vipLevel;
+  final bool vipOnlinePriority;
   final int joinedAtMs;
   final int lastSeenAtMs;
 
@@ -27,6 +31,8 @@ class RoomPresenceUser {
         displayName:
             (data['displayName'] ?? 'مستخدم Shadow Live').toString(),
         profileImageUrl: (data['profileImageUrl'] ?? '').toString(),
+        vipLevel: (data['vipLevel'] as num?)?.toInt() ?? 0,
+        vipOnlinePriority: data['vipOnlinePriority'] == true,
         joinedAtMs: (data['joinedAtMs'] as num?)?.toInt() ?? 0,
         lastSeenAtMs: (data['lastSeenAtMs'] as num?)?.toInt() ?? 0,
       );
