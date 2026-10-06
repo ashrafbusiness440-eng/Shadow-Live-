@@ -1,10 +1,12 @@
 import 'control_firebase.dart';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
@@ -53,7 +55,21 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
   final Set<String> _selectedChannels = {'vip'};
   List<Map<String, dynamic>> _assets = const [];
   String _assetFilter = 'all';
+  String _assetTypeFilter = 'all';
+  String _assetChannelFilter = 'all';
+  String _debouncedSearch = '';
+  Timer? _searchDebounce;
   bool _showStudioForm = false;
+  Map<String, dynamic>? _editingAsset;
+  bool _unlockIdentityFields = false;
+  bool _hasUnsavedChanges = false;
+  bool? _lastFailedPublishIntent;
+  String? _operationId;
+  Map<String, dynamic>? _lastSuccess;
+  int _previewRefreshNonce = 0;
+  int _visibleLimit = 24;
+  final Set<String> _favoriteAssetKeys = <String>{};
+  final List<String> _recentAssetKeys = <String>[];
 
   @override
   void dispose() {
@@ -62,7 +78,275 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     _fileName.dispose();
     _reason.dispose();
     _assetSearch.dispose();
+    _searchDebounce?.cancel();
     super.dispose();
+  }
+
+  bool get _isEditing => _editingAsset != null;
+
+  Map<String, dynamic> _assetSource(Map<String, dynamic> asset) {
+    final draft = asset['draft'] is Map
+        ? Map<String, dynamic>.from(asset['draft'] as Map)
+        : <String, dynamic>{};
+    return asset['hasDraft'] == true && draft.isNotEmpty ? draft : asset;
+  }
+
+  String _assetDirectory(Map<String, dynamic> asset) {
+    final source = _assetSource(asset);
+    final direct = (source['directory'] ?? asset['directory'] ?? '').toString().trim();
+    if (direct.isNotEmpty) return ControlAssetPolicy.normalizeDirectory(direct);
+    final fullPath = (source['fullPath'] ?? asset['fullPath'] ?? '').toString().trim();
+    final slash = fullPath.lastIndexOf('/');
+    return slash > 0 ? fullPath.substring(0, slash) : '';
+  }
+
+  String _assetFileName(Map<String, dynamic> asset) {
+    final source = _assetSource(asset);
+    final direct = (source['fileName'] ?? asset['fileName'] ?? '').toString().trim();
+    if (direct.isNotEmpty) return direct;
+    final fullPath = (source['fullPath'] ?? asset['fullPath'] ?? '').toString().trim();
+    final slash = fullPath.lastIndexOf('/');
+    return slash >= 0 ? fullPath.substring(slash + 1) : fullPath;
+  }
+
+  String _assetLiveUrl(Map<String, dynamic>? asset, {bool bypassCache = false}) {
+    if (asset == null) return '';
+    final raw = (asset['rawUrl'] ?? '').toString().trim();
+    if (raw.isEmpty) return '';
+    if (!bypassCache) return raw;
+    final separator = raw.contains('?') ? '&' : '?';
+    return '${raw}${separator}studioRefresh=$_previewRefreshNonce';
+  }
+
+  void _markDirty() {
+    if (!_hasUnsavedChanges) {
+      setState(() {
+        _hasUnsavedChanges = true;
+        _lastSuccess = null;
+        _operationId = null;
+      });
+    }
+  }
+
+  void _selectAll(TextEditingController controller) {
+    controller.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: controller.text.length,
+    );
+  }
+
+  void _recordRecent(String key) {
+    final value = key.trim();
+    if (value.isEmpty) return;
+    _recentAssetKeys.remove(value);
+    _recentAssetKeys.insert(0, value);
+    if (_recentAssetKeys.length > 8) {
+      _recentAssetKeys.removeRange(8, _recentAssetKeys.length);
+    }
+  }
+
+  void _resetPreparedFile() {
+    _sourceBytes = null;
+    _bytes = null;
+    _mimeType = null;
+    _pickedName = null;
+    _conversionNote = null;
+    _preparedAnimated = false;
+    _preparedWidth = null;
+    _preparedHeight = null;
+  }
+
+  void _startNewAsset() {
+    setState(() {
+      _editingAsset = null;
+      _unlockIdentityFields = false;
+      _showStudioForm = true;
+      _hasUnsavedChanges = false;
+      _lastFailedPublishIntent = null;
+      _lastSuccess = null;
+      _operationId = null;
+      _message = 'وضع إضافة أصل جديد';
+      _resetPreparedFile();
+    });
+  }
+
+  void _beginEditAsset(Map<String, dynamic> asset) {
+    final source = _assetSource(asset);
+    final templateId = (source['templateId'] ?? asset['templateId'] ?? '').toString();
+    final channels = (source['channels'] ?? asset['channels']);
+    final key = (asset['assetKey'] ?? '').toString().trim();
+    setState(() {
+      _editingAsset = Map<String, dynamic>.from(asset);
+      _unlockIdentityFields = false;
+      _showStudioForm = true;
+      _assetKey.text = key;
+      _directory.text = _assetDirectory(asset);
+      _fileName.text = _assetFileName(asset);
+      _mode = (source['mode'] ?? asset['mode']) == 'bundled' ? 'bundled' : 'remote';
+      if (templateId.isNotEmpty &&
+          _templates.any((template) => template.id == templateId)) {
+        _selectedTemplateId = templateId;
+      }
+      _selectedChannels
+        ..clear()
+        ..addAll(
+          channels is List
+              ? channels.map((e) => e.toString()).where(_channels.contains)
+              : const <String>[],
+        );
+      if (_selectedChannels.isEmpty && _channels.contains('system')) {
+        _selectedChannels.add('system');
+      } else if (_selectedChannels.isEmpty && _channels.isNotEmpty) {
+        _selectedChannels.add(_channels.first);
+      }
+      _reason.text = 'استبدال تصميم الأصل الحالي';
+      _resetPreparedFile();
+      _hasUnsavedChanges = false;
+      _lastFailedPublishIntent = null;
+      _lastSuccess = null;
+      _operationId = null;
+      _message = 'وضع تعديل أصل موجود: اختر الصورة الجديدة فقط ثم راجع وانشر.';
+      _recordRecent(key);
+    });
+  }
+
+  void _cloneAsset(Map<String, dynamic> asset) {
+    final source = _assetSource(asset);
+    final originalKey = (asset['assetKey'] ?? '').toString().trim();
+    final originalName = _assetFileName(asset);
+    final dot = originalName.lastIndexOf('.');
+    final base = dot > 0 ? originalName.substring(0, dot) : originalName;
+    final ext = dot > 0 ? originalName.substring(dot) : '.webp';
+    setState(() {
+      _editingAsset = null;
+      _unlockIdentityFields = true;
+      _showStudioForm = true;
+      _assetKey.text = originalKey.isEmpty ? '' : '${originalKey}.copy';
+      _directory.text = _assetDirectory(asset);
+      _fileName.text = '${base}_copy$ext';
+      _mode = (source['mode'] ?? asset['mode']) == 'bundled' ? 'bundled' : 'remote';
+      final templateId = (source['templateId'] ?? asset['templateId'] ?? '').toString();
+      if (templateId.isNotEmpty &&
+          _templates.any((template) => template.id == templateId)) {
+        _selectedTemplateId = templateId;
+      }
+      final channels = source['channels'] ?? asset['channels'];
+      _selectedChannels
+        ..clear()
+        ..addAll(
+          channels is List
+              ? channels.map((e) => e.toString()).where(_channels.contains)
+              : const <String>[],
+        );
+      _reason.text = 'إنشاء أصل جديد اعتمادًا على أصل موجود';
+      _resetPreparedFile();
+      _hasUnsavedChanges = true;
+      _lastFailedPublishIntent = null;
+      _lastSuccess = null;
+      _operationId = null;
+      _message = 'تم نسخ إعدادات الأصل. غيّر Asset Key واسم الملف واختر صورة جديدة.';
+    });
+  }
+
+  Future<bool> _confirmDiscardChanges() async {
+    if (!_hasUnsavedChanges) return true;
+    return await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('تغييرات غير محفوظة'),
+            content: const Text(
+              'لديك تغييرات لم يتم حفظها أو نشرها. هل تريد تجاهلها؟',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('متابعة التعديل'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('تجاهل'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  Future<void> _closeStudioForm() async {
+    if (!await _confirmDiscardChanges()) return;
+    if (!mounted) return;
+    setState(() {
+      _showStudioForm = false;
+      _editingAsset = null;
+      _unlockIdentityFields = false;
+      _hasUnsavedChanges = false;
+      _lastFailedPublishIntent = null;
+      _lastSuccess = null;
+      _operationId = null;
+      _message = null;
+      _resetPreparedFile();
+    });
+  }
+
+  Future<void> _unlockIdentity() async {
+    if (!_isEditing || _unlockIdentityFields) return;
+    final accepted = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('فتح الحقول الحساسة؟'),
+            content: const Text(
+              'تغيير Asset Key أو المسار أو اسم الملف قد يفصل الأصل عن الأماكن المرتبطة به. استخدمه فقط إذا كنت تقصد نقل الأصل.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('إلغاء'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('فتح الحقول'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (accepted && mounted) {
+      setState(() => _unlockIdentityFields = true);
+    }
+  }
+
+  Future<void> _copyText(String text, String label) async {
+    if (text.trim().isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('تم نسخ $label')),
+    );
+  }
+
+  Future<void> _copyAssetMetadata(Map<String, dynamic> asset) async {
+    final source = _assetSource(asset);
+    final text = <String>[
+      'Asset Key: ${asset['assetKey'] ?? ''}',
+      'Path: ${source['fullPath'] ?? asset['fullPath'] ?? ''}',
+      'File: ${source['fileName'] ?? asset['fileName'] ?? ''}',
+      'Template: ${source['templateId'] ?? asset['templateId'] ?? ''}',
+      'Channels: ${((source['channels'] ?? asset['channels']) as List?)?.join(', ') ?? ''}',
+      'Live URL: ${asset['rawUrl'] ?? ''}',
+      'Content SHA: ${asset['contentSha'] ?? ''}',
+    ].join('\n');
+    await _copyText(text, 'بيانات الأصل');
+  }
+
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 280), () {
+      if (!mounted) return;
+      setState(() {
+        _debouncedSearch = value.trim().toLowerCase();
+        _visibleLimit = 24;
+      });
+    });
   }
 
   Future<String> _token() async {
