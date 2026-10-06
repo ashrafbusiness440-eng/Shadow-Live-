@@ -1967,7 +1967,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                 child: OutlinedButton.icon(
                   onPressed: _busy ? null : () => _upload(publish: false),
                   icon: const Icon(Icons.save_outlined),
-                  label: const Text('مسودة'),
+                  label: const Text('حفظ مسودة'),
                 ),
               ),
               const SizedBox(width: 8),
