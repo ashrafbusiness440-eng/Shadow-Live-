@@ -38,7 +38,6 @@ class VipProfileIdentitySurface extends StatelessWidget {
       child: Stack(
         fit: StackFit.passthrough,
         children: [
-          child,
           if (backgroundKey.isNotEmpty)
             Positioned.fill(
               child: VipCosmeticAssetLayer(
@@ -47,6 +46,7 @@ class VipProfileIdentitySurface extends StatelessWidget {
                 opacity: backgroundOpacity,
               ),
             ),
+          child,
           if (dataCardKey.isNotEmpty)
             Positioned.fill(
               child: VipCosmeticAssetLayer(
