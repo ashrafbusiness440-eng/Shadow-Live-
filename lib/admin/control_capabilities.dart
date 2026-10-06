@@ -9,7 +9,7 @@ abstract final class ControlCapabilities {
   static const manageAgencyPackages='manageAgencyPackages', grantAgencyPackage='grantAgencyPackage';
   static const suspendAgencies='suspendAgencies';
   static const manageUserLevels='manageUserLevels', manageWealthLevel='manageWealthLevel', manageAttractionLevel='manageAttractionLevel', manageGameLevel='manageGameLevel';
-  static const manageVip='manageVip', manageSpecialIds='manageSpecialIds', manageIds='manageIds', manageStore='manageStore';
+  static const manageVip='manageVip', manageVipLevels='manageVipLevels', manageSpecialIds='manageSpecialIds', manageIds='manageIds', manageStore='manageStore';
   static const manageGames='manageGames', manageEconomy='manageEconomy', adjustBalances='adjustBalances';
   static const manageWithdrawals='manageWithdrawals', manageSettlements='manageSettlements';
   static const manageCampaigns='manageCampaigns', manageRoles='manageRoles';
