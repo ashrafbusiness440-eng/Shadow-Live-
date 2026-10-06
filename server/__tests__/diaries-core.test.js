@@ -886,7 +886,19 @@ test("Firestore deployment keeps diaries indexless in production", () => {
   );
 
   assert.equal(firebaseConfig?.firestore?.indexes, "firestore.indexes.json");
-  assert.deepEqual(indexConfig.indexes || [], []);
+  const diaryCollections = new Set([
+    "diaries",
+    "diary_operations",
+    "diary_image_links",
+    "diary_audit_logs",
+    "diary_comments",
+    "diary_likes",
+    "diary_view_keys",
+  ]);
+  const diaryIndexes = (indexConfig.indexes || []).filter((index) =>
+    diaryCollections.has(String(index?.collectionGroup || ""))
+  );
+  assert.deepEqual(diaryIndexes, []);
   assert.equal(source.includes('users/${userId}/diaries'), true);
   assert.equal(source.includes('users/${uid}/diaries/${diaryId}'), true);
   assert.equal(

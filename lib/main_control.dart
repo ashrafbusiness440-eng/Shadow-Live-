@@ -23,6 +23,7 @@ import 'admin/user_access_control_card.dart';
 import 'admin/system_health_card.dart';
 import 'admin/control_user_level.dart';
 import 'admin/control_vip_level.dart';
+import 'admin/control_vip_information.dart';
 
 
 Future<void> main() async {
@@ -1348,7 +1349,7 @@ class _RolePolicyCard extends StatelessWidget {
     'reviewReports':'مراجعة البلاغات','manageDiaries':'حذف اليوميات من البلاغات','deleteDiaryComment':'حذف تعليقات اليوميات','manageEconomy':'إدارة الاقتصاد','manageGames':'إدارة الألعاب','manageWithdrawals':'إدارة السحب',
     'manageSettlements':'إدارة التسويات','manageRoles':'إدارة الأدوار','manageCapabilities':'إدارة الصلاحيات',
     'manageSystem':'إدارة النظام','manageIds':'إدارة IDs المستخدمين والغرف',
-    'manageVipLevels':'إدارة مستويات VIP',
+    'manageVipLevels':'إدارة مستويات VIP','manageVipPolicy':'إدارة إعدادات وعروض VIP',
   };
   @override Widget build(BuildContext context){
     final isOwner=role=='owner';
@@ -2896,6 +2897,8 @@ class MorePage extends StatelessWidget {
               capabilities.contains('deleteDiaryComment')));
         final canOpenVip=isOwner||
             (adminEnabled&&capabilities.contains('manageVipLevels'));
+        final canOpenVipInformation=isOwner||
+            (adminEnabled&&capabilities.contains('manageVipPolicy'));
         final canOpenIds=isOwner||
             (adminEnabled&&(
               capabilities.contains('manageIds')||
@@ -2909,6 +2912,8 @@ class MorePage extends StatelessWidget {
             const ControlItem('التقارير','بلاغات اليوميات والتعليقات عبر Worker bounded + مراجعة وحذف حسب الصلاحيات',Icons.flag_outlined),
           if(canOpenVip)
             const ControlItem('إدارة VIP','بحث المستخدم ومنح/تغيير/سحب VIP حسب الصلاحيات',Icons.workspace_premium_outlined),
+          if(canOpenVipInformation)
+            const ControlItem('عروض VIP السريعة','إدارة عروض Growth السريعة داخل مركز معلومات VIP',Icons.bolt_outlined),
           if(canOpenIds)
             const ControlItem('IDs الخاصة','إدارة المعرّفات الخاصة',Icons.badge_outlined),
           if(isOwner)
@@ -2944,6 +2949,7 @@ class ControlList extends StatelessWidget {
     if (item.title == 'العلاقات / CP') return const ControlRelationshipTypesPage();
     if (item.title == 'تسجيل الدخول والربط') return const AuthLoginControlPage();
     if (item.title == 'إدارة VIP') return const VipLevelControlPage();
+    if (item.title == 'عروض VIP السريعة') return const VipInformationControlPage();
     return DetailPage(item:item);
   }
 

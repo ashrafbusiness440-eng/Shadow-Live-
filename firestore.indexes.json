@@ -1,4 +1,37 @@
 {
-  "indexes": [],
+  "indexes": [
+    {
+      "collectionGroup": "vip_growth_history",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "vip_audit_logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "targetUserId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "action",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    }
+  ],
   "fieldOverrides": []
 }
