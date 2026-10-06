@@ -19,6 +19,7 @@ import {
   vipStateFromUser,
   vipUserPatch,
 } from "./vip-runtime.js";
+import { publishGlobalAppEvents } from "./room-realtime.js";
 
 const clean = (value) => String(value ?? "").trim();
 
