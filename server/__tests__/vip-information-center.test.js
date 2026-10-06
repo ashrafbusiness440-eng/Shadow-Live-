@@ -55,6 +55,10 @@ test("VIP history is paginated, bounded and excludes duplicate growth audit acti
   assert.equal(actions.includes("const VIP_HISTORY_PAGE_SIZE = 20;"), true);
   assert.equal(actions.includes("const VIP_HISTORY_MAX_PAGE_SIZE = 20;"), true);
   assert.equal(actions.includes('action === "history"'), true);
+  assert.equal(actions.includes("serverNowMs"), true);
+  assert.equal(actions.includes("effectiveVipExpiresAtMs"), true);
+  assert.equal(actions.includes('"vip_upgrade"'), true);
+  assert.equal(actions.includes('"vip_downgrade"'), true);
   assert.equal(actions.includes('db.runQuery("vip_growth_history"'), true);
   assert.equal(actions.includes('db.runQuery("vip_audit_logs"'), true);
   assert.equal(actions.includes('"manageVipLevels"'), true);
@@ -71,6 +75,7 @@ test("VIP history is paginated, bounded and excludes duplicate growth audit acti
 test("VIP information control is separated from level grants and audited", () => {
   const control = source("cloudflare-worker/src/manage-vip-information.js");
   const router = source("cloudflare-worker/src/index.js");
+  const access = source("cloudflare-worker/src/manage-user-access.js");
 
   assert.equal(control.includes('actorCapabilities(actor).has("manageVipPolicy")'), true);
   assert.equal(control.includes("manageVipLevels"), false);
@@ -80,6 +85,7 @@ test("VIP information control is separated from level grants and audited", () =>
   assert.equal(control.includes("control_operations/"), true);
   assert.equal(control.includes("admin_audit_logs/vip_info_"), true);
   assert.equal(control.includes("setVipQuickPurchaseOffers"), true);
+  assert.equal(access.includes('"manageVipPolicy"'), true);
   assert.equal(
     router.includes('url.pathname === "/api/manage-vip-information"'),
     true,
