@@ -1960,9 +1960,15 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                       textAlign: TextAlign.center,
                     ),
                   ),
-                  onSelected: _busy
+                  onSelected: _busy ||
+                          (_isEditing && !_unlockIdentityFields)
                       ? null
-                      : (_) => setState(() => _mode = 'remote'),
+                      : (_) => setState(() {
+                            _mode = 'remote';
+                            _hasUnsavedChanges = true;
+                            _lastSuccess = null;
+                            _operationId = null;
+                          }),
                 ),
               ),
               const SizedBox(width: 8),
@@ -1976,9 +1982,15 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                       textAlign: TextAlign.center,
                     ),
                   ),
-                  onSelected: _busy
+                  onSelected: _busy ||
+                          (_isEditing && !_unlockIdentityFields)
                       ? null
-                      : (_) => setState(() => _mode = 'bundled'),
+                      : (_) => setState(() {
+                            _mode = 'bundled';
+                            _hasUnsavedChanges = true;
+                            _lastSuccess = null;
+                            _operationId = null;
+                          }),
                 ),
               ),
             ],
@@ -2007,7 +2019,8 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                         (channel) => FilterChip(
                           label: Text(_channelLabel(channel)),
                           selected: _selectedChannels.contains(channel),
-                          onSelected: _busy
+                          onSelected: _busy ||
+                                  (_isEditing && !_unlockIdentityFields)
                               ? null
                               : (selected) {
                                   setState(() {
@@ -2016,6 +2029,9 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                                     } else {
                                       _selectedChannels.remove(channel);
                                     }
+                                    _hasUnsavedChanges = true;
+                                    _lastSuccess = null;
+                                    _operationId = null;
                                   });
                                 },
                         ),
@@ -2030,13 +2046,117 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
             controller: _reason,
             enabled: !_busy,
             maxLength: 200,
+            minLines: 1,
+            maxLines: 3,
+            onTap: () => _selectAll(_reason),
+            onChanged: (_) => _markDirty(),
             decoration: const InputDecoration(
-              labelText: 'سبب التغيير',
+              labelText: 'سبب التغيير *',
               hintText: 'مثال: تحديث التصميم أو تحسين الجودة',
               prefixIcon: Icon(Icons.edit_note_rounded),
               border: OutlineInputBorder(),
             ),
           ),
+          if (_lastSuccess != null) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.greenAccent.withValues(alpha: .07),
+                borderRadius: BorderRadius.circular(13),
+                border: Border.all(
+                  color: Colors.greenAccent.withValues(alpha: .22),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        _lastSuccess!['verified'] == true
+                            ? Icons.verified_rounded
+                            : Icons.cloud_done_outlined,
+                        color: _lastSuccess!['verified'] == true
+                            ? Colors.greenAccent
+                            : Colors.amberAccent,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _lastSuccess!['status'] == 'published'
+                              ? (_lastSuccess!['verified'] == true
+                                  ? 'منشور ومتحقق من النسخة الحية'
+                                  : 'منشور • التحقق الحي يحتاج إعادة فحص')
+                              : 'تم حفظ المسودة',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  SelectableText(
+                    (_lastSuccess!['assetKey'] ?? '').toString(),
+                    textDirection: TextDirection.ltr,
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                  const SizedBox(height: 4),
+                  SelectableText(
+                    (_lastSuccess!['fullPath'] ?? '').toString(),
+                    textDirection: TextDirection.ltr,
+                    style: const TextStyle(
+                      color: Colors.white60,
+                      fontSize: 10.5,
+                    ),
+                  ),
+                  if (_lastSuccess!['status'] == 'published') ...[
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: _editingAsset == null
+                              ? null
+                              : () => _showAssetPreview(_editingAsset!),
+                          icon: const Icon(Icons.visibility_outlined),
+                          label: const Text('فتح الأصل'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: () => _copyText(
+                            (_lastSuccess!['assetKey'] ?? '').toString(),
+                            'Asset Key',
+                          ),
+                          icon: const Icon(Icons.copy_rounded),
+                          label: const Text('نسخ المفتاح'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+          if (_lastFailedPublishIntent != null) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _busy
+                        ? null
+                        : () => _upload(
+                              publish: _lastFailedPublishIntent!,
+                            ),
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('إعادة المحاولة بنفس البيانات'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+          ],
           if (_message != null) ...[
             Container(
               padding: const EdgeInsets.all(11),
