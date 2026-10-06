@@ -669,7 +669,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
           _preparedAnimated = true;
           _preparedFrameCount = decoded.numFrames;
           _conversionNote =
-              'تم الحفاظ على Animation الأصلية • '
+              'تم الحفاظ على الحركة الأصلية • '
               '${decoded.width}×${decoded.height} • '
               '${(sourceBytes.length / 1024).toStringAsFixed(1)} كيلوبايت';
           if (updateMessage) _message = null;
@@ -2260,7 +2260,8 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     if (_assets.isEmpty) {
       await _loadAssets();
     }
-    if (!mounted || _assets.isEmpty) {
+    if (!mounted) return;
+    if (_assets.isEmpty) {
       setState(() => _message = 'سجل الأصول فارغ حاليًا.');
       return;
     }
