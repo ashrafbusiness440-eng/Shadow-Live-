@@ -97,13 +97,13 @@ class _VipLevelControlPageState extends State<VipLevelControlPage> {
           : const <_VipControlUser>[];
       final rawAllowed = body['allowedVipGrantLevels'];
       final allowed = rawAllowed is List
-          ? rawAllowed
-              .map((item) => int.tryParse('$item'))
-              .whereType<int>()
-              .where((level) => level >= 1 && level <= 10)
-              .toSet()
-              .toList()
-            ..sort()
+          ? (rawAllowed
+                .map((item) => int.tryParse('$item'))
+                .whereType<int>()
+                .where((level) => level >= 1 && level <= 10)
+                .toSet()
+                .toList()
+              ..sort())
           : <int>[];
       if (!mounted) return;
       setState(() {
