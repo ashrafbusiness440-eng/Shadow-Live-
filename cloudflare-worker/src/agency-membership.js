@@ -3701,6 +3701,7 @@ export async function getMyAgencyMembershipRequest(
 export async function getMyAgencyJoinEligibility(
   db,
   actorUid,
+  { nowMs = Date.now() } = {},
 ) {
   const [
     userSnap,
@@ -3736,7 +3737,6 @@ export async function getMyAgencyJoinEligibility(
   const membershipReserved =
     acceptanceSnap.exists &&
     ["pending", "accepted", "committed"].includes(clean(acceptance.status));
-  const nowMs = Date.now();
   const cooldownUntilMs =
     historicalMembership(membershipSnap)
       ? timestampMs(membership.cooldownUntil)
