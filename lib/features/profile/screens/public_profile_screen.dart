@@ -19,6 +19,7 @@ import '../../vip/utils/vip_public_state.dart';
 import '../../vip/services/profile_visit_service.dart';
 import '../../vip/widgets/vip_avatar_frame.dart';
 import '../../vip/widgets/vip_profile_avatar.dart';
+import '../../vip/widgets/vip_profile_identity.dart';
 import '../widgets/registry_badge.dart';
 import '../widgets/user_level_badges.dart';
 
@@ -550,7 +551,9 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
     required int vipFrameLevel,
     required List<String> badges,
   }) {
-    return Container(
+    return VipProfileIdentitySurface(
+      vipLevel: vip,
+      child: Container(
       decoration: BoxDecoration(
         gradient: cover.isEmpty
             ? const RadialGradient(center: Alignment(.6, -.5), radius: 1.3, colors: [Color(0xFF251044), Color(0xFF07111F), Color(0xFF05060D)])
@@ -604,7 +607,16 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
             ],
           ),
           const SizedBox(height: 11),
-          Text(name, style: const TextStyle(color: Colors.white, fontSize: 25, fontWeight: FontWeight.w900)),
+          VipStyledName(
+            vipLevel: vip,
+            name: name,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 25,
+              fontWeight: FontWeight.w900,
+            ),
+            textAlign: TextAlign.center,
+          ),
           const SizedBox(height: 4),
           Row(
             mainAxisSize: MainAxisSize.min,
@@ -646,7 +658,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
           _publicLevelBadges(),
         ],
       ),
-    );
+    ));
   }
 
   Widget _stats(String userId) {

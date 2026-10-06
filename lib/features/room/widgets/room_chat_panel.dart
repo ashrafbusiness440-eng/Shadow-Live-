@@ -12,6 +12,9 @@ import '../../profile/screens/user_level_screen.dart';
 import '../../profile/widgets/quick_profile_sheet.dart';
 import '../../profile/widgets/user_level_badges.dart';
 import '../../vip/widgets/vip_avatar_frame.dart';
+import 'cosmetic_effect_widgets.dart';
+import '../../vip/utils/vip_cosmetic_policy.dart';
+import '../../vip/widgets/vip_cosmetic_asset.dart';
 
 class RoomChatPanel extends StatefulWidget {
   const RoomChatPanel({
@@ -193,13 +196,16 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
 
   Widget _bubble(RoomChatMessage message) {
     if (message.type == 'gift') {
+      final vipGiftKey = widget.roomEffectsEnabled && message.vipLevel >= 4
+          ? ShadowAssetKeys.vipGiftVisual(message.vipLevel.clamp(4, 10))
+          : '';
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 5),
         child: Align(
           alignment: AlignmentDirectional.centerStart,
           child: Container(
             constraints: const BoxConstraints(maxWidth: 320),
-            padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+            clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
@@ -212,36 +218,55 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
                 color: const Color(0xFFFFD54A).withValues(alpha: .45),
               ),
             ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
+            child: Stack(
               children: [
-                SizedBox(
-                  width: 42,
-                  height: 42,
-                  child: _giftVisual(message),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        message.text,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
+                if (vipGiftKey.isNotEmpty)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Opacity(
+                        opacity: .34,
+                        child: CosmeticAssetVisual(
+                          assetKey: vipGiftKey,
+                          fit: BoxFit.fill,
                         ),
                       ),
-                      if (message.giftTotalCost > 0)
-                        Text(
-                          '🪙 ' + message.giftTotalCost.toString(),
-                          style: const TextStyle(
-                            color: Color(0xFFFFD54A),
-                            fontSize: 10,
-                            fontWeight: FontWeight.w900,
-                          ),
+                    ),
+                  ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 42,
+                        height: 42,
+                        child: _giftVisual(message),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              message.text,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            if (message.giftTotalCost > 0)
+                              Text(
+                                '🪙 ' + message.giftTotalCost.toString(),
+                                style: const TextStyle(
+                                  color: Color(0xFFFFD54A),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                          ],
                         ),
+                      ),
                     ],
                   ),
                 ),
@@ -255,7 +280,8 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
     if (message.type == 'system') {
       final vipEntry = widget.roomEffectsEnabled &&
           message.systemKind == 'room_join' &&
-          message.vipLevel > 0;
+          message.vipLevel >= 8 &&
+          message.entryEffectKey.trim().isNotEmpty;
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Center(
@@ -266,54 +292,72 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
               scale: scale,
               child: child,
             ),
-            child: Container(
-              padding: EdgeInsets.symmetric(
-                horizontal: vipEntry ? 14 : 10,
-                vertical: vipEntry ? 7 : 5,
-              ),
-              decoration: BoxDecoration(
-                gradient: vipEntry
-                    ? const LinearGradient(
-                        colors: [
-                          Color(0xFF6D27D9),
-                          Color(0xFFB57A18),
-                        ],
-                      )
-                    : null,
-                color: vipEntry
-                    ? null
-                    : Colors.white.withValues(alpha: .05),
-                borderRadius: BorderRadius.circular(999),
-                border: vipEntry
-                    ? Border.all(
-                        color: const Color(0xFFFFD54A)
-                            .withValues(alpha: .55),
-                      )
-                    : null,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: Stack(
+                alignment: Alignment.center,
                 children: [
-                  if (vipEntry) ...[
-                    const Icon(
-                      Icons.workspace_premium_rounded,
-                      color: Color(0xFFFFE08A),
-                      size: 15,
-                    ),
-                    const SizedBox(width: 5),
-                  ],
-                  Flexible(
-                    child: Text(
-                      message.text,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color:
-                            vipEntry ? Colors.white : Colors.white54,
-                        fontSize: vipEntry ? 11 : 10,
-                        fontWeight: vipEntry
-                            ? FontWeight.w800
-                            : FontWeight.w400,
+                  if (vipEntry)
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: CosmeticAssetVisual(
+                          assetKey: message.entryEffectKey,
+                          fit: BoxFit.fill,
+                        ),
                       ),
+                    ),
+                  Container(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: vipEntry ? 14 : 10,
+                      vertical: vipEntry ? 7 : 5,
+                    ),
+                    decoration: BoxDecoration(
+                      gradient: vipEntry
+                          ? LinearGradient(
+                              colors: [
+                                Colors.black.withValues(alpha: .18),
+                                const Color(0xFF5D3114)
+                                    .withValues(alpha: .24),
+                              ],
+                            )
+                          : null,
+                      color: vipEntry
+                          ? null
+                          : Colors.white.withValues(alpha: .05),
+                      borderRadius: BorderRadius.circular(999),
+                      border: vipEntry
+                          ? Border.all(
+                              color: const Color(0xFFFFD54A)
+                                  .withValues(alpha: .55),
+                            )
+                          : null,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (vipEntry) ...[
+                          const Icon(
+                            Icons.workspace_premium_rounded,
+                            color: Color(0xFFFFE08A),
+                            size: 15,
+                          ),
+                          const SizedBox(width: 5),
+                        ],
+                        Flexible(
+                          child: Text(
+                            message.text,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color:
+                                  vipEntry ? Colors.white : Colors.white54,
+                              fontSize: vipEntry ? 11 : 10,
+                              fontWeight: vipEntry
+                                  ? FontWeight.w800
+                                  : FontWeight.w400,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -326,6 +370,17 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
 
     final mine = message.senderUid == _uid;
     final mentionedMe = message.mentionUids.contains(_uid);
+    final vipBubbleKey = widget.roomEffectsEnabled && message.vipLevel >= 2
+        ? ShadowAssetKeys.vipChatBubble(message.vipLevel.clamp(2, 10))
+        : '';
+    final vipNameKey = widget.roomEffectsEnabled && message.vipLevel >= 10
+        ? ShadowAssetKeys.vipNameEffect(message.vipLevel.clamp(10, 10))
+        : '';
+    final fallbackColor = mine
+        ? const Color(0xFF4F1E96).withValues(alpha: .72)
+        : mentionedMe
+            ? const Color(0xFF8A3DFF).withValues(alpha: .20)
+            : const Color(0xFF141A28).withValues(alpha: .92);
     return Align(
       alignment: mine
           ? AlignmentDirectional.centerEnd
@@ -335,13 +390,11 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
         child: Container(
           constraints: const BoxConstraints(maxWidth: 310),
           margin: const EdgeInsets.symmetric(vertical: 4),
-          padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+          clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
-            color: mine
-                ? const Color(0xFF4F1E96).withValues(alpha: .72)
-                : mentionedMe
-                    ? const Color(0xFF8A3DFF).withValues(alpha: .20)
-                    : const Color(0xFF141A28).withValues(alpha: .92),
+            color: vipBubbleKey.isEmpty
+                ? fallbackColor
+                : Colors.black.withValues(alpha: .22),
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
               color: mentionedMe
@@ -349,54 +402,93 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
                   : Colors.white10,
             ),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Stack(
             children: [
-              InkWell(
-                onTap: () => _mention(message),
-                child: Text(
-                  message.displayName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: mine
-                        ? const Color(0xFFFFD54A)
-                        : const Color(0xFFBFA5FF),
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
+              if (vipBubbleKey.isNotEmpty)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: CosmeticAssetVisual(
+                      assetKey: vipBubbleKey,
+                      fit: BoxFit.fill,
+                    ),
                   ),
                 ),
-              ),
-              if ((message.replyPreview ?? '').isNotEmpty) ...[
-                const SizedBox(height: 5),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(7),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: .22),
-                    borderRadius: BorderRadius.circular(8),
-                    border: const BorderDirectional(
-                      start: BorderSide(
-                        color: Color(0xFFFFD54A),
-                        width: 2,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    InkWell(
+                      onTap: () => _mention(message),
+                      child: Stack(
+                        alignment: AlignmentDirectional.centerStart,
+                        children: [
+                          if (vipNameKey.isNotEmpty)
+                            Positioned.fill(
+                              child: IgnorePointer(
+                                child: Opacity(
+                                  opacity: .88,
+                                  child: CosmeticAssetVisual(
+                                    assetKey: vipNameKey,
+                                    fit: BoxFit.fill,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          Padding(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: vipNameKey.isEmpty ? 0 : 5,
+                              vertical: vipNameKey.isEmpty ? 0 : 2,
+                            ),
+                            child: Text(
+                              message.displayName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: mine
+                                    ? const Color(0xFFFFD54A)
+                                    : const Color(0xFFBFA5FF),
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
-                  child: Text(
-                    message.replyPreview!,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white54,
-                      fontSize: 9,
+                    if ((message.replyPreview ?? '').isNotEmpty) ...[
+                      const SizedBox(height: 5),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(7),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: .22),
+                          borderRadius: BorderRadius.circular(8),
+                          border: const BorderDirectional(
+                            start: BorderSide(
+                              color: Color(0xFFFFD54A),
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                        child: Text(
+                          message.replyPreview!,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white54,
+                            fontSize: 9,
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 5),
+                    RichText(
+                      text: _messageSpan(message.text),
+                      textDirection: TextDirection.rtl,
                     ),
-                  ),
+                  ],
                 ),
-              ],
-              const SizedBox(height: 5),
-              RichText(
-                text: _messageSpan(message.text),
-                textDirection: TextDirection.rtl,
               ),
             ],
           ),
@@ -913,24 +1005,29 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Align(
           alignment: AlignmentDirectional.centerStart,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
+          child: VipCosmeticSurface(
+            assetKey: isGift
+                ? VipCosmeticPolicy.giftVisualKey(message.vipLevel)
+                : '',
+            borderRadius: BorderRadius.circular(12),
+            assetOpacity: .28,
+            fallbackDecoration: BoxDecoration(
               color: isGift
                   ? const Color(0xFFFFD54A).withValues(alpha: .12)
                   : vipEntry
                       ? const Color(0xFF8A3DFF).withValues(alpha: .18)
                       : Colors.white.withValues(alpha: .04),
-              borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: isGift
                     ? const Color(0xFFFFD54A).withValues(alpha: .35)
                     : Colors.white10,
               ),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
                 Icon(
                   isGift
                       ? Icons.card_giftcard_rounded
@@ -953,7 +1050,8 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
                     ),
                   ),
                 ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -1004,14 +1102,31 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
                               message.displayName,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Color(0xFFBFA5FF),
+                              style: TextStyle(
+                                color: VipCosmeticPolicy.nameColor(
+                                  message.vipLevel,
+                                  mine: false,
+                                ),
                                 fontSize: 11,
                                 fontWeight: FontWeight.w900,
                               ),
                             ),
                           ),
                         ),
+                        if (VipCosmeticPolicy.nameEffectKey(
+                              message.vipLevel,
+                            ).isNotEmpty) ...[
+                          const SizedBox(width: 4),
+                          SizedBox.square(
+                            dimension: 17,
+                            child: VipCosmeticAssetLayer(
+                              assetKey: VipCosmeticPolicy.nameEffectKey(
+                                message.vipLevel,
+                              ),
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                        ],
                         if (message.vipLevel > 0) ...[
                           const SizedBox(width: 5),
                           VipInlineBadge(
@@ -1036,12 +1151,27 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
                       ),
                     ],
                     const SizedBox(height: 3),
-                    Text(
-                      message.text,
-                      textDirection: TextDirection.rtl,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
+                    VipCosmeticSurface(
+                      assetKey:
+                          VipCosmeticPolicy.chatBubbleKey(message.vipLevel),
+                      borderRadius: BorderRadius.circular(12),
+                      assetOpacity: .32,
+                      fallbackDecoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: .035),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 6,
+                        ),
+                        child: Text(
+                          message.text,
+                          textDirection: TextDirection.rtl,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                          ),
+                        ),
                       ),
                     ),
                   ],

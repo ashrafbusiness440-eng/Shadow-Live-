@@ -8,7 +8,7 @@ import {
 } from "./firebase-auth.js";
 import { firestoreQuotaResponse, json, readJson } from "./http.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
-import { activeEffectiveVipLevelFromUser } from "./vip-runtime.js";
+import { vipCosmeticsFromUser } from "./vip-entitlements.js";
 import {
   createAsyncLimiter,
   createAsyncTtlCache,
@@ -418,6 +418,7 @@ export async function roomRealtime(request, env) {
       const roomData = room.data || {};
       const profileData = user.data || {};
       const levelMetadata = roomUserLevelMetadata(levelPolicy, uid, profileData);
+      const vipCosmetics = vipCosmeticsFromUser(profileData, Date.now());
       if (user.exists) {
         assertUserDocumentSessionState(payload, profileData);
       }
@@ -452,15 +453,8 @@ export async function roomRealtime(request, env) {
           ),
           ghostMode: activeRoomGhostMode(profileData, Date.now()),
           hiddenRoomEntry: activeHiddenRoomEntry(profileData, Date.now()),
-          vipLevel: activeEffectiveVipLevelFromUser(
-            profileData,
-            Date.now(),
-          ),
-          entryEffectKey: String(
-            profileData.vipEntryEffectKey ||
-            profileData.vip?.entryEffectKey ||
-            "",
-          ),
+          vipLevel: vipCosmetics.level,
+          entryEffectKey: vipCosmetics.keys.entryStrip,
           reconnectAttempt: Math.max(
             0,
             Math.min(3, Number(body.reconnectAttempt || 0)),

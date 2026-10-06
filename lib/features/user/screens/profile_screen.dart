@@ -21,6 +21,7 @@ import '../../agency/screens/agency_package_grant_page.dart';
 import '../../relationships/screens/relationships_page.dart';
 import '../../vip/screens/vip_screen.dart';
 import '../../vip/widgets/vip_profile_avatar.dart';
+import '../../vip/widgets/vip_profile_identity.dart';
 import '../bloc/user_bloc.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -523,7 +524,9 @@ class _ProfileScreenState extends State<ProfileScreen>
     final gender = _text(profile, 'gender', '');
     final bio = _text(profile, 'bio', '');
 
-    return Container(
+    return VipProfileIdentitySurface(
+      vipLevel: _num(profile, ['effectiveVipLevel']),
+      child: Container(
       decoration: BoxDecoration(
         gradient: cover.isEmpty
             ? const RadialGradient(
@@ -592,14 +595,15 @@ class _ProfileScreenState extends State<ProfileScreen>
             ),
           ),
           const SizedBox(height: 10),
-          Text(
-            name,
-            textAlign: TextAlign.center,
+          VipStyledName(
+            vipLevel: _num(profile, ['effectiveVipLevel']),
+            name: name,
             style: const TextStyle(
               color: Colors.white,
               fontSize: 24,
               fontWeight: FontWeight.w900,
             ),
+            textAlign: TextAlign.center,
           ),
           const SizedBox(height: 7),
           Wrap(
@@ -725,7 +729,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           ),
         ],
       ),
-    );
+    ));
   }
 
   Widget _balanceChip(IconData icon, String text, int tab) {

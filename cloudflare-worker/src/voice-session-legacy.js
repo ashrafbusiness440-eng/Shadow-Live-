@@ -16,6 +16,8 @@ import {
   canUseHiddenRoomEntry,
   canUseRoomGhostMode,
   vipEntitlementsFromUser,
+  vipCosmeticAssetKey,
+  vipCosmeticsFromUser,
 } from "./vip-entitlements.js";
 import {timestampToEpochMs} from "./vip-runtime.js";
 import {
@@ -1793,11 +1795,22 @@ export async function announceRoomEntrance(db,uid,roomId){
     throw new ApiError("room_unavailable",404);
   }
 
-  const cosmetics=await activeCosmetics(db,uid,["entrance"]);
-  const entrance=cosmetics.entrance;
-  if(!entrance)return {ok:true,announced:false,roomId};
+  const [cosmetics,userSnap,profileSnap]=await Promise.all([
+    activeCosmetics(db,uid,["entrance"]),
+    db.collection("users").doc(uid).get(),
+    db.collection("public_profiles").doc(uid).get(),
+  ]);
+  const entrance=cosmetics.entrance||{};
+  const user=userSnap.data()||{};
+  const vipCosmetics=vipCosmeticsFromUser(user,Date.now());
+  const hasRewardEntrance=
+    clean(entrance.assetKey).length>0||clean(entrance.imageUrl).length>0;
+  const hasVipRoomEntrance=
+    vipCosmetics.level>=9&&clean(vipCosmetics.keys.entryStrip).length>0;
+  if(!hasRewardEntrance&&!hasVipRoomEntrance){
+    return {ok:true,announced:false,roomId};
+  }
 
-  const profileSnap=await db.collection("public_profiles").doc(uid).get();
   const profile=profileSnap.data()||{};
   const eventAtMs=Date.now();
   const event={
@@ -1805,10 +1818,14 @@ export async function announceRoomEntrance(db,uid,roomId){
     uid,
     displayName:clean(profile.displayName||profile.username||"مستخدم Shadow Live"),
     profileImageUrl:clean(profile.profileImageUrl),
-    rewardId:clean(entrance.rewardId),
-    assetKey:clean(entrance.assetKey),
-    imageUrl:clean(entrance.imageUrl),
-    rewardExpiresAtMs:Number(entrance.expiresAtMs||0),
+    rewardId:hasRewardEntrance?clean(entrance.rewardId):"vip_room_entry",
+    assetKey:hasRewardEntrance
+      ?clean(entrance.assetKey)
+      :clean(vipCosmetics.keys.entryStrip),
+    imageUrl:hasRewardEntrance?clean(entrance.imageUrl):"",
+    rewardExpiresAtMs:hasRewardEntrance
+      ?Number(entrance.expiresAtMs||0)
+      :timestampToEpochMs(user.vipExpiresAt),
     eventAtMs,
   };
   const delivered=await broadcastRoomRealtimeEvent(
@@ -1984,6 +2001,29 @@ export async function roomSeatAction(db,uid,body){
       );
       const frame=cosmetics.frame||{};
       const voiceWave=cosmetics.voice_wave||{};
+      const vipCosmetics=vipCosmeticsFromUser(actor,Date.now());
+      const vipExpiryMs=timestampToEpochMs(actor.vipExpiresAt);
+      const selectedVipFrameLevel=Math.max(
+        3,
+        Math.min(
+          vipCosmetics.level,
+          Number(actor.vipProfileFrameLevel||vipCosmetics.level),
+        ),
+      );
+      const vipFrameAssetKey=vipCosmetics.level>=3
+        ?vipCosmeticAssetKey(selectedVipFrameLevel,"profileFrame")
+        :"";
+      const effectiveFrameAssetKey=clean(frame.assetKey)||vipFrameAssetKey;
+      const effectiveFrameImageUrl=clean(frame.imageUrl);
+      const effectiveFrameExpiresAtMs=clean(frame.assetKey)||clean(frame.imageUrl)
+        ?Number(frame.expiresAtMs||0)
+        :vipExpiryMs;
+      const vipWaveAssetKey=vipCosmetics.keys.audioWave;
+      const effectiveWaveAssetKey=clean(voiceWave.assetKey)||vipWaveAssetKey;
+      const effectiveWaveImageUrl=clean(voiceWave.imageUrl);
+      const effectiveWaveExpiresAtMs=clean(voiceWave.assetKey)||clean(voiceWave.imageUrl)
+        ?Number(voiceWave.expiresAtMs||0)
+        :vipExpiryMs;
       const existingSeat=currentSeatIndex>=0?seats[currentSeatIndex]:null;
       const keepMicActive=
         existingSeat?.muted===false&&Number(existingSeat?.micStartedAtMs||0)>0;
@@ -2007,13 +2047,13 @@ export async function roomSeatAction(db,uid,body){
         muted:!keepMicActive,
         micStartedAtMs,
         frameRewardId:clean(frame.rewardId),
-        frameAssetKey:clean(frame.assetKey),
-        frameImageUrl:clean(frame.imageUrl),
-        frameExpiresAtMs:Number(frame.expiresAtMs||0),
+        frameAssetKey:effectiveFrameAssetKey,
+        frameImageUrl:effectiveFrameImageUrl,
+        frameExpiresAtMs:effectiveFrameExpiresAtMs,
         voiceWaveRewardId:clean(voiceWave.rewardId),
-        voiceWaveAssetKey:clean(voiceWave.assetKey),
-        voiceWaveImageUrl:clean(voiceWave.imageUrl),
-        voiceWaveExpiresAtMs:Number(voiceWave.expiresAtMs||0),
+        voiceWaveAssetKey:effectiveWaveAssetKey,
+        voiceWaveImageUrl:effectiveWaveImageUrl,
+        voiceWaveExpiresAtMs:effectiveWaveExpiresAtMs,
         customerServiceMicExpiresAtMs,
       };
       invites=invites.filter(id=>id!==uid);
@@ -2219,6 +2259,7 @@ async function sendRoomChat(db,uid,body){
   });
 
   const profile=profileSnap.data()||{};
+  const vipCosmetics=vipCosmeticsFromUser(actorUser,nowMs);
   const messageId="msg_"+randomBytes(12).toString("hex");
   await publishRoomRealtimeEvent(
     legacyEnv,
@@ -2238,7 +2279,7 @@ async function sendRoomChat(db,uid,body){
         replySenderUid:replySenderUid||null,
         createdAtMs:nowMs,
         systemKind:"",
-        vipLevel:0,
+        vipLevel:vipCosmetics.level,
         entryEffectKey:"",
       },
     },
