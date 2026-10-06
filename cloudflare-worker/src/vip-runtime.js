@@ -63,13 +63,38 @@ export function activeEffectiveVipLevelFromUser(
   user = {},
   nowMs = Date.now(),
 ) {
-  const level = Math.max(
-    0,
-    Math.min(10, Number(user.effectiveVipLevel || 0) || 0),
+  const now = Number(nowMs);
+  const clampLevel = (value) =>
+    Math.max(0, Math.min(10, Number(value || 0) || 0));
+
+  const earnedLevel = clampLevel(user.earnedVipLevel);
+  const earnedExpiry = timestampToEpochMs(user.earnedVipExpiresAt);
+  const activeEarned =
+    earnedLevel > 0 && (earnedExpiry === 0 || earnedExpiry > now)
+      ? earnedLevel
+      : 0;
+
+  const adminLevel = clampLevel(user.adminGrantVipLevel);
+  const adminExpiry = timestampToEpochMs(user.adminGrantExpiresAt);
+  const activeAdmin =
+    adminLevel > 0 && adminExpiry > now ? adminLevel : 0;
+
+  const trialLevel = clampLevel(user.trialVipLevel);
+  const trialExpiry = timestampToEpochMs(user.trialVipExpiresAt);
+  const activeTrial =
+    trialLevel > 0 && trialExpiry > now ? trialLevel : 0;
+
+  const sourced = Math.max(activeEarned, activeAdmin, activeTrial);
+  if (sourced > 0) return sourced;
+
+  // Backward-compatible fallback for legacy users that only have the
+  // materialized effective fields.
+  const legacyLevel = clampLevel(
+    user.effectiveVipLevel ?? user.vipLevel,
   );
-  if (level <= 0) return 0;
-  const expiresAtMs = timestampToEpochMs(user.vipExpiresAt);
-  return expiresAtMs > Number(nowMs) ? level : 0;
+  if (legacyLevel <= 0) return 0;
+  const legacyExpiry = timestampToEpochMs(user.vipExpiresAt);
+  return legacyExpiry > now ? legacyLevel : 0;
 }
 
 export function vipPublicProfilePatch(state, now = new Date()) {
