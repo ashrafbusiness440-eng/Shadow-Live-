@@ -15,7 +15,7 @@ void main() {
     expect(access, contains("'manageVipLevels': 'إدارة مستويات VIP'"));
     expect(access, contains("'allowedVipGrantLevels': allowedVipLevels"));
     expect(access, contains("List<Widget>.generate(10"));
-    expect(access, contains("label: Text('VIP$level')"));
+    expect(access, contains("label: Text('VIP\$level')"));
     expect(
       access,
       contains('إذا بقيت القائمة فارغة فلن يستطيع منح أي مستوى'),
