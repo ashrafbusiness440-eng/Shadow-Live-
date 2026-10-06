@@ -214,6 +214,7 @@ test("asset studio UX exposes safe replace, preview, history and batch guardrail
     'assetUsageMap',
     'assetVersionHistory',
     'rollbackPreviousAssetVersion',
+    'templatePrompt',
   ]) {
     assert.equal(worker.includes(expected), true, expected);
   }
@@ -230,6 +231,10 @@ test("asset studio UX exposes safe replace, preview, history and batch guardrail
     "_loadManifestForAsset",
     "_preparedFrameCount",
     "_healthLine",
+    "تشخيص الأصل",
+    "سجل الدفعة الرسمي",
+    "الحالي",
+    "الجديد",
     "_buildStickyStudioActions",
     "_confirmPublishImpact",
     "_verifyPublishedAsset",
@@ -265,6 +270,11 @@ test("asset studio UX exposes safe replace, preview, history and batch guardrail
   assert.equal(worker.includes('url.searchParams.get("level")'), true);
   assert.equal(worker.includes('url.searchParams.get("updatedAfter")'), true);
   assert.equal(worker.includes("maxPages = hasFilters ? 3 : 1"), true);
+  assert.equal(worker.includes("filesWithoutRegistry"), true);
+  assert.equal(worker.includes("duplicatePathKeys"), true);
+  assert.equal(worker.includes("duplicateFunctionKeys"), true);
+  assert.equal(control.includes("الإطارات:"), true);
+  assert.equal(control.includes("أماكن الاستخدام المحددة:"), true);
 });
 
 test("login header is a first-class Asset Studio surface with bundled fallback", () => {
