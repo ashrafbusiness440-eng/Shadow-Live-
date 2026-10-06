@@ -1514,24 +1514,59 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                 color: Color(0xFFD7B85A),
               ),
               const SizedBox(width: 8),
-              const Expanded(
+              Expanded(
                 child: Text(
-                  'إضافة أو تعديل أصل',
-                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900),
+                  _isEditing ? 'تعديل أصل موجود' : 'إضافة أصل جديد',
+                  style: const TextStyle(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
               ),
               IconButton(
                 tooltip: 'إغلاق النموذج',
-                onPressed:
-                    _busy ? null : () => setState(() => _showStudioForm = false),
+                onPressed: _busy ? null : _closeStudioForm,
                 icon: const Icon(Icons.close_rounded),
               ),
             ],
           ),
-          const Text(
-            'اختر القالب، ارفع الصورة، ثم راجع البيانات قبل الحفظ أو النشر.',
-            style: TextStyle(color: Colors.white60, height: 1.45),
+          Text(
+            _isEditing
+                ? 'البيانات الأساسية مأخوذة من الأصل المنشور. اختر الصورة الجديدة واكتب سبب التغيير.'
+                : 'اختر القالب، ارفع الصورة، ثم راجع البيانات قبل الحفظ أو النشر.',
+            style: const TextStyle(color: Colors.white60, height: 1.45),
           ),
+          if (_isEditing) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(11),
+              decoration: BoxDecoration(
+                color: Colors.greenAccent.withValues(alpha: .07),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Colors.greenAccent.withValues(alpha: .20),
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.swap_horiz_rounded,
+                    color: Colors.greenAccent,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Replace In Place • نفس Asset Key والمسار واسم الملف',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 11.5,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 14),
           DropdownButtonFormField<String>(
             value: template?.id,
@@ -1549,7 +1584,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                   ),
                 )
                 .toList(growable: false),
-            onChanged: _busy
+            onChanged: _busy || (_isEditing && !_unlockIdentityFields)
                 ? null
                 : (value) {
                     if (value == null) return;
@@ -1559,6 +1594,9 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                     setState(() {
                       _applyTemplate(selected.first);
                       _message = null;
+                      _hasUnsavedChanges = true;
+                      _lastSuccess = null;
+                      _operationId = null;
                     });
                   },
           ),
@@ -1657,17 +1695,118 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
               ),
             ),
           ],
+
+          if (_bytes != null &&
+              _preparedWidth != null &&
+              _preparedHeight != null) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 7,
+              runSpacing: 7,
+              alignment: WrapAlignment.center,
+              children: [
+                Chip(
+                  avatar: const Icon(Icons.aspect_ratio_rounded, size: 16),
+                  label: Text('${_preparedWidth}×${_preparedHeight}'),
+                ),
+                Chip(
+                  avatar: const Icon(Icons.data_object_rounded, size: 16),
+                  label: Text(
+                    _mimeType?.split('/').last.toUpperCase() ?? '—',
+                  ),
+                ),
+                Chip(
+                  avatar: Icon(
+                    _preparedAnimated
+                        ? Icons.animation_rounded
+                        : Icons.image_outlined,
+                    size: 16,
+                  ),
+                  label: Text(_preparedAnimated ? 'متحرك' : 'ثابت'),
+                ),
+                Chip(
+                  avatar: const Icon(Icons.sd_storage_outlined, size: 16),
+                  label: Text(
+                    '${(_bytes!.length / 1024).toStringAsFixed(1)} KB',
+                  ),
+                ),
+              ],
+            ),
+          ],
           if (_bytes != null) ...[
             const SizedBox(height: 12),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(15),
-              child: Container(
-                height: 180,
-                color: Colors.black26,
-                padding: const EdgeInsets.all(8),
-                child: Image.memory(_bytes!, fit: BoxFit.contain),
+            if (_isEditing && _assetLiveUrl(_editingAsset).isNotEmpty)
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      children: [
+                        const Text(
+                          'الحالي',
+                          style: TextStyle(
+                            color: Colors.white60,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 11,
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(15),
+                          child: Container(
+                            height: 150,
+                            color: Colors.black26,
+                            padding: const EdgeInsets.all(8),
+                            child: Image.network(
+                              _assetLiveUrl(_editingAsset),
+                              fit: BoxFit.contain,
+                              gaplessPlayback: true,
+                              errorBuilder: (_, __, ___) => const Icon(
+                                Icons.broken_image_outlined,
+                                color: Colors.orangeAccent,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      children: [
+                        const Text(
+                          'الجديد',
+                          style: TextStyle(
+                            color: Colors.greenAccent,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 11,
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(15),
+                          child: Container(
+                            height: 150,
+                            color: Colors.black26,
+                            padding: const EdgeInsets.all(8),
+                            child: Image.memory(_bytes!, fit: BoxFit.contain),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              )
+            else
+              ClipRRect(
+                borderRadius: BorderRadius.circular(15),
+                child: Container(
+                  height: 180,
+                  color: Colors.black26,
+                  padding: const EdgeInsets.all(8),
+                  child: Image.memory(_bytes!, fit: BoxFit.contain),
+                ),
               ),
-            ),
             const SizedBox(height: 8),
             Row(
               children: [
@@ -1693,25 +1832,71 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
             ),
           ],
           const SizedBox(height: 18),
-          const Text(
-            'معلومات الأصل',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'معلومات الأصل',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+                ),
+              ),
+              if (_isEditing)
+                TextButton.icon(
+                  onPressed:
+                      _busy || _unlockIdentityFields ? null : _unlockIdentity,
+                  icon: Icon(
+                    _unlockIdentityFields
+                        ? Icons.lock_open_rounded
+                        : Icons.lock_rounded,
+                    size: 18,
+                  ),
+                  label: Text(
+                    _unlockIdentityFields ? 'الحقول مفتوحة' : 'فتح الحقول',
+                  ),
+                ),
+            ],
           ),
-          const SizedBox(height: 10),
+          if (_isEditing && !_unlockIdentityFields)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 10),
+              child: Text(
+                'Asset Key والمسار واسم الملف مقفلة للحماية من كسر الربط.',
+                style: TextStyle(color: Colors.white54, fontSize: 10.5),
+              ),
+            ),
           TextField(
             controller: _directory,
             enabled: !_busy,
-            onChanged: (_) => setState(_syncGiftFileNameFromAssetKey),
-            decoration: const InputDecoration(
-              labelText: 'المسار داخل المشروع',
-              prefixIcon: Icon(Icons.folder_outlined),
-              border: OutlineInputBorder(),
+            readOnly: _isEditing && !_unlockIdentityFields,
+            minLines: 1,
+            maxLines: 2,
+            textDirection: TextDirection.ltr,
+            onTap: () => _selectAll(_directory),
+            onChanged: (_) {
+              _syncGiftFileNameFromAssetKey();
+              _markDirty();
+            },
+            decoration: InputDecoration(
+              labelText: 'المسار داخل المشروع *',
+              prefixIcon: const Icon(Icons.folder_outlined),
+              suffixIcon: IconButton(
+                tooltip: 'نسخ المسار',
+                onPressed: () => _copyText(_directory.text, 'المسار'),
+                icon: const Icon(Icons.copy_rounded),
+              ),
+              border: const OutlineInputBorder(),
             ),
           ),
           const SizedBox(height: 10),
           TextField(
             controller: _fileName,
             enabled: !_busy,
+            readOnly: _isEditing && !_unlockIdentityFields,
+            minLines: 1,
+            maxLines: 2,
+            textDirection: TextDirection.ltr,
+            onTap: () => _selectAll(_fileName),
+            onChanged: (_) => _markDirty(),
             onEditingComplete: () async {
               FocusScope.of(context).unfocus();
               if (_sourceBytes == null) return;
@@ -1722,21 +1907,39 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
               await _convertSelectedToTarget();
               if (mounted) setState(() => _busy = false);
             },
-            decoration: const InputDecoration(
-              labelText: 'اسم الملف',
-              prefixIcon: Icon(Icons.insert_drive_file_outlined),
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: 'اسم الملف *',
+              prefixIcon: const Icon(Icons.insert_drive_file_outlined),
+              suffixIcon: IconButton(
+                tooltip: 'نسخ اسم الملف',
+                onPressed: () => _copyText(_fileName.text, 'اسم الملف'),
+                icon: const Icon(Icons.copy_rounded),
+              ),
+              border: const OutlineInputBorder(),
             ),
           ),
           const SizedBox(height: 10),
           TextField(
             controller: _assetKey,
             enabled: !_busy,
-            onChanged: (_) => setState(_syncGiftFileNameFromAssetKey),
-            decoration: const InputDecoration(
-              labelText: 'Asset Key',
-              prefixIcon: Icon(Icons.link_rounded),
-              border: OutlineInputBorder(),
+            readOnly: _isEditing && !_unlockIdentityFields,
+            minLines: 1,
+            maxLines: 2,
+            textDirection: TextDirection.ltr,
+            onTap: () => _selectAll(_assetKey),
+            onChanged: (_) {
+              _syncGiftFileNameFromAssetKey();
+              _markDirty();
+            },
+            decoration: InputDecoration(
+              labelText: 'Asset Key *',
+              prefixIcon: const Icon(Icons.link_rounded),
+              suffixIcon: IconButton(
+                tooltip: 'نسخ Asset Key',
+                onPressed: () => _copyText(_assetKey.text, 'Asset Key'),
+                icon: const Icon(Icons.copy_rounded),
+              ),
+              border: const OutlineInputBorder(),
             ),
           ),
           const SizedBox(height: 16),
