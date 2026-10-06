@@ -61,6 +61,7 @@ class OwnerUserAccessCard extends StatelessWidget {
     'manageGameLevel': 'إدارة مستوى الألعاب فقط',
     'manageVip': 'إدارة VIP القديمة — توافق فقط',
     'manageVipLevels': 'إدارة مستويات VIP',
+    'manageVipPolicy': 'إدارة إعدادات وعروض VIP',
     'manageSpecialIds': 'إدارة IDs المميزة',
     'manageIds': 'إدارة IDs المستخدمين والغرف',
     'manageStore': 'إدارة المتجر',
@@ -99,7 +100,7 @@ class OwnerUserAccessCard extends StatelessWidget {
       'manageUserLevels', 'manageWealthLevel', 'manageAttractionLevel', 'manageGameLevel',
     ],
     'VIP': [
-      'manageVipLevels',
+      'manageVipLevels', 'manageVipPolicy',
     ],
     'الإدارة العامة': [
       'manageVip', 'manageStore', 'manageCampaigns', 'manageRoles', 'viewAuditLog', 'emergencyLock',
@@ -115,7 +116,7 @@ class OwnerUserAccessCard extends StatelessWidget {
       'manageRooms', 'globalRoomControl',
       'manageAgencies', 'reviewAgencyApplications', 'manageAgencyMemberships',
       'manageAgencyManagers', 'suspendAgencies',
-      'manageVip', 'manageIds', 'manageStore', 'manageGames', 'viewAuditLog',
+      'manageVip', 'manageVipPolicy', 'manageIds', 'manageStore', 'manageGames', 'viewAuditLog',
     },
     _ => <String>{},
   };
@@ -274,6 +275,7 @@ class OwnerUserAccessCard extends StatelessWidget {
                               'manageAttractionLevel',
                               'manageGameLevel',
                               'manageVipLevels',
+                              'manageVipPolicy',
                             });
                             allowedVipLevels.clear();
                           }
@@ -316,6 +318,7 @@ class OwnerUserAccessCard extends StatelessWidget {
                         'manageAttractionLevel',
                         'manageGameLevel',
                         'manageVipLevels',
+                        'manageVipPolicy',
                       }.contains(capability);
                       final levelRoleAllowed =
                           selectedRole == 'admin' || selectedRole == 'super_admin';
