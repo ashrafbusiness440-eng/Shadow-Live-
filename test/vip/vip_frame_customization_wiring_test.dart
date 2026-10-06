@@ -26,7 +26,7 @@ void main() {
     expect(quickProfile.contains('frameLevel: vipFrameLevel'), isTrue);
 
     expect(vip.contains("'vip-frame-customization'"), isTrue);
-    expect(vip.contains("'vip-frame-choice-$level'"), isTrue);
+    expect(vip.contains("'vip-frame-choice-\$level'"), isTrue);
     expect(vip.contains('setVipProfileFrame(level)'), isTrue);
     expect(vip.contains('30 يوم'), isTrue);
   });
