@@ -153,16 +153,633 @@ async function verifyOwner(request, env) {
   return { decoded, db };
 }
 
-async function listAssets(db) {
-  const docs = await db.runQuery("app_asset_registry", {
-    orderBy: [{ field: "updatedAt", direction: "desc" }],
-    limit: 100,
+function assetMatchesListFilters(asset, {
+  query = "",
+  status = "all",
+  type = "all",
+  channel = "all",
+  family = "",
+  level = "",
+  updatedAfter = "",
+  updatedBefore = "",
+} = {}) {
+  const draft = asset?.draft && typeof asset.draft === "object"
+    ? asset.draft
+    : {};
+  const hasDraft = asset?.hasDraft === true && Object.keys(draft).length > 0;
+  const source = hasDraft ? draft : asset;
+  const published = asset?.published === true;
+  const normalizedStatus = clean(asset?.status).toLowerCase();
+  const assetType = clean(source?.assetType || asset?.assetType);
+  const channels = Array.isArray(source?.channels || asset?.channels)
+    ? (source?.channels || asset?.channels).map((item) => clean(item))
+    : [];
+  const assetKey = clean(asset?.assetKey);
+  const fullPath = clean(source?.fullPath || asset?.fullPath);
+  const fileName = clean(source?.fileName || asset?.fileName);
+  const templateId = clean(source?.templateId || asset?.templateId);
+
+  const statusOk = status === "published"
+    ? published
+    : status === "draft"
+      ? hasDraft
+      : status === "review"
+        ? normalizedStatus.includes("review") ||
+          normalizedStatus.includes("pending")
+        : true;
+  if (!statusOk) return false;
+  if (type !== "all" && assetType !== type) return false;
+  if (channel !== "all" && !channels.includes(channel)) return false;
+
+  const familyNeedle = clean(family).toLowerCase();
+  if (familyNeedle) {
+    const familyHaystack = `${assetKey} ${fullPath} ${templateId}`.toLowerCase();
+    if (!familyHaystack.includes(familyNeedle)) return false;
+  }
+
+  const levelNeedle = clean(level).toLowerCase();
+  if (levelNeedle) {
+    const levelHaystack = `${assetKey} ${fullPath} ${fileName}`.toLowerCase();
+    if (!levelHaystack.includes(levelNeedle)) return false;
+  }
+
+  const updatedAt = new Date(asset?.updatedAt || 0);
+  if (clean(updatedAfter)) {
+    const after = new Date(updatedAfter);
+    if (!Number.isNaN(after.getTime()) &&
+        (Number.isNaN(updatedAt.getTime()) || updatedAt < after)) {
+      return false;
+    }
+  }
+  if (clean(updatedBefore)) {
+    const before = new Date(updatedBefore);
+    if (!Number.isNaN(before.getTime()) &&
+        (Number.isNaN(updatedAt.getTime()) || updatedAt > before)) {
+      return false;
+    }
+  }
+
+  const q = clean(query).toLowerCase();
+  if (!q) return true;
+  const haystack = [
+    assetKey,
+    fullPath,
+    fileName,
+    assetType,
+    templateId,
+    ...channels,
+  ].join(" ").toLowerCase();
+  return haystack.includes(q);
+}
+
+function registryCursor(updatedAt, id) {
+  const timestamp = clean(updatedAt);
+  const date = timestamp ? new Date(timestamp) : null;
+  if (!date || Number.isNaN(date.getTime()) || !clean(id)) return [];
+  return [
+    date,
+    { referencePath: `app_asset_registry/${clean(id)}` },
+  ];
+}
+
+async function listAssets(
+  db,
+  {
+    limit = 100,
+    cursorUpdatedAt = "",
+    cursorId = "",
+    query = "",
+    status = "all",
+    type = "all",
+    channel = "all",
+    family = "",
+    level = "",
+    updatedAfter = "",
+    updatedBefore = "",
+  } = {},
+) {
+  const boundedLimit = Math.max(12, Math.min(100, Number(limit || 60)));
+  const filters = {
+    query: clean(query),
+    status: clean(status) || "all",
+    type: clean(type) || "all",
+    channel: clean(channel) || "all",
+    family: clean(family),
+    level: clean(level),
+    updatedAfter: clean(updatedAfter),
+    updatedBefore: clean(updatedBefore),
+  };
+  const hasFilters = Boolean(
+    filters.query ||
+    filters.family ||
+    filters.level ||
+    filters.updatedAfter ||
+    filters.updatedBefore ||
+    filters.status !== "all" ||
+    filters.type !== "all" ||
+    filters.channel !== "all"
+  );
+
+  let startAfter = registryCursor(cursorUpdatedAt, cursorId);
+  const assets = [];
+  let scanned = 0;
+  let nextCursor = null;
+  let exhausted = false;
+  const maxPages = hasFilters ? 3 : 1;
+
+  for (let page = 0; page < maxPages && assets.length < boundedLimit; page++) {
+    const docs = await db.runQuery("app_asset_registry", {
+      orderBy: [
+        { field: "updatedAt", direction: "desc" },
+        { field: "__name__", direction: "desc" },
+      ],
+      limit: boundedLimit,
+      startAfter,
+    });
+
+    if (!docs.length) {
+      exhausted = true;
+      break;
+    }
+
+    for (let index = 0; index < docs.length; index++) {
+      const doc = docs[index];
+      scanned++;
+      const asset = {
+        assetKey: doc.id,
+        ...(doc.data || {}),
+        updatedAt: doc.data?.updatedAt || null,
+      };
+      if (assetMatchesListFilters(asset, filters)) {
+        assets.push(asset);
+      }
+
+      const isLastDoc = index === docs.length - 1;
+      const reachedResultLimit = assets.length >= boundedLimit;
+      if (reachedResultLimit || isLastDoc) {
+        nextCursor = {
+          updatedAt: doc.data?.updatedAt || null,
+          id: doc.id,
+        };
+      }
+      if (reachedResultLimit) break;
+    }
+
+    if (assets.length >= boundedLimit) break;
+    if (docs.length < boundedLimit) {
+      exhausted = true;
+      break;
+    }
+    const last = docs[docs.length - 1];
+    startAfter = registryCursor(last.data?.updatedAt, last.id);
+    if (!startAfter.length) {
+      exhausted = true;
+      break;
+    }
+  }
+
+  return {
+    assets,
+    nextCursor: exhausted ? null : nextCursor,
+    scannedCount: scanned,
+    filtered: hasFilters,
+    scanLimitReached:
+      hasFilters && !exhausted && assets.length < boundedLimit,
+  };
+}
+
+function assetRepoConfig(env) {
+  return {
+    branch: clean(env.GITHUB_ASSET_BRANCH) || DEFAULT_BRANCH,
+    repo: clean(env.GITHUB_ASSET_REPO) || `${OWNER}/${REPO}`,
+  };
+}
+
+async function assetVersionHistory(env, db, assetKey, asset, limit = 8) {
+  const fullPath = clean(asset?.fullPath);
+  const { branch, repo } = assetRepoConfig(env);
+  let commits = [];
+
+  if (fullPath) {
+    const url =
+      `https://api.github.com/repos/${repo}/commits?` +
+      `path=${encodeURIComponent(fullPath)}&sha=${encodeURIComponent(branch)}&per_page=${Math.max(2, Math.min(12, Number(limit || 8)))}`;
+    const response = await github(env, url);
+    commits = Array.isArray(response.body)
+      ? response.body.map((item) => ({
+          sha: clean(item?.sha),
+          message: clean(item?.commit?.message),
+          date: clean(item?.commit?.committer?.date || item?.commit?.author?.date),
+          author: clean(item?.commit?.author?.name || item?.author?.login),
+          htmlUrl: clean(item?.html_url),
+        })).filter((item) => item.sha)
+      : [];
+  }
+
+  const audits = await db.runQuery("admin_audit_logs", {
+    filters: [{ field: "targetId", op: "==", value: assetKey }],
+    limit: 20,
   });
-  return docs.map((doc) => ({
-    assetKey: doc.id,
-    ...(doc.data || {}),
-    updatedAt: doc.data?.updatedAt || null,
-  }));
+  const audit = audits
+    .map((doc) => ({ id: doc.id, ...(doc.data || {}) }))
+    .filter((item) => clean(item.targetType) === "app_asset")
+    .sort((a, b) =>
+      clean(b.createdAt).localeCompare(clean(a.createdAt))
+    )
+    .slice(0, 12)
+    .map((item) => ({
+      id: item.id,
+      action: clean(item.action),
+      actorUid: clean(item.actorUid),
+      reason: clean(item.reason),
+      createdAt: item.createdAt || null,
+      before: item.before || null,
+      after: item.after || null,
+    }));
+
+  return { commits, audit };
+}
+
+function parentDirectory(path) {
+  const value = normalizeDirectory(path);
+  const slash = value.lastIndexOf("/");
+  return slash > 0 ? value.slice(0, slash) : "";
+}
+
+function decodeGithubTextContent(body) {
+  const encoded = clean(body?.content).replace(/\s+/g, "");
+  if (!encoded) return "";
+  const bytes = decodeBase64(encoded);
+  return new TextDecoder().decode(bytes);
+}
+
+async function assetBatchManifest(env, db, assetKey, asset) {
+  const fullPath = clean(asset?.fullPath);
+  let directory = clean(asset?.directory);
+  if (!directory && fullPath.includes("/")) {
+    directory = fullPath.slice(0, fullPath.lastIndexOf("/"));
+  }
+  if (!directory) {
+    return {
+      sourcePath: null,
+      batch: null,
+      metric: null,
+      tier: null,
+      assets: [],
+    };
+  }
+
+  const { branch, repo } = assetRepoConfig(env);
+  const directories = [];
+  let cursor = directory;
+  for (let i = 0; i < 4 && cursor; i++) {
+    if (!directories.includes(cursor)) directories.push(cursor);
+    if (cursor === "assets/images" || cursor === "assets") break;
+    cursor = parentDirectory(cursor);
+  }
+
+  for (const dir of directories) {
+    const listing = await github(
+      env,
+      `https://api.github.com/repos/${repo}/contents/${encodePath(dir)}?ref=${encodeURIComponent(branch)}`,
+    );
+    const entries = Array.isArray(listing.body) ? listing.body : [];
+    const candidates = entries.filter((item) => {
+      const name = clean(item?.name).toUpperCase();
+      return item?.type === "file" && name.endsWith("PUBLISHED.JSON");
+    });
+
+    for (const candidate of candidates.slice(0, 6)) {
+      const file = await github(
+        env,
+        `https://api.github.com/repos/${repo}/contents/${encodePath(clean(candidate.path))}?ref=${encodeURIComponent(branch)}`,
+      );
+      let parsed = null;
+      try {
+        parsed = JSON.parse(decodeGithubTextContent(file.body));
+      } catch {
+        parsed = null;
+      }
+      const declared = Array.isArray(parsed?.assets) ? parsed.assets : [];
+      if (!declared.some((item) => clean(item?.assetKey) === assetKey)) {
+        continue;
+      }
+
+      const limited = declared.slice(0, 40);
+      const templateMap = new Map(
+        publicAssetStudioTemplates().map((template) => [
+          clean(template?.id),
+          template,
+        ]),
+      );
+      const metadata = await Promise.all(
+        limited.map(async (item) => {
+          const key = clean(item?.assetKey);
+          if (!validKey(key)) return null;
+          const current = await db.get(`app_asset_registry/${key}`);
+          const data = current.data || {};
+          const templateId = clean(data.templateId);
+          const template = templateMap.get(templateId) || null;
+          return {
+            assetKey: key,
+            fullPath: clean(item?.fullPath || data.fullPath),
+            width: Number(item?.width || data?.templateSpecs?.width || 0) || null,
+            height: Number(item?.height || data?.templateSpecs?.height || 0) || null,
+            contentSha: clean(item?.contentSha || data.contentSha) || null,
+            published: current.exists && data.published === true,
+            hasDraft: current.exists && data.hasDraft === true,
+            status: clean(data.status) || (current.exists ? "registered" : "missing"),
+            assetType: clean(data.assetType),
+            templateId,
+            templateLabel: clean(template?.labelAr),
+            templatePrompt: clean(template?.prompt),
+            channels: Array.isArray(data.channels) ? data.channels : [],
+            mode: data.mode === "bundled" ? "bundled" : "remote",
+            fileName: clean(data.fileName) ||
+              clean(item?.fullPath).split("/").pop() ||
+              "",
+            directory: clean(data.directory) ||
+              parentDirectory(clean(item?.fullPath)),
+          };
+        }),
+      );
+
+      return {
+        sourcePath: clean(candidate.path),
+        batch: clean(parsed?.batch) || null,
+        metric: clean(parsed?.metric) || null,
+        tier: clean(parsed?.tier) || null,
+        publishedAt: parsed?.publishedAt || null,
+        assets: metadata.filter(Boolean),
+      };
+    }
+  }
+
+  return {
+    sourcePath: null,
+    batch: null,
+    metric: null,
+    tier: null,
+    assets: [{
+      assetKey,
+      fullPath,
+      width: Number(asset?.templateSpecs?.width || 0) || null,
+      height: Number(asset?.templateSpecs?.height || 0) || null,
+      contentSha: clean(asset?.contentSha) || null,
+      published: asset?.published === true,
+      hasDraft: asset?.hasDraft === true,
+      status: clean(asset?.status) || "registered",
+      assetType: clean(asset?.assetType),
+      templateId: clean(asset?.templateId),
+      channels: Array.isArray(asset?.channels) ? asset.channels : [],
+      mode: asset?.mode === "bundled" ? "bundled" : "remote",
+      fileName: clean(asset?.fileName),
+      directory,
+    }],
+  };
+}
+
+async function assetHealthCheck(env, db, assetKey, asset) {
+  const { branch, repo } = assetRepoConfig(env);
+  const fullPath = clean(asset?.fullPath);
+  const directory = clean(asset?.directory) ||
+    (fullPath.includes("/") ? fullPath.slice(0, fullPath.lastIndexOf("/")) : "");
+  const usage = await assetUsageMap(env, assetKey, asset);
+
+  let fileExists = false;
+  if (fullPath) {
+    const file = await github(
+      env,
+      `https://api.github.com/repos/${repo}/contents/${encodePath(fullPath)}?ref=${encodeURIComponent(branch)}`,
+    );
+    fileExists = file.status !== 404;
+  }
+
+  let directoryFiles = [];
+  if (directory) {
+    const listing = await github(
+      env,
+      `https://api.github.com/repos/${repo}/contents/${encodePath(directory)}?ref=${encodeURIComponent(branch)}`,
+    );
+    directoryFiles = Array.isArray(listing.body)
+      ? listing.body
+          .filter((item) => item?.type === "file")
+          .map((item) => clean(item?.path))
+          .filter(Boolean)
+          .slice(0, 60)
+      : [];
+  }
+
+  const sameDirectory = directory
+    ? await db.runQuery("app_asset_registry", {
+        filters: [{ field: "directory", op: "==", value: directory }],
+        limit: 80,
+      })
+    : [];
+  const registeredPaths = new Set(
+    sameDirectory
+      .map((doc) => clean(doc.data?.fullPath))
+      .filter(Boolean),
+  );
+  const filesWithoutRegistry = directoryFiles
+    .filter((path) => {
+      const name = path.split("/").pop()?.toUpperCase() || "";
+      if (name.endsWith("PUBLISHED.JSON")) return false;
+      return !registeredPaths.has(path);
+    })
+    .slice(0, 20);
+
+  const samePath = fullPath
+    ? await db.runQuery("app_asset_registry", {
+        filters: [{ field: "fullPath", op: "==", value: fullPath }],
+        limit: 12,
+      })
+    : [];
+  const duplicatePathKeys = samePath
+    .map((doc) => doc.id)
+    .filter((id) => id && id !== assetKey)
+    .slice(0, 10);
+
+  const templateId = clean(asset?.templateId);
+  const sameTemplate = templateId
+    ? await db.runQuery("app_asset_registry", {
+        filters: [{ field: "templateId", op: "==", value: templateId }],
+        limit: 24,
+      })
+    : [];
+  const channels = Array.isArray(asset?.channels)
+    ? asset.channels.map((item) => clean(item)).sort()
+    : [];
+  const duplicateFunctionKeys = sameTemplate
+    .filter((doc) => doc.id !== assetKey)
+    .filter((doc) => {
+      const other = Array.isArray(doc.data?.channels)
+        ? doc.data.channels.map((item) => clean(item)).sort()
+        : [];
+      return JSON.stringify(other) === JSON.stringify(channels);
+    })
+    .map((doc) => doc.id)
+    .slice(0, 10);
+
+  return {
+    assetKey,
+    fileExists,
+    unusedDirectly: Number(usage.totalReferences || 0) === 0,
+    directUsageCount: Number(usage.totalReferences || 0),
+    filesWithoutRegistry,
+    duplicatePathKeys,
+    duplicateFunctionKeys,
+    directoryFileScanTruncated: directoryFiles.length >= 60,
+  };
+}
+
+async function assetUsageMap(env, assetKey, asset) {
+  const { repo } = assetRepoConfig(env);
+  const query = encodeURIComponent(`"${assetKey}" repo:${repo}`);
+  const response = await github(
+    env,
+    `https://api.github.com/search/code?q=${query}&per_page=20`,
+  );
+  const items = Array.isArray(response.body?.items)
+    ? response.body.items
+        .map((item) => ({
+          path: clean(item?.path),
+          htmlUrl: clean(item?.html_url),
+          repository: clean(item?.repository?.full_name),
+        }))
+        .filter((item) => item.path)
+    : [];
+  return {
+    assetKey,
+    assetType: clean(asset?.assetType),
+    channels: Array.isArray(asset?.channels) ? asset.channels : [],
+    references: items,
+    truncated: Number(response.body?.total_count || 0) > items.length,
+    totalReferences: Number(response.body?.total_count || 0),
+  };
+}
+
+async function rollbackPreviousAssetVersion({
+  env,
+  db,
+  decoded,
+  assetKey,
+  reason,
+  idempotencyKey,
+  operationPath,
+}) {
+  const registryPath = `app_asset_registry/${assetKey}`;
+  const current = await db.get(registryPath);
+  if (!current.exists) throw new ApiError("asset_not_found", 404);
+  const data = current.data || {};
+  if (data.published !== true || !clean(data.fullPath)) {
+    throw new ApiError("asset_not_published", 409);
+  }
+
+  const { branch, repo } = assetRepoConfig(env);
+  const fullPath = clean(data.fullPath);
+  const commitsResponse = await github(
+    env,
+    `https://api.github.com/repos/${repo}/commits?path=${encodeURIComponent(fullPath)}&sha=${encodeURIComponent(branch)}&per_page=12`,
+  );
+  const commits = Array.isArray(commitsResponse.body)
+    ? commitsResponse.body
+    : [];
+  if (commits.length < 2) throw new ApiError("asset_history_not_found", 404);
+
+  const currentCommitSha = clean(data.commitSha);
+  let currentIndex = currentCommitSha
+    ? commits.findIndex((item) => clean(item?.sha) === currentCommitSha)
+    : 0;
+  if (currentIndex < 0) currentIndex = 0;
+  const previous = commits[currentIndex + 1];
+  const previousSha = clean(previous?.sha);
+  if (!previousSha) throw new ApiError("asset_history_not_found", 404);
+
+  const contentsUrl =
+    `https://api.github.com/repos/${repo}/contents/${encodePath(fullPath)}`;
+  const previousFile = await github(
+    env,
+    `${contentsUrl}?ref=${encodeURIComponent(previousSha)}`,
+  );
+  const encoded = clean(previousFile.body?.content).replace(/\s+/g, "");
+  if (!encoded) throw new ApiError("asset_history_content_missing", 409);
+  const bytes = decodeBase64(encoded);
+  if (!bytes.length || bytes.length > MAX_BYTES) {
+    throw new ApiError("asset_history_content_invalid", 409);
+  }
+
+  const restored = await writeFinalAssetToGithub(env, {
+    assetKey,
+    directory: clean(data.directory),
+    fileName: clean(data.fileName),
+    bytes,
+    reason: `Rollback: ${reason}`,
+  });
+
+  const now = new Date();
+  const patch = {
+    contentSha: restored.contentSha,
+    commitSha: restored.commitSha || null,
+    rawUrl: restored.rawUrl,
+    byteSize: bytes.length,
+    replaced: true,
+    published: true,
+    status: "published",
+    hasDraft: false,
+    draft: null,
+    publishedBy: decoded.sub,
+    publishedAt: now,
+    updatedBy: decoded.sub,
+    updatedAt: now,
+  };
+  const result = {
+    assetKey,
+    fullPath,
+    contentSha: restored.contentSha,
+    commitSha: restored.commitSha,
+    rawUrl: restored.rawUrl,
+    rolledBackFrom: currentCommitSha || null,
+    restoredFrom: previousSha,
+    published: true,
+    status: "published",
+  };
+  const auditId = crypto.randomUUID().replace(/-/g, "");
+
+  await db.commit(null, [
+    db.writeUpdate(registryPath, patch, Object.keys(patch)),
+    db.writeCreate(`admin_audit_logs/${auditId}`, {
+      actorUid: decoded.sub,
+      action: "rollbackAppAsset",
+      targetType: "app_asset",
+      targetId: assetKey,
+      reason,
+      before: {
+        contentSha: data.contentSha || null,
+        commitSha: currentCommitSha || null,
+        fullPath,
+      },
+      after: {
+        contentSha: restored.contentSha,
+        commitSha: restored.commitSha || null,
+        restoredFrom: previousSha,
+        fullPath,
+      },
+      operationId: idempotencyKey,
+      createdAt: now,
+    }),
+    db.writeCreate(operationPath, {
+      action: "rollbackAppAsset",
+      actorUid: decoded.sub,
+      targetId: assetKey,
+      status: "completed",
+      result,
+      createdAt: now,
+    }),
+  ]);
+
+  invalidateAssetCaches(assetKey);
+  return result;
 }
 
 async function sha1Blob(bytes) {
@@ -218,7 +835,7 @@ function templateSpecs(template) {
 
 async function writeFinalAssetToGithub(
   env,
-  { assetKey, directory, fileName, bytes },
+  { assetKey, directory, fileName, bytes, reason = "" },
 ) {
   const fullPath = `${directory}/${fileName}`;
   const branch = clean(env.GITHUB_ASSET_BRANCH) || DEFAULT_BRANCH;
@@ -244,7 +861,8 @@ async function writeFinalAssetToGithub(
     downloadUrl = existing.body?.download_url || null;
   } else {
     const payload = {
-      message: `Asset ${replaced ? "replace" : "add"}: ${assetKey} (${fullPath})`,
+      message: `Asset ${replaced ? "replace" : "add"}: ${assetKey} (${fullPath})` +
+        (clean(reason) ? ` — ${clean(reason).slice(0, 120)}` : ""),
       content: encodeBase64(bytes),
       branch,
       ...(existingSha ? { sha: existingSha } : {}),
@@ -314,6 +932,7 @@ async function publishAsset({
     directory: clean(draft.directory),
     fileName: clean(draft.fileName),
     bytes,
+    reason,
   });
 
   const now = new Date();
@@ -418,13 +1037,80 @@ export async function manageAppAsset(request, env) {
     const { decoded, db } = await verifyOwner(request, env);
 
     if (request.method === "GET") {
+      const url = new URL(request.url);
+      const detailKey = clean(url.searchParams.get("assetKey"));
+      const include = clean(url.searchParams.get("include"));
+
+      if (detailKey) {
+        if (!validKey(detailKey)) throw new ApiError("invalid_request", 400);
+        const current = await db.get(`app_asset_registry/${detailKey}`);
+        if (!current.exists) throw new ApiError("asset_not_found", 404);
+        const asset = { assetKey: detailKey, ...(current.data || {}) };
+
+        if (include === "history") {
+          phase = "history";
+          return json(request, env, {
+            ok: true,
+            asset,
+            history: await assetVersionHistory(env, db, detailKey, asset),
+          });
+        }
+        if (include === "usage") {
+          phase = "usage";
+          return json(request, env, {
+            ok: true,
+            asset,
+            usage: await assetUsageMap(env, detailKey, asset),
+          });
+        }
+        if (include === "health") {
+          phase = "health";
+          return json(request, env, {
+            ok: true,
+            asset,
+            health: await assetHealthCheck(env, db, detailKey, asset),
+          });
+        }
+        if (include === "manifest") {
+          phase = "manifest";
+          return json(request, env, {
+            ok: true,
+            asset,
+            manifest: await assetBatchManifest(
+              env,
+              db,
+              detailKey,
+              asset,
+            ),
+          });
+        }
+        return json(request, env, { ok: true, asset });
+      }
+
       phase = "list";
+      const page = await listAssets(db, {
+        limit: Number(url.searchParams.get("limit") || 60),
+        cursorUpdatedAt: clean(url.searchParams.get("cursorUpdatedAt")),
+        cursorId: clean(url.searchParams.get("cursorId")),
+        query: clean(url.searchParams.get("q")),
+        status: clean(url.searchParams.get("status")) || "all",
+        type: clean(url.searchParams.get("type")) || "all",
+        channel: clean(url.searchParams.get("channel")) || "all",
+        family: clean(url.searchParams.get("family")),
+        level: clean(url.searchParams.get("level")),
+        updatedAfter: clean(url.searchParams.get("updatedAfter")),
+        updatedBefore: clean(url.searchParams.get("updatedBefore")),
+      });
       return json(request, env, {
         ok: true,
         studioVersion: ASSET_STUDIO_VERSION,
         channels: [...ASSET_STUDIO_CHANNELS],
         templates: publicAssetStudioTemplates(),
-        assets: await listAssets(db),
+        assets: page.assets,
+        nextCursor: page.nextCursor,
+        scannedCount: page.scannedCount,
+        filtered: page.filtered,
+        scanLimitReached: page.scanLimitReached,
       });
     }
 
@@ -452,6 +1138,20 @@ export async function manageAppAsset(request, env) {
     if (action === "publish") {
       phase = "publish";
       const result = await publishAsset({
+        env,
+        db,
+        decoded,
+        assetKey,
+        reason,
+        idempotencyKey,
+        operationPath,
+      });
+      return json(request, env, { ok: true, code: "ok", ...result });
+    }
+
+    if (action === "rollback_previous") {
+      phase = "rollback";
+      const result = await rollbackPreviousAssetVersion({
         env,
         db,
         decoded,
@@ -645,6 +1345,7 @@ export async function manageAppAsset(request, env) {
       directory,
       fileName,
       bytes,
+      reason,
     });
 
     phase = "registry";

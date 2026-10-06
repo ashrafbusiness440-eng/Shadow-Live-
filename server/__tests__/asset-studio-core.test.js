@@ -164,7 +164,9 @@ test("asset manager keeps bounded registry and explicit draft publish flow", () 
   const worker = source("cloudflare-worker/src/manage-app-asset.js");
   const control = source("lib/admin/control_asset_manager_page.dart");
 
-  assert.equal(worker.includes('limit: 100'), true);
+  assert.equal(worker.includes('limit = 100'), true);
+  assert.equal(worker.includes('boundedLimit'), true);
+  assert.equal(worker.includes('startAfter'), true);
   assert.equal(worker.includes('recent_auth_required'), false);
   assert.equal(worker.includes('actor.role !== "owner"'), true);
   assert.equal(worker.includes('actor.adminEnabled !== true'), true);
@@ -190,6 +192,94 @@ test("asset manager keeps bounded registry and explicit draft publish flow", () 
   assert.equal(control.includes("البحث في الأصول"), true);
   assert.equal(control.includes("Timer.periodic"), false);
   assert.equal(control.includes(".snapshots()"), false);
+  assert.equal(control.includes("RepaintBoundary"), false);
+  assert.equal(control.includes("_onSearchChanged"), true);
+  assert.equal(control.includes("Duration(milliseconds: 280)"), true);
+  assert.equal(control.includes("_visibleLimit = 24"), true);
+  assert.equal(control.includes("_loadAssets(append: true)"), true);
+});
+
+test("asset studio UX exposes safe replace, preview, history and batch guardrails", () => {
+  const worker = source("cloudflare-worker/src/manage-app-asset.js");
+  const control = source("lib/admin/control_asset_manager_page.dart");
+
+  for (const expected of [
+    'include === "history"',
+    'include === "usage"',
+    'include === "manifest"',
+    'include === "health"',
+    'action === "rollback_previous"',
+    'assetBatchManifest',
+    'assetHealthCheck',
+    'assetUsageMap',
+    'assetVersionHistory',
+    'rollbackPreviousAssetVersion',
+    'templatePrompt',
+  ]) {
+    assert.equal(worker.includes(expected), true, expected);
+  }
+
+  for (const expected of [
+    "استبدال نفس الأصل",
+    "_assetThumbnail",
+    "_showAssetPreview",
+    "_contextPreview",
+    "_showAssetInsights",
+    "_runBatchUpload",
+    "_buildBatchProgress",
+    "_showSmartPresetPicker",
+    "_loadManifestForAsset",
+    "_preparedFrameCount",
+    "_healthLine",
+    "تشخيص الأصل",
+    "سجل الدفعة الرسمي",
+    "الحالي",
+    "الجديد",
+    "_buildStickyStudioActions",
+    "_confirmPublishImpact",
+    "_verifyPublishedAsset",
+    "_confirmDiscardChanges",
+    "_unlockIdentity",
+    "رفع مجموعة",
+    "اختيار أصل جاهز",
+  ]) {
+    assert.equal(control.includes(expected), true, expected);
+  }
+
+  assert.equal(control.includes("pickMultiImage()"), true);
+  assert.equal(control.includes(".take(12)"), true);
+  assert.equal(control.includes("Future<void>.delayed(Duration.zero)"), true);
+  assert.equal(control.includes("cacheWidth:"), true);
+  assert.equal(control.includes("cacheHeight:"), true);
+  assert.equal(control.includes("ListView.builder("), true);
+  assert.equal(control.includes("cacheExtent: 180"), true);
+  assert.equal(control.includes("PopScope("), true);
+  assert.equal(control.includes("readOnly: _isEditing && !_unlockIdentityFields"), true);
+  assert.equal(control.includes("_imageHasRealTransparency"), true);
+  assert.equal(control.includes("_validatePreparedMedia"), true);
+  assert.equal(control.includes("خيارات إضافية"), true);
+  assert.equal(control.includes("_openLastSuccessAsset"), true);
+  assert.equal(control.includes("_applyRegistryFilters"), true);
+  assert.equal(control.includes("updatedAfter"), true);
+
+  assert.equal(worker.includes("assetMatchesListFilters"), true);
+  assert.equal(worker.includes("registryCursor"), true);
+  assert.equal(worker.includes("new Date(cursorUpdatedAt"), false);
+  assert.equal(worker.includes('url.searchParams.get("q")'), true);
+  assert.equal(worker.includes('url.searchParams.get("family")'), true);
+  assert.equal(worker.includes('url.searchParams.get("level")'), true);
+  assert.equal(worker.includes('url.searchParams.get("updatedAfter")'), true);
+  assert.equal(worker.includes("maxPages = hasFilters ? 3 : 1"), true);
+  assert.equal(worker.includes("filesWithoutRegistry"), true);
+  assert.equal(worker.includes("duplicatePathKeys"), true);
+  assert.equal(worker.includes("duplicateFunctionKeys"), true);
+  assert.equal(control.includes("الإطارات:"), true);
+  assert.equal(control.includes("_aspectRatioLabel"), true);
+  assert.equal(control.includes("التناسب:"), true);
+  assert.equal(control.includes("_favoriteTemplateIds"), true);
+  assert.equal(control.includes("_recentTemplateIds"), true);
+  assert.equal(control.includes("إضافة القالب إلى المفضلة"), true);
+  assert.equal(control.includes("أماكن الاستخدام المحددة:"), true);
 });
 
 test("login header is a first-class Asset Studio surface with bundled fallback", () => {
