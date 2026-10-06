@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../core/assets/shadow_asset_registry.dart';
+import '../../room/widgets/cosmetic_effect_widgets.dart';
 import '../services/reward_inventory_service.dart';
 
 class MyItemsScreen extends StatefulWidget {
@@ -213,6 +214,14 @@ class _MyItemsScreenState extends State<MyItemsScreen>
   }
 
   Widget _preview(MyItemReward item) {
+    if (item.type == 'frame' &&
+        usesAnimatedProfileFramePoc(item.assetKey)) {
+      return AnimatedProfileFrameVisual(
+        assetKey: item.assetKey,
+        imageUrl: item.imageUrl,
+      );
+    }
+
     if (item.imageUrl.trim().isNotEmpty) {
       return Image.network(
         item.imageUrl,
