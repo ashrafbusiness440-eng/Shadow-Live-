@@ -13,6 +13,7 @@ import {
   vipStateFromUser,
   vipUserPatch,
 } from "./vip-runtime.js";
+import { vip10TrialCardGrantWrites } from "./vip-trial-cards.js";
 
 const PLAY_SCOPE = "https://www.googleapis.com/auth/androidpublisher";
 
@@ -261,6 +262,15 @@ export async function creditPurchase(
       }
 
       const closingCoins = openingCoins + coinsToCredit;
+      const trialGrant = vip10TrialCardGrantWrites(
+        db,
+        uid,
+        user,
+        vipPolicy,
+        vipBefore,
+        vipAfter,
+        nowMs,
+      );
 
       await db.commit(transaction, [
         db.writeUpdate(
@@ -269,6 +279,7 @@ export async function creditPurchase(
             coins: closingCoins,
             walletUpdatedAt: now,
             ...vipUserPatch(vipAfter, now),
+            ...trialGrant.userPatch,
           },
           [
             "coins",
@@ -276,8 +287,10 @@ export async function creditPurchase(
             "earnedVipLevel",
             "effectiveVipLevel",
             "adminGrantVipLevel",
+            "trialVipLevel",
             "earnedVipExpiresAt",
             "adminGrantExpiresAt",
+            "trialVipExpiresAt",
             "effectiveVipSource",
             "vipGrowthPoints",
             "vipMaintenancePoints",
@@ -285,6 +298,7 @@ export async function creditPurchase(
             "vipExpiresAt",
             "vipSource",
             "vipUpdatedAt",
+            ...Object.keys(trialGrant.userPatch),
           ],
         ),
         ...(publicProfileSnap.exists
@@ -358,6 +372,7 @@ export async function creditPurchase(
           packageId: rechargePackage.id,
           createdAt: now,
         }),
+        ...trialGrant.writes,
       ]);
 
       return {
@@ -367,6 +382,7 @@ export async function creditPurchase(
         bonusCoins: bonusCoinsToCredit,
         vipGrowthPoints,
         vipLevel: vipAfter.effectiveVipLevel,
+        trialCardsGranted: trialGrant.cardIds,
         closingCoins,
       };
     } catch (error) {
