@@ -11,6 +11,7 @@ import 'package:image_picker/image_picker.dart';
 
 import 'control_asset_policy.dart';
 import 'control_asset_studio_template.dart';
+import '../core/assets/shadow_asset_registry.dart';
 
 class ControlAssetManagerPage extends StatefulWidget {
   const ControlAssetManagerPage({super.key});
@@ -460,6 +461,13 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
       }
     }
 
+    final rawAssetKey = _assetKey.text.trim();
+    final canonicalAssetKey =
+        ShadowAssetKeys.canonicalizeVipAssetKey(rawAssetKey);
+    if (canonicalAssetKey != rawAssetKey) {
+      _assetKey.text = canonicalAssetKey;
+    }
+
     final error = _validate();
     if (error != null) {
       setState(() {
@@ -481,7 +489,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
         'templateId': template.id,
         'channels': _selectedChannels.toList(growable: false),
         'publish': publish,
-        'assetKey': _assetKey.text.trim(),
+        'assetKey': canonicalAssetKey,
         'directory': ControlAssetPolicy.normalizeDirectory(_directory.text),
         'fileName': _fileName.text.trim(),
         'mimeType': _mimeType,
