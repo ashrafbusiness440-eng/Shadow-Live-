@@ -51,7 +51,7 @@ void main() {
 
     expect(
       shell,
-      contains("capabilities.contains('manageVip')"),
+      contains("capabilities.contains('manageVipPolicy')"),
     );
     expect(
       shell,
