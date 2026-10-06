@@ -195,3 +195,53 @@ export function vipCosmeticAssetKeysFromUser(user = {}, nowMs = Date.now()) {
       entitlements.premiumGiftVisual ? key("giftVisual") : "",
   };
 }
+
+
+export function vipCosmeticAssetKey(level, kind) {
+  const safeLevel = Math.max(0, Math.min(10, Number(level || 0)));
+  if (safeLevel <= 0) return "";
+  const suffixes = {
+    mainBadge: "mainBadge",
+    badge: "badge",
+    chatBubble: "chatBubble",
+    profileFrame: "profileFrame",
+    profileBackground: "profileBackground",
+    audioWave: "audioWave",
+    entryStrip: "entryStrip",
+    dataCard: "dataCard",
+    giftVisual: "giftVisual",
+    profileDecoration: "profileDecoration",
+    nameEffect: "nameEffect",
+    globalEntryBanner: "globalEntryBanner",
+  };
+  const suffix = suffixes[kind];
+  return suffix ? `vip.v${safeLevel}.${suffix}` : "";
+}
+
+export function vipCosmeticsFromUser(user = {}, nowMs = Date.now()) {
+  const entitlements = vipEntitlementsFromUser(user, nowMs);
+  const level = entitlements.level;
+  const key = (kind, allowed) =>
+    allowed ? vipCosmeticAssetKey(level, kind) : "";
+  return {
+    level,
+    entitlements,
+    keys: {
+      mainBadge: key("mainBadge", entitlements.mainBadge),
+      badge: key("badge", entitlements.mainBadge),
+      chatBubble: key("chatBubble", entitlements.chatBubble),
+      profileFrame: key("profileFrame", entitlements.profileFrame),
+      profileBackground:
+        key("profileBackground", entitlements.profileBackground),
+      audioWave: key("audioWave", entitlements.voiceWave),
+      entryStrip: key("entryStrip", entitlements.entryStrip),
+      dataCard: key("dataCard", entitlements.dataCard),
+      giftVisual: key("giftVisual", entitlements.vipGiftVisual),
+      profileDecoration:
+        key("profileDecoration", entitlements.profileDecoration),
+      nameEffect: key("nameEffect", entitlements.nameEffect),
+      globalEntryBanner:
+        key("globalEntryBanner", level >= 10),
+    },
+  };
+}
