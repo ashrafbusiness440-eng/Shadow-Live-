@@ -63,6 +63,24 @@ abstract final class ShadowAssetKeys {
   static String vipNameEffect(int level) => 'vip.v$level.nameEffect';
   static String vipGlobalEntryBanner(int level) => 'vip.v$level.globalEntryBanner';
 
+  static List<String> vipBatchHKeys(int level) {
+    final value = level.clamp(1, 10);
+    return <String>[
+      vipMainBadge(value),
+      vipLevelBadge(value),
+      if (value >= 2) vipChatBubble(value),
+      if (value >= 3) vipProfileFrame(value),
+      if (value >= 4) vipGiftVisual(value),
+      if (value >= 5) vipProfileBackground(value),
+      if (value >= 5) vipDataCard(value),
+      if (value >= 7) vipAudioWave(value),
+      if (value >= 8) vipEntryStrip(value),
+      if (value >= 9) vipProfileDecoration(value),
+      if (value >= 10) vipNameEffect(value),
+      if (value >= 10) vipGlobalEntryBanner(value),
+    ];
+  }
+
   static String? levelMainBadge(String metric, int level) {
     final bucket = _levelBucket(metric, level);
     if (bucket == null) return null;
