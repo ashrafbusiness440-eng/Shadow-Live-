@@ -234,7 +234,7 @@ class _WealthLv2630FrameFxPainter extends CustomPainter {
   ) {
     final paint = Paint()
       ..color = const Color(0xFFFFF4C8).withValues(alpha: alpha)
-      ..strokeWidth = math.max(1, radius * .18)
+      ..strokeWidth = math.max(1.0, radius * .18).toDouble()
       ..strokeCap = StrokeCap.round;
 
     canvas.drawCircle(center, radius * .20, paint);
