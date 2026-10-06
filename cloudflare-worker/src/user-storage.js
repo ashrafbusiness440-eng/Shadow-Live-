@@ -25,6 +25,7 @@ export const DIARY_ORPHAN_DELETE_DELAY_MS = 24 * 60 * 60 * 1000;
 export const STORAGE_DELETE_BATCH_LIMIT = 25;
 const REPLACEABLE_SCOPES = new Set([
   "profile_image",
+  "profile_avatar_animation",
   "profile_cover",
   "room_cover",
   "agency_logo",
@@ -999,6 +1000,10 @@ export async function storageQueueObjectStillReferenced(
     case "profile_image":
       documentPath = `users/${targetId}`;
       field = "profileImageObjectId";
+      break;
+    case "profile_avatar_animation":
+      documentPath = `users/${targetId}`;
+      field = "profileAvatarAnimationObjectId";
       break;
     case "profile_cover":
       documentPath = `users/${targetId}`;
