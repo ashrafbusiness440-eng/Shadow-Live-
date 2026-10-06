@@ -585,7 +585,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                 if (_activeFrame != null)
                   Positioned.fill(
                     child: IgnorePointer(
-                      child: CosmeticAssetVisual(
+                      child: AnimatedProfileFrameVisual(
                         assetKey: _activeFrame!.assetKey,
                         imageUrl: _activeFrame!.imageUrl,
                       ),
