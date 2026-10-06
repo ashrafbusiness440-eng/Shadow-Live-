@@ -95,7 +95,7 @@ test("VIP frame change is blocked for 30 days and above current VIP", async () =
       db,
       uid,
       { frameLevel: 8 },
-      nowMs + 61 * 24 * 60 * 60 * 1000,
+      nowMs + 31 * 24 * 60 * 60 * 1000,
     ),
     /vip_frame_level_locked/,
   );
