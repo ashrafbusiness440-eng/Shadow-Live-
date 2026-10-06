@@ -82,7 +82,7 @@ void main() {
     expect(runtime, isNot(contains('Image.network(')));
     expect(manager, contains('decoded.numFrames > 1'));
     expect(manager, contains('_preparedAnimated'));
-    expect(manager, contains('تم الحفاظ على Animation الأصلية'));
+    expect(manager, contains('تم الحفاظ على الحركة الأصلية'));
 
     expect(policy, isNot(contains('static bool vehicle(')));
     expect(policy, isNot(contains('profileVehicleDisplay')));
