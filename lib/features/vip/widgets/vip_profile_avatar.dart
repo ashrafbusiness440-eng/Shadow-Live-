@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
 
-import '../services/vip_public_snapshot.dart';
+import '../utils/vip_public_state.dart';
 
 ImageProvider? effectiveProfileAvatarProvider(
   Map<String, dynamic> data, {
