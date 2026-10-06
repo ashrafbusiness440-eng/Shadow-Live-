@@ -72,8 +72,9 @@ test("VIP information control is separated from level grants and audited", () =>
   const control = source("cloudflare-worker/src/manage-vip-information.js");
   const router = source("cloudflare-worker/src/index.js");
 
-  assert.equal(control.includes('actorCapabilities(actor).has("manageVip")'), true);
+  assert.equal(control.includes('actorCapabilities(actor).has("manageVipPolicy")'), true);
   assert.equal(control.includes("manageVipLevels"), false);
+  assert.equal(control.includes('has("manageVip")'), false);
   assert.equal(control.includes("rawOffers.length > 8"), true);
   assert.equal(control.includes("recent_auth_required"), true);
   assert.equal(control.includes("control_operations/"), true);
