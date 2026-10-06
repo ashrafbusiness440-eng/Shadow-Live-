@@ -509,7 +509,7 @@ jobs:
             });
             if (
               invalidMime.response.status !== 400 ||
-              invalidMime.body.code !== "invalid_file_type"
+              invalidMime.body.code !== "gif_profile_only"
             ) {
               throw new Error(
                 "invalid_mime_should_be_rejected:" +
