@@ -28,6 +28,8 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
   final _fileName = TextEditingController(text: 'vip_1.webp');
   final _reason = TextEditingController(text: 'تحديث أصل التطبيق من Shadow Control');
   final _assetSearch = TextEditingController();
+  final _assetFamilySearch = TextEditingController();
+  final _assetLevelSearch = TextEditingController();
 
   Uint8List? _bytes;
   Uint8List? _sourceBytes;
@@ -92,6 +94,8 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     _fileName.dispose();
     _reason.dispose();
     _assetSearch.dispose();
+    _assetFamilySearch.dispose();
+    _assetLevelSearch.dispose();
     _searchDebounce?.cancel();
     super.dispose();
   }
@@ -361,7 +365,46 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
         _debouncedSearch = value.trim().toLowerCase();
         _visibleLimit = 24;
       });
+      unawaited(_loadAssets());
     });
+  }
+
+  void _applyRegistryFilters({
+    String? status,
+    String? type,
+    String? channel,
+    String? family,
+    String? level,
+    String? updatedWindow,
+  }) {
+    setState(() {
+      if (status != null) _assetFilter = status;
+      if (type != null) _assetTypeFilter = type;
+      if (channel != null) _assetChannelFilter = channel;
+      if (family != null) _assetFamilyFilter = family.trim();
+      if (level != null) _assetLevelFilter = level.trim();
+      if (updatedWindow != null) _assetUpdatedWindow = updatedWindow;
+      _visibleLimit = 24;
+    });
+    unawaited(_loadAssets());
+  }
+
+  void _clearRegistryFilters() {
+    _searchDebounce?.cancel();
+    _assetSearch.clear();
+    _assetFamilySearch.clear();
+    _assetLevelSearch.clear();
+    setState(() {
+      _debouncedSearch = '';
+      _assetFilter = 'all';
+      _assetTypeFilter = 'all';
+      _assetChannelFilter = 'all';
+      _assetFamilyFilter = '';
+      _assetLevelFilter = '';
+      _assetUpdatedWindow = 'all';
+      _visibleLimit = 24;
+    });
+    unawaited(_loadAssets());
   }
 
   Future<String> _token() async {
@@ -2625,7 +2668,9 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
       _filteredAssets.take(_visibleLimit).toList(growable: false);
 
   List<String> get _availableAssetTypes {
-    final result = <String>{};
+    final result = <String>{
+      ..._templates.map((template) => template.type.trim()),
+    }..removeWhere((type) => type.isEmpty);
     for (final asset in _assets) {
       final source = _assetSource(asset);
       final type =
