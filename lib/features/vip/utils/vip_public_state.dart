@@ -28,3 +28,12 @@ int effectivePublicVipLevel(
   final current = now ?? DateTime.now();
   return expiry.isAfter(current) ? level : 0;
 }
+
+
+bool publicNobleLevelHidden(
+  Map<String, dynamic> data, {
+  DateTime? now,
+}) {
+  return effectivePublicVipLevel(data, now: now) >= 4 &&
+      data['hideNobleLevel'] == true;
+}
