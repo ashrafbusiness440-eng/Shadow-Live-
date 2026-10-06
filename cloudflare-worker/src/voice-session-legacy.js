@@ -1261,6 +1261,16 @@ function roomControlPolicySnapshot(room){
     systemOwned:room.systemOwned===true,
     hostUid:roomHostUid(room),
     features:roomFeatureFlags(room),
+    customerServiceMinVipLevel:
+      customerService
+        ? Math.max(1,Math.min(10,Number(room.customerServiceMinVipLevel||1)))
+        : 0,
+    customerServiceMode:
+      customerService&&Number(room.customerServiceMinVipLevel||1)>=4
+        ? "exclusive_1to1"
+        : customerService
+          ? "vip_standard"
+          : "",
     baseSeats,
     baseModerators,
     overrides,
@@ -1298,6 +1308,9 @@ async function createOfficialRoomFromControl(db,uid,body){
     ? [...new Set(body.tags.map(clean).filter(Boolean))].slice(0,8)
     : [];
   const customerService=officialType==="customer_service";
+  const customerServiceMinVipLevel=customerService
+    ? Number(body.customerServiceMinVipLevel??1)
+    : 0;
   const featureDefault=!customerService;
   const giftsEnabled=Object.prototype.hasOwnProperty.call(body,"giftsEnabled")
     ? body.giftsEnabled===true
@@ -1320,6 +1333,9 @@ async function createOfficialRoomFromControl(db,uid,body){
   if(!["public","hidden"].includes(visibility))throw new ApiError("invalid_room_visibility",400);
   if(!Number.isInteger(seats)||seats<1||seats>50)throw new ApiError("invalid_seat_override",400);
   if(!Number.isInteger(moderators)||moderators<0||moderators>30)throw new ApiError("invalid_moderator_override",400);
+  if(customerService&&![1,4].includes(customerServiceMinVipLevel)){
+    throw new ApiError("invalid_customer_service_vip_level",400);
+  }
   if(reason.length<3||reason.length>160||!/^[A-Za-z0-9_-]{12,160}$/.test(operationId)){
     throw new ApiError("invalid_request",400);
   }
@@ -1367,6 +1383,13 @@ async function createOfficialRoomFromControl(db,uid,body){
         pkEnabled,
         gamesEnabled,
         roomRocketEnabled,
+        customerServiceMinVipLevel,
+        customerServiceMode:
+          customerServiceMinVipLevel>=4
+            ? "exclusive_1to1"
+            : customerService
+              ? "vip_standard"
+              : "",
         visibility,
         isHidden:visibility==="hidden",
         isActive:true,
@@ -1981,6 +2004,14 @@ export async function roomSeatAction(db,uid,body){
           throw new ApiError("customer_service_manager_mic_required",403);
         }
         if(seatIndex>=2&&!canManageMic&&currentSeatIndex<0){
+          if(Number(room.customerServiceMinVipLevel||1)>=4){
+            const anotherCustomer=seats.some(
+              item=>item.index>=2&&item.uid&&item.uid!==uid
+            );
+            if(anotherCustomer){
+              throw new ApiError("customer_service_exclusive_busy",409);
+            }
+          }
           if(!invites.includes(uid))throw new ApiError("mic_invite_required",403);
           const inviteExpiresAtMs=Number(inviteExpiries[uid]||0);
           if(inviteExpiresAtMs<=Date.now()){
