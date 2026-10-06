@@ -25,6 +25,7 @@ import {
   listVipTrialCards,
   vip10MaintenanceTrialCardWrites,
 } from "./vip-trial-cards.js";
+import { resolveUserId } from "./vip-fancy-id.js";
 
 const clean = (value) => String(value ?? "").trim();
 
@@ -560,11 +561,17 @@ export async function vipActions(request, env) {
       );
     }
     if (action === "giftTrialCard") {
+      const recipientResolution = await resolveUserId(db, body?.recipientId);
       const policy = await loadVipPolicy(db);
       return json(
         request,
         env,
-        await giftVipTrialCard(db, decoded.sub, body, policy),
+        await giftVipTrialCard(
+          db,
+          decoded.sub,
+          { ...body, recipientResolution },
+          policy,
+        ),
       );
     }
     throw new ApiError("invalid_action", 400);
