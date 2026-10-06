@@ -2507,13 +2507,17 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
       final width = selectedSpec['width'];
       final height = selectedSpec['height'];
       final template = _selectedTemplate;
+      final officialPrompt =
+          (selectedSpec['templatePrompt'] ?? template?.prompt ?? '')
+              .toString()
+              .trim();
       setState(() {
         _activeManifest = manifest;
         _message = [
           'تمت تعبئة المعلومات من سجل الدفعة الرسمي.',
           if (width != null && height != null)
             'المقاس المطلوب: $width×$height.',
-          if (template != null && template.prompt.trim().isNotEmpty)
+          if (officialPrompt.isNotEmpty)
             'الوصف الجاهز موجود داخل مواصفات القالب.',
         ].join(' ');
       });
