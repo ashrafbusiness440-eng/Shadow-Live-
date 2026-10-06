@@ -734,7 +734,7 @@ async function confirmUpload(request, env, auth, body) {
       replacedObjectId: previous?.objectId || null,
       createdAt: now,
     }),
-  );
+  ];
   let diaryOrphanDeleteAtValue = null;
   if (metadata.scope === "diary_image") {
     if (!stablePublicUrl) {
