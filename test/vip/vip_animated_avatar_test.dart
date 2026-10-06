@@ -18,6 +18,9 @@ void main() {
     expect(edit.contains("mime=='image/gif'"), isTrue);
     expect(edit.contains("vip<4"), isTrue);
     expect(edit.contains('img.encodeWebP'), isTrue);
+    expect(edit.contains("profileAvatarAnimationObjectId"), isTrue);
+    expect(edit.contains("animationToDelete"), isTrue);
+    expect(edit.contains("_deleteStoredObject(animationToDelete)"), isTrue);
     expect(
       edit.contains("scope:'profile_avatar_animation'"),
       isTrue,
@@ -32,5 +35,7 @@ void main() {
 
     expect(rules.contains("'profileAvatarAnimationUrl'"), isTrue);
     expect(rules.contains("'profileAvatarAnimationObjectId'"), isTrue);
+    expect(edit.contains("vip<4"), isTrue);
+    expect(edit.contains("animationToDelete=_storedObjectId"), isTrue);
   });
 }
