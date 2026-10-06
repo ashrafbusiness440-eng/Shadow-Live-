@@ -131,7 +131,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         if (item.type == 'frame' &&
             item.active &&
             !item.expired &&
-            item.expiresAtMs > now) {
+            (item.permanent || item.expiresAtMs > now)) {
           active = item;
           break;
         }
