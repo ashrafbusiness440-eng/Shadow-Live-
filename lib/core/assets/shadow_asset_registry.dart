@@ -132,3 +132,4 @@ abstract final class ShadowAssetKeys {
     }
     return null;
   }
+}
