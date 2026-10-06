@@ -183,6 +183,8 @@ service cloud.firestore {
         'gameWinBannerVisibilityUpdatedAt',
         'hideBetWinNotification',
         'betWinNotificationVisibilityUpdatedAt',
+        'vip10GlobalEntryDayKey',
+        'vip10GlobalEntryPublishedAt',
         'publicBadges',
         'totalGiftsSent',
         'totalGiftsReceived',
@@ -286,6 +288,8 @@ service cloud.firestore {
         && !('gameWinBannerVisibilityUpdatedAt' in request.resource.data)
         && !('hideBetWinNotification' in request.resource.data)
         && !('betWinNotificationVisibilityUpdatedAt' in request.resource.data)
+        && !('vip10GlobalEntryDayKey' in request.resource.data)
+        && !('vip10GlobalEntryPublishedAt' in request.resource.data)
         && !('publicBadges' in request.resource.data)
         && !('totalGiftsSent' in request.resource.data)
         && !('totalGiftsReceived' in request.resource.data)
