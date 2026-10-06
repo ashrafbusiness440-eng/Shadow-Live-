@@ -53,11 +53,13 @@ export function vip10TrialCardGrantWrites(
     Number(beforeState?.maintenancePoints || 0) < required &&
     Number(afterState?.maintenancePoints || 0) >= required;
 
-  if (!crossed) return { writes: [], cardIds: [], granted: false };
+  if (!crossed) {
+    return { writes: [], cardIds: [], granted: false, userPatch: {} };
+  }
 
   const cycleKey = cycleKeyFromState(uid, beforeState);
   if (clean(user?.vip10TrialCardsCycleKey) === cycleKey) {
-    return { writes: [], cardIds: [], granted: false };
+    return { writes: [], cardIds: [], granted: false, userPatch: {} };
   }
 
   const existingIds = safeIds(user?.vipTrialCardIds);
@@ -98,19 +100,6 @@ export function vip10TrialCardGrantWrites(
   );
 
   writes.push(
-    db.writeUpdate(
-      `users/${uid}`,
-      {
-        vipTrialCardIds: mergedIds,
-        vip10TrialCardsCycleKey: cycleKey,
-        vip10TrialCardsGrantedAt: now,
-      },
-      [
-        "vipTrialCardIds",
-        "vip10TrialCardsCycleKey",
-        "vip10TrialCardsGrantedAt",
-      ],
-    ),
     db.writeCreate(`vip_audit_logs/${ids[0]}__grant`, {
       actorUid: uid,
       targetUserId: uid,
@@ -124,7 +113,16 @@ export function vip10TrialCardGrantWrites(
     }),
   );
 
-  return { writes, cardIds: ids, granted: true };
+  return {
+    writes,
+    cardIds: ids,
+    granted: true,
+    userPatch: {
+      vipTrialCardIds: mergedIds,
+      vip10TrialCardsCycleKey: cycleKey,
+      vip10TrialCardsGrantedAt: now,
+    },
+  };
 }
 
 export async function listVipTrialCards(db, uid) {
