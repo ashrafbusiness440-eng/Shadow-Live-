@@ -26,6 +26,7 @@ import {
 } from "./room-realtime.js";
 import { writePressureDataPoint } from "./pressure-telemetry.js";
 import { giftLevelPointAwards, safeAddUserLevelPoints } from "./user-level-policy.js";
+import { vipCosmeticsFromUser } from "./vip-entitlements.js";
 
 const clean = (value) => String(value ?? "").trim();
 const validKey = (value) => /^[A-Za-z0-9_-]{12,220}$/.test(clean(value));
@@ -495,6 +496,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       "مستخدم Shadow Live",
     );
     const senderPhoto = clean(sender.profileImageUrl);
+    const senderVipCosmetics = vipCosmeticsFromUser(sender, nowMs);
     const giftName = clean(gift.nameAr || "هدية");
     const assetKey = clean(gift.assetKey || "gifts.placeholder.default");
     const imageUrl = clean(gift.imageUrl);
@@ -1134,6 +1136,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
           totalCost,
           assetKey,
           imageUrl,
+          vipLevel: senderVipCosmetics.level,
           text:
             senderName +
             " أرسل " +
