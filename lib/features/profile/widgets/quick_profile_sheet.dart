@@ -68,10 +68,61 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
 
   bool get _isSelf => FirebaseAuth.instance.currentUser?.uid == widget.userId;
 
-  Future<void> _copyPublicId(String publicId) async {
-    final value = publicId.trim();
-    if (value.isEmpty || value == '—') return;
-    await Clipboard.setData(ClipboardData(text: value));
+  Future<void> _copyUserIds({
+    required String publicId,
+    required String fancyId,
+  }) async {
+    final basic = publicId.trim();
+    final fancy = fancyId.trim();
+    if (fancy.isEmpty) {
+      if (basic.isEmpty || basic == '—') return;
+      await Clipboard.setData(ClipboardData(text: basic));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم نسخ Public ID')),
+      );
+      return;
+    }
+
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: const Color(0xFF0D111B),
+      builder: (sheetContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: SafeArea(
+          child: Wrap(
+            children: [
+              ListTile(
+                title: const Text(
+                  'نسخ Fancy ID',
+                  style: TextStyle(color: Colors.white),
+                ),
+                subtitle: Text(
+                  fancy,
+                  textDirection: TextDirection.ltr,
+                  style: const TextStyle(color: Colors.white54),
+                ),
+                onTap: () => Navigator.pop(sheetContext, fancy),
+              ),
+              ListTile(
+                title: const Text(
+                  'نسخ Public ID الأساسي',
+                  style: TextStyle(color: Colors.white),
+                ),
+                subtitle: Text(
+                  basic,
+                  textDirection: TextDirection.ltr,
+                  style: const TextStyle(color: Colors.white54),
+                ),
+                onTap: () => Navigator.pop(sheetContext, basic),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (selected == null || selected.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: selected));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('تم نسخ ID المستخدم')),
@@ -180,6 +231,7 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
             final name = (data['displayName'] ?? 'مستخدم Shadow Live').toString();
             final photo = (data['profileImageUrl'] ?? '').toString();
             final publicId = (data['publicId'] ?? '—').toString();
+            final fancyId = (data['activeFancyId'] ?? '').toString().trim();
             final moodEmoji = (data['moodEmoji'] ?? '').toString().trim();
             final moodText = (data['moodText'] ?? '').toString().trim();
             final mood = [
@@ -250,7 +302,7 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              'ID: $publicId',
+                              'ID: ${fancyId.isNotEmpty ? fancyId : publicId}',
                               textDirection: TextDirection.ltr,
                               style: const TextStyle(color: Colors.white54),
                             ),
@@ -259,7 +311,10 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                               key: const Key('quick-profile-copy-id'),
                               tooltip: 'نسخ ID',
                               visualDensity: VisualDensity.compact,
-                              onPressed: () => _copyPublicId(publicId),
+                              onPressed: () => _copyUserIds(
+                                publicId: publicId,
+                                fancyId: fancyId,
+                              ),
                               icon: const Icon(
                                 Icons.copy_rounded,
                                 size: 15,
