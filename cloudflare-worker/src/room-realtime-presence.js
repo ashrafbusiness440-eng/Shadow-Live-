@@ -19,12 +19,18 @@ export function presenceSnapshotFromAttachments(
       0,
       Number(item.joinedAtMs || connectedAtMs || nowMs),
     );
+    const vipLevel = Math.max(
+      0,
+      Math.min(10, Number(item.vipLevel || 0)),
+    );
     const existing = byUid.get(uid);
     if (!existing) {
       byUid.set(uid, {
         uid,
         displayName: clean(item.displayName) || "مستخدم Shadow Live",
         profileImageUrl: clean(item.profileImageUrl),
+        vipLevel,
+        vipOnlinePriority: vipLevel >= 2,
         joinedAtMs,
         lastSeenAtMs: Number(nowMs),
       });
@@ -32,6 +38,8 @@ export function presenceSnapshotFromAttachments(
     }
 
     existing.joinedAtMs = Math.min(existing.joinedAtMs, joinedAtMs);
+    existing.vipLevel = Math.max(existing.vipLevel || 0, vipLevel);
+    existing.vipOnlinePriority = existing.vipLevel >= 2;
     if (!existing.profileImageUrl && clean(item.profileImageUrl)) {
       existing.profileImageUrl = clean(item.profileImageUrl);
     }
@@ -40,9 +48,12 @@ export function presenceSnapshotFromAttachments(
     }
   }
 
-  return Array.from(byUid.values()).sort(
-    (a, b) => a.joinedAtMs - b.joinedAtMs || a.uid.localeCompare(b.uid),
-  );
+  return Array.from(byUid.values()).sort((a, b) => {
+    const priority =
+      Number(b.vipOnlinePriority === true) - Number(a.vipOnlinePriority === true);
+    if (priority !== 0) return priority;
+    return a.joinedAtMs - b.joinedAtMs || a.uid.localeCompare(b.uid);
+  });
 }
 
 export function presenceCountFromAttachments(attachments) {
