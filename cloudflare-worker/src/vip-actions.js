@@ -19,6 +19,12 @@ import {
   vipStateFromUser,
   vipUserPatch,
 } from "./vip-runtime.js";
+import {
+  TrialCardError,
+  giftVipTrialCard,
+  listVipTrialCards,
+  vip10MaintenanceTrialCardWrites,
+} from "./vip-trial-cards.js";
 
 const clean = (value) => String(value ?? "").trim();
 
@@ -60,6 +66,8 @@ function summaryPayload(policy, state, user = {}) {
     effectiveVipSource: state.effectiveVipSource,
     earnedVipLevel: earnedLevel,
     adminGrantVipLevel: state.adminGrantVipLevel,
+    trialVipLevel: state.trialVipLevel,
+    trialVipExpiresAtMs: state.trialVipExpiresAtMs,
     growthPoints: state.growthPoints,
     maintenancePoints: state.maintenancePoints,
     maintenanceRequired:
@@ -370,11 +378,20 @@ export async function buyVipGrowth(db, uid, body, nowMs = Date.now()) {
       );
       if (!afterState) throw new ApiError("invalid_vip_state", 409);
 
+      const trialAward = vip10MaintenanceTrialCardWrites(
+        db,
+        uid,
+        beforeState,
+        afterState,
+        vipMaintenanceThreshold(policy, 10),
+        nowMs,
+      );
       const closingCoins = openingCoins - coinCost;
       const result = {
         growthPointsPurchased: requestedGrowthPoints,
         coinsSpent: coinCost,
         coins: closingCoins,
+        trialCardsAwarded: trialAward.count,
         vip: summaryPayload(
           policy,
           afterState,
@@ -396,8 +413,10 @@ export async function buyVipGrowth(db, uid, body, nowMs = Date.now()) {
             "earnedVipLevel",
             "effectiveVipLevel",
             "adminGrantVipLevel",
+            "trialVipLevel",
             "earnedVipExpiresAt",
             "adminGrantExpiresAt",
+            "trialVipExpiresAt",
             "effectiveVipSource",
             "vipGrowthPoints",
             "vipMaintenancePoints",
@@ -459,6 +478,7 @@ export async function buyVipGrowth(db, uid, body, nowMs = Date.now()) {
           idempotencyKey: key,
           createdAt: now,
         }),
+        ...trialAward.writes,
         db.writeCreate(`vip_operations/${uid}__${key}`, {
           uid,
           action: "buyGrowth",
@@ -532,9 +552,24 @@ export async function vipActions(request, env) {
         await setVip4PrivacyPreference(db, decoded.sub, body),
       );
     }
+    if (action === "trialCards") {
+      return json(
+        request,
+        env,
+        await listVipTrialCards(db, decoded.sub),
+      );
+    }
+    if (action === "giftTrialCard") {
+      const policy = await loadVipPolicy(db);
+      return json(
+        request,
+        env,
+        await giftVipTrialCard(db, decoded.sub, body, policy),
+      );
+    }
     throw new ApiError("invalid_action", 400);
   } catch (error) {
-    if (error instanceof ApiError) {
+    if (error instanceof ApiError || error instanceof TrialCardError) {
       return json(request, env, { ok: false, code: error.code }, error.status);
     }
     const code = clean(error?.message);
