@@ -68,6 +68,10 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
   Map<String, dynamic>? _lastSuccess;
   int _previewRefreshNonce = 0;
   int _visibleLimit = 24;
+  String? _registryCursorUpdatedAt;
+  String? _registryCursorId;
+  bool _hasMoreRegistry = true;
+  bool _loadingMoreRegistry = false;
   final Set<String> _favoriteAssetKeys = <String>{};
   final List<String> _recentAssetKeys = <String>[];
 
@@ -660,22 +664,49 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     }
   }
 
-  Future<void> _loadAssets() async {
+  Future<void> _loadAssets({bool append = false}) async {
+    if (_loadingMoreRegistry) return;
+    if (append && !_hasMoreRegistry) return;
+
+    if (append && mounted) {
+      setState(() => _loadingMoreRegistry = true);
+    }
+
     try {
+      final params = <String, String>{'limit': '60'};
+      if (append &&
+          _registryCursorUpdatedAt != null &&
+          _registryCursorId != null) {
+        params['cursorUpdatedAt'] = _registryCursorUpdatedAt!;
+        params['cursorId'] = _registryCursorId!;
+      }
+      final uri = _endpoint.replace(queryParameters: params);
       final response = await http.get(
-        _endpoint,
+        uri,
         headers: {'authorization': 'Bearer ${await _token()}'},
       );
-      final body = jsonDecode(response.body);
-      if (response.statusCode == 200 && body is Map<String, dynamic>) {
+
+      final decoded =
+          response.body.isEmpty ? <String, dynamic>{} : jsonDecode(response.body);
+      final body = decoded is Map<String, dynamic>
+          ? decoded
+          : <String, dynamic>{};
+      if (response.statusCode == 200 && body['ok'] == true) {
         final list = body['assets'];
         final rawTemplates = body['templates'];
         final rawChannels = body['channels'];
+        final nextCursor = body['nextCursor'] is Map
+            ? Map<String, dynamic>.from(body['nextCursor'] as Map)
+            : <String, dynamic>{};
         if (mounted) {
           final templates = rawTemplates is List
               ? rawTemplates
                   .whereType<Map>()
-                  .map((e) => ControlAssetStudioTemplate.fromMap(Map<String, dynamic>.from(e)))
+                  .map(
+                    (e) => ControlAssetStudioTemplate.fromMap(
+                      Map<String, dynamic>.from(e),
+                    ),
+                  )
                   .where((e) => e.id.isNotEmpty && e.type.isNotEmpty)
                   .toList(growable: false)
               : <ControlAssetStudioTemplate>[];
@@ -685,25 +716,69 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                   .where((e) => e.isNotEmpty)
                   .toList(growable: false)
               : _channels;
+          final incoming = list is List
+              ? list
+                  .whereType<Map>()
+                  .map((e) => Map<String, dynamic>.from(e))
+                  .toList(growable: false)
+              : <Map<String, dynamic>>[];
           setState(() {
-            _studioVersion = (body['studioVersion'] as num?)?.toInt() ?? 1;
-            _assets = list is List
-                ? list.whereType<Map>().map((e) => Map<String,dynamic>.from(e)).toList()
-                : const [];
-            _templates = templates;
-            _channels = channels;
-            if (_selectedTemplate == null && templates.isNotEmpty) {
-              final badge = templates.where((e) => e.id == 'badge.base.v1').toList();
-              _applyTemplate(badge.isNotEmpty ? badge.first : templates.first);
+            _studioVersion =
+                (body['studioVersion'] as num?)?.toInt() ?? _studioVersion;
+            if (append) {
+              final byKey = <String, Map<String, dynamic>>{
+                for (final asset in _assets)
+                  (asset['assetKey'] ?? '').toString(): asset,
+              };
+              for (final asset in incoming) {
+                byKey[(asset['assetKey'] ?? '').toString()] = asset;
+              }
+              _assets = byKey.values.toList(growable: false);
+            } else {
+              _assets = incoming;
             }
-            _selectedChannels.removeWhere((value) => !_channels.contains(value));
+            if (templates.isNotEmpty) _templates = templates;
+            if (channels.isNotEmpty) _channels = channels;
+            _registryCursorUpdatedAt =
+                (nextCursor['updatedAt'] ?? '').toString().trim().isEmpty
+                    ? null
+                    : (nextCursor['updatedAt'] ?? '').toString();
+            _registryCursorId =
+                (nextCursor['id'] ?? '').toString().trim().isEmpty
+                    ? null
+                    : (nextCursor['id'] ?? '').toString();
+            _hasMoreRegistry =
+                _registryCursorUpdatedAt != null && _registryCursorId != null;
+            if (!append) _visibleLimit = 24;
+            if (_selectedTemplate == null && _templates.isNotEmpty) {
+              final badge = _templates
+                  .where((e) => e.id == 'badge.base.v1')
+                  .toList();
+              _applyTemplate(
+                badge.isNotEmpty ? badge.first : _templates.first,
+              );
+            }
+            _selectedChannels.removeWhere(
+              (value) => !_channels.contains(value),
+            );
             if (_selectedChannels.isEmpty && _channels.isNotEmpty) {
               _selectedChannels.add(_channels.first);
             }
           });
         }
+      } else if (mounted) {
+        setState(() {
+          _message =
+              'تعذر تحديث سجل الأصول: ${body['code'] ?? response.statusCode}';
+        });
       }
-    } catch (_) {}
+    } catch (e) {
+      if (mounted) {
+        setState(() => _message = 'تعذر تحديث سجل الأصول: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _loadingMoreRegistry = false);
+    }
   }
 
   Widget _assetThumbnail(
