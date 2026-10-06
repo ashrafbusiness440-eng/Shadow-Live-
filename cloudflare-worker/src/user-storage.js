@@ -1,3 +1,4 @@
+import { activeEffectiveVipLevelFromUser } from "./vip-runtime.js";
 import {
   firestoreQuotaResponse,
   json,
@@ -46,6 +47,7 @@ const MIME_TO_EXT = Object.freeze({
   "image/jpeg": "jpg",
   "image/png": "png",
   "image/webp": "webp",
+  "image/gif": "gif",
 });
 
 const rateState = new Map();
@@ -111,7 +113,7 @@ export function buildStorageObjectKey({
   const safeTarget = encodedSegment(targetId);
   const safeObject = encodedSegment(objectId);
   const safeExt = clean(extension).toLowerCase();
-  if (!/^(jpg|png|webp)$/.test(safeExt)) {
+  if (!/^(jpg|png|webp|gif)$/.test(safeExt)) {
     throw new StorageApiError("invalid_file_type", 400);
   }
 
@@ -148,6 +150,9 @@ export function validateStoragePayload({
 
   const extension = storageExtensionForMime(mimeType);
   if (!extension) throw new StorageApiError("invalid_file_type", 400);
+  if (extension === "gif" && normalizedScope !== "profile_image") {
+    throw new StorageApiError("gif_profile_only", 400);
+  }
 
   const size = Number(byteLength || 0);
   if (!Number.isSafeInteger(size) || size <= 0 || size > config.maxBytes) {
@@ -275,6 +280,15 @@ export async function authorizeAgencyLogoManagement(
     throw new StorageApiError("agency_closed", 409);
   }
   return { targetId, agency: agency.data || {} };
+}
+
+async function authorizeVipAnimatedProfileImage(db, uid, nowMs = Date.now()) {
+  const user = await db.get(`users/${uid}`);
+  if (!user.exists) throw new StorageApiError("user_not_found", 404);
+  if (activeEffectiveVipLevelFromUser(user.data || {}, nowMs) < 4) {
+    throw new StorageApiError("vip4_required_for_animated_avatar", 403);
+  }
+  return true;
 }
 
 async function authorizeUpload(db, uid, scope, rawTargetId) {
@@ -428,6 +442,9 @@ async function prepareUpload(request, env, auth, body) {
     scope,
     rawTargetId,
   );
+  if (validated.extension === "gif") {
+    await authorizeVipAnimatedProfileImage(auth.db, auth.uid);
+  }
 
   let previous = null;
   let effectiveReplaceObjectId = "";
@@ -529,6 +546,12 @@ async function confirmUpload(request, env, auth, body) {
 
   if (clean(ticket.ownerUid) !== auth.uid) {
     throw new StorageApiError("forbidden", 403);
+  }
+  if (
+    clean(ticket.scope) === "profile_image" &&
+    clean(ticket.mimeType).toLowerCase() === "image/gif"
+  ) {
+    await authorizeVipAnimatedProfileImage(auth.db, auth.uid);
   }
   if (clean(ticket.scope) === "room_cover") {
     await authorizeRoomCoverManagement(
