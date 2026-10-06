@@ -239,6 +239,8 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
               if (moodText.isNotEmpty) moodText,
             ].join(' ').trim();
             final vip = effectivePublicVipLevel(data);
+            final vipFrameLevel =
+                (data['vipProfileFrameLevel'] as num?)?.toInt() ?? vip;
             final online = data['isOnline'] == true;
             final badges = data['badges'] is List
                 ? (data['badges'] as List).map((e) => e.toString()).where((e) => e.isNotEmpty).toList()
@@ -260,6 +262,7 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                       children: [
                         VipAvatarFrame(
                           vipLevel: vip,
+                          frameLevel: vipFrameLevel,
                           avatarDiameter: 96,
                           child: CircleAvatar(
                             radius: 48,

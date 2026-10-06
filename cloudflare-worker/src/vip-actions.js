@@ -15,6 +15,7 @@ import {
 } from "./vip-state.js";
 import {
   activeEffectiveVipLevelFromUser,
+  timestampToEpochMs,
   vipPublicProfilePatch,
   vipStateFromUser,
   vipUserPatch,
@@ -90,6 +91,24 @@ function summaryPayload(policy, state, user = {}) {
     canHideBetWinNotification: currentLevel >= 4,
     hideBetWinNotification:
       currentLevel >= 4 && user.hideBetWinNotification === true,
+    canCustomizeVipFrame: currentLevel >= 6,
+    vipProfileFrameLevel:
+      currentLevel >= 3
+        ? Math.max(
+            3,
+            Math.min(
+              currentLevel,
+              Number(user.vipProfileFrameLevel || currentLevel) || currentLevel,
+            ),
+          )
+        : 0,
+    frameCustomizationChangedAtMs:
+      timestampToEpochMs(user.frameCustomizationChangedAt),
+    nextFrameCustomizationAtMs:
+      timestampToEpochMs(user.frameCustomizationChangedAt) > 0
+        ? timestampToEpochMs(user.frameCustomizationChangedAt) +
+          VIP_FRAME_CUSTOMIZATION_COOLDOWN_MS
+        : 0,
   };
 }
 
@@ -413,6 +432,91 @@ export async function publishVip10GlobalEntry(
   };
 }
 
+const VIP_FRAME_CUSTOMIZATION_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000;
+
+export async function setVipProfileFrame(
+  db,
+  uid,
+  body,
+  nowMs = Date.now(),
+) {
+  const requestedLevel = Number(body?.frameLevel);
+  if (!Number.isSafeInteger(requestedLevel) || requestedLevel < 3 || requestedLevel > 10) {
+    throw new ApiError("invalid_vip_frame_level", 400);
+  }
+
+  const transaction = await db.beginTransaction();
+  try {
+    const [userSnap, profileSnap] = await Promise.all([
+      db.get(`users/${uid}`, transaction),
+      db.get(`public_profiles/${uid}`, transaction),
+    ]);
+    if (!userSnap.exists) throw new ApiError("user_not_found", 404);
+
+    const user = userSnap.data || {};
+    const activeLevel = activeEffectiveVipLevelFromUser(user, nowMs);
+    if (activeLevel < 6) {
+      throw new ApiError("vip_frame_customization_requires_vip6", 403);
+    }
+    if (requestedLevel > activeLevel) {
+      throw new ApiError("vip_frame_level_locked", 403);
+    }
+
+    const lastChangedMs = timestampToEpochMs(user.frameCustomizationChangedAt);
+    const currentLevel = Number(user.vipProfileFrameLevel || 0);
+    if (
+      currentLevel !== requestedLevel &&
+      lastChangedMs > 0 &&
+      nowMs - lastChangedMs < VIP_FRAME_CUSTOMIZATION_COOLDOWN_MS
+    ) {
+      throw new ApiError("vip_frame_customization_cooldown", 409);
+    }
+
+    const changedAt = new Date(nowMs);
+    const nextAllowedAtMs = nowMs + VIP_FRAME_CUSTOMIZATION_COOLDOWN_MS;
+    const writes = [
+      db.writeUpdate(
+        `users/${uid}`,
+        {
+          vipProfileFrameLevel: requestedLevel,
+          frameCustomizationChangedAt: changedAt,
+        },
+        ["vipProfileFrameLevel", "frameCustomizationChangedAt"],
+      ),
+    ];
+
+    if (profileSnap.exists) {
+      writes.push(
+        db.writeUpdate(
+          `public_profiles/${uid}`,
+          {
+            vipProfileFrameLevel: requestedLevel,
+            frameCustomizationChangedAt: changedAt,
+            updatedAt: changedAt,
+          },
+          [
+            "vipProfileFrameLevel",
+            "frameCustomizationChangedAt",
+            "updatedAt",
+          ],
+        ),
+      );
+    }
+
+    await db.commit(transaction, writes);
+    return {
+      ok: true,
+      vipProfileFrameLevel: requestedLevel,
+      frameCustomizationChangedAtMs: nowMs,
+      nextFrameCustomizationAtMs: nextAllowedAtMs,
+      effectiveVipLevel: activeLevel,
+    };
+  } catch (error) {
+    await db.rollback(transaction);
+    throw error;
+  }
+}
+
 export async function buyVipGrowth(db, uid, body, nowMs = Date.now()) {
   const requestedGrowthPoints = asPositiveInt(body.growthPoints);
   const key = operationKey(body.idempotencyKey);
@@ -644,6 +748,13 @@ export async function vipActions(request, env) {
         request,
         env,
         await setVip4PrivacyPreference(db, decoded.sub, body),
+      );
+    }
+    if (action === "setVipProfileFrame") {
+      return json(
+        request,
+        env,
+        await setVipProfileFrame(db, decoded.sub, body),
       );
     }
     if (action === "vip10GlobalEntryState") {

@@ -333,6 +333,8 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
                     .toList(growable: false)
                 : <String>[];
             final vip = effectivePublicVipLevel(data);
+            final vipFrameLevel =
+                (data['vipProfileFrameLevel'] as num?)?.toInt() ?? vip;
             final online = data['isOnline'] == true;
             final badges = data['badges'] is List
                 ? (data['badges'] as List).map((e) => e.toString()).where((e) => e.isNotEmpty).toList()
@@ -357,6 +359,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
                       cover: cover,
                       online: online,
                       vip: vip,
+                      vipFrameLevel: vipFrameLevel,
                       badges: badges,
                     ),
                   ),
@@ -548,6 +551,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
     required String cover,
     required bool online,
     required int vip,
+    required int vipFrameLevel,
     required List<String> badges,
   }) {
     return Container(
@@ -572,6 +576,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
             children: [
               VipAvatarFrame(
                 vipLevel: vip,
+                frameLevel: vipFrameLevel,
                 avatarDiameter: 110,
                 child: CircleAvatar(
                   radius: 55,

@@ -35,6 +35,7 @@ class _VipScreenState extends State<VipScreen> {
   VipSummaryData? _summary;
   bool _loading = true;
   bool _buying = false;
+  bool _savingFrame = false;
   String? _error;
   int _previewLevel = 1;
 
@@ -172,6 +173,121 @@ class _VipScreenState extends State<VipScreen> {
     }
   }
 
+  Future<void> _selectVipFrame(int level) async {
+    final summary = _summary;
+    if (summary == null || _savingFrame) return;
+    if (!summary.canCustomizeVipFrame) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تخصيص الإطار متاح من VIP6.')),
+      );
+      return;
+    }
+
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final nextAt = summary.nextFrameCustomizationAtMs;
+    if (summary.vipProfileFrameLevel != level && nextAt > nowMs) {
+      final remaining = Duration(milliseconds: nextAt - nowMs);
+      final days = (remaining.inHours / 24).ceil();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('يمكن تغيير إطار VIP بعد $days يوم.')),
+      );
+      return;
+    }
+
+    setState(() => _savingFrame = true);
+    try {
+      final updated = await _service!.setVipProfileFrame(level);
+      if (!mounted) return;
+      setState(() {
+        _summary = summary.copyWith(
+          canCustomizeVipFrame: true,
+          vipProfileFrameLevel: updated.vipProfileFrameLevel,
+          frameCustomizationChangedAtMs:
+              updated.frameCustomizationChangedAtMs,
+          nextFrameCustomizationAtMs:
+              updated.nextFrameCustomizationAtMs,
+        );
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تم اعتماد إطار VIP$level.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      final code = error.toString();
+      final message = code.contains('vip_frame_customization_cooldown')
+          ? 'لم تنتهِ مهلة 30 يوم لتغيير الإطار.'
+          : code.contains('vip_frame_level_locked')
+              ? 'هذا الإطار غير مفتوح لمستواك الحالي.'
+              : 'تعذر تغيير إطار VIP حاليًا.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } finally {
+      if (mounted) setState(() => _savingFrame = false);
+    }
+  }
+
+  Widget _frameCustomizationCard(VipSummaryData summary) {
+    final max = summary.effectiveVipLevel.clamp(3, 10).toInt();
+    final selected = summary.vipProfileFrameLevel > 0
+        ? summary.vipProfileFrameLevel
+        : summary.effectiveVipLevel;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final lockedByCooldown = summary.nextFrameCustomizationAtMs > nowMs;
+
+    return Container(
+      key: const Key('vip-frame-customization'),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF101622),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0x334D67FF)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'تخصيص إطار الصورة',
+            style: TextStyle(
+              color: Color(0xFFFFD98A),
+              fontWeight: FontWeight.w900,
+              fontSize: 17,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            lockedByCooldown
+                ? 'التغيير التالي متاح بعد انتهاء مهلة 30 يوم.'
+                : 'اختر أي إطار VIP مفتوح لديك. بعد التغيير يبدأ Cooldown لمدة 30 يوم.',
+            style: const TextStyle(color: Colors.white54, fontSize: 12),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (var level = 3; level <= max; level++)
+                ChoiceChip(
+                  key: Key('vip-frame-choice-$level'),
+                  selected: selected == level,
+                  onSelected:
+                      _savingFrame ? null : (_) => _selectVipFrame(level),
+                  label: Text(
+                    'VIP$level',
+                    textDirection: TextDirection.ltr,
+                  ),
+                ),
+            ],
+          ),
+          if (_savingFrame) ...[
+            const SizedBox(height: 10),
+            const LinearProgressIndicator(minHeight: 2),
+          ],
+        ],
+      ),
+    );
+  }
+
   void _openInfo() {
     showModalBottomSheet<void>(
       context: context,
@@ -299,6 +415,10 @@ class _VipScreenState extends State<VipScreen> {
           const SizedBox(height: 14),
           if (cosmetics.isNotEmpty) _cosmeticsGrid(cosmetics, locked),
           if (cosmetics.isNotEmpty) const SizedBox(height: 14),
+          if (summary.canCustomizeVipFrame) ...[
+            _frameCustomizationCard(summary),
+            const SizedBox(height: 14),
+          ],
           _benefitsCard(benefits, locked),
           const SizedBox(height: 14),
           if (summary.effectiveVipLevel >= 3) ...[

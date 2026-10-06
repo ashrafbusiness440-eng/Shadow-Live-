@@ -9,18 +9,24 @@ class VipAvatarFrame extends StatelessWidget {
     required this.vipLevel,
     required this.avatarDiameter,
     required this.child,
+    this.frameLevel,
     this.resolveUri,
   });
 
   final int vipLevel;
+  final int? frameLevel;
   final double avatarDiameter;
   final Widget child;
   final LevelAssetUriResolver? resolveUri;
 
   @override
   Widget build(BuildContext context) {
-    final level = vipLevel.clamp(0, 10).toInt();
-    if (level <= 0) return child;
+    final effectiveVip = vipLevel.clamp(0, 10).toInt();
+    if (effectiveVip <= 0) return child;
+    final selected = (frameLevel ?? effectiveVip).clamp(0, 10).toInt();
+    final level = selected >= 3 && selected <= effectiveVip
+        ? selected
+        : effectiveVip;
 
     final frameSize = avatarDiameter * 1.22;
     return SizedBox.square(
