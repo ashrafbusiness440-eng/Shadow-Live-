@@ -7,6 +7,7 @@ import { changePublicId } from "./change-public-id.js";
 import { setIdManagementPermission } from "./set-id-management-permission.js";
 import { manageUserAccess } from "./manage-user-access.js";
 import { manageUserLevel } from "./manage-user-level.js";
+import { manageVipLevel } from "./manage-vip-level.js";
 import { manageUserAccount, releaseExpiredSuspensions } from "./manage-user-account.js";
 import { controlUserDetails } from "./control-user-details.js";
 import { walletActions } from "./wallet-actions.js";
@@ -94,6 +95,10 @@ async function dispatchRequest(request, env, ctx) {
   if (url.pathname === "/api/manage-user-level") {
     annotatePressureRequest(request, { action: "manageUserLevel" });
     return manageUserLevel(request, env);
+  }
+  if (url.pathname === "/api/manage-vip-level") {
+    annotatePressureRequest(request, { action: "manageVipLevel" });
+    return manageVipLevel(request, env);
   }
   if (url.pathname === "/api/manage-user-account") {
     return manageUserAccount(request, env);
