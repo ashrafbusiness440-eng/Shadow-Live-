@@ -466,12 +466,20 @@ async function assetBatchManifest(env, db, assetKey, asset) {
       }
 
       const limited = declared.slice(0, 40);
+      const templateMap = new Map(
+        publicAssetStudioTemplates().map((template) => [
+          clean(template?.id),
+          template,
+        ]),
+      );
       const metadata = await Promise.all(
         limited.map(async (item) => {
           const key = clean(item?.assetKey);
           if (!validKey(key)) return null;
           const current = await db.get(`app_asset_registry/${key}`);
           const data = current.data || {};
+          const templateId = clean(data.templateId);
+          const template = templateMap.get(templateId) || null;
           return {
             assetKey: key,
             fullPath: clean(item?.fullPath || data.fullPath),
@@ -482,7 +490,9 @@ async function assetBatchManifest(env, db, assetKey, asset) {
             hasDraft: current.exists && data.hasDraft === true,
             status: clean(data.status) || (current.exists ? "registered" : "missing"),
             assetType: clean(data.assetType),
-            templateId: clean(data.templateId),
+            templateId,
+            templateLabel: clean(template?.labelAr),
+            templatePrompt: clean(template?.prompt),
             channels: Array.isArray(data.channels) ? data.channels : [],
             mode: data.mode === "bundled" ? "bundled" : "remote",
             fileName: clean(data.fileName) ||
