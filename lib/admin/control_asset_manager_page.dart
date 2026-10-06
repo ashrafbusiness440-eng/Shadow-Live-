@@ -4105,16 +4105,42 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
             ),
           ),
           const SizedBox(height: 12),
-          FilledButton.icon(
-            onPressed: _busy ? null : _startNewAsset,
-            icon: const Icon(Icons.add_circle_outline_rounded),
-            label: const Padding(
-              padding: EdgeInsets.symmetric(vertical: 13),
-              child: Text(
-                'إضافة أصل جديد',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: _busy ? null : _startNewAsset,
+                  icon: const Icon(Icons.add_circle_outline_rounded),
+                  label: const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 13),
+                    child: Text(
+                      'إضافة أصل جديد',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _busy ? null : _showSmartPresetPicker,
+                  icon: const Icon(Icons.auto_awesome_rounded),
+                  label: const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 13),
+                    child: Text(
+                      'Smart Preset',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 12),
           Row(
