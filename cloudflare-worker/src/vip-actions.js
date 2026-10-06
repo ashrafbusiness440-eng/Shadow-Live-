@@ -15,6 +15,7 @@ import {
 } from "./vip-state.js";
 import {
   activeEffectiveVipLevelFromUser,
+  timestampToEpochMs,
   vipPublicProfilePatch,
   vipStateFromUser,
   vipUserPatch,
