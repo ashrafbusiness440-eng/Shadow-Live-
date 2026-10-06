@@ -1095,3 +1095,16 @@ test("agency logo storage stays owner-authorized audited and delayed-replacement
   assert.equal(source.includes("transferDeletedAccountAgencyLogoOwnership"), true);
   assert.equal(source.includes("REPLACEMENT_DELETE_DELAY_MS"), true);
 });
+
+
+test("VIP4 animated avatar storage is isolated and entitlement-gated", () => {
+  const source = readFileSync(
+    new URL("../../cloudflare-worker/src/user-storage.js", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /profile_avatar_animation/);
+  assert.match(source, /image\/gif/);
+  assert.match(source, /vip4_required_for_animated_avatar/);
+  assert.match(source, /activeEffectiveVipLevelFromUser/);
+  assert.match(source, /profileAvatarAnimationObjectId/);
+});
