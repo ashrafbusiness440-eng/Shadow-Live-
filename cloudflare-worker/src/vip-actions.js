@@ -397,7 +397,7 @@ export async function publishVip10GlobalEntry(
     throw error;
   }
 
-  const broadcast = await publishGlobalAppEvents(env, [event]).catch(() => ({
+  const broadcast = await publishGlobalAppEvents(env, [event], nowMs).catch(() => ({
     ok: false,
     shards: 0,
     events: 0,
