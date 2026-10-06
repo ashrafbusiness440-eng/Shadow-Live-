@@ -1301,9 +1301,14 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
         final fileName = (spec['fileName'] ?? '').toString().trim();
         final file = byName[fileName.toLowerCase()];
         if (file != null) matched++;
+        final existingState = spec['hasDraft'] == true
+            ? 'Draft'
+            : spec['published'] == true
+                ? 'Published'
+                : 'Missing';
         initial.add({
           ...spec,
-          'batchState': file == null ? 'Missing' : 'Ready',
+          'batchState': file == null ? existingState : 'Ready',
           'localFile': file?.name,
         });
       }
@@ -3545,6 +3550,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     Color stateColor(String state) => switch (state) {
           'Verified' => Colors.greenAccent,
           'Published' => Colors.lightBlueAccent,
+          'Draft' => Colors.amberAccent,
           'Uploading' => Colors.amberAccent,
           'Failed' => Colors.redAccent,
           'Ready' => const Color(0xFFC4A7FF),
@@ -3587,6 +3593,17 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
             Text(
               _batchProgressLabel!,
               style: const TextStyle(color: Colors.white60, fontSize: 11.5),
+            ),
+          ],
+          if (_batchResults.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              '${_batchResults.where((item) => item['batchState'] == 'Verified').length}/${_batchResults.length} Verified',
+              style: const TextStyle(
+                color: Colors.greenAccent,
+                fontSize: 10.5,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ],
           if (_batchBusy) ...[
