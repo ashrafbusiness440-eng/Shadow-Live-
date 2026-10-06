@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/assets/shadow_asset_registry.dart';
@@ -28,11 +29,14 @@ class VipCosmeticAssetLayer extends StatelessWidget {
         return IgnorePointer(
           child: Opacity(
             opacity: opacity.clamp(0, 1),
-            child: Image.network(
-              uri.toString(),
+            child: CachedNetworkImage(
+              imageUrl: uri.toString(),
               fit: fit,
               alignment: alignment,
-              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+              fadeInDuration: Duration.zero,
+              fadeOutDuration: Duration.zero,
+              placeholder: (_, __) => const SizedBox.shrink(),
+              errorWidget: (_, __, ___) => const SizedBox.shrink(),
             ),
           ),
         );

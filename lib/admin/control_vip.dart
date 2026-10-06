@@ -29,7 +29,6 @@ abstract final class VipEntitlementPolicy {
   static bool customGifts(int level) => level >= 5;
   static bool profileBackground(int level) => level >= 5;
 
-  static bool vehicle(int level) => level >= 6;
   static bool kickProtection(int level) => level >= 6;
   static bool customizableProfileFrame(int level) => level >= 6;
 
@@ -39,9 +38,7 @@ abstract final class VipEntitlementPolicy {
   static bool hideGamePkActivity(int level) => hideCurrentRoom(level);
   static bool audioWave(int level) => level >= 7;
 
-  static bool profileVehicleDisplay(int level) => level >= 8;
   static bool entryStrip(int level) => level >= 8;
-  static bool specialVehicle(int level) => level >= 8;
 
   static bool hideVisitIdentity(int level) => level >= 9;
   static bool roomEntryBroadcast(int level) => level >= 9;
@@ -54,6 +51,20 @@ abstract final class VipEntitlementPolicy {
   static bool extraVipBadge(int level) => level >= 10;
   static bool globalAppEntryBanner(int level) => level >= 10;
   static bool vipGiftDecoration(int level) => level >= 10;
+
+  static int cumulativeBenefitCount(int level) => switch (level.clamp(0, 10)) {
+        0 => 0,
+        1 => 3,
+        2 => 7,
+        3 => 10,
+        4 => 16,
+        5 => 21,
+        6 => 23,
+        7 => 27,
+        8 => 28,
+        9 => 32,
+        _ => 38,
+      };
 
   // Legacy surface compatibility only. The new VIP1→10 spec has no
   // hide-social-counts entitlement, so callers must never receive it.

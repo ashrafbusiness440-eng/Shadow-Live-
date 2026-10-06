@@ -11,6 +11,7 @@ import 'package:image_picker/image_picker.dart';
 
 import 'control_asset_policy.dart';
 import 'control_asset_studio_template.dart';
+import '../core/assets/shadow_asset_registry.dart';
 
 class ControlAssetManagerPage extends StatefulWidget {
   const ControlAssetManagerPage({super.key});
@@ -30,6 +31,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
   String? _mimeType;
   String? _pickedName;
   String? _conversionNote;
+  bool _preparedAnimated = false;
   bool _busy = false;
   String _mode = 'remote';
   String? _message;
@@ -95,6 +97,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
       _mimeType = null;
       _pickedName = null;
       _conversionNote = null;
+      _preparedAnimated = false;
       _preparedWidth = null;
       _preparedHeight = null;
       if (matches.isNotEmpty) {
@@ -271,6 +274,43 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
       return false;
     }
 
+    final sourceExtension = _extensionOf(_pickedName ?? '');
+    final animated = decoded.numFrames > 1;
+    if (animated) {
+      if (sourceExtension != extension) {
+        if (mounted && updateMessage) {
+          setState(() => _message =
+              'الملف متحرك. للحفاظ على الحركة استخدم نفس الامتداد الأصلي في اسم الملف.');
+        }
+        return false;
+      }
+      final longest = decoded.width > decoded.height
+          ? decoded.width
+          : decoded.height;
+      if (longest > 2048 || sourceBytes.length > ControlAssetPolicy.maxBytes) {
+        if (mounted && updateMessage) {
+          setState(() => _message =
+              'الملف المتحرك أكبر من حدود Asset Studio. استخدم نسخة أصغر مع نفس الامتداد.');
+        }
+        return false;
+      }
+      if (mounted) {
+        setState(() {
+          _bytes = sourceBytes;
+          _mimeType = _mimeForExtension(extension);
+          _preparedWidth = decoded.width;
+          _preparedHeight = decoded.height;
+          _preparedAnimated = true;
+          _conversionNote =
+              'تم الحفاظ على Animation الأصلية • '
+              '${decoded.width}×${decoded.height} • '
+              '${(sourceBytes.length / 1024).toStringAsFixed(1)} KB';
+          if (updateMessage) _message = null;
+        });
+      }
+      return true;
+    }
+
     final prepared = _prepareDimensions(decoded);
     final encoded = _encodeForTarget(prepared, extension);
     if (encoded == null) {
@@ -289,6 +329,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
         _mimeType = _mimeForExtension(extension);
         _preparedWidth = prepared.width;
         _preparedHeight = prepared.height;
+        _preparedAnimated = false;
         _conversionNote =
             'تجهيز تلقائي حسب اسم الملف → ${_formatLabel(extension)} • '
             '${prepared.width}×${prepared.height} • '
@@ -314,6 +355,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
       setState(() {
         _sourceBytes = sourceBytes;
         _pickedName = file.name;
+        _preparedAnimated = false;
         _fileName.text = outputName;
       });
       await _convertSelectedToTarget();
@@ -419,6 +461,13 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
       }
     }
 
+    final rawAssetKey = _assetKey.text.trim();
+    final canonicalAssetKey =
+        ShadowAssetKeys.canonicalizeVipAssetKey(rawAssetKey);
+    if (canonicalAssetKey != rawAssetKey) {
+      _assetKey.text = canonicalAssetKey;
+    }
+
     final error = _validate();
     if (error != null) {
       setState(() {
@@ -440,7 +489,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
         'templateId': template.id,
         'channels': _selectedChannels.toList(growable: false),
         'publish': publish,
-        'assetKey': _assetKey.text.trim(),
+        'assetKey': canonicalAssetKey,
         'directory': ControlAssetPolicy.normalizeDirectory(_directory.text),
         'fileName': _fileName.text.trim(),
         'mimeType': _mimeType,
@@ -856,7 +905,8 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Preview • ${(_bytes!.length / 1024).toStringAsFixed(1)} KB'
+                    '${_preparedAnimated ? 'Animated Preview' : 'Preview'} • '
+                    '${(_bytes!.length / 1024).toStringAsFixed(1)} KB'
                     ' • ${_preparedWidth ?? '—'}×${_preparedHeight ?? '—'}',
                     textAlign: TextAlign.center,
                     style: const TextStyle(color: Colors.white60),

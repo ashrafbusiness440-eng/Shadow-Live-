@@ -52,6 +52,7 @@ abstract final class ShadowAssetKeys {
   // VIP business logic or Flutter surfaces.
   static String vipMainBadge(int level) => 'vip.v$level.mainBadge';
   static String vipLevelBadge(int level) => 'vip.v$level.badge';
+  static String vipMiniBadge(int level) => 'vip.v$level.miniBadge';
   static String vipChatBubble(int level) => 'vip.v$level.chatBubble';
   static String vipProfileFrame(int level) => 'vip.v$level.profileFrame';
   static String vipProfileBackground(int level) => 'vip.v$level.profileBackground';
@@ -59,9 +60,48 @@ abstract final class ShadowAssetKeys {
   static String vipEntryStrip(int level) => 'vip.v$level.entryStrip';
   static String vipDataCard(int level) => 'vip.v$level.dataCard';
   static String vipGiftVisual(int level) => 'vip.v$level.giftVisual';
+  static String vipFancyIdPlate(int level) => 'vip.v$level.fancyIdPlate';
+  static String vipEmojiPack(int level) => 'vip.v$level.emojiPack';
   static String vipProfileDecoration(int level) => 'vip.v$level.profileDecoration';
   static String vipNameEffect(int level) => 'vip.v$level.nameEffect';
   static String vipGlobalEntryBanner(int level) => 'vip.v$level.globalEntryBanner';
+  static String vipDynamicFx(int level) => 'vip.v$level.dynamicFx';
+
+  static String canonicalizeVipAssetKey(String raw) {
+    final key = raw.trim();
+    final match = RegExp(r'^vip\.vip(10|[1-9])\.([A-Za-z0-9_-]+)$')
+        .firstMatch(key);
+    if (match == null) return key;
+    final level = match.group(1)!;
+    final suffix = switch (match.group(2)!) {
+      'mainEmblem' => 'mainBadge',
+      'badgeMini' => 'miniBadge',
+      final value => value,
+    };
+    return 'vip.v$level.$suffix';
+  }
+
+  static List<String> vipBatchHKeys(int level) {
+    final value = level.clamp(1, 10).toInt();
+    return <String>[
+      vipMainBadge(value),
+      vipLevelBadge(value),
+      vipMiniBadge(value),
+      if (value >= 2) vipChatBubble(value),
+      if (value >= 3) vipProfileFrame(value),
+      if (value >= 3) vipFancyIdPlate(value),
+      if (value >= 4) vipGiftVisual(value),
+      if (value >= 4) vipEmojiPack(value),
+      if (value >= 5) vipProfileBackground(value),
+      if (value >= 5) vipDataCard(value),
+      if (value >= 7) vipAudioWave(value),
+      if (value >= 8) vipEntryStrip(value),
+      if (value >= 9) vipProfileDecoration(value),
+      if (value >= 10) vipNameEffect(value),
+      if (value >= 10) vipGlobalEntryBanner(value),
+      if (value >= 10) vipDynamicFx(value),
+    ];
+  }
 
   static String? levelMainBadge(String metric, int level) {
     final bucket = _levelBucket(metric, level);
