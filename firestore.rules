@@ -159,8 +159,10 @@ service cloud.firestore {
         'earnedVipLevel',
         'effectiveVipLevel',
         'adminGrantVipLevel',
+        'trialVipLevel',
         'earnedVipExpiresAt',
         'adminGrantExpiresAt',
+        'trialVipExpiresAt',
         'effectiveVipSource',
         'vipGrowthPoints',
         'vipMaintenancePoints',
@@ -185,6 +187,11 @@ service cloud.firestore {
         'betWinNotificationVisibilityUpdatedAt',
         'vip10GlobalEntryDayKey',
         'vip10GlobalEntryPublishedAt',
+        'vipTrialCardIds',
+        'vip10TrialCardsCycleKey',
+        'vip10TrialCardsGrantedAt',
+        'vipProfileFrameLevel',
+        'frameCustomizationChangedAt',
         'publicBadges',
         'totalGiftsSent',
         'totalGiftsReceived',
@@ -244,6 +251,10 @@ service cloud.firestore {
     function blockedBetween(firstUid, secondUid) {
       return exists(/databases/$(database)/documents/user_blocks/$(firstUid)/items/$(secondUid))
         || exists(/databases/$(database)/documents/user_blocks/$(secondUid)/items/$(firstUid));
+    }
+
+    match /vip_trial_cards/{cardId} {
+      allow read, write: if false;
     }
 
     match /users/{userId} {

@@ -7,6 +7,7 @@ import '../../../utils/compact_number.dart';
 import '../../profile/widgets/level_asset_image.dart';
 import '../services/vip_service.dart';
 import 'vip_fancy_id_screen.dart';
+import 'vip_trial_cards_screen.dart';
 
 typedef VipSummaryLoader = Future<VipSummaryData> Function();
 typedef VipGrowthBuyer = Future<VipSummaryData> Function({
@@ -456,6 +457,40 @@ class _VipScreenState extends State<VipScreen> {
               ),
             ),
           ],
+          const SizedBox(height: 14),
+          ListTile(
+            key: const Key('vip-trial-cards-open'),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+              side: const BorderSide(color: Color(0x335EC8FF)),
+            ),
+            tileColor: const Color(0xFF101622),
+            leading: const Icon(
+              Icons.card_membership_rounded,
+              color: Color(0xFF7DD3FC),
+            ),
+            title: const Text(
+              'بطاقات تجربة VIP',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            subtitle: const Text(
+              'عرض، استخدام أو إهداء بطاقات VIP5 التجريبية',
+              style: TextStyle(color: Colors.white54),
+            ),
+            trailing: const Icon(
+              Icons.chevron_left_rounded,
+              color: Colors.white38,
+            ),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const VipTrialCardsScreen(),
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
           _statusCard(summary),
         ],
       ),
@@ -885,7 +920,9 @@ class _VipScreenState extends State<VipScreen> {
   Widget _statusCard(VipSummaryData summary) {
     final expiryMs = summary.effectiveVipSource == 'admin_grant'
         ? summary.adminGrantExpiresAtMs
-        : summary.earnedVipExpiresAtMs;
+        : summary.effectiveVipSource == 'trial_card'
+            ? summary.trialVipExpiresAtMs
+            : summary.earnedVipExpiresAtMs;
 
     return Container(
       padding: const EdgeInsets.all(15),
@@ -906,9 +943,11 @@ class _VipScreenState extends State<VipScreen> {
             'المصدر',
             summary.effectiveVipSource == 'admin_grant'
                 ? 'منحة إدارية مؤقتة'
-                : summary.effectiveVipSource == 'progression'
-                    ? 'VIP طبيعي'
-                    : '—',
+                : summary.effectiveVipSource == 'trial_card'
+                    ? 'بطاقة تجربة VIP'
+                    : summary.effectiveVipSource == 'progression'
+                        ? 'VIP طبيعي'
+                        : '—',
           ),
           _statusRow('الصلاحية', _remainingTime(expiryMs)),
           _statusRow(

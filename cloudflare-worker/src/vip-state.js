@@ -40,13 +40,19 @@ export function effectiveVipState(state, nowMs = Date.now()) {
   const grantActive =
     grantLevel > 0 && grantExpiry > now;
 
+  const trialLevel = level(state?.trialVipLevel);
+  const trialExpiry = safeInt(state?.trialVipExpiresAtMs, 0);
+  const trialActive =
+    trialLevel > 0 && trialExpiry > now;
+
   const activeEarned = earnedActive ? earnedLevel : 0;
   const activeGrant = grantActive ? grantLevel : 0;
-  const effectiveVipLevel = Math.max(activeEarned, activeGrant);
+  const activeTrial = trialActive ? trialLevel : 0;
+  const effectiveVipLevel = Math.max(activeEarned, activeGrant, activeTrial);
   const effectiveVipSource =
-    activeGrant > activeEarned ? "admin_grant" :
-    activeEarned > 0 ? "progression" :
-    activeGrant > 0 ? "admin_grant" :
+    activeEarned === effectiveVipLevel && activeEarned > 0 ? "progression" :
+    activeGrant === effectiveVipLevel && activeGrant > 0 ? "admin_grant" :
+    activeTrial > 0 ? "trial_card" :
     "none";
 
   return {
@@ -54,6 +60,7 @@ export function effectiveVipState(state, nowMs = Date.now()) {
     effectiveVipSource,
     earnedActive,
     adminGrantActive: grantActive,
+    trialVipActive: trialActive,
   };
 }
 
@@ -63,12 +70,18 @@ export function materializeVipState(policy, inputState, nowMs = Date.now()) {
   let earnedVipExpiresAtMs = safeInt(inputState?.earnedVipExpiresAtMs, 0);
   let adminGrantVipLevel = level(inputState?.adminGrantVipLevel);
   let adminGrantExpiresAtMs = safeInt(inputState?.adminGrantExpiresAtMs, 0);
+  let trialVipLevel = level(inputState?.trialVipLevel);
+  let trialVipExpiresAtMs = safeInt(inputState?.trialVipExpiresAtMs, 0);
   let growthPoints = safeInt(inputState?.growthPoints, 0);
   let maintenancePoints = safeInt(inputState?.maintenancePoints, 0);
 
   if (adminGrantVipLevel > 0 && adminGrantExpiresAtMs <= now) {
     adminGrantVipLevel = 0;
     adminGrantExpiresAtMs = 0;
+  }
+  if (trialVipLevel > 0 && trialVipExpiresAtMs <= now) {
+    trialVipLevel = 0;
+    trialVipExpiresAtMs = 0;
   }
 
   let steps = 0;
@@ -112,6 +125,8 @@ export function materializeVipState(policy, inputState, nowMs = Date.now()) {
     earnedVipExpiresAtMs,
     adminGrantVipLevel,
     adminGrantExpiresAtMs,
+    trialVipLevel,
+    trialVipExpiresAtMs,
     growthPoints,
     maintenancePoints,
     expiryMaterializationSteps: steps,
