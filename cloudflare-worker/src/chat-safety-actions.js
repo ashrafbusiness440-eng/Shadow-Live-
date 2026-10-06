@@ -22,6 +22,7 @@ import {
 } from "./room-presence-authority.js";
 import { giftLevelPointAwards, safeAddUserLevelPoints } from "./user-level-policy.js";
 import { activeEffectiveVipLevelFromUser } from "./vip-runtime.js";
+import { vipCosmeticsFromUser } from "./vip-entitlements.js";
 
 const clean = (value) => String(value ?? "").trim();
 const validKey = (value) => /^[A-Za-z0-9_-]{12,220}$/.test(clean(value));
@@ -246,6 +247,7 @@ export async function sendMessage(db, uid, body) {
       (senderData.adminEnabled === true &&
         (senderCapabilities.has("manageUsers") ||
           senderCapabilities.has("reviewReports")));
+    const senderVipCosmetics = vipCosmeticsFromUser(senderData, nowMs);
     const receiverVip = activeEffectiveVipLevelFromUser(receiverData, nowMs);
     const friendsOnly =
       receiverVip >= 1 && receiverData.friendsOnlyMessages === true;
@@ -285,6 +287,7 @@ export async function sendMessage(db, uid, body) {
         receiverId,
         text: message,
         type: "text",
+        senderVipLevel: senderVipCosmetics.level,
         createdAt: now,
       }),
     ];
@@ -649,6 +652,10 @@ export async function sendGift(db, uid, body, options = {}) {
     );
     const senderPublicId = clean(senderData.publicId);
     const senderProfileImageUrl = clean(senderData.profileImageUrl);
+    const giftSenderVipCosmetics = vipCosmeticsFromUser(
+      senderData,
+      now.getTime(),
+    );
     const messageId = contextType === "chat" ? randomDocId("msg") : null;
     const messagePath = contextType === "chat"
       ? `${conversationPath}/messages/${messageId}`
@@ -998,6 +1005,7 @@ export async function sendGift(db, uid, body, options = {}) {
           totalCost,
           imageUrl,
           assetKey,
+          senderVipLevel: giftSenderVipCosmetics.level,
           createdAt: now,
           createdAtMs: now.getTime(),
         }),
