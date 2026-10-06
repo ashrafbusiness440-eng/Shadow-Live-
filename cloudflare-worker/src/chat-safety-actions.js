@@ -505,6 +505,20 @@ export async function sendGift(db, uid, body, options = {}) {
       senderData,
       now.getTime(),
     );
+    const requiredGiftVipLevel = (() => {
+      const explicit = Number(giftData.minVipLevel);
+      if (
+        Number.isSafeInteger(explicit) &&
+        explicit >= 0 &&
+        explicit <= 10
+      ) {
+        return explicit;
+      }
+      return clean(giftData.category) === "vip" ? 4 : 0;
+    })();
+    if (requiredGiftVipLevel > 0 && senderVip < requiredGiftVipLevel) {
+      throw new ApiError("vip_gift_requires_level", 403);
+    }
     const vipGiftVisualKey = vipCosmeticAssetKey(
       senderVip,
       "giftVisual",
@@ -1179,6 +1193,8 @@ export async function sendGift(db, uid, body, options = {}) {
       ...financialContext,
       giftId,
       giftName,
+      requiredVipLevel: requiredGiftVipLevel,
+      senderVipLevel: senderVip,
       quantity,
       totalCost,
       messageId,
