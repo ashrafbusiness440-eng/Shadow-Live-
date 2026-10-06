@@ -529,6 +529,100 @@ async function assetBatchManifest(env, db, assetKey, asset) {
   };
 }
 
+async function assetHealthCheck(env, db, assetKey, asset) {
+  const { branch, repo } = assetRepoConfig(env);
+  const fullPath = clean(asset?.fullPath);
+  const directory = clean(asset?.directory) ||
+    (fullPath.includes("/") ? fullPath.slice(0, fullPath.lastIndexOf("/")) : "");
+  const usage = await assetUsageMap(env, assetKey, asset);
+
+  let fileExists = false;
+  if (fullPath) {
+    const file = await github(
+      env,
+      `https://api.github.com/repos/${repo}/contents/${encodePath(fullPath)}?ref=${encodeURIComponent(branch)}`,
+    );
+    fileExists = file.status !== 404;
+  }
+
+  let directoryFiles = [];
+  if (directory) {
+    const listing = await github(
+      env,
+      `https://api.github.com/repos/${repo}/contents/${encodePath(directory)}?ref=${encodeURIComponent(branch)}`,
+    );
+    directoryFiles = Array.isArray(listing.body)
+      ? listing.body
+          .filter((item) => item?.type === "file")
+          .map((item) => clean(item?.path))
+          .filter(Boolean)
+          .slice(0, 60)
+      : [];
+  }
+
+  const sameDirectory = directory
+    ? await db.runQuery("app_asset_registry", {
+        filters: [{ field: "directory", op: "==", value: directory }],
+        limit: 80,
+      })
+    : [];
+  const registeredPaths = new Set(
+    sameDirectory
+      .map((doc) => clean(doc.data?.fullPath))
+      .filter(Boolean),
+  );
+  const filesWithoutRegistry = directoryFiles
+    .filter((path) => {
+      const name = path.split("/").pop()?.toUpperCase() || "";
+      if (name.endsWith("PUBLISHED.JSON")) return false;
+      return !registeredPaths.has(path);
+    })
+    .slice(0, 20);
+
+  const samePath = fullPath
+    ? await db.runQuery("app_asset_registry", {
+        filters: [{ field: "fullPath", op: "==", value: fullPath }],
+        limit: 12,
+      })
+    : [];
+  const duplicatePathKeys = samePath
+    .map((doc) => doc.id)
+    .filter((id) => id && id !== assetKey)
+    .slice(0, 10);
+
+  const templateId = clean(asset?.templateId);
+  const sameTemplate = templateId
+    ? await db.runQuery("app_asset_registry", {
+        filters: [{ field: "templateId", op: "==", value: templateId }],
+        limit: 24,
+      })
+    : [];
+  const channels = Array.isArray(asset?.channels)
+    ? asset.channels.map((item) => clean(item)).sort()
+    : [];
+  const duplicateFunctionKeys = sameTemplate
+    .filter((doc) => doc.id !== assetKey)
+    .filter((doc) => {
+      const other = Array.isArray(doc.data?.channels)
+        ? doc.data.channels.map((item) => clean(item)).sort()
+        : [];
+      return JSON.stringify(other) === JSON.stringify(channels);
+    })
+    .map((doc) => doc.id)
+    .slice(0, 10);
+
+  return {
+    assetKey,
+    fileExists,
+    unusedDirectly: Number(usage.totalReferences || 0) === 0,
+    directUsageCount: Number(usage.totalReferences || 0),
+    filesWithoutRegistry,
+    duplicatePathKeys,
+    duplicateFunctionKeys,
+    directoryFileScanTruncated: directoryFiles.length >= 60,
+  };
+}
+
 async function assetUsageMap(env, assetKey, asset) {
   const { repo } = assetRepoConfig(env);
   const query = encodeURIComponent(`"${assetKey}" repo:${repo}`);
@@ -957,6 +1051,14 @@ export async function manageAppAsset(request, env) {
             ok: true,
             asset,
             usage: await assetUsageMap(env, detailKey, asset),
+          });
+        }
+        if (include === "health") {
+          phase = "health";
+          return json(request, env, {
+            ok: true,
+            asset,
+            health: await assetHealthCheck(env, db, detailKey, asset),
           });
         }
         if (include === "manifest") {
