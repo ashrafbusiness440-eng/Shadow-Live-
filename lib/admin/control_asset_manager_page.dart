@@ -645,6 +645,10 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
         _pickedName = file.name;
         _preparedAnimated = false;
         _fileName.text = outputName;
+        _hasUnsavedChanges = true;
+        _lastSuccess = null;
+        _lastFailedPublishIntent = null;
+        _operationId = null;
       });
       await _convertSelectedToTarget();
     } catch (e) {
