@@ -24,7 +24,7 @@ export function normalizeGlobalAppFeedEvent(raw, nowMs = Date.now()) {
   const endsAtMs = integer(raw.endsAtMs);
   if (
     !eventId ||
-    kind !== "vip10_global_entry" ||
+    (kind !== "vip10_global_entry" && kind !== "vip_level_upgrade") ||
     startsAtMs <= 0 ||
     endsAtMs <= startsAtMs ||
     endsAtMs + GLOBAL_APP_FEED_RETAIN_MS <= nowMs
