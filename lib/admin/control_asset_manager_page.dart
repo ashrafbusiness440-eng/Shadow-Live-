@@ -557,6 +557,15 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
           );
   }
 
+  bool _imageHasRealTransparency(img.Image image) {
+    for (final frame in image.frames) {
+      if (frame.numChannels < 4) continue;
+      final maxAlpha = frame.maxChannelValue;
+      if (frame.any((pixel) => pixel.a < maxAlpha)) return true;
+    }
+    return false;
+  }
+
   Uint8List? _encodeForTarget(img.Image image, String extension) {
     if (extension == 'webp') {
       Uint8List? smallest;
@@ -654,7 +663,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
           _mimeType = _mimeForExtension(extension);
           _preparedWidth = decoded.width;
           _preparedHeight = decoded.height;
-          _preparedHasAlpha = decoded.numChannels == 4;
+          _preparedHasAlpha = _imageHasRealTransparency(decoded);
           _preparedAnimated = true;
           _conversionNote =
               'تم الحفاظ على Animation الأصلية • '
@@ -684,7 +693,9 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
         _mimeType = _mimeForExtension(extension);
         _preparedWidth = prepared.width;
         _preparedHeight = prepared.height;
-        _preparedHasAlpha = prepared.numChannels == 4;
+        _preparedHasAlpha = extension == 'jpg' || extension == 'jpeg'
+            ? false
+            : _imageHasRealTransparency(prepared);
         _preparedAnimated = false;
         _conversionNote =
             'تجهيز تلقائي حسب اسم الملف → ${_formatLabel(extension)} • '
@@ -1483,7 +1494,9 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
       'width': width,
       'height': height,
       'animated': animated,
-      'hasAlpha': decoded.numChannels == 4,
+      'hasAlpha': extension == 'jpg' || extension == 'jpeg'
+          ? false
+          : _imageHasRealTransparency(decoded),
     };
   }
 
@@ -2310,6 +2323,41 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     }
   }
 
+  String? _validatePreparedMedia() {
+    if (_bytes == null || _mimeType == null) return 'اختر صورة أولًا.';
+    final template = _selectedTemplate;
+    if (template == null) return 'اختر قالبًا أولًا.';
+
+    final extension = _extensionOf(_fileName.text);
+    if (!template.allowsExtension(extension)) {
+      return 'صيغة الملف لا تطابق القالب المختار.';
+    }
+    if (_bytes!.length > template.maxBytes) {
+      return 'حجم الملف أكبر من الحد المسموح.';
+    }
+
+    final width = _preparedWidth;
+    final height = _preparedHeight;
+    if (width != null &&
+        height != null &&
+        !template.dimensionsMatch(width, height)) {
+      return 'المقاس لا يطابق المطلوب: ${template.dimensionsLabel}.';
+    }
+    if (template.transparency == 'required' && _preparedHasAlpha != true) {
+      return 'الخلفية يجب أن تكون شفافة فعلًا.';
+    }
+    if (template.transparency == 'forbidden' && _preparedHasAlpha == true) {
+      return 'هذا الأصل يجب أن يكون بدون شفافية.';
+    }
+    if (template.motion == 'static' && _preparedAnimated) {
+      return 'هذا الأصل يجب أن يكون ثابتًا.';
+    }
+    if (template.motion == 'animated' && !_preparedAnimated) {
+      return 'هذا الأصل يجب أن يكون متحركًا.';
+    }
+    return null;
+  }
+
   String? _validate() {
     if (_bytes == null || _mimeType == null) return 'اختر صورة أولاً.';
     final template = _selectedTemplate;
@@ -2328,32 +2376,8 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     if (!template.allowsDirectory(directory)) {
       return 'المسار لا يطابق القالب المختار.';
     }
-    final extension = _extensionOf(_fileName.text);
-    if (!template.allowsExtension(extension)) {
-      return 'صيغة الملف لا تطابق القالب المختار.';
-    }
-    if (_bytes!.length > template.maxBytes) {
-      return 'حجم الملف أكبر من الحد المسموح للقالب المختار.';
-    }
-    final width = _preparedWidth;
-    final height = _preparedHeight;
-    if (width != null &&
-        height != null &&
-        !template.dimensionsMatch(width, height)) {
-      return 'أبعاد الملف لا تطابق القالب: ${template.dimensionsLabel}.';
-    }
-    if (template.transparency == 'required' && _preparedHasAlpha != true) {
-      return 'هذا القالب يحتاج خلفية شفافة.';
-    }
-    if (template.transparency == 'forbidden' && _preparedHasAlpha == true) {
-      return 'هذا القالب لا يسمح بخلفية شفافة.';
-    }
-    if (template.motion == 'static' && _preparedAnimated) {
-      return 'هذا القالب يقبل صورة ثابتة فقط.';
-    }
-    if (template.motion == 'animated' && !_preparedAnimated) {
-      return 'هذا القالب يحتاج صورة متحركة.';
-    }
+    final mediaError = _validatePreparedMedia();
+    if (mediaError != null) return mediaError;
     if (_reason.text.trim().length < 3) {
       return 'اكتب سببًا مختصرًا للتغيير.';
     }
@@ -3072,6 +3096,22 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                   avatar: const Icon(Icons.sd_storage_outlined, size: 16),
                   label: Text(
                     '${(_bytes!.length / 1024).toStringAsFixed(1)} KB',
+                  ),
+                ),
+                Chip(
+                  avatar: Icon(
+                    _validatePreparedMedia() == null
+                        ? Icons.check_circle_rounded
+                        : Icons.error_outline_rounded,
+                    size: 16,
+                    color: _validatePreparedMedia() == null
+                        ? Colors.greenAccent
+                        : Colors.orangeAccent,
+                  ),
+                  label: Text(
+                    _validatePreparedMedia() == null
+                        ? 'جاهز'
+                        : 'يحتاج تعديل',
                   ),
                 ),
               ],
