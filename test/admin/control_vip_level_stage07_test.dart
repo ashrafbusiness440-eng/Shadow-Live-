@@ -45,7 +45,7 @@ void main() {
     expect(access, contains("'manageVipLevels': 'إدارة مستويات VIP'"));
     expect(access, contains("'allowedVipGrantLevels': allowedVipLevels"));
     expect(access, contains("FilterChip("));
-    expect(access, contains("Text('VIP$level')"));
+    expect(access, contains(r"Text('VIP$level')"));
 
     expect(server, contains('limit: 20'));
     expect(server, contains('capabilities.has("manageVipLevels")'));
