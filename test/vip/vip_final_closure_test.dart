@@ -16,6 +16,25 @@ void main() {
     }
   });
 
+  test('Batch H legacy aliases normalize into canonical vip.vN namespace', () {
+    expect(
+      ShadowAssetKeys.canonicalizeVipAssetKey('vip.vip1.mainEmblem'),
+      'vip.v1.mainBadge',
+    );
+    expect(
+      ShadowAssetKeys.canonicalizeVipAssetKey('vip.vip10.badgeMini'),
+      'vip.v10.miniBadge',
+    );
+    expect(
+      ShadowAssetKeys.canonicalizeVipAssetKey('vip.vip9.roomEntryBanner'),
+      'vip.v9.roomEntryBanner',
+    );
+    expect(
+      ShadowAssetKeys.canonicalizeVipAssetKey('vip.v4.badge'),
+      'vip.v4.badge',
+    );
+  });
+
   test('Batch H manifest has no vehicles and keeps entry assets', () {
     for (var level = 1; level <= 10; level++) {
       final keys = ShadowAssetKeys.vipBatchHKeys(level);
