@@ -2231,6 +2231,27 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     );
   }
 
+  Future<void> _openLastSuccessAsset() async {
+    final key = (_lastSuccess?['assetKey'] ?? '').toString().trim();
+    if (key.isEmpty || _busy) return;
+    setState(() => _busy = true);
+    try {
+      final asset = await _fetchAssetByKey(key);
+      if (!mounted) return;
+      if (asset == null) {
+        setState(() => _message = 'تعذر فتح الأصل المنشور حاليًا.');
+        return;
+      }
+      await _showAssetPreview(asset);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _message = 'تعذر فتح الأصل: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<bool> _confirmPublishImpact() async {
     if (!_isEditing) return true;
     final template = _selectedTemplate;
@@ -3326,73 +3347,91 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
               border: const OutlineInputBorder(),
             ),
           ),
-          const SizedBox(height: 16),
-          const Text(
-            'طريقة الاستخدام',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: ChoiceChip(
-                  selected: _mode == 'remote',
-                  label: const SizedBox(
-                    width: double.infinity,
-                    child: Text(
-                      'من الخادم\nمع حفظ مؤقت لتسريع العرض',
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                  onSelected: _busy ||
-                          (_isEditing && !_unlockIdentityFields)
-                      ? null
-                      : (_) => setState(() {
-                            _mode = 'remote';
-                            _hasUnsavedChanges = true;
-                            _lastSuccess = null;
-                            _operationId = null;
-                          }),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: ChoiceChip(
-                  selected: _mode == 'bundled',
-                  label: const SizedBox(
-                    width: double.infinity,
-                    child: Text(
-                      'داخل التطبيق\nيُحفظ مع نسخة التطبيق',
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                  onSelected: _busy ||
-                          (_isEditing && !_unlockIdentityFields)
-                      ? null
-                      : (_) => setState(() {
-                            _mode = 'bundled';
-                            _hasUnsavedChanges = true;
-                            _lastSuccess = null;
-                            _operationId = null;
-                          }),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           ExpansionTile(
             tilePadding: EdgeInsets.zero,
             title: const Text(
-              'قنوات الاستخدام',
+              'خيارات إضافية',
               style: TextStyle(fontWeight: FontWeight.w800),
             ),
             subtitle: Text(
-              _selectedChannels.map(_channelLabel).join(' • '),
-              maxLines: 1,
+              '${_mode == 'remote' ? 'من الخادم' : 'داخل التطبيق'} • '
+              '${_selectedChannels.map(_channelLabel).join(' • ')}',
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 11.5),
             ),
             children: [
+              const Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  'مكان حفظ الأصل',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 7),
+              Row(
+                children: [
+                  Expanded(
+                    child: ChoiceChip(
+                      selected: _mode == 'remote',
+                      label: const SizedBox(
+                        width: double.infinity,
+                        child: Text(
+                          'من الخادم\nمع حفظ مؤقت',
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                      onSelected: _busy ||
+                              (_isEditing && !_unlockIdentityFields)
+                          ? null
+                          : (_) => setState(() {
+                                _mode = 'remote';
+                                _hasUnsavedChanges = true;
+                                _lastSuccess = null;
+                                _operationId = null;
+                              }),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ChoiceChip(
+                      selected: _mode == 'bundled',
+                      label: const SizedBox(
+                        width: double.infinity,
+                        child: Text(
+                          'داخل التطبيق\nمع نسخة التطبيق',
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                      onSelected: _busy ||
+                              (_isEditing && !_unlockIdentityFields)
+                          ? null
+                          : (_) => setState(() {
+                                _mode = 'bundled';
+                                _hasUnsavedChanges = true;
+                                _lastSuccess = null;
+                                _operationId = null;
+                              }),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              const Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  'أماكن استخدام الأصل',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 7),
               Align(
                 alignment: Alignment.centerRight,
                 child: Wrap(
@@ -3423,6 +3462,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                       .toList(growable: false),
                 ),
               ),
+              const SizedBox(height: 8),
             ],
           ),
           const SizedBox(height: 8),
@@ -3501,16 +3541,14 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                       runSpacing: 8,
                       children: [
                         OutlinedButton.icon(
-                          onPressed: _editingAsset == null
-                              ? null
-                              : () => _showAssetPreview(_editingAsset!),
+                          onPressed: _busy ? null : _openLastSuccessAsset,
                           icon: const Icon(Icons.visibility_outlined),
                           label: const Text('فتح الأصل'),
                         ),
                         OutlinedButton.icon(
                           onPressed: () => _copyText(
                             (_lastSuccess!['assetKey'] ?? '').toString(),
-                            'Asset Key',
+                            'مفتاح الأصل',
                           ),
                           icon: const Icon(Icons.copy_rounded),
                           label: const Text('نسخ المفتاح'),
