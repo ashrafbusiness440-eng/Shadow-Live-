@@ -728,6 +728,13 @@ class UserReadOnlyPage extends StatelessWidget {
           targetRole:t(data['role']??'user'),
           adminEnabled:data['adminEnabled']==true,
           capabilities:caps,
+          allowedVipGrantLevels:data['allowedVipGrantLevels'] is List
+              ? (data['allowedVipGrantLevels'] as List)
+                  .map((e)=>int.tryParse('$e'))
+                  .whereType<int>()
+                  .where((e)=>e>=1&&e<=10)
+                  .toList()
+              : const <int>[],
         ),
         const SizedBox(height:10),
         _OwnerAccountActionsCard(
@@ -1340,6 +1347,7 @@ class _RolePolicyCard extends StatelessWidget {
     'reviewReports':'مراجعة البلاغات','manageDiaries':'حذف اليوميات من البلاغات','deleteDiaryComment':'حذف تعليقات اليوميات','manageEconomy':'إدارة الاقتصاد','manageGames':'إدارة الألعاب','manageWithdrawals':'إدارة السحب',
     'manageSettlements':'إدارة التسويات','manageRoles':'إدارة الأدوار','manageCapabilities':'إدارة الصلاحيات',
     'manageSystem':'إدارة النظام','manageIds':'إدارة IDs المستخدمين والغرف',
+    'manageVipLevels':'إدارة مستويات VIP',
   };
   @override Widget build(BuildContext context){
     final isOwner=role=='owner';
