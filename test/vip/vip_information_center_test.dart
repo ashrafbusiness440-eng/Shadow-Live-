@@ -18,11 +18,16 @@ void main() {
     expect(service, contains('quickPurchaseOffers'));
 
     expect(screen, contains("Tab(text: 'نقاط النمو'"));
-    expect(screen, contains("Tab(text: 'السجل'"));
-    expect(screen, contains("Tab(text: 'قواعد VIP'"));
+    expect(screen, contains("Tab(text: 'التفاصيل'"));
+    expect(screen, contains("Tab(text: 'شرح قواعد VIP'"));
     expect(screen, contains("const RechargeScreen(initialTab: 0)"));
     expect(screen, contains("key: const Key('vip-history-load-more')"));
     expect(screen, contains("key: const Key('vip-open-recharge')"));
+    expect(screen, contains("key: const Key('vip-manual-growth-input')"));
+    expect(screen, contains("key: const Key('vip-manual-growth-buy')"));
+    expect(screen, contains('نقاط النمو للعضوية المميزة'));
+    expect(screen, contains('الحد الأقصى الحالي لنقاط VIP'));
+    expect(screen, contains('_remainingValidityLabel'));
     expect(screen, contains('quickPurchaseOffers'));
     expect(screen, contains('downgradeRetentionBps'));
     expect(screen, isNot(contains('FirebaseFirestore')));
