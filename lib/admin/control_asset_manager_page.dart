@@ -342,8 +342,8 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
       'File: ${source['fileName'] ?? asset['fileName'] ?? ''}',
       'Template: ${source['templateId'] ?? asset['templateId'] ?? ''}',
       'Channels: ${((source['channels'] ?? asset['channels']) as List?)?.join(', ') ?? ''}',
-      'Live URL: ${asset['rawUrl'] ?? ''}',
-      'Content SHA: ${asset['contentSha'] ?? ''}',
+      'رابط النسخة المنشورة: ${asset['rawUrl'] ?? ''}',
+      'بصمة النسخة: ${asset['contentSha'] ?? ''}',
     ].join('\n');
     await _copyText(text, 'بيانات الأصل');
   }
@@ -1139,7 +1139,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
       if (assets.isEmpty || index < 0) {
         if (mounted) {
           setState(() => _message =
-              'تعذر تحديد الأصل التالي من الـManifest الرسمي.');
+              'تعذر تحديد الأصل التالي من سجل الدفعة الرسمي.');
         }
         return;
       }
@@ -1282,7 +1282,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     if (_batchBusy || _busy) return;
     setState(() {
       _batchBusy = true;
-      _batchProgressLabel = 'جارٍ تحميل Manifest الدفعة...';
+      _batchProgressLabel = 'جارٍ تحميل سجل الدفعة الرسمي...';
       _batchResults = const [];
     });
 
@@ -1330,7 +1330,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
       final proceed = await showDialog<bool>(
             context: context,
             builder: (dialogContext) => AlertDialog(
-              title: const Text('تأكيد Batch Upload'),
+              title: const Text('تأكيد رفع المجموعة'),
               content: Text(
                 'الدفعة: ${manifest['batch'] ?? manifest['tier'] ?? '—'}\n'
                 'المتوقع: ${specs.length} أصل\n'
@@ -1388,7 +1388,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
               assetType.isEmpty ||
               channels.isEmpty) {
             throw StateError(
-              'بيانات Template/Channels غير مكتملة في Registry.',
+              'معلومات القالب أو أماكن الاستخدام غير مكتملة في سجل الأصول.',
             );
           }
           ControlAssetStudioTemplate? template;
@@ -1399,7 +1399,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
             }
           }
           if (template == null) {
-            throw StateError('Template غير محمل في الاستديو.');
+            throw StateError('القالب غير متاح داخل الاستديو.');
           }
           final hasAlpha = prepared['hasAlpha'] == true;
           final animated = prepared['animated'] == true;
@@ -1456,8 +1456,8 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
               item['batchState'] =
                   verified ? 'Verified' : 'Published';
               item['note'] = verified
-                  ? 'Live verification PASS'
-                  : 'Published; live verification pending';
+                  ? 'تم التأكد من النسخة المنشورة'
+                  : 'تم النشر • التأكد النهائي لم يكتمل';
             });
           } else {
             setState(() {
@@ -1489,7 +1489,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
           _batchProgressLabel =
               'انتهت الدفعة • Verified $verified • Failed $failed';
           _message = failed == 0
-              ? 'انتهى Batch Upload بدون أخطاء في الملفات المطابقة.'
+              ? 'انتهى رفع المجموعة بدون أخطاء في الملفات المطابقة.'
               : 'انتهى Batch Upload مع $failed ملف يحتاج مراجعة.';
         });
       }
@@ -1497,7 +1497,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
       if (mounted) {
         setState(() {
           _batchProgressLabel = null;
-          _message = 'تعذر تشغيل Batch Upload: $e';
+          _message = 'تعذر تشغيل رفع المجموعة: $e';
         });
       }
     } finally {
@@ -1729,7 +1729,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                             ),
                       const Divider(height: 26),
                       Text(
-                        'Version History (${commits.length})',
+                        'سجل النسخ (${commits.length})',
                         style: const TextStyle(fontWeight: FontWeight.w900),
                       ),
                       if (commits.isEmpty)
@@ -1766,7 +1766,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                             ),
                       const Divider(height: 26),
                       Text(
-                        'Audit Log (${audit.length})',
+                        'سجل التعديلات (${audit.length})',
                         style: const TextStyle(fontWeight: FontWeight.w900),
                       ),
                       ...audit.take(8).map(
@@ -1887,7 +1887,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                 child: Column(
                   children: [
                     const Text(
-                      'Smart Preset — اختر أصلًا معروفًا',
+                      'اختر أصلًا جاهزًا لتعبئة المعلومات تلقائيًا',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w900,
@@ -1900,7 +1900,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                         () => query = value.trim().toLowerCase(),
                       ),
                       decoration: const InputDecoration(
-                        hintText: 'Asset Key / File / Path',
+                        hintText: 'مفتاح الأصل / اسم الملف / المسار',
                         prefixIcon: Icon(Icons.search_rounded),
                         border: OutlineInputBorder(),
                       ),
@@ -1943,7 +1943,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     if (selected != null && mounted) {
       _beginEditAsset(selected);
       setState(() => _message =
-          'تم تعبئة البيانات تلقائيًا من الأصل المعروف.');
+          'تم تعبئة المعلومات تلقائيًا من الأصل الذي اخترته.');
     }
   }
 
@@ -2088,16 +2088,16 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
       return 'أبعاد الملف لا تطابق Template: ${template.dimensionsLabel}.';
     }
     if (template.transparency == 'required' && _preparedHasAlpha != true) {
-      return 'هذا Template يحتاج خلفية شفافة (Alpha).';
+      return 'هذا القالب يحتاج خلفية شفافة.';
     }
     if (template.transparency == 'forbidden' && _preparedHasAlpha == true) {
-      return 'هذا Template لا يسمح بالشفافية.';
+      return 'هذا القالب لا يسمح بخلفية شفافة.';
     }
     if (template.motion == 'static' && _preparedAnimated) {
-      return 'هذا Template يقبل أصلًا ثابتًا فقط.';
+      return 'هذا القالب يقبل صورة ثابتة فقط.';
     }
     if (template.motion == 'animated' && !_preparedAnimated) {
-      return 'هذا Template يحتاج أصلًا متحركًا.';
+      return 'هذا القالب يحتاج صورة متحركة.';
     }
     if (_reason.text.trim().length < 3) {
       return 'اكتب سببًا مختصرًا للتغيير.';
@@ -2580,7 +2580,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Replace In Place • نفس Asset Key والمسار واسم الملف',
+                      'استبدال نفس الأصل • نفس المفتاح والمسار واسم الملف',
                       style: const TextStyle(
                         fontWeight: FontWeight.w800,
                         fontSize: 11.5,
@@ -2607,7 +2607,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.collections_outlined),
-                    label: const Text('Batch لنفس الدفعة'),
+                    label: const Text('رفع مجموعة من نفس الدفعة'),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -2787,8 +2787,8 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                   ),
                   label: Text(
                     _preparedHasAlpha == true
-                        ? 'شفافية Alpha'
-                        : 'بدون Alpha',
+                        ? 'خلفية شفافة'
+                        : 'بدون شفافية',
                   ),
                 ),
                 Chip(
@@ -2999,11 +2999,11 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
               _markDirty();
             },
             decoration: InputDecoration(
-              labelText: 'Asset Key *',
+              labelText: 'مفتاح الأصل *',
               prefixIcon: const Icon(Icons.link_rounded),
               suffixIcon: IconButton(
-                tooltip: 'نسخ Asset Key',
-                onPressed: () => _copyText(_assetKey.text, 'Asset Key'),
+                tooltip: 'نسخ مفتاح الأصل',
+                onPressed: () => _copyText(_assetKey.text, 'مفتاح الأصل'),
                 icon: const Icon(Icons.copy_rounded),
               ),
               border: const OutlineInputBorder(),
@@ -3023,7 +3023,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                   label: const SizedBox(
                     width: double.infinity,
                     child: Text(
-                      'Remote + Cached\nتحميل من الخادم مع التخزين المؤقت',
+                      'من الخادم\nمع حفظ مؤقت لتسريع العرض',
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -3045,7 +3045,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                   label: const SizedBox(
                     width: double.infinity,
                     child: Text(
-                      'محلي\nيدخل في Build التطبيق',
+                      'داخل التطبيق\nيُحفظ مع نسخة التطبيق',
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -3519,7 +3519,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                           value: 'batch',
                           child: ListTile(
                             leading: Icon(Icons.collections_outlined),
-                            title: Text('Batch Upload لنفس الدفعة'),
+                            title: Text('رفع مجموعة من نفس الدفعة'),
                           ),
                         ),
                         const PopupMenuItem(
@@ -3583,7 +3583,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
               const SizedBox(width: 8),
               const Expanded(
                 child: Text(
-                  'Batch Progress',
+                  'تقدم رفع المجموعة',
                   style: TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w900,
@@ -4161,7 +4161,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                   label: const Padding(
                     padding: EdgeInsets.symmetric(vertical: 13),
                     child: Text(
-                      'Smart Preset',
+                      'اختيار أصل جاهز',
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w900,
@@ -4226,9 +4226,9 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
               ),
               children: const [
                 Text(
-                  'Owner-only • Templates/Channels • Validation • '
-                  'R2 Drafts • Publish-only GitHub Commit • Idempotency • '
-                  'Firestore Registry • Audit Log. لا Polling ولا Reads على Room/Gift hot paths.',
+                  'للمالك فقط • قوالب وأماكن استخدام • فحص قبل النشر • '
+                  'مسودات آمنة • نشر مضبوط • منع تكرار العملية • '
+                  'سجل أصول وتعديلات واضح. بدون تحميل متكرر أو مراقبة مستمرة تسبب ضغطًا.',
                   style: TextStyle(color: Colors.white60, height: 1.45),
                 ),
               ],
@@ -4262,7 +4262,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
         }
       },
       child: Scaffold(
-        appBar: AppBar(title: const Text('Shadow Asset Studio')),
+        appBar: AppBar(title: const Text('استديو أصول شادو لايف')),
         bottomNavigationBar:
             _showStudioForm ? _buildStickyStudioActions() : null,
         body: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
