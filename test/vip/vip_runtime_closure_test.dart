@@ -35,7 +35,10 @@ void main() {
     expect(giftCatalog, contains('minVipLevel'));
     expect(giftCatalog, contains('effectiveMinVipLevel'));
     expect(giftControl, contains('الحد الأدنى VIP'));
-    expect(giftControl, contains("value:4"));
+    expect(
+      RegExp(r'value:\s*4').hasMatch(giftControl),
+      isTrue,
+    );
     expect(roomGift, contains('vip_gift_requires_level'));
     expect(directGift, contains('vip_gift_requires_level'));
 
