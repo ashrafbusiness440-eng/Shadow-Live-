@@ -23,6 +23,7 @@ import {
   rocketFeedRoomIdForUid,
   rocketFeedRoomIds,
 } from "./room-rocket-feed.js";
+import { normalizeGlobalAppFeedEvent } from "./global-app-feed.js";
 
 const REALTIME_TICKET_FIRESTORE_CONCURRENCY = 32;
 const REALTIME_ROOM_CACHE_TTL_MS = 30000;
@@ -215,6 +216,42 @@ export async function publishGlobalRocketEvents(env, rawEvents = []) {
     events: events.length,
   };
 }
+
+export async function publishGlobalAppEvents(env, rawEvents = []) {
+  const events = Array.isArray(rawEvents)
+    ? rawEvents
+        .map((event) => normalizeGlobalAppFeedEvent(event))
+        .filter(Boolean)
+        .slice(0, 20)
+    : [];
+  if (events.length === 0) return { ok: true, shards: 0, events: 0 };
+
+  const roomIds = rocketFeedRoomIds();
+  const results = await Promise.allSettled(
+    roomIds.map((roomId) =>
+      roomObject(env, roomId).fetch(
+        "https://room-realtime.internal/global/publish",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ events }),
+        },
+      ),
+    ),
+  );
+  const successful = results.filter(
+    (result) =>
+      result.status === "fulfilled" &&
+      result.value &&
+      result.value.ok,
+  ).length;
+  return {
+    ok: successful > 0,
+    shards: successful,
+    events: events.length,
+  };
+}
+
 
 function isAnonymous(payload) {
   return String(payload?.firebase?.sign_in_provider || "") === "anonymous";
