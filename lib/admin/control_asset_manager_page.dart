@@ -612,6 +612,29 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     return null;
   }
 
+  String _aspectRatioLabel(int? width, int? height) {
+    if (width == null || height == null || width <= 0 || height <= 0) {
+      return '—';
+    }
+
+    int gcd(int a, int b) {
+      while (b != 0) {
+        final next = a % b;
+        a = b;
+        b = next;
+      }
+      return a.abs();
+    }
+
+    final divisor = gcd(width, height);
+    final simpleWidth = width ~/ divisor;
+    final simpleHeight = height ~/ divisor;
+    if (simpleWidth <= 20 && simpleHeight <= 20) {
+      return '$simpleWidth:$simpleHeight';
+    }
+    return (width / height).toStringAsFixed(2);
+  }
+
   String _formatLabel(String extension) => switch (extension) {
         'jpg' || 'jpeg' => 'JPEG',
         _ => extension.toUpperCase(),
@@ -3561,6 +3584,12 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                 Chip(
                   avatar: const Icon(Icons.aspect_ratio_rounded, size: 16),
                   label: Text('${_preparedWidth}×${_preparedHeight}'),
+                ),
+                Chip(
+                  avatar: const Icon(Icons.crop_rounded, size: 16),
+                  label: Text(
+                    'التناسب: ${_aspectRatioLabel(_preparedWidth, _preparedHeight)}',
+                  ),
                 ),
                 Chip(
                   avatar: const Icon(Icons.data_object_rounded, size: 16),
