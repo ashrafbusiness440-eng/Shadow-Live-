@@ -21,6 +21,7 @@ import {
   vipUserPatch,
 } from "./vip-runtime.js";
 import { publishGlobalAppEvents } from "./room-realtime.js";
+import { vipUpgradeBroadcastEvent } from "./vip-upgrade-broadcast.js";
 import {
   giftVipTrialCard,
   listVipTrialCards,
@@ -606,6 +607,14 @@ export async function buyVipGrowth(db, uid, body, nowMs = Date.now()) {
         afterState,
         nowMs,
       );
+      const upgradeBroadcastEvent = vipUpgradeBroadcastEvent(
+        uid,
+        user,
+        beforeState,
+        afterState,
+        key,
+        nowMs,
+      );
       const result = {
         growthPointsPurchased: requestedGrowthPoints,
         coinsSpent: coinCost,
@@ -616,6 +625,7 @@ export async function buyVipGrowth(db, uid, body, nowMs = Date.now()) {
           { ...user, coins: closingCoins, ...trialGrant.userPatch },
         ),
         trialCardsGranted: trialGrant.cardIds,
+        upgradeBroadcastEvent,
       };
 
       await db.commit(transaction, [
@@ -743,7 +753,20 @@ export async function vipActions(request, env) {
       });
     }
     if (action === "buyGrowth") {
-      return json(request, env, await buyVipGrowth(db, decoded.sub, body));
+      const result = await buyVipGrowth(db, decoded.sub, body);
+      let upgradeBroadcastPublished = false;
+      if (result.code !== "duplicate" && result.upgradeBroadcastEvent) {
+        const broadcast = await publishGlobalAppEvents(
+          env,
+          [result.upgradeBroadcastEvent],
+          result.upgradeBroadcastEvent.startsAtMs,
+        ).catch(() => ({ ok: false }));
+        upgradeBroadcastPublished = broadcast.ok === true;
+      }
+      return json(request, env, {
+        ...result,
+        upgradeBroadcastPublished,
+      });
     }
     if (action === "setHideRankingLists") {
       return json(
