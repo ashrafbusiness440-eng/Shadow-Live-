@@ -146,6 +146,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     var enabled = current?.enabled ?? true;
     var featured = current?.featured ?? false;
     var category = current?.category ?? 'general';
+    var minVipLevel = current?.effectiveMinVipLevel ?? 0;
 
     final result = await showDialog<GiftCatalogItem>(
       context: context,
@@ -178,7 +179,35 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                         )
                         .toList(),
                     onChanged: (value) {
-                      if (value != null) setLocal(() => category = value);
+                      if (value != null) {
+                        setLocal(() {
+                          category = value;
+                          if (category == 'vip' && minVipLevel == 0) {
+                            minVipLevel = 4;
+                          }
+                        });
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<int>(
+                    value: minVipLevel,
+                    decoration: const InputDecoration(
+                      labelText: 'الحد الأدنى VIP',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const <DropdownMenuItem<int>>[
+                      DropdownMenuItem(value: 0, child: Text('متاحة للجميع')),
+                      DropdownMenuItem(value: 4, child: Text('VIP4+')),
+                      DropdownMenuItem(value: 5, child: Text('VIP5+')),
+                      DropdownMenuItem(value: 6, child: Text('VIP6+')),
+                      DropdownMenuItem(value: 7, child: Text('VIP7+')),
+                      DropdownMenuItem(value: 8, child: Text('VIP8+')),
+                      DropdownMenuItem(value: 9, child: Text('VIP9+')),
+                      DropdownMenuItem(value: 10, child: Text('VIP10')),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) setLocal(() => minVipLevel = value);
                     },
                   ),
                   const SizedBox(height: 10),
@@ -243,6 +272,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                     sortOrder: index ?? gifts.length,
                     assetKey: cleanAsset,
                     localPlaceholder: cleanPlaceholder,
+                    minVipLevel: minVipLevel,
                   ),
                 );
               },
@@ -368,6 +398,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                                       sortOrder: index,
                                       assetKey: item.assetKey,
                                       localPlaceholder: item.localPlaceholder,
+                                      minVipLevel: item.minVipLevel,
                                     );
                                   });
                                 },
@@ -401,7 +432,12 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                             '🪙 ' +
                                 formatCompactAmount(item.priceCoins) +
                                 ' • ' +
-                                item.category,
+                                item.category +
+                                (item.effectiveMinVipLevel > 0
+                                    ? ' • VIP' +
+                                        item.effectiveMinVipLevel.toString() +
+                                        '+'
+                                    : ''),
                           ),
                           Directionality(
                             textDirection: TextDirection.ltr,
