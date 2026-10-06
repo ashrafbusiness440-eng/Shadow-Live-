@@ -166,7 +166,9 @@ class _RoomRocketBannerHostState extends State<RoomRocketBannerHost> {
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     final active = _globalEvents
         .where((event) =>
-            event.kind == 'vip10_global_entry' && event.activeAt(nowMs))
+            (event.kind == 'vip10_global_entry' ||
+                event.kind == 'vip_level_upgrade') &&
+            event.activeAt(nowMs))
         .toList()
       ..sort((a, b) => a.startsAtMs.compareTo(b.startsAtMs));
     final next = active.isEmpty ? null : active.first;
@@ -546,10 +548,12 @@ class _Vip10GlobalBanner extends StatelessWidget {
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    const Text(
-                      'دخل التطبيق • VIP10',
+                    Text(
+                      event.kind == 'vip_level_upgrade'
+                          ? 'ترقّى إلى VIP${event.vipLevel} 🎉'
+                          : 'دخل التطبيق • VIP10',
                       textDirection: TextDirection.rtl,
-                      style: TextStyle(
+                      style: const TextStyle(
                         color: Color(0xFFFFD54A),
                         fontWeight: FontWeight.w900,
                         fontSize: 12,
