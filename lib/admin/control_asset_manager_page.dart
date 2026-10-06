@@ -2489,6 +2489,26 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     }
   }
 
+  String _assetTypeLabel(String type) => switch (type) {
+        'frame' => 'إطار صورة',
+        'profile_background' => 'خلفية الملف الشخصي',
+        'chat_bubble' => 'فقاعة محادثة',
+        'room_background' => 'خلفية غرفة',
+        'entrance' => 'دخولية',
+        'audio_wave' => 'موجة صوت',
+        'badge' => 'شارة',
+        'name_effect' => 'تأثير الاسم',
+        'mic_effect' => 'تأثير المايك',
+        'sticker_pack' => 'حزمة ملصقات',
+        'profile_card' => 'بطاقة ملف شخصي',
+        'event_cosmetic' => 'زينة فعالية',
+        'agency_cosmetic' => 'زينة وكالة',
+        'vip_cosmetic' => 'زينة VIP',
+        'auth_screen' => 'صورة شاشة الدخول',
+        'system_cosmetic' => 'زينة رسمية',
+        _ => type,
+      };
+
   String _channelLabel(String channel) => switch (channel) {
         'store' => 'المتجر',
         'agency_packages' => 'باكيجات الوكالات',
@@ -4009,6 +4029,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                             _debouncedSearch = key.toLowerCase();
                             _visibleLimit = 24;
                           });
+                          unawaited(_loadAssets());
                         },
                       ),
                     ),
@@ -4028,6 +4049,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                             _debouncedSearch = key.toLowerCase();
                             _visibleLimit = 24;
                           });
+                          unawaited(_loadAssets());
                         },
                       ),
                     ),
@@ -4052,6 +4074,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                           _debouncedSearch = '';
                           _visibleLimit = 24;
                         });
+                        unawaited(_loadAssets());
                       },
                       icon: const Icon(Icons.close_rounded),
                     ),
@@ -4066,37 +4089,25 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                 ChoiceChip(
                   label: const Text('الكل'),
                   selected: _assetFilter == 'all',
-                  onSelected: (_) => setState(() {
-                    _assetFilter = 'all';
-                    _visibleLimit = 24;
-                  }),
+                  onSelected: (_) => _applyRegistryFilters(status: 'all'),
                 ),
                 const SizedBox(width: 7),
                 ChoiceChip(
                   label: const Text('منشور'),
                   selected: _assetFilter == 'published',
-                  onSelected: (_) => setState(() {
-                    _assetFilter = 'published';
-                    _visibleLimit = 24;
-                  }),
+                  onSelected: (_) => _applyRegistryFilters(status: 'published'),
                 ),
                 const SizedBox(width: 7),
                 ChoiceChip(
                   label: const Text('مسودة'),
                   selected: _assetFilter == 'draft',
-                  onSelected: (_) => setState(() {
-                    _assetFilter = 'draft';
-                    _visibleLimit = 24;
-                  }),
+                  onSelected: (_) => _applyRegistryFilters(status: 'draft'),
                 ),
                 const SizedBox(width: 7),
                 ChoiceChip(
                   label: const Text('يحتاج مراجعة'),
                   selected: _assetFilter == 'review',
-                  onSelected: (_) => setState(() {
-                    _assetFilter = 'review';
-                    _visibleLimit = 24;
-                  }),
+                  onSelected: (_) => _applyRegistryFilters(status: 'review'),
                 ),
               ],
             ),
@@ -4121,14 +4132,12 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                     ..._availableAssetTypes.map(
                       (type) => DropdownMenuItem(
                         value: type,
-                        child: Text(type),
+                        child: Text(_assetTypeLabel(type)),
                       ),
                     ),
                   ],
-                  onChanged: (value) => setState(() {
-                    _assetTypeFilter = value ?? 'all';
-                    _visibleLimit = 24;
-                  }),
+                  onChanged: (value) =>
+                      _applyRegistryFilters(type: value ?? 'all'),
                 ),
               ),
               const SizedBox(width: 8),
@@ -4137,14 +4146,14 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                   value: _assetChannelFilter,
                   isExpanded: true,
                   decoration: const InputDecoration(
-                    labelText: 'القناة',
+                    labelText: 'مكان الاستخدام',
                     isDense: true,
                     border: OutlineInputBorder(),
                   ),
                   items: [
                     const DropdownMenuItem(
                       value: 'all',
-                      child: Text('كل القنوات'),
+                      child: Text('كل أماكن الاستخدام'),
                     ),
                     ..._channels.map(
                       (channel) => DropdownMenuItem(
@@ -4153,14 +4162,127 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                       ),
                     ),
                   ],
-                  onChanged: (value) => setState(() {
-                    _assetChannelFilter = value ?? 'all';
-                    _visibleLimit = 24;
-                  }),
+                  onChanged: (value) =>
+                      _applyRegistryFilters(channel: value ?? 'all'),
                 ),
               ),
             ],
           ),
+          const SizedBox(height: 8),
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            title: const Text(
+              'فلاتر إضافية',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+            subtitle: const Text(
+              'المجموعة • المستوى • آخر تحديث',
+              style: TextStyle(fontSize: 11.5),
+            ),
+            children: [
+              TextField(
+                controller: _assetFamilySearch,
+                textDirection: TextDirection.ltr,
+                onTap: () => _selectAll(_assetFamilySearch),
+                onSubmitted: (value) =>
+                    _applyRegistryFilters(family: value),
+                decoration: InputDecoration(
+                  labelText: 'المجموعة',
+                  hintText: 'مثال: wealth أو vip أو game',
+                  prefixIcon: const Icon(Icons.folder_copy_outlined),
+                  suffixIcon: IconButton(
+                    tooltip: 'تطبيق',
+                    onPressed: () => _applyRegistryFilters(
+                      family: _assetFamilySearch.text,
+                    ),
+                    icon: const Icon(Icons.search_rounded),
+                  ),
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _assetLevelSearch,
+                textDirection: TextDirection.ltr,
+                onTap: () => _selectAll(_assetLevelSearch),
+                onSubmitted: (value) =>
+                    _applyRegistryFilters(level: value),
+                decoration: InputDecoration(
+                  labelText: 'المستوى أو الفئة',
+                  hintText: 'مثال: lv26_30',
+                  prefixIcon: const Icon(Icons.stairs_outlined),
+                  suffixIcon: IconButton(
+                    tooltip: 'تطبيق',
+                    onPressed: () => _applyRegistryFilters(
+                      level: _assetLevelSearch.text,
+                    ),
+                    icon: const Icon(Icons.search_rounded),
+                  ),
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: _assetUpdatedWindow,
+                decoration: const InputDecoration(
+                  labelText: 'آخر تحديث',
+                  prefixIcon: Icon(Icons.schedule_rounded),
+                  border: OutlineInputBorder(),
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'all',
+                    child: Text('أي وقت'),
+                  ),
+                  DropdownMenuItem(
+                    value: '7d',
+                    child: Text('آخر 7 أيام'),
+                  ),
+                  DropdownMenuItem(
+                    value: '30d',
+                    child: Text('آخر 30 يوم'),
+                  ),
+                  DropdownMenuItem(
+                    value: '90d',
+                    child: Text('آخر 90 يوم'),
+                  ),
+                ],
+                onChanged: (value) => _applyRegistryFilters(
+                  updatedWindow: value ?? 'all',
+                ),
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: _clearRegistryFilters,
+                  icon: const Icon(Icons.filter_alt_off_outlined),
+                  label: const Text('مسح كل الفلاتر'),
+                ),
+              ),
+            ],
+          ),
+          if (_registryScanLimitReached) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.amberAccent.withValues(alpha: .06),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Colors.amberAccent.withValues(alpha: .18),
+                ),
+              ),
+              child: const Text(
+                'للحفاظ على سرعة الاستديو تم فحص جزء محدد من السجل. '
+                'استخدم فلترًا أدق أو حمّل الصفحة التالية إذا لم تجد الأصل المطلوب.',
+                style: TextStyle(
+                  color: Colors.amberAccent,
+                  fontSize: 10.5,
+                ),
+              ),
+            ),
+          ],
           if (warnings.isNotEmpty) ...[
             const SizedBox(height: 10),
             ExpansionTile(
