@@ -1070,6 +1070,394 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     }
   }
 
+  Future<Map<String, dynamic>> _loadManifestForAsset(
+    Map<String, dynamic> asset,
+  ) async {
+    final key = (asset['assetKey'] ?? '').toString().trim();
+    if (key.isEmpty) return <String, dynamic>{};
+    final body = await _loadAssetInsight(key, 'manifest');
+    final manifest = body['manifest'] is Map
+        ? Map<String, dynamic>.from(body['manifest'] as Map)
+        : <String, dynamic>{};
+    if (mounted) {
+      setState(() => _activeManifest = manifest);
+    }
+    return manifest;
+  }
+
+  Map<String, dynamic>? _loadedAssetByKey(String key) {
+    for (final asset in _assets) {
+      if ((asset['assetKey'] ?? '').toString() == key) return asset;
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> _fetchAssetByKey(String key) async {
+    final loaded = _loadedAssetByKey(key);
+    if (loaded != null) return loaded;
+    final uri = _endpoint.replace(queryParameters: {'assetKey': key});
+    final response = await http.get(
+      uri,
+      headers: {'authorization': 'Bearer ${await _token()}'},
+    );
+    final decoded =
+        response.body.isEmpty ? <String, dynamic>{} : jsonDecode(response.body);
+    final body = decoded is Map<String, dynamic>
+        ? decoded
+        : <String, dynamic>{};
+    if (response.statusCode >= 200 &&
+        response.statusCode < 300 &&
+        body['ok'] == true &&
+        body['asset'] is Map) {
+      return Map<String, dynamic>.from(body['asset'] as Map);
+    }
+    return null;
+  }
+
+  Future<void> _openNextManifestAsset() async {
+    final editing = _editingAsset;
+    if (editing == null) return;
+    setState(() => _busy = true);
+    try {
+      final manifest =
+          _activeManifest ?? await _loadManifestForAsset(editing);
+      final assets = manifest['assets'] is List
+          ? (manifest['assets'] as List)
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList(growable: false)
+          : <Map<String, dynamic>>[];
+      final currentKey =
+          (editing['assetKey'] ?? '').toString().trim();
+      final index = assets.indexWhere(
+        (item) => (item['assetKey'] ?? '').toString() == currentKey,
+      );
+      if (assets.isEmpty || index < 0) {
+        if (mounted) {
+          setState(() => _message =
+              'تعذر تحديد الأصل التالي من الـManifest الرسمي.');
+        }
+        return;
+      }
+
+      Map<String, dynamic>? nextSpec;
+      for (var offset = 1; offset < assets.length; offset++) {
+        final candidate = assets[(index + offset) % assets.length];
+        if ((candidate['assetKey'] ?? '').toString().trim().isNotEmpty) {
+          nextSpec = candidate;
+          break;
+        }
+      }
+      if (nextSpec == null) return;
+      final nextKey = (nextSpec['assetKey'] ?? '').toString().trim();
+      final nextAsset = await _fetchAssetByKey(nextKey);
+      if (!mounted) return;
+      if (nextAsset == null) {
+        setState(() => _message =
+            'الأصل التالي $nextKey موجود في الـManifest لكنه غير مسجل بعد.');
+        return;
+      }
+      _beginEditAsset(nextAsset);
+      setState(() {
+        _activeManifest = manifest;
+        _message = 'تم فتح الأصل التالي في نفس الدفعة.';
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _message = 'تعذر فتح الأصل التالي: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<Map<String, dynamic>> _prepareBatchFile(
+    XFile file,
+    Map<String, dynamic> spec,
+  ) async {
+    final sourceBytes = await file.readAsBytes();
+    final decoded = img.decodeImage(sourceBytes);
+    if (decoded == null) {
+      throw StateError('تعذر قراءة الصورة.');
+    }
+
+    final fileName = (spec['fileName'] ?? '').toString().trim();
+    final directory = ControlAssetPolicy.normalizeDirectory(
+      (spec['directory'] ?? '').toString(),
+    );
+    final extension = _extensionOf(fileName);
+    if (!ControlAssetPolicy.allowedExtensions.contains(extension)) {
+      throw StateError('امتداد الهدف غير مدعوم.');
+    }
+
+    final sourceExtension = _extensionOf(file.name);
+    final animated = decoded.numFrames > 1;
+    Uint8List output;
+    int width;
+    int height;
+
+    if (animated) {
+      if (sourceExtension != extension) {
+        throw StateError(
+          'الملف متحرك؛ يجب أن يطابق امتداد الهدف للحفاظ على الحركة.',
+        );
+      }
+      if (sourceBytes.length > ControlAssetPolicy.maxBytes) {
+        throw StateError('حجم الملف المتحرك أكبر من الحد.');
+      }
+      output = sourceBytes;
+      width = decoded.width;
+      height = decoded.height;
+    } else {
+      final prepared =
+          _prepareDimensionsForDirectory(decoded, directory);
+      final encoded = _encodeForTarget(prepared, extension);
+      if (encoded == null) {
+        throw StateError('تعذر ضغط الملف تحت الحد المسموح.');
+      }
+      output = encoded;
+      width = prepared.width;
+      height = prepared.height;
+    }
+
+    final expectedWidth = (spec['width'] as num?)?.toInt();
+    final expectedHeight = (spec['height'] as num?)?.toInt();
+    if (expectedWidth != null &&
+        expectedHeight != null &&
+        expectedWidth > 0 &&
+        expectedHeight > 0 &&
+        (width != expectedWidth || height != expectedHeight)) {
+      throw StateError(
+        'المقاس $width×$height لا يطابق المطلوب '
+        '$expectedWidth×$expectedHeight.',
+      );
+    }
+
+    return {
+      'bytes': output,
+      'mimeType': _mimeForExtension(extension),
+      'width': width,
+      'height': height,
+      'animated': animated,
+    };
+  }
+
+  Future<bool> _verifyRawUrl(String rawUrl) async {
+    if (rawUrl.trim().isEmpty) return false;
+    try {
+      final separator = rawUrl.contains('?') ? '&' : '?';
+      final response = await http.get(
+        Uri.parse(
+          '$rawUrl${separator}batchVerify=${DateTime.now().microsecondsSinceEpoch}',
+        ),
+        headers: const {'cache-control': 'no-cache'},
+      );
+      return response.statusCode >= 200 &&
+          response.statusCode < 300 &&
+          response.bodyBytes.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _runBatchUpload(Map<String, dynamic> asset) async {
+    if (_batchBusy || _busy) return;
+    setState(() {
+      _batchBusy = true;
+      _batchProgressLabel = 'جارٍ تحميل Manifest الدفعة...';
+      _batchResults = const [];
+    });
+
+    try {
+      final manifest = await _loadManifestForAsset(asset);
+      final specs = manifest['assets'] is List
+          ? (manifest['assets'] as List)
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .take(40)
+              .toList(growable: false)
+          : <Map<String, dynamic>>[];
+      if (specs.length <= 1) {
+        throw StateError(
+          'لم يتم العثور على دفعة متعددة الأصول لهذا الأصل.',
+        );
+      }
+
+      final picked = await ImagePicker().pickMultiImage();
+      if (picked.isEmpty) return;
+      final files = picked.take(12).toList(growable: false);
+      final byName = <String, XFile>{
+        for (final file in files) file.name.toLowerCase(): file,
+      };
+
+      final initial = <Map<String, dynamic>>[];
+      var matched = 0;
+      for (final spec in specs) {
+        final fileName = (spec['fileName'] ?? '').toString().trim();
+        final file = byName[fileName.toLowerCase()];
+        if (file != null) matched++;
+        initial.add({
+          ...spec,
+          'batchState': file == null ? 'Missing' : 'Ready',
+          'localFile': file?.name,
+        });
+      }
+
+      if (!mounted) return;
+      final proceed = await showDialog<bool>(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              title: const Text('تأكيد Batch Upload'),
+              content: Text(
+                'الدفعة: ${manifest['batch'] ?? manifest['tier'] ?? '—'}\n'
+                'المتوقع: ${specs.length} أصل\n'
+                'المطابق بالاسم: $matched\n'
+                'المحدد من الهاتف: ${files.length}\n\n'
+                'سيتم نشر الملفات المطابقة فقط، بالتتابع ملفًا واحدًا كل مرة لتقليل الضغط.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('إلغاء'),
+                ),
+                FilledButton(
+                  onPressed: matched == 0
+                      ? null
+                      : () => Navigator.pop(dialogContext, true),
+                  child: const Text('ابدأ النشر'),
+                ),
+              ],
+            ),
+          ) ??
+          false;
+      if (!proceed) {
+        setState(() => _batchResults = initial);
+        return;
+      }
+
+      final results = initial
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList(growable: false);
+      setState(() => _batchResults = results);
+
+      var completed = 0;
+      for (var i = 0; i < results.length; i++) {
+        final item = results[i];
+        if (item['batchState'] != 'Ready') continue;
+        final fileName = (item['fileName'] ?? '').toString();
+        final file = byName[fileName.toLowerCase()];
+        if (file == null) continue;
+
+        setState(() {
+          item['batchState'] = 'Uploading';
+          _batchProgressLabel =
+              'جارٍ معالجة ${completed + 1} من $matched • $fileName';
+        });
+
+        try {
+          final prepared = await _prepareBatchFile(file, item);
+          final templateId = (item['templateId'] ?? '').toString().trim();
+          final assetType = (item['assetType'] ?? '').toString().trim();
+          final channels = item['channels'] is List
+              ? (item['channels'] as List).map((e) => e.toString()).toList()
+              : <String>[];
+          if (templateId.isEmpty ||
+              assetType.isEmpty ||
+              channels.isEmpty) {
+            throw StateError(
+              'بيانات Template/Channels غير مكتملة في Registry.',
+            );
+          }
+
+          final response = await http.post(
+            _endpoint,
+            headers: {
+              'authorization': 'Bearer ${await _token()}',
+              'content-type': 'application/json',
+            },
+            body: jsonEncode({
+              'action': 'upload',
+              'studioVersion': _studioVersion,
+              'assetType': assetType,
+              'templateId': templateId,
+              'channels': channels,
+              'publish': true,
+              'assetKey': (item['assetKey'] ?? '').toString(),
+              'directory': (item['directory'] ?? '').toString(),
+              'fileName': fileName,
+              'mimeType': prepared['mimeType'],
+              'contentBase64':
+                  base64Encode(prepared['bytes'] as Uint8List),
+              'mode': item['mode'] == 'bundled' ? 'bundled' : 'remote',
+              'reason': 'Batch replace from Shadow Asset Studio',
+              'idempotencyKey':
+                  'asset_batch_${DateTime.now().microsecondsSinceEpoch}_$i',
+            }),
+          );
+          final decoded = response.body.isEmpty
+              ? <String, dynamic>{}
+              : jsonDecode(response.body);
+          final body = decoded is Map<String, dynamic>
+              ? decoded
+              : <String, dynamic>{};
+          if (response.statusCode >= 200 &&
+              response.statusCode < 300 &&
+              body['ok'] == true) {
+            final verified =
+                await _verifyRawUrl((body['rawUrl'] ?? '').toString());
+            setState(() {
+              item['batchState'] =
+                  verified ? 'Verified' : 'Published';
+              item['note'] = verified
+                  ? 'Live verification PASS'
+                  : 'Published; live verification pending';
+            });
+          } else {
+            setState(() {
+              item['batchState'] = 'Failed';
+              item['note'] =
+                  (body['code'] ?? 'http_${response.statusCode}').toString();
+            });
+          }
+        } catch (e) {
+          if (mounted) {
+            setState(() {
+              item['batchState'] = 'Failed';
+              item['note'] = e.toString();
+            });
+          }
+        }
+
+        completed++;
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      await _loadAssets();
+      if (mounted) {
+        final verified =
+            results.where((item) => item['batchState'] == 'Verified').length;
+        final failed =
+            results.where((item) => item['batchState'] == 'Failed').length;
+        setState(() {
+          _batchProgressLabel =
+              'انتهت الدفعة • Verified $verified • Failed $failed';
+          _message = failed == 0
+              ? 'انتهى Batch Upload بدون أخطاء في الملفات المطابقة.'
+              : 'انتهى Batch Upload مع $failed ملف يحتاج مراجعة.';
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _batchProgressLabel = null;
+          _message = 'تعذر تشغيل Batch Upload: $e';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _batchBusy = false);
+    }
+  }
+
   Future<Map<String, dynamic>> _loadAssetInsight(
     String assetKey,
     String include,
