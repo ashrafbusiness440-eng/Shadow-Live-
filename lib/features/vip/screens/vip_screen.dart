@@ -6,6 +6,7 @@ import '../../../core/assets/shadow_asset_registry.dart';
 import '../../../utils/compact_number.dart';
 import '../../profile/widgets/level_asset_image.dart';
 import '../services/vip_service.dart';
+import 'vip_fancy_id_screen.dart';
 
 typedef VipSummaryLoader = Future<VipSummaryData> Function();
 typedef VipGrowthBuyer = Future<VipSummaryData> Function({
@@ -300,6 +301,41 @@ class _VipScreenState extends State<VipScreen> {
           if (cosmetics.isNotEmpty) const SizedBox(height: 14),
           _benefitsCard(benefits, locked),
           const SizedBox(height: 14),
+          if (summary.effectiveVipLevel >= 3) ...[
+            const SizedBox(height: 14),
+            ListTile(
+              key: const Key('vip-fancy-id-open'),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+                side: const BorderSide(color: Color(0x33FFD166)),
+              ),
+              tileColor: const Color(0xFF101622),
+              leading: const Icon(
+                Icons.confirmation_number_rounded,
+                color: Color(0xFFFFD166),
+              ),
+              title: const Text(
+                'الرقم الفاخر',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              subtitle: const Text(
+                'اختيار وإدارة Fancy ID منفصل عن Public ID الأساسي',
+                style: TextStyle(color: Colors.white54),
+              ),
+              trailing: const Icon(
+                Icons.chevron_left_rounded,
+                color: Colors.white38,
+              ),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const VipFancyIdScreen(),
+                ),
+              ),
+            ),
+          ],
           _statusCard(summary),
         ],
       ),
