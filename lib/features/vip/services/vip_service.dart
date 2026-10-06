@@ -32,6 +32,10 @@ class VipSummaryData {
     this.hideGameWinBanner = false,
     this.canHideBetWinNotification = false,
     this.hideBetWinNotification = false,
+    this.canCustomizeVipFrame = false,
+    this.vipProfileFrameLevel = 0,
+    this.frameCustomizationChangedAtMs = 0,
+    this.nextFrameCustomizationAtMs = 0,
   });
 
   final int effectiveVipLevel;
@@ -61,6 +65,10 @@ class VipSummaryData {
   final bool hideGameWinBanner;
   final bool canHideBetWinNotification;
   final bool hideBetWinNotification;
+  final bool canCustomizeVipFrame;
+  final int vipProfileFrameLevel;
+  final int frameCustomizationChangedAtMs;
+  final int nextFrameCustomizationAtMs;
 
   factory VipSummaryData.fromJson(Map<String, dynamic> json) {
     int value(String key) {
@@ -98,6 +106,10 @@ class VipSummaryData {
       hideGameWinBanner: json['hideGameWinBanner'] == true,
       canHideBetWinNotification: json['canHideBetWinNotification'] == true,
       hideBetWinNotification: json['hideBetWinNotification'] == true,
+      canCustomizeVipFrame: json['canCustomizeVipFrame'] == true,
+      vipProfileFrameLevel: value('vipProfileFrameLevel').clamp(0, 10).toInt(),
+      frameCustomizationChangedAtMs: value('frameCustomizationChangedAtMs'),
+      nextFrameCustomizationAtMs: value('nextFrameCustomizationAtMs'),
     );
   }
 
@@ -114,6 +126,10 @@ class VipSummaryData {
     bool? hideGameWinBanner,
     bool? canHideBetWinNotification,
     bool? hideBetWinNotification,
+    bool? canCustomizeVipFrame,
+    int? vipProfileFrameLevel,
+    int? frameCustomizationChangedAtMs,
+    int? nextFrameCustomizationAtMs,
   }) {
     return VipSummaryData(
       effectiveVipLevel: effectiveVipLevel,
@@ -150,6 +166,14 @@ class VipSummaryData {
           canHideBetWinNotification ?? this.canHideBetWinNotification,
       hideBetWinNotification:
           hideBetWinNotification ?? this.hideBetWinNotification,
+      canCustomizeVipFrame:
+          canCustomizeVipFrame ?? this.canCustomizeVipFrame,
+      vipProfileFrameLevel:
+          vipProfileFrameLevel ?? this.vipProfileFrameLevel,
+      frameCustomizationChangedAtMs:
+          frameCustomizationChangedAtMs ?? this.frameCustomizationChangedAtMs,
+      nextFrameCustomizationAtMs:
+          nextFrameCustomizationAtMs ?? this.nextFrameCustomizationAtMs,
     );
   }
 }
@@ -255,6 +279,35 @@ class Vip10GlobalEntryState {
         alreadyPublished: json['alreadyPublished'] == true,
         dayKey: (json['dayKey'] ?? '').toString(),
       );
+}
+
+class VipFrameCustomizationState {
+  const VipFrameCustomizationState({
+    required this.vipProfileFrameLevel,
+    required this.frameCustomizationChangedAtMs,
+    required this.nextFrameCustomizationAtMs,
+    required this.effectiveVipLevel,
+  });
+
+  final int vipProfileFrameLevel;
+  final int frameCustomizationChangedAtMs;
+  final int nextFrameCustomizationAtMs;
+  final int effectiveVipLevel;
+
+  factory VipFrameCustomizationState.fromJson(Map<String, dynamic> json) {
+    int value(String key) {
+      final raw = json[key];
+      if (raw is num) return raw.toInt();
+      return int.tryParse(raw?.toString() ?? '') ?? 0;
+    }
+
+    return VipFrameCustomizationState(
+      vipProfileFrameLevel: value('vipProfileFrameLevel').clamp(0, 10).toInt(),
+      frameCustomizationChangedAtMs: value('frameCustomizationChangedAtMs'),
+      nextFrameCustomizationAtMs: value('nextFrameCustomizationAtMs'),
+      effectiveVipLevel: value('effectiveVipLevel').clamp(0, 10).toInt(),
+    );
+  }
 }
 
 class VipService {
@@ -371,6 +424,14 @@ class VipService {
     return Vip10GlobalEntryState.fromJson(
       await _post({'action': 'publishVip10GlobalEntry'}),
     );
+  }
+
+  Future<VipFrameCustomizationState> setVipProfileFrame(int frameLevel) async {
+    final body = await _post({
+      'action': 'setVipProfileFrame',
+      'frameLevel': frameLevel,
+    });
+    return VipFrameCustomizationState.fromJson(body);
   }
 
   void close() {
