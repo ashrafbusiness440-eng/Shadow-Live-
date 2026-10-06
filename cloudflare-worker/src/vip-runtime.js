@@ -22,6 +22,8 @@ export function vipStateFromUser(user = {}) {
     earnedVipExpiresAtMs: timestampToEpochMs(user.earnedVipExpiresAt),
     adminGrantVipLevel: Number(user.adminGrantVipLevel || 0),
     adminGrantExpiresAtMs: timestampToEpochMs(user.adminGrantExpiresAt),
+    trialVipLevel: Number(user.trialVipLevel || 0),
+    trialVipExpiresAtMs: timestampToEpochMs(user.trialVipExpiresAt),
     growthPoints: Number(user.vipGrowthPoints || 0),
     maintenancePoints: Number(user.vipMaintenancePoints || 0),
   };
@@ -30,9 +32,11 @@ export function vipStateFromUser(user = {}) {
 export function vipUserPatch(state, now = new Date()) {
   const earnedExpiry = Number(state?.earnedVipExpiresAtMs || 0);
   const grantExpiry = Number(state?.adminGrantExpiresAtMs || 0);
+  const trialExpiry = Number(state?.trialVipExpiresAtMs || 0);
   const source = String(state?.effectiveVipSource || "none");
   const effectiveExpiry =
     source === "admin_grant" ? grantExpiry :
+    source === "trial_card" ? trialExpiry :
     source === "progression" ? earnedExpiry :
     0;
 
@@ -40,8 +44,10 @@ export function vipUserPatch(state, now = new Date()) {
     earnedVipLevel: Number(state?.earnedVipLevel || 0),
     effectiveVipLevel: Number(state?.effectiveVipLevel || 0),
     adminGrantVipLevel: Number(state?.adminGrantVipLevel || 0),
+    trialVipLevel: Number(state?.trialVipLevel || 0),
     earnedVipExpiresAt: earnedExpiry > 0 ? new Date(earnedExpiry) : null,
     adminGrantExpiresAt: grantExpiry > 0 ? new Date(grantExpiry) : null,
+    trialVipExpiresAt: trialExpiry > 0 ? new Date(trialExpiry) : null,
     effectiveVipSource: source,
     vipGrowthPoints: Number(state?.growthPoints || 0),
     vipMaintenancePoints: Number(state?.maintenancePoints || 0),
