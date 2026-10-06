@@ -10,6 +10,7 @@ import '../screens/user_level_screen.dart';
 import '../../gift/widgets/direct_gift_sheet.dart';
 import '../../vip/utils/vip_public_state.dart';
 import '../../vip/widgets/vip_avatar_frame.dart';
+import '../../vip/widgets/vip_profile_avatar.dart';
 import '../services/follow_service.dart';
 import '../services/profile_action_service.dart';
 import '../services/user_level_service.dart';
@@ -158,13 +159,8 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
     super.dispose();
   }
 
-  ImageProvider? _avatar(Map<String, dynamic> data) {
-    final photo = (data['profileImageUrl'] ?? '').toString().trim();
-    final asset = (data['profileAvatarAsset'] ?? '').toString().trim();
-    if (photo.isNotEmpty) return NetworkImage(photo);
-    if (asset.isNotEmpty) return AssetImage(asset);
-    return null;
-  }
+  ImageProvider? _avatar(Map<String, dynamic> data) =>
+      effectiveProfileAvatarProvider(data);
 
   Future<void> _gift(BuildContext context, String name) => showDirectGiftSheet(
         context,
