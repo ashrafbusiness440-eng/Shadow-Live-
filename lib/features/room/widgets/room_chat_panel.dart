@@ -196,13 +196,16 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
 
   Widget _bubble(RoomChatMessage message) {
     if (message.type == 'gift') {
+      final vipGiftKey = widget.roomEffectsEnabled && message.vipLevel >= 4
+          ? ShadowAssetKeys.vipGiftVisual(message.vipLevel.clamp(4, 10))
+          : '';
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 5),
         child: Align(
           alignment: AlignmentDirectional.centerStart,
           child: Container(
             constraints: const BoxConstraints(maxWidth: 320),
-            padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+            clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
@@ -215,36 +218,55 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
                 color: const Color(0xFFFFD54A).withValues(alpha: .45),
               ),
             ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
+            child: Stack(
               children: [
-                SizedBox(
-                  width: 42,
-                  height: 42,
-                  child: _giftVisual(message),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        message.text,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
+                if (vipGiftKey.isNotEmpty)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Opacity(
+                        opacity: .34,
+                        child: CosmeticAssetVisual(
+                          assetKey: vipGiftKey,
+                          fit: BoxFit.fill,
                         ),
                       ),
-                      if (message.giftTotalCost > 0)
-                        Text(
-                          '🪙 ' + message.giftTotalCost.toString(),
-                          style: const TextStyle(
-                            color: Color(0xFFFFD54A),
-                            fontSize: 10,
-                            fontWeight: FontWeight.w900,
-                          ),
+                    ),
+                  ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 42,
+                        height: 42,
+                        child: _giftVisual(message),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              message.text,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            if (message.giftTotalCost > 0)
+                              Text(
+                                '🪙 ' + message.giftTotalCost.toString(),
+                                style: const TextStyle(
+                                  color: Color(0xFFFFD54A),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                          ],
                         ),
+                      ),
                     ],
                   ),
                 ),
