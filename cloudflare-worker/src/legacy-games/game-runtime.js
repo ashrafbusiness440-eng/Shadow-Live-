@@ -18,6 +18,7 @@ import {
   gameLevelAfterWager,
   loadUserLevelPolicy,
 } from "../user-level-policy.js";
+import { vip4PrivacyPreferencesFromUser } from "../vip-entitlements.js";
 
 const clean=(value)=>String(value??"").trim();
 const validRoomId=(value)=>/^[A-Za-z0-9_-]{1,180}$/.test(clean(value));
@@ -403,6 +404,15 @@ function publicOperation(data={}){
     outcomeId:data.status==="settled"?clean(data.outcomeId):null,
     reels:data.status==="settled"&&Array.isArray(data.reels)?data.reels:[],
     balanceAfter:Number(data.balanceAfter||0),
+    publicWinBannerHidden:data.publicWinBannerHidden===true,
+    publicBetWinNotificationHidden:data.publicBetWinNotificationHidden===true,
+  };
+}
+
+export function publicGameWinVisibilityFromOperation(data={}){
+  return {
+    showGameWinBanner:data.publicWinBannerHidden!==true,
+    showBetWinNotification:data.publicBetWinNotificationHidden!==true,
   };
 }
 
@@ -550,6 +560,7 @@ export async function placeGameBet(
       : [];
 
     const user=userSnap.data()||{};
+    const vipPrivacy=vip4PrivacyPreferencesFromUser(user,nowMs);
     const gameLevelState=gameLevelAfterWager(gameLevelPolicy,{
       gamePoints:user.gamePoints??0,
       wagerCoins:stake,
@@ -602,6 +613,8 @@ export async function placeGameBet(
       decayDaysAppliedBeforeWager:
         gameLevelState.decayDaysAppliedBeforeWager,
       payoutCoins:payout,
+      publicWinBannerHidden:vipPrivacy.hideGameWinBanner,
+      publicBetWinNotificationHidden:vipPrivacy.hideBetWinNotification,
       outcomeId:resolved.outcomeId,
       reels,
       entropyDigest:resolved.entropyDigest,
@@ -712,6 +725,8 @@ export async function placeGameBet(
         selections,
         totalStakeCoins:stake,
         payoutCoins:payout,
+        publicWinBannerHidden:vipPrivacy.hideGameWinBanner,
+        publicBetWinNotificationHidden:vipPrivacy.hideBetWinNotification,
         outcomeId:resolved.outcomeId,
         reels,
         settledAt:now,
@@ -744,9 +759,11 @@ async function settleOperationRef(db,operationRef,nowMs,{workerTag=""}={}){
     const userRef=db.collection("users").doc(uid);
     const userSnap=await tx.get(userRef);
     if(!userSnap.exists)throw Error("user_not_found");
+    const user=userSnap.data()||{};
+    const vipPrivacy=vip4PrivacyPreferencesFromUser(user,nowMs);
 
     const payout=Math.max(0,Number(operation.payoutCoins||0));
-    const before=Number(userSnap.data()?.coins??userSnap.data()?.balance??0);
+    const before=Number(user.coins??user.balance??0);
     if(!Number.isSafeInteger(before)||before<0||!Number.isSafeInteger(payout)){
       throw Error("invalid_wallet_state");
     }
@@ -771,6 +788,8 @@ async function settleOperationRef(db,operationRef,nowMs,{workerTag=""}={}){
       balanceAfter:after,
       settledAt:now,
       updatedAt:now,
+      publicWinBannerHidden:vipPrivacy.hideGameWinBanner,
+      publicBetWinNotificationHidden:vipPrivacy.hideBetWinNotification,
       ...(workerTag?{settlementWorker:workerTag}:{}),
     });
     tx.delete(settlementQueueRef);
@@ -808,6 +827,8 @@ async function settleOperationRef(db,operationRef,nowMs,{workerTag=""}={}){
       selections:Array.isArray(operation.selections)?operation.selections:[],
       totalStakeCoins:Number(operation.totalStakeCoins||0),
       payoutCoins:payout,
+      publicWinBannerHidden:vipPrivacy.hideGameWinBanner,
+      publicBetWinNotificationHidden:vipPrivacy.hideBetWinNotification,
       outcomeId:clean(operation.outcomeId),
       reels:Array.isArray(operation.reels)?operation.reels:[],
       settledAt:now,
