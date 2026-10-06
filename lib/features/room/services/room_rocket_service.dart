@@ -28,6 +28,48 @@ class RoomRocketRequestException implements Exception {
   String toString() => 'RoomRocketRequestException($code, $statusCode)';
 }
 
+class GlobalAppEvent {
+  const GlobalAppEvent({
+    required this.id,
+    required this.kind,
+    required this.startsAtMs,
+    required this.endsAtMs,
+    required this.uid,
+    required this.displayName,
+    required this.profileImageUrl,
+    required this.publicId,
+    required this.vipLevel,
+    required this.assetKey,
+  });
+
+  final String id;
+  final String kind;
+  final int startsAtMs;
+  final int endsAtMs;
+  final String uid;
+  final String displayName;
+  final String profileImageUrl;
+  final String publicId;
+  final int vipLevel;
+  final String assetKey;
+
+  bool activeAt(int nowMs) => nowMs >= startsAtMs && nowMs < endsAtMs;
+
+  factory GlobalAppEvent.fromMap(Map<String, dynamic> data) => GlobalAppEvent(
+        id: (data['eventId'] ?? data['id'] ?? '').toString(),
+        kind: (data['kind'] ?? '').toString(),
+        startsAtMs: (data['startsAtMs'] as num?)?.toInt() ?? 0,
+        endsAtMs: (data['endsAtMs'] as num?)?.toInt() ?? 0,
+        uid: (data['uid'] ?? '').toString(),
+        displayName:
+            (data['displayName'] ?? 'مستخدم Shadow Live').toString(),
+        profileImageUrl: (data['profileImageUrl'] ?? '').toString(),
+        publicId: (data['publicId'] ?? '').toString(),
+        vipLevel: (data['vipLevel'] as num?)?.toInt() ?? 0,
+        assetKey: (data['assetKey'] ?? '').toString(),
+      );
+}
+
 class RoomRocketEvent {
   const RoomRocketEvent({
     required this.id,
@@ -159,7 +201,10 @@ class RoomRocketService {
 
   final StreamController<List<RoomRocketEvent>> _feedController =
       StreamController<List<RoomRocketEvent>>.broadcast();
+  final StreamController<List<GlobalAppEvent>> _globalFeedController =
+      StreamController<List<GlobalAppEvent>>.broadcast();
   final Map<String, RoomRocketEvent> _feedEvents = <String, RoomRocketEvent>{};
+  final Map<String, GlobalAppEvent> _globalFeedEvents = <String, GlobalAppEvent>{};
 
   StreamSubscription<User?>? _authSubscription;
   RoomPresenceSocketConnection? _feedSocket;
@@ -168,6 +213,11 @@ class RoomRocketService {
   int _feedGeneration = 0;
   int _feedReconnectAttempt = 0;
   bool _feedStarted = false;
+
+  Stream<List<GlobalAppEvent>> watchGlobalEvents() {
+    watchRecentEvents();
+    return _globalFeedController.stream;
+  }
 
   Stream<List<RoomRocketEvent>> watchRecentEvents() {
     if (!_feedStarted) {
@@ -181,7 +231,9 @@ class RoomRocketService {
 
         if (user == null) {
           _feedEvents.clear();
+          _globalFeedEvents.clear();
           _emitFeedEvents();
+          _emitGlobalFeedEvents();
           unawaited(_closeFeedSocket());
           return;
         }
@@ -317,12 +369,25 @@ class RoomRocketService {
           }
           _emitFeedEvents();
         }
+        final rawGlobal = payload['recentGlobalEvents'];
+        if (rawGlobal is List) {
+          _globalFeedEvents.clear();
+          for (final rawEvent in rawGlobal.whereType<Map>()) {
+            _upsertGlobalFeedEvent(Map<String, dynamic>.from(rawEvent));
+          }
+          _emitGlobalFeedEvents();
+        }
         return;
       }
 
       if (type == 'room.rocket_explosion') {
         _upsertFeedEvent(payload);
         _emitFeedEvents();
+        return;
+      }
+      if (type == 'app.global_event') {
+        _upsertGlobalFeedEvent(payload);
+        _emitGlobalFeedEvents();
       }
     } catch (_) {
       // A malformed/future realtime message must never affect room audio.
@@ -333,6 +398,24 @@ class RoomRocketService {
     final event = RoomRocketEvent.fromMap(data);
     if (event.id.isEmpty || event.roomId.isEmpty) return;
     _feedEvents[event.id] = event;
+  }
+
+  void _upsertGlobalFeedEvent(Map<String, dynamic> data) {
+    final event = GlobalAppEvent.fromMap(data);
+    if (event.id.isEmpty || event.kind.isEmpty) return;
+    _globalFeedEvents[event.id] = event;
+  }
+
+  void _emitGlobalFeedEvents() {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    _globalFeedEvents.removeWhere(
+      (_, event) => event.endsAtMs + _feedRetentionMs <= nowMs,
+    );
+    final events = _globalFeedEvents.values.toList(growable: false)
+      ..sort((a, b) => b.startsAtMs.compareTo(a.startsAtMs));
+    if (!_globalFeedController.isClosed) {
+      _globalFeedController.add(events.take(20).toList(growable: false));
+    }
   }
 
   void _emitFeedEvents() {
@@ -447,6 +530,9 @@ class RoomRocketService {
     unawaited(_closeFeedSocket());
     if (!_feedController.isClosed) {
       unawaited(_feedController.close());
+    }
+    if (!_globalFeedController.isClosed) {
+      unawaited(_globalFeedController.close());
     }
     _client.close();
   }
