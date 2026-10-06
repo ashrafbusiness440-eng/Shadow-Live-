@@ -124,6 +124,7 @@ class VipHistoryEvent {
   const VipHistoryEvent({
     required this.source,
     required this.eventType,
+    required this.triggerType,
     required this.level,
     required this.oldVipLevel,
     required this.newVipLevel,
@@ -138,6 +139,7 @@ class VipHistoryEvent {
 
   final String source;
   final String eventType;
+  final String triggerType;
   final int level;
   final int oldVipLevel;
   final int newVipLevel;
@@ -156,6 +158,7 @@ class VipHistoryEvent {
     return VipHistoryEvent(
       source: '${json['source'] ?? ''}'.trim(),
       eventType: '${json['eventType'] ?? ''}'.trim(),
+      triggerType: '${json['triggerType'] ?? json['eventType'] ?? ''}'.trim(),
       level: value('level'),
       oldVipLevel: value('oldVipLevel'),
       newVipLevel: value('newVipLevel'),
@@ -221,6 +224,8 @@ class VipSummaryData {
     required this.coins,
     required this.purchaseGrowthPerCoin,
     required this.paidRechargeGrowthPerCoin,
+    this.serverNowMs = 0,
+    this.effectiveVipExpiresAtMs = 0,
     this.canHideRankingLists = false,
     this.hideRankingLists = false,
     this.canHideProfileVisits = false,
@@ -257,6 +262,8 @@ class VipSummaryData {
   final int coins;
   final int purchaseGrowthPerCoin;
   final int paidRechargeGrowthPerCoin;
+  final int serverNowMs;
+  final int effectiveVipExpiresAtMs;
   final bool canHideRankingLists;
   final bool hideRankingLists;
   final bool canHideProfileVisits;
@@ -301,6 +308,8 @@ class VipSummaryData {
       coins: value('coins'),
       purchaseGrowthPerCoin: value('purchaseGrowthPerCoin'),
       paidRechargeGrowthPerCoin: value('paidRechargeGrowthPerCoin'),
+      serverNowMs: value('serverNowMs'),
+      effectiveVipExpiresAtMs: value('effectiveVipExpiresAtMs'),
       canHideRankingLists: json['canHideRankingLists'] == true,
       hideRankingLists: json['hideRankingLists'] == true,
       canHideProfileVisits: json['canHideProfileVisits'] == true,
@@ -328,6 +337,8 @@ class VipSummaryData {
   VipSummaryData copyWith({
     int? trialVipLevel,
     int? trialVipExpiresAtMs,
+    int? serverNowMs,
+    int? effectiveVipExpiresAtMs,
     bool? canHideRankingLists,
     bool? hideRankingLists,
     bool? canHideProfileVisits,
@@ -365,6 +376,9 @@ class VipSummaryData {
       coins: coins,
       purchaseGrowthPerCoin: purchaseGrowthPerCoin,
       paidRechargeGrowthPerCoin: paidRechargeGrowthPerCoin,
+      serverNowMs: serverNowMs ?? this.serverNowMs,
+      effectiveVipExpiresAtMs:
+          effectiveVipExpiresAtMs ?? this.effectiveVipExpiresAtMs,
       canHideRankingLists:
           canHideRankingLists ?? this.canHideRankingLists,
       hideRankingLists: hideRankingLists ?? this.hideRankingLists,
