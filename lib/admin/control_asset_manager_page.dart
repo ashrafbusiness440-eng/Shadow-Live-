@@ -1157,11 +1157,14 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
           break;
         }
       }
-      nextSpec ??= ordered.cast<Map<String, dynamic>?>().firstWhere(
-            (candidate) =>
-                (candidate?['assetKey'] ?? '').toString().trim().isNotEmpty,
-            orElse: () => null,
-          );
+      if (nextSpec == null) {
+        for (final candidate in ordered) {
+          if ((candidate['assetKey'] ?? '').toString().trim().isNotEmpty) {
+            nextSpec = candidate;
+            break;
+          }
+        }
+      }
       if (nextSpec == null) return;
       final nextKey = (nextSpec['assetKey'] ?? '').toString().trim();
       final nextAsset = await _fetchAssetByKey(nextKey);
