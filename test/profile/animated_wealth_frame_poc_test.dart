@@ -35,6 +35,14 @@ void main() {
     expect(source.contains('disableAnimations'), isTrue);
     expect(source.contains('CustomPaint('), isTrue);
     expect(source.contains('Timer.periodic'), isFalse);
+    expect(source.contains('canvas.drawArc('), isTrue);
+    expect(source.contains('specularCore'), isTrue);
+    expect(source.contains('specularHalo'), isTrue);
+    expect(source.contains('wingPaint'), isTrue);
+    expect(source.contains('RadialGradient('), isTrue);
+    expect(source.contains('_burstEnvelope'), isTrue);
+    expect(source.contains('for (var i = 0; i < 4; i++)'), isTrue);
+    expect(source.contains('sparkleAngles'), isFalse);
   });
 
   test('equipped permanent level frame is allowed on the profile', () {
