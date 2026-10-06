@@ -40,6 +40,7 @@ export const DEFAULT_VIP_POLICY = Object.freeze({
   maxGrowthPoints: 2_788_461_538,
   paidRechargeGrowthPerCoin: 1,
   purchasedGrowthPerCoin: 3,
+  quickPurchaseOffers: Object.freeze([]),
 });
 
 function safeNonNegativeInteger(value) {
@@ -89,6 +90,67 @@ function normalizePositiveIntegers(raw, fallback, length, min, max) {
     normalized.push(number);
   }
   return normalized;
+}
+
+function clean(value) {
+  return String(value ?? "").trim();
+}
+
+export function normalizeVipQuickPurchaseOffers(
+  raw,
+  purchasedGrowthPerCoin = 3,
+) {
+  if (!Array.isArray(raw)) return [];
+  const ratio = integerOrDefault(purchasedGrowthPerCoin, 3, 1, 100);
+  const normalized = [];
+  const ids = new Set();
+  for (const item of raw.slice(0, 8)) {
+    if (!item || typeof item !== "object") continue;
+    const id = clean(item.id);
+    const growthPoints = safeNonNegativeInteger(item.growthPoints);
+    const baseCoinCost = safeNonNegativeInteger(item.baseCoinCost);
+    const sortOrder = integerOrDefault(item.sortOrder, normalized.length, 0, 1000);
+    if (
+      !/^[a-z0-9][a-z0-9_-]{1,39}$/.test(id) ||
+      ids.has(id) ||
+      growthPoints === null ||
+      growthPoints <= 0 ||
+      growthPoints % ratio !== 0
+    ) {
+      continue;
+    }
+    const finalCoinCost = growthPoints / ratio;
+    if (
+      !Number.isSafeInteger(finalCoinCost) ||
+      finalCoinCost <= 0 ||
+      baseCoinCost === null ||
+      baseCoinCost < finalCoinCost
+    ) {
+      continue;
+    }
+    ids.add(id);
+    const discountBps = baseCoinCost === 0
+      ? 0
+      : Math.max(
+          0,
+          Math.min(
+            10_000,
+            Math.floor(((baseCoinCost - finalCoinCost) * 10_000) / baseCoinCost),
+          ),
+        );
+    normalized.push({
+      id,
+      labelAr: clean(item.labelAr).slice(0, 60),
+      growthPoints,
+      baseCoinCost,
+      finalCoinCost,
+      discountBps,
+      enabled: item.enabled !== false,
+      sortOrder,
+    });
+  }
+  return normalized
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.growthPoints - b.growthPoints);
 }
 
 export function normalizeVipPolicy(raw = {}) {
@@ -144,6 +206,10 @@ export function normalizeVipPolicy(raw = {}) {
       3,
       1,
       100,
+    ),
+    quickPurchaseOffers: normalizeVipQuickPurchaseOffers(
+      data.quickPurchaseOffers,
+      integerOrDefault(data.purchasedGrowthPerCoin, 3, 1, 100),
     ),
   };
 }
