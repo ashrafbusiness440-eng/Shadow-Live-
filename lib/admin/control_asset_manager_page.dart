@@ -1994,16 +1994,44 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
   Future<bool> _confirmPublishImpact() async {
     if (!_isEditing) return true;
     final template = _selectedTemplate;
+    var directUsageCount = 0;
+    var usageTruncated = false;
+
+    try {
+      final key = _assetKey.text.trim();
+      if (key.isNotEmpty) {
+        final body = await _loadAssetInsight(key, 'usage');
+        final usage = body['usage'] is Map
+            ? Map<String, dynamic>.from(body['usage'] as Map)
+            : <String, dynamic>{};
+        directUsageCount =
+            (usage['totalReferences'] as num?)?.toInt() ?? 0;
+        usageTruncated = usage['truncated'] == true;
+      }
+    } catch (_) {
+      // Impact lookup is advisory. Publishing still requires explicit approval.
+    }
+
+    if (!mounted) return false;
+    final channelsText = _selectedChannels.isEmpty
+        ? 'غير محدد'
+        : _selectedChannels.map(_channelLabel).join(' • ');
+    final usageText = directUsageCount == 0
+        ? 'لم يظهر استخدام مباشر داخل الملفات، وقد يكون الربط تلقائيًا.'
+        : 'يعتمد عليه $directUsageCount مكان مباشر داخل المشروع'
+            '${usageTruncated ? ' أو أكثر' : ''}.';
+
     return await showDialog<bool>(
           context: context,
           builder: (dialogContext) => AlertDialog(
-            title: const Text('تأكيد استبدال الأصل الحي'),
+            title: const Text('تأكيد استبدال الأصل الحالي'),
             content: Text(
-              'سيتم استبدال الأصل تحت نفس مفتاح الأصل بدون إنشاء مفتاح جديد.\n\n'
+              'سيتم استبدال الأصل نفسه بدون تغيير الربط.\n\n'
               'مفتاح الأصل: ${_assetKey.text.trim()}\n'
               'النوع: ${template?.labelAr ?? template?.type ?? 'غير محدد'}\n'
-              'قنوات الاستخدام: ${_selectedChannels.map(_channelLabel).join(' • ')}\n\n'
-              'أي مكان يستخدم هذا المفتاح سيقرأ النسخة الجديدة بعد تحديث الكاش.',
+              'أماكن الاستخدام: $channelsText\n'
+              '$usageText\n\n'
+              'كل مكان يستخدم هذا الأصل سيظهر فيه التصميم الجديد بعد تحديث النسخة المحفوظة.',
             ),
             actions: [
               TextButton(
