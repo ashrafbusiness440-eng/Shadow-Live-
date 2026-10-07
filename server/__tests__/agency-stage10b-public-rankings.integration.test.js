@@ -51,10 +51,19 @@ test("10-B Top 10 ranks by public supportCoins, not Host financial share", async
     adminDb.collection("users").doc(hostA).set(
       user(hostA, "810001", "Host A"),
     ),
+    adminDb.collection("public_profiles").doc(hostA).set(
+      user(hostA, "810001", "Host A"),
+    ),
     adminDb.collection("users").doc(hostB).set(
       user(hostB, "810002", "Host B"),
     ),
+    adminDb.collection("public_profiles").doc(hostB).set(
+      user(hostB, "810002", "Host B"),
+    ),
     adminDb.collection("users").doc(hostC).set(
+      user(hostC, "810003", "Host C"),
+    ),
+    adminDb.collection("public_profiles").doc(hostC).set(
       user(hostC, "810003", "Host C"),
     ),
     adminDb.collection("agency_host_monthly")
@@ -175,6 +184,8 @@ test("10-B pressure contract keeps ranking query at 10 and profile reads at max 
     writes: 0,
     activeUserGets: 0,
     maxActiveUserGets: 0,
+    activeProfileGets: 0,
+    maxActiveProfileGets: 0,
   };
   const rows = Array.from({ length: PUBLIC_RANKING_MAX }, (_, index) => ({
     id: agencyId + "__2026-09__host_" + index,
@@ -205,6 +216,20 @@ test("10-B pressure contract keeps ranking query at 10 and profile reads at max 
             ownerUid: "owner",
             status: "active",
           },
+        };
+      }
+      if (path.startsWith("public_profiles/")) {
+        calls.activeProfileGets += 1;
+        calls.maxActiveProfileGets = Math.max(
+          calls.maxActiveProfileGets,
+          calls.activeProfileGets,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        calls.activeProfileGets -= 1;
+        const uid = path.replace("public_profiles/", "");
+        return {
+          exists: true,
+          data: user(uid, "820000", uid),
         };
       }
       if (path.startsWith("users/")) {
@@ -259,6 +284,7 @@ test("10-B pressure contract keeps ranking query at 10 and profile reads at max 
   assert.deepEqual(calls.queries[0].options.orderBy, [
     { field: "publicRankingKey", direction: "asc" },
   ]);
+  assert.ok(calls.maxActiveProfileGets <= 4);
   assert.ok(calls.maxActiveUserGets <= 4);
   assert.equal(calls.writes, 0);
 });
