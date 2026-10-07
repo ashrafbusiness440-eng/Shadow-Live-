@@ -8,6 +8,7 @@ import '../../../services/navigation_service.dart';
 import '../../voice/services/voice_room_session_controller.dart';
 import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../services/room_rocket_service.dart';
+import 'cosmetic_effect_widgets.dart';
 import '../../vip/services/vip_service.dart';
 
 class RoomRocketBannerHost extends StatefulWidget {
@@ -570,69 +571,85 @@ class _CelebrationBanner extends StatelessWidget {
                 ),
               ],
             ),
-            child: Row(
+            child: Stack(
+              fit: StackFit.expand,
               children: [
-                ProfileAvatarWithFrame(
-                  diameter: 44,
-                  userId: event.uid,
-                  backgroundColor: const Color(0xFF25183F),
-                  placeholderColor: Colors.white70,
-                  fallbackProfile: <String, dynamic>{
-                    'profileImageUrl': event.profileImageUrl,
-                  },
-                ),
-                if (hasSecondary) ...[
-                  Transform.translate(
-                    offset: const Offset(8, 0),
-                    child: ProfileAvatarWithFrame(
-                      diameter: 38,
-                      userId: event.secondaryUid,
+                if (event.assetKey.trim().isNotEmpty)
+                  IgnorePointer(
+                    child: Opacity(
+                      opacity: .20,
+                      child: CosmeticAssetVisual(
+                        assetKey: event.assetKey,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  ),
+                Row(
+                  children: [
+              children: [
+                    ProfileAvatarWithFrame(
+                      diameter: 44,
+                      userId: event.uid,
                       backgroundColor: const Color(0xFF25183F),
                       placeholderColor: Colors.white70,
                       fallbackProfile: <String, dynamic>{
-                        'profileImageUrl': event.secondaryProfileImageUrl,
+                        'profileImageUrl': event.profileImageUrl,
                       },
                     ),
-                  ),
-                  const SizedBox(width: 6),
-                ] else
-                  const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _headline,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
+                    if (hasSecondary) ...[
+                      Transform.translate(
+                        offset: const Offset(8, 0),
+                        child: ProfileAvatarWithFrame(
+                          diameter: 38,
+                          userId: event.secondaryUid,
+                          backgroundColor: const Color(0xFF25183F),
+                          placeholderColor: Colors.white70,
+                          fallbackProfile: <String, dynamic>{
+                            'profileImageUrl': event.secondaryProfileImageUrl,
+                          },
                         ),
                       ),
-                      Text(
-                        _message,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: _accent,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 12,
-                        ),
+                      const SizedBox(width: 6),
+                    ] else
+                      const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _headline,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          Text(
+                            _message,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: _accent,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
-                Icon(_icon, color: _accent, size: 27),
-                const SizedBox(width: 7),
-                Text(
-                  '${seconds}s',
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 11,
-                  ),
+                    ),
+                    Icon(_icon, color: _accent, size: 27),
+                    const SizedBox(width: 7),
+                    Text(
+                      '${seconds}s',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
