@@ -24,7 +24,9 @@ class RoomChatMessage {
     required this.systemKind,
     required this.vipLevel,
     required this.entryEffectKey,
-    required this.vipEmojiToken,
+    required this.animatedEmojiId,
+    required this.animatedEmojiAssetKey,
+    required this.animatedEmojiFallbackGlyph,
     required this.giftName,
     required this.giftAssetKey,
     required this.giftImageUrl,
@@ -54,7 +56,9 @@ class RoomChatMessage {
   final String systemKind;
   final int vipLevel;
   final String entryEffectKey;
-  final String vipEmojiToken;
+  final String animatedEmojiId;
+  final String animatedEmojiAssetKey;
+  final String animatedEmojiFallbackGlyph;
   final String giftName;
   final String giftAssetKey;
   final String giftImageUrl;
@@ -97,7 +101,12 @@ class RoomChatMessage {
       systemKind: (data['systemKind'] ?? '').toString(),
       vipLevel: (data['vipLevel'] as num?)?.toInt() ?? 0,
       entryEffectKey: (data['entryEffectKey'] ?? '').toString(),
-      vipEmojiToken: (data['vipEmojiToken'] ?? '').toString(),
+      animatedEmojiId:
+          (data['animatedEmojiId'] ?? data['vipEmojiToken'] ?? '').toString(),
+      animatedEmojiAssetKey:
+          (data['animatedEmojiAssetKey'] ?? '').toString(),
+      animatedEmojiFallbackGlyph:
+          (data['animatedEmojiFallbackGlyph'] ?? '').toString(),
       giftName: (data['giftName'] ?? '').toString(),
       giftAssetKey: (data['assetKey'] ?? '').toString(),
       giftImageUrl: (data['imageUrl'] ?? '').toString(),
@@ -138,7 +147,7 @@ class RoomChatService {
     String? replyPreview,
     String? replySenderUid,
     List<String> mentionUids = const [],
-    String? vipEmojiToken,
+    String? animatedEmojiId,
   }) async {
     final activeRoomId = _session.roomId.trim();
     if (!_session.active ||
@@ -152,7 +161,7 @@ class RoomChatService {
       replyPreview: replyPreview,
       replySenderUid: replySenderUid,
       mentionUids: mentionUids,
-      vipEmojiToken: vipEmojiToken,
+      animatedEmojiId: animatedEmojiId,
     );
   }
 
