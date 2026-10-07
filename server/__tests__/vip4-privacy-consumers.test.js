@@ -124,7 +124,12 @@ test("06-H game privacy stays a broadcast contract and does not alter settlement
   assert.match(source, /type:"game_payout_credit"/);
   assert.match(source, /financial_ledger/);
 
-  // 06-H must not invent a second app-wide event stream or broadcast surface.
-  assert.doesNotMatch(source, /publishGlobalAppEvents/);
-  assert.doesNotMatch(source, /app\.global_event/);
+  // Game wins now use the already-existing shared app celebration feed.
+  // Privacy still suppresses only the banner; settlement/ledger stay untouched.
+  assert.match(source, /publishGlobalAppEvents/);
+  assert.match(
+    source,
+    /operation\.publicWinBannerHidden===true/,
+  );
+  assert.doesNotMatch(source, /broadcast.*app\.global_event/i);
 });
