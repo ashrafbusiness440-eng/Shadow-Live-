@@ -19,10 +19,6 @@ import {
   loadUserLevelPolicy,
 } from "../user-level-policy.js";
 import { vip4PrivacyPreferencesFromUser } from "../vip-entitlements.js";
-import {
-  loadPublicProfilePresentations,
-  publicProfilePresentation,
-
 const clean=(value)=>String(value??"").trim();
 const validRoomId=(value)=>/^[A-Za-z0-9_-]{1,180}$/.test(clean(value));
 
@@ -427,7 +423,7 @@ function participantPublic(data={},rank=null){
     displayName:clean(data.displayName),
     photoUrl:clean(data.photoUrl),
     stakeCoins:Number.isSafeInteger(stake)&&stake>0?stake:0,
-    payoutCoins:Number.isSafeInteger(payout)&&payout>0,
+    payoutCoins:Number.isSafeInteger(payout)&&payout>0?payout:0,
     won:Number.isSafeInteger(payout)&&payout>0,
     ...(rank==null?{}:{rank}),
   };
