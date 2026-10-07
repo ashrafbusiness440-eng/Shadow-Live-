@@ -7,6 +7,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'firebase_options.dart';
 import 'utils/compact_number.dart';
+import 'features/profile/widgets/profile_avatar_with_frame.dart';
 import 'admin/control_admin_id_override.dart';
 import 'admin/agency_control_page.dart';
 import 'admin/agency_management_page.dart';
@@ -902,17 +903,26 @@ class _UserAccountOverviewCardState extends State<_UserAccountOverviewCard> {
         final roomId=text(firstValue([room['publicId'],data['personalRoomId'],data['roomId'],room['id']]));
         final agencyName=text(firstValue([agency['name'],agency['displayName'],agency['agencyName']]));
         final agencyId=text(firstValue([data['agencyId'],agency['id']]));
-        final image=avatar(data,profile,auth);
+        final fallbackImageUrl=text(firstValue([
+          profile['profileImageUrl'],data['profileImageUrl'],data['profileImage'],
+          data['avatarUrl'],auth['photoUrl'],
+        ]));
+        final fallbackAvatarAsset=text(firstValue([
+          profile['profileAvatarAsset'],data['profileAvatarAsset'],
+        ]));
 
         return Card(
           child:Padding(
             padding:const EdgeInsets.all(16),
             child:Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
               Row(crossAxisAlignment:CrossAxisAlignment.center,children:[
-                CircleAvatar(
-                  radius:31,
-                  backgroundImage:image,
-                  child:image==null?const Icon(Icons.person,size:32):null,
+                ProfileAvatarWithFrame(
+                  diameter:62,
+                  userId:widget.uid,
+                  fallbackProfile:<String,dynamic>{
+                    'profileImageUrl':fallbackImageUrl,
+                    'profileAvatarAsset':fallbackAvatarAsset,
+                  },
                 ),
                 const SizedBox(width:12),
                 Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
