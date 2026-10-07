@@ -335,19 +335,12 @@ class _NotificationsPageState extends State<NotificationsPage> {
                     children: [
                       ProfileAvatarWithFrame(
                         diameter: 60,
+                        userId: detail.uid,
                         backgroundColor: const Color(0xFF31204F),
-                        profile: profileAvatarFrameData(
-                          imageUrl: detail.profileImageUrl,
-                          avatarAsset: detail.profileAvatarAsset,
-                          frameAssetKey:
-                              detail.activeProfileFrameAssetKey,
-                          frameImageUrl:
-                              detail.activeProfileFrameImageUrl,
-                          frameExpiresAtMs:
-                              detail.activeProfileFrameExpiresAtMs,
-                          framePermanent:
-                              detail.activeProfileFramePermanent,
-                        ),
+                        fallbackProfile: <String, dynamic>{
+                          'profileImageUrl': detail.profileImageUrl,
+                          'profileAvatarAsset': detail.profileAvatarAsset,
+                        },
                       ),
                       const SizedBox(width: 12),
                       Expanded(
