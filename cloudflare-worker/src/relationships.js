@@ -5,6 +5,10 @@ import {
 } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
+import {
+  loadPublicProfilePresentations,
+  publicProfilePresentation,
+} from "./public-profile-presentation.js";
 
 const clean = (value) => String(value ?? "").trim();
 const validOperationKey = (value) => /^[A-Za-z0-9_-]{12,220}$/.test(clean(value));
@@ -852,13 +856,17 @@ async function listMine(db, uid) {
     }))
     .filter((entry) => entry.relationshipId && entry.partnerUid);
 
-  const profiles = await Promise.all(
-    active.map((entry) => db.get(`public_profiles/${entry.partnerUid}`)),
+  const profiles = await loadPublicProfilePresentations(
+    db,
+    active.map((entry) => entry.partnerUid),
+    { limit: MAX_TYPES, concurrency: MAX_TYPES },
   );
   return {
     ok: true,
-    items: active.map((entry, index) => {
-      const profile = profiles[index]?.data || {};
+    items: active.map((entry) => {
+      const profile =
+        profiles.get(entry.partnerUid) ||
+        publicProfilePresentation(entry.partnerUid);
       return {
         ...entry,
         partnerName: clean(profile.displayName || "مستخدم Shadow Live"),
