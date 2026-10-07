@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../profile/screens/public_profile_screen.dart';
+import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../services/host_my_agency_service.dart';
 import '../services/owner_agency_service.dart';
-import '../widgets/agency_user_avatar.dart';
 
 class AgencyMembershipReviewPage extends StatefulWidget {
   const AgencyMembershipReviewPage({
@@ -472,20 +472,23 @@ class _ManagerMemberPerformanceTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final avatar = agencyUserAvatarProvider(
-      imageUrl: member.profileImageUrl,
-      avatarAsset: member.profileAvatarAsset,
-    );
     final publicId = member.publicId?.trim() ?? '';
     return Card(
       key: Key('agency-manager-member-${member.uid}'),
       color: const Color(0xFF11182A),
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
-        leading: CircleAvatar(
+        leading: ProfileAvatarWithFrame(
+          diameter: 40,
           backgroundColor: const Color(0xFF2A3150),
-          backgroundImage: avatar,
-          child: avatar == null ? const Icon(Icons.person_rounded) : null,
+          profile: profileAvatarFrameData(
+            imageUrl: member.profileImageUrl,
+            avatarAsset: member.profileAvatarAsset,
+            frameAssetKey: member.activeProfileFrameAssetKey,
+            frameImageUrl: member.activeProfileFrameImageUrl,
+            frameExpiresAtMs: member.activeProfileFrameExpiresAtMs,
+            framePermanent: member.activeProfileFramePermanent,
+          ),
         ),
         title: Text(
           member.displayName ?? (publicId.isEmpty ? member.uid : publicId),
@@ -616,10 +619,6 @@ class _ReviewRequestCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final publicId = request.userPublicId?.trim() ?? '';
-    final avatar = agencyUserAvatarProvider(
-      imageUrl: request.profileImageUrl,
-      avatarAsset: request.profileAvatarAsset,
-    );
     final typeLabel = switch (request.type) {
       'leave' => 'طلب مغادرة',
       'join' => 'طلب انضمام',
@@ -653,16 +652,18 @@ class _ReviewRequestCard extends StatelessWidget {
                 InkWell(
                   onTap: request.uid.isEmpty ? null : openProfile,
                   borderRadius: BorderRadius.circular(999),
-                  child: CircleAvatar(
-                    radius: 24,
+                  child: ProfileAvatarWithFrame(
+                    diameter: 48,
                     backgroundColor: const Color(0xFF31204F),
-                    backgroundImage: avatar,
-                    child: avatar == null
-                        ? const Icon(
-                            Icons.person_rounded,
-                            color: Colors.white70,
-                          )
-                        : null,
+                    placeholderColor: Colors.white70,
+                    profile: profileAvatarFrameData(
+                      imageUrl: request.profileImageUrl,
+                      avatarAsset: request.profileAvatarAsset,
+                      frameAssetKey: request.activeProfileFrameAssetKey,
+                      frameImageUrl: request.activeProfileFrameImageUrl,
+                      frameExpiresAtMs: request.activeProfileFrameExpiresAtMs,
+                      framePermanent: request.activeProfileFramePermanent,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 10),
