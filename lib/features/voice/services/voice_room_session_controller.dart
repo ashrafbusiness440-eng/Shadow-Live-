@@ -343,6 +343,16 @@ class VoiceRoomSessionController extends ChangeNotifier {
           'displayName': displayName,
           'profileImageUrl':
               (event.payload['profileImageUrl'] ?? '').toString(),
+          'activeProfileFrameAssetKey':
+              (event.payload['activeProfileFrameAssetKey'] ?? '').toString(),
+          'activeProfileFrameImageUrl':
+              (event.payload['activeProfileFrameImageUrl'] ?? '').toString(),
+          'activeProfileFrameExpiresAtMs':
+              (event.payload['activeProfileFrameExpiresAtMs'] as num?)
+                      ?.toInt() ??
+                  0,
+          'activeProfileFramePermanent':
+              event.payload['activeProfileFramePermanent'] == true,
           'text': vipLevel > 0
               ? displayName + ' دخل الغرفة — VIP ' + vipLevel.toString()
               : displayName + ' دخل الغرفة',
