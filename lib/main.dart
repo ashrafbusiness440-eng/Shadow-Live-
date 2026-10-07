@@ -191,13 +191,16 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   final RoomModerationService _roomModeration = RoomModerationService();
   final RoomModeratorService _roomModeratorService = RoomModeratorService();
   final RoomSeatService _roomSeatService = RoomSeatService();
-  final RoomEffectCoordinator _roomEffectCoordinator =
-      RoomEffectCoordinator();
+  late final RoomEffectCoordinator _roomEffectCoordinator;
   bool _voiceStarted = false;
 
   @override
   void initState() {
     super.initState();
+    _roomEffectCoordinator = RoomEffectCoordinator(
+      playEffectSound: _voiceSession.playRoomEffectSound,
+      stopEffectSounds: _voiceSession.stopRoomEffectSounds,
+    );
     _voiceSession.addListener(_syncVoiceSession);
   }
 
