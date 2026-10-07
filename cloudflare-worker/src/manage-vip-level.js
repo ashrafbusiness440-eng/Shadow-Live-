@@ -19,6 +19,10 @@ import {
   vipStateFromUser,
   vipUserPatch,
 } from "./vip-runtime.js";
+import {
+  loadPublicProfilePresentations,
+  publicProfilePresentation,
+} from "./public-profile-presentation.js";
 
 class ApiError extends Error {
   constructor(code, status = 400) {
@@ -118,32 +122,30 @@ async function loadActor(db, payload) {
   return { uid, actor, access };
 }
 
-function publicUser(uid, user, state) {
+function publicUser(uid, user, state, profile = {}) {
   const expiry = (value) => {
     const number = Number(value || 0);
     return Number.isSafeInteger(number) && number > 0 ? number : 0;
   };
+  const display = {
+    ...publicProfilePresentation(uid),
+    ...profile,
+  };
   return {
     uid,
-    displayName: clean(
-      user.displayName || user.name || user.username || "مستخدم Shadow Live",
-    ),
+    displayName: clean(display.displayName || "مستخدم Shadow Live"),
     username: clean(user.username),
-    publicId: clean(user.publicId),
-    profileImageUrl: clean(
-      user.profileImageUrl ||
-      user.profileImage ||
-      user.avatarUrl,
-    ),
-    profileAvatarAsset: clean(user.profileAvatarAsset),
-    activeProfileFrameAssetKey: clean(user.activeProfileFrameAssetKey),
-    activeProfileFrameImageUrl: clean(user.activeProfileFrameImageUrl),
+    publicId: clean(display.publicId),
+    profileImageUrl: clean(display.profileImageUrl),
+    profileAvatarAsset: clean(display.profileAvatarAsset),
+    activeProfileFrameAssetKey: clean(display.activeProfileFrameAssetKey),
+    activeProfileFrameImageUrl: clean(display.activeProfileFrameImageUrl),
     activeProfileFrameExpiresAtMs: Math.max(
       0,
-      Number(user.activeProfileFrameExpiresAtMs || 0),
+      Number(display.activeProfileFrameExpiresAtMs || 0),
     ),
     activeProfileFramePermanent:
-      user.activeProfileFramePermanent === true,
+      display.activeProfileFramePermanent === true,
     role: clean(user.role || "user") || "user",
     accountStatus: clean(user.accountStatus || "active") || "active",
     vip: {
@@ -205,11 +207,15 @@ export async function searchVipUsers(db, payload, body) {
   }
 
   const nowMs = Date.now();
-  const [policy, snaps] = await Promise.all([
+  const [policy, snaps, publicProfiles] = await Promise.all([
     loadVipPolicy(db),
     Promise.all(unique.map((uid) =>
       db.get(`users/${uid}`).catch(() => ({ exists: false, data: null }))
     )),
+    loadPublicProfilePresentations(db, unique, {
+      limit: 20,
+      concurrency: 8,
+    }),
   ]);
 
   const results = [];
@@ -218,7 +224,12 @@ export async function searchVipUsers(db, payload, body) {
     if (!snap?.exists) continue;
     const user = snap.data || {};
     const state = materializeVipState(policy, vipStateFromUser(user), nowMs);
-    results.push(publicUser(unique[i], user, state));
+    results.push(publicUser(
+      unique[i],
+      user,
+      state,
+      publicProfiles.get(unique[i]) || publicProfilePresentation(unique[i]),
+    ));
   }
 
   return {
