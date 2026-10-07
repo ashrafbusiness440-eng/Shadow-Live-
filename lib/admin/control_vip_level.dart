@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import 'control_api_endpoints.dart';
+import '../features/profile/widgets/profile_avatar_with_frame.dart';
 import 'control_firebase.dart';
 
 class VipLevelControlPage extends StatefulWidget {
@@ -397,14 +398,19 @@ class _VipLevelControlPageState extends State<VipLevelControlPage> {
           children: <Widget>[
             Row(
               children: <Widget>[
-                CircleAvatar(
-                  radius: 24,
-                  backgroundImage: user.profileImageUrl.isEmpty
-                      ? null
-                      : NetworkImage(user.profileImageUrl),
-                  child: user.profileImageUrl.isEmpty
-                      ? const Icon(Icons.person_outline)
-                      : null,
+                ProfileAvatarWithFrame(
+                  diameter: 48,
+                  placeholderIcon: Icons.person_outline,
+                  profile: profileAvatarFrameData(
+                    imageUrl: user.profileImageUrl,
+                    avatarAsset: user.profileAvatarAsset,
+                    frameAssetKey: user.activeProfileFrameAssetKey,
+                    frameImageUrl: user.activeProfileFrameImageUrl,
+                    frameExpiresAtMs:
+                        user.activeProfileFrameExpiresAtMs,
+                    framePermanent:
+                        user.activeProfileFramePermanent,
+                  ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -574,6 +580,11 @@ class _VipControlUser {
     required this.displayName,
     required this.publicId,
     required this.profileImageUrl,
+    required this.profileAvatarAsset,
+    required this.activeProfileFrameAssetKey,
+    required this.activeProfileFrameImageUrl,
+    required this.activeProfileFrameExpiresAtMs,
+    required this.activeProfileFramePermanent,
     required this.role,
     required this.earnedVipLevel,
     required this.effectiveVipLevel,
@@ -589,6 +600,11 @@ class _VipControlUser {
   final String displayName;
   final String publicId;
   final String profileImageUrl;
+  final String profileAvatarAsset;
+  final String activeProfileFrameAssetKey;
+  final String activeProfileFrameImageUrl;
+  final int activeProfileFrameExpiresAtMs;
+  final bool activeProfileFramePermanent;
   final String role;
   final int earnedVipLevel;
   final int effectiveVipLevel;
@@ -609,6 +625,16 @@ class _VipControlUser {
       displayName: '${json['displayName'] ?? 'مستخدم Shadow Live'}'.trim(),
       publicId: '${json['publicId'] ?? ''}'.trim(),
       profileImageUrl: '${json['profileImageUrl'] ?? ''}'.trim(),
+      profileAvatarAsset:
+          '${json['profileAvatarAsset'] ?? ''}'.trim(),
+      activeProfileFrameAssetKey:
+          '${json['activeProfileFrameAssetKey'] ?? ''}'.trim(),
+      activeProfileFrameImageUrl:
+          '${json['activeProfileFrameImageUrl'] ?? ''}'.trim(),
+      activeProfileFrameExpiresAtMs:
+          int.tryParse('${json['activeProfileFrameExpiresAtMs'] ?? 0}') ?? 0,
+      activeProfileFramePermanent:
+          json['activeProfileFramePermanent'] == true,
       role: '${json['role'] ?? 'user'}'.trim(),
       earnedVipLevel: value('earnedVipLevel'),
       effectiveVipLevel: value('effectiveVipLevel'),
