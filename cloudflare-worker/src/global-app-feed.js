@@ -22,9 +22,16 @@ export function normalizeGlobalAppFeedEvent(raw, nowMs = Date.now()) {
   const kind = clean(raw.kind);
   const startsAtMs = integer(raw.startsAtMs);
   const endsAtMs = integer(raw.endsAtMs);
+  const supportedKinds = new Set([
+    "vip10_global_entry",
+    "vip_level_upgrade",
+    "game_win",
+    "relationship_level_up",
+    "premium_gift",
+  ]);
   if (
     !eventId ||
-    (kind !== "vip10_global_entry" && kind !== "vip_level_upgrade") ||
+    !supportedKinds.has(kind) ||
     startsAtMs <= 0 ||
     endsAtMs <= startsAtMs ||
     endsAtMs + GLOBAL_APP_FEED_RETAIN_MS <= nowMs
@@ -42,6 +49,18 @@ export function normalizeGlobalAppFeedEvent(raw, nowMs = Date.now()) {
     publicId: clean(raw.publicId),
     vipLevel: Math.max(0, Math.min(10, integer(raw.vipLevel))),
     assetKey: clean(raw.assetKey),
+    secondaryUid: clean(raw.secondaryUid),
+    secondaryDisplayName: clean(raw.secondaryDisplayName),
+    secondaryProfileImageUrl: clean(raw.secondaryProfileImageUrl),
+    relationshipType: clean(raw.relationshipType),
+    relationshipLevel: Math.max(0, integer(raw.relationshipLevel)),
+    giftId: clean(raw.giftId),
+    giftName: clean(raw.giftName),
+    giftQuantity: Math.max(0, integer(raw.giftQuantity)),
+    giftTotalCoins: Math.max(0, integer(raw.giftTotalCoins)),
+    payoutCoins: Math.max(0, integer(raw.payoutCoins)),
+    roomId: clean(raw.roomId),
+    messageAr: clean(raw.messageAr).slice(0, 160),
   };
 }
 
