@@ -82,7 +82,10 @@ class _RoomRocketBannerHostState extends State<RoomRocketBannerHost> {
     );
     _timer = Timer.periodic(
       const Duration(milliseconds: 250),
-      (_) => _refresh(),
+      (_) {
+        _refresh();
+        _refreshGlobal();
+      },
     );
   }
 
