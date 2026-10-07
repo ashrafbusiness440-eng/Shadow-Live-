@@ -10,6 +10,7 @@ import '../../../shared/services/user_storage_service.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../profile/screens/public_profile_screen.dart';
 import '../services/diary_service.dart';
+import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../widgets/diary_comments_sheet.dart';
 import '../widgets/diary_gifts_sheet.dart';
 import '../widgets/diary_report_sheet.dart';
@@ -950,13 +951,18 @@ class _DiariesScreenState extends State<DiariesScreen> {
             onTap: () => _openProfile(item),
             child: Row(
               children: [
-                CircleAvatar(
-                  radius: 22,
+                ProfileAvatarWithFrame(
+                  diameter: 44,
                   backgroundColor: const Color(0xFF272C39),
-                  backgroundImage: _avatar(item),
-                  child: _avatar(item) == null
-                      ? const Icon(Icons.person_rounded, color: Colors.white54)
-                      : null,
+                  placeholderColor: Colors.white54,
+                  profile: profileAvatarFrameData(
+                    imageUrl: item.ownerProfileImageUrl,
+                    avatarAsset: item.ownerProfileAvatarAsset,
+                    frameAssetKey: item.activeProfileFrameAssetKey,
+                    frameImageUrl: item.activeProfileFrameImageUrl,
+                    frameExpiresAtMs: item.activeProfileFrameExpiresAtMs,
+                    framePermanent: item.activeProfileFramePermanent,
+                  ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
