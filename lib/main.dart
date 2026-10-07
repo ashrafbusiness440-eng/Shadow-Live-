@@ -63,6 +63,7 @@ import 'features/room/widgets/room_music_sheet.dart';
 import 'features/room/widgets/room_pk_panel.dart';
 import 'features/room/widgets/room_rocket_banner_host.dart';
 import 'features/room/widgets/cosmetic_effect_widgets.dart';
+import 'features/room/widgets/room_effect_coordinator.dart';
 import 'features/room/services/room_rocket_service.dart';
 import 'core/assets/shadow_asset_registry.dart';
 import 'features/room/widgets/star_battle_sheet.dart';
@@ -190,6 +191,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   final RoomModerationService _roomModeration = RoomModerationService();
   final RoomModeratorService _roomModeratorService = RoomModeratorService();
   final RoomSeatService _roomSeatService = RoomSeatService();
+  final RoomEffectCoordinator _roomEffectCoordinator =
+      RoomEffectCoordinator();
   bool _voiceStarted = false;
 
   @override
@@ -210,6 +213,21 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         _roomArguments = _voiceSession.roomArguments;
       }
     });
+    _roomEffectCoordinator.setPreferences(
+      visualEnabled: _roomEffectsEnabled,
+      effectSoundEnabled: _effectSoundEnabled,
+    );
+    final rawEntrance = _voiceSession.roomArguments['recentEntrance'];
+    if (rawEntrance is Map) {
+      _roomEffectCoordinator.ingestEntrance(
+        Map<String, dynamic>.from(rawEntrance),
+      );
+    }
+    for (final message in _voiceSession.roomChatMessages.take(8)) {
+      if ((message['systemKind'] ?? '').toString() == 'gift') {
+        _roomEffectCoordinator.ingestGiftMessage(message);
+      }
+    }
     if ((roomClosed || roomBanned) && !_roomClosedHandled) {
       _roomClosedHandled = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1844,7 +1862,9 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     final nameSize = compact ? 8.5 : 10.0;
     final starSize = compact ? 8.0 : 9.0;
 
-    return GridView.builder(
+    return AnimatedBuilder(
+      animation: _roomEffectCoordinator,
+      builder: (context, _) => GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: seats.length,
@@ -1856,6 +1876,9 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       ),
       itemBuilder: (_, index) {
         final seat = seats[index];
+        final giftEffect = seat.occupied
+            ? _roomEffectCoordinator.seatEffectFor(seat.uid)
+            : null;
         return InkWell(
           onTap: _changingSeat ? null : () => _handleSeatTap(seat),
           borderRadius: BorderRadius.circular(18),
@@ -1865,6 +1888,22 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
               Stack(
                 clipBehavior: Clip.none,
                 children: [
+                  if (giftEffect != null)
+                    Positioned(
+                      left: -10,
+                      top: -10,
+                      child: IgnorePointer(
+                        child: SizedBox(
+                          width: micSize + 20,
+                          height: micSize + 20,
+                          child: CosmeticAssetVisual(
+                            assetKey: giftEffect.assetKey,
+                            imageUrl: giftEffect.imageUrl,
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                      ),
+                    ),
                   if (seat.voiceWaveActive)
                     Positioned(
                       left: -8,
@@ -1993,6 +2032,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           ),
         );
       },
+      ),
     );
   }
 
@@ -2748,11 +2788,19 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
 
             void toggleEffectSound(bool value) {
               setState(() => _effectSoundEnabled = value);
+              _roomEffectCoordinator.setPreferences(
+                visualEnabled: _roomEffectsEnabled,
+                effectSoundEnabled: value,
+              );
               setSheetState(() {});
             }
 
             void toggleRoomEffects(bool value) {
               setState(() => _roomEffectsEnabled = value);
+              _roomEffectCoordinator.setPreferences(
+                visualEnabled: value,
+                effectSoundEnabled: _effectSoundEnabled,
+              );
               setSheetState(() {});
             }
 
@@ -4541,6 +4589,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     _roomModeration.close();
     _roomModeratorService.close();
     _roomSeatService.close();
+    _roomEffectCoordinator.dispose();
     super.dispose();
   }
 
@@ -5799,10 +5848,6 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         rewardBackgroundValid ? rawRewardBackgroundImageUrl : '';
     final rewardBackgroundAssetKey =
         rewardBackgroundValid ? rawRewardBackgroundAssetKey : '';
-    final rawEntrance = _roomArguments['recentEntrance'];
-    final recentEntrance = rawEntrance is Map
-        ? Map<String, dynamic>.from(rawEntrance)
-        : null;
     final roomTitle = (_roomArguments['name'] ??
             _roomArguments['title'] ??
             'غرفة صوتية')
@@ -5860,8 +5905,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         ),
                       ),
                       Positioned.fill(
-                        child: RoomEntranceEffectHost(
-                          event: recentEntrance,
+                        child: RoomEffectCoordinatorHost(
+                          coordinator: _roomEffectCoordinator,
                         ),
                       ),
                       Positioned(
