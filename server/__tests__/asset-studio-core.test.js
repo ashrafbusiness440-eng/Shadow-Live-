@@ -280,6 +280,15 @@ test("asset studio UX exposes safe replace, preview, history and batch guardrail
   assert.equal(control.includes("_recentTemplateIds"), true);
   assert.equal(control.includes("إضافة القالب إلى المفضلة"), true);
   assert.equal(control.includes("أماكن الاستخدام المحددة:"), true);
+  assert.equal(control.includes("_reverifyLastSuccess"), true);
+  assert.equal(control.includes("attempts = 3"), true);
+  assert.equal(control.includes("650 * attempt"), true);
+  assert.equal(control.includes("إعادة التحقق"), true);
+  assert.equal(control.includes("تم النشر • بانتظار التأكد"), true);
+  assert.equal(
+    control.includes("تم النشر، لكن التحقق المباشر من الملف الحي لم يكتمل."),
+    false,
+  );
 });
 
 test("login header is a first-class Asset Studio surface with bundled fallback", () => {
