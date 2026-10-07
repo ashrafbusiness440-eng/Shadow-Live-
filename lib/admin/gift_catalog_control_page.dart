@@ -154,6 +154,9 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
           current?.assetKey ??
           'gifts.placeholder.default',
     );
+    final effectSoundAssetKey = TextEditingController(
+      text: current?.effectSoundAssetKey ?? '',
+    );
     final effectMinQuantity = TextEditingController(
       text: (current?.effectMinQuantity ?? 0).toString(),
     );
@@ -286,6 +289,12 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                   ),
                   const SizedBox(height: 10),
                   field(
+                    effectSoundAssetKey,
+                    'مفتاح صوت المؤثر — اختياري',
+                    'gifts.example.sound',
+                  ),
+                  const SizedBox(height: 10),
+                  field(
                     effectMinQuantity,
                     'أقل كمية لتشغيل المؤثر (0 = بدون مؤثر)',
                     '7',
@@ -343,6 +352,8 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                 final cleanAsset = assetKey.text.trim();
                 final cleanPlaceholder = placeholder.text.trim();
                 final cleanEffectAssetKey = effectAssetKey.text.trim();
+                final cleanEffectSoundAssetKey =
+                    effectSoundAssetKey.text.trim();
                 final parsedEffectMin =
                     int.tryParse(effectMinQuantity.text.trim()) ?? 0;
                 final parsedEffectDuration =
@@ -362,6 +373,9 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                     !cleanPlaceholder.startsWith('assets/images/gifts/') ||
                     !RegExp(r'^[a-z0-9][A-Za-z0-9._-]{2,119}$')
                         .hasMatch(cleanEffectAssetKey) ||
+                    (cleanEffectSoundAssetKey.isNotEmpty &&
+                        !RegExp(r'^[a-z0-9][A-Za-z0-9._-]{2,119}$')
+                            .hasMatch(cleanEffectSoundAssetKey)) ||
                     parsedEffectMin < 0 ||
                     parsedEffectMin > 777 ||
                     (effectMode == 'none' && parsedEffectMin != 0) ||
@@ -392,6 +406,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                     isAnimated: isAnimated,
                     effectMode: effectMode,
                     effectAssetKey: cleanEffectAssetKey,
+                    effectSoundAssetKey: cleanEffectSoundAssetKey,
                     effectMinQuantity: parsedEffectMin,
                     effectDurationMs: parsedEffectDuration,
                     premiumBannerMinQuantity: parsedPremiumBannerMin,
@@ -412,6 +427,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     assetKey.dispose();
     placeholder.dispose();
     effectAssetKey.dispose();
+    effectSoundAssetKey.dispose();
     effectMinQuantity.dispose();
     effectDurationMs.dispose();
     premiumBannerMinQuantity.dispose();
@@ -530,6 +546,8 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                                       isAnimated: item.isAnimated,
                                       effectMode: item.effectMode,
                                       effectAssetKey: item.effectAssetKey,
+                                      effectSoundAssetKey:
+                                          item.effectSoundAssetKey,
                                       effectMinQuantity: item.effectMinQuantity,
                                       effectDurationMs: item.effectDurationMs,
                                       premiumBannerMinQuantity:
