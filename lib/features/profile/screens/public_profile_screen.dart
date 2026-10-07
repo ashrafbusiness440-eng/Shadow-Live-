@@ -22,6 +22,7 @@ import '../../vip/widgets/vip_profile_avatar.dart';
 import '../../vip/widgets/vip_profile_identity.dart';
 import '../widgets/registry_badge.dart';
 import '../widgets/user_level_badges.dart';
+import '../widgets/profile_avatar_with_frame.dart';
 
 class PublicProfileScreen extends StatefulWidget {
   const PublicProfileScreen({super.key, required this.userId});
@@ -349,10 +350,10 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
                   title: Text(isSelf ? 'بروفايلي' : 'الملف الشخصي'),
                   flexibleSpace: FlexibleSpaceBar(
                     background: _header(
+                      profile: data,
                       name: name,
                       publicId: publicId,
                       fancyId: fancyId,
-                      photo: provider,
                       cover: cover,
                       online: online,
                       vip: vip,
@@ -541,10 +542,10 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
   }
 
   Widget _header({
+    required Map<String, dynamic> profile,
     required String name,
     required String publicId,
     required String fancyId,
-    required ImageProvider? photo,
     required String cover,
     required bool online,
     required int vip,
@@ -573,22 +574,12 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
           Stack(
             clipBehavior: Clip.none,
             children: [
-              VipAvatarFrame(
+              ProfileAvatarWithFrame(
+                diameter: 110,
+                profile: profile,
                 vipLevel: vip,
-                frameLevel: vipFrameLevel,
-                avatarDiameter: 110,
-                child: CircleAvatar(
-                  radius: 55,
-                  backgroundColor: const Color(0xFF25183F),
-                  backgroundImage: photo,
-                  child: photo == null
-                      ? const Icon(
-                          Icons.person,
-                          size: 52,
-                          color: Color(0xFFFFD54A),
-                        )
-                      : null,
-                ),
+                vipFrameLevel: vipFrameLevel,
+                useVipFallback: true,
               ),
               if (online)
                 Positioned(
