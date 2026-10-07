@@ -2435,20 +2435,16 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                 final busy = sending.contains(friend.uid);
                                 return ListTile(
                                   contentPadding: EdgeInsets.zero,
-                                  leading: CircleAvatar(
-                                    radius: 23,
+                                  leading: ProfileAvatarWithFrame(
+                                    diameter: 46,
+                                    userId: friend.uid,
                                     backgroundColor:
                                         const Color(0xFF25183F),
-                                    backgroundImage:
-                                        friend.photoUrl.trim().isEmpty
-                                            ? null
-                                            : NetworkImage(friend.photoUrl),
-                                    child: friend.photoUrl.trim().isEmpty
-                                        ? const Icon(
-                                            Icons.person_rounded,
-                                            color: Color(0xFFFFD54A),
-                                          )
-                                        : null,
+                                    placeholderColor:
+                                        const Color(0xFFFFD54A),
+                                    fallbackProfile: <String, dynamic>{
+                                      'profileImageUrl': friend.photoUrl,
+                                    },
                                   ),
                                   title: Text(
                                     friend.name,
@@ -5320,25 +5316,41 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                           final name =
                               (item['displayName'] ?? 'مستخدم Shadow Live')
                                   .toString();
+                          final userId =
+                              (item['uid'] ?? item['userId'] ?? '')
+                                  .toString()
+                                  .trim();
                           final photo =
                               (item['profileImageUrl'] ?? '').toString();
                           final coins = (item['coins'] as num?)?.toInt() ?? 0;
                           return ListTile(
                             contentPadding: EdgeInsets.zero,
-                            leading: CircleAvatar(
-                              backgroundColor: const Color(0xFF25183F),
-                              backgroundImage:
-                                  photo.isEmpty ? null : NetworkImage(photo),
-                              child: photo.isEmpty
-                                  ? Text(
+                            leading: userId.isEmpty
+                                ? CircleAvatar(
+                                    backgroundColor:
+                                        const Color(0xFF25183F),
+                                    child: Text(
                                       '${entry.key + 1}',
                                       style: const TextStyle(
                                         color: Color(0xFFFFD54A),
                                         fontWeight: FontWeight.w900,
                                       ),
-                                    )
-                                  : null,
-                            ),
+                                    ),
+                                  )
+                                : ProfileAvatarWithFrame(
+                                    diameter: 40,
+                                    userId: userId,
+                                    backgroundColor:
+                                        const Color(0xFF25183F),
+                                    placeholderColor:
+                                        const Color(0xFFFFD54A),
+                                    fallbackProfile: <String, dynamic>{
+                                      'profileImageUrl': photo,
+                                      'profileAvatarAsset':
+                                          (item['profileAvatarAsset'] ?? '')
+                                              .toString(),
+                                    },
+                                  ),
                             title: Text(
                               name,
                               style: const TextStyle(
