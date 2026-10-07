@@ -313,7 +313,40 @@ function publicImageSnapshot(objectId, object = {}) {
   };
 }
 
-function normalizeDiary(id, data = {}) {
+function currentProfileFrame(data = {}) {
+  return {
+    activeProfileFrameAssetKey: clean(data.activeProfileFrameAssetKey),
+    activeProfileFrameImageUrl: clean(data.activeProfileFrameImageUrl),
+    activeProfileFrameExpiresAtMs: Math.max(
+      0,
+      Number(data.activeProfileFrameExpiresAtMs || 0),
+    ),
+    activeProfileFramePermanent: data.activeProfileFramePermanent === true,
+  };
+}
+
+async function loadCurrentProfileFrames(db, uidInputs = []) {
+  const uids = [...new Set(
+    uidInputs.map(clean).filter(Boolean),
+  )].slice(0, MAX_PAGE_SIZE);
+  const frames = new Map();
+  const concurrency = 8;
+  for (let offset = 0; offset < uids.length; offset += concurrency) {
+    const batch = uids.slice(offset, offset + concurrency);
+    const snapshots = await Promise.all(
+      batch.map((uid) => db.get(`public_profiles/${uid}`)),
+    );
+    for (let index = 0; index < batch.length; index += 1) {
+      const snapshot = snapshots[index];
+      if (!snapshot?.exists) continue;
+      frames.set(batch[index], currentProfileFrame(snapshot.data || {}));
+    }
+  }
+  return frames;
+}
+
+function normalizeDiary(id, data = {}, frame = null) {
+  const currentFrame = frame || currentProfileFrame(data);
   return {
     diaryId: id,
     ownerUid: clean(data.ownerUid),
@@ -321,6 +354,7 @@ function normalizeDiary(id, data = {}) {
     ownerPublicId: clean(data.ownerPublicId),
     ownerProfileImageUrl: clean(data.ownerProfileImageUrl),
     ownerProfileAvatarAsset: clean(data.ownerProfileAvatarAsset),
+    ...currentFrame,
     text: clean(data.text),
     images: Array.isArray(data.images) ? data.images : [],
     commentsEnabled: data.commentsEnabled !== false,
@@ -1289,7 +1323,16 @@ async function getDiary(db, body) {
   const diaryId = assertSafeId(body.diaryId, "invalid_diary_id");
   const diary = await db.get(`diaries/${diaryId}`);
   if (!diary.exists) throw new DiaryApiError("diary_not_found", 404);
-  return { ok: true, diary: normalizeDiary(diaryId, diary.data || {}) };
+  const ownerUid = clean(diary.data?.ownerUid);
+  const frames = await loadCurrentProfileFrames(db, ownerUid ? [ownerUid] : []);
+  return {
+    ok: true,
+    diary: normalizeDiary(
+      diaryId,
+      diary.data || {},
+      frames.get(ownerUid) || null,
+    ),
+  };
 }
 
 async function listLatest(db, body) {
@@ -1310,9 +1353,16 @@ async function listLatest(db, body) {
   });
   const hasMore = rows.length > limit;
   const visible = rows.slice(0, limit);
+  const frames = await loadCurrentProfileFrames(
+    db,
+    visible.map((row) => clean(row?.data?.ownerUid)),
+  );
   return {
     ok: true,
-    items: visible.map((row) => normalizeDiary(row.id, row.data)),
+    items: visible.map((row) => {
+      const ownerUid = clean(row?.data?.ownerUid);
+      return normalizeDiary(row.id, row.data, frames.get(ownerUid) || null);
+    }),
     nextCursor:
       hasMore && visible.length
         ? makeCursor(visible[visible.length - 1])
@@ -1341,9 +1391,12 @@ async function listUser(db, body) {
   });
   const hasMore = rows.length > limit;
   const visible = rows.slice(0, limit);
+  const frames = await loadCurrentProfileFrames(db, [userId]);
   return {
     ok: true,
-    items: visible.map((row) => normalizeDiary(row.id, row.data)),
+    items: visible.map((row) =>
+      normalizeDiary(row.id, row.data, frames.get(userId) || null)
+    ),
     nextCursor:
       hasMore && visible.length
         ? makeCursor(visible[visible.length - 1])
@@ -1396,10 +1449,17 @@ async function listFollowing(db, uid, body) {
   const visible = scanned.filter((row) =>
     followedOwnerIds.has(clean(row?.data?.ownerUid))
   );
+  const frames = await loadCurrentProfileFrames(
+    db,
+    visible.map((row) => clean(row?.data?.ownerUid)),
+  );
 
   return {
     ok: true,
-    items: visible.map((row) => normalizeDiary(row.id, row.data)),
+    items: visible.map((row) => {
+      const ownerUid = clean(row?.data?.ownerUid);
+      return normalizeDiary(row.id, row.data, frames.get(ownerUid) || null);
+    }),
     nextCursor:
       hasMore && scanned.length
         ? makeCursor(scanned[scanned.length - 1])
