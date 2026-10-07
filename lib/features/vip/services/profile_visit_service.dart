@@ -9,10 +9,6 @@ class ProfileVisitItem {
     required this.publicId,
     required this.displayName,
     required this.profileImageUrl,
-    required this.activeProfileFrameAssetKey,
-    required this.activeProfileFrameImageUrl,
-    required this.activeProfileFrameExpiresAtMs,
-    required this.activeProfileFramePermanent,
     required this.effectiveVipLevel,
     required this.lastVisitedAt,
   });
@@ -21,10 +17,6 @@ class ProfileVisitItem {
   final String publicId;
   final String displayName;
   final String profileImageUrl;
-  final String activeProfileFrameAssetKey;
-  final String activeProfileFrameImageUrl;
-  final int activeProfileFrameExpiresAtMs;
-  final bool activeProfileFramePermanent;
   final int effectiveVipLevel;
   final DateTime? lastVisitedAt;
 
@@ -36,14 +28,6 @@ class ProfileVisitItem {
       displayName:
           (json['displayName'] ?? 'مستخدم Shadow Live').toString().trim(),
       profileImageUrl: (json['profileImageUrl'] ?? '').toString().trim(),
-      activeProfileFrameAssetKey:
-          (json['activeProfileFrameAssetKey'] ?? '').toString().trim(),
-      activeProfileFrameImageUrl:
-          (json['activeProfileFrameImageUrl'] ?? '').toString().trim(),
-      activeProfileFrameExpiresAtMs:
-          (json['activeProfileFrameExpiresAtMs'] as num?)?.toInt() ?? 0,
-      activeProfileFramePermanent:
-          json['activeProfileFramePermanent'] == true,
       effectiveVipLevel: ((json['effectiveVipLevel'] as num?)?.toInt() ?? 0)
           .clamp(0, 10)
           .toInt(),
