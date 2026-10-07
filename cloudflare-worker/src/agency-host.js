@@ -22,6 +22,9 @@ import {
 } from "./economy-policy.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 import { adminInboxUpsertWrite } from "./admin-inbox-index.js";
+import {
+  loadPublicProfilePresentation,
+} from "./public-profile-presentation.js";
 
 const clean = (value) => String(value ?? "").trim();
 
@@ -61,28 +64,6 @@ function validIdempotencyKey(value) {
 function safeAgencyRoomId(value) {
   const roomId = clean(value);
   return /^[A-Za-z0-9_-]{3,180}$/.test(roomId) ? roomId : null;
-}
-
-function personSummary(uidInput, snap) {
-  const uid = clean(uidInput);
-  const user = snap?.exists ? snap.data || {} : {};
-  return {
-    uid,
-    publicId: clean(user.publicId) || null,
-    displayName:
-      clean(user.displayName || user.name || user.username) || "Shadow Live",
-    profileImageUrl:
-      clean(user.profileImageUrl || user.photoUrl || user.avatarUrl) || null,
-    profileAvatarAsset: clean(user.profileAvatarAsset) || null,
-    activeProfileFrameAssetKey:
-      clean(user.activeProfileFrameAssetKey) || null,
-    activeProfileFrameImageUrl:
-      clean(user.activeProfileFrameImageUrl) || null,
-    activeProfileFrameExpiresAtMs:
-      Math.max(0, Number(user.activeProfileFrameExpiresAtMs || 0)),
-    activeProfileFramePermanent:
-      user.activeProfileFramePermanent === true,
-  };
 }
 
 function targetSummary(target) {
@@ -175,8 +156,7 @@ export async function loadAgencyHostCore(
 
   const ownerUid = clean(agency.ownerUid);
   if (!ownerUid) throw new ApiError("agency_owner_missing", 409);
-  const ownerSnap = await db.get("users/" + ownerUid);
-  if (!ownerSnap.exists) throw new ApiError("agency_owner_missing", 409);
+  const ownerProfile = await loadPublicProfilePresentation(db, ownerUid);
 
   const month = currentAgencyMonthKey(now);
   const targetPolicy =
@@ -252,7 +232,7 @@ export async function loadAgencyHostCore(
       backgroundUrl:
         clean(agency.backgroundUrl || agency.roomBackgroundUrl) || null,
     },
-    owner: personSummary(ownerUid, ownerSnap),
+    owner: ownerProfile,
     membership: {
       role,
       status: membershipStatus,
