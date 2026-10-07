@@ -253,7 +253,7 @@ fs.writeFileSync("visual-qa/01-semantics-after-login.json", JSON.stringify(after
 await page.screenshot({ path: "visual-qa/01-after-login.png" });
 
 try {
-  await clickSemantics(page, "المزيد");
+  await page.mouse.click(88, 875);\nawait page.waitForTimeout(1200);
 } catch (_) {
   // Flutter Web can render bottom-navigation labels without exposing semantics.
   // On the fixed 412px mobile viewport, "المزيد" is the second destination from the left.
