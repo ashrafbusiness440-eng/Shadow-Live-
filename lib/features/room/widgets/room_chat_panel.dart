@@ -1149,15 +1149,10 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
                 customBorder: const CircleBorder(),
                 child: ProfileAvatarWithFrame(
                   diameter: 32,
-                  profile: profileAvatarFrameData(
-                    imageUrl: message.profileImageUrl,
-                    frameAssetKey: message.activeProfileFrameAssetKey,
-                    frameImageUrl: message.activeProfileFrameImageUrl,
-                    frameExpiresAtMs:
-                        message.activeProfileFrameExpiresAtMs,
-                    framePermanent:
-                        message.activeProfileFramePermanent,
-                  ),
+                  userId: message.senderUid,
+                  fallbackProfile: <String, dynamic>{
+                    'profileImageUrl': message.profileImageUrl,
+                  },
                   vipLevel: message.vipLevel,
                   useVipFallback: true,
                 ),
