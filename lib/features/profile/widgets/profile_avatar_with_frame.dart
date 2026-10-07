@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
 
+import '../../room/widgets/cosmetic_effect_widgets.dart';
 import '../../vip/widgets/vip_avatar_frame.dart';
 import '../../vip/widgets/vip_profile_avatar.dart';
-import '../../room/widgets/cosmetic_effect_widgets.dart';
+import '../services/profile_visual_identity_service.dart';
 
-class ProfileAvatarWithFrame extends StatelessWidget {
+class ProfileAvatarWithFrame extends StatefulWidget {
   const ProfileAvatarWithFrame({
     super.key,
     required this.diameter,
-    required this.profile,
+    required this.userId,
+    this.fallbackProfile = const <String, dynamic>{},
     this.vipLevel = 0,
     this.vipFrameLevel,
     this.backgroundColor = const Color(0xFF25183F),
@@ -19,7 +21,8 @@ class ProfileAvatarWithFrame extends StatelessWidget {
   });
 
   final double diameter;
-  final Map<String, dynamic> profile;
+  final String userId;
+  final Map<String, dynamic> fallbackProfile;
   final int vipLevel;
   final int? vipFrameLevel;
   final Color backgroundColor;
@@ -28,46 +31,79 @@ class ProfileAvatarWithFrame extends StatelessWidget {
   final bool useVipFallback;
   final double frameScale;
 
-  String _text(String key) => (profile[key] ?? '').toString().trim();
+  @override
+  State<ProfileAvatarWithFrame> createState() => _ProfileAvatarWithFrameState();
+}
 
-  bool get _frameActive {
-    final key = _text('activeProfileFrameAssetKey');
+class _ProfileAvatarWithFrameState extends State<ProfileAvatarWithFrame> {
+  Future<ProfileVisualIdentity>? _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _reload();
+  }
+
+  @override
+  void didUpdateWidget(covariant ProfileAvatarWithFrame oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.userId != widget.userId) {
+      _reload();
+    }
+  }
+
+  void _reload() {
+    final uid = widget.userId.trim();
+    _future = uid.isEmpty
+        ? null
+        : ProfileVisualIdentityService.instance.load(uid);
+  }
+
+  String _text(Map<String, dynamic> profile, String key) =>
+      (profile[key] ?? '').toString().trim();
+
+  bool _frameActive(Map<String, dynamic> profile) {
+    final key = _text(profile, 'activeProfileFrameAssetKey');
     if (key.isEmpty) return false;
     if (profile['activeProfileFramePermanent'] == true) return true;
     final expiresAt =
         (profile['activeProfileFrameExpiresAtMs'] as num?)?.toInt() ??
-            int.tryParse(_text('activeProfileFrameExpiresAtMs')) ??
+            int.tryParse(
+              _text(profile, 'activeProfileFrameExpiresAtMs'),
+            ) ??
             0;
-    return expiresAt <= 0 || expiresAt > DateTime.now().millisecondsSinceEpoch;
+    return expiresAt <= 0 ||
+        expiresAt > DateTime.now().millisecondsSinceEpoch;
   }
 
-  Widget _baseAvatar() {
+  Widget _baseAvatar(Map<String, dynamic> profile) {
     final provider = effectiveProfileAvatarProvider(profile);
     return CircleAvatar(
-      radius: diameter / 2,
-      backgroundColor: backgroundColor,
+      radius: widget.diameter / 2,
+      backgroundColor: widget.backgroundColor,
       backgroundImage: provider,
       child: provider == null
           ? Icon(
-              placeholderIcon,
-              color: placeholderColor,
-              size: diameter * .46,
+              widget.placeholderIcon,
+              color: widget.placeholderColor,
+              size: widget.diameter * .46,
             )
           : null,
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
+  Widget _render(Map<String, dynamic> profile) {
     final avatar = SizedBox.square(
-      dimension: diameter,
-      child: _baseAvatar(),
+      dimension: widget.diameter,
+      child: _baseAvatar(profile),
     );
 
-    if (_frameActive) {
-      final frameAssetKey = _text('activeProfileFrameAssetKey');
-      final frameImageUrl = _text('activeProfileFrameImageUrl');
-      final frameSize = diameter * frameScale;
+    if (_frameActive(profile)) {
+      final frameAssetKey =
+          _text(profile, 'activeProfileFrameAssetKey');
+      final frameImageUrl =
+          _text(profile, 'activeProfileFrameImageUrl');
+      final frameSize = widget.diameter * widget.frameScale;
       return SizedBox.square(
         dimension: frameSize,
         child: Stack(
@@ -88,38 +124,35 @@ class ProfileAvatarWithFrame extends StatelessWidget {
       );
     }
 
-    if (useVipFallback && vipLevel > 0) {
+    if (widget.useVipFallback && widget.vipLevel > 0) {
       return VipAvatarFrame(
-        vipLevel: vipLevel,
-        frameLevel: vipFrameLevel,
-        avatarDiameter: diameter,
-        child: _baseAvatar(),
+        vipLevel: widget.vipLevel,
+        frameLevel: widget.vipFrameLevel,
+        avatarDiameter: widget.diameter,
+        child: _baseAvatar(profile),
       );
     }
 
     return avatar;
   }
-}
 
-Map<String, dynamic> profileAvatarFrameData({
-  String? imageUrl,
-  String? avatarAsset,
-  String? frameAssetKey,
-  String? frameImageUrl,
-  int? frameExpiresAtMs,
-  bool framePermanent = false,
-}) {
-  return <String, dynamic>{
-    if ((imageUrl ?? '').trim().isNotEmpty)
-      'profileImageUrl': imageUrl!.trim(),
-    if ((avatarAsset ?? '').trim().isNotEmpty)
-      'profileAvatarAsset': avatarAsset!.trim(),
-    if ((frameAssetKey ?? '').trim().isNotEmpty)
-      'activeProfileFrameAssetKey': frameAssetKey!.trim(),
-    if ((frameImageUrl ?? '').trim().isNotEmpty)
-      'activeProfileFrameImageUrl': frameImageUrl!.trim(),
-    if (frameExpiresAtMs != null)
-      'activeProfileFrameExpiresAtMs': frameExpiresAtMs,
-    if (framePermanent) 'activeProfileFramePermanent': true,
-  };
+  @override
+  Widget build(BuildContext context) {
+    final fallback = widget.fallbackProfile;
+    final future = _future;
+    if (future == null) return _render(fallback);
+
+    return FutureBuilder<ProfileVisualIdentity>(
+      future: future,
+      builder: (context, snapshot) {
+        final identity = snapshot.data;
+        if (identity == null) return _render(fallback);
+
+        return _render(<String, dynamic>{
+          ...fallback,
+          ...identity.toProfileMap(),
+        });
+      },
+    );
+  }
 }
