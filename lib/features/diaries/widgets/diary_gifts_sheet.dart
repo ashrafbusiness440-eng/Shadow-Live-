@@ -171,15 +171,12 @@ class _DiaryGiftsSheetState extends State<DiaryGiftsSheet> {
             onTap: () => _openProfile(item),
             child: ProfileAvatarWithFrame(
               diameter: 40,
+              userId: item.senderId,
               backgroundColor: const Color(0xFF272C39),
               placeholderColor: Colors.white54,
-              profile: profileAvatarFrameData(
-                imageUrl: item.senderProfileImageUrl,
-                frameAssetKey: item.activeProfileFrameAssetKey,
-                frameImageUrl: item.activeProfileFrameImageUrl,
-                frameExpiresAtMs: item.activeProfileFrameExpiresAtMs,
-                framePermanent: item.activeProfileFramePermanent,
-              ),
+              fallbackProfile: <String, dynamic>{
+                'profileImageUrl': item.senderProfileImageUrl,
+              },
             ),
           ),
           const SizedBox(width: 10),
