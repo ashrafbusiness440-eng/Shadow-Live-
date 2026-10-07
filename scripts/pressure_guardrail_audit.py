@@ -634,9 +634,8 @@ def main() -> int:
         failures.append("Step 10 regression: sendRoomGift handler is missing")
     else:
         for required in (
-            "senderRealtimePresence",
-            "receiverRealtimePresence",
-            "realtimeUserPresentFromNamespace",
+            "realtimeResolveRoomUidsFromNamespace",
+            "realtimeRoomParticipantsFromNamespace",
             "assertRoomPresence",
         ):
             if required not in room_gift_body:
