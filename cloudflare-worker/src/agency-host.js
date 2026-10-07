@@ -21,6 +21,7 @@ import {
   revenueTiers,
 } from "./economy-policy.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
+import { adminInboxUpsertWrite } from "./admin-inbox-index.js";
 
 const clean = (value) => String(value ?? "").trim();
 
@@ -718,6 +719,15 @@ export async function requestAgencyIdentityChange(
             createdAt: now,
           },
         ),
+        adminInboxUpsertWrite(db, {
+          type: "agency_identity_change",
+          title: "طلب تغيير بيانات وكالة",
+          body: [agencyId, requestedName].filter(Boolean).join(" • "),
+          targetId: requestId,
+          route: "agency_control",
+          createdAt: now,
+          meta: { agencyId, status: "pending" },
+        }),
       ]);
       return { ok: true, code: "ok", ...result };
     } catch (error) {
@@ -949,6 +959,18 @@ export async function requestAgencyOwnershipTransfer(
             createdAt: now,
           },
         ),
+        adminInboxUpsertWrite(db, {
+          type: "agency_ownership_transfer",
+          title: "طلب نقل ملكية وكالة",
+          body: [agencyId, newOwnerPublicId ? `المالك الجديد: ${newOwnerPublicId}` : ""]
+            .filter(Boolean)
+            .join(" • "),
+          targetId: requestId,
+          route: "agency_control",
+          createdAt: now,
+          priority: "high",
+          meta: { agencyId, status: "pending" },
+        }),
       ];
       await db.commit(tx, writes);
       return { ok: true, code: "ok", ...result };
