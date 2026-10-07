@@ -1421,7 +1421,7 @@ class _RoomChatComposerState extends State<RoomChatComposer> {
   }
 
 
-  Future<void> _pickVipEmoji() async {
+  Future<void> _pickAnimatedEmoji() async {
     if (!_canUseAnimatedEmoji || !_canSend) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -1508,7 +1508,7 @@ class _RoomChatComposerState extends State<RoomChatComposer> {
                   tooltip: _canUseAnimatedEmoji
                       ? 'إيموجي متحرك'
                       : 'لا يوجد إيموجي متحرك متاح',
-                  onPressed: _canSend ? _pickVipEmoji : null,
+                  onPressed: _canSend ? _pickAnimatedEmoji : null,
                   visualDensity: VisualDensity.compact,
                   icon: Icon(
                     Icons.sentiment_satisfied_alt_rounded,
