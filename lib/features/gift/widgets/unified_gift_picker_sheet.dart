@@ -81,7 +81,11 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
     } catch (_) {
       // Gift sending stays available even if the level summary cannot load.
     } finally {
-      _wealthLoading = false;
+      if (mounted) {
+        setState(() => _wealthLoading = false);
+      } else {
+        _wealthLoading = false;
+      }
     }
   }
 
