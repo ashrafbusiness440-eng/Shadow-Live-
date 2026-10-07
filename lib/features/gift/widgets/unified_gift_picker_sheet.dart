@@ -319,6 +319,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
         'vip_gift_requires_level' => 'هذه الهدية تتطلب مستوى VIP أعلى.',
         'emergency_locked' => 'عمليات الهدايا متوقفة مؤقتاً.',
         'blocked' => 'لا يمكن إرسال الهدية بسبب إعدادات الحظر.',
+        'gift_bag_insufficient' => 'الكمية الموجودة في الحقيبة لا تكفي.',
         _ => 'تعذر إرسال الهدية حالياً.',
       };
       ScaffoldMessenger.of(context).showSnackBar(
