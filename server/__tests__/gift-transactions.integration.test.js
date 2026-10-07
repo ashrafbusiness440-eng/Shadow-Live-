@@ -31,6 +31,13 @@ function previousMonthKey(date=new Date()){
   )).toISOString().slice(0,7);
 }
 
+function relationshipPathSafe(value){
+  return Array.from(
+    new TextEncoder().encode(String(value||"").trim()),
+    byte=>byte.toString(16).padStart(2,"0"),
+  ).join("");
+}
+
 function agencyAccrualShard(value){
   const text=String(value??"").trim();
   let hash=2166136261;
@@ -348,6 +355,154 @@ test("room gift fanout charges once and commits all recipients atomically",async
   assert.equal(duplicate.code,"duplicate");
   const senderAfter=await db.collection("users").doc(senderId).get();
   assert.equal(senderAfter.data().coins,800000);
+});
+
+test("CP gift keeps coin price separate and awards exact 1.5x affinity",async()=>{
+  await seedSharedConfig();
+  const suffix=Date.now().toString()+"_cp_gift";
+  const senderId="sender_"+suffix;
+  const receiverId="receiver_"+suffix;
+  const roomId="room_"+suffix;
+  const relationshipId="rel_"+suffix;
+  const key="roomgift_cp_"+suffix;
+  const basePoints=200;
+
+  await db.collection("system_config").doc("gift_catalog").set({
+    gifts:[{
+      id:"cp_heart",
+      category:"cp",
+      nameAr:"قلب CP",
+      priceCoins:1200,
+      enabled:true,
+      assetKey:"gifts.placeholder.default",
+      affinityBasePoints:basePoints,
+    }],
+  });
+
+  await Promise.all([
+    db.collection("users").doc(senderId).set({
+      coins:100000,diamonds:0,role:"user",
+      wealthPoints:0,attractionPoints:0,
+    }),
+    db.collection("users").doc(receiverId).set({
+      coins:0,diamonds:0,role:"user",
+      wealthPoints:0,attractionPoints:0,
+      pendingGiftEarningCoins:0,
+    }),
+    db.collection("rooms").doc(roomId).set({
+      isActive:true,totalSupport:0,
+    }),
+    db.collection("relationships").doc(relationshipId).set({
+      relationshipId,
+      relationshipType:"cp",
+      status:"active",
+      participants:[senderId,receiverId].sort(),
+      affinityPoints:1000,
+    }),
+    db.collection("relationship_slots").doc(
+      relationshipPathSafe(senderId)+"__cp",
+    ).set({
+      userId:senderId,
+      partnerUid:receiverId,
+      relationshipId,
+      relationshipType:"cp",
+    }),
+  ]);
+
+  const result=await sendRoomGift(
+    cloudflareDb,
+    senderId,
+    {
+      roomId,
+      receiverId,
+      giftId:"cp_heart",
+      quantity:7,
+      idempotencyKey:key,
+    },
+    {
+      realtimeNamespace:realtimeNamespaceWithPresentUids([
+        senderId,receiverId,
+      ]),
+    },
+  );
+
+  assert.equal(result.totalCost,8400);
+  assert.equal(result.affinityBasePoints,basePoints);
+  assert.equal(result.affinityPointsAwarded,2100);
+
+  const [relationship,tx,event,sender]=await Promise.all([
+    db.collection("relationships").doc(relationshipId).get(),
+    db.collection("gift_transactions").doc(key).get(),
+    db.collection("relationship_affinity_events").doc(key).get(),
+    db.collection("users").doc(senderId).get(),
+  ]);
+  assert.equal(relationship.data().affinityPoints,3100);
+  assert.equal(relationship.data().giftAffinityPoints,2100);
+  assert.equal(tx.data().totalCost,8400);
+  assert.equal(tx.data().affinityBasePoints,basePoints);
+  assert.equal(tx.data().affinityPointsAwarded,2100);
+  assert.equal(event.data().multiplierBps,15000);
+  assert.equal(event.data().affinityPointsAwarded,2100);
+  assert.equal(sender.data().coins,91600);
+});
+
+test("relationship gift is rejected before any financial write when pair is not eligible",async()=>{
+  await seedSharedConfig();
+  const suffix=Date.now().toString()+"_cp_guard";
+  const senderId="sender_"+suffix;
+  const receiverId="receiver_"+suffix;
+  const roomId="room_"+suffix;
+  const key="roomgift_cp_guard_"+suffix;
+
+  await db.collection("system_config").doc("gift_catalog").set({
+    gifts:[{
+      id:"cp_only",
+      category:"cp",
+      nameAr:"هدية CP",
+      priceCoins:1000,
+      enabled:true,
+      assetKey:"gifts.placeholder.default",
+      affinityBasePoints:100,
+    }],
+  });
+  await Promise.all([
+    db.collection("users").doc(senderId).set({
+      coins:100000,diamonds:0,role:"user",
+    }),
+    db.collection("users").doc(receiverId).set({
+      coins:0,diamonds:0,role:"user",
+    }),
+    db.collection("rooms").doc(roomId).set({isActive:true}),
+  ]);
+
+  await assert.rejects(
+    ()=>sendRoomGift(
+      cloudflareDb,
+      senderId,
+      {
+        roomId,
+        receiverId,
+        giftId:"cp_only",
+        quantity:1,
+        idempotencyKey:key,
+      },
+      {
+        realtimeNamespace:realtimeNamespaceWithPresentUids([
+          senderId,receiverId,
+        ]),
+      },
+    ),
+    /relationship_gift_not_eligible/,
+  );
+
+  const [sender,ledger,operation]=await Promise.all([
+    db.collection("users").doc(senderId).get(),
+    db.collection("financial_ledger").doc("gift_"+key).get(),
+    db.collection("gift_operations").doc(key).get(),
+  ]);
+  assert.equal(sender.data().coins,100000);
+  assert.equal(ledger.exists,false);
+  assert.equal(operation.exists,false);
 });
 
 test("chat gift uses the same monthly target salary and sharded accrual as room gifts",async()=>{
