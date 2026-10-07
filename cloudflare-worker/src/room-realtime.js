@@ -473,6 +473,18 @@ export async function roomRealtime(request, env) {
           profileImageUrl: String(
             profileData.profileImageUrl || payload.picture || "",
           ),
+          activeProfileFrameAssetKey: String(
+            profileData.activeProfileFrameAssetKey || "",
+          ),
+          activeProfileFrameImageUrl: String(
+            profileData.activeProfileFrameImageUrl || "",
+          ),
+          activeProfileFrameExpiresAtMs: Math.max(
+            0,
+            Number(profileData.activeProfileFrameExpiresAtMs || 0),
+          ),
+          activeProfileFramePermanent:
+            profileData.activeProfileFramePermanent === true,
           publicId: String(profileData.publicId || ""),
           wealthLevel: levelMetadata.wealthLevel,
           attractionLevel: levelMetadata.attractionLevel,
