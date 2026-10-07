@@ -1,0 +1,34 @@
+name: Repair Asset Registry profile frames
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - cloudflare-worker/scripts/repair-profile-frame-registry.mjs
+      - .github/workflows/repair-profile-frame-registry.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shadow-live-profile-frame-registry-repair
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Repair misclassified profile-frame metadata
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node cloudflare-worker/scripts/repair-profile-frame-registry.mjs
