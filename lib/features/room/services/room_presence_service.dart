@@ -11,6 +11,10 @@ class RoomPresenceUser {
     required this.uid,
     required this.displayName,
     required this.profileImageUrl,
+    this.activeProfileFrameAssetKey = '',
+    this.activeProfileFrameImageUrl = '',
+    this.activeProfileFrameExpiresAtMs = 0,
+    this.activeProfileFramePermanent = false,
     required this.vipLevel,
     required this.vipOnlinePriority,
     required this.joinedAtMs,
@@ -20,6 +24,10 @@ class RoomPresenceUser {
   final String uid;
   final String displayName;
   final String profileImageUrl;
+  final String activeProfileFrameAssetKey;
+  final String activeProfileFrameImageUrl;
+  final int activeProfileFrameExpiresAtMs;
+  final bool activeProfileFramePermanent;
   final int vipLevel;
   final bool vipOnlinePriority;
   final int joinedAtMs;
@@ -31,6 +39,14 @@ class RoomPresenceUser {
         displayName:
             (data['displayName'] ?? 'مستخدم Shadow Live').toString(),
         profileImageUrl: (data['profileImageUrl'] ?? '').toString(),
+        activeProfileFrameAssetKey:
+            (data['activeProfileFrameAssetKey'] ?? '').toString(),
+        activeProfileFrameImageUrl:
+            (data['activeProfileFrameImageUrl'] ?? '').toString(),
+        activeProfileFrameExpiresAtMs:
+            (data['activeProfileFrameExpiresAtMs'] as num?)?.toInt() ?? 0,
+        activeProfileFramePermanent:
+            data['activeProfileFramePermanent'] == true,
         vipLevel: (data['vipLevel'] as num?)?.toInt() ?? 0,
         vipOnlinePriority: data['vipOnlinePriority'] == true,
         joinedAtMs: (data['joinedAtMs'] as num?)?.toInt() ?? 0,
