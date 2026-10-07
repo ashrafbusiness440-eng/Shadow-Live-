@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import 'control_api_endpoints.dart';
+import '../features/profile/widgets/profile_avatar_with_frame.dart';
 import 'control_firebase.dart';
 
 abstract final class UserLevelMigrationPolicy {
@@ -433,14 +434,19 @@ class _UserLevelControlPageState extends State<UserLevelControlPage> {
             children: <Widget>[
               Row(
                 children: <Widget>[
-                  CircleAvatar(
-                    radius: 24,
-                    backgroundImage: user.profileImageUrl.isEmpty
-                        ? null
-                        : NetworkImage(user.profileImageUrl),
-                    child: user.profileImageUrl.isEmpty
-                        ? const Icon(Icons.person_outline)
-                        : null,
+                  ProfileAvatarWithFrame(
+                    diameter: 48,
+                    placeholderIcon: Icons.person_outline,
+                    profile: profileAvatarFrameData(
+                      imageUrl: user.profileImageUrl,
+                      avatarAsset: user.profileAvatarAsset,
+                      frameAssetKey: user.activeProfileFrameAssetKey,
+                      frameImageUrl: user.activeProfileFrameImageUrl,
+                      frameExpiresAtMs:
+                          user.activeProfileFrameExpiresAtMs,
+                      framePermanent:
+                          user.activeProfileFramePermanent,
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -578,6 +584,11 @@ class _LevelUser {
     required this.displayName,
     required this.publicId,
     required this.profileImageUrl,
+    required this.profileAvatarAsset,
+    required this.activeProfileFrameAssetKey,
+    required this.activeProfileFrameImageUrl,
+    required this.activeProfileFrameExpiresAtMs,
+    required this.activeProfileFramePermanent,
     required this.role,
     required this.wealth,
     required this.attraction,
@@ -593,6 +604,16 @@ class _LevelUser {
       displayName: (json['displayName'] ?? 'مستخدم Shadow Live').toString(),
       publicId: (json['publicId'] ?? '').toString(),
       profileImageUrl: (json['profileImageUrl'] ?? '').toString(),
+      profileAvatarAsset:
+          (json['profileAvatarAsset'] ?? '').toString(),
+      activeProfileFrameAssetKey:
+          (json['activeProfileFrameAssetKey'] ?? '').toString(),
+      activeProfileFrameImageUrl:
+          (json['activeProfileFrameImageUrl'] ?? '').toString(),
+      activeProfileFrameExpiresAtMs:
+          (json['activeProfileFrameExpiresAtMs'] as num?)?.toInt() ?? 0,
+      activeProfileFramePermanent:
+          json['activeProfileFramePermanent'] == true,
       role: (json['role'] ?? 'user').toString(),
       wealth: _LevelMetric.fromJson(
         key: 'wealth',
@@ -622,6 +643,11 @@ class _LevelUser {
   final String displayName;
   final String publicId;
   final String profileImageUrl;
+  final String profileAvatarAsset;
+  final String activeProfileFrameAssetKey;
+  final String activeProfileFrameImageUrl;
+  final int activeProfileFrameExpiresAtMs;
+  final bool activeProfileFramePermanent;
   final String role;
   final _LevelMetric wealth;
   final _LevelMetric attraction;
