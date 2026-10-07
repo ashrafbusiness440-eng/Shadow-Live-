@@ -23,13 +23,16 @@ void main() {
     final directGift = File(
       'lib/features/gift/widgets/direct_gift_sheet.dart',
     ).readAsStringSync();
+    final unifiedGift = File(
+      'lib/features/gift/widgets/unified_gift_picker_sheet.dart',
+    ).readAsStringSync();
 
     expect(presence, contains('vipOnlinePriority'));
-    expect(presence, contains('vipEmojiToken'));
+    expect(presence, contains('vipLevel'));
 
-    expect(composer, contains('إيموجي VIP الحصري'));
-    expect(composer, contains('vipEmojiToken'));
-    expect(composer, contains('VIP Emoji'));
+    expect(composer, contains('إيموجي متحرك'));
+    expect(composer, contains('animatedEmojiId'));
+    expect(composer, contains('AnimatedEmojiVisual'));
     expect(composer, isNot(contains('Timer.periodic')));
 
     expect(giftCatalog, contains('minVipLevel'));
@@ -39,8 +42,9 @@ void main() {
       RegExp(r'value:\s*4').hasMatch(giftControl),
       isTrue,
     );
-    expect(roomGift, contains('vip_gift_requires_level'));
-    expect(directGift, contains('vip_gift_requires_level'));
+    expect(roomGift, contains('UnifiedGiftPickerSheet'));
+    expect(directGift, contains('UnifiedGiftPickerSheet'));
+    expect(unifiedGift, contains('vip_gift_requires_level'));
 
     expect(control, contains('VIP1+ — خدمة عملاء VIP'));
     expect(control, contains('VIP4+ — قناة حصرية 1-to-1'));
@@ -55,8 +59,8 @@ void main() {
       'lib/features/room/services/room_chat_service.dart',
     ).readAsStringSync();
 
-    expect(session, contains('vipEmojiToken'));
-    expect(chat, contains('vipEmojiToken'));
+    expect(session, contains('animatedEmojiId'));
+    expect(chat, contains('animatedEmojiId'));
     expect(session, isNot(contains('Timer.periodic')));
     expect(chat, isNot(contains('FirebaseFirestore')));
   });

@@ -15,6 +15,15 @@ class GiftCatalogItem {
     required this.assetKey,
     required this.localPlaceholder,
     this.minVipLevel = 0,
+    this.isAnimated = false,
+    this.effectMode = 'none',
+    this.effectAssetKey = '',
+    this.effectSoundAssetKey = '',
+    this.effectMinQuantity = 0,
+    this.effectDurationMs = 2200,
+    this.effectSize = 0,
+    this.premiumBannerMinQuantity = 0,
+    this.affinityBasePoints = 0,
   });
 
   final String id;
@@ -27,6 +36,21 @@ class GiftCatalogItem {
   final String assetKey;
   final String localPlaceholder;
   final int minVipLevel;
+  final bool isAnimated;
+  final String effectMode;
+  final String effectAssetKey;
+  final String effectSoundAssetKey;
+  final int effectMinQuantity;
+  final int effectDurationMs;
+  final int effectSize;
+  final int premiumBannerMinQuantity;
+  final int affinityBasePoints;
+
+  bool get isRelationshipGift => category == 'cp' || category == 'friends';
+  bool get hasRoomEffect =>
+      effectMode == 'seat' || effectMode == 'cinematic';
+  String get effectiveEffectAssetKey =>
+      effectAssetKey.trim().isEmpty ? assetKey : effectAssetKey;
 
   int get effectiveMinVipLevel =>
       minVipLevel > 0 ? minVipLevel : (category == 'vip' ? 4 : 0);
@@ -46,6 +70,20 @@ class GiftCatalogItem {
           .toString(),
       minVipLevel: (map['minVipLevel'] as num?)?.toInt() ??
           ((map['category'] ?? '').toString() == 'vip' ? 4 : 0),
+      isAnimated: map['isAnimated'] == true,
+      effectMode: (map['effectMode'] ?? 'none').toString(),
+      effectAssetKey: (map['effectAssetKey'] ?? '').toString(),
+      effectSoundAssetKey:
+          (map['effectSoundAssetKey'] ?? '').toString(),
+      effectMinQuantity:
+          (map['effectMinQuantity'] as num?)?.toInt() ?? 0,
+      effectDurationMs:
+          (map['effectDurationMs'] as num?)?.toInt() ?? 2200,
+      effectSize: (map['effectSize'] as num?)?.toInt() ?? 0,
+      premiumBannerMinQuantity:
+          (map['premiumBannerMinQuantity'] as num?)?.toInt() ?? 0,
+      affinityBasePoints:
+          (map['affinityBasePoints'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -60,6 +98,15 @@ class GiftCatalogItem {
         'assetKey': assetKey,
         'localPlaceholder': localPlaceholder,
         'minVipLevel': effectiveMinVipLevel,
+        'isAnimated': isAnimated,
+        'effectMode': effectMode,
+        'effectAssetKey': effectiveEffectAssetKey,
+        'effectSoundAssetKey': effectSoundAssetKey.trim(),
+        'effectMinQuantity': effectMinQuantity,
+        'effectDurationMs': effectDurationMs,
+        'effectSize': effectSize,
+        'premiumBannerMinQuantity': premiumBannerMinQuantity,
+        'affinityBasePoints': affinityBasePoints,
       };
 }
 
@@ -75,6 +122,13 @@ class GiftCatalogService {
   static List<GiftCatalogItem>? _cachedCatalog;
   static DateTime? _loadedAt;
   static Future<List<GiftCatalogItem>>? _inflight;
+  static int? _cachedBalanceCoins;
+
+  static int? get cachedBalanceCoins => _cachedBalanceCoins;
+
+  static void updateCachedBalance(int value) {
+    _cachedBalanceCoins = value < 0 ? 0 : value;
+  }
   static const Set<String> categories = <String>{
     'general',
     'countries',
@@ -82,7 +136,21 @@ class GiftCatalogService {
     'vip',
     'lucky',
     'activities',
+    'cp',
+    'friends',
   };
+
+  static String categoryLabel(String category) => switch (category) {
+        'general' => 'هدايا',
+        'countries' => 'دول',
+        'celebrities' => 'مشاهير',
+        'vip' => 'امتياز',
+        'lucky' => 'محظوظ',
+        'activities' => 'أنشطة',
+        'cp' => 'CP',
+        'friends' => 'أصدقاء',
+        _ => 'هدايا',
+      };
 
   static const List<GiftCatalogItem> fallbackGifts = <GiftCatalogItem>[
     GiftCatalogItem(
@@ -311,6 +379,10 @@ class GiftCatalogService {
       if (response.statusCode != 200 || body['ok'] != true) {
         throw StateError((body['code'] ?? 'gift_catalog_failed').toString());
       }
+      final balance = (body['balance'] as num?)?.toInt();
+      if (balance != null && balance >= 0) {
+        _cachedBalanceCoins = balance;
+      }
       return parseCatalog(body['gifts']);
     } finally {
       if (ownedClient) httpClient.close();
@@ -321,6 +393,7 @@ class GiftCatalogService {
     _cachedCatalog = null;
     _loadedAt = null;
     _inflight = null;
+    _cachedBalanceCoins = null;
   }
 
 }

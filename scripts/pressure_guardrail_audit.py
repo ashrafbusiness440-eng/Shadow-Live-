@@ -118,6 +118,7 @@ def main() -> int:
     app_assets = read("cloudflare-worker/src/app-assets.js")
     manage_app_asset = read("cloudflare-worker/src/manage-app-asset.js")
     gift_catalog_service = read("lib/features/gift/services/gift_catalog_service.dart")
+    unified_gift_picker = read("lib/features/gift/widgets/unified_gift_picker_sheet.dart")
     recharge_config_service = read("lib/features/wallet/services/recharge_config_service.dart")
     recharge_screen = read("lib/features/wallet/screens/recharge_screen.dart")
     room_presence_authority = read("cloudflare-worker/src/room-presence-authority.js")
@@ -292,7 +293,11 @@ def main() -> int:
         if loader not in service:
             failures.append(f"Step 8 regression: {label} cached API loader is missing")
 
-    if "GiftCatalogService.loadCatalog()" not in app_main and "GiftCatalogService.loadCatalog()" not in read("lib/features/gift/widgets/room_gift_sheet.dart"):
+    if (
+        "GiftCatalogService.loadCatalog()" not in app_main
+        and "GiftCatalogService.loadCatalog()" not in read("lib/features/gift/widgets/room_gift_sheet.dart")
+        and "GiftCatalogService.loadCatalog()" not in unified_gift_picker
+    ):
         failures.append("Step 8 regression: active gift UI is not using the cached catalog API")
     if "RechargeConfigService.watchPackages()" in recharge_screen or "_packageSubscription" in recharge_screen:
         failures.append("Step 8 regression: recharge screen reopened the Firestore config stream")
@@ -629,9 +634,8 @@ def main() -> int:
         failures.append("Step 10 regression: sendRoomGift handler is missing")
     else:
         for required in (
-            "senderRealtimePresence",
-            "receiverRealtimePresence",
-            "realtimeUserPresentFromNamespace",
+            "realtimeResolveRoomUidsFromNamespace",
+            "realtimeRoomParticipantsFromNamespace",
             "assertRoomPresence",
         ):
             if required not in room_gift_body:

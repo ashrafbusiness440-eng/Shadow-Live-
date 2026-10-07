@@ -5,6 +5,7 @@ import {
   persistRoomChatReport,
 } from "./room-realtime-persistence.js";
 
+import { validateAnimatedEmojiForVip } from "./animated-emoji-catalog.js";
 import {
   ROOM_REALTIME_PROTOCOL_VERSION,
   normalizeRoomId,
@@ -38,6 +39,7 @@ import {
 
 const TICKET_PREFIX = "ticket:";
 const CUSTOMER_SERVICE_MIC_SCHEDULE_PREFIX = "cs_mic:";
+const ROOM_PRESENCE_CLIENT_SNAPSHOT_LIMIT = 200;
 
 async function ticketStorageKey(ticket) {
   const bytes = new TextEncoder().encode(String(ticket || ""));
@@ -329,6 +331,25 @@ export class RoomRealtimeObject extends DurableObject {
         participants,
       });
     }
+    if (url.pathname === "/presence/bounded" && request.method === "GET") {
+      const requested = Number(url.searchParams.get("limit") || 24);
+      const limit = Math.max(1, Math.min(64, Math.floor(requested)));
+      const participants = this.#presenceSnapshot("", {
+        includeGhost: true,
+      });
+      const requiredUid = String(
+        url.searchParams.get("requiredUid") || "",
+      ).trim();
+      return Response.json({
+        ok: true,
+        onlineCount: participants.length,
+        participants: participants.slice(0, limit),
+        truncated: participants.length > limit,
+        requiredUidPresent: requiredUid
+          ? hasPresenceUid(this.#presenceAttachments(), requiredUid)
+          : null,
+      });
+    }
     if (url.pathname === "/presence/count" && request.method === "GET") {
       const onlineCount = this.#presenceSnapshot().length;
       recordRealtimeTelemetry(this.env, {
@@ -353,6 +374,31 @@ export class RoomRealtimeObject extends DurableObject {
       return Response.json({
         ok: true,
         present,
+      });
+    }
+    if (url.pathname === "/presence/resolve" && request.method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const rawUids = Array.isArray(body.uids) ? body.uids : [];
+      const uids = Array.from(
+        new Set(
+          rawUids
+            .map((value) => String(value || "").trim())
+            .filter(Boolean),
+        ),
+      ).slice(0, 24);
+      const attachments = this.#presenceAttachments();
+      const presentUids = uids.filter((uid) =>
+        hasPresenceUid(attachments, uid)
+      );
+      recordRealtimeTelemetry(this.env, {
+        event: "presence_resolve",
+        fanout: uids.length,
+        onlineCount: this.#presenceSnapshot().length,
+      });
+      return Response.json({
+        ok: true,
+        requestedCount: uids.length,
+        presentUids,
       });
     }
     if (url.pathname === "/rocket/publish" && request.method === "POST") {
@@ -578,6 +624,12 @@ export class RoomRealtimeObject extends DurableObject {
         connectionId,
         onlineCount,
         participantsCount: onlineCount,
+        participants: participants.slice(
+          0,
+          ROOM_PRESENCE_CLIENT_SNAPSHOT_LIMIT,
+        ),
+        participantsTruncated:
+          participants.length > ROOM_PRESENCE_CLIENT_SNAPSHOT_LIMIT,
       }),
     );
     this.#publishOnlineCount(roomId, participants);
@@ -968,13 +1020,23 @@ export class RoomRealtimeObject extends DurableObject {
       0,
       Math.min(10, Number(attachment.vipLevel || 0)),
     );
-    const vipEmojiToken = String(payload.vipEmojiToken || "").trim();
-    const allowedVipEmojiTokens = new Set([
-      "vip_star",
-      "vip_crown",
-      "vip_diamond",
-      "vip_shadow",
-    ]);
+    const animatedEmojiId = String(
+      payload.animatedEmojiId || payload.vipEmojiToken || "",
+    ).trim();
+    let animatedEmoji = null;
+    try {
+      animatedEmoji = validateAnimatedEmojiForVip(
+        animatedEmojiId,
+        vipLevel,
+      );
+    } catch (error) {
+      this.#chatError(
+        webSocket,
+        requestId,
+        String(error?.code || error?.message || "invalid_animated_emoji"),
+      );
+      return true;
+    }
 
     if (!requestId || !roomId || roomId !== attachedRoomId || !uid) {
       this.#chatError(webSocket, requestId, "invalid_room_message");
@@ -983,16 +1045,6 @@ export class RoomRealtimeObject extends DurableObject {
     if (!text || text.length > 500) {
       this.#chatError(webSocket, requestId, "invalid_room_message");
       return true;
-    }
-    if (vipEmojiToken) {
-      if (!allowedVipEmojiTokens.has(vipEmojiToken)) {
-        this.#chatError(webSocket, requestId, "invalid_vip_emoji");
-        return true;
-      }
-      if (vipLevel < 4) {
-        this.#chatError(webSocket, requestId, "vip4_emoji_required");
-        return true;
-      }
     }
     if (
       attachment.chatEnabled === false &&
@@ -1064,13 +1116,16 @@ export class RoomRealtimeObject extends DurableObject {
         attractionLevel: Math.max(0, Math.min(35, Number(attachment.attractionLevel || 0))),
         gameLevel: Math.max(0, Math.min(21, Number(attachment.gameLevel || 0))),
         text,
-        vipEmojiToken: vipEmojiToken || "",
+        animatedEmojiId: animatedEmoji?.id || "",
+        animatedEmojiAssetKey: animatedEmoji?.assetKey || "",
+        animatedEmojiFallbackGlyph: animatedEmoji?.fallbackGlyph || "",
+        animatedEmojiMinVipLevel: animatedEmoji?.minVipLevel || 0,
         mentionUids: mentions,
         replyTo: replyTo || null,
         replyPreview: replyPreview || null,
         replySenderUid: replySenderUid || null,
         createdAtMs: nowMs,
-        systemKind: vipEmojiToken ? "vip_emoji" : "",
+        systemKind: animatedEmoji ? "animated_emoji" : "",
         vipLevel,
         entryEffectKey: "",
       },

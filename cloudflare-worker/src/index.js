@@ -127,7 +127,7 @@ async function dispatchRequest(request, env, ctx) {
     return profileVisits(request, env);
   }
   if (url.pathname === "/api/chat-actions") {
-    return chatSafetyActions(request, env);
+    return chatSafetyActions(request, env, ctx);
   }
   if (url.pathname === "/api/storage-health") {
     annotatePressureRequest(request, { action: "storageHealth" });

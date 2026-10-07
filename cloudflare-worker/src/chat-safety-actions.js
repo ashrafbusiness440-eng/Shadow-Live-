@@ -22,7 +22,14 @@ import {
 } from "./room-presence-authority.js";
 import { giftLevelPointAwards, safeAddUserLevelPoints } from "./user-level-policy.js";
 import { activeEffectiveVipLevelFromUser } from "./vip-runtime.js";
+import { validateAnimatedEmojiForVip } from "./animated-emoji-catalog.js";
 import { vipCosmeticAssetKey } from "./vip-entitlements.js";
+import { publishGlobalAppEvents } from "./room-realtime.js";
+import { premiumGiftCelebrationEvent } from "./gift-visual-policy.js";
+import {
+  prepareRelationshipGiftContext,
+  relationshipGiftWritesForRecipient,
+} from "./relationship-gift.js";
 
 const clean = (value) => String(value ?? "").trim();
 const validKey = (value) => /^[A-Za-z0-9_-]{12,220}$/.test(clean(value));
@@ -141,6 +148,7 @@ export async function sendMessage(db, uid, body) {
   const receiverId = clean(body.receiverId);
   const conversationId = clean(body.conversationId);
   const message = clean(body.text);
+  const animatedEmojiId = clean(body.animatedEmojiId || body.vipEmojiToken);
   const key = clean(body.idempotencyKey);
 
   if (
@@ -248,6 +256,22 @@ export async function sendMessage(db, uid, body) {
         (senderCapabilities.has("manageUsers") ||
           senderCapabilities.has("reviewReports")));
     const senderVip = activeEffectiveVipLevelFromUser(senderData, nowMs);
+    let animatedEmoji = null;
+    try {
+      animatedEmoji = validateAnimatedEmojiForVip(
+        animatedEmojiId,
+        senderVip,
+      );
+    } catch (error) {
+      const code = clean(error?.code || error?.message);
+      if (
+        code === "vip4_emoji_required" ||
+        code === "invalid_animated_emoji"
+      ) {
+        throw new ApiError(code, 403);
+      }
+      throw error;
+    }
     const receiverVip = activeEffectiveVipLevelFromUser(receiverData, nowMs);
     const friendsOnly =
       receiverVip >= 1 && receiverData.friendsOnlyMessages === true;
@@ -283,7 +307,7 @@ export async function sendMessage(db, uid, body) {
         updatedAt: now,
       }, ["windowStartedAt", "count", "updatedAt"]),
       db.writeUpdate(conversationPath, {
-        lastMessage: message,
+        lastMessage: animatedEmoji ? animatedEmoji.fallbackGlyph : message,
         lastSenderId: uid,
         updatedAt: now,
         unreadCounts: counts,
@@ -292,8 +316,12 @@ export async function sendMessage(db, uid, body) {
         senderId: uid,
         receiverId,
         text: message,
-        type: "text",
+        type: animatedEmoji ? "animated_emoji" : "text",
         vipLevel: senderVip,
+        animatedEmojiId: animatedEmoji?.id || "",
+        animatedEmojiAssetKey: animatedEmoji?.assetKey || "",
+        animatedEmojiFallbackGlyph: animatedEmoji?.fallbackGlyph || "",
+        animatedEmojiMinVipLevel: animatedEmoji?.minVipLevel || 0,
         createdAt: now,
       }),
     ];
@@ -331,6 +359,7 @@ export async function sendMessage(db, uid, body) {
 
     const resultData = {
       messageId,
+      animatedEmojiId: animatedEmoji?.id || "",
       mutual,
       assignedCustomerServiceModerator: assignedModerator,
       unlimitedGreetings,
@@ -489,6 +518,24 @@ export async function sendGift(db, uid, body, options = {}) {
     const giftData = rawCatalog.find((item) => clean(item?.id) === giftId);
     if (!giftData) throw new ApiError("not_found", 404);
     if (giftData.enabled === false) throw new ApiError("gift_inactive", 409);
+
+    let relationshipGiftContext = null;
+    try {
+      relationshipGiftContext = await prepareRelationshipGiftContext(
+        db,
+        transaction,
+        {
+          senderUid: uid,
+          gift: giftData,
+        },
+      );
+    } catch (error) {
+      const code = clean(error?.message);
+      if (code === "invalid_affinity_base_points") {
+        throw new ApiError(code, 409);
+      }
+      throw error;
+    }
 
     const unitCoins = Number(giftData.priceCoins || 0);
     if (!Number.isSafeInteger(unitCoins) || unitCoins <= 0) {
@@ -704,7 +751,42 @@ export async function sendGift(db, uid, body, options = {}) {
       counts[receiverId] = Number(counts[receiverId] || 0) + 1;
     }
 
+    let relationshipGiftAward = {
+      writes: [],
+      relationshipId: null,
+      relationshipType: null,
+      affinityBasePoints: 0,
+      affinityPointsAwarded: 0,
+    };
+    try {
+      relationshipGiftAward =
+        await relationshipGiftWritesForRecipient(
+          db,
+          transaction,
+          relationshipGiftContext,
+          {
+            receiverId,
+            giftId,
+            quantity,
+            operationId: key,
+            now,
+          },
+        );
+    } catch (error) {
+      const code = clean(error?.message);
+      if (
+        code === "relationship_gift_not_eligible" ||
+        code === "invalid_affinity_points" ||
+        code === "invalid_affinity_quantity" ||
+        code === "invalid_relationship_gift_operation"
+      ) {
+        throw new ApiError(code, 409);
+      }
+      throw error;
+    }
+
     const writes = [
+      ...relationshipGiftAward.writes,
       db.writeUpdate(
         senderPath,
         { coins: after, wealthPoints: nextWealthPoints },
@@ -1159,6 +1241,14 @@ export async function sendGift(db, uid, body, options = {}) {
             : "applied",
         periods,
         agencyId: agencyId || null,
+        relationshipId: relationshipGiftAward.relationshipId,
+        relationshipType: relationshipGiftAward.relationshipType,
+        affinityBasePoints:
+          relationshipGiftAward.affinityBasePoints,
+        affinityPointsAwarded:
+          relationshipGiftAward.affinityPointsAwarded,
+        affinityMultiplierBps:
+          relationshipGiftAward.relationshipId ? 15000 : 0,
         createdAt: now,
       }),
       db.writeCreate(ledgerPath, {
@@ -1227,6 +1317,12 @@ export async function sendGift(db, uid, body, options = {}) {
       agencyNextTargetCoins: agencyTarget?.remainingToNextTargetCoins || 0,
       agencySalaryPaidDiamonds: agencyTarget?.paidDiamonds || 0,
       salaryDeltaDiamonds: agencyTarget?.salaryDeltaDiamonds || 0,
+      relationshipId: relationshipGiftAward.relationshipId,
+      relationshipType: relationshipGiftAward.relationshipType,
+      affinityBasePoints:
+        relationshipGiftAward.affinityBasePoints,
+      affinityPointsAwarded:
+        relationshipGiftAward.affinityPointsAwarded,
     };
 
     writes.push(
@@ -1244,7 +1340,34 @@ export async function sendGift(db, uid, body, options = {}) {
     );
 
     await db.commit(transaction, writes);
-    return { ok: true, code: "ok", ...resultData };
+    const premiumEvent = premiumGiftCelebrationEvent({
+      operationId: key,
+      gift: giftData,
+      quantity,
+      totalCost,
+      sender: {
+        uid,
+        displayName: senderName,
+        profileImageUrl: senderProfileImageUrl,
+        publicId: senderPublicId,
+      },
+      receiver: {
+        uid: receiverId,
+        displayName: clean(
+          receiverData.displayName ||
+            receiverData.username ||
+            "مستخدم Shadow Live",
+        ),
+        profileImageUrl: clean(receiverData.profileImageUrl),
+      },
+      nowMs: now.getTime(),
+    });
+    return {
+      ok: true,
+      code: "ok",
+      ...resultData,
+      _globalAppEvents: premiumEvent ? [premiumEvent] : [],
+    };
   });
 }
 
@@ -1649,7 +1772,7 @@ async function reportUser(db, uid, body) {
   });
 }
 
-export async function chatSafetyActions(request, env) {
+export async function chatSafetyActions(request, env, ctx) {
   if (request.method !== "POST") {
     return json(request, env, { ok: false, code: "method_not_allowed" }, 405);
   }
@@ -1692,7 +1815,26 @@ export async function chatSafetyActions(request, env) {
       default:
         throw new ApiError("invalid_action", 400);
     }
-    return json(request, env, result, 200);
+    const globalAppEvents = Array.isArray(result?._globalAppEvents)
+      ? result._globalAppEvents
+      : [];
+    if (globalAppEvents.length > 0) {
+      const publishTask = publishGlobalAppEvents(env, globalAppEvents).catch(
+        (error) => {
+          console.error(
+            "Premium gift celebration publish failed",
+            String(error?.message || error),
+          );
+        },
+      );
+      if (typeof ctx?.waitUntil === "function") {
+        ctx.waitUntil(publishTask);
+      } else {
+        await publishTask;
+      }
+    }
+    const { _globalAppEvents, ...publicResult } = result || {};
+    return json(request, env, publicResult, 200);
   } catch (error) {
     if (error instanceof ApiError) {
       return json(request, env, { ok: false, code: error.code }, error.status);

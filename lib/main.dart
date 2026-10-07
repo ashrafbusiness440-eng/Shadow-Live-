@@ -56,7 +56,6 @@ import 'features/room/services/room_insights_service.dart';
 import 'features/room/services/room_bootstrap_service.dart';
 import 'features/room/services/room_moderation_service.dart';
 import 'features/room/services/room_moderator_service.dart';
-import 'features/room/services/room_presence_service.dart';
 import 'features/room/widgets/room_chat_panel.dart';
 import 'features/gift/widgets/room_gift_sheet.dart';
 import 'features/room/widgets/room_moderator_manager_sheet.dart';
@@ -64,6 +63,7 @@ import 'features/room/widgets/room_music_sheet.dart';
 import 'features/room/widgets/room_pk_panel.dart';
 import 'features/room/widgets/room_rocket_banner_host.dart';
 import 'features/room/widgets/cosmetic_effect_widgets.dart';
+import 'features/room/widgets/room_effect_coordinator.dart';
 import 'features/room/services/room_rocket_service.dart';
 import 'core/assets/shadow_asset_registry.dart';
 import 'features/room/widgets/star_battle_sheet.dart';
@@ -190,13 +190,17 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   final RoomBootstrapService _roomBootstrapService = RoomBootstrapService();
   final RoomModerationService _roomModeration = RoomModerationService();
   final RoomModeratorService _roomModeratorService = RoomModeratorService();
-  final RoomPresenceService _roomPresence = RoomPresenceService();
   final RoomSeatService _roomSeatService = RoomSeatService();
+  late final RoomEffectCoordinator _roomEffectCoordinator;
   bool _voiceStarted = false;
 
   @override
   void initState() {
     super.initState();
+    _roomEffectCoordinator = RoomEffectCoordinator(
+      playEffectSound: _voiceSession.playRoomEffectSound,
+      stopEffectSounds: _voiceSession.stopRoomEffectSounds,
+    );
     _voiceSession.addListener(_syncVoiceSession);
   }
 
@@ -212,6 +216,27 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         _roomArguments = _voiceSession.roomArguments;
       }
     });
+    _roomEffectCoordinator.setPreferences(
+      visualEnabled: _roomEffectsEnabled,
+      effectSoundEnabled: _effectSoundEnabled,
+    );
+    final rawEntrance = _voiceSession.roomArguments['recentEntrance'];
+    if (rawEntrance is Map) {
+      _roomEffectCoordinator.ingestEntrance(
+        Map<String, dynamic>.from(rawEntrance),
+      );
+    }
+    for (final message in _voiceSession.roomChatMessages.take(8)) {
+      final systemKind = (message['systemKind'] ?? '').toString();
+      if (systemKind == 'gift') {
+        _roomEffectCoordinator.ingestGiftMessage(message);
+      } else if (
+        systemKind == 'animated_emoji' ||
+        (message['animatedEmojiId'] ?? '').toString().trim().isNotEmpty
+      ) {
+        _roomEffectCoordinator.ingestAnimatedEmojiMessage(message);
+      }
+    }
     if ((roomClosed || roomBanned) && !_roomClosedHandled) {
       _roomClosedHandled = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1348,20 +1373,12 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                   ),
                   const SizedBox(height: 12),
                   Expanded(
-                    child: FutureBuilder<List<RoomPresenceUser>>(
-                      future: _roomPresence.load(roomId),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState !=
-                            ConnectionState.done) {
-                          return const Center(
-                            child: CircularProgressIndicator(
-                              color: Color(0xFF8A3DFF),
-                            ),
-                          );
-                        }
-                        final users = (snapshot.data ?? const [])
+                    child: AnimatedBuilder(
+                      animation: _voiceSession,
+                      builder: (context, _) {
+                        final users = _voiceSession.roomParticipants
                             .where((user) => user.uid != me)
-                            .toList();
+                            .toList(growable: false);
                         if (users.isEmpty) {
                           return const Center(
                             child: Text(
@@ -1392,14 +1409,17 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                 adminActions.add(
                                   QuickProfileAction(
                                     icon: Icons.mic_external_on_rounded,
-                                    label: invited ? 'تمت دعوته للمايك' : 'دعوة إلى المايك',
+                                    label: invited
+                                        ? 'تمت دعوته للمايك'
+                                        : 'دعوة إلى المايك',
                                     color: const Color(0xFFFFD54A),
                                     onTap: invited
                                         ? () {}
                                         : () {
                                             unawaited(
                                               _runSeatAction(
-                                                () => _roomSeatService.inviteToMic(
+                                                () => _roomSeatService
+                                                    .inviteToMic(
                                                   roomId: roomId,
                                                   targetUid: user.uid,
                                                 ),
@@ -1421,7 +1441,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                     onTap: () {
                                       unawaited(
                                         _runSeatAction(
-                                          () => _roomSeatService.setTargetSeatMuted(
+                                          () => _roomSeatService
+                                              .setTargetSeatMuted(
                                             roomId: roomId,
                                             targetUid: user.uid,
                                             muted: !seat.muted,
@@ -1497,7 +1518,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                   ? onMic
                                       ? const Chip(
                                           label: Text('على المايك'),
-                                          visualDensity: VisualDensity.compact,
+                                          visualDensity:
+                                              VisualDensity.compact,
                                         )
                                       : FilledButton(
                                           onPressed: invited
@@ -1505,13 +1527,15 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                               : () async {
                                                   try {
                                                     final state =
-                                                        await _roomSeatService.inviteToMic(
+                                                        await _roomSeatService
+                                                            .inviteToMic(
                                                       roomId: roomId,
                                                       targetUid: user.uid,
                                                     );
                                                     if (mounted) {
                                                       setState(
-                                                        () => _roomSeatState = state,
+                                                        () => _roomSeatState =
+                                                            state,
                                                       );
                                                     }
                                                   } catch (_) {}
@@ -1847,7 +1871,9 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     final nameSize = compact ? 8.5 : 10.0;
     final starSize = compact ? 8.0 : 9.0;
 
-    return GridView.builder(
+    return AnimatedBuilder(
+      animation: _roomEffectCoordinator,
+      builder: (context, _) => GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: seats.length,
@@ -1859,6 +1885,14 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       ),
       itemBuilder: (_, index) {
         final seat = seats[index];
+        final giftEffect = seat.occupied
+            ? _roomEffectCoordinator.seatEffectFor(seat.uid)
+            : null;
+        final giftEffectSize = giftEffect == null
+            ? 0.0
+            : (giftEffect.size > 0
+                ? giftEffect.size.toDouble()
+                : micSize + 20);
         return InkWell(
           onTap: _changingSeat ? null : () => _handleSeatTap(seat),
           borderRadius: BorderRadius.circular(18),
@@ -1868,6 +1902,22 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
               Stack(
                 clipBehavior: Clip.none,
                 children: [
+                  if (giftEffect != null)
+                    Positioned(
+                      left: (micSize - giftEffectSize) / 2,
+                      top: (micSize - giftEffectSize) / 2,
+                      child: IgnorePointer(
+                        child: SizedBox(
+                          width: giftEffectSize,
+                          height: giftEffectSize,
+                          child: CosmeticAssetVisual(
+                            assetKey: giftEffect.assetKey,
+                            imageUrl: giftEffect.imageUrl,
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                      ),
+                    ),
                   if (seat.voiceWaveActive)
                     Positioned(
                       left: -8,
@@ -1996,6 +2046,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           ),
         );
       },
+      ),
     );
   }
 
@@ -2751,11 +2802,19 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
 
             void toggleEffectSound(bool value) {
               setState(() => _effectSoundEnabled = value);
+              _roomEffectCoordinator.setPreferences(
+                visualEnabled: _roomEffectsEnabled,
+                effectSoundEnabled: value,
+              );
               setSheetState(() {});
             }
 
             void toggleRoomEffects(bool value) {
               setState(() => _roomEffectsEnabled = value);
+              _roomEffectCoordinator.setPreferences(
+                visualEnabled: value,
+                effectSoundEnabled: _effectSoundEnabled,
+              );
               setSheetState(() {});
             }
 
@@ -4543,8 +4602,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     _roomInsightsService.close();
     _roomModeration.close();
     _roomModeratorService.close();
-    _roomPresence.close();
     _roomSeatService.close();
+    _roomEffectCoordinator.dispose();
     super.dispose();
   }
 
@@ -5712,6 +5771,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                   : () => showRoomGiftSheet(
                         context,
                         roomId: roomId,
+                        participants: _voiceSession.roomParticipants,
+                        seats: _roomSeatState?.seats ?? const <VoiceSeat>[],
                       ),
               color: const Color(0xFFFFD54A),
             ),
@@ -5801,10 +5862,6 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         rewardBackgroundValid ? rawRewardBackgroundImageUrl : '';
     final rewardBackgroundAssetKey =
         rewardBackgroundValid ? rawRewardBackgroundAssetKey : '';
-    final rawEntrance = _roomArguments['recentEntrance'];
-    final recentEntrance = rawEntrance is Map
-        ? Map<String, dynamic>.from(rawEntrance)
-        : null;
     final roomTitle = (_roomArguments['name'] ??
             _roomArguments['title'] ??
             'غرفة صوتية')
@@ -5862,8 +5919,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         ),
                       ),
                       Positioned.fill(
-                        child: RoomEntranceEffectHost(
-                          event: recentEntrance,
+                        child: RoomEffectCoordinatorHost(
+                          coordinator: _roomEffectCoordinator,
                         ),
                       ),
                       Positioned(

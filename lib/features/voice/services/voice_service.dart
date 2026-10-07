@@ -23,6 +23,8 @@ abstract interface class VoiceService {
   Future<void> setPlaybackEnabled(bool enabled);
   Future<void> playRoomMedia(Uint8List mediaData);
   Future<void> stopRoomMedia();
+  Future<void> playLocalEffect(Uint8List mediaData);
+  Future<void> stopLocalEffect();
 
   Future<void> takeMicSeat(int seatIndex);
   Future<void> leaveMicSeat();
