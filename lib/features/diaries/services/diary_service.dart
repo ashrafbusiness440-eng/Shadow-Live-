@@ -11,10 +11,6 @@ class DiaryMentionCandidate {
     required this.publicId,
     required this.profileImageUrl,
     required this.profileAvatarAsset,
-    required this.activeProfileFrameAssetKey,
-    required this.activeProfileFrameImageUrl,
-    required this.activeProfileFrameExpiresAtMs,
-    required this.activeProfileFramePermanent,
   });
 
   final String uid;
@@ -22,10 +18,6 @@ class DiaryMentionCandidate {
   final String publicId;
   final String profileImageUrl;
   final String profileAvatarAsset;
-  final String activeProfileFrameAssetKey;
-  final String activeProfileFrameImageUrl;
-  final int activeProfileFrameExpiresAtMs;
-  final bool activeProfileFramePermanent;
 
   factory DiaryMentionCandidate.fromMap(Map<String, dynamic> data) {
     return DiaryMentionCandidate(
@@ -36,14 +28,6 @@ class DiaryMentionCandidate {
       profileImageUrl: (data['profileImageUrl'] ?? '').toString().trim(),
       profileAvatarAsset:
           (data['profileAvatarAsset'] ?? '').toString().trim(),
-      activeProfileFrameAssetKey:
-          (data['activeProfileFrameAssetKey'] ?? '').toString().trim(),
-      activeProfileFrameImageUrl:
-          (data['activeProfileFrameImageUrl'] ?? '').toString().trim(),
-      activeProfileFrameExpiresAtMs:
-          (data['activeProfileFrameExpiresAtMs'] as num?)?.toInt() ?? 0,
-      activeProfileFramePermanent:
-          data['activeProfileFramePermanent'] == true,
     );
   }
 }
@@ -79,10 +63,6 @@ class DiaryItem {
     required this.ownerPublicId,
     required this.ownerProfileImageUrl,
     required this.ownerProfileAvatarAsset,
-    required this.activeProfileFrameAssetKey,
-    required this.activeProfileFrameImageUrl,
-    required this.activeProfileFrameExpiresAtMs,
-    required this.activeProfileFramePermanent,
     required this.text,
     required this.images,
     required this.commentsEnabled,
@@ -100,10 +80,6 @@ class DiaryItem {
   final String ownerPublicId;
   final String ownerProfileImageUrl;
   final String ownerProfileAvatarAsset;
-  final String activeProfileFrameAssetKey;
-  final String activeProfileFrameImageUrl;
-  final int activeProfileFrameExpiresAtMs;
-  final bool activeProfileFramePermanent;
   final String text;
   final List<DiaryImageItem> images;
   final bool commentsEnabled;
@@ -129,10 +105,6 @@ class DiaryItem {
       ownerPublicId: ownerPublicId,
       ownerProfileImageUrl: ownerProfileImageUrl,
       ownerProfileAvatarAsset: ownerProfileAvatarAsset,
-      activeProfileFrameAssetKey: activeProfileFrameAssetKey,
-      activeProfileFrameImageUrl: activeProfileFrameImageUrl,
-      activeProfileFrameExpiresAtMs: activeProfileFrameExpiresAtMs,
-      activeProfileFramePermanent: activeProfileFramePermanent,
       text: text,
       images: images,
       commentsEnabled: commentsEnabled ?? this.commentsEnabled,
@@ -157,14 +129,6 @@ class DiaryItem {
           (data['ownerProfileImageUrl'] ?? '').toString().trim(),
       ownerProfileAvatarAsset:
           (data['ownerProfileAvatarAsset'] ?? '').toString().trim(),
-      activeProfileFrameAssetKey:
-          (data['activeProfileFrameAssetKey'] ?? '').toString().trim(),
-      activeProfileFrameImageUrl:
-          (data['activeProfileFrameImageUrl'] ?? '').toString().trim(),
-      activeProfileFrameExpiresAtMs:
-          (data['activeProfileFrameExpiresAtMs'] as num?)?.toInt() ?? 0,
-      activeProfileFramePermanent:
-          data['activeProfileFramePermanent'] == true,
       text: (data['text'] ?? '').toString(),
       images: rawImages is List
           ? rawImages
@@ -225,10 +189,6 @@ class DiaryCommentItem {
     required this.authorPublicId,
     required this.authorProfileImageUrl,
     required this.authorProfileAvatarAsset,
-    required this.activeProfileFrameAssetKey,
-    required this.activeProfileFrameImageUrl,
-    required this.activeProfileFrameExpiresAtMs,
-    required this.activeProfileFramePermanent,
     required this.text,
     required this.createdAtMs,
   });
@@ -240,10 +200,6 @@ class DiaryCommentItem {
   final String authorPublicId;
   final String authorProfileImageUrl;
   final String authorProfileAvatarAsset;
-  final String activeProfileFrameAssetKey;
-  final String activeProfileFrameImageUrl;
-  final int activeProfileFrameExpiresAtMs;
-  final bool activeProfileFramePermanent;
   final String text;
   final int createdAtMs;
 
@@ -259,14 +215,6 @@ class DiaryCommentItem {
           (data['authorProfileImageUrl'] ?? '').toString().trim(),
       authorProfileAvatarAsset:
           (data['authorProfileAvatarAsset'] ?? '').toString().trim(),
-      activeProfileFrameAssetKey:
-          (data['activeProfileFrameAssetKey'] ?? '').toString().trim(),
-      activeProfileFrameImageUrl:
-          (data['activeProfileFrameImageUrl'] ?? '').toString().trim(),
-      activeProfileFrameExpiresAtMs:
-          (data['activeProfileFrameExpiresAtMs'] as num?)?.toInt() ?? 0,
-      activeProfileFramePermanent:
-          data['activeProfileFramePermanent'] == true,
       text: (data['text'] ?? '').toString(),
       createdAtMs: (data['createdAtMs'] as num?)?.toInt() ?? 0,
     );
@@ -342,10 +290,6 @@ class DiaryGiftEventItem {
     required this.senderName,
     required this.senderPublicId,
     required this.senderProfileImageUrl,
-    required this.activeProfileFrameAssetKey,
-    required this.activeProfileFrameImageUrl,
-    required this.activeProfileFrameExpiresAtMs,
-    required this.activeProfileFramePermanent,
     required this.receiverId,
     required this.giftId,
     required this.giftName,
@@ -364,10 +308,6 @@ class DiaryGiftEventItem {
   final String senderName;
   final String senderPublicId;
   final String senderProfileImageUrl;
-  final String activeProfileFrameAssetKey;
-  final String activeProfileFrameImageUrl;
-  final int activeProfileFrameExpiresAtMs;
-  final bool activeProfileFramePermanent;
   final String receiverId;
   final String giftId;
   final String giftName;
@@ -388,14 +328,6 @@ class DiaryGiftEventItem {
       senderPublicId: (data['senderPublicId'] ?? '').toString().trim(),
       senderProfileImageUrl:
           (data['senderProfileImageUrl'] ?? '').toString().trim(),
-      activeProfileFrameAssetKey:
-          (data['activeProfileFrameAssetKey'] ?? '').toString().trim(),
-      activeProfileFrameImageUrl:
-          (data['activeProfileFrameImageUrl'] ?? '').toString().trim(),
-      activeProfileFrameExpiresAtMs:
-          (data['activeProfileFrameExpiresAtMs'] as num?)?.toInt() ?? 0,
-      activeProfileFramePermanent:
-          data['activeProfileFramePermanent'] == true,
       receiverId: (data['receiverId'] ?? '').toString().trim(),
       giftId: (data['giftId'] ?? '').toString().trim(),
       giftName: (data['giftName'] ?? 'هدية').toString().trim(),
