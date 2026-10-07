@@ -627,16 +627,13 @@ class _RankingTile extends StatelessWidget {
           children: [
             ProfileAvatarWithFrame(
               diameter: 32,
+              userId: person.uid,
               backgroundColor: const Color(0xFF2A3150),
               placeholderColor: Colors.white70,
-              profile: profileAvatarFrameData(
-                imageUrl: person.profileImageUrl,
-                avatarAsset: person.profileAvatarAsset,
-                frameAssetKey: person.activeProfileFrameAssetKey,
-                frameImageUrl: person.activeProfileFrameImageUrl,
-                frameExpiresAtMs: person.activeProfileFrameExpiresAtMs,
-                framePermanent: person.activeProfileFramePermanent,
-              ),
+              fallbackProfile: <String, dynamic>{
+                'profileImageUrl': person.profileImageUrl,
+                'profileAvatarAsset': person.profileAvatarAsset,
+              },
             ),
             const SizedBox(width: 8),
             Expanded(
@@ -924,16 +921,13 @@ class _PersonTile extends StatelessWidget {
         ),
         leading: ProfileAvatarWithFrame(
           diameter: 40,
+          userId: person.uid,
           backgroundColor: const Color(0xFF2A3150),
           placeholderColor: Colors.white70,
-          profile: profileAvatarFrameData(
-            imageUrl: person.profileImageUrl,
-            avatarAsset: person.profileAvatarAsset,
-            frameAssetKey: person.activeProfileFrameAssetKey,
-            frameImageUrl: person.activeProfileFrameImageUrl,
-            frameExpiresAtMs: person.activeProfileFrameExpiresAtMs,
-            framePermanent: person.activeProfileFramePermanent,
-          ),
+          fallbackProfile: <String, dynamic>{
+            'profileImageUrl': person.profileImageUrl,
+            'profileAvatarAsset': person.profileAvatarAsset,
+          },
         ),
         title: Text(
           person.displayName,
