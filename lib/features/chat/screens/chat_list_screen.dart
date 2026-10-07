@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'private_chat_screen.dart';
 import '../../profile/widgets/quick_profile_sheet.dart';
+import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../../profile/services/profile_action_service.dart';
 
 class ChatListScreen extends StatefulWidget {
@@ -86,10 +87,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
     final provider = _avatar(user);
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-      leading: CircleAvatar(
-        backgroundColor: const Color(0xFF25183F),
-        backgroundImage: provider,
-        child: provider == null ? const Icon(Icons.person, color: Color(0xFFFFD54A)) : null,
+      leading: ProfileAvatarWithFrame(
+        diameter: 40,
+        profile: user,
       ),
       title: Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
       subtitle: Text('ID: ${user['publicId'] ?? doc.id}', style: const TextStyle(color: Colors.white54)),
@@ -377,10 +377,9 @@ class _ConversationTile extends StatelessWidget {
           color: const Color(0xFF101522),
           borderRadius: BorderRadius.circular(18),
           child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: const Color(0xFF25183F),
-              backgroundImage: provider,
-              child: provider == null ? const Icon(Icons.person, color: Color(0xFFFFD54A)) : null,
+            leading: ProfileAvatarWithFrame(
+              diameter: 40,
+              profile: user,
             ),
             title: Text(name, style: TextStyle(color: Colors.white, fontWeight: unread > 0 ? FontWeight.w900 : FontWeight.w700)),
             subtitle: Text(lastMessage.isEmpty ? 'ابدأ المحادثة' : lastMessage, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: unread > 0 ? Colors.white70 : Colors.white54)),
