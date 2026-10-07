@@ -34,6 +34,23 @@ export function publicProfilePresentation(uidInput, data = {}) {
   };
 }
 
+async function readPublicProfileSnapshot(db, uid, transaction = null) {
+  if (typeof db?.get === "function") {
+    return db.get("public_profiles/" + uid, transaction);
+  }
+  if (typeof db?.collection === "function") {
+    const ref = db.collection("public_profiles").doc(uid);
+    return transaction?.get ? transaction.get(ref) : ref.get();
+  }
+  throw new Error("unsupported_public_profile_reader");
+}
+
+function snapshotData(snapshot) {
+  if (!snapshot?.exists) return {};
+  if (typeof snapshot.data === "function") return snapshot.data() || {};
+  return snapshot.data || {};
+}
+
 export async function loadPublicProfilePresentation(
   db,
   uidInput,
@@ -41,11 +58,8 @@ export async function loadPublicProfilePresentation(
 ) {
   const uid = clean(uidInput);
   if (!uid) return publicProfilePresentation("", {});
-  const snapshot = await db.get("public_profiles/" + uid, transaction);
-  return publicProfilePresentation(
-    uid,
-    snapshot?.exists ? snapshot.data || {} : {},
-  );
+  const snapshot = await readPublicProfileSnapshot(db, uid, transaction);
+  return publicProfilePresentation(uid, snapshotData(snapshot));
 }
 
 export async function loadPublicProfilePresentations(
@@ -74,20 +88,34 @@ export async function loadPublicProfilePresentations(
   )].slice(0, boundedLimit);
 
   const result = new Map();
+  if (!uids.length) return result;
+
+  if (
+    typeof db?.getAll === "function" &&
+    typeof db?.collection === "function"
+  ) {
+    const refs = uids.map((uid) => db.collection("public_profiles").doc(uid));
+    const snapshots = await db.getAll(...refs);
+    for (let index = 0; index < uids.length; index += 1) {
+      const uid = uids[index];
+      result.set(
+        uid,
+        publicProfilePresentation(uid, snapshotData(snapshots[index])),
+      );
+    }
+    return result;
+  }
+
   for (let offset = 0; offset < uids.length; offset += boundedConcurrency) {
     const batch = uids.slice(offset, offset + boundedConcurrency);
     const snapshots = await Promise.all(
-      batch.map((uid) => db.get("public_profiles/" + uid)),
+      batch.map((uid) => readPublicProfileSnapshot(db, uid)),
     );
     for (let index = 0; index < batch.length; index += 1) {
       const uid = batch[index];
-      const snapshot = snapshots[index];
       result.set(
         uid,
-        publicProfilePresentation(
-          uid,
-          snapshot?.exists ? snapshot.data || {} : {},
-        ),
+        publicProfilePresentation(uid, snapshotData(snapshots[index])),
       );
     }
   }
