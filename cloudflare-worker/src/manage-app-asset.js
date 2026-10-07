@@ -153,6 +153,20 @@ async function verifyOwner(request, env) {
   return { decoded, db };
 }
 
+function assetStudioEffectiveType(asset, source = asset) {
+  const assetKey = clean(asset?.assetKey).toLowerCase();
+  const fullPath = clean(source?.fullPath || asset?.fullPath).toLowerCase();
+  const fileName = clean(source?.fileName || asset?.fileName).toLowerCase();
+  if (
+    assetKey.endsWith(".profileframe") ||
+    fileName.includes("_profile_frame.") ||
+    fullPath.includes("_profile_frame.")
+  ) {
+    return "frame";
+  }
+  return clean(source?.assetType || asset?.assetType);
+}
+
 function assetMatchesListFilters(asset, {
   query = "",
   status = "all",
@@ -170,7 +184,7 @@ function assetMatchesListFilters(asset, {
   const source = hasDraft ? draft : asset;
   const published = asset?.published === true;
   const normalizedStatus = clean(asset?.status).toLowerCase();
-  const assetType = clean(source?.assetType || asset?.assetType);
+  const assetType = assetStudioEffectiveType(asset, source);
   const channels = Array.isArray(source?.channels || asset?.channels)
     ? (source?.channels || asset?.channels).map((item) => clean(item))
     : [];
