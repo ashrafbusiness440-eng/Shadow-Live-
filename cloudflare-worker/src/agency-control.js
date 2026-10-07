@@ -26,6 +26,10 @@ import {
 import { overrideAgencyRejoinCooldown } from "./agency-membership.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 import { adminInboxDeleteWrite } from "./admin-inbox-index.js";
+import {
+  loadPublicProfilePresentations,
+  publicProfilePresentation,
+} from "./public-profile-presentation.js";
 
 const clean = (value) => String(value ?? "").trim();
 
@@ -297,9 +301,14 @@ function agencyReviewPerson({
   fallbackPublicId = null,
   userSnap,
   membershipSnap,
+  profile = {},
 } = {}) {
   const user = userSnap?.data || {};
   const membership = membershipSnap?.data || {};
+  const publicProfile = {
+    ...publicProfilePresentation(uid),
+    ...profile,
+  };
   const accountStatus = clean(user.accountStatus || "active");
   const membershipStatus = clean(membership.status);
   const currentAgencyId = clean(user.agencyId || membership.agencyId);
@@ -318,19 +327,19 @@ function agencyReviewPerson({
 
   return {
     uid: clean(uid),
-    publicId: clean(user.publicId || fallbackPublicId) || null,
-    displayName: clean(user.displayName || user.username || "مستخدم Shadow Live"),
-    profileImageUrl:
-      clean(user.profileImageUrl || user.photoUrl || user.avatarUrl) || null,
-    profileAvatarAsset: clean(user.profileAvatarAsset) || null,
+    publicId: clean(publicProfile.publicId || fallbackPublicId) || null,
+    displayName:
+      clean(publicProfile.displayName || "مستخدم Shadow Live"),
+    profileImageUrl: clean(publicProfile.profileImageUrl) || null,
+    profileAvatarAsset: clean(publicProfile.profileAvatarAsset) || null,
     activeProfileFrameAssetKey:
-      clean(user.activeProfileFrameAssetKey) || null,
+      clean(publicProfile.activeProfileFrameAssetKey) || null,
     activeProfileFrameImageUrl:
-      clean(user.activeProfileFrameImageUrl) || null,
+      clean(publicProfile.activeProfileFrameImageUrl) || null,
     activeProfileFrameExpiresAtMs:
-      Math.max(0, Number(user.activeProfileFrameExpiresAtMs || 0)),
+      Math.max(0, Number(publicProfile.activeProfileFrameExpiresAtMs || 0)),
     activeProfileFramePermanent:
-      user.activeProfileFramePermanent === true,
+      publicProfile.activeProfileFramePermanent === true,
     accountStatus,
     availability,
     currentAgencyId: currentAgencyId || null,
@@ -369,8 +378,16 @@ export async function getAgencyReviewDetails(db, applicationIdInput) {
     })),
   ].filter((item) => item.uid);
 
-  // Review details are deliberately lazy. Each participant uses exactly two
-  // direct reads and the participant count is bounded by Agency limits.
+  // Review details stay lazy and bounded. Internal account/membership state
+  // is read directly; every user-facing identity comes from public_profiles.
+  const publicProfiles = await loadPublicProfilePresentations(
+    db,
+    participants.map((person) => person.uid),
+    {
+      limit: AGENCY_LIMITS.maxApplicationHostIds + 1,
+      concurrency: 8,
+    },
+  );
   const snapshots = await Promise.all(
     participants.map(async (person) => {
       const [userSnap, membershipSnap] = await Promise.all([
@@ -384,6 +401,9 @@ export async function getAgencyReviewDetails(db, applicationIdInput) {
           fallbackPublicId: person.publicId,
           userSnap,
           membershipSnap,
+          profile:
+            publicProfiles.get(person.uid) ||
+            publicProfilePresentation(person.uid),
         }),
       };
     }),
