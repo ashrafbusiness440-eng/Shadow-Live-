@@ -150,6 +150,7 @@ class _DirectGiftContextState extends State<_DirectGiftContext> {
     widget.onGiftSent?.call(quantity, totalCost);
     return GiftPickerSendResult(
       balanceCoins: balance,
+      wealthDeltaCoins: totalCost,
       message: 'تم إرسال ${gift.nameAr} ×$quantity إلى ${widget.receiverName}',
     );
   }
