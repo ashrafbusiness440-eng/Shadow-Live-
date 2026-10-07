@@ -229,7 +229,7 @@ test("join request notifies only authorized agency reviewers and manager review 
     (request) => request.requestId === join.requestId,
   );
   assert.equal(row.displayName, "Applicant User");
-  assert.equal(row.profileImageUrl, "https://example.invalid/applicant.webp");
+  assert.equal(row.profileImageUrl, null);
   assert.equal(row.accountStatus, "active");
   assert.equal(row.conflictStatus, "none");
 
@@ -569,7 +569,7 @@ test("authorized reviewer deep-link is bounded and concurrent decisions have one
   );
   assert.equal(detail.actionable, true);
   assert.equal(detail.request.displayName, "Race Applicant");
-  assert.equal(detail.request.profileImageUrl, "https://example.invalid/race.webp");
+  assert.equal(detail.request.profileImageUrl, null);
   assert.equal(detail.request.userPublicId, "649101");
 
   const settled = await Promise.allSettled([

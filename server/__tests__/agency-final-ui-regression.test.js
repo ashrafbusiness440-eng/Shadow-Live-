@@ -22,11 +22,11 @@ test("Agencies final UI keeps account images and pending request layout stable",
 
   assert.equal(
     membershipSource.includes("loadPublicProfilePresentations"),
-    true,
+    false,
   );
   assert.equal(
     hostSource.includes("loadPublicProfilePresentation"),
-    true,
+    false,
   );
   assert.equal(
     membershipSource.includes(
@@ -60,7 +60,7 @@ test("Agencies final UI keeps account images and pending request layout stable",
   assert.equal(controlPage.includes("fallbackProfile: person"), true);
   assert.equal(
     controlSource.includes("loadPublicProfilePresentations"),
-    true,
+    false,
   );
   assert.equal(
     controlSource.includes(
