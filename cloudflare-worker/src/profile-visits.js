@@ -181,24 +181,14 @@ export async function profileVisitHistory(db, uid, body, nowMs = Date.now()) {
     limit: HISTORY_LIMIT,
   });
 
-  const uids = rows.map((row) => clean(row.data?.uid || row.id));
-  const profiles = await loadPublicProfilePresentations(db, uids, {
-    limit: HISTORY_LIMIT,
-    concurrency: 8,
-  });
-
   return {
     ok: true,
     mode,
     limit: HISTORY_LIMIT,
-    items: rows.map((row) => {
-      const targetUid = clean(row.data?.uid || row.id);
-      return {
-        ...row.data,
-        ...(profiles.get(targetUid) || publicProfilePresentation(targetUid)),
-        id: row.id,
-      };
-    }),
+    items: rows.map((row) => ({
+      ...row.data,
+      id: row.id,
+    })),
   };
 }
 
@@ -214,22 +204,13 @@ export async function inspectPrivateVisits(db, uid, body) {
     orderBy: [{ field: "lastVisitedAt", direction: "desc" }],
     limit: HISTORY_LIMIT,
   });
-  const uids = rows.map((row) => clean(row.data?.uid || row.id));
-  const profiles = await loadPublicProfilePresentations(db, uids, {
-    limit: HISTORY_LIMIT,
-    concurrency: 8,
-  });
   return {
     ok: true,
     targetUid,
-    items: rows.map((row) => {
-      const visitorUid = clean(row.data?.uid || row.id);
-      return {
-        ...row.data,
-        ...(profiles.get(visitorUid) || publicProfilePresentation(visitorUid)),
-        id: row.id,
-      };
-    }),
+    items: rows.map((row) => ({
+      ...row.data,
+      id: row.id,
+    })),
   };
 }
 
