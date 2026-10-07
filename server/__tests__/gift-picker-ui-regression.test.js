@@ -78,6 +78,7 @@ test("gift bag is one bounded catalog source and free sends do not credit paid e
   assert.equal(catalog.includes('.limit(100)'), true);
   assert.equal(catalog.includes('action === "grantBagGift"'), true);
   assert.equal(catalog.includes('"admin", "event", "free"'), true);
+  assert.equal(catalog.includes('where("publicId", "==", targetUserId)'), true);
   assert.equal(client.includes("cachedBagQuantities"), true);
 
   for (const code of [room, direct]) {
@@ -86,4 +87,40 @@ test("gift bag is one bounded catalog source and free sends do not credit paid e
     assert.equal(code.includes("bagQuantityRemaining"), true);
     assert.equal(code.includes("if (paidCost > 0)"), true);
   }
+});
+
+
+test("free bag gifts never leak nominal value into room paid economy stats", () => {
+  const room = source("../../cloudflare-worker/src/room-gift.js");
+
+  for (const forbidden of [
+    'db.increment("totalValueReceived", recipientCost)',
+    'db.increment("giftSupportReceivedCoins", recipientCost)',
+    'db.increment("receivedCoins", recipientCost)',
+    'db.increment("supportCoins", recipientCost)',
+    'delta: -totalCost',
+  ]) {
+    assert.equal(room.includes(forbidden), false, forbidden);
+  }
+  assert.equal(
+    room.includes('db.increment("supportCoins", paidRecipientCost)'),
+    true,
+  );
+  assert.equal(
+    room.includes('db.increment("quantity", -requiredBagQuantity)'),
+    true,
+  );
+});
+
+test("Shadow Control exposes an Arabic gift bag grant flow", () => {
+  const control = source(
+    "../../lib/admin/gift_catalog_control_page.dart",
+  );
+
+  assert.equal(control.includes("منح هدية إلى حقيبة مستخدم"), true);
+  assert.equal(control.includes("'action': 'grantBagGift'"), true);
+  assert.equal(control.includes("'targetUserId': targetUserId"), true);
+  assert.equal(control.includes("من الإدارة"), true);
+  assert.equal(control.includes("من فعالية"), true);
+  assert.equal(control.includes("هدية مجانية"), true);
 });
