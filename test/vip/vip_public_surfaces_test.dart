@@ -92,20 +92,27 @@ void main() {
     final roomChat = File(
       'lib/features/room/widgets/room_chat_panel.dart',
     ).readAsStringSync();
+    final sharedAvatar = File(
+      'lib/features/profile/widgets/profile_avatar_with_frame.dart',
+    ).readAsStringSync();
     final roomRealtime = File(
       'cloudflare-worker/src/room-realtime.js',
     ).readAsStringSync();
 
     expect(publicProfile.contains('effectivePublicVipLevel(data)'), isTrue);
     expect(publicProfile.contains('ShadowAssetKeys.vipLevelBadge(vip)'), isTrue);
-    expect(publicProfile.contains('VipAvatarFrame('), isTrue);
+    expect(publicProfile.contains('ProfileAvatarWithFrame('), isTrue);
+    expect(publicProfile.contains('useVipFallback: true'), isTrue);
 
     expect(quickProfile.contains('effectivePublicVipLevel(data)'), isTrue);
     expect(quickProfile.contains('ShadowAssetKeys.vipLevelBadge(vip)'), isTrue);
-    expect(quickProfile.contains('VipAvatarFrame('), isTrue);
+    expect(quickProfile.contains('ProfileAvatarWithFrame('), isTrue);
+    expect(quickProfile.contains('useVipFallback: true'), isTrue);
 
     expect(roomChat.contains('VipInlineBadge('), isTrue);
-    expect(roomChat.contains('VipAvatarFrame('), isTrue);
+    expect(roomChat.contains('ProfileAvatarWithFrame('), isTrue);
+    expect(roomChat.contains('useVipFallback: true'), isTrue);
+    expect(sharedAvatar.contains('VipAvatarFrame('), isTrue);
 
     expect(
       roomRealtime.contains('vipCosmeticsFromUser(profileData, DateTime.now().millisecondsSinceEpoch)') ||
