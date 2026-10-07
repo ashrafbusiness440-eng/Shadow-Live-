@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../room/widgets/cosmetic_effect_widgets.dart';
@@ -11,6 +13,7 @@ class ProfileAvatarWithFrame extends StatefulWidget {
     required this.diameter,
     required this.userId,
     this.fallbackProfile = const <String, dynamic>{},
+    this.fallbackIsVisualSnapshot = false,
     this.vipLevel = 0,
     this.vipFrameLevel,
     this.backgroundColor = const Color(0xFF25183F),
@@ -23,6 +26,7 @@ class ProfileAvatarWithFrame extends StatefulWidget {
   final double diameter;
   final String userId;
   final Map<String, dynamic> fallbackProfile;
+  final bool fallbackIsVisualSnapshot;
   final int vipLevel;
   final int? vipFrameLevel;
   final Color backgroundColor;
@@ -37,26 +41,56 @@ class ProfileAvatarWithFrame extends StatefulWidget {
 
 class _ProfileAvatarWithFrameState extends State<ProfileAvatarWithFrame> {
   Future<ProfileVisualIdentity>? _future;
+  StreamSubscription<String>? _invalidationSub;
 
   @override
   void initState() {
     super.initState();
+    _invalidationSub =
+        ProfileVisualIdentityService.instance.invalidations.listen((uid) {
+      if (!mounted || uid != widget.userId.trim()) return;
+      setState(() => _reload(allowPrime: false));
+    });
     _reload();
   }
 
   @override
   void didUpdateWidget(covariant ProfileAvatarWithFrame oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.userId != widget.userId) {
+    final snapshotChanged = widget.fallbackIsVisualSnapshot &&
+        _snapshotSignature(oldWidget.fallbackProfile) !=
+            _snapshotSignature(widget.fallbackProfile);
+    if (oldWidget.userId != widget.userId || snapshotChanged) {
       _reload();
     }
   }
 
-  void _reload() {
+  @override
+  void dispose() {
+    _invalidationSub?.cancel();
+    super.dispose();
+  }
+
+  String _snapshotSignature(Map<String, dynamic> profile) => <Object?>[
+        profile['profileImageUrl'],
+        profile['profileAvatarAsset'],
+        profile['activeProfileFrameAssetKey'],
+        profile['activeProfileFrameImageUrl'],
+        profile['activeProfileFrameExpiresAtMs'],
+        profile['activeProfileFramePermanent'],
+      ].join('|');
+
+  void _reload({bool allowPrime = true}) {
     final uid = widget.userId.trim();
-    _future = uid.isEmpty
-        ? null
-        : ProfileVisualIdentityService.instance.load(uid);
+    if (uid.isEmpty) {
+      _future = null;
+      return;
+    }
+    final service = ProfileVisualIdentityService.instance;
+    if (allowPrime && widget.fallbackIsVisualSnapshot) {
+      service.prime(uid, widget.fallbackProfile);
+    }
+    _future = service.load(uid);
   }
 
   String _text(Map<String, dynamic> profile, String key) =>
