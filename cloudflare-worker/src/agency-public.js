@@ -466,15 +466,31 @@ export async function loadPublicAgencyRanking(
       ? [...normalizedRows, { hostUid: cleanViewerUid }]
       : normalizedRows;
   const profileUids = peopleRows.map((row) => clean(row.hostUid)).filter(Boolean);
-  const [publicProfiles, privacySnaps] = await Promise.all([
-    loadPublicProfilePresentations(db, profileUids, {
+  const publicProfilesPromise = loadPublicProfilePresentations(
+    db,
+    profileUids,
+    {
       limit: PUBLIC_RANKING_MAX + 1,
       concurrency: PUBLIC_USER_READ_CONCURRENCY,
-    }),
-    Promise.all(
-      profileUids.map((uid) => db.get("users/" + uid)),
-    ),
-  ]);
+    },
+  );
+  const privacySnaps = [];
+  for (
+    let offset = 0;
+    offset < profileUids.length;
+    offset += PUBLIC_USER_READ_CONCURRENCY
+  ) {
+    const chunk = profileUids.slice(
+      offset,
+      offset + PUBLIC_USER_READ_CONCURRENCY,
+    );
+    privacySnaps.push(
+      ...(await Promise.all(
+        chunk.map((uid) => db.get("users/" + uid)),
+      )),
+    );
+  }
+  const publicProfiles = await publicProfilesPromise;
   const userSnaps = privacySnaps.slice(0, normalizedRows.length);
   const viewerSnap =
     viewerIndex >= 0
