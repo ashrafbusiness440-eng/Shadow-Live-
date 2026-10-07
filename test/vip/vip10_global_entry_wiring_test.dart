@@ -24,6 +24,10 @@ void main() {
     expect(host.contains('publishVip10GlobalEntry()'), isTrue);
     expect(host.contains('authStateChanges()'), isTrue);
     expect(host.contains('مرة واحدة فقط اليوم'), isTrue);
-    expect(host.contains('_Vip10GlobalBanner'), isTrue);
+    expect(host.contains('_CelebrationBanner'), isTrue);
+    expect(host.contains("'vip10_global_entry'"), isTrue);
+    expect(host.contains("'game_win'"), isTrue);
+    expect(host.contains("'relationship_level_up'"), isTrue);
+    expect(host.contains("'premium_gift'"), isTrue);
   });
 }
