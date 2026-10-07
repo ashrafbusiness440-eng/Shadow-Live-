@@ -52,8 +52,32 @@ function realtimeNamespaceWithPresentUids(uids=[]){
     idFromName(roomId){return `room:${roomId}`;},
     get(){
       return {
-        async fetch(url){
-          const uid=new URL(url).searchParams.get("uid");
+        async fetch(url,init={}){
+          const target=new URL(url);
+          if(target.pathname==="/presence/resolve"){
+            const body=JSON.parse(init.body||"{}");
+            const requested=Array.isArray(body.uids)?body.uids:[];
+            return Response.json({
+              ok:true,
+              requestedCount:requested.length,
+              presentUids:requested.filter(uid=>present.has(uid)),
+            });
+          }
+          if(target.pathname==="/presence/bounded"){
+            const limit=Math.max(1,Number(target.searchParams.get("limit")||24));
+            const participants=Array.from(present)
+              .slice(0,limit)
+              .map(uid=>({uid}));
+            const requiredUid=target.searchParams.get("requiredUid")||"";
+            return Response.json({
+              ok:true,
+              onlineCount:present.size,
+              participants,
+              truncated:present.size>limit,
+              requiredUidPresent:requiredUid?present.has(requiredUid):null,
+            });
+          }
+          const uid=target.searchParams.get("uid");
           return Response.json({ok:true,present:present.has(uid)});
         },
       };
@@ -234,6 +258,96 @@ test("room gift pays agency target salary immediately and records sharded monthl
   const explosionsAfter=await db.collection("room_rocket_explosions")
     .where("operationId","==",key).get();
   assert.equal(explosionsAfter.size,1);
+});
+
+test("room gift fanout charges once and commits all recipients atomically",async()=>{
+  await seedSharedConfig();
+  const suffix=Date.now().toString()+"_fanout";
+  const senderId="sender_"+suffix;
+  const receiverA="receiver_a_"+suffix;
+  const receiverB="receiver_b_"+suffix;
+  const roomId="room_"+suffix;
+  const key="roomgift_fanout_"+suffix;
+
+  await Promise.all([
+    db.collection("users").doc(senderId).set({
+      coins:1000000,diamonds:0,role:"user",wealthPoints:0,
+    }),
+    db.collection("users").doc(receiverA).set({
+      coins:0,diamonds:0,role:"user",attractionPoints:0,
+      pendingGiftEarningCoins:0,
+    }),
+    db.collection("users").doc(receiverB).set({
+      coins:0,diamonds:0,role:"user",attractionPoints:0,
+      pendingGiftEarningCoins:0,
+    }),
+    db.collection("rooms").doc(roomId).set({
+      isActive:true,totalSupport:0,
+    }),
+  ]);
+
+  const body={
+    roomId,
+    recipientMode:"users",
+    recipientIds:[receiverA,receiverB],
+    giftId:"integration_gift",
+    quantity:1,
+    idempotencyKey:key,
+  };
+  const first=await sendRoomGift(
+    cloudflareDb,
+    senderId,
+    body,
+    {
+      realtimeNamespace:realtimeNamespaceWithPresentUids([
+        senderId,receiverA,receiverB,
+      ]),
+    },
+  );
+
+  assert.equal(first.ok,true);
+  assert.equal(first.recipientCount,2);
+  assert.equal(first.totalCost,200000);
+  assert.equal(first.balance,800000);
+  assert.equal(first.recipientShareCoins,100000);
+  assert.equal(first.platformShareCoins,100000);
+
+  const [sender,a,b,ledger,operation,txA,txB]=await Promise.all([
+    db.collection("users").doc(senderId).get(),
+    db.collection("users").doc(receiverA).get(),
+    db.collection("users").doc(receiverB).get(),
+    db.collection("financial_ledger").doc("gift_"+key).get(),
+    db.collection("gift_operations").doc(key).get(),
+    db.collection("gift_transactions").doc(key+"_1").get(),
+    db.collection("gift_transactions").doc(key+"_2").get(),
+  ]);
+  assert.equal(sender.data().coins,800000);
+  assert.equal(sender.data().wealthPoints,200000);
+  assert.equal(sender.data().totalGiftsSent,2);
+  assert.equal(a.data().attractionPoints,100000);
+  assert.equal(b.data().attractionPoints,100000);
+  assert.equal(a.data().totalGiftsReceived,1);
+  assert.equal(b.data().totalGiftsReceived,1);
+  assert.equal(ledger.data().delta,-200000);
+  assert.deepEqual(
+    new Set(ledger.data().counterpartyUids),
+    new Set([receiverA,receiverB]),
+  );
+  assert.equal(operation.data().recipientCount,2);
+  assert.equal(txA.data().operationId,key);
+  assert.equal(txB.data().operationId,key);
+
+  const duplicate=await sendRoomGift(
+    cloudflareDb,
+    senderId,
+    body,
+    {
+      realtimeNamespace:realtimeNamespaceWithPresentUids([]),
+    },
+  );
+  assert.equal(duplicate.code,"duplicate");
+  const senderAfter=await db.collection("users").doc(senderId).get();
+  assert.equal(senderAfter.data().coins,800000);
 });
 
 test("chat gift uses the same monthly target salary and sharded accrual as room gifts",async()=>{
