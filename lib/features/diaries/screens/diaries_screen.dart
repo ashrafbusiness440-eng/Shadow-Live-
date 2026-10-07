@@ -953,16 +953,13 @@ class _DiariesScreenState extends State<DiariesScreen> {
               children: [
                 ProfileAvatarWithFrame(
                   diameter: 44,
+                  userId: item.ownerUid,
                   backgroundColor: const Color(0xFF272C39),
                   placeholderColor: Colors.white54,
-                  profile: profileAvatarFrameData(
-                    imageUrl: item.ownerProfileImageUrl,
-                    avatarAsset: item.ownerProfileAvatarAsset,
-                    frameAssetKey: item.activeProfileFrameAssetKey,
-                    frameImageUrl: item.activeProfileFrameImageUrl,
-                    frameExpiresAtMs: item.activeProfileFrameExpiresAtMs,
-                    framePermanent: item.activeProfileFramePermanent,
-                  ),
+                  fallbackProfile: <String, dynamic>{
+                    'profileImageUrl': item.ownerProfileImageUrl,
+                    'profileAvatarAsset': item.ownerProfileAvatarAsset,
+                  },
                 ),
                 const SizedBox(width: 10),
                 Expanded(
