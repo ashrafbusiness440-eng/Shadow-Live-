@@ -10,6 +10,7 @@ import {
   agencyPublicRankingKey,
   agencyTargetAchievementDeltas,
   calculateAgencyTargetProgress,
+  convertAgencyCoinsWithCarryover,
 } from "./agency-policy.js";
 import {
   buildAgencyTargetSharePayoutWrites,
@@ -18,6 +19,8 @@ import {
 import { advanceRoomRocket } from "./room-rocket.js";
 import {
   legacyPresenceFresh,
+  realtimeResolveRoomUidsFromNamespace,
+  realtimeRoomParticipantsFromNamespace,
   realtimeUserPresentFromNamespace,
 } from "./room-presence-authority.js";
 import {
@@ -39,14 +42,85 @@ function roomFeatureEnabled(room = {}, key) {
     : defaultValue;
 }
 const AGENCY_MONTHLY_ACCRUAL_SHARDS = 32;
+const MAX_ROOM_GIFT_RECIPIENTS = 22;
+const MAX_ROOM_GIFT_WRITES = 480;
+
+function normalizeRoomGiftRecipientMode(value) {
+  const mode = clean(value || "users");
+  return ["users", "all_mics", "all_room"].includes(mode)
+    ? mode
+    : "";
+}
+
+function normalizeRoomGiftRecipientIds(body = {}) {
+  const raw = Array.isArray(body.recipientIds)
+    ? body.recipientIds
+    : [];
+  const receiverId = clean(body.receiverId);
+  return Array.from(
+    new Set(
+      [
+        ...raw.map(clean),
+        ...(raw.length === 0 && receiverId ? [receiverId] : []),
+      ].filter(Boolean),
+    ),
+  );
+}
+
+function roomGiftSubOperationId(key, index, count) {
+  if (count === 1) return key;
+  const suffix = "_" + String(index + 1);
+  return clean(key).slice(0, 220 - suffix.length) + suffix;
+}
+
+function sameRecipientSet(left = [], right = []) {
+  const a = Array.from(new Set(left.map(clean).filter(Boolean))).sort();
+  const b = Array.from(new Set(right.map(clean).filter(Boolean))).sort();
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
+function continueAgencyTargetSharePlan(plan, cursor) {
+  if (!plan || !cursor) return plan;
+  const conversion = convertAgencyCoinsWithCarryover({
+    carryoverCoins: cursor.carryoverCoins,
+    payableCoins: plan.deltaCoins,
+    coinsPerDiamond: plan.coinsPerDiamond,
+  });
+  return {
+    ...plan,
+    openingCarryoverCoins: conversion.openingCarryoverCoins,
+    shareDiamondsEarned: conversion.diamondsEarned,
+    remainderCoins: conversion.remainderCoins,
+    legacyDiamonds: 0,
+    legacyRemainderCoins: 0,
+    legacyAlreadyMigrated: true,
+    priorLifetimeDiamonds: cursor.lifetimeAgencyDiamonds,
+    lifetimeAgencyDiamonds:
+      cursor.lifetimeAgencyDiamonds + conversion.diamondsEarned,
+    financialStateExists: true,
+    legacyWalletExists: false,
+  };
+}
 
 function roomGiftOperationConflicts(data = {}, expected = {}) {
   if (clean(data.action) && clean(data.action) !== "sendRoomGift") return true;
   if (clean(data.senderId) && clean(data.senderId) !== clean(expected.senderId)) return true;
-  if (clean(data.receiverId) && clean(data.receiverId) !== clean(expected.receiverId)) return true;
   if (clean(data.roomId) && clean(data.roomId) !== clean(expected.roomId)) return true;
   if (clean(data.giftId) && clean(data.giftId) !== clean(expected.giftId)) return true;
   if (data.quantity != null && Number(data.quantity) !== Number(expected.quantity)) return true;
+
+  const storedMode = normalizeRoomGiftRecipientMode(
+    data.recipientMode || (data.receiverId ? "users" : ""),
+  );
+  const expectedMode = normalizeRoomGiftRecipientMode(expected.recipientMode);
+  if (storedMode && expectedMode && storedMode !== expectedMode) return true;
+
+  if (expectedMode === "users") {
+    const storedIds = Array.isArray(data.recipientIds)
+      ? data.recipientIds
+      : [data.receiverId];
+    if (!sameRecipientSet(storedIds, expected.recipientIds || [])) return true;
+  }
   return false;
 }
 
