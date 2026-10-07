@@ -224,8 +224,14 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       );
     }
     for (final message in _voiceSession.roomChatMessages.take(8)) {
-      if ((message['systemKind'] ?? '').toString() == 'gift') {
+      final systemKind = (message['systemKind'] ?? '').toString();
+      if (systemKind == 'gift') {
         _roomEffectCoordinator.ingestGiftMessage(message);
+      } else if (
+        systemKind == 'animated_emoji' ||
+        (message['animatedEmojiId'] ?? '').toString().trim().isNotEmpty
+      ) {
+        _roomEffectCoordinator.ingestAnimatedEmojiMessage(message);
       }
     }
     if ((roomClosed || roomBanned) && !_roomClosedHandled) {
