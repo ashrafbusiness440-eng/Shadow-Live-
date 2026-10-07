@@ -5,6 +5,7 @@ import {
   persistRoomChatReport,
 } from "./room-realtime-persistence.js";
 
+import { validateAnimatedEmojiForVip } from "./animated-emoji-catalog.js";
 import {
   ROOM_REALTIME_PROTOCOL_VERSION,
   normalizeRoomId,
@@ -1019,13 +1020,23 @@ export class RoomRealtimeObject extends DurableObject {
       0,
       Math.min(10, Number(attachment.vipLevel || 0)),
     );
-    const vipEmojiToken = String(payload.vipEmojiToken || "").trim();
-    const allowedVipEmojiTokens = new Set([
-      "vip_star",
-      "vip_crown",
-      "vip_diamond",
-      "vip_shadow",
-    ]);
+    const animatedEmojiId = String(
+      payload.animatedEmojiId || payload.vipEmojiToken || "",
+    ).trim();
+    let animatedEmoji = null;
+    try {
+      animatedEmoji = validateAnimatedEmojiForVip(
+        animatedEmojiId,
+        vipLevel,
+      );
+    } catch (error) {
+      this.#chatError(
+        webSocket,
+        requestId,
+        String(error?.code || error?.message || "invalid_animated_emoji"),
+      );
+      return true;
+    }
 
     if (!requestId || !roomId || roomId !== attachedRoomId || !uid) {
       this.#chatError(webSocket, requestId, "invalid_room_message");
@@ -1034,16 +1045,6 @@ export class RoomRealtimeObject extends DurableObject {
     if (!text || text.length > 500) {
       this.#chatError(webSocket, requestId, "invalid_room_message");
       return true;
-    }
-    if (vipEmojiToken) {
-      if (!allowedVipEmojiTokens.has(vipEmojiToken)) {
-        this.#chatError(webSocket, requestId, "invalid_vip_emoji");
-        return true;
-      }
-      if (vipLevel < 4) {
-        this.#chatError(webSocket, requestId, "vip4_emoji_required");
-        return true;
-      }
     }
     if (
       attachment.chatEnabled === false &&
@@ -1115,13 +1116,16 @@ export class RoomRealtimeObject extends DurableObject {
         attractionLevel: Math.max(0, Math.min(35, Number(attachment.attractionLevel || 0))),
         gameLevel: Math.max(0, Math.min(21, Number(attachment.gameLevel || 0))),
         text,
-        vipEmojiToken: vipEmojiToken || "",
+        animatedEmojiId: animatedEmoji?.id || "",
+        animatedEmojiAssetKey: animatedEmoji?.assetKey || "",
+        animatedEmojiFallbackGlyph: animatedEmoji?.fallbackGlyph || "",
+        animatedEmojiMinVipLevel: animatedEmoji?.minVipLevel || 0,
         mentionUids: mentions,
         replyTo: replyTo || null,
         replyPreview: replyPreview || null,
         replySenderUid: replySenderUid || null,
         createdAtMs: nowMs,
-        systemKind: vipEmojiToken ? "vip_emoji" : "",
+        systemKind: animatedEmoji ? "animated_emoji" : "",
         vipLevel,
         entryEffectKey: "",
       },
