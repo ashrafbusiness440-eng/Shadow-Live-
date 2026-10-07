@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../../../services/navigation_service.dart';
 import '../../voice/services/voice_room_session_controller.dart';
+import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../services/room_rocket_service.dart';
 import '../../vip/services/vip_service.dart';
 
@@ -523,15 +524,14 @@ class _Vip10GlobalBanner extends StatelessWidget {
           ),
           child: Row(
             children: [
-              CircleAvatar(
-                radius: 23,
+              ProfileAvatarWithFrame(
+                diameter: 46,
+                userId: event.uid,
                 backgroundColor: const Color(0xFF25183F),
-                backgroundImage: event.profileImageUrl.isEmpty
-                    ? null
-                    : NetworkImage(event.profileImageUrl),
-                child: event.profileImageUrl.isEmpty
-                    ? const Icon(Icons.person_rounded, color: Colors.white70)
-                    : null,
+                placeholderColor: Colors.white70,
+                fallbackProfile: <String, dynamic>{
+                  'profileImageUrl': event.profileImageUrl,
+                },
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -631,18 +631,14 @@ class _RocketBanner extends StatelessWidget {
             ),
             child: Row(
               children: [
-                CircleAvatar(
-                  radius: 22,
+                ProfileAvatarWithFrame(
+                  diameter: 44,
+                  userId: event.triggerUid,
                   backgroundColor: const Color(0xFF25183F),
-                  backgroundImage: event.triggerProfileImageUrl.isEmpty
-                      ? null
-                      : NetworkImage(event.triggerProfileImageUrl),
-                  child: event.triggerProfileImageUrl.isEmpty
-                      ? const Icon(
-                          Icons.person_rounded,
-                          color: Colors.white70,
-                        )
-                      : null,
+                  placeholderColor: Colors.white70,
+                  fallbackProfile: <String, dynamic>{
+                    'profileImageUrl': event.triggerProfileImageUrl,
+                  },
                 ),
                 const SizedBox(width: 10),
                 Expanded(
