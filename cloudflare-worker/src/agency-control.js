@@ -25,6 +25,7 @@ import {
 } from "./economy-policy.js";
 import { overrideAgencyRejoinCooldown } from "./agency-membership.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
+import { adminInboxDeleteWrite } from "./admin-inbox-index.js";
 
 const clean = (value) => String(value ?? "").trim();
 
@@ -792,6 +793,7 @@ async function createAgencyForOwner({
               agencyId: candidate,
               updatedAt: now,
             }, ["status", "agencyId", "updatedAt"]),
+            adminInboxDeleteWrite(db, "agency_application", applicationId),
           );
           for (let index = 0; index < hostUids.length; index += 1) {
             const uid = hostUids[index];
@@ -1153,6 +1155,7 @@ export async function rejectAgencyApplication(
           reapplyAllowedAt,
           createdAt: now,
         }),
+        adminInboxDeleteWrite(db, "agency_application", applicationId),
       ];
       if (reapplyMode === "manual") {
         writes.push(
@@ -1720,6 +1723,7 @@ async function finalizeAgencyIdentityChangeRequest(
           ],
         ),
         ...(lockSnap.exists ? [db.writeDelete(lockPath)] : []),
+        adminInboxDeleteWrite(db, "agency_identity_change", requestId),
         db.writeCreate(
           `admin_audit_logs/agency_identity_change_review_${requestId}`,
           {
@@ -1972,6 +1976,7 @@ async function finalizeOwnershipTransferRequest(
           ],
         ),
         ...(lockSnap.exists ? [db.writeDelete(lockPath)] : []),
+        adminInboxDeleteWrite(db, "agency_ownership_transfer", requestId),
         db.writeCreate(
           `admin_audit_logs/agency_owner_transfer_review_${requestId}`,
           {
@@ -3068,6 +3073,7 @@ async function finalizeAgencyCooldownExceptionReview(
             "updatedAt",
           ],
         ),
+        adminInboxDeleteWrite(db, "agency_cooldown_exception", requestId),
         db.writeCreate(
           "admin_audit_logs/agency_cooldown_exception_review_" +
             requestId + "_" + decision,
