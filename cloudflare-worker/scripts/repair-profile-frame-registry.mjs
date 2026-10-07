@@ -37,17 +37,27 @@ async function googleAccessToken() {
   const signature = sign("RSA-SHA256", Buffer.from(unsigned), privateKey);
   const assertion = unsigned + "." + b64url(signature);
 
-  const response = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth-bearer",
-      assertion,
-    }),
-  });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok || !body.access_token) throw Error("google oauth failed");
-  return body.access_token;
+  const exchange = async (grantType) => {
+    const response = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: grantType,
+        assertion,
+      }),
+    });
+    const body = await response.json().catch(() => ({}));
+    return { response, body };
+  };
+
+  let attempt = await exchange("urn:ietf:params:oauth-bearer");
+  if (!attempt.response.ok || !attempt.body.access_token) {
+    attempt = await exchange("urn:ietf:params:oauth:grant-type:jwt-bearer");
+  }
+  if (!attempt.response.ok || !attempt.body.access_token) {
+    throw Error("google oauth failed");
+  }
+  return attempt.body.access_token;
 }
 
 const accessToken = await googleAccessToken();
