@@ -2085,24 +2085,26 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                           );
                                         });
                                       },
-                                leading: CircleAvatar(
+                                leading: ProfileAvatarWithFrame(
+                                  diameter: 40,
                                   backgroundColor:
                                       const Color(0xFF25183F),
-                                  backgroundImage:
-                                      supporter.profileImageUrl.isEmpty
-                                          ? null
-                                          : NetworkImage(
-                                              supporter.profileImageUrl,
-                                            ),
-                                  child: supporter.profileImageUrl.isEmpty
-                                      ? Text(
-                                          supporter.rank.toString(),
-                                          style: const TextStyle(
-                                            color: Color(0xFFFFD54A),
-                                            fontWeight: FontWeight.w900,
-                                          ),
-                                        )
-                                      : null,
+                                  placeholderColor:
+                                      const Color(0xFFFFD54A),
+                                  profile: profileAvatarFrameData(
+                                    imageUrl:
+                                        supporter.profileImageUrl,
+                                    frameAssetKey: supporter
+                                        .activeProfileFrameAssetKey,
+                                    frameImageUrl: supporter
+                                        .activeProfileFrameImageUrl,
+                                    frameExpiresAtMs: supporter
+                                        .activeProfileFrameExpiresAtMs,
+                                    framePermanent: supporter
+                                        .activeProfileFramePermanent,
+                                  ),
+                                  vipLevel: supporter.vipLevel,
+                                  useVipFallback: true,
                                 ),
                                 title: Text(
                                   supporter.displayName,
@@ -5439,24 +5441,23 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             child: Stack(
               clipBehavior: Clip.none,
               children: [
-                CircleAvatar(
-                  radius: 14,
+                ProfileAvatarWithFrame(
+                  diameter: 28,
                   backgroundColor: const Color(0xFF25183F),
-                  backgroundImage: supporter.profileImageUrl.isEmpty
-                      ? null
-                      : NetworkImage(supporter.profileImageUrl),
-                  child: supporter.profileImageUrl.isEmpty
-                      ? Text(
-                          supporter.displayName.isEmpty
-                              ? '?'
-                              : supporter.displayName.substring(0, 1),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        )
-                      : null,
+                  placeholderColor: Colors.white,
+                  profile: profileAvatarFrameData(
+                    imageUrl: supporter.profileImageUrl,
+                    frameAssetKey:
+                        supporter.activeProfileFrameAssetKey,
+                    frameImageUrl:
+                        supporter.activeProfileFrameImageUrl,
+                    frameExpiresAtMs:
+                        supporter.activeProfileFrameExpiresAtMs,
+                    framePermanent:
+                        supporter.activeProfileFramePermanent,
+                  ),
+                  vipLevel: supporter.vipLevel,
+                  useVipFallback: true,
                 ),
                 Positioned(
                   right: -2,
