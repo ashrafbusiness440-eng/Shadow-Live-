@@ -22,6 +22,11 @@ import {
 } from "./agency-policy.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 import { adminInboxUpsertWrite } from "./admin-inbox-index.js";
+import {
+  loadPublicProfilePresentation,
+  loadPublicProfilePresentations,
+  publicProfilePresentation,
+} from "./public-profile-presentation.js";
 
 const clean = (value) => String(value ?? "").trim();
 
@@ -3158,28 +3163,31 @@ function managementRolePermissions(role, agencyStatus = "active") {
   };
 }
 
-function activeMemberSummary(row, userSnap) {
+function activeMemberSummary(row, userSnap, profile = {}) {
   const membership = row?.data || {};
   const user = userSnap?.exists ? userSnap.data || {} : {};
+  const uid = clean(membership.uid || row?.id?.split("__").pop());
+  const publicProfile = {
+    ...publicProfilePresentation(uid),
+    ...profile,
+  };
   return {
-    uid: clean(membership.uid || row?.id?.split("__").pop()),
+    uid,
     role: clean(membership.role),
     status: clean(membership.status),
     joinedAt: membership.joinedAt || null,
-    publicId: clean(user.publicId) || null,
-    displayName:
-      clean(user.displayName || user.name || user.username) || null,
-    profileImageUrl:
-      clean(user.profileImageUrl || user.photoUrl || user.avatarUrl) || null,
-    profileAvatarAsset: clean(user.profileAvatarAsset) || null,
+    publicId: publicProfile.publicId,
+    displayName: publicProfile.displayName,
+    profileImageUrl: publicProfile.profileImageUrl,
+    profileAvatarAsset: publicProfile.profileAvatarAsset,
     activeProfileFrameAssetKey:
-      clean(user.activeProfileFrameAssetKey) || null,
+      publicProfile.activeProfileFrameAssetKey,
     activeProfileFrameImageUrl:
-      clean(user.activeProfileFrameImageUrl) || null,
+      publicProfile.activeProfileFrameImageUrl,
     activeProfileFrameExpiresAtMs:
-      Math.max(0, Number(user.activeProfileFrameExpiresAtMs || 0)),
+      publicProfile.activeProfileFrameExpiresAtMs,
     activeProfileFramePermanent:
-      user.activeProfileFramePermanent === true,
+      publicProfile.activeProfileFramePermanent,
     accountStatus: clean(user.accountStatus || "active"),
   };
 }
@@ -3247,12 +3255,14 @@ export async function loadAgencyMemberPerformance(
     actorMembershipSnap,
     targetMembershipSnap,
     targetUserSnap,
+    targetProfile,
   ] = await Promise.all([
     db.get("agencies/" + agencyId),
     db.get("users/" + actorUid),
     db.get("agency_user_memberships/" + actorUid),
     db.get("agency_user_memberships/" + targetUid),
     db.get("users/" + targetUid),
+    loadPublicProfilePresentation(db, targetUid),
   ]);
 
   if (!agencySnap.exists) throw new ApiError("agency_not_found", 404);
@@ -3340,29 +3350,8 @@ export async function loadAgencyMemberPerformance(
     agencyId,
     privacyMode: "manager_performance_only",
     host: {
+      ...targetProfile,
       uid: targetUid,
-      publicId: clean(targetUser.publicId) || null,
-      displayName:
-        clean(
-          targetUser.displayName ||
-          targetUser.name ||
-          targetUser.username,
-        ) || "Shadow Live",
-      profileImageUrl:
-        clean(
-          targetUser.profileImageUrl ||
-          targetUser.photoUrl ||
-          targetUser.avatarUrl,
-        ) || null,
-      profileAvatarAsset: clean(targetUser.profileAvatarAsset) || null,
-      activeProfileFrameAssetKey:
-        clean(targetUser.activeProfileFrameAssetKey) || null,
-      activeProfileFrameImageUrl:
-        clean(targetUser.activeProfileFrameImageUrl) || null,
-      activeProfileFrameExpiresAtMs:
-        Math.max(0, Number(targetUser.activeProfileFrameExpiresAtMs || 0)),
-      activeProfileFramePermanent:
-        targetUser.activeProfileFramePermanent === true,
       role: clean(targetMembership.role),
       status: clean(targetMembership.status),
       accountStatus: clean(targetUser.accountStatus || "active"),
@@ -3450,12 +3439,20 @@ export async function listAgencyMembers(
     ],
     limit,
   });
-  const userSnaps = await Promise.all(
-    rows.map((row) => {
-      const uid = clean(row?.data?.uid || row?.id?.split("__").pop());
-      return uid ? db.get("users/" + uid) : Promise.resolve({ exists: false });
-    }),
+  const memberUids = rows.map(
+    (row) => clean(row?.data?.uid || row?.id?.split("__").pop()),
   );
+  const [userSnaps, publicProfiles] = await Promise.all([
+    Promise.all(
+      memberUids.map((uid) =>
+        uid ? db.get("users/" + uid) : Promise.resolve({ exists: false })
+      ),
+    ),
+    loadPublicProfilePresentations(db, memberUids, {
+      limit,
+      concurrency: 8,
+    }),
+  ]);
   const roleRank = {
     owner: 0,
     senior_manager: 1,
@@ -3463,7 +3460,14 @@ export async function listAgencyMembers(
     host: 3,
   };
   const members = rows
-    .map((row, index) => activeMemberSummary(row, userSnaps[index]))
+    .map((row, index) => {
+      const uid = memberUids[index];
+      return activeMemberSummary(
+        row,
+        userSnaps[index],
+        publicProfiles.get(uid) || publicProfilePresentation(uid),
+      );
+    })
     .sort((a, b) => {
       const roleDiff =
         (roleRank[a.role] ?? 99) - (roleRank[b.role] ?? 99);
@@ -3543,24 +3547,28 @@ function pendingRequestView({
   row,
   userSnap,
   lockSnap,
+  profile = {},
 }) {
   const request = row?.data || {};
   const user = userSnap?.exists ? userSnap.data || {} : {};
+  const uid = clean(request.uid);
+  const publicProfile = {
+    ...publicProfilePresentation(uid),
+    ...profile,
+  };
   return {
     ...requestSummary(request),
-    displayName:
-      clean(user.displayName || user.name || user.username) || null,
-    profileImageUrl:
-      clean(user.profileImageUrl || user.photoUrl || user.avatarUrl) || null,
-    profileAvatarAsset: clean(user.profileAvatarAsset) || null,
+    displayName: publicProfile.displayName,
+    profileImageUrl: publicProfile.profileImageUrl,
+    profileAvatarAsset: publicProfile.profileAvatarAsset,
     activeProfileFrameAssetKey:
-      clean(user.activeProfileFrameAssetKey) || null,
+      publicProfile.activeProfileFrameAssetKey,
     activeProfileFrameImageUrl:
-      clean(user.activeProfileFrameImageUrl) || null,
+      publicProfile.activeProfileFrameImageUrl,
     activeProfileFrameExpiresAtMs:
-      Math.max(0, Number(user.activeProfileFrameExpiresAtMs || 0)),
+      publicProfile.activeProfileFrameExpiresAtMs,
     activeProfileFramePermanent:
-      user.activeProfileFramePermanent === true,
+      publicProfile.activeProfileFramePermanent,
     accountStatus: clean(user.accountStatus || "active"),
     conflictStatus: pendingConflictStatus({
       agencyId,
@@ -3601,20 +3609,23 @@ export async function listAgencyMembershipPending(
   });
   const pageRows = sorted.slice(offset, offset + limit);
 
-  const userSnaps = await Promise.all(
-    pageRows.map((row) => {
-      const uid = clean(row?.data?.uid);
-      return uid ? db.get("users/" + uid) : Promise.resolve({ exists: false });
+  const pendingUids = pageRows.map((row) => clean(row?.data?.uid));
+  const [userSnaps, lockSnaps, publicProfiles] = await Promise.all([
+    Promise.all(
+      pendingUids.map((uid) =>
+        uid ? db.get("users/" + uid) : Promise.resolve({ exists: false })
+      ),
+    ),
+    Promise.all(
+      pendingUids.map((uid) =>
+        uid ? db.get(acceptanceLockPath(uid)) : Promise.resolve({ exists: false })
+      ),
+    ),
+    loadPublicProfilePresentations(db, pendingUids, {
+      limit,
+      concurrency: 8,
     }),
-  );
-  const lockSnaps = await Promise.all(
-    pageRows.map((row) => {
-      const uid = clean(row?.data?.uid);
-      return uid
-        ? db.get(acceptanceLockPath(uid))
-        : Promise.resolve({ exists: false });
-    }),
-  );
+  ]);
 
   const consumed = offset + pageRows.length;
   const hasMore = consumed < sorted.length;
@@ -3631,6 +3642,9 @@ export async function listAgencyMembershipPending(
         row,
         userSnap: userSnaps[index],
         lockSnap: lockSnaps[index],
+        profile:
+          publicProfiles.get(pendingUids[index]) ||
+          publicProfilePresentation(pendingUids[index]),
       })
     ),
   };
@@ -3668,15 +3682,17 @@ export async function getAgencyMembershipReviewRequest(
     throw new ApiError("cannot_review_own_request", 403);
   }
 
-  const [userSnap, lockSnap] = await Promise.all([
+  const [userSnap, lockSnap, profile] = await Promise.all([
     db.get(`users/${uid}`),
     db.get(acceptanceLockPath(uid)),
+    loadPublicProfilePresentation(db, uid),
   ]);
   const detail = pendingRequestView({
     agencyId,
     row: { data: request },
     userSnap,
     lockSnap,
+    profile,
   });
   return {
     ok: true,
