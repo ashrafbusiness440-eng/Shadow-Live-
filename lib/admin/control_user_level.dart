@@ -580,10 +580,6 @@ class _LevelUser {
     required this.publicId,
     required this.profileImageUrl,
     required this.profileAvatarAsset,
-    required this.activeProfileFrameAssetKey,
-    required this.activeProfileFrameImageUrl,
-    required this.activeProfileFrameExpiresAtMs,
-    required this.activeProfileFramePermanent,
     required this.role,
     required this.wealth,
     required this.attraction,
@@ -601,14 +597,6 @@ class _LevelUser {
       profileImageUrl: (json['profileImageUrl'] ?? '').toString(),
       profileAvatarAsset:
           (json['profileAvatarAsset'] ?? '').toString(),
-      activeProfileFrameAssetKey:
-          (json['activeProfileFrameAssetKey'] ?? '').toString(),
-      activeProfileFrameImageUrl:
-          (json['activeProfileFrameImageUrl'] ?? '').toString(),
-      activeProfileFrameExpiresAtMs:
-          (json['activeProfileFrameExpiresAtMs'] as num?)?.toInt() ?? 0,
-      activeProfileFramePermanent:
-          json['activeProfileFramePermanent'] == true,
       role: (json['role'] ?? 'user').toString(),
       wealth: _LevelMetric.fromJson(
         key: 'wealth',
@@ -639,10 +627,6 @@ class _LevelUser {
   final String publicId;
   final String profileImageUrl;
   final String profileAvatarAsset;
-  final String activeProfileFrameAssetKey;
-  final String activeProfileFrameImageUrl;
-  final int activeProfileFrameExpiresAtMs;
-  final bool activeProfileFramePermanent;
   final String role;
   final _LevelMetric wealth;
   final _LevelMetric attraction;
