@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../agency/services/agency_membership_service.dart';
 import '../../diaries/screens/diaries_screen.dart';
 import '../../profile/screens/public_profile_screen.dart';
+import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../../relationships/services/relationship_service.dart';
 import '../services/notification_service.dart';
 
@@ -315,7 +316,6 @@ class _NotificationsPageState extends State<NotificationsPage> {
       final detail = await _membershipService.getReviewRequest(requestId);
       if (!mounted) return;
       final publicId = detail.userPublicId?.trim() ?? '';
-      final image = detail.profileImageUrl?.trim() ?? '';
 
       final decision = await showModalBottomSheet<String>(
         context: context,
@@ -333,14 +333,21 @@ class _NotificationsPageState extends State<NotificationsPage> {
                 children: [
                   Row(
                     children: [
-                      CircleAvatar(
-                        radius: 30,
+                      ProfileAvatarWithFrame(
+                        diameter: 60,
                         backgroundColor: const Color(0xFF31204F),
-                        backgroundImage:
-                            image.isEmpty ? null : NetworkImage(image),
-                        child: image.isEmpty
-                            ? const Icon(Icons.person_rounded)
-                            : null,
+                        profile: profileAvatarFrameData(
+                          imageUrl: detail.profileImageUrl,
+                          avatarAsset: detail.profileAvatarAsset,
+                          frameAssetKey:
+                              detail.activeProfileFrameAssetKey,
+                          frameImageUrl:
+                              detail.activeProfileFrameImageUrl,
+                          frameExpiresAtMs:
+                              detail.activeProfileFrameExpiresAtMs,
+                          framePermanent:
+                              detail.activeProfileFramePermanent,
+                        ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
