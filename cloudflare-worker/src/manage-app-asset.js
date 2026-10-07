@@ -294,71 +294,69 @@ async function listAssets(
     filters.channel !== "all"
   );
 
-  let startAfter = registryCursor(cursorUpdatedAt, cursorId);
-  const assets = [];
-  let scanned = 0;
-  let nextCursor = null;
-  let exhausted = false;
-  const maxPages = hasFilters ? 3 : 1;
+  // Search/filter must cover the registry, not only the first ordered page.
+  // Keep it bounded so Asset Studio never performs an unbounded collection scan.
+  if (hasFilters) {
+    const scanCap = 500;
+    const docs = await db.list("app_asset_registry", scanCap);
+    const normalized = docs.map((doc) => ({
+      assetKey: doc.id,
+      ...(doc.data || {}),
+      updatedAt: doc.data?.updatedAt || doc.updateTime || null,
+    }));
 
-  for (let page = 0; page < maxPages && assets.length < boundedLimit; page++) {
-    const docs = await db.runQuery("app_asset_registry", {
-      orderBy: [
-        { field: "updatedAt", direction: "desc" },
-        { field: "__name__", direction: "desc" },
-      ],
-      limit: boundedLimit,
-      startAfter,
+    normalized.sort((left, right) => {
+      const leftTime = new Date(left.updatedAt || 0).getTime();
+      const rightTime = new Date(right.updatedAt || 0).getTime();
+      const safeLeft = Number.isNaN(leftTime) ? 0 : leftTime;
+      const safeRight = Number.isNaN(rightTime) ? 0 : rightTime;
+      if (safeLeft !== safeRight) return safeRight - safeLeft;
+      return clean(right.assetKey).localeCompare(clean(left.assetKey));
     });
 
-    if (!docs.length) {
-      exhausted = true;
-      break;
-    }
+    const matches = normalized.filter((asset) =>
+      assetMatchesListFilters(asset, filters)
+    );
 
-    for (let index = 0; index < docs.length; index++) {
-      const doc = docs[index];
-      scanned++;
-      const asset = {
-        assetKey: doc.id,
-        ...(doc.data || {}),
-        updatedAt: doc.data?.updatedAt || null,
-      };
-      if (assetMatchesListFilters(asset, filters)) {
-        assets.push(asset);
-      }
-
-      const isLastDoc = index === docs.length - 1;
-      const reachedResultLimit = assets.length >= boundedLimit;
-      if (reachedResultLimit || isLastDoc) {
-        nextCursor = {
-          updatedAt: doc.data?.updatedAt || null,
-          id: doc.id,
-        };
-      }
-      if (reachedResultLimit) break;
-    }
-
-    if (assets.length >= boundedLimit) break;
-    if (docs.length < boundedLimit) {
-      exhausted = true;
-      break;
-    }
-    const last = docs[docs.length - 1];
-    startAfter = registryCursor(last.data?.updatedAt, last.id);
-    if (!startAfter.length) {
-      exhausted = true;
-      break;
-    }
+    return {
+      assets: matches.slice(0, boundedLimit),
+      nextCursor: null,
+      scannedCount: docs.length,
+      filtered: true,
+      scanLimitReached:
+        docs.length >= scanCap && matches.length < boundedLimit,
+    };
   }
+
+  const startAfter = registryCursor(cursorUpdatedAt, cursorId);
+  const docs = await db.runQuery("app_asset_registry", {
+    orderBy: [
+      { field: "updatedAt", direction: "desc" },
+      { field: "__name__", direction: "desc" },
+    ],
+    limit: boundedLimit,
+    startAfter,
+  });
+
+  const assets = docs.map((doc) => ({
+    assetKey: doc.id,
+    ...(doc.data || {}),
+    updatedAt: doc.data?.updatedAt || null,
+  }));
+  const last = docs.length ? docs[docs.length - 1] : null;
+  const nextCursor = docs.length === boundedLimit && last
+    ? {
+        updatedAt: last.data?.updatedAt || null,
+        id: last.id,
+      }
+    : null;
 
   return {
     assets,
-    nextCursor: exhausted ? null : nextCursor,
-    scannedCount: scanned,
-    filtered: hasFilters,
-    scanLimitReached:
-      hasFilters && !exhausted && assets.length < boundedLimit,
+    nextCursor,
+    scannedCount: docs.length,
+    filtered: false,
+    scanLimitReached: false,
   };
 }
 
