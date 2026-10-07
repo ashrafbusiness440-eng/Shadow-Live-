@@ -20,6 +20,7 @@ class GiftCatalogItem {
     this.effectAssetKey = '',
     this.effectMinQuantity = 0,
     this.effectDurationMs = 2200,
+    this.effectSize = 0,
     this.premiumBannerMinQuantity = 0,
     this.affinityBasePoints = 0,
   });
@@ -39,6 +40,7 @@ class GiftCatalogItem {
   final String effectAssetKey;
   final int effectMinQuantity;
   final int effectDurationMs;
+  final int effectSize;
   final int premiumBannerMinQuantity;
   final int affinityBasePoints;
 
@@ -73,6 +75,7 @@ class GiftCatalogItem {
           (map['effectMinQuantity'] as num?)?.toInt() ?? 0,
       effectDurationMs:
           (map['effectDurationMs'] as num?)?.toInt() ?? 2200,
+      effectSize: (map['effectSize'] as num?)?.toInt() ?? 0,
       premiumBannerMinQuantity:
           (map['premiumBannerMinQuantity'] as num?)?.toInt() ?? 0,
       affinityBasePoints:
@@ -96,6 +99,7 @@ class GiftCatalogItem {
         'effectAssetKey': effectiveEffectAssetKey,
         'effectMinQuantity': effectMinQuantity,
         'effectDurationMs': effectDurationMs,
+        'effectSize': effectSize,
         'premiumBannerMinQuantity': premiumBannerMinQuantity,
         'affinityBasePoints': affinityBasePoints,
       };
