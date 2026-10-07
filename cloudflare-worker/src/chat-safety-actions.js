@@ -22,6 +22,7 @@ import {
 } from "./room-presence-authority.js";
 import { giftLevelPointAwards, safeAddUserLevelPoints } from "./user-level-policy.js";
 import { activeEffectiveVipLevelFromUser } from "./vip-runtime.js";
+import { validateAnimatedEmojiForVip } from "./animated-emoji-catalog.js";
 import { vipCosmeticAssetKey } from "./vip-entitlements.js";
 import { publishGlobalAppEvents } from "./room-realtime.js";
 import { premiumGiftCelebrationEvent } from "./gift-visual-policy.js";
@@ -147,6 +148,7 @@ export async function sendMessage(db, uid, body) {
   const receiverId = clean(body.receiverId);
   const conversationId = clean(body.conversationId);
   const message = clean(body.text);
+  const animatedEmojiId = clean(body.animatedEmojiId || body.vipEmojiToken);
   const key = clean(body.idempotencyKey);
 
   if (
@@ -254,6 +256,22 @@ export async function sendMessage(db, uid, body) {
         (senderCapabilities.has("manageUsers") ||
           senderCapabilities.has("reviewReports")));
     const senderVip = activeEffectiveVipLevelFromUser(senderData, nowMs);
+    let animatedEmoji = null;
+    try {
+      animatedEmoji = validateAnimatedEmojiForVip(
+        animatedEmojiId,
+        senderVip,
+      );
+    } catch (error) {
+      const code = clean(error?.code || error?.message);
+      if (
+        code === "vip4_emoji_required" ||
+        code === "invalid_animated_emoji"
+      ) {
+        throw new ApiError(code, 403);
+      }
+      throw error;
+    }
     const receiverVip = activeEffectiveVipLevelFromUser(receiverData, nowMs);
     const friendsOnly =
       receiverVip >= 1 && receiverData.friendsOnlyMessages === true;
@@ -289,7 +307,7 @@ export async function sendMessage(db, uid, body) {
         updatedAt: now,
       }, ["windowStartedAt", "count", "updatedAt"]),
       db.writeUpdate(conversationPath, {
-        lastMessage: message,
+        lastMessage: animatedEmoji ? animatedEmoji.fallbackGlyph : message,
         lastSenderId: uid,
         updatedAt: now,
         unreadCounts: counts,
@@ -298,8 +316,12 @@ export async function sendMessage(db, uid, body) {
         senderId: uid,
         receiverId,
         text: message,
-        type: "text",
+        type: animatedEmoji ? "animated_emoji" : "text",
         vipLevel: senderVip,
+        animatedEmojiId: animatedEmoji?.id || "",
+        animatedEmojiAssetKey: animatedEmoji?.assetKey || "",
+        animatedEmojiFallbackGlyph: animatedEmoji?.fallbackGlyph || "",
+        animatedEmojiMinVipLevel: animatedEmoji?.minVipLevel || 0,
         createdAt: now,
       }),
     ];
@@ -337,6 +359,7 @@ export async function sendMessage(db, uid, body) {
 
     const resultData = {
       messageId,
+      animatedEmojiId: animatedEmoji?.id || "",
       mutual,
       assignedCustomerServiceModerator: assignedModerator,
       unlimitedGreetings,
