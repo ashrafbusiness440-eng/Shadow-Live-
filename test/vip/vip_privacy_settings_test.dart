@@ -29,6 +29,8 @@ void main() {
       isTrue,
     );
     expect(privacy.contains("'vip-profile-visit-history'"), isTrue);
+    expect(privacy.contains("'mysterious-person-entry'"), isTrue);
+    expect(privacy.contains('MysteriousPersonScreen'), isTrue);
 
     expect(privacy.contains('_levels.updateVisibility('), isTrue);
     expect(privacy.contains('_rooms.setGhostMode(enabled)'), isTrue);
@@ -37,6 +39,7 @@ void main() {
     expect(privacy.contains('_vip.setHideProfileVisits(enabled)'), isTrue);
     expect(privacy.contains('_vip.setFriendsOnlyMessages(enabled)'), isTrue);
     expect(privacy.contains('_vip.setVip4PrivacyPreference('), isTrue);
+    expect(privacy.contains('_mysterious.setEnabled(enabled)'), isTrue);
 
     // Privacy settings must reuse bounded server APIs. No Firestore listener,
     // direct user-document write, polling, or duplicated room hot-path IO.

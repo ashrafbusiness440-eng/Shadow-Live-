@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../features/profile/services/user_level_service.dart';
+import '../../features/mysterious/screens/mysterious_person_screen.dart';
+import '../../features/mysterious/services/mysterious_person_service.dart';
 import '../../features/room/services/room_action_service.dart';
 import '../../features/vip/screens/vip_screen.dart';
 import '../../features/vip/screens/profile_visit_history_screen.dart';
@@ -20,11 +22,13 @@ class _VipPrivacySettingsScreenState extends State<VipPrivacySettingsScreen> {
   final UserLevelService _levels = UserLevelService();
   final RoomActionService _rooms = RoomActionService();
   final VipService _vip = VipService();
+  final MysteriousPersonService _mysterious = MysteriousPersonService();
 
   UserLevelSummary? _levelSummary;
   RoomGhostState? _ghost;
   RoomHiddenEntryState? _hiddenEntry;
   VipSummaryData? _vipSummary;
+  MysteriousPersonState? _mysteriousState;
   bool _loading = true;
   bool _saving = false;
   String? _error;
@@ -39,7 +43,16 @@ class _VipPrivacySettingsScreenState extends State<VipPrivacySettingsScreen> {
   void dispose() {
     _levels.close();
     _vip.close();
+    _mysterious.close();
     super.dispose();
+  }
+
+  Future<Object?> _loadMysteriousSafely() async {
+    try {
+      return await _mysterious.loadState();
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _load() async {
@@ -50,11 +63,12 @@ class _VipPrivacySettingsScreenState extends State<VipPrivacySettingsScreen> {
       });
     }
     try {
-      final results = await Future.wait<Object>([
+      final results = await Future.wait<Object?>([
         _levels.loadSelf(),
         _rooms.loadGhostState(),
         _rooms.loadHiddenEntryState(),
         _vip.loadSummary(),
+        _loadMysteriousSafely(),
       ]);
       if (!mounted) return;
       setState(() {
@@ -62,6 +76,7 @@ class _VipPrivacySettingsScreenState extends State<VipPrivacySettingsScreen> {
         _ghost = results[1] as RoomGhostState;
         _hiddenEntry = results[2] as RoomHiddenEntryState;
         _vipSummary = results[3] as VipSummaryData;
+        _mysteriousState = results[4] as MysteriousPersonState?;
         _loading = false;
       });
     } catch (_) {
@@ -346,6 +361,79 @@ class _VipPrivacySettingsScreenState extends State<VipPrivacySettingsScreen> {
     }
   }
 
+  Future<void> _openMysterious() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const MysteriousPersonScreen()),
+    );
+    try {
+      final state = await _mysterious.loadState();
+      if (mounted) setState(() => _mysteriousState = state);
+    } catch (_) {}
+  }
+
+  Future<bool> _confirmMysteriousEnable() async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => Directionality(
+            textDirection: TextDirection.rtl,
+            child: AlertDialog(
+              backgroundColor: const Color(0xFF101827),
+              title: const Text(
+                'تشغيل الشخص الغامض',
+                style: TextStyle(color: Colors.white),
+              ),
+              content: const Text(
+                'عند التشغيل تظهر بهويتك الغامضة في الأماكن المعتمدة داخل غرف الصوت والترتيبات المرتبطة بها. نقاطك ومركزك وحسابك الحقيقي لا تتغير، وإيقاف الوضع لا يوقف مدة الاشتراك.',
+                style: TextStyle(color: Colors.white70, height: 1.6),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('إلغاء'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text('فهمت، متابعة'),
+                ),
+              ],
+            ),
+          ),
+        ) ??
+        false;
+  }
+
+  Future<void> _saveMysterious(bool enabled) async {
+    if (_saving) return;
+    final current = _mysteriousState;
+    if (current == null) {
+      await _openMysterious();
+      return;
+    }
+    if (enabled) {
+      final confirmed = await _confirmMysteriousEnable();
+      if (!confirmed || !mounted) return;
+      if (!current.active) {
+        await _openMysterious();
+        return;
+      }
+    }
+
+    setState(() => _saving = true);
+    try {
+      final saved = await _mysterious.setEnabled(enabled);
+      if (!mounted) return;
+      setState(() {
+        _mysteriousState = saved;
+        _saving = false;
+      });
+      if (enabled) await _openMysterious();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      _message('تعذر تحديث وضع الشخص الغامض حالياً.');
+    }
+  }
+
   void _openVisitHistory() {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const ProfileVisitHistoryScreen()),
@@ -400,6 +488,7 @@ class _VipPrivacySettingsScreenState extends State<VipPrivacySettingsScreen> {
     final ghost = _ghost!;
     final hiddenEntry = _hiddenEntry!;
     final vip = _vipSummary!;
+    final mysterious = _mysteriousState;
 
     return RefreshIndicator(
       onRefresh: _load,
@@ -408,6 +497,43 @@ class _VipPrivacySettingsScreenState extends State<VipPrivacySettingsScreen> {
         padding: const EdgeInsets.fromLTRB(14, 16, 14, 32),
         children: [
           _intro(vip.effectiveVipLevel),
+          const SizedBox(height: 14),
+          _section(
+            title: 'الشخص الغامض',
+            children: [
+              ListTile(
+                key: const Key('mysterious-person-entry'),
+                leading: const Icon(
+                  Icons.theater_comedy_rounded,
+                  color: Color(0xFFFFD166),
+                ),
+                title: const Text(
+                  'الشخص الغامض',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                subtitle: Text(
+                  mysterious == null
+                      ? 'اضغط لفتح النظام'
+                      : mysterious.active
+                          ? (mysterious.enabled
+                              ? 'الوضع مفعّل — اضغط لعرض التفاصيل'
+                              : 'الاشتراك فعّال والوضع متوقف')
+                          : 'نظام مستقل — اضغط للشراء أو التمديد',
+                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+                trailing: Switch(
+                  value: mysterious?.enabled ?? false,
+                  onChanged: _saving
+                      ? null
+                      : (value) => unawaited(_saveMysterious(value)),
+                ),
+                onTap: _saving ? null : () => unawaited(_openMysterious()),
+              ),
+            ],
+          ),
           const SizedBox(height: 14),
           _section(
             title: 'إخفاء المستويات',
@@ -592,7 +718,7 @@ class _VipPrivacySettingsScreenState extends State<VipPrivacySettingsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'خصوصية VIP',
+                    'إعداد التخفي',
                     style: TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w900,
@@ -600,9 +726,9 @@ class _VipPrivacySettingsScreenState extends State<VipPrivacySettingsScreen> {
                     ),
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    level > 0 ? 'مستواك الحالي VIP$level' : 'لا يوجد VIP فعّال',
-                    style: const TextStyle(color: Colors.white60),
+                  const Text(
+                    'كل ميزة تعمل حسب نظامها وأهليتها؛ الشخص الغامض مستقل عن VIP والنبلاء.',
+                    style: TextStyle(color: Colors.white60),
                   ),
                 ],
               ),

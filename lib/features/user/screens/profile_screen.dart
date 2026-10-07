@@ -19,6 +19,7 @@ import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../../agency/screens/agency_package_grant_page.dart';
 import '../../relationships/screens/relationships_page.dart';
 import '../../vip/screens/vip_screen.dart';
+import '../../mysterious/screens/mysterious_person_screen.dart';
 import '../../vip/widgets/vip_profile_identity.dart';
 import '../bloc/user_bloc.dart';
 
@@ -34,6 +35,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   late final TabController _tabs;
   bool _loggingOut = false;
   bool _openingEdit = false;
+  int _profileTabIndex = 0;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _profileSub;
   StreamSubscription<User?>? _authSub;
   String? _boundUid;
@@ -41,7 +43,8 @@ class _ProfileScreenState extends State<ProfileScreen>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 3, vsync: this);
+    _tabs = TabController(length: 4, vsync: this);
+    _tabs.addListener(_handleProfileTabChanged);
     _boundUid = FirebaseAuth.instance.currentUser?.uid;
     _authSub = FirebaseAuth.instance.userChanges().listen((user) {
       final nextUid = user?.uid;
@@ -62,10 +65,17 @@ class _ProfileScreenState extends State<ProfileScreen>
     });
   }
 
+  void _handleProfileTabChanged() {
+    final next = _tabs.index;
+    if (!mounted || next == _profileTabIndex) return;
+    setState(() => _profileTabIndex = next);
+  }
+
   @override
   void dispose() {
     _authSub?.cancel();
     _profileSub?.cancel();
+    _tabs.removeListener(_handleProfileTabChanged);
     _tabs.dispose();
     super.dispose();
   }
@@ -438,10 +448,13 @@ class _ProfileScreenState extends State<ProfileScreen>
                               controller: _tabs,
                               labelColor: const Color(0xFFFFD54A),
                               unselectedLabelColor: Colors.white54,
+                              isScrollable: true,
+                              tabAlignment: TabAlignment.start,
                               tabs: const [
                                 Tab(text: 'حول'),
                                 Tab(text: 'الغرف'),
                                 Tab(text: 'الهدايا'),
+                                Tab(text: 'الشخص الغامض'),
                               ],
                             ),
                           ),
@@ -463,6 +476,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                               style: TextStyle(color: Colors.white54),
                             ),
                           ),
+                          _profileTabIndex == 3
+                              ? const MysteriousPersonScreen(embedded: true)
+                              : const SizedBox.shrink(),
                         ],
                       ),
                     );
