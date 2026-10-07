@@ -13,6 +13,10 @@ import {
   levelProgress,
 } from "./user-level-policy.js";
 import { summarizeUserLevelData } from "./user-level-summary.js";
+import {
+  loadPublicProfilePresentations,
+  publicProfilePresentation,
+} from "./public-profile-presentation.js";
 
 class ApiError extends Error {
   constructor(code, status = 400) {
@@ -113,26 +117,26 @@ function userSummary(policy, uid, user, nowMs = Date.now()) {
   return summarizeUserLevelData(policy, uid, user, nowMs).summary;
 }
 
-function publicUser(uid, user, summary) {
+function publicUser(uid, user, summary, profile = {}) {
+  const display = {
+    ...publicProfilePresentation(uid),
+    ...profile,
+  };
   return {
     uid,
-    displayName: clean(user.displayName || user.name || user.username || "مستخدم Shadow Live"),
+    displayName: clean(display.displayName || "مستخدم Shadow Live"),
     username: clean(user.username),
-    publicId: clean(user.publicId),
-    profileImageUrl: clean(
-      user.profileImageUrl ||
-      user.profileImage ||
-      user.avatarUrl,
-    ),
-    profileAvatarAsset: clean(user.profileAvatarAsset),
-    activeProfileFrameAssetKey: clean(user.activeProfileFrameAssetKey),
-    activeProfileFrameImageUrl: clean(user.activeProfileFrameImageUrl),
+    publicId: clean(display.publicId),
+    profileImageUrl: clean(display.profileImageUrl),
+    profileAvatarAsset: clean(display.profileAvatarAsset),
+    activeProfileFrameAssetKey: clean(display.activeProfileFrameAssetKey),
+    activeProfileFrameImageUrl: clean(display.activeProfileFrameImageUrl),
     activeProfileFrameExpiresAtMs: Math.max(
       0,
-      Number(user.activeProfileFrameExpiresAtMs || 0),
+      Number(display.activeProfileFrameExpiresAtMs || 0),
     ),
     activeProfileFramePermanent:
-      user.activeProfileFramePermanent === true,
+      display.activeProfileFramePermanent === true,
     role: clean(user.role || "user") || "user",
     accountStatus: clean(user.accountStatus || "active") || "active",
     levels: {
@@ -196,11 +200,15 @@ async function searchUsers(db, payload, body) {
     };
   }
 
-  const [policy, snaps] = await Promise.all([
+  const [policy, snaps, publicProfiles] = await Promise.all([
     loadUserLevelPolicy(db),
     Promise.all(unique.map((uid) =>
       db.get(`users/${uid}`).catch(() => ({ exists: false, data: null }))
     )),
+    loadPublicProfilePresentations(db, unique, {
+      limit: 20,
+      concurrency: 8,
+    }),
   ]);
 
   const results = [];
@@ -214,6 +222,7 @@ async function searchUsers(db, payload, body) {
         unique[i],
         user,
         userSummary(policy, unique[i], user, nowMs),
+        publicProfiles.get(unique[i]) || publicProfilePresentation(unique[i]),
       ));
     } catch (_) {}
   }
