@@ -4439,15 +4439,18 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                 Row(
                   children: [
                     Expanded(
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
+                      child: Tooltip(
+                        message: key.isEmpty ? 'أصل بدون مفتاح' : key,
                         child: Text(
                           key.isEmpty ? 'أصل بدون مفتاح' : key,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           softWrap: false,
                           textDirection: TextDirection.ltr,
+                          textAlign: TextAlign.right,
                           style: const TextStyle(
                             fontWeight: FontWeight.w900,
-                            fontSize: 13,
+                            fontSize: 12.5,
                           ),
                         ),
                       ),
@@ -5266,66 +5269,71 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
           ),
           const SizedBox(height: 14),
           _studioPanel(
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                const Row(
-                  children: [
-                    Icon(Icons.star_rounded, color: Color(0xFFD7B85A)),
-                    SizedBox(width: 7),
-                    Text(
-                      'الأصل المحدد',
-                      style: TextStyle(
-                        color: Color(0xFFD7B85A),
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(15),
-                  child: Image.asset(
-                    'assets/images/auth_header.png',
-                    height: 145,
-                    fit: BoxFit.cover,
+                  borderRadius: BorderRadius.circular(13),
+                  child: SizedBox(
+                    width: 74,
+                    height: 74,
+                    child: Image.asset(
+                      'assets/images/auth_header.png',
+                      fit: BoxFit.cover,
+                    ),
                   ),
                 ),
-                const SizedBox(height: 11),
-                const Text(
-                  'صورة شاشة تسجيل الدخول',
-                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  'الصورة المعروضة في أعلى شاشة تسجيل الدخول.',
-                  style: TextStyle(color: Colors.white60),
-                ),
-                const SizedBox(height: 10),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: .18),
-                    borderRadius: BorderRadius.circular(11),
-                  ),
-                  child: const Row(
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Icon(Icons.link_rounded, size: 17, color: Colors.white54),
-                      SizedBox(width: 7),
-                      Expanded(
-                        child: Text(
-                          'auth.login.header',
-                          textDirection: TextDirection.ltr,
-                          textAlign: TextAlign.right,
-                          style: TextStyle(fontWeight: FontWeight.w700),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.star_rounded,
+                            size: 17,
+                            color: Color(0xFFD7B85A),
+                          ),
+                          SizedBox(width: 5),
+                          Text(
+                            'الأصل المحدد',
+                            style: TextStyle(
+                              color: Color(0xFFD7B85A),
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 5),
+                      Text(
+                        'صورة شاشة تسجيل الدخول',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      SizedBox(height: 3),
+                      Text(
+                        'auth.login.header',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textDirection: TextDirection.ltr,
+                        textAlign: TextAlign.right,
+                        style: TextStyle(
+                          color: Colors.white60,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 11),
-                FilledButton.icon(
+                IconButton(
+                  tooltip: 'تعديل الأصل',
                   onPressed: _busy
                       ? null
                       : () {
@@ -5333,10 +5341,10 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                           setState(() => _showStudioForm = true);
                         },
                   icon: const Icon(Icons.edit_outlined),
-                  label: const Text('تعديل هذا الأصل'),
                 ),
               ],
             ),
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
           ),
           const SizedBox(height: 12),
           Row(
