@@ -1,15 +1,22 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../core/assets/shadow_asset_registry.dart';
+import '../../../utils/compact_number.dart';
+import '../../profile/screens/user_level_screen.dart';
+import '../../profile/services/user_level_service.dart';
 import '../services/gift_catalog_service.dart';
 
 class GiftPickerSendResult {
   const GiftPickerSendResult({
     required this.balanceCoins,
+    this.wealthDeltaCoins = 0,
     this.message = '',
   });
 
   final int? balanceCoins;
+  final int wealthDeltaCoins;
   final String message;
 }
 
@@ -42,6 +49,9 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
   String _category = 'general';
   int _quantity = 1;
   int? _balanceCoins;
+  UserLevelService? _levelService;
+  UserLevelSectionSummary? _wealth;
+  bool _wealthLoading = false;
   bool _loading = true;
   bool _sending = false;
   String? _error;
@@ -50,7 +60,100 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
   void initState() {
     super.initState();
     _balanceCoins = GiftCatalogService.cachedBalanceCoins;
+    _levelService = UserLevelService();
     _load();
+    unawaited(_loadWealth());
+  }
+
+  @override
+  void dispose() {
+    _levelService?.close();
+    super.dispose();
+  }
+
+  Future<void> _loadWealth() async {
+    if (_wealthLoading) return;
+    _wealthLoading = true;
+    try {
+      final summary = await _levelService!.loadSelf();
+      if (!mounted) return;
+      setState(() => _wealth = summary.wealth);
+    } catch (_) {
+      // Gift sending stays available even if the level summary cannot load.
+    } finally {
+      _wealthLoading = false;
+    }
+  }
+
+  void _applyWealthDelta(int delta) {
+    if (delta <= 0) return;
+    final current = _wealth;
+    if (current == null) {
+      unawaited(_loadWealth());
+      return;
+    }
+    final nextPoints = current.points + delta;
+    final nextThreshold = current.nextThreshold;
+    if (nextThreshold == null) {
+      setState(() {
+        _wealth = UserLevelSectionSummary(
+          level: current.level,
+          maxLevel: current.maxLevel,
+          points: nextPoints,
+          minimumThreshold: current.minimumThreshold,
+          nextThreshold: null,
+          remaining: 0,
+          progressBps: 10000,
+          hidden: current.hidden,
+          publiclyHidden: current.publiclyHidden,
+        );
+      });
+      return;
+    }
+    if (nextPoints >= nextThreshold) {
+      setState(() {
+        _wealth = UserLevelSectionSummary(
+          level: current.level,
+          maxLevel: current.maxLevel,
+          points: nextPoints,
+          minimumThreshold: current.minimumThreshold,
+          nextThreshold: nextThreshold,
+          remaining: 0,
+          progressBps: 10000,
+          hidden: current.hidden,
+          publiclyHidden: current.publiclyHidden,
+        );
+      });
+      // Crossing a level is rare; refresh once to get the next official threshold.
+      unawaited(_loadWealth());
+      return;
+    }
+    final span = (nextThreshold - current.minimumThreshold).clamp(1, 1 << 62).toInt();
+    final gained =
+        (nextPoints - current.minimumThreshold).clamp(0, span).toInt();
+    final progressBps = ((gained * 10000) ~/ span).clamp(0, 10000).toInt();
+    setState(() {
+      _wealth = UserLevelSectionSummary(
+        level: current.level,
+        maxLevel: current.maxLevel,
+        points: nextPoints,
+        minimumThreshold: current.minimumThreshold,
+        nextThreshold: nextThreshold,
+        remaining: nextThreshold - nextPoints,
+        progressBps: progressBps,
+        hidden: current.hidden,
+        publiclyHidden: current.publiclyHidden,
+      );
+    });
+  }
+
+  Future<void> _openWealthPrivileges() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const UserLevelScreen(initialTabIndex: 0),
+      ),
+    );
+    if (mounted) unawaited(_loadWealth());
   }
 
   Future<void> _load() async {
@@ -97,9 +200,6 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
       value == 'relationship'
           ? 'علاقة'
           : GiftCatalogService.categoryLabel(value);
-
-  List<GiftCatalogItem> get _featured =>
-      _catalog.where((gift) => gift.featured).take(8).toList();
 
   String _giftEmoji(String id) => switch (id) {
         'rose' => '🌹',
@@ -148,13 +248,13 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
         GiftCatalogService.updateCachedBalance(result.balanceCoins!);
         _balanceCoins = result.balanceCoins;
       }
+      _applyWealthDelta(result.wealthDeltaCoins);
       final message = result.message.trim();
       if (message.isNotEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(message)),
         );
       }
-      Navigator.pop(context);
     } on StateError catch (error) {
       if (!mounted) return;
       final message = switch (error.message.toString()) {
@@ -188,72 +288,99 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
     }
   }
 
-  Widget _featuredStrip() {
-    final items = _featured;
-    if (items.isEmpty) return const SizedBox.shrink();
-    return SizedBox(
-      height: 78,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: items.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (_, index) {
-          final gift = items[index];
-          return InkWell(
-            onTap: () => setState(() {
-              _selected = gift;
-              _category = _uiCategoryForGift(gift);
-            }),
-            borderRadius: BorderRadius.circular(16),
-            child: Container(
-              width: 154,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF2A1748), Color(0xFF15192A)],
-                ),
-                border: Border.all(color: const Color(0x55FFD54A)),
-              ),
-              child: Row(
+  Widget _wealthStrip() {
+    final wealth = _wealth;
+    final progress = wealth == null
+        ? 0.0
+        : (wealth.progressBps.clamp(0, 10000) / 10000.0);
+    final nextThreshold = wealth?.nextThreshold;
+    final progressText = wealth == null
+        ? (_wealthLoading ? 'تحميل الثروة...' : 'الثروة')
+        : nextThreshold == null
+            ? 'المستوى الأقصى'
+            : formatCompactAmount(
+                    wealth.points - wealth.minimumThreshold,
+                  ) +
+                ' / ' +
+                formatCompactAmount(
+                  nextThreshold - wealth.minimumThreshold,
+                );
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
                 children: [
-                  SizedBox(width: 50, height: 50, child: _giftImage(gift, fallbackSize: 30)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          gift.nameAr,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          '🪙 ${gift.priceCoins}',
-                          style: const TextStyle(
-                            color: Color(0xFFFFD54A),
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
+                  Text(
+                    wealth == null
+                        ? 'الثروة'
+                        : 'الثروة LV' + wealth.level.toString(),
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    progressText,
+                    style: const TextStyle(
+                      color: Color(0xFFFFD98A),
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                 ],
               ),
+              const SizedBox(height: 6),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(99),
+                child: LinearProgressIndicator(
+                  value: progress,
+                  minHeight: 7,
+                  backgroundColor: const Color(0xFF2A2E38),
+                  valueColor: const AlwaysStoppedAnimation<Color>(
+                    Color(0xFFD7B56D),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'كل 1 كوين مُرسل = 1 نقطة ثروة',
+                style: TextStyle(
+                  color: Colors.white38,
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 10),
+        OutlinedButton.icon(
+          onPressed: _openWealthPrivileges,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: const Color(0xFFFFD98A),
+            side: const BorderSide(color: Color(0x665C4820)),
+            backgroundColor: const Color(0x332E2411),
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(13),
             ),
-          );
-        },
-      ),
+          ),
+          icon: const Icon(Icons.workspace_premium_rounded, size: 18),
+          label: const Text(
+            'امتيازاتي',
+            style: TextStyle(fontWeight: FontWeight.w900),
+          ),
+        ),
+      ],
     );
   }
-
   Widget _categoryBar() {
     final categories = _categories;
     if (categories.length < 2) return const SizedBox.shrink();
@@ -538,8 +665,8 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
                           const SizedBox(height: 10),
                           widget.recipientArea,
                           const SizedBox(height: 10),
-                          _featuredStrip(),
-                          if (_featured.isNotEmpty) const SizedBox(height: 8),
+                          _wealthStrip(),
+                          const SizedBox(height: 10),
                           _categoryBar(),
                           const SizedBox(height: 8),
                           Expanded(
