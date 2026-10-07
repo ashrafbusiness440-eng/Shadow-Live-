@@ -15,6 +15,7 @@ import '../../profile/services/follow_service.dart';
 import '../../profile/widgets/quick_profile_sheet.dart';
 import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../services/chat_safety_service.dart';
+import '../services/animated_emoji_catalog.dart';
 import '../../vip/utils/vip_cosmetic_policy.dart';
 import '../../vip/widgets/vip_cosmetic_asset.dart';
 import '../../vip/utils/vip_public_state.dart';
@@ -52,6 +53,8 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   );
   bool _markingRead = false;
   bool _sendingImage = false;
+  int? _selfVipLevelCache;
+  String? _animatedEmojiId;
 
   String get _uid => FirebaseAuth.instance.currentUser!.uid;
   DocumentReference<Map<String, dynamic>> get _conversation => FirebaseFirestore.instance.collection('conversations').doc(widget.conversationId);
@@ -95,6 +98,8 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
           'receiverId': widget.otherUid,
           'conversationId': widget.conversationId,
           'text': text,
+          if (_animatedEmojiId != null)
+            'animatedEmojiId': _animatedEmojiId,
           'idempotencyKey': key,
         }),
       );
@@ -105,6 +110,8 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       } catch (_) {}
       if (response.statusCode == 200 && body['ok'] == true) {
         _controller.clear();
+        _animatedEmojiId = null;
+        if (mounted) setState(() {});
         return;
       }
       switch (body['code']) {
@@ -445,6 +452,41 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     }
   }
 
+  Future<int> _selfVipLevel() async {
+    final cached = _selfVipLevelCache;
+    if (cached != null) return cached;
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('public_profiles')
+          .doc(_uid)
+          .get();
+      final data = snap.data();
+      final level = data == null ? 0 : effectivePublicVipLevel(data);
+      _selfVipLevelCache = level;
+      return level;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  Future<void> _pickAnimatedEmoji() async {
+    if (_sending) return;
+    final vipLevel = await _selfVipLevel();
+    if (!mounted) return;
+    final selected = await showAnimatedEmojiPicker(
+      context,
+      vipLevel: vipLevel,
+    );
+    if (selected == null || !mounted) return;
+    setState(() {
+      _animatedEmojiId = selected.id;
+      _controller.text = selected.fallbackGlyph;
+      _controller.selection = TextSelection.collapsed(
+        offset: _controller.text.length,
+      );
+    });
+  }
+
   Future<void> _openGiftPicker() async {
     await showDirectGiftSheet(
       context,
@@ -663,6 +705,13 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
           ],
         ),
       );
+    } else if (type == 'animated_emoji') {
+      padding = const EdgeInsets.symmetric(horizontal: 10, vertical: 6);
+      content = AnimatedEmojiVisual(
+        emojiId: (data['animatedEmojiId'] ?? '').toString(),
+        assetKey: (data['animatedEmojiAssetKey'] ?? '').toString(),
+        size: 78,
+      );
     } else if (type == 'gift') {
       content = Row(
         mainAxisSize: MainAxisSize.min,
@@ -788,6 +837,14 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.image_outlined),
+              ),
+              IconButton(
+                tooltip: 'إيموجي متحرك',
+                onPressed: _sending ? null : _pickAnimatedEmoji,
+                color: _animatedEmojiId == null
+                    ? Colors.white54
+                    : const Color(0xFFFFD54A),
+                icon: const Icon(Icons.sentiment_satisfied_alt_rounded),
               ),
               Expanded(
                 child: TextField(
