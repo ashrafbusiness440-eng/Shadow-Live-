@@ -332,14 +332,6 @@ function agencyReviewPerson({
       clean(publicProfile.displayName || "مستخدم Shadow Live"),
     profileImageUrl: clean(publicProfile.profileImageUrl) || null,
     profileAvatarAsset: clean(publicProfile.profileAvatarAsset) || null,
-    activeProfileFrameAssetKey:
-      clean(publicProfile.activeProfileFrameAssetKey) || null,
-    activeProfileFrameImageUrl:
-      clean(publicProfile.activeProfileFrameImageUrl) || null,
-    activeProfileFrameExpiresAtMs:
-      Math.max(0, Number(publicProfile.activeProfileFrameExpiresAtMs || 0)),
-    activeProfileFramePermanent:
-      publicProfile.activeProfileFramePermanent === true,
     accountStatus,
     availability,
     currentAgencyId: currentAgencyId || null,
