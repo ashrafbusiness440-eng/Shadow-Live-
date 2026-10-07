@@ -16,7 +16,9 @@ import 'control_asset_studio_template.dart';
 import '../core/assets/shadow_asset_registry.dart';
 
 class ControlAssetManagerPage extends StatefulWidget {
-  const ControlAssetManagerPage({super.key});
+  const ControlAssetManagerPage({super.key, this.initialSearch = ''});
+
+  final String initialSearch;
 
   @override
   State<ControlAssetManagerPage> createState() => _ControlAssetManagerPageState();
@@ -5445,6 +5447,11 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
   @override
   void initState() {
     super.initState();
+    final initialSearch = widget.initialSearch.trim();
+    if (initialSearch.isNotEmpty) {
+      _assetSearch.text = initialSearch;
+      _debouncedSearch = initialSearch.toLowerCase();
+    }
     _loadAssets();
   }
 
