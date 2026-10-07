@@ -1530,7 +1530,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         );
                       },
                     ),
-                  ),,
+                  ),
                 ],
               ),
             ),
