@@ -96,7 +96,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
   String _categoryLabel(String value) =>
       value == 'relationship'
           ? 'علاقة'
-          : _categoryLabel(value);
+          : GiftCatalogService.categoryLabel(value);
 
   List<GiftCatalogItem> get _featured =>
       _catalog.where((gift) => gift.featured).take(8).toList();
