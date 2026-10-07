@@ -10,6 +10,7 @@ import '../services/room_chat_service.dart';
 import '../../voice/services/voice_room_session_controller.dart';
 import '../../profile/screens/user_level_screen.dart';
 import '../../profile/widgets/quick_profile_sheet.dart';
+import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../../profile/widgets/user_level_badges.dart';
 import '../../vip/widgets/vip_avatar_frame.dart';
 import 'cosmetic_effect_widgets.dart';
@@ -953,6 +954,14 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
         'senderUid': message.senderUid,
         'displayName': message.displayName,
         'profileImageUrl': message.profileImageUrl,
+        'activeProfileFrameAssetKey':
+            message.activeProfileFrameAssetKey,
+        'activeProfileFrameImageUrl':
+            message.activeProfileFrameImageUrl,
+        'activeProfileFrameExpiresAtMs':
+            message.activeProfileFrameExpiresAtMs,
+        'activeProfileFramePermanent':
+            message.activeProfileFramePermanent,
         'publicId': message.publicId,
         'wealthLevel': message.wealthLevel,
         'attractionLevel': message.attractionLevel,
@@ -1138,10 +1147,19 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
               InkWell(
                 onTap: () => _openChatQuickProfile(message),
                 customBorder: const CircleBorder(),
-                child: VipAvatarFrame(
+                child: ProfileAvatarWithFrame(
+                  diameter: 32,
+                  profile: profileAvatarFrameData(
+                    imageUrl: message.profileImageUrl,
+                    frameAssetKey: message.activeProfileFrameAssetKey,
+                    frameImageUrl: message.activeProfileFrameImageUrl,
+                    frameExpiresAtMs:
+                        message.activeProfileFrameExpiresAtMs,
+                    framePermanent:
+                        message.activeProfileFramePermanent,
+                  ),
                   vipLevel: message.vipLevel,
-                  avatarDiameter: 32,
-                  child: _senderAvatar(message),
+                  useVipFallback: true,
                 ),
               ),
               const SizedBox(width: 8),
