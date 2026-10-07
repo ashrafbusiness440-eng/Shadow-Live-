@@ -4,6 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../../profile/widgets/profile_avatar_with_frame.dart';
+
 import '../game_asset_paths.dart';
 import '../services/game_runtime_service.dart';
 import '../../room/services/room_presence_service.dart';
@@ -2409,18 +2411,15 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
                               ),
                             ),
                             const SizedBox(height: 4),
-                            CircleAvatar(
-                              radius: 18,
+                            ProfileAvatarWithFrame(
+                              diameter: 36,
                               backgroundColor: Colors.white10,
-                              backgroundImage:
-                                  photo.isEmpty ? null : NetworkImage(photo),
-                              child: photo.isEmpty
-                                  ? const Icon(
-                                      Icons.person_rounded,
-                                      color: Colors.white54,
-                                      size: 18,
-                                    )
-                                  : null,
+                              placeholderColor: Colors.white54,
+                              profile: <String, dynamic>{
+                                ...winner,
+                                if (photo.isNotEmpty)
+                                  'profileImageUrl': photo,
+                              },
                             ),
                             const SizedBox(height: 4),
                             Text(
