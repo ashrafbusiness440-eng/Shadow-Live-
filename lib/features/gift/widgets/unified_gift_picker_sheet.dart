@@ -685,8 +685,8 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
       borderRadius: BorderRadius.circular(12),
       child: Container(
         height: 36,
-        constraints: const BoxConstraints(minWidth: 44),
-        padding: const EdgeInsets.symmetric(horizontal: 9),
+        constraints: const BoxConstraints(minWidth: 30),
+        padding: const EdgeInsets.symmetric(horizontal: 4),
         decoration: BoxDecoration(
           color: selected
               ? const Color(0xFF6C27D9)
@@ -703,7 +703,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
           label,
           style: TextStyle(
             color: selected ? Colors.white : Colors.white70,
-            fontSize: 11,
+            fontSize: 10,
             fontWeight: FontWeight.w900,
           ),
         ),
@@ -714,7 +714,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
   Widget _balancePill() {
     return Container(
       height: 36,
-      padding: const EdgeInsetsDirectional.only(start: 8, end: 5),
+      padding: const EdgeInsetsDirectional.only(start: 4, end: 2),
       decoration: BoxDecoration(
         color: const Color(0xFF151A24),
         borderRadius: BorderRadius.circular(18),
@@ -726,29 +726,29 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
           const Icon(
             Icons.monetization_on_rounded,
             color: Color(0xFFFFC84A),
-            size: 18,
+            size: 14,
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 2),
           Text(
             _balanceCoins == null
                 ? '—'
                 : formatCompactAmount(_balanceCoins),
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 10.5,
+              fontSize: 9,
               fontWeight: FontWeight.w900,
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 2),
           InkWell(
             onTap: _openRecharge,
             borderRadius: BorderRadius.circular(99),
             child: const Padding(
-              padding: EdgeInsets.all(4),
+              padding: EdgeInsets.all(2),
               child: Icon(
                 Icons.add_circle_rounded,
                 color: Colors.white54,
-                size: 18,
+                size: 14,
               ),
             ),
           ),
@@ -837,14 +837,14 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
             textDirection: TextDirection.ltr,
             children: [
               SizedBox(
-                width: 92,
+                width: 72,
                 height: 38,
                 child: FilledButton.icon(
                   onPressed: sendEnabled ? _send : null,
                   style: FilledButton.styleFrom(
                     backgroundColor: const Color(0xFF8A26ED),
                     disabledBackgroundColor: const Color(0xFF292E39),
-                    padding: const EdgeInsets.symmetric(horizontal: 9),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(13),
                     ),
@@ -862,21 +862,21 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
                   label: const Text(
                     'إهداء',
                     style: TextStyle(
-                      fontSize: 12,
+                      fontSize: 10.5,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
                 ),
               ),
-              const SizedBox(width: 5),
+              const SizedBox(width: 3),
               _quantityButton('آخر'),
-              const SizedBox(width: 4),
+              const SizedBox(width: 3),
               _quantityButton('777', value: 777),
-              const SizedBox(width: 4),
+              const SizedBox(width: 3),
               _quantityButton('77', value: 77),
-              const SizedBox(width: 4),
+              const SizedBox(width: 3),
               _quantityButton('7', value: 7),
-              const SizedBox(width: 4),
+              const SizedBox(width: 3),
               _quantityButton('1', value: 1),
               const Spacer(),
               _balancePill(),
