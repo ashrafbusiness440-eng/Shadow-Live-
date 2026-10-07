@@ -34,10 +34,14 @@ export function publicProfilePresentation(uidInput, data = {}) {
   };
 }
 
-export async function loadPublicProfilePresentation(db, uidInput) {
+export async function loadPublicProfilePresentation(
+  db,
+  uidInput,
+  { transaction = null } = {},
+) {
   const uid = clean(uidInput);
   if (!uid) return publicProfilePresentation("", {});
-  const snapshot = await db.get("public_profiles/" + uid);
+  const snapshot = await db.get("public_profiles/" + uid, transaction);
   return publicProfilePresentation(
     uid,
     snapshot?.exists ? snapshot.data || {} : {},
