@@ -8,6 +8,7 @@ import '../../../shared/services/user_storage_service.dart';
 import '../../../shared/widgets/country_selector.dart';
 import '../../room/services/room_action_service.dart';
 import '../../profile/screens/public_profile_screen.dart';
+import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../../profile/services/profile_action_service.dart';
 import '../services/host_my_agency_service.dart';
 import '../services/public_agency_service.dart';
@@ -1531,10 +1532,6 @@ class _OwnerCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final avatar = agencyUserAvatarProvider(
-      imageUrl: owner.profileImageUrl,
-      avatarAsset: owner.profileAvatarAsset,
-    );
     return Container(
       decoration: _cardDecoration(),
       child: ListTile(
@@ -1543,13 +1540,18 @@ class _OwnerCard extends StatelessWidget {
           horizontal: 16,
           vertical: 8,
         ),
-        leading: CircleAvatar(
-          radius: 26,
+        leading: ProfileAvatarWithFrame(
+          diameter: 52,
           backgroundColor: const Color(0xFF2A3150),
-          backgroundImage: avatar,
-          child: avatar == null
-              ? const Icon(Icons.person_rounded, color: Colors.white70)
-              : null,
+          placeholderColor: Colors.white70,
+          profile: profileAvatarFrameData(
+            imageUrl: owner.profileImageUrl,
+            avatarAsset: owner.profileAvatarAsset,
+            frameAssetKey: owner.activeProfileFrameAssetKey,
+            frameImageUrl: owner.activeProfileFrameImageUrl,
+            frameExpiresAtMs: owner.activeProfileFrameExpiresAtMs,
+            framePermanent: owner.activeProfileFramePermanent,
+          ),
         ),
         title: const Text(
           'مالك الوكالة',
@@ -2269,10 +2271,6 @@ class _HostRankingTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final person = entry.person;
-    final avatar = agencyUserAvatarProvider(
-      imageUrl: person.profileImageUrl,
-      avatarAsset: person.profileAvatarAsset,
-    );
     return ListTile(
       dense: true,
       onTap: onTap,
@@ -2295,13 +2293,18 @@ class _HostRankingTile extends StatelessWidget {
       ),
       title: Row(
         children: [
-          CircleAvatar(
-            radius: 15,
+          ProfileAvatarWithFrame(
+            diameter: 30,
             backgroundColor: const Color(0xFF2A3150),
-            backgroundImage: avatar,
-            child: avatar == null
-                ? const Icon(Icons.person_rounded, size: 16, color: Colors.white70)
-                : null,
+            placeholderColor: Colors.white70,
+            profile: profileAvatarFrameData(
+              imageUrl: person.profileImageUrl,
+              avatarAsset: person.profileAvatarAsset,
+              frameAssetKey: person.activeProfileFrameAssetKey,
+              frameImageUrl: person.activeProfileFrameImageUrl,
+              frameExpiresAtMs: person.activeProfileFrameExpiresAtMs,
+              framePermanent: person.activeProfileFramePermanent,
+            ),
           ),
           const SizedBox(width: 8),
           Expanded(
