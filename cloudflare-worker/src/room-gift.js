@@ -377,6 +377,9 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       throw new ApiError("room_unavailable", 409);
     }
     const room = roomSnap.data || {};
+    const roomOwnerUid = clean(
+      room.ownerUid || room.ownerId || room.hostId || "",
+    );
     if (!roomFeatureEnabled(room, "giftsEnabled")) {
       throw new ApiError("room_gifts_disabled", 409);
     }
@@ -399,7 +402,11 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
         if (!present.has(senderUid)) {
           throw new ApiError("sender_not_in_room", 409);
         }
-        if (recipientIds.some((uid) => !present.has(uid))) {
+        if (
+          recipientIds.some(
+            (uid) => !present.has(uid) && uid !== roomOwnerUid,
+          )
+        ) {
           throw new ApiError("receiver_not_in_room", 409);
         }
       } else {
@@ -412,6 +419,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
           "sender_not_in_room",
         );
         for (const uid of recipientIds) {
+          if (uid === roomOwnerUid) continue;
           await assertRoomPresence(
             db,
             transaction,
