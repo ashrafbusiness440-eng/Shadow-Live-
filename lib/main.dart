@@ -40,6 +40,7 @@ import 'features/agency/screens/agency_application_page.dart';
 import 'features/agency/screens/agency_search_page.dart';
 import 'features/notifications/screens/notifications_page.dart';
 import 'features/profile/widgets/quick_profile_sheet.dart';
+import 'features/profile/widgets/profile_avatar_with_frame.dart';
 import 'features/profile/widgets/registry_badge.dart';
 import 'features/profile/widgets/user_level_badges.dart';
 import 'features/profile/screens/user_level_screen.dart';
@@ -1453,21 +1454,24 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                   adminActions: adminActions,
                                 );
                               },
-                              leading: CircleAvatar(
+                              leading: ProfileAvatarWithFrame(
+                                diameter: 40,
                                 backgroundColor:
                                     const Color(0xFF25183F),
-                                backgroundImage:
-                                    user.profileImageUrl.isEmpty
-                                        ? null
-                                        : NetworkImage(
-                                            user.profileImageUrl,
-                                          ),
-                                child: user.profileImageUrl.isEmpty
-                                    ? const Icon(
-                                        Icons.person_rounded,
-                                        color: Colors.white54,
-                                      )
-                                    : null,
+                                placeholderColor: Colors.white54,
+                                profile: profileAvatarFrameData(
+                                  imageUrl: user.profileImageUrl,
+                                  frameAssetKey:
+                                      user.activeProfileFrameAssetKey,
+                                  frameImageUrl:
+                                      user.activeProfileFrameImageUrl,
+                                  frameExpiresAtMs:
+                                      user.activeProfileFrameExpiresAtMs,
+                                  framePermanent:
+                                      user.activeProfileFramePermanent,
+                                ),
+                                vipLevel: user.vipLevel,
+                                useVipFallback: true,
                               ),
                               title: Text(
                                 user.displayName,
