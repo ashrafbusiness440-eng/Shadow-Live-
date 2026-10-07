@@ -1,28 +1,33 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../core/assets/shadow_asset_registry.dart';
 import '../../../utils/compact_number.dart';
 import '../../profile/screens/user_level_screen.dart';
 import '../../profile/services/user_level_service.dart';
+import '../../wallet/screens/recharge_screen.dart';
 import '../services/gift_catalog_service.dart';
 
 class GiftPickerSendResult {
   const GiftPickerSendResult({
     required this.balanceCoins,
     this.wealthDeltaCoins = 0,
+    this.bagQuantityRemaining,
     this.message = '',
   });
 
   final int? balanceCoins;
   final int wealthDeltaCoins;
+  final int? bagQuantityRemaining;
   final String message;
 }
 
 typedef GiftPickerSender = Future<GiftPickerSendResult> Function(
   GiftCatalogItem gift,
   int quantity,
+  bool useGiftBag,
 );
 
 class UnifiedGiftPickerSheet extends StatefulWidget {
@@ -48,7 +53,12 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
   GiftCatalogItem? _selected;
   String _category = 'general';
   int _quantity = 1;
+  final TextEditingController _customQuantityController =
+      TextEditingController();
+  final FocusNode _customQuantityFocus = FocusNode();
+  bool _customQuantityOpen = false;
   int? _balanceCoins;
+  Map<String, int> _bagQuantities = const <String, int>{};
   UserLevelService? _levelService;
   UserLevelSectionSummary? _wealth;
   bool _wealthLoading = false;
@@ -67,6 +77,8 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
 
   @override
   void dispose() {
+    _customQuantityController.dispose();
+    _customQuantityFocus.dispose();
     _levelService?.close();
     super.dispose();
   }
@@ -173,6 +185,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
         _catalog = catalog;
         _category = initialCategory;
         _balanceCoins = GiftCatalogService.cachedBalanceCoins;
+        _bagQuantities = GiftCatalogService.cachedBagQuantities;
         _loading = false;
       });
     } catch (_) {
@@ -188,7 +201,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
       gift.isRelationshipGift ? 'relationship' : gift.category;
 
   List<String> get _categories {
-    final values = <String>[];
+    final values = <String>['bag'];
     for (final gift in _catalog) {
       final value = _uiCategoryForGift(gift);
       if (!values.contains(value)) values.add(value);
@@ -196,14 +209,34 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
     return values;
   }
 
-  List<GiftCatalogItem> get _visible => _catalog
-      .where((gift) => _uiCategoryForGift(gift) == _category)
-      .toList(growable: false);
+  List<GiftCatalogItem> get _visible {
+    if (_category == 'bag') {
+      return _catalog
+          .where((gift) => (_bagQuantities[gift.id] ?? 0) > 0)
+          .toList(growable: false);
+    }
+    return _catalog
+        .where((gift) => _uiCategoryForGift(gift) == _category)
+        .toList(growable: false);
+  }
 
-  String _categoryLabel(String value) =>
-      value == 'relationship'
-          ? 'علاقة'
-          : GiftCatalogService.categoryLabel(value);
+  String _categoryLabel(String value) => switch (value) {
+        'bag' => '',
+        'relationship' => 'علاقة',
+        _ => GiftCatalogService.categoryLabel(value),
+      };
+
+  IconData? _categoryIcon(String value) => switch (value) {
+        'bag' => Icons.shopping_bag_rounded,
+        'general' => Icons.card_giftcard_rounded,
+        'lucky' => Icons.auto_awesome_rounded,
+        'vip' => Icons.workspace_premium_rounded,
+        'relationship' => Icons.favorite_rounded,
+        'activities' => Icons.celebration_rounded,
+        'countries' => Icons.public_rounded,
+        'celebrities' => Icons.star_rounded,
+        _ => null,
+      };
 
   String _giftEmoji(String id) => switch (id) {
         'rose' => '🌹',
@@ -246,13 +279,23 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
     if (gift == null || !widget.canSend || _sending) return;
     setState(() => _sending = true);
     try {
-      final result = await widget.onSend(gift, _quantity);
+      final useGiftBag = _category == 'bag';
+      final result = await widget.onSend(gift, _quantity, useGiftBag);
       if (!mounted) return;
       if (result.balanceCoins != null) {
         GiftCatalogService.updateCachedBalance(result.balanceCoins!);
         _balanceCoins = result.balanceCoins;
       }
       _applyWealthDelta(result.wealthDeltaCoins);
+      if (useGiftBag) {
+        final remaining = result.bagQuantityRemaining ??
+            ((_bagQuantities[gift.id] ?? 0) - _quantity).clamp(0, 1 << 31).toInt();
+        GiftCatalogService.updateCachedBagQuantity(gift.id, remaining);
+        _bagQuantities = GiftCatalogService.cachedBagQuantities;
+        if (remaining <= 0) {
+          _selected = null;
+        }
+      }
       final message = result.message.trim();
       if (message.isNotEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -299,119 +342,180 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
         : (wealth.progressBps.clamp(0, 10000) / 10000.0);
     final nextThreshold = wealth?.nextThreshold;
     final progressText = wealth == null
-        ? (_wealthLoading ? 'تحميل الثروة...' : 'الثروة')
+        ? (_wealthLoading ? 'تحميل...' : '—')
         : nextThreshold == null
-            ? 'المستوى الأقصى'
+            ? 'MAX'
             : formatCompactAmount(
-                    wealth.points - wealth.minimumThreshold,
-                  ) +
+                  wealth.points - wealth.minimumThreshold,
+                ) +
                 ' / ' +
                 formatCompactAmount(
                   nextThreshold - wealth.minimumThreshold,
                 );
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
+    return SizedBox(
+      height: 42,
+      child: Row(
+        textDirection: TextDirection.ltr,
+        children: [
+          SizedBox(
+            height: 36,
+            child: OutlinedButton.icon(
+              onPressed: _openWealthPrivileges,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFFFFD98A),
+                side: const BorderSide(color: Color(0x665C4820)),
+                backgroundColor: const Color(0x332E2411),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              icon: const Icon(Icons.workspace_premium_rounded, size: 16),
+              label: const Text(
+                'امتيازاتي',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Directionality(
+              textDirection: TextDirection.rtl,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(
-                    wealth == null
-                        ? 'الثروة'
-                        : 'الثروة LV' + wealth.level.toString(),
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
+                  Row(
+                    children: [
+                      Text(
+                        wealth == null
+                            ? 'الثروة'
+                            : 'الثروة LV' + wealth.level.toString(),
+                        style: const TextStyle(
+                          color: Colors.white60,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        progressText,
+                        style: const TextStyle(
+                          color: Color(0xFFFFD98A),
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(99),
+                    child: LinearProgressIndicator(
+                      value: progress,
+                      minHeight: 6,
+                      backgroundColor: const Color(0xFF292D37),
+                      valueColor: const AlwaysStoppedAnimation<Color>(
+                        Color(0xFFD7B56D),
+                      ),
                     ),
                   ),
-                  const Spacer(),
-                  Text(
-                    progressText,
-                    style: const TextStyle(
-                      color: Color(0xFFFFD98A),
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w800,
+                  const SizedBox(height: 3),
+                  const Align(
+                    alignment: AlignmentDirectional.centerEnd,
+                    child: Text(
+                      '1 كوين = 1 نقطة ثروة',
+                      style: TextStyle(
+                        color: Colors.white30,
+                        fontSize: 8.5,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 6),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(99),
-                child: LinearProgressIndicator(
-                  value: progress,
-                  minHeight: 7,
-                  backgroundColor: const Color(0xFF2A2E38),
-                  valueColor: const AlwaysStoppedAnimation<Color>(
-                    Color(0xFFD7B56D),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                'كل 1 كوين مُرسل = 1 نقطة ثروة',
-                style: TextStyle(
-                  color: Colors.white38,
-                  fontSize: 9.5,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 10),
-        OutlinedButton.icon(
-          onPressed: _openWealthPrivileges,
-          style: OutlinedButton.styleFrom(
-            foregroundColor: const Color(0xFFFFD98A),
-            side: const BorderSide(color: Color(0x665C4820)),
-            backgroundColor: const Color(0x332E2411),
-            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(13),
             ),
           ),
-          icon: const Icon(Icons.workspace_premium_rounded, size: 18),
-          label: const Text(
-            'امتيازاتي',
-            style: TextStyle(fontWeight: FontWeight.w900),
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
+
   Widget _categoryBar() {
     final categories = _categories;
-    if (categories.length < 2) return const SizedBox.shrink();
     return SizedBox(
-      height: 38,
+      height: 34,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: categories.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 7),
+        separatorBuilder: (_, __) => const SizedBox(width: 3),
         itemBuilder: (_, index) {
           final value = categories[index];
           final selected = value == _category;
-          return ChoiceChip(
-            label: Text(_categoryLabel(value)),
-            selected: selected,
-            onSelected: (_) => setState(() {
-              _category = value;
-              if (_selected?.category != value) _selected = null;
-            }),
-            selectedColor: const Color(0xFF6D27D9),
-            backgroundColor: const Color(0xFF151A28),
-            side: BorderSide(
-              color: selected ? const Color(0xFFFFD54A) : Colors.white10,
-            ),
-            labelStyle: TextStyle(
-              color: selected ? Colors.white : Colors.white70,
-              fontWeight: FontWeight.w800,
+          final icon = _categoryIcon(value);
+          return InkWell(
+            onTap: _sending
+                ? null
+                : () => setState(() {
+                      _category = value;
+                      _customQuantityOpen = false;
+                      if (_selected != null &&
+                          !_visible.any((gift) => gift.id == _selected!.id)) {
+                        _selected = null;
+                      }
+                    }),
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              constraints: BoxConstraints(
+                minWidth: value == 'bag' ? 38 : 55,
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 7),
+              decoration: BoxDecoration(
+                color: selected
+                    ? const Color(0x332A1A47)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(10),
+                border: Border(
+                  bottom: BorderSide(
+                    color: selected
+                        ? const Color(0xFFFFD54A)
+                        : Colors.transparent,
+                    width: 2,
+                  ),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (icon != null)
+                    Icon(
+                      icon,
+                      size: value == 'bag' ? 20 : 14,
+                      color: selected
+                          ? const Color(0xFFFFD54A)
+                          : Colors.white54,
+                    ),
+                  if (_categoryLabel(value).isNotEmpty) ...[
+                    if (icon != null) const SizedBox(width: 3),
+                    Text(
+                      _categoryLabel(value),
+                      style: TextStyle(
+                        color: selected
+                            ? const Color(0xFFFFD54A)
+                            : Colors.white54,
+                        fontSize: 10,
+                        fontWeight: selected
+                            ? FontWeight.w900
+                            : FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
           );
         },
@@ -421,46 +525,55 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
 
   Widget _giftCard(GiftCatalogItem gift) {
     final selected = _selected?.id == gift.id;
-    final total = gift.priceCoins * _quantity;
+    final bagCount = _bagQuantities[gift.id] ?? 0;
     return InkWell(
       onTap: _sending ? null : () => setState(() => _selected = gift),
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.all(8),
+      borderRadius: BorderRadius.circular(13),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        padding: const EdgeInsets.fromLTRB(5, 5, 5, 6),
         decoration: BoxDecoration(
-          color: selected ? const Color(0xFF21183A) : const Color(0xFF121725),
-          borderRadius: BorderRadius.circular(16),
+          color: selected
+              ? const Color(0xFF25143D)
+              : const Color(0xFF111620),
+          borderRadius: BorderRadius.circular(13),
           border: Border.all(
-            color: selected ? const Color(0xFFFFD54A) : Colors.white10,
-            width: selected ? 1.5 : 1,
+            color: selected
+                ? const Color(0xFFB736FF)
+                : const Color(0x16FFFFFF),
+            width: selected ? 1.4 : .8,
           ),
+          boxShadow: selected
+              ? const [
+                  BoxShadow(
+                    color: Color(0x443000FF),
+                    blurRadius: 10,
+                    spreadRadius: 1,
+                  ),
+                ]
+              : const [],
         ),
         child: Column(
           children: [
             Expanded(
               child: Stack(
                 children: [
-                  Positioned.fill(child: Center(child: _giftImage(gift))),
+                  Positioned.fill(
+                    child: Center(
+                      child: _giftImage(gift, fallbackSize: 30),
+                    ),
+                  ),
                   if (gift.isAnimated)
-                    Positioned(
+                    const Positioned(
                       top: 0,
                       left: 0,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 5,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xCC6D27D9),
-                          borderRadius: BorderRadius.circular(99),
-                        ),
-                        child: const Text(
-                          'متحركة',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 8,
-                            fontWeight: FontWeight.w900,
-                          ),
+                      child: CircleAvatar(
+                        radius: 8,
+                        backgroundColor: Color(0xFF09B968),
+                        child: Icon(
+                          Icons.play_arrow_rounded,
+                          color: Colors.white,
+                          size: 11,
                         ),
                       ),
                     ),
@@ -468,59 +581,54 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
                     Positioned(
                       top: 0,
                       right: 0,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 5,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: gift.category == 'cp'
-                              ? const Color(0xDDF15C9A)
-                              : const Color(0xDD27AFCB),
-                          borderRadius: BorderRadius.circular(99),
-                        ),
-                        child: Text(
-                          gift.category == 'cp' ? 'CP' : 'صديق',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 8,
-                            fontWeight: FontWeight.w900,
-                          ),
+                      child: Text(
+                        gift.category == 'cp' ? 'CP' : 'صديق',
+                        style: const TextStyle(
+                          color: Color(0xFFFF77AE),
+                          fontSize: 7.5,
+                          fontWeight: FontWeight.w900,
                         ),
                       ),
                     ),
                 ],
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 2),
             Text(
               gift.nameAr,
-              maxLines: 2,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                color: Colors.white,
-                fontSize: 10.5,
-                height: 1.1,
+                color: Colors.white70,
+                fontSize: 9.2,
+                height: 1.05,
                 fontWeight: FontWeight.w800,
               ),
             ),
-            if (gift.effectiveMinVipLevel > 0)
-              Text(
-                'VIP${gift.effectiveMinVipLevel}+',
-                style: const TextStyle(
-                  color: Color(0xFFFFD54A),
-                  fontSize: 9,
-                  fontWeight: FontWeight.w900,
+            const SizedBox(height: 2),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  _category == 'bag'
+                      ? Icons.shopping_bag_rounded
+                      : Icons.monetization_on_rounded,
+                  size: 11,
+                  color: const Color(0xFFFFD54A),
                 ),
-              ),
-            Text(
-              '🪙 $total',
-              style: const TextStyle(
-                color: Color(0xFFFFD54A),
-                fontSize: 10,
-                fontWeight: FontWeight.w900,
-              ),
+                const SizedBox(width: 2),
+                Text(
+                  _category == 'bag'
+                      ? '×' + formatCompactAmount(bagCount)
+                      : formatCompactAmount(gift.priceCoins),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -528,85 +636,251 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
     );
   }
 
+  Future<void> _openRecharge() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const RechargeScreen(initialTab: 0),
+      ),
+    );
+    if (mounted) {
+      _balanceCoins = GiftCatalogService.cachedBalanceCoins;
+      setState(() {});
+    }
+  }
+
+  void _openCustomQuantity() {
+    _customQuantityController.text = _quantity.toString();
+    setState(() => _customQuantityOpen = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _customQuantityFocus.requestFocus();
+    });
+  }
+
+  void _confirmCustomQuantity() {
+    final value = int.tryParse(_customQuantityController.text.trim()) ?? 0;
+    if (value < 1 || value > 9999) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('أدخل عدداً من 1 إلى 9999.')),
+      );
+      return;
+    }
+    setState(() {
+      _quantity = value;
+      _customQuantityOpen = false;
+    });
+    _customQuantityFocus.unfocus();
+  }
+
+  Widget _quantityButton(String label, {int? value}) {
+    final selected = value != null && _quantity == value && !_customQuantityOpen;
+    return InkWell(
+      onTap: _sending
+          ? null
+          : value == null
+              ? _openCustomQuantity
+              : () => setState(() {
+                    _quantity = value;
+                    _customQuantityOpen = false;
+                  }),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        height: 36,
+        constraints: const BoxConstraints(minWidth: 44),
+        padding: const EdgeInsets.symmetric(horizontal: 9),
+        decoration: BoxDecoration(
+          color: selected
+              ? const Color(0xFF6C27D9)
+              : const Color(0xFF171C27),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected
+                ? const Color(0xFFFFD54A)
+                : Colors.white12,
+          ),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? Colors.white : Colors.white70,
+            fontSize: 11,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _balancePill() {
+    return Container(
+      height: 36,
+      padding: const EdgeInsetsDirectional.only(start: 8, end: 5),
+      decoration: BoxDecoration(
+        color: const Color(0xFF151A24),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.monetization_on_rounded,
+            color: Color(0xFFFFC84A),
+            size: 18,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            _balanceCoins == null
+                ? '—'
+                : formatCompactAmount(_balanceCoins),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 10.5,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(width: 4),
+          InkWell(
+            onTap: _openRecharge,
+            borderRadius: BorderRadius.circular(99),
+            child: const Padding(
+              padding: EdgeInsets.all(4),
+              child: Icon(
+                Icons.add_circle_rounded,
+                color: Colors.white54,
+                size: 18,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _bottomBar() {
     final gift = _selected;
-    final balanceText = _balanceCoins == null
-        ? 'الرصيد: —'
-        : 'الرصيد: $_balanceCoins كوينز';
+    final bagCount = gift == null ? 0 : (_bagQuantities[gift.id] ?? 0);
+    final bagAllowed = _category != 'bag' || bagCount >= _quantity;
+    final sendEnabled =
+        gift != null && widget.canSend && !_sending && bagAllowed;
+
     return Container(
-      padding: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.only(top: 6),
       decoration: const BoxDecoration(
         border: Border(top: BorderSide(color: Colors.white10)),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: Text(
-              balanceText,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white70,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Align(
-            alignment: AlignmentDirectional.centerEnd,
-            child: Wrap(
-              spacing: 5,
-              runSpacing: 5,
-              children: [1, 7, 77, 777]
-                  .map(
-                    (value) => ChoiceChip(
-                      label: Text('×$value'),
-                      selected: _quantity == value,
-                      onSelected: _sending
-                          ? null
-                          : (_) => setState(() => _quantity = value),
-                      selectedColor: const Color(0xFF6D27D9),
-                      visualDensity: VisualDensity.compact,
-                      labelStyle: TextStyle(
-                        color: _quantity == value
-                            ? Colors.white
-                            : Colors.white70,
-                        fontWeight: FontWeight.w800,
+          if (_customQuantityOpen) ...[
+            Row(
+              children: [
+                SizedBox(
+                  width: 42,
+                  height: 38,
+                  child: FilledButton(
+                    onPressed: _confirmCustomQuantity,
+                    style: FilledButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      backgroundColor: const Color(0xFF6D27D9),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(11),
                       ),
                     ),
-                  )
-                  .toList(),
+                    child: const Icon(Icons.check_rounded, size: 20),
+                  ),
+                ),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: SizedBox(
+                    height: 38,
+                    child: TextField(
+                      controller: _customQuantityController,
+                      focusNode: _customQuantityFocus,
+                      keyboardType: TextInputType.number,
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => _confirmCustomQuantity(),
+                      inputFormatters: const [
+                        FilteringTextInputFormatter.digitsOnly,
+                        LengthLimitingTextInputFormatter(4),
+                      ],
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                      ),
+                      decoration: InputDecoration(
+                        counterText: '',
+                        hintText: 'أدخل عدد الهدايا من 1 إلى 9999',
+                        hintStyle: const TextStyle(
+                          color: Colors.white38,
+                          fontSize: 11,
+                        ),
+                        filled: true,
+                        fillColor: const Color(0xFF242738),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(11),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: FilledButton.icon(
-              onPressed: gift == null || !widget.canSend || _sending ? null : _send,
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF7B2DFF),
-                disabledBackgroundColor: const Color(0xFF282D39),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(15),
+            const SizedBox(height: 6),
+          ],
+          Row(
+            textDirection: TextDirection.ltr,
+            children: [
+              SizedBox(
+                width: 92,
+                height: 38,
+                child: FilledButton.icon(
+                  onPressed: sendEnabled ? _send : null,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF8A26ED),
+                    disabledBackgroundColor: const Color(0xFF292E39),
+                    padding: const EdgeInsets.symmetric(horizontal: 9),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                  ),
+                  icon: _sending
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.send_rounded, size: 16),
+                  label: const Text(
+                    'إهداء',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
                 ),
               ),
-              icon: _sending
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Icon(Icons.card_giftcard_rounded),
-              label: Text(
-                gift == null ? 'اختر هدية' : 'إهداء',
-                style: const TextStyle(fontWeight: FontWeight.w900),
-              ),
-            ),
+              const SizedBox(width: 5),
+              _quantityButton('آخر'),
+              const SizedBox(width: 4),
+              _quantityButton('777', value: 777),
+              const SizedBox(width: 4),
+              _quantityButton('77', value: 77),
+              const SizedBox(width: 4),
+              _quantityButton('7', value: 7),
+              const SizedBox(width: 4),
+              _quantityButton('1', value: 1),
+              const Spacer(),
+              _balancePill(),
+            ],
           ),
         ],
       ),
@@ -619,7 +893,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
       textDirection: TextDirection.rtl,
       child: SafeArea(
         child: SizedBox(
-          height: MediaQuery.sizeOf(context).height * .82,
+          height: MediaQuery.sizeOf(context).height * .55,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
             child: _loading
@@ -644,35 +918,13 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
                               borderRadius: BorderRadius.circular(99),
                             ),
                           ),
-                          const SizedBox(height: 10),
-                          Row(
-                            children: [
-                              const Icon(
-                                Icons.card_giftcard_rounded,
-                                color: Color(0xFFFFD54A),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  widget.title,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
+                          const SizedBox(height: 7),
                           widget.recipientArea,
-                          const SizedBox(height: 10),
+                          const SizedBox(height: 5),
                           _wealthStrip(),
-                          const SizedBox(height: 10),
+                          const SizedBox(height: 4),
                           _categoryBar(),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 4),
                           Expanded(
                             child: _visible.isEmpty
                                 ? const Center(
@@ -685,9 +937,9 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
                                     itemCount: _visible.length,
                                     gridDelegate:
                                         const SliverGridDelegateWithFixedCrossAxisCount(
-                                      crossAxisCount: 3,
-                                      crossAxisSpacing: 9,
-                                      mainAxisSpacing: 9,
+                                      crossAxisCount: 4,
+                                      crossAxisSpacing: 5,
+                                      mainAxisSpacing: 5,
                                       childAspectRatio: .78,
                                     ),
                                     itemBuilder: (_, index) =>
