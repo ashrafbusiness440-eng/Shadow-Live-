@@ -400,7 +400,7 @@ export async function sendGift(db, uid, body, options = {}) {
     !giftId ||
     (contextType === "chat" && (!conversationId || conversationId.includes("/"))) ||
     (contextType === "diary" && (!diaryId || diaryId.includes("/") || conversationId)) ||
-    ![1, 7, 77, 777].includes(quantity) ||
+    (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 9999) ||
     !validKey(key)
   ) {
     throw new ApiError("invalid_request", 400);
