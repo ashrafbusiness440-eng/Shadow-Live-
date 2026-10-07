@@ -130,6 +130,24 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     return slash >= 0 ? fullPath.substring(slash + 1) : fullPath;
   }
 
+  String _effectiveAssetType(Map<String, dynamic> asset) {
+    final source = _assetSource(asset);
+    final key = (asset['assetKey'] ?? '').toString().trim().toLowerCase();
+    final fullPath = (source['fullPath'] ?? asset['fullPath'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    final fileName = _assetFileName(asset).toLowerCase();
+    if (key.endsWith('.profileframe') ||
+        fileName.contains('_profile_frame.') ||
+        fullPath.contains('_profile_frame.')) {
+      return 'frame';
+    }
+    return (source['assetType'] ?? asset['assetType'] ?? '')
+        .toString()
+        .trim();
+  }
+
   String _assetLiveUrl(Map<String, dynamic>? asset, {bool bypassCache = false}) {
     if (asset == null) return '';
     final raw = (asset['rawUrl'] ?? '').toString().trim();
@@ -225,6 +243,9 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
   void _beginEditAsset(Map<String, dynamic> asset) {
     final source = _assetSource(asset);
     final templateId = (source['templateId'] ?? asset['templateId'] ?? '').toString();
+    final preferredTemplateId = _effectiveAssetType(asset) == 'frame'
+        ? 'frame.base.v1'
+        : templateId;
     final channels = (source['channels'] ?? asset['channels']);
     final key = (asset['assetKey'] ?? '').toString().trim();
     setState(() {
@@ -235,10 +256,10 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
       _directory.text = _assetDirectory(asset);
       _fileName.text = _assetFileName(asset);
       _mode = (source['mode'] ?? asset['mode']) == 'bundled' ? 'bundled' : 'remote';
-      if (templateId.isNotEmpty &&
-          _templates.any((template) => template.id == templateId)) {
-        _selectedTemplateId = templateId;
-        _recordRecentTemplate(templateId);
+      if (preferredTemplateId.isNotEmpty &&
+          _templates.any((template) => template.id == preferredTemplateId)) {
+        _selectedTemplateId = preferredTemplateId;
+        _recordRecentTemplate(preferredTemplateId);
       }
       _selectedChannels
         ..clear()
@@ -3277,8 +3298,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
       if (!matchesStatus) return false;
 
       final source = _assetSource(asset);
-      final type =
-          (source['assetType'] ?? asset['assetType'] ?? '').toString();
+      final type = _effectiveAssetType(asset);
       if (_assetTypeFilter != 'all' && type != _assetTypeFilter) {
         return false;
       }
@@ -3313,9 +3333,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
       ..._templates.map((template) => template.type.trim()),
     }..removeWhere((type) => type.isEmpty);
     for (final asset in _assets) {
-      final source = _assetSource(asset);
-      final type =
-          (source['assetType'] ?? asset['assetType'] ?? '').toString().trim();
+      final type = _effectiveAssetType(asset);
       if (type.isNotEmpty) result.add(type);
     }
     final list = result.toList()..sort();
