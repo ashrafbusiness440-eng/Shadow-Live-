@@ -9,6 +9,7 @@ import 'agency_policy_control_page.dart';
 import 'agency_package_builder_page.dart';
 import '../shared/widgets/country_selector.dart';
 import '../features/profile/screens/public_profile_screen.dart';
+import '../features/profile/widgets/profile_avatar_with_frame.dart';
 
 class AgencyControlPage extends StatefulWidget {
   const AgencyControlPage({
@@ -266,7 +267,6 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
     final uid = (person['uid'] ?? '').toString();
     final name = (person['displayName'] ?? 'مستخدم Shadow Live').toString();
     final publicId = (person['publicId'] ?? '—').toString();
-    final imageUrl = (person['profileImageUrl'] ?? '').toString().trim();
     final accountStatus = (person['accountStatus'] ?? 'active').toString();
     final availability = (person['availability'] ?? '').toString();
     final availabilityText = reviewAvailabilityLabel(availability);
@@ -279,13 +279,10 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            CircleAvatar(
-              radius: 26,
-              backgroundImage:
-                  imageUrl.isEmpty ? null : NetworkImage(imageUrl),
-              child: imageUrl.isEmpty
-                  ? const Icon(Icons.person_outline)
-                  : null,
+            ProfileAvatarWithFrame(
+              diameter: 52,
+              profile: person,
+              placeholderIcon: Icons.person_outline,
             ),
             const SizedBox(width: 12),
             Expanded(
