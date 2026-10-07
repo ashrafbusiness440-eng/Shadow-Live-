@@ -119,6 +119,44 @@ class RoomEffectCoordinator extends ChangeNotifier {
     );
   }
 
+  void ingestAnimatedEmojiMessage(Map<String, dynamic> message) {
+    final emojiId =
+        (message['animatedEmojiId'] ?? '').toString().trim();
+    final assetKey =
+        (message['animatedEmojiAssetKey'] ?? '').toString().trim();
+    final senderUid = (message['senderUid'] ?? '').toString().trim();
+    final messageId = (message['id'] ?? '').toString().trim();
+    if (
+      emojiId.isEmpty ||
+      assetKey.isEmpty ||
+      senderUid.isEmpty ||
+      messageId.isEmpty ||
+      !_markSeen('emoji:$messageId')
+    ) {
+      return;
+    }
+    if (!_visualEnabled) return;
+
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final createdAtMs =
+        (message['createdAtMs'] as num?)?.toInt() ?? nowMs;
+    if (createdAtMs <= 0 || nowMs - createdAtMs > 12000) return;
+
+    _showSeatEffect(
+      RoomVisualEffect(
+        eventId: messageId,
+        kind: 'animated_emoji',
+        mode: 'seat',
+        assetKey: assetKey,
+        imageUrl: '',
+        durationMs: 1800,
+        recipientUids: <String>[senderUid],
+        displayName: (message['displayName'] ?? '').toString(),
+        profileImageUrl: (message['profileImageUrl'] ?? '').toString(),
+      ),
+    );
+  }
+
   void ingestGiftMessage(Map<String, dynamic> message) {
     final eventId =
         (message['giftEffectEventId'] ?? '').toString().trim();
