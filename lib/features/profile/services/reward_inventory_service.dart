@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 
+import 'profile_visual_identity_service.dart';
+
 class MyItemReward {
   const MyItemReward({
     required this.docId,
@@ -121,6 +123,12 @@ class RewardInventoryService {
       'rewardId': item.rewardId,
       'active': active,
     });
+    if (item.type == 'frame') {
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      if (uid.isNotEmpty) {
+        ProfileVisualIdentityService.instance.invalidate(uid);
+      }
+    }
   }
 
   void close() => _client.close();
