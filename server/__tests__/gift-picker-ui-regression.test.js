@@ -132,7 +132,7 @@ test("Shadow Control exposes an Arabic gift bag grant flow", () => {
 
   assert.equal(control.includes("منح هدية إلى حقيبة مستخدم"), true);
   assert.equal(control.includes("'action': 'grantBagGift'"), true);
-  assert.equal(control.includes("'targetUserId': targetUserId"), true);
+  assert.equal(control.includes("'targetUid': targetUserId"), true);
   assert.equal(control.includes("من الإدارة"), true);
   assert.equal(control.includes("من فعالية"), true);
   assert.equal(control.includes("هدية مجانية"), true);
