@@ -273,12 +273,20 @@ export async function handler(req, res) {
     const action = clean(req.body?.action);
 
     if (action === "catalog") {
-      await authenticatedUser(req);
+      const decoded = await authenticatedUser(req);
       const db = getFirestore();
-      const state = await cachedCatalogState(db);
+      const [state, userSnap] = await Promise.all([
+        cachedCatalogState(db),
+        db.collection("users").doc(decoded.uid).get(),
+      ]);
+      if (!userSnap.exists) throw Error("forbidden");
+      const user = userSnap.data() || {};
+      assertUserDocumentSessionState(decoded, user);
+      const balance = Math.max(0, Number(user.coins ?? user.balance ?? 0));
       return out(res, 200, {
         ok: true,
         gifts: publicCatalog(state.config),
+        balance: Number.isSafeInteger(balance) ? balance : 0,
       });
     }
 
