@@ -119,10 +119,6 @@ class AgencyReviewRequestDetail {
     required this.displayName,
     required this.profileImageUrl,
     required this.profileAvatarAsset,
-    required this.activeProfileFrameAssetKey,
-    required this.activeProfileFrameImageUrl,
-    required this.activeProfileFrameExpiresAtMs,
-    required this.activeProfileFramePermanent,
     required this.type,
     required this.targetRole,
     required this.status,
@@ -141,10 +137,6 @@ class AgencyReviewRequestDetail {
   final String? displayName;
   final String? profileImageUrl;
   final String? profileAvatarAsset;
-  final String? activeProfileFrameAssetKey;
-  final String? activeProfileFrameImageUrl;
-  final int activeProfileFrameExpiresAtMs;
-  final bool activeProfileFramePermanent;
   final String type;
   final String targetRole;
   final String status;
@@ -175,14 +167,6 @@ class AgencyReviewRequestDetail {
       displayName: _nullable(request['displayName']),
       profileImageUrl: _nullable(request['profileImageUrl']),
       profileAvatarAsset: _nullable(request['profileAvatarAsset']),
-      activeProfileFrameAssetKey:
-          _nullable(request['activeProfileFrameAssetKey']),
-      activeProfileFrameImageUrl:
-          _nullable(request['activeProfileFrameImageUrl']),
-      activeProfileFrameExpiresAtMs:
-          (request['activeProfileFrameExpiresAtMs'] as num?)?.toInt() ?? 0,
-      activeProfileFramePermanent:
-          request['activeProfileFramePermanent'] == true,
       type: (request['type'] ?? '').toString().trim(),
       targetRole: (request['targetRole'] ?? 'host').toString().trim(),
       status: (request['status'] ?? '').toString().trim(),
