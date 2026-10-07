@@ -22,14 +22,24 @@ class RoomGiftService {
 
   Future<Map<String, dynamic>> send({
     required String roomId,
-    required String receiverId,
     required String giftId,
     required int quantity,
+    String recipientMode = 'users',
+    List<String> recipientIds = const <String>[],
   }) async {
     final user = _auth.currentUser;
     final token = await user?.getIdToken();
     if (user == null || token == null || token.isEmpty) {
       throw StateError('not_signed_in');
+    }
+
+    final normalizedIds = recipientIds
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    if (recipientMode == 'users' && normalizedIds.isEmpty) {
+      throw StateError('recipient_required');
     }
 
     final key = [
@@ -42,12 +52,15 @@ class RoomGiftService {
     final response = await _client.post(
       Uri.parse('$_baseUrl/room-gift'),
       headers: {
-        'authorization': 'Bearer ' + token,
+        'authorization': 'Bearer $token',
         'content-type': 'application/json',
       },
       body: jsonEncode({
         'roomId': roomId,
-        'receiverId': receiverId,
+        'recipientMode': recipientMode,
+        'recipientIds': normalizedIds,
+        if (recipientMode == 'users' && normalizedIds.length == 1)
+          'receiverId': normalizedIds.single,
         'giftId': giftId,
         'quantity': quantity,
         'idempotencyKey': key,
