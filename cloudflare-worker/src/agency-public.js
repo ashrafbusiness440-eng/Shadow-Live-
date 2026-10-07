@@ -299,6 +299,14 @@ function publicPersonSummary(uidInput, userSnap) {
     profileImageUrl:
       clean(user.profileImageUrl || user.photoUrl || user.avatarUrl) || null,
     profileAvatarAsset: clean(user.profileAvatarAsset) || null,
+    activeProfileFrameAssetKey:
+      clean(user.activeProfileFrameAssetKey) || null,
+    activeProfileFrameImageUrl:
+      clean(user.activeProfileFrameImageUrl) || null,
+    activeProfileFrameExpiresAtMs:
+      Math.max(0, Number(user.activeProfileFrameExpiresAtMs || 0)),
+    activeProfileFramePermanent:
+      user.activeProfileFramePermanent === true,
   };
 }
 
