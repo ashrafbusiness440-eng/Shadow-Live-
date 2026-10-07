@@ -22,6 +22,9 @@ import {
 } from "./economy-policy.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 import { adminInboxUpsertWrite } from "./admin-inbox-index.js";
+import {
+  loadPublicProfilePresentation,
+} from "./public-profile-presentation.js";
 
 const clean = (value) => String(value ?? "").trim();
 
@@ -166,8 +169,7 @@ export async function loadAgencyHostCore(
 
   const ownerUid = clean(agency.ownerUid);
   if (!ownerUid) throw new ApiError("agency_owner_missing", 409);
-  const ownerSnap = await db.get("users/" + ownerUid);
-  if (!ownerSnap.exists) throw new ApiError("agency_owner_missing", 409);
+  const ownerProfile = await loadPublicProfilePresentation(db, ownerUid);
 
   const month = currentAgencyMonthKey(now);
   const targetPolicy =
@@ -243,7 +245,13 @@ export async function loadAgencyHostCore(
       backgroundUrl:
         clean(agency.backgroundUrl || agency.roomBackgroundUrl) || null,
     },
-    owner: personSummary(ownerUid, ownerSnap),
+    owner: {
+      uid: ownerUid,
+      publicId: ownerProfile.publicId,
+      displayName: ownerProfile.displayName,
+      profileImageUrl: ownerProfile.profileImageUrl,
+      profileAvatarAsset: ownerProfile.profileAvatarAsset,
+    },
     membership: {
       role,
       status: membershipStatus,
