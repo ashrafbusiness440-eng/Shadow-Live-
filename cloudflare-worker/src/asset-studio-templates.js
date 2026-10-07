@@ -50,7 +50,7 @@ export const ASSET_STUDIO_TEMPLATES = Object.freeze([
     id: "frame.base.v1",
     type: "frame",
     labelAr: "إطار الملف الشخصي",
-    directories: ["assets/images/frames", "assets/images/vip", "assets/images/store"],
+    directories: ["assets/images/frames", "assets/images/vip", "assets/images/levels", "assets/images/store"],
     extensions: ALPHA_IMAGE_EXTS,
     transparency: "required",
     prompt: "Decorative profile frame for Shadow Live. Keep the center transparent and do not bake user names, IDs, or photos into the artwork.",
