@@ -13,6 +13,9 @@ void main() {
     final quickProfile =
         File('lib/features/profile/widgets/quick_profile_sheet.dart')
             .readAsStringSync();
+    final sharedAvatar =
+        File('lib/features/profile/widgets/profile_avatar_with_frame.dart')
+            .readAsStringSync();
     final vip =
         File('lib/features/vip/screens/vip_screen.dart').readAsStringSync();
 
@@ -20,10 +23,18 @@ void main() {
     expect(widget.contains('selected <= effectiveVip'), isTrue);
 
     expect(publicProfile.contains("data['vipProfileFrameLevel']"), isTrue);
-    expect(publicProfile.contains('frameLevel: vipFrameLevel'), isTrue);
+    expect(publicProfile.contains('vipFrameLevel: vipFrameLevel'), isTrue);
+    expect(publicProfile.contains('useVipFallback: true'), isTrue);
 
     expect(quickProfile.contains("data['vipProfileFrameLevel']"), isTrue);
-    expect(quickProfile.contains('frameLevel: vipFrameLevel'), isTrue);
+    expect(quickProfile.contains('vipFrameLevel: vipFrameLevel'), isTrue);
+    expect(quickProfile.contains('useVipFallback: true'), isTrue);
+
+    expect(sharedAvatar.contains('VipAvatarFrame('), isTrue);
+    expect(
+      sharedAvatar.contains('frameLevel: widget.vipFrameLevel'),
+      isTrue,
+    );
 
     expect(vip.contains("'vip-frame-customization'"), isTrue);
     expect(vip.contains("'vip-frame-choice-\$level'"), isTrue);
