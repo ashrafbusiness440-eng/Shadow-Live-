@@ -31,6 +31,15 @@ function user(uid, publicId, displayName) {
   };
 }
 
+function profile(uid, publicId, displayName) {
+  return {
+    uid,
+    publicId,
+    displayName,
+    profileImageUrl: "https://example.invalid/" + uid + ".webp",
+  };
+}
+
 test("10-A public agency page paginates active Hosts only", async () => {
   const agencyId = "731204";
   const ownerUid = "stage10a_owner";
@@ -56,6 +65,9 @@ test("10-A public agency page paginates active Hosts only", async () => {
     }),
     adminDb.collection("users").doc(ownerUid).set(
       user(ownerUid, "900001", "Agency Owner"),
+    ),
+    adminDb.collection("public_profiles").doc(ownerUid).set(
+      profile(ownerUid, "900001", "Agency Owner"),
     ),
     adminDb.collection("users").doc(managerUid).set(
       user(managerUid, "900002", "Manager"),
@@ -96,6 +108,11 @@ test("10-A public agency page paginates active Hosts only", async () => {
     writes.push(
       adminDb.collection("users").doc(uid).set(
         user(uid, String(910000 + index), "Host " + index),
+      ),
+    );
+    writes.push(
+      adminDb.collection("public_profiles").doc(uid).set(
+        profile(uid, String(910000 + index), "Host " + index),
       ),
     );
     writes.push(
@@ -182,21 +199,18 @@ test("10-A pressure contract caps the query at 25 and performs no writes", async
           },
         };
       }
-      if (path === "users/" + ownerUid) {
-        return {
-          exists: true,
-          data: user(ownerUid, "920001", "Pressure Owner"),
-        };
+      if (path.startsWith("public_profiles/")) {
+        const uid = path.replace("public_profiles/", "");
+        calls.activeHostGets += 1;
+        calls.maxActiveHostGets = Math.max(
+          calls.maxActiveHostGets,
+          calls.activeHostGets,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        calls.activeHostGets -= 1;
+        return { exists: true, data: profile(uid, "920000", uid) };
       }
-      const uid = path.replace("users/", "");
-      calls.activeHostGets += 1;
-      calls.maxActiveHostGets = Math.max(
-        calls.maxActiveHostGets,
-        calls.activeHostGets,
-      );
-      await new Promise((resolve) => setTimeout(resolve, 1));
-      calls.activeHostGets -= 1;
-      return { exists: true, data: user(uid, "920000", uid) };
+      throw new Error("unexpected_get_" + path);
     },
     async runQuery(collectionPath, options) {
       calls.queries.push({ collectionPath, options });
@@ -229,7 +243,7 @@ test("10-A pressure contract caps the query at 25 and performs no writes", async
   );
   assert.equal(calls.writes, 0);
   assert.equal(
-    calls.gets.filter((path) => path.startsWith("users/")).length,
+    calls.gets.filter((path) => path.startsWith("public_profiles/")).length,
     PUBLIC_HOST_PAGE_MAX + 1,
   );
   assert.ok(calls.maxActiveHostGets <= 4);
