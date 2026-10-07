@@ -20,7 +20,7 @@ test("gift picker uses wealth progress instead of featured banner", () => {
     true,
   );
   assert.equal(
-    picker.includes("كل 1 كوين مُرسل = 1 نقطة ثروة"),
+    picker.includes("1 كوين = 1 نقطة ثروة"),
     true,
   );
   assert.equal(picker.includes("Navigator.pop(context);"), false);
@@ -37,8 +37,8 @@ test("room and direct gifts advance wealth by exact paid gift value", () => {
     "../../cloudflare-worker/src/user-level-policy.js",
   );
 
-  assert.equal(room.includes("wealthDeltaCoins: totalCost"), true);
-  assert.equal(direct.includes("wealthDeltaCoins: totalCost"), true);
+  assert.equal(room.includes("wealthDeltaCoins: paidCost"), true);
+  assert.equal(direct.includes("wealthDeltaCoins: paidCost"), true);
   assert.equal(policy.includes("wealthPoints: paid"), true);
 });
 
