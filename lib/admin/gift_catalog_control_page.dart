@@ -129,6 +129,153 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
         .showSnackBar(SnackBar(content: Text(value)));
   }
 
+  Future<void> grantBagGift() async {
+    if (gifts.isEmpty) {
+      message('لا توجد هدايا متاحة للمنح.');
+      return;
+    }
+
+    final userId = TextEditingController();
+    final quantity = TextEditingController(text: '1');
+    var giftId = gifts.first.id;
+    var source = 'admin';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setLocal) => AlertDialog(
+          title: const Text('منح هدية إلى الحقيبة'),
+          content: SizedBox(
+            width: 480,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  field(
+                    userId,
+                    'ID المستخدم',
+                    'أدخل ID المستخدم',
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    value: giftId,
+                    decoration: const InputDecoration(
+                      labelText: 'الهدية',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: gifts
+                        .where((item) => item.enabled)
+                        .map(
+                          (item) => DropdownMenuItem<String>(
+                            value: item.id,
+                            child: Text(
+                              item.nameAr +
+                                  ' • ' +
+                                  formatCompactAmount(item.priceCoins) +
+                                  ' كوين',
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) {
+                      if (value != null) setLocal(() => giftId = value);
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  field(
+                    quantity,
+                    'الكمية',
+                    '1 إلى 9999',
+                    numeric: true,
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    value: source,
+                    decoration: const InputDecoration(
+                      labelText: 'مصدر الهدية',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'admin',
+                        child: Text('من الإدارة'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'event',
+                        child: Text('من فعالية'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'free',
+                        child: Text('هدية مجانية'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) setLocal(() => source = value);
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'الهدية الممنوحة تدخل الحقيبة ولا تخصم كوينز عند استخدامها، ولا تُحتسب ضمن الثروة أو التارغت أو أرباح الوكالة.',
+                    style: TextStyle(color: Color(0xFF8D8797)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              icon: const Icon(Icons.card_giftcard_rounded),
+              label: const Text('منح للحقيبة'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed != true) {
+      userId.dispose();
+      quantity.dispose();
+      return;
+    }
+
+    final targetUserId = userId.text.trim();
+    final parsedQuantity = int.tryParse(quantity.text.trim()) ?? 0;
+    userId.dispose();
+    quantity.dispose();
+
+    if (targetUserId.isEmpty || parsedQuantity < 1 || parsedQuantity > 9999) {
+      message('تأكد من ID المستخدم والكمية من 1 إلى 9999.');
+      return;
+    }
+
+    setState(() => saving = true);
+    try {
+      await post({
+        'action': 'grantBagGift',
+        'targetUserId': targetUserId,
+        'giftId': giftId,
+        'quantity': parsedQuantity,
+        'source': source,
+      });
+      if (!mounted) return;
+      setState(() => saving = false);
+      message(
+        'تم منح ' +
+            formatCompactAmount(parsedQuantity) +
+            ' من الهدية إلى حقيبة المستخدم.',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => saving = false);
+      message('تعذر منح الهدية: ' + e.toString());
+    }
+  }
+
   Future<void> editGift([int? index]) async {
     final current = index == null ? null : gifts[index];
     final id = TextEditingController(text: current?.id ?? '');
@@ -521,6 +668,26 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                     subtitle: Text(
                       'يمكن تعديل الاسم والسعر والفئة والصورة والترتيب بدون تحديث التطبيق.',
                     ),
+                  ),
+                ),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(
+                      Icons.shopping_bag_rounded,
+                      color: Color(0xFFFFD54A),
+                    ),
+                    title: const Text(
+                      'منح هدية إلى حقيبة مستخدم',
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    subtitle: const Text(
+                      'للإدارة والفعاليات والهدايا المجانية — بدون خصم كوينز من المستلم.',
+                    ),
+                    trailing: FilledButton(
+                      onPressed: saving ? null : grantBagGift,
+                      child: const Text('منح'),
+                    ),
+                    onTap: saving ? null : grantBagGift,
                   ),
                 ),
                 if (error != null)
