@@ -2825,52 +2825,101 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
 
   Future<bool> _verifyPublishedAsset(
     String assetKey,
-    String expectedSha,
-  ) async {
+    String expectedSha, {
+    int attempts = 3,
+  }) async {
+    final boundedAttempts = attempts.clamp(1, 3);
+    for (var attempt = 1; attempt <= boundedAttempts; attempt++) {
+      try {
+        final uri = _endpoint.replace(
+          queryParameters: {'assetKey': assetKey},
+        );
+        final response = await http.get(
+          uri,
+          headers: {'authorization': 'Bearer ${await _token()}'},
+        );
+        final decoded = response.body.isEmpty
+            ? <String, dynamic>{}
+            : jsonDecode(response.body);
+        final body = decoded is Map<String, dynamic>
+            ? decoded
+            : <String, dynamic>{};
+        final asset = body['asset'] is Map
+            ? Map<String, dynamic>.from(body['asset'] as Map)
+            : <String, dynamic>{};
+
+        final registryMatches = response.statusCode >= 200 &&
+            response.statusCode < 300 &&
+            body['ok'] == true &&
+            asset['published'] == true &&
+            (asset['contentSha'] ?? '').toString() == expectedSha;
+
+        if (registryMatches) {
+          final rawUrl = (asset['rawUrl'] ?? '').toString().trim();
+          if (rawUrl.isNotEmpty) {
+            final separator = rawUrl.contains('?') ? '&' : '?';
+            final liveResponse = await http.get(
+              Uri.parse(
+                '$rawUrl${separator}verify='
+                '${DateTime.now().microsecondsSinceEpoch}',
+              ),
+              headers: const {'cache-control': 'no-cache'},
+            );
+            final verified = liveResponse.statusCode >= 200 &&
+                liveResponse.statusCode < 300 &&
+                liveResponse.bodyBytes.isNotEmpty;
+            if (verified) {
+              unawaited(_loadAssets());
+              return true;
+            }
+          }
+        }
+      } catch (_) {
+        // The new file can need a brief moment before it becomes reachable.
+      }
+
+      if (attempt < boundedAttempts) {
+        await Future<void>.delayed(
+          Duration(milliseconds: 650 * attempt),
+        );
+      }
+    }
+    return false;
+  }
+
+  Future<void> _reverifyLastSuccess() async {
+    final success = _lastSuccess;
+    if (success == null ||
+        success['status'] != 'published' ||
+        _busy) {
+      return;
+    }
+
+    final assetKey = (success['assetKey'] ?? '').toString().trim();
+    final contentSha = (success['contentSha'] ?? '').toString().trim();
+    if (assetKey.isEmpty || contentSha.isEmpty) return;
+
+    setState(() {
+      _busy = true;
+      _message = null;
+    });
+
     try {
-      final uri = _endpoint.replace(
-        queryParameters: {'assetKey': assetKey},
+      final verified = await _verifyPublishedAsset(
+        assetKey,
+        contentSha,
+        attempts: 3,
       );
-      final response = await http.get(
-        uri,
-        headers: {'authorization': 'Bearer ${await _token()}'},
-      );
-      final decoded = response.body.isEmpty
-          ? <String, dynamic>{}
-          : jsonDecode(response.body);
-      final body = decoded is Map<String, dynamic>
-          ? decoded
-          : <String, dynamic>{};
-      final asset = body['asset'] is Map
-          ? Map<String, dynamic>.from(body['asset'] as Map)
-          : <String, dynamic>{};
-
-      if (response.statusCode < 200 ||
-          response.statusCode >= 300 ||
-          body['ok'] != true ||
-          asset['published'] != true ||
-          (asset['contentSha'] ?? '').toString() != expectedSha) {
-        return false;
-      }
-
-      final rawUrl = (asset['rawUrl'] ?? '').toString().trim();
-      if (rawUrl.isEmpty) return false;
-      final separator = rawUrl.contains('?') ? '&' : '?';
-      final liveResponse = await http.get(
-        Uri.parse(
-          '$rawUrl${separator}verify=${DateTime.now().microsecondsSinceEpoch}',
-        ),
-        headers: const {'cache-control': 'no-cache'},
-      );
-      final verified = liveResponse.statusCode >= 200 &&
-          liveResponse.statusCode < 300 &&
-          liveResponse.bodyBytes.isNotEmpty;
-      if (verified) {
-        unawaited(_loadAssets());
-      }
-      return verified;
-    } catch (_) {
-      return false;
+      if (!mounted) return;
+      setState(() {
+        _lastSuccess = {
+          ...success,
+          'verified': verified,
+        };
+        _message = null;
+      });
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -3029,13 +3078,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
             'rawUrl': body['rawUrl'],
             'contentSha': contentSha,
           };
-          _message = status == 'published'
-              ? (verified
-                  ? (replaced
-                      ? 'تم استبدال الأصل والتحقق من النسخة الحية.'
-                      : 'تم نشر الأصل والتحقق من النسخة الحية.')
-                  : 'تم النشر، لكن التحقق المباشر من الملف الحي لم يكتمل.')
-              : 'تم حفظ الأصل كمسودة بدون تغيير النسخة الحية.';
+          _message = null;
           _recordRecent(assetKey);
         });
       } else {
@@ -4111,10 +4154,16 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.greenAccent.withValues(alpha: .07),
+                color: (_lastSuccess!['status'] == 'published' &&
+                            _lastSuccess!['verified'] != true)
+                    ? Colors.amberAccent.withValues(alpha: .07)
+                    : Colors.greenAccent.withValues(alpha: .07),
                 borderRadius: BorderRadius.circular(13),
                 border: Border.all(
-                  color: Colors.greenAccent.withValues(alpha: .22),
+                  color: (_lastSuccess!['status'] == 'published' &&
+                              _lastSuccess!['verified'] != true)
+                      ? Colors.amberAccent.withValues(alpha: .24)
+                      : Colors.greenAccent.withValues(alpha: .22),
                 ),
               ),
               child: Column(
@@ -4135,8 +4184,8 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                         child: Text(
                           _lastSuccess!['status'] == 'published'
                               ? (_lastSuccess!['verified'] == true
-                                  ? 'منشور ومتحقق من النسخة الحية'
-                                  : 'منشور • التحقق الحي يحتاج إعادة فحص')
+                                  ? 'تم النشر والتأكد ✅'
+                                  : 'تم النشر • بانتظار التأكد')
                               : 'تم حفظ المسودة',
                           style: const TextStyle(
                             fontWeight: FontWeight.w900,
@@ -4146,11 +4195,33 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  SelectableText(
-                    (_lastSuccess!['assetKey'] ?? '').toString(),
-                    textDirection: TextDirection.ltr,
-                    style: const TextStyle(fontSize: 11),
+                  const Text(
+                    'مفتاح الأصل',
+                    style: TextStyle(
+                      color: Colors.white60,
+                      fontSize: 10.5,
+                    ),
                   ),
+                  const SizedBox(height: 3),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: SelectableText(
+                      (_lastSuccess!['assetKey'] ?? '').toString(),
+                      textDirection: TextDirection.ltr,
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                  ),
+                  if (_lastSuccess!['status'] == 'published' &&
+                      _lastSuccess!['verified'] != true) ...[
+                    const SizedBox(height: 7),
+                    const Text(
+                      'النشر تم بنجاح. بقي التأكد من ظهور النسخة الجديدة من المصدر.',
+                      style: TextStyle(
+                        color: Colors.amberAccent,
+                        fontSize: 10.5,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 4),
                   SelectableText(
                     (_lastSuccess!['fullPath'] ?? '').toString(),
@@ -4179,6 +4250,12 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                           icon: const Icon(Icons.copy_rounded),
                           label: const Text('نسخ المفتاح'),
                         ),
+                        if (_lastSuccess!['verified'] != true)
+                          OutlinedButton.icon(
+                            onPressed: _busy ? null : _reverifyLastSuccess,
+                            icon: const Icon(Icons.refresh_rounded),
+                            label: const Text('إعادة التحقق'),
+                          ),
                         if (_isEditing)
                           OutlinedButton.icon(
                             onPressed: _busy ? null : _openNextManifestAsset,
