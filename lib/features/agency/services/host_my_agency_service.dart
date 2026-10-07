@@ -52,10 +52,6 @@ class HostAgencyOwner {
     required this.displayName,
     required this.profileImageUrl,
     this.profileAvatarAsset,
-    this.activeProfileFrameAssetKey,
-    this.activeProfileFrameImageUrl,
-    this.activeProfileFrameExpiresAtMs = 0,
-    this.activeProfileFramePermanent = false,
   });
 
   final String uid;
@@ -63,10 +59,6 @@ class HostAgencyOwner {
   final String displayName;
   final String? profileImageUrl;
   final String? profileAvatarAsset;
-  final String? activeProfileFrameAssetKey;
-  final String? activeProfileFrameImageUrl;
-  final int activeProfileFrameExpiresAtMs;
-  final bool activeProfileFramePermanent;
 
   factory HostAgencyOwner.fromJson(Map<String, dynamic> json) {
     return HostAgencyOwner(
@@ -75,14 +67,6 @@ class HostAgencyOwner {
       displayName: (json['displayName'] ?? 'Shadow Live').toString().trim(),
       profileImageUrl: _nullableString(json['profileImageUrl']),
       profileAvatarAsset: _nullableString(json['profileAvatarAsset']),
-      activeProfileFrameAssetKey:
-          _nullableString(json['activeProfileFrameAssetKey']),
-      activeProfileFrameImageUrl:
-          _nullableString(json['activeProfileFrameImageUrl']),
-      activeProfileFrameExpiresAtMs:
-          _nonNegativeInt(json['activeProfileFrameExpiresAtMs']),
-      activeProfileFramePermanent:
-          json['activeProfileFramePermanent'] == true,
     );
   }
 }
