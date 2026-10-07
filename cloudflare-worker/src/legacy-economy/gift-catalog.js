@@ -128,6 +128,10 @@ function publicCatalog(config) {
         300,
         Math.min(12000, Number(item.effectDurationMs || 2200)),
       ),
+      effectSize: Math.max(
+        0,
+        Math.min(420, Number(item.effectSize || 0)),
+      ),
       premiumBannerMinQuantity: Math.max(
         0,
         Number(item.premiumBannerMinQuantity || 0),
@@ -171,6 +175,7 @@ function validateGifts(raw) {
     const effectAssetKey = clean(item?.effectAssetKey || assetKey);
     const effectMinQuantity = Number(item?.effectMinQuantity || 0);
     const effectDurationMs = Number(item?.effectDurationMs || 2200);
+    const effectSize = Number(item?.effectSize || 0);
     const premiumBannerMinQuantity = Number(
       item?.premiumBannerMinQuantity || 0,
     );
@@ -223,6 +228,14 @@ function validateGifts(raw) {
       throw Error("invalid_effect_duration");
     }
     if (
+      !Number.isSafeInteger(effectSize) ||
+      effectSize < 0 ||
+      effectSize > 420 ||
+      (effectSize > 0 && effectSize < 40)
+    ) {
+      throw Error("invalid_effect_size");
+    }
+    if (
       !Number.isSafeInteger(premiumBannerMinQuantity) ||
       premiumBannerMinQuantity < 0 ||
       premiumBannerMinQuantity > 777
@@ -256,6 +269,7 @@ function validateGifts(raw) {
       effectAssetKey,
       effectMinQuantity,
       effectDurationMs,
+      effectSize,
       premiumBannerMinQuantity,
       affinityBasePoints,
     };
