@@ -44,6 +44,10 @@ function chatGiftOperationConflicts(data = {}, expected = {}) {
   if (clean(data.diaryId) && clean(data.diaryId) !== clean(expected.diaryId)) return true;
   if (clean(data.giftId) && clean(data.giftId) !== clean(expected.giftId)) return true;
   if (data.quantity != null && Number(data.quantity) !== Number(expected.quantity)) return true;
+  if (
+    data.useGiftBag != null &&
+    (data.useGiftBag === true) !== (expected.useGiftBag === true)
+  ) return true;
   return false;
 }
 
@@ -393,6 +397,7 @@ export async function sendGift(db, uid, body, options = {}) {
   const contextType = diaryId ? "diary" : "chat";
   const key = clean(body.idempotencyKey);
   const quantity = Number(body.quantity || 1);
+  const useGiftBag = body.useGiftBag === true;
 
   if (
     !receiverId ||
@@ -436,6 +441,7 @@ export async function sendGift(db, uid, body, options = {}) {
     const contextPath = contextType === "diary" ? diaryPath : conversationPath;
     const outgoingBlockPath = `user_blocks/${uid}/items/${receiverId}`;
     const incomingBlockPath = `user_blocks/${receiverId}/items/${uid}`;
+    const bagPath = `user_gift_bags/${uid}/items/${giftId}`;
 
     const [
       op,
@@ -447,6 +453,7 @@ export async function sendGift(db, uid, body, options = {}) {
       contextDoc,
       outgoingBlock,
       incomingBlock,
+      bag,
     ] = await Promise.all([
       db.get(opPath, transaction),
       db.get(senderPath, transaction),
@@ -457,6 +464,9 @@ export async function sendGift(db, uid, body, options = {}) {
       db.get(contextPath, transaction),
       db.get(outgoingBlockPath, transaction),
       db.get(incomingBlockPath, transaction),
+      useGiftBag
+        ? db.get(bagPath, transaction)
+        : Promise.resolve({ exists: false, data: null }),
     ]);
 
     if (op.exists) {
@@ -468,6 +478,7 @@ export async function sendGift(db, uid, body, options = {}) {
         diaryId,
         giftId,
         quantity,
+        useGiftBag,
       })) {
         throw new ApiError("idempotency_conflict", 409);
       }
@@ -545,6 +556,21 @@ export async function sendGift(db, uid, body, options = {}) {
     if (!Number.isSafeInteger(totalCost) || totalCost <= 0) {
       throw new ApiError("invalid_gift_price", 409);
     }
+    const bagBefore = useGiftBag
+      ? Math.max(0, Number(bag?.data?.quantity || 0))
+      : 0;
+    if (
+      useGiftBag &&
+      (!bag?.exists ||
+        !Number.isSafeInteger(bagBefore) ||
+        bagBefore < quantity)
+    ) {
+      throw new ApiError("gift_bag_insufficient", 409);
+    }
+    const paidCost = useGiftBag ? 0 : totalCost;
+    const bagQuantityRemaining = useGiftBag
+      ? bagBefore - quantity
+      : null;
 
     const senderData = sender.data || {};
     const receiverData = receiver.data || {};
@@ -571,8 +597,8 @@ export async function sendGift(db, uid, body, options = {}) {
       "giftVisual",
     );
     const levelPointAwards = giftLevelPointAwards({
-      nominalCoins: totalCost,
-      paidCoins: totalCost,
+      nominalCoins: paidCost,
+      paidCoins: paidCost,
     });
     const nextWealthPoints = levelPointAwards
       ? safeAddUserLevelPoints(
@@ -594,7 +620,7 @@ export async function sendGift(db, uid, body, options = {}) {
       throw new ApiError("invalid_level_points", 409);
     }
     const before = Number(senderData.coins || 0);
-    if (!Number.isSafeInteger(before) || before < totalCost) {
+    if (!Number.isSafeInteger(before) || before < paidCost) {
       throw new ApiError("insufficient_balance", 409);
     }
 
@@ -605,7 +631,7 @@ export async function sendGift(db, uid, body, options = {}) {
       clean(receiverData.giftRevenueMonth) === revenueMonth
         ? Math.max(0, Number(receiverData.giftRevenueMonthCoins || 0))
         : 0;
-    const monthlyGrossCoins = previousMonthCoins + totalCost;
+    const monthlyGrossCoins = previousMonthCoins + paidCost;
     const previousAgencyPublicSupportCoins =
       agencyId &&
       clean(receiverData.agencyPublicSupportAgencyId) === agencyId &&
@@ -616,7 +642,7 @@ export async function sendGift(db, uid, body, options = {}) {
           )
         : 0;
     const agencyPublicSupportCoins =
-      previousAgencyPublicSupportCoins + totalCost;
+      previousAgencyPublicSupportCoins + paidCost;
     if (
       agencyId &&
       !Number.isSafeInteger(agencyPublicSupportCoins)
@@ -641,17 +667,18 @@ export async function sendGift(db, uid, body, options = {}) {
     );
 
     const policyEnabled = economyData.enabled !== false;
-    const earningsEnabled = policyEnabled && revenue.hostShareBps > 0;
+    const earningsEnabled =
+      paidCost > 0 && policyEnabled && revenue.hostShareBps > 0;
     const recipientShareBps = earningsEnabled ? revenue.hostShareBps : 0;
     const recipientShareCoins = earningsEnabled
-      ? Math.floor((totalCost * recipientShareBps) / 10000)
+      ? Math.floor((paidCost * recipientShareBps) / 10000)
       : 0;
     const agencyShareCoins = policyEnabled && agencyId
-      ? Math.floor((totalCost * revenue.agencyShareBps) / 10000)
+      ? Math.floor((paidCost * revenue.agencyShareBps) / 10000)
       : 0;
     const platformShareCoins = policyEnabled
-      ? Math.max(0, totalCost - recipientShareCoins - agencyShareCoins)
-      : totalCost;
+      ? Math.max(0, paidCost - recipientShareCoins - agencyShareCoins)
+      : paidCost;
 
     const previousPending = Math.max(
       0,
@@ -721,7 +748,7 @@ export async function sendGift(db, uid, body, options = {}) {
       agencyTargetSharePlan?.ownerIsHost === true
         ? agencyTargetSharePayout.ownerClosingDiamonds
         : hostSalaryClosingDiamonds;
-    const after = before - totalCost;
+    const after = before - paidCost;
 
     const giftName = clean(giftData.nameAr || "هدية");
     const imageUrl = clean(giftData.imageUrl);
@@ -785,6 +812,14 @@ export async function sendGift(db, uid, body, options = {}) {
       throw error;
     }
 
+    if (useGiftBag) {
+      relationshipGiftAward = {
+        ...relationshipGiftAward,
+        writes: [],
+        affinityPointsAwarded: 0,
+      };
+    }
+
     const writes = [
       ...relationshipGiftAward.writes,
       db.writeUpdate(
@@ -794,6 +829,16 @@ export async function sendGift(db, uid, body, options = {}) {
         [db.increment("totalGiftsSent", quantity)],
       ),
     ];
+    if (useGiftBag) {
+      writes.push(
+        db.writeUpdate(
+          bagPath,
+          { updatedAt: now },
+          ["updatedAt"],
+          [db.increment("quantity", -quantity)],
+        ),
+      );
+    }
 
     const receiverFields = {
       giftRevenueMonth: revenueMonth,
@@ -820,8 +865,8 @@ export async function sendGift(db, uid, body, options = {}) {
     }
     const receiverTransforms = [
       db.increment("totalGiftsReceived", quantity),
-      db.increment("totalValueReceived", totalCost),
-      db.increment("giftSupportReceivedCoins", totalCost),
+      db.increment("totalValueReceived", paidCost),
+      db.increment("giftSupportReceivedCoins", paidCost),
     ];
 
     if (earningsEnabled) {
@@ -878,7 +923,7 @@ export async function sendGift(db, uid, body, options = {}) {
     }
 
     const receiverStatsTransforms = [
-      db.increment("receivedCoins", totalCost),
+      db.increment("receivedCoins", paidCost),
       db.increment("giftCount", quantity),
       db.increment("earningCoins", recipientShareCoins),
       db.increment("diamondsEarned", diamondsEarned),
@@ -896,7 +941,7 @@ export async function sendGift(db, uid, body, options = {}) {
 
     if (agencyId) {
       const agencyStatsTransforms = [
-        db.increment("supportCoins", totalCost),
+        db.increment("supportCoins", paidCost),
         db.increment("giftCount", quantity),
         db.increment("hostEarningCoins", recipientShareCoins),
         db.increment("agencyEarningCoins", agencyShareCoins),
@@ -929,7 +974,7 @@ export async function sendGift(db, uid, body, options = {}) {
           },
           ["agencyId", "month", "shard", "updatedAt"],
           [
-            db.increment("supportCoins", totalCost),
+            db.increment("supportCoins", paidCost),
             db.increment("hostShareCoins", recipientShareCoins),
             db.increment("agencyShareCoins", agencyShareCoins),
             db.increment("platformShareCoins", platformShareCoins),
@@ -981,7 +1026,7 @@ export async function sendGift(db, uid, body, options = {}) {
             "updatedAt",
           ],
           [
-            db.increment("supportCoins", totalCost),
+            db.increment("supportCoins", paidCost),
             db.increment("hostShareCoins", recipientShareCoins),
             db.increment("agencyShareCoins", agencyShareCoins),
             db.increment(
@@ -1113,6 +1158,8 @@ export async function sendGift(db, uid, body, options = {}) {
           quantity,
           unitCoins,
           totalCost,
+          paidCost,
+          useGiftBag,
           imageUrl,
           assetKey,
           vipLevel: senderVip,
@@ -1130,7 +1177,7 @@ export async function sendGift(db, uid, body, options = {}) {
           ["lastGiftAt"],
           [
             db.increment("giftCount", quantity),
-            db.increment("giftCoins", totalCost),
+            db.increment("giftCoins", paidCost),
           ],
         ),
         db.writeUpdate(
@@ -1139,7 +1186,7 @@ export async function sendGift(db, uid, body, options = {}) {
           ["lastGiftAt"],
           [
             db.increment("giftCount", quantity),
-            db.increment("giftCoins", totalCost),
+            db.increment("giftCoins", paidCost),
           ],
         ),
         db.writeCreate(`${diaryPath}/gifts/${key}`, {
@@ -1155,6 +1202,8 @@ export async function sendGift(db, uid, body, options = {}) {
           quantity,
           unitCoins,
           totalCost,
+          paidCost,
+          useGiftBag,
           imageUrl,
           assetKey,
           vipLevel: senderVip,
@@ -1177,6 +1226,8 @@ export async function sendGift(db, uid, body, options = {}) {
           giftName,
           quantity,
           totalCost,
+          paidCost,
+          useGiftBag,
           createdAt: now,
           updatedAt: now,
         }),
@@ -1193,6 +1244,8 @@ export async function sendGift(db, uid, body, options = {}) {
         quantity,
         unitCoins,
         totalCost,
+        paidCost,
+        useGiftBag,
         assetKey,
         wealthPointsAwarded: levelPointAwards.wealthPoints,
         attractionPointsAwarded: levelPointAwards.attractionPoints,
@@ -1251,20 +1304,7 @@ export async function sendGift(db, uid, body, options = {}) {
           relationshipGiftAward.relationshipId ? 15000 : 0,
         createdAt: now,
       }),
-      db.writeCreate(ledgerPath, {
-        userId: uid,
-        asset: "coins",
-        delta: -totalCost,
-        openingBalance: before,
-        closingBalance: after,
-        reason: "gift_send",
-        sourceType: "gift",
-        sourceId: key,
-        actorUid: uid,
-        ...financialContext,
-        idempotencyKey: key,
-        createdAt: now,
-      }),
+
       db.writeUpdate(
         showcasePath,
         {
@@ -1278,6 +1318,24 @@ export async function sendGift(db, uid, body, options = {}) {
         [db.increment("count", quantity)],
       ),
     );
+    if (paidCost > 0) {
+      writes.push(
+        db.writeCreate(ledgerPath, {
+          userId: uid,
+          asset: "coins",
+          delta: -paidCost,
+          openingBalance: before,
+          closingBalance: after,
+          reason: "gift_send",
+          sourceType: "gift",
+          sourceId: key,
+          actorUid: uid,
+          ...financialContext,
+          idempotencyKey: key,
+          createdAt: now,
+        }),
+      );
+    }
 
     const resultData = {
       ...financialContext,
@@ -1287,6 +1345,9 @@ export async function sendGift(db, uid, body, options = {}) {
       senderVipLevel: senderVip,
       quantity,
       totalCost,
+      paidCost,
+      useGiftBag,
+      bagQuantityRemaining,
       messageId,
       balance: after,
       wealthPointsAwarded: levelPointAwards.wealthPoints,
@@ -1332,6 +1393,7 @@ export async function sendGift(db, uid, body, options = {}) {
         ...financialContext,
         giftId,
         quantity,
+        useGiftBag,
         action: "sendGift",
         status: "completed",
         result: resultData,
@@ -1344,7 +1406,7 @@ export async function sendGift(db, uid, body, options = {}) {
       operationId: key,
       gift: giftData,
       quantity,
-      totalCost,
+      totalCost: paidCost,
       sender: {
         uid,
         displayName: senderName,
