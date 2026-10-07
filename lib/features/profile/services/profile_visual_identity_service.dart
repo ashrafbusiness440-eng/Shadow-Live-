@@ -70,7 +70,7 @@ class ProfileVisualIdentityService {
   static const int _maxPendingPerFlush = 40;
   static const int _maxCacheEntries = 160;
 
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  FirebaseFirestore get _firestore => FirebaseFirestore.instance;
   final Map<String, _CachedVisualIdentity> _cache = {};
   final Map<String, Completer<ProfileVisualIdentity>> _pending = {};
   final StreamController<String> _invalidations =
