@@ -21,6 +21,7 @@ import {
   DEFAULT_AGENCY_TARGETS,
 } from "./agency-policy.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
+import { adminInboxUpsertWrite } from "./admin-inbox-index.js";
 
 const clean = (value) => String(value ?? "").trim();
 
@@ -2826,6 +2827,17 @@ export async function requestAgencyCooldownException(
             createdAt: now,
           },
         ),
+        adminInboxUpsertWrite(db, {
+          type: "agency_cooldown_exception",
+          title: "طلب استثناء انتظار وكالة",
+          body: [clean(userSnap.data?.publicId || actorUid), agencyId]
+            .filter(Boolean)
+            .join(" • "),
+          targetId: requestId,
+          route: "agency_control",
+          createdAt: now,
+          meta: { agencyId: agencyId || null, status: "pending" },
+        }),
       ]);
       return { ok: true, code: "ok", ...result };
     } catch (error) {
