@@ -21,6 +21,10 @@ import {
 } from "./vip-entitlements.js";
 import {timestampToEpochMs} from "./vip-runtime.js";
 import {
+  loadPublicProfilePresentations,
+  publicProfilePresentation,
+} from "./public-profile-presentation.js";
+import {
   legacyPresenceFresh,
   realtimeUserPresentFromNamespace,
 } from "./room-presence-authority.js";
@@ -3748,15 +3752,22 @@ async function enrichSupporterPublicMetadata(db,supporters,viewerUid){
   const list=Array.isArray(supporters)?supporters.slice(0,50):[];
   if(!list.length)return list;
   try{
-    const [policy,byUidData]=await Promise.all([
+    const [policy,byUidData,publicProfiles]=await Promise.all([
       loadUserLevelPolicy(db),
       supporterRankingUserSnapshots(db,list,viewerUid,50),
+      loadPublicProfilePresentations(
+        db,
+        list.map(item=>clean(item?.uid)),
+        {limit:50,concurrency:8},
+      ),
     ]);
     const visible=filterHiddenSupporters(list,byUidData,viewerUid);
     const byUid=new Map();
     for(const item of visible){
       const userId=clean(item.uid);
       const data=byUidData.get(userId)||{};
+      const profile=
+        publicProfiles.get(userId)||publicProfilePresentation(userId);
       let levels={wealthLevel:0,attractionLevel:0,gameLevel:0};
       try{
         const summary=summarizeUserLevelData(
@@ -3777,23 +3788,32 @@ async function enrichSupporterPublicMetadata(db,supporters,viewerUid){
           ?data.badges
           :[];
       byUid.set(userId,{
-        publicId:clean(data.publicId),
-        vipLevel:vipEntitlementsFromUser(data,Date.now()).level,
+        displayName:clean(profile.displayName),
+        profileImageUrl:clean(profile.profileImageUrl),
+        profileAvatarAsset:clean(profile.profileAvatarAsset),
+        publicId:clean(profile.publicId),
+        vipLevel:Math.max(
+          Number(profile.effectiveVipLevel||0),
+          vipEntitlementsFromUser(data,Date.now()).level,
+        ),
         badges:rawBadges.map(clean).filter(Boolean).slice(0,12),
-        activeProfileFrameAssetKey:clean(data.activeProfileFrameAssetKey),
-        activeProfileFrameImageUrl:clean(data.activeProfileFrameImageUrl),
+        activeProfileFrameAssetKey:clean(profile.activeProfileFrameAssetKey),
+        activeProfileFrameImageUrl:clean(profile.activeProfileFrameImageUrl),
         activeProfileFrameExpiresAtMs:Math.max(
           0,
-          Number(data.activeProfileFrameExpiresAtMs||0),
+          Number(profile.activeProfileFrameExpiresAtMs||0),
         ),
         activeProfileFramePermanent:
-          data.activeProfileFramePermanent===true,
+          profile.activeProfileFramePermanent===true,
         ...levels,
       });
     }
     return visible.map(item=>({
       ...item,
       ...(byUid.get(clean(item.uid))||{
+        displayName:"Shadow Live",
+        profileImageUrl:"",
+        profileAvatarAsset:"",
         publicId:"",
         vipLevel:0,
         badges:[],
