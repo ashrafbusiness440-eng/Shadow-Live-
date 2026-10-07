@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../services/room_pk_service.dart';
+import '../../profile/widgets/profile_avatar_with_frame.dart';
 
 class RoomPkPanel extends StatefulWidget {
   const RoomPkPanel({
@@ -202,20 +203,21 @@ class _RoomPkPanelState extends State<RoomPkPanel> {
                           return CheckboxListTile(
                             value: checked,
                             activeColor: const Color(0xFF6D27D9),
-                            secondary: CircleAvatar(
+                            secondary: ProfileAvatarWithFrame(
+                              diameter: 40,
                               backgroundColor: const Color(0xFF25183F),
-                              backgroundImage:
-                                  speaker.profileImageUrl.isEmpty
-                                      ? null
-                                      : NetworkImage(
-                                          speaker.profileImageUrl,
-                                        ),
-                              child: speaker.profileImageUrl.isEmpty
-                                  ? const Icon(
-                                      Icons.person_rounded,
-                                      color: Colors.white54,
-                                    )
-                                  : null,
+                              placeholderColor: Colors.white54,
+                              profile: profileAvatarFrameData(
+                                imageUrl: speaker.profileImageUrl,
+                                frameAssetKey:
+                                    speaker.activeProfileFrameAssetKey,
+                                frameImageUrl:
+                                    speaker.activeProfileFrameImageUrl,
+                                frameExpiresAtMs:
+                                    speaker.activeProfileFrameExpiresAtMs,
+                                framePermanent:
+                                    speaker.activeProfileFramePermanent,
+                              ),
                             ),
                             title: Text(
                               speaker.displayName,
@@ -345,19 +347,17 @@ class _RoomPkPanelState extends State<RoomPkPanel> {
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 14,
+          ProfileAvatarWithFrame(
+            diameter: 28,
             backgroundColor: const Color(0xFF25183F),
-            backgroundImage: item.profileImageUrl.isEmpty
-                ? null
-                : NetworkImage(item.profileImageUrl),
-            child: item.profileImageUrl.isEmpty
-                ? const Icon(
-                    Icons.person_rounded,
-                    color: Colors.white54,
-                    size: 15,
-                  )
-                : null,
+            placeholderColor: Colors.white54,
+            profile: profileAvatarFrameData(
+              imageUrl: item.profileImageUrl,
+              frameAssetKey: item.activeProfileFrameAssetKey,
+              frameImageUrl: item.activeProfileFrameImageUrl,
+              frameExpiresAtMs: item.activeProfileFrameExpiresAtMs,
+              framePermanent: item.activeProfileFramePermanent,
+            ),
           ),
           const SizedBox(width: 6),
           Expanded(
@@ -592,22 +592,21 @@ class _RoomPkPanelState extends State<RoomPkPanel> {
                     (supporter) => Expanded(
                       child: Column(
                         children: [
-                          CircleAvatar(
-                            radius: 17,
+                          ProfileAvatarWithFrame(
+                            diameter: 34,
                             backgroundColor: const Color(0xFF25183F),
-                            backgroundImage:
-                                supporter.profileImageUrl.isEmpty
-                                    ? null
-                                    : NetworkImage(
-                                        supporter.profileImageUrl,
-                                      ),
-                            child: supporter.profileImageUrl.isEmpty
-                                ? const Icon(
-                                    Icons.person_rounded,
-                                    size: 15,
-                                    color: Colors.white54,
-                                  )
-                                : null,
+                            placeholderColor: Colors.white54,
+                            profile: profileAvatarFrameData(
+                              imageUrl: supporter.profileImageUrl,
+                              frameAssetKey:
+                                  supporter.activeProfileFrameAssetKey,
+                              frameImageUrl:
+                                  supporter.activeProfileFrameImageUrl,
+                              frameExpiresAtMs:
+                                  supporter.activeProfileFrameExpiresAtMs,
+                              framePermanent:
+                                  supporter.activeProfileFramePermanent,
+                            ),
                           ),
                           const SizedBox(height: 3),
                           Text(
