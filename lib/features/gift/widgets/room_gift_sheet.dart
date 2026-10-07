@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/assets/shadow_asset_registry.dart';
 import '../../room/services/room_presence_service.dart';
+import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../services/gift_catalog_service.dart';
 import '../services/room_gift_service.dart';
 
@@ -139,14 +140,19 @@ class _RoomGiftSheetState extends State<_RoomGiftSheet> {
   }
 
   Widget _avatar(RoomPresenceUser user, {double radius = 24}) {
-    return CircleAvatar(
-      radius: radius,
+    return ProfileAvatarWithFrame(
+      diameter: radius * 2,
       backgroundColor: const Color(0xFF25183F),
-      backgroundImage:
-          user.profileImageUrl.isEmpty ? null : NetworkImage(user.profileImageUrl),
-      child: user.profileImageUrl.isEmpty
-          ? const Icon(Icons.person_rounded, color: Colors.white70)
-          : null,
+      placeholderColor: Colors.white70,
+      profile: profileAvatarFrameData(
+        imageUrl: user.profileImageUrl,
+        frameAssetKey: user.activeProfileFrameAssetKey,
+        frameImageUrl: user.activeProfileFrameImageUrl,
+        frameExpiresAtMs: user.activeProfileFrameExpiresAtMs,
+        framePermanent: user.activeProfileFramePermanent,
+      ),
+      vipLevel: user.vipLevel,
+      useVipFallback: true,
     );
   }
 
