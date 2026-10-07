@@ -1888,6 +1888,11 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         final giftEffect = seat.occupied
             ? _roomEffectCoordinator.seatEffectFor(seat.uid)
             : null;
+        final giftEffectSize = giftEffect == null
+            ? 0.0
+            : (giftEffect.size > 0
+                ? giftEffect.size.toDouble()
+                : micSize + 20);
         return InkWell(
           onTap: _changingSeat ? null : () => _handleSeatTap(seat),
           borderRadius: BorderRadius.circular(18),
@@ -1899,12 +1904,12 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                 children: [
                   if (giftEffect != null)
                     Positioned(
-                      left: -10,
-                      top: -10,
+                      left: (micSize - giftEffectSize) / 2,
+                      top: (micSize - giftEffectSize) / 2,
                       child: IgnorePointer(
                         child: SizedBox(
-                          width: micSize + 20,
-                          height: micSize + 20,
+                          width: giftEffectSize,
+                          height: giftEffectSize,
                           child: CosmeticAssetVisual(
                             assetKey: giftEffect.assetKey,
                             imageUrl: giftEffect.imageUrl,
