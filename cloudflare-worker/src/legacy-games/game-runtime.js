@@ -22,7 +22,6 @@ import { vip4PrivacyPreferencesFromUser } from "../vip-entitlements.js";
 import {
   loadPublicProfilePresentations,
   publicProfilePresentation,
-} from "../public-profile-presentation.js";
 
 const clean=(value)=>String(value??"").trim();
 const validRoomId=(value)=>/^[A-Za-z0-9_-]{1,180}$/.test(clean(value));
@@ -420,30 +419,15 @@ export function publicGameWinVisibilityFromOperation(data={}){
   };
 }
 
-function participantPublic(data={},rank=null,profile={}){
+function participantPublic(data={},rank=null){
   const stake=Number(data.totalStakeCoins||0);
   const payout=Number(data.payoutCoins||0);
   return {
     userId:clean(data.userId),
-    displayName:clean(
-      profile.displayName||profile.username||data.displayName
-    ),
-    photoUrl:clean(
-      profile.profileImageUrl||data.photoUrl
-    ),
-    profileAvatarAsset:clean(profile.profileAvatarAsset),
-    activeProfileFrameAssetKey:
-      clean(profile.activeProfileFrameAssetKey),
-    activeProfileFrameImageUrl:
-      clean(profile.activeProfileFrameImageUrl),
-    activeProfileFrameExpiresAtMs:Math.max(
-      0,
-      Number(profile.activeProfileFrameExpiresAtMs||0),
-    ),
-    activeProfileFramePermanent:
-      profile.activeProfileFramePermanent===true,
+    displayName:clean(data.displayName),
+    photoUrl:clean(data.photoUrl),
     stakeCoins:Number.isSafeInteger(stake)&&stake>0?stake:0,
-    payoutCoins:Number.isSafeInteger(payout)&&payout>0?payout:0,
+    payoutCoins:Number.isSafeInteger(payout)&&payout>0,
     won:Number.isSafeInteger(payout)&&payout>0,
     ...(rank==null?{}:{rank}),
   };
@@ -457,33 +441,10 @@ async function roundResultSummary(db,roundId,uid){
     participants.orderBy("payoutCoins","desc").limit(3).get(),
     participants.doc(uid).get(),
   ]);
-  const ids=[...new Set([
-    ...leadersSnap.docs.map(doc=>clean(doc.data()?.userId||doc.id)),
-    clean(uid),
-  ].filter(Boolean))].slice(0,4);
-  const profiles=await loadPublicProfilePresentations(
-    db,
-    ids,
-    {limit:4,concurrency:4},
-  );
   const topWinners=leadersSnap.docs
-    .map((doc,index)=>{
-      const data=doc.data()||{};
-      const userId=clean(data.userId||doc.id);
-      return participantPublic(
-        data,
-        index+1,
-        profiles.get(userId)||publicProfilePresentation(userId),
-      );
-    })
+    .map((doc,index)=>participantPublic(doc.data()||{},index+1))
     .filter(item=>item.payoutCoins>0);
-  let myRound=mySnap.exists
-    ? participantPublic(
-        mySnap.data()||{},
-        null,
-        profiles.get(clean(uid))||publicProfilePresentation(clean(uid)),
-      )
-    : null;
+  let myRound=mySnap.exists?participantPublic(mySnap.data()||{}):null;
   if(myRound){
     const ranked=topWinners.find(item=>item.userId===uid);
     myRound={...myRound,winnerRank:ranked?.rank??null};
