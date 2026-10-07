@@ -260,7 +260,7 @@ await page.waitForTimeout(900);
 await page.screenshot({ path: "visual-qa/03b-studio-registry.png", fullPage: false });
 
 async function typeSearch(query, screenshotName) {
-  await page.mouse.click(206, 795);
+  await page.mouse.click(206, 525);
   await page.waitForTimeout(250);
   await page.keyboard.press(process.platform === "darwin" ? "Meta+A" : "Control+A");
   await page.keyboard.type(query, { delay: 10 });

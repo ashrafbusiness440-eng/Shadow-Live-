@@ -2,7 +2,7 @@ name: Visual QA Asset Studio
 
 on:
   push:
-    branches: [main]
+    branches: [qa-asset-studio-final-20261007]
     paths:
       - scripts/visual-qa-asset-studio.mjs
       - .github/workflows/visual-qa-asset-studio.yml
