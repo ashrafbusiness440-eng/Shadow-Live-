@@ -188,81 +188,13 @@ class RoomModeratorService {
     );
   }
 
-  Future<RoomModeratorState> _hydrateModeratorProfiles(
-    RoomModeratorState state,
-  ) async {
-    if (state.moderators.isEmpty) return state;
-
-    final ids = state.moderators
-        .map((item) => item.uid.trim())
-        .where((uid) => uid.isNotEmpty)
-        .toSet()
-        .toList(growable: false);
-    final profiles = <String, Map<String, dynamic>>{};
-
-    for (var offset = 0; offset < ids.length; offset += 10) {
-      final batch = ids.skip(offset).take(10).toList(growable: false);
-      if (batch.isEmpty) continue;
-      final snapshot = await _firestore
-          .collection('public_profiles')
-          .where(FieldPath.documentId, whereIn: batch)
-          .get();
-      for (final doc in snapshot.docs) {
-        profiles[doc.id] = doc.data();
-      }
-    }
-
-    final moderators = state.moderators.map((item) {
-      final profile = profiles[item.uid];
-      if (profile == null) return item;
-      return RoomModerator(
-        uid: item.uid,
-        displayName:
-            (profile['displayName'] ?? item.displayName).toString(),
-        profileImageUrl:
-            (profile['profileImageUrl'] ?? item.profileImageUrl).toString(),
-        profileAvatarAsset:
-            (profile['profileAvatarAsset'] ?? '').toString(),
-        activeProfileFrameAssetKey:
-            (profile['activeProfileFrameAssetKey'] ?? '').toString(),
-        activeProfileFrameImageUrl:
-            (profile['activeProfileFrameImageUrl'] ?? '').toString(),
-        activeProfileFrameExpiresAtMs:
-            (profile['activeProfileFrameExpiresAtMs'] as num?)?.toInt() ?? 0,
-        activeProfileFramePermanent:
-            profile['activeProfileFramePermanent'] == true,
-        capabilities: item.capabilities,
-      );
-    }).toList(growable: false);
-
-    return RoomModeratorState(
-      roomId: state.roomId,
-      isOwner: state.isOwner,
-      limit: state.limit,
-      myCapabilities: state.myCapabilities,
-      moderators: moderators,
-      platformOwner: state.platformOwner,
-      ownerAbsoluteRoomAccess: state.ownerAbsoluteRoomAccess,
-      globalRoomManage: state.globalRoomManage,
-    );
-  }
-
   Stream<RoomModeratorState> watch(String roomId) {
-    return _firestore
-        .collection('rooms')
-        .doc(roomId)
-        .snapshots()
-        .asyncMap((snap) async {
-      final state = fromRoomData(
+    return _firestore.collection('rooms').doc(roomId).snapshots().map(
+      (snap) => fromRoomData(
         roomId,
         snap.data() ?? <String, dynamic>{},
-      );
-      try {
-        return await _hydrateModeratorProfiles(state);
-      } catch (_) {
-        return state;
-      }
-    });
+      ),
+    );
   }
 
   Future<void> setModerator({
