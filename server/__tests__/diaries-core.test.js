@@ -209,13 +209,21 @@ function imageObject(id, uid = "user_a") {
 }
 
 function seedUser(uid = "user_a") {
+  const display = {
+    displayName: uid.toUpperCase(),
+    publicId: "12345678",
+    profileImageUrl: "",
+    profileAvatarAsset: "",
+    activeProfileFrameAssetKey: "",
+    activeProfileFrameImageUrl: "",
+    activeProfileFrameExpiresAtMs: 0,
+    activeProfileFramePermanent: false,
+  };
   return {
     [`users/${uid}`]: {
-      displayName: uid.toUpperCase(),
-      publicId: "12345678",
-      profileImageUrl: "",
-      profileAvatarAsset: "",
+      accountStatus: "active",
     },
+    [`public_profiles/${uid}`]: display,
   };
 }
 
