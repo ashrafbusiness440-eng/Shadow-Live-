@@ -23,6 +23,10 @@ import {
 import { giftLevelPointAwards, safeAddUserLevelPoints } from "./user-level-policy.js";
 import { activeEffectiveVipLevelFromUser } from "./vip-runtime.js";
 import { vipCosmeticAssetKey } from "./vip-entitlements.js";
+import {
+  prepareRelationshipGiftContext,
+  relationshipGiftWritesForRecipient,
+} from "./relationship-gift.js";
 
 const clean = (value) => String(value ?? "").trim();
 const validKey = (value) => /^[A-Za-z0-9_-]{12,220}$/.test(clean(value));
@@ -490,6 +494,24 @@ export async function sendGift(db, uid, body, options = {}) {
     if (!giftData) throw new ApiError("not_found", 404);
     if (giftData.enabled === false) throw new ApiError("gift_inactive", 409);
 
+    let relationshipGiftContext = null;
+    try {
+      relationshipGiftContext = await prepareRelationshipGiftContext(
+        db,
+        transaction,
+        {
+          senderUid: uid,
+          gift: giftData,
+        },
+      );
+    } catch (error) {
+      const code = clean(error?.message);
+      if (code === "invalid_affinity_base_points") {
+        throw new ApiError(code, 409);
+      }
+      throw error;
+    }
+
     const unitCoins = Number(giftData.priceCoins || 0);
     if (!Number.isSafeInteger(unitCoins) || unitCoins <= 0) {
       throw new ApiError("invalid_gift_price", 409);
@@ -704,7 +726,42 @@ export async function sendGift(db, uid, body, options = {}) {
       counts[receiverId] = Number(counts[receiverId] || 0) + 1;
     }
 
+    let relationshipGiftAward = {
+      writes: [],
+      relationshipId: null,
+      relationshipType: null,
+      affinityBasePoints: 0,
+      affinityPointsAwarded: 0,
+    };
+    try {
+      relationshipGiftAward =
+        await relationshipGiftWritesForRecipient(
+          db,
+          transaction,
+          relationshipGiftContext,
+          {
+            receiverId,
+            giftId,
+            quantity,
+            operationId: key,
+            now,
+          },
+        );
+    } catch (error) {
+      const code = clean(error?.message);
+      if (
+        code === "relationship_gift_not_eligible" ||
+        code === "invalid_affinity_points" ||
+        code === "invalid_affinity_quantity" ||
+        code === "invalid_relationship_gift_operation"
+      ) {
+        throw new ApiError(code, 409);
+      }
+      throw error;
+    }
+
     const writes = [
+      ...relationshipGiftAward.writes,
       db.writeUpdate(
         senderPath,
         { coins: after, wealthPoints: nextWealthPoints },
@@ -1159,6 +1216,14 @@ export async function sendGift(db, uid, body, options = {}) {
             : "applied",
         periods,
         agencyId: agencyId || null,
+        relationshipId: relationshipGiftAward.relationshipId,
+        relationshipType: relationshipGiftAward.relationshipType,
+        affinityBasePoints:
+          relationshipGiftAward.affinityBasePoints,
+        affinityPointsAwarded:
+          relationshipGiftAward.affinityPointsAwarded,
+        affinityMultiplierBps:
+          relationshipGiftAward.relationshipId ? 15000 : 0,
         createdAt: now,
       }),
       db.writeCreate(ledgerPath, {
@@ -1227,6 +1292,12 @@ export async function sendGift(db, uid, body, options = {}) {
       agencyNextTargetCoins: agencyTarget?.remainingToNextTargetCoins || 0,
       agencySalaryPaidDiamonds: agencyTarget?.paidDiamonds || 0,
       salaryDeltaDiamonds: agencyTarget?.salaryDeltaDiamonds || 0,
+      relationshipId: relationshipGiftAward.relationshipId,
+      relationshipType: relationshipGiftAward.relationshipType,
+      affinityBasePoints:
+        relationshipGiftAward.affinityBasePoints,
+      affinityPointsAwarded:
+        relationshipGiftAward.affinityPointsAwarded,
     };
 
     writes.push(
