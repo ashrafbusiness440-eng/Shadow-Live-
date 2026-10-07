@@ -292,6 +292,20 @@ test("asset studio UX exposes safe replace, preview, history and batch guardrail
 });
 
 test("level profile frames use the frame template and stay searchable as frames", () => {
+  const canonical = validateAssetStudioMetadata({
+    studioVersion: 1,
+    assetKey: "levels.wealth.lv26_30.profileFrame",
+    assetType: "badge",
+    templateId: "badge.base.v1",
+    channels: ["system"],
+    directory: "assets/images/levels/wealth/lv26_30",
+    fileName: "wealth_lv26_30_profile_frame.webp",
+    byteSize: 120000,
+  });
+  assert.equal(canonical.ok, true);
+  assert.equal(canonical.template.id, "frame.base.v1");
+  assert.equal(canonical.template.type, "frame");
+
   const frame = ASSET_STUDIO_TEMPLATES.find((item) => item.id === "frame.base.v1");
   assert.ok(frame);
   assert.equal(frame.directories.includes("assets/images/levels"), true);
