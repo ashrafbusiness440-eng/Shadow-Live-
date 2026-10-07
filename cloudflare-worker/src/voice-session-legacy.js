@@ -2324,6 +2324,25 @@ async function sendRoomChat(db,uid,body){
         senderUid:uid,
         displayName:clean(profile.displayName||profile.username||actorUser.displayName||actorUser.username||"مستخدم Shadow Live"),
         profileImageUrl:clean(profile.profileImageUrl||actorUser.profileImageUrl),
+        activeProfileFrameAssetKey:clean(
+          profile.activeProfileFrameAssetKey||
+          actorUser.activeProfileFrameAssetKey,
+        ),
+        activeProfileFrameImageUrl:clean(
+          profile.activeProfileFrameImageUrl||
+          actorUser.activeProfileFrameImageUrl,
+        ),
+        activeProfileFrameExpiresAtMs:Math.max(
+          0,
+          Number(
+            profile.activeProfileFrameExpiresAtMs||
+            actorUser.activeProfileFrameExpiresAtMs||
+            0
+          ),
+        ),
+        activeProfileFramePermanent:
+          profile.activeProfileFramePermanent===true||
+          actorUser.activeProfileFramePermanent===true,
         text:message,
         mentionUids:mentions,
         replyTo:replyTo||null,
@@ -2978,6 +2997,16 @@ async function refreshRoomPresenceSummary(db,roomId,{includeGhost=false}={}){
         uid:doc.id,
         displayName:clean(data.displayName||"مستخدم Shadow Live"),
         profileImageUrl:clean(data.profileImageUrl),
+        activeProfileFrameAssetKey:
+          clean(data.activeProfileFrameAssetKey),
+        activeProfileFrameImageUrl:
+          clean(data.activeProfileFrameImageUrl),
+        activeProfileFrameExpiresAtMs:Math.max(
+          0,
+          Number(data.activeProfileFrameExpiresAtMs||0),
+        ),
+        activeProfileFramePermanent:
+          data.activeProfileFramePermanent===true,
         joinedAtMs:Number(data.joinedAtMs||0),
         lastSeenAtMs,
         ghostMode,
@@ -3050,7 +3079,22 @@ async function roomSessionLeave(db,uid,roomId){
     if(seat){
       await recordMicActivity(tx,db,uid,seat);
       seats=seats.map(item=>item.uid===uid
-        ? {...item,uid:"",displayName:"",profileImageUrl:"",muted:true,micStartedAtMs:0}
+        ? {
+            ...item,
+            uid:"",
+            displayName:"",
+            profileImageUrl:"",
+            muted:true,
+            micStartedAtMs:0,
+            frameRewardId:"",
+            frameAssetKey:"",
+            frameImageUrl:"",
+            frameExpiresAtMs:0,
+            voiceWaveRewardId:"",
+            voiceWaveAssetKey:"",
+            voiceWaveImageUrl:"",
+            voiceWaveExpiresAtMs:0,
+          }
         : item);
       update.seats=seats;
     }
@@ -3097,6 +3141,21 @@ async function roomPresenceJoin(db,uid,roomId){
     uid,
     displayName,
     profileImageUrl,
+    activeProfileFrameAssetKey:
+      clean(profile.activeProfileFrameAssetKey||user.activeProfileFrameAssetKey),
+    activeProfileFrameImageUrl:
+      clean(profile.activeProfileFrameImageUrl||user.activeProfileFrameImageUrl),
+    activeProfileFrameExpiresAtMs:Math.max(
+      0,
+      Number(
+        profile.activeProfileFrameExpiresAtMs||
+        user.activeProfileFrameExpiresAtMs||
+        0
+      ),
+    ),
+    activeProfileFramePermanent:
+      profile.activeProfileFramePermanent===true||
+      user.activeProfileFramePermanent===true,
     joinedAtMs:presenceSnap.exists?Number(presenceSnap.data()?.joinedAtMs||now):now,
     lastSeenAtMs:now,
     ghostMode,
@@ -3128,7 +3187,22 @@ async function roomPresenceHeartbeat(db,uid,roomId){
     await presenceRef.set({
       uid,
       displayName:clean(data.displayName||data.username||"مستخدم Shadow Live"),
-      profileImageUrl:clean(data.profileImageUrl),
+      profileImageUrl:clean(data.profileImageUrl||user.profileImageUrl),
+      activeProfileFrameAssetKey:
+        clean(data.activeProfileFrameAssetKey||user.activeProfileFrameAssetKey),
+      activeProfileFrameImageUrl:
+        clean(data.activeProfileFrameImageUrl||user.activeProfileFrameImageUrl),
+      activeProfileFrameExpiresAtMs:Math.max(
+        0,
+        Number(
+          data.activeProfileFrameExpiresAtMs||
+          user.activeProfileFrameExpiresAtMs||
+          0
+        ),
+      ),
+      activeProfileFramePermanent:
+        data.activeProfileFramePermanent===true||
+        user.activeProfileFramePermanent===true,
       joinedAtMs:now,
       lastSeenAtMs:now,
       ghostMode:activeRoomGhostMode(user,now),
@@ -3151,7 +3225,22 @@ async function roomPresenceLeave(db,uid,roomId){
     if(seat){
       await recordMicActivity(tx,db,uid,seat);
       seats=seats.map(item=>item.uid===uid
-        ? {...item,uid:"",displayName:"",profileImageUrl:"",muted:true,micStartedAtMs:0}
+        ? {
+            ...item,
+            uid:"",
+            displayName:"",
+            profileImageUrl:"",
+            muted:true,
+            micStartedAtMs:0,
+            frameRewardId:"",
+            frameAssetKey:"",
+            frameImageUrl:"",
+            frameExpiresAtMs:0,
+            voiceWaveRewardId:"",
+            voiceWaveAssetKey:"",
+            voiceWaveImageUrl:"",
+            voiceWaveExpiresAtMs:0,
+          }
         : item);
       tx.update(roomRef,{seats,updatedAt:FieldValue.serverTimestamp()});
     }
