@@ -331,11 +331,13 @@ async function loadReadState(db, uid) {
   return { readThroughMs: 0, keys: new Set(keys) };
 }
 
-async function loadIndexedItems(db, actor) {
-  const rows = await db.list(
-    ADMIN_INBOX_INDEX_COLLECTION,
-    ADMIN_INBOX_INDEX_LIMIT,
-  );
+async function loadIndexedItems(db, actor, prefetchedRows = null) {
+  const rows = Array.isArray(prefetchedRows)
+    ? prefetchedRows
+    : await db.list(
+        ADMIN_INBOX_INDEX_COLLECTION,
+        ADMIN_INBOX_INDEX_LIMIT,
+      );
   const metaPresent = rows.some((row) => row.id === "__meta");
   const indexed = rows
     .filter((row) => row.id !== "__meta")
@@ -378,10 +380,16 @@ async function loadIndexedItems(db, actor) {
   return legacy;
 }
 
-async function listInbox(db, actor) {
+async function listInbox(
+  db,
+  actor,
+  { prefetchedRows = null, prefetchedReadState = null } = {},
+) {
   const [items, readState] = await Promise.all([
-    loadIndexedItems(db, actor),
-    loadReadState(db, actor.uid),
+    loadIndexedItems(db, actor, prefetchedRows),
+    prefetchedReadState
+      ? Promise.resolve(prefetchedReadState)
+      : loadReadState(db, actor.uid),
   ]);
   let unreadCount = 0;
   const visible = items.map((item) => {
@@ -449,13 +457,25 @@ export async function adminInbox(request, env) {
   try {
     const decoded = await verifyFirebaseIdToken(request, env, { checkUserState: false });
     const db = firestoreClient(env);
-    const actor = await loadActor(db, decoded);
     const body = await readJson(request);
     const action = clean(body.action || "list");
 
     if (action === "list") {
-      return json(request, env, await listInbox(db, actor));
+      const uid = clean(decoded?.sub);
+      if (!uid) throw new AdminInboxError("unauthorized", 401);
+      const [actor, prefetchedReadState, prefetchedRows] = await Promise.all([
+        loadActor(db, decoded),
+        loadReadState(db, uid),
+        db.list(ADMIN_INBOX_INDEX_COLLECTION, ADMIN_INBOX_INDEX_LIMIT),
+      ]);
+      return json(
+        request,
+        env,
+        await listInbox(db, actor, { prefetchedRows, prefetchedReadState }),
+      );
     }
+
+    const actor = await loadActor(db, decoded);
     if (action === "markRead") {
       return json(request, env, await markRead(db, actor, body));
     }
