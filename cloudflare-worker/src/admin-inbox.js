@@ -4,6 +4,12 @@ import {
   verifyFirebaseIdToken,
 } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
+import {
+  ADMIN_INBOX_INDEX_COLLECTION,
+  ADMIN_INBOX_INDEX_LIMIT,
+  adminInboxUpsertWrite,
+  normalizeAdminInboxIndexRow,
+} from "./admin-inbox-index.js";
 
 const clean = (value) => String(value ?? "").trim();
 const MAX_SOURCE_ITEMS = 12;
@@ -42,6 +48,27 @@ function safeKey(value) {
 
 function readPath(uid, key) {
   return `admin_notification_reads/${safeKey(uid)}__${safeKey(key)}`;
+}
+
+function readStatePath(uid) {
+  return `admin_notification_read_state/${safeKey(uid)}`;
+}
+
+function itemAllowedForActor(actor, item) {
+  switch (clean(item?.type)) {
+    case "diary_report":
+      return canSeeDiary(actor);
+    case "agency_application":
+      return canReviewAgencyApplications(actor);
+    case "agency_identity_change":
+      return canManageAgencies(actor);
+    case "agency_ownership_transfer":
+      return actor.owner;
+    case "agency_cooldown_exception":
+      return canManageMemberships(actor);
+    default:
+      return false;
+  }
 }
 
 async function loadActor(db, decoded) {
@@ -273,14 +300,106 @@ async function loadReadKeys(db, uid) {
   );
 }
 
+async function loadReadKeys(db, uid) {
+  const rows = await db.runQuery("admin_notification_reads", {
+    filters: [{ field: "userId", op: "==", value: uid }],
+    limit: MAX_READ_RECEIPTS,
+  });
+  return new Set(
+    rows
+      .map((row) => clean(row?.data?.key))
+      .filter(Boolean),
+  );
+}
+
+async function loadReadState(db, uid) {
+  const path = readStatePath(uid);
+  const snapshot = await db.get(path);
+  if (snapshot.exists) {
+    const data = snapshot.data || {};
+    return {
+      readThroughMs: Math.max(0, Number(data.readThroughMs || 0)),
+      keys: new Set(
+        Array.isArray(data.keys) ? data.keys.map(clean).filter(Boolean) : [],
+      ),
+    };
+  }
+
+  // One-time compatibility migration for admins who already have legacy
+  // per-notification receipts. After this, normal loads use one direct read.
+  const legacyKeys = await loadReadKeys(db, uid);
+  const keys = [...legacyKeys].slice(-250);
+  const now = new Date();
+  await db.commit(null, [
+    db.writeCreate(path, {
+      userId: uid,
+      readThroughMs: 0,
+      keys,
+      migratedFromLegacy: true,
+      createdAt: now,
+      updatedAt: now,
+    }),
+  ]).catch(() => {});
+  return { readThroughMs: 0, keys: new Set(keys) };
+}
+
+async function loadIndexedItems(db, actor) {
+  const rows = await db.list(
+    ADMIN_INBOX_INDEX_COLLECTION,
+    ADMIN_INBOX_INDEX_LIMIT,
+  );
+  const metaPresent = rows.some((row) => row.id === "__meta");
+  const indexed = rows
+    .filter((row) => row.id !== "__meta")
+    .map(normalizeAdminInboxIndexRow)
+    .filter((item) => item.key && item.targetId && itemAllowedForActor(actor, item))
+    .sort((a, b) => {
+      const byTime = b.createdAtMs - a.createdAtMs;
+      return byTime !== 0 ? byTime : b.key.localeCompare(a.key);
+    })
+    .slice(0, MAX_VISIBLE_ITEMS);
+
+  if (metaPresent) return indexed;
+
+  // Safe first-run fallback: build the index from the legacy sources once.
+  const legacy = await loadItems(db, actor);
+  const writes = legacy.map((item) =>
+    adminInboxUpsertWrite(db, {
+      type: item.type,
+      title: item.title,
+      body: item.body,
+      targetId: item.targetId,
+      route: item.route,
+      createdAt: item.createdAt,
+      priority: item.priority,
+      meta: item.meta,
+    })
+  );
+  writes.push(
+    db.writeUpdate(
+      `${ADMIN_INBOX_INDEX_COLLECTION}/__meta`,
+      {
+        schemaVersion: 1,
+        ready: true,
+        backfilledAt: new Date(),
+      },
+      ["schemaVersion", "ready", "backfilledAt"],
+    ),
+  );
+  await db.commit(null, writes).catch(() => {});
+  return legacy;
+}
+
 async function listInbox(db, actor) {
-  const [items, readKeys] = await Promise.all([
-    loadItems(db, actor),
-    loadReadKeys(db, actor.uid),
+  const [items, readState] = await Promise.all([
+    loadIndexedItems(db, actor),
+    loadReadState(db, actor.uid),
   ]);
   let unreadCount = 0;
   const visible = items.map((item) => {
-    const read = readKeys.has(item.key);
+    const read =
+      item.createdAtMs <= readState.readThroughMs ||
+      readState.keys.has(item.key);
     if (!read) unreadCount += 1;
     return { ...item, read };
   });
@@ -296,40 +415,43 @@ async function listInbox(db, actor) {
 async function markRead(db, actor, body) {
   const key = safeKey(body.key);
   if (!key) throw new AdminInboxError("invalid_notification_key", 400);
-  const path = readPath(actor.uid, key);
-  const existing = await db.get(path);
-  if (existing.exists) {
-    return { ok: true, code: "already_read", key };
-  }
+  const path = readStatePath(actor.uid);
+  const current = await db.get(path);
+  const data = current.exists ? current.data || {} : {};
+  const keys = Array.isArray(data.keys)
+    ? data.keys.map(clean).filter(Boolean)
+    : [];
+  const nextKeys = [...new Set([...keys, key])].slice(-250);
+  const fields = {
+    userId: actor.uid,
+    readThroughMs: Math.max(0, Number(data.readThroughMs || 0)),
+    keys: nextKeys,
+    updatedAt: new Date(),
+  };
   await db.commit(null, [
-    db.writeCreate(path, {
-      userId: actor.uid,
-      key,
-      readAt: new Date(),
-    }),
+    current.exists
+      ? db.writeUpdate(path, fields, Object.keys(fields))
+      : db.writeCreate(path, { ...fields, createdAt: new Date() }),
   ]);
-  return { ok: true, code: "ok", key };
+  return { ok: true, code: keys.includes(key) ? "already_read" : "ok", key };
 }
 
 async function markVisibleRead(db, actor) {
-  const [items, readKeys] = await Promise.all([
-    loadItems(db, actor),
-    loadReadKeys(db, actor.uid),
-  ]);
+  const path = readStatePath(actor.uid);
+  const current = await db.get(path);
   const now = new Date();
-  const writes = items.flatMap((item) =>
-    readKeys.has(item.key)
-      ? []
-      : [
-          db.writeCreate(readPath(actor.uid, item.key), {
-            userId: actor.uid,
-            key: item.key,
-            readAt: now,
-          }),
-        ],
-  );
-  if (writes.length) await db.commit(null, writes);
-  return { ok: true, code: "ok", marked: writes.length };
+  const fields = {
+    userId: actor.uid,
+    readThroughMs: now.getTime(),
+    keys: [],
+    updatedAt: now,
+  };
+  await db.commit(null, [
+    current.exists
+      ? db.writeUpdate(path, fields, Object.keys(fields))
+      : db.writeCreate(path, { ...fields, createdAt: now }),
+  ]);
+  return { ok: true, code: "ok" };
 }
 
 export async function adminInbox(request, env) {
@@ -370,5 +492,7 @@ export const adminInboxTestHooks = Object.freeze({
   safeKey,
   loadItems,
   loadReadKeys,
+  loadReadState,
+  loadIndexedItems,
   listInbox,
 });
