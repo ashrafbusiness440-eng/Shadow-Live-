@@ -26,6 +26,7 @@ class RoomGiftService {
     required int quantity,
     String recipientMode = 'users',
     List<String> recipientIds = const <String>[],
+    bool useGiftBag = false,
   }) async {
     final user = _auth.currentUser;
     final token = await user?.getIdToken();
@@ -63,6 +64,7 @@ class RoomGiftService {
           'receiverId': normalizedIds.single,
         'giftId': giftId,
         'quantity': quantity,
+        'useGiftBag': useGiftBag,
         'idempotencyKey': key,
       }),
     );
