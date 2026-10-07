@@ -387,6 +387,16 @@ export class RoomRealtimeObject extends DurableObject {
     const expiresAtMs = Number(body.expiresAtMs || 0);
     const displayName = String(body.displayName || "").trim();
     const profileImageUrl = String(body.profileImageUrl || "").trim();
+    const activeProfileFrameAssetKey =
+      String(body.activeProfileFrameAssetKey || "").trim();
+    const activeProfileFrameImageUrl =
+      String(body.activeProfileFrameImageUrl || "").trim();
+    const activeProfileFrameExpiresAtMs = Math.max(
+      0,
+      Number(body.activeProfileFrameExpiresAtMs || 0),
+    );
+    const activeProfileFramePermanent =
+      body.activeProfileFramePermanent === true;
     const publicId = String(body.publicId || "").trim().slice(0, 16);
     const wealthLevel = Math.max(0, Math.min(35, Number(body.wealthLevel || 0)));
     const attractionLevel = Math.max(0, Math.min(35, Number(body.attractionLevel || 0)));
@@ -419,6 +429,10 @@ export class RoomRealtimeObject extends DurableObject {
       expiresAtMs,
       displayName,
       profileImageUrl,
+      activeProfileFrameAssetKey,
+      activeProfileFrameImageUrl,
+      activeProfileFrameExpiresAtMs,
+      activeProfileFramePermanent,
       publicId,
       wealthLevel,
       attractionLevel,
@@ -529,6 +543,16 @@ export class RoomRealtimeObject extends DurableObject {
       joinedAtMs,
       displayName,
       profileImageUrl,
+      activeProfileFrameAssetKey:
+        String(record.activeProfileFrameAssetKey || "").trim(),
+      activeProfileFrameImageUrl:
+        String(record.activeProfileFrameImageUrl || "").trim(),
+      activeProfileFrameExpiresAtMs: Math.max(
+        0,
+        Number(record.activeProfileFrameExpiresAtMs || 0),
+      ),
+      activeProfileFramePermanent:
+        record.activeProfileFramePermanent === true,
       publicId: String(record.publicId || "").trim().slice(0, 16),
       wealthLevel: Math.max(0, Math.min(35, Number(record.wealthLevel || 0))),
       attractionLevel: Math.max(0, Math.min(35, Number(record.attractionLevel || 0))),
@@ -569,6 +593,16 @@ export class RoomRealtimeObject extends DurableObject {
         uid,
         displayName: displayName || "مستخدم Shadow Live",
         profileImageUrl,
+        activeProfileFrameAssetKey:
+          String(record.activeProfileFrameAssetKey || "").trim(),
+        activeProfileFrameImageUrl:
+          String(record.activeProfileFrameImageUrl || "").trim(),
+        activeProfileFrameExpiresAtMs: Math.max(
+          0,
+          Number(record.activeProfileFrameExpiresAtMs || 0),
+        ),
+        activeProfileFramePermanent:
+          record.activeProfileFramePermanent === true,
         publicId: String(record.publicId || "").trim().slice(0, 16),
         wealthLevel: Math.max(0, Math.min(35, Number(record.wealthLevel || 0))),
         attractionLevel: Math.max(0, Math.min(35, Number(record.attractionLevel || 0))),
@@ -1015,6 +1049,16 @@ export class RoomRealtimeObject extends DurableObject {
           String(attachment.displayName || "").trim() ||
           "مستخدم Shadow Live",
         profileImageUrl: String(attachment.profileImageUrl || "").trim(),
+        activeProfileFrameAssetKey:
+          String(attachment.activeProfileFrameAssetKey || "").trim(),
+        activeProfileFrameImageUrl:
+          String(attachment.activeProfileFrameImageUrl || "").trim(),
+        activeProfileFrameExpiresAtMs: Math.max(
+          0,
+          Number(attachment.activeProfileFrameExpiresAtMs || 0),
+        ),
+        activeProfileFramePermanent:
+          attachment.activeProfileFramePermanent === true,
         publicId: String(attachment.publicId || "").trim().slice(0, 16),
         wealthLevel: Math.max(0, Math.min(35, Number(attachment.wealthLevel || 0))),
         attractionLevel: Math.max(0, Math.min(35, Number(attachment.attractionLevel || 0))),
