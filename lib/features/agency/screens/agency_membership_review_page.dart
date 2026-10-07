@@ -480,15 +480,12 @@ class _ManagerMemberPerformanceTile extends StatelessWidget {
       child: ListTile(
         leading: ProfileAvatarWithFrame(
           diameter: 40,
+          userId: member.uid,
           backgroundColor: const Color(0xFF2A3150),
-          profile: profileAvatarFrameData(
-            imageUrl: member.profileImageUrl,
-            avatarAsset: member.profileAvatarAsset,
-            frameAssetKey: member.activeProfileFrameAssetKey,
-            frameImageUrl: member.activeProfileFrameImageUrl,
-            frameExpiresAtMs: member.activeProfileFrameExpiresAtMs,
-            framePermanent: member.activeProfileFramePermanent,
-          ),
+          fallbackProfile: <String, dynamic>{
+            'profileImageUrl': member.profileImageUrl,
+            'profileAvatarAsset': member.profileAvatarAsset,
+          },
         ),
         title: Text(
           member.displayName ?? (publicId.isEmpty ? member.uid : publicId),
@@ -654,16 +651,13 @@ class _ReviewRequestCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(999),
                   child: ProfileAvatarWithFrame(
                     diameter: 48,
+                    userId: request.uid,
                     backgroundColor: const Color(0xFF31204F),
                     placeholderColor: Colors.white70,
-                    profile: profileAvatarFrameData(
-                      imageUrl: request.profileImageUrl,
-                      avatarAsset: request.profileAvatarAsset,
-                      frameAssetKey: request.activeProfileFrameAssetKey,
-                      frameImageUrl: request.activeProfileFrameImageUrl,
-                      frameExpiresAtMs: request.activeProfileFrameExpiresAtMs,
-                      framePermanent: request.activeProfileFramePermanent,
-                    ),
+                    fallbackProfile: <String, dynamic>{
+                      'profileImageUrl': request.profileImageUrl,
+                      'profileAvatarAsset': request.profileAvatarAsset,
+                    },
                   ),
                 ),
                 const SizedBox(width: 10),
