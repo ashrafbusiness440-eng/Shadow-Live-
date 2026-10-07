@@ -12,6 +12,7 @@ Future<void> showDirectGiftSheet(
   BuildContext context, {
   required String receiverId,
   required String receiverName,
+  String? conversationId,
   String? diaryId,
   void Function(int quantity, int totalCost)? onGiftSent,
 }) async {
@@ -25,6 +26,7 @@ Future<void> showDirectGiftSheet(
     builder: (_) => _DirectGiftContext(
       receiverId: receiverId,
       receiverName: receiverName,
+      conversationId: conversationId,
       diaryId: diaryId,
       onGiftSent: onGiftSent,
     ),
@@ -35,12 +37,14 @@ class _DirectGiftContext extends StatefulWidget {
   const _DirectGiftContext({
     required this.receiverId,
     required this.receiverName,
+    this.conversationId,
     this.diaryId,
     this.onGiftSent,
   });
 
   final String receiverId;
   final String receiverName;
+  final String? conversationId;
   final String? diaryId;
   final void Function(int quantity, int totalCost)? onGiftSent;
 
@@ -91,8 +95,14 @@ class _DirectGiftContextState extends State<_DirectGiftContext> {
     }
 
     final diaryId = widget.diaryId?.trim() ?? '';
-    final conversationId = diaryId.isEmpty ? _conversationId() : '';
-    if (diaryId.isEmpty) {
+    final suppliedConversationId =
+        widget.conversationId?.trim() ?? '';
+    final conversationId = diaryId.isEmpty
+        ? (suppliedConversationId.isNotEmpty
+            ? suppliedConversationId
+            : _conversationId())
+        : '';
+    if (diaryId.isEmpty && suppliedConversationId.isEmpty) {
       await _ensureConversation(conversationId);
     }
 
