@@ -9,12 +9,20 @@ class RoomPkSpeaker {
     required this.uid,
     required this.displayName,
     required this.profileImageUrl,
+    required this.activeProfileFrameAssetKey,
+    required this.activeProfileFrameImageUrl,
+    required this.activeProfileFrameExpiresAtMs,
+    required this.activeProfileFramePermanent,
     required this.seatIndex,
   });
 
   final String uid;
   final String displayName;
   final String profileImageUrl;
+  final String activeProfileFrameAssetKey;
+  final String activeProfileFrameImageUrl;
+  final int activeProfileFrameExpiresAtMs;
+  final bool activeProfileFramePermanent;
   final int seatIndex;
 
   factory RoomPkSpeaker.fromMap(Map<String, dynamic> data) => RoomPkSpeaker(
@@ -22,6 +30,22 @@ class RoomPkSpeaker {
         displayName:
             (data['displayName'] ?? 'مستخدم Shadow Live').toString(),
         profileImageUrl: (data['profileImageUrl'] ?? '').toString(),
+        activeProfileFrameAssetKey:
+            (data['activeProfileFrameAssetKey'] ??
+                    data['frameAssetKey'] ??
+                    '')
+                .toString(),
+        activeProfileFrameImageUrl:
+            (data['activeProfileFrameImageUrl'] ??
+                    data['frameImageUrl'] ??
+                    '')
+                .toString(),
+        activeProfileFrameExpiresAtMs:
+            (data['activeProfileFrameExpiresAtMs'] as num?)?.toInt() ??
+                (data['frameExpiresAtMs'] as num?)?.toInt() ??
+                0,
+        activeProfileFramePermanent:
+            data['activeProfileFramePermanent'] == true,
         seatIndex: (data['index'] as num?)?.toInt() ?? -1,
       );
 }
@@ -31,6 +55,10 @@ class RoomPkParticipant {
     required this.uid,
     required this.displayName,
     required this.profileImageUrl,
+    required this.activeProfileFrameAssetKey,
+    required this.activeProfileFrameImageUrl,
+    required this.activeProfileFrameExpiresAtMs,
+    required this.activeProfileFramePermanent,
     required this.seatIndex,
     required this.team,
     required this.accepted,
@@ -40,6 +68,10 @@ class RoomPkParticipant {
   final String uid;
   final String displayName;
   final String profileImageUrl;
+  final String activeProfileFrameAssetKey;
+  final String activeProfileFrameImageUrl;
+  final int activeProfileFrameExpiresAtMs;
+  final bool activeProfileFramePermanent;
   final int seatIndex;
   final String team;
   final bool accepted;
@@ -51,6 +83,22 @@ class RoomPkParticipant {
         displayName:
             (data['displayName'] ?? 'مستخدم Shadow Live').toString(),
         profileImageUrl: (data['profileImageUrl'] ?? '').toString(),
+        activeProfileFrameAssetKey:
+            (data['activeProfileFrameAssetKey'] ??
+                    data['frameAssetKey'] ??
+                    '')
+                .toString(),
+        activeProfileFrameImageUrl:
+            (data['activeProfileFrameImageUrl'] ??
+                    data['frameImageUrl'] ??
+                    '')
+                .toString(),
+        activeProfileFrameExpiresAtMs:
+            (data['activeProfileFrameExpiresAtMs'] as num?)?.toInt() ??
+                (data['frameExpiresAtMs'] as num?)?.toInt() ??
+                0,
+        activeProfileFramePermanent:
+            data['activeProfileFramePermanent'] == true,
         seatIndex: (data['seatIndex'] as num?)?.toInt() ?? -1,
         team: (data['team'] ?? 'a').toString(),
         accepted: data['accepted'] == true,
@@ -63,12 +111,20 @@ class RoomPkSupporter {
     required this.uid,
     required this.displayName,
     required this.profileImageUrl,
+    required this.activeProfileFrameAssetKey,
+    required this.activeProfileFrameImageUrl,
+    required this.activeProfileFrameExpiresAtMs,
+    required this.activeProfileFramePermanent,
     required this.coins,
   });
 
   final String uid;
   final String displayName;
   final String profileImageUrl;
+  final String activeProfileFrameAssetKey;
+  final String activeProfileFrameImageUrl;
+  final int activeProfileFrameExpiresAtMs;
+  final bool activeProfileFramePermanent;
   final num coins;
 
   factory RoomPkSupporter.fromMap(Map<String, dynamic> data) =>
@@ -77,6 +133,22 @@ class RoomPkSupporter {
         displayName:
             (data['displayName'] ?? 'مستخدم Shadow Live').toString(),
         profileImageUrl: (data['profileImageUrl'] ?? '').toString(),
+        activeProfileFrameAssetKey:
+            (data['activeProfileFrameAssetKey'] ??
+                    data['frameAssetKey'] ??
+                    '')
+                .toString(),
+        activeProfileFrameImageUrl:
+            (data['activeProfileFrameImageUrl'] ??
+                    data['frameImageUrl'] ??
+                    '')
+                .toString(),
+        activeProfileFrameExpiresAtMs:
+            (data['activeProfileFrameExpiresAtMs'] as num?)?.toInt() ??
+                (data['frameExpiresAtMs'] as num?)?.toInt() ??
+                0,
+        activeProfileFramePermanent:
+            data['activeProfileFramePermanent'] == true,
         coins: (data['coins'] as num?) ?? 0,
       );
 }
