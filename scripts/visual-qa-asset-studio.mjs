@@ -266,6 +266,15 @@ async function typeSearch(query, screenshotName) {
   await page.keyboard.type(query, { delay: 10 });
   await page.waitForTimeout(2600);
   await page.screenshot({ path: `visual-qa/${screenshotName}`, fullPage: false });
+  await page.mouse.move(206, 790);
+  await page.mouse.wheel(0, 520);
+  await page.waitForTimeout(800);
+  await page.screenshot({
+    path: `visual-qa/${screenshotName.replace(".png", "-result.png")}`,
+    fullPage: false,
+  });
+  await page.mouse.wheel(0, -520);
+  await page.waitForTimeout(650);
   return { query, url: page.url() };
 }
 

@@ -4439,15 +4439,16 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                 Row(
                   children: [
                     Expanded(
-                      child: Text(
-                        key.isEmpty ? 'أصل بدون مفتاح' : key,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        textDirection: TextDirection.ltr,
-                        textAlign: TextAlign.right,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 13,
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Text(
+                          key.isEmpty ? 'أصل بدون مفتاح' : key,
+                          softWrap: false,
+                          textDirection: TextDirection.ltr,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 13,
+                          ),
                         ),
                       ),
                     ),
@@ -4803,7 +4804,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
             ],
           ),
           const Text(
-            'ابحث بالمفتاح أو الملف أو المسار، ثم صفِّ النتائج. الصور المصغرة محدودة الحجم للحفاظ على الأداء.',
+            'ابحث بالمفتاح أو الملف أو المسار. الأرقام هنا تخص النتائج الحالية، والبحث والفلترة يفحصان السجل ضمن حد آمن.',
             style: TextStyle(color: Colors.white60, fontSize: 11.5),
           ),
           if (_recentAssetKeys.isNotEmpty ||
@@ -5381,7 +5382,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
               _statTile(
                 Icons.inventory_2_outlined,
                 _assets.length.toString(),
-                'إجمالي الأصول',
+                'النتائج الحالية',
                 const Color(0xFFC4A7FF),
               ),
               const SizedBox(width: 7),

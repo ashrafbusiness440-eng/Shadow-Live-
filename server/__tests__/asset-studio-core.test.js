@@ -286,6 +286,7 @@ test("asset studio UX exposes safe replace, preview, history and batch guardrail
   assert.equal(control.includes("attempts = 3"), true);
   assert.equal(control.includes("650 * attempt"), true);
   assert.equal(control.includes("إعادة التحقق"), true);
+  assert.equal(control.includes("النتائج الحالية"), true);
   assert.equal(control.includes("تم النشر • بانتظار التأكد"), true);
   assert.equal(
     control.includes("تم النشر، لكن التحقق المباشر من الملف الحي لم يكتمل."),
