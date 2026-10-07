@@ -123,6 +123,7 @@ function publicCatalog(config) {
       effectAssetKey: clean(
         item.effectAssetKey || item.assetKey || "gifts.placeholder.default",
       ),
+      effectSoundAssetKey: clean(item.effectSoundAssetKey),
       effectMinQuantity: Math.max(0, Number(item.effectMinQuantity || 0)),
       effectDurationMs: Math.max(
         300,
@@ -173,6 +174,7 @@ function validateGifts(raw) {
     const isAnimated = item?.isAnimated === true;
     const effectMode = clean(item?.effectMode || "none");
     const effectAssetKey = clean(item?.effectAssetKey || assetKey);
+    const effectSoundAssetKey = clean(item?.effectSoundAssetKey);
     const effectMinQuantity = Number(item?.effectMinQuantity || 0);
     const effectDurationMs = Number(item?.effectDurationMs || 2200);
     const effectSize = Number(item?.effectSize || 0);
@@ -210,6 +212,12 @@ function validateGifts(raw) {
       !/^[a-z0-9][a-z0-9._-]{2,119}$/.test(effectAssetKey)
     ) {
       throw Error("invalid_effect_asset_key");
+    }
+    if (
+      effectSoundAssetKey &&
+      !/^[a-z0-9][A-Za-z0-9._-]{2,119}$/.test(effectSoundAssetKey)
+    ) {
+      throw Error("invalid_effect_sound_asset_key");
     }
     if (
       !Number.isSafeInteger(effectMinQuantity) ||
@@ -267,6 +275,7 @@ function validateGifts(raw) {
       isAnimated,
       effectMode,
       effectAssetKey,
+      effectSoundAssetKey,
       effectMinQuantity,
       effectDurationMs,
       effectSize,
@@ -375,6 +384,7 @@ export async function handler(req, res) {
               "invalid_placeholder_path",
               "invalid_effect_mode",
               "invalid_effect_asset_key",
+              "invalid_effect_sound_asset_key",
               "invalid_effect_min_quantity",
               "invalid_effect_duration",
               "invalid_premium_banner_quantity",
