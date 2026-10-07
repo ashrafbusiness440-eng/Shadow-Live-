@@ -9,17 +9,41 @@ class StarBattleLeader {
     required this.uid,
     required this.displayName,
     required this.profileImageUrl,
+    required this.activeProfileFrameAssetKey,
+    required this.activeProfileFrameImageUrl,
+    required this.activeProfileFrameExpiresAtMs,
+    required this.activeProfileFramePermanent,
     required this.coins,
   });
   final String uid;
   final String displayName;
   final String profileImageUrl;
+  final String activeProfileFrameAssetKey;
+  final String activeProfileFrameImageUrl;
+  final int activeProfileFrameExpiresAtMs;
+  final bool activeProfileFramePermanent;
   final int coins;
 
   factory StarBattleLeader.fromMap(Map<String, dynamic> map) => StarBattleLeader(
         uid: (map['uid'] ?? '').toString(),
         displayName: (map['displayName'] ?? 'مستخدم Shadow Live').toString(),
         profileImageUrl: (map['profileImageUrl'] ?? '').toString(),
+        activeProfileFrameAssetKey:
+            (map['activeProfileFrameAssetKey'] ??
+                    map['frameAssetKey'] ??
+                    '')
+                .toString(),
+        activeProfileFrameImageUrl:
+            (map['activeProfileFrameImageUrl'] ??
+                    map['frameImageUrl'] ??
+                    '')
+                .toString(),
+        activeProfileFrameExpiresAtMs:
+            (map['activeProfileFrameExpiresAtMs'] as num?)?.toInt() ??
+                (map['frameExpiresAtMs'] as num?)?.toInt() ??
+                0,
+        activeProfileFramePermanent:
+            map['activeProfileFramePermanent'] == true,
         coins: (map['coins'] as num?)?.toInt() ?? 0,
       );
 }
