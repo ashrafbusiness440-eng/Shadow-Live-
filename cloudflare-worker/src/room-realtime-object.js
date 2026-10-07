@@ -367,6 +367,31 @@ export class RoomRealtimeObject extends DurableObject {
         present,
       });
     }
+    if (url.pathname === "/presence/resolve" && request.method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const rawUids = Array.isArray(body.uids) ? body.uids : [];
+      const uids = Array.from(
+        new Set(
+          rawUids
+            .map((value) => String(value || "").trim())
+            .filter(Boolean),
+        ),
+      ).slice(0, 24);
+      const attachments = this.#presenceAttachments();
+      const presentUids = uids.filter((uid) =>
+        hasPresenceUid(attachments, uid)
+      );
+      recordRealtimeTelemetry(this.env, {
+        event: "presence_resolve",
+        fanout: uids.length,
+        onlineCount: this.#presenceSnapshot().length,
+      });
+      return Response.json({
+        ok: true,
+        requestedCount: uids.length,
+        presentUids,
+      });
+    }
     if (url.pathname === "/rocket/publish" && request.method === "POST") {
       return this.#publishRocketEvents(request);
     }
