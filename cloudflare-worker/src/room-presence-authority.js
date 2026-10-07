@@ -48,6 +48,46 @@ export async function realtimeRoomParticipantsFromNamespace(
   }
 }
 
+export async function realtimeResolveRoomUidsFromNamespace(
+  namespace,
+  roomId,
+  uids = [],
+) {
+  const stub = realtimeRoomStub(namespace, roomId);
+  const requested = Array.from(
+    new Set(
+      (Array.isArray(uids) ? uids : [])
+        .map(clean)
+        .filter(Boolean),
+    ),
+  ).slice(0, 24);
+  if (!stub || requested.length === 0) return null;
+
+  try {
+    const response = await stub.fetch(
+      "https://room-realtime.internal/presence/resolve",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uids: requested }),
+      },
+    );
+    if (!response.ok) return null;
+    const body = await response.json().catch(() => ({}));
+    return Array.isArray(body.presentUids)
+      ? Array.from(
+          new Set(
+            body.presentUids
+              .map(clean)
+              .filter((uid) => requested.includes(uid)),
+          ),
+        )
+      : [];
+  } catch (_) {
+    return null;
+  }
+}
+
 export async function realtimeUserPresentFromNamespace(
   namespace,
   roomId,
