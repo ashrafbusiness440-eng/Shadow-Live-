@@ -278,6 +278,7 @@ async function searchMentions(db, uid, body) {
       publicId: publicId.slice(0, 16),
       profileImageUrl: clean(data.profileImageUrl).slice(0, 1000),
       profileAvatarAsset: clean(data.profileAvatarAsset).slice(0, 500),
+      ...currentProfileFrame(data),
     });
   };
 
@@ -766,7 +767,8 @@ async function toggleLike(db, uid, body) {
   });
 }
 
-function normalizeComment(id, data = {}) {
+function normalizeComment(id, data = {}, frame = null) {
+  const currentFrame = frame || currentProfileFrame(data);
   return {
     commentId: id,
     diaryId: clean(data.diaryId),
@@ -775,6 +777,7 @@ function normalizeComment(id, data = {}) {
     authorPublicId: clean(data.authorPublicId),
     authorProfileImageUrl: clean(data.authorProfileImageUrl),
     authorProfileAvatarAsset: clean(data.authorProfileAvatarAsset),
+    ...currentFrame,
     text: clean(data.text),
     createdAt: data.createdAt || null,
     createdAtMs: Math.max(0, Number(data.createdAtMs || 0)),
@@ -820,6 +823,7 @@ async function createComment(db, uid, body) {
     const now = new Date();
     const nowMs = Date.now();
     const author = publicAuthorSnapshot(user.data || {}, uid);
+    const authorFrame = currentProfileFrame(user.data || {});
     const mentionTargets = await resolveMentionTargets(db, text, transaction);
     const mentionedUids = mentionTargets
       .map((target) => target.uid)
@@ -843,7 +847,7 @@ async function createComment(db, uid, body) {
       diaryId,
       commentId,
       commentCount,
-      comment: normalizeComment(commentId, comment),
+      comment: normalizeComment(commentId, comment, authorFrame),
     };
 
     const writes = [
@@ -938,9 +942,16 @@ async function listComments(db, body) {
   });
   const hasMore = rows.length > limit;
   const visible = rows.slice(0, limit);
+  const frames = await loadCurrentProfileFrames(
+    db,
+    visible.map((row) => clean(row?.data?.authorUid)),
+  );
   return {
     ok: true,
-    items: visible.map((row) => normalizeComment(row.id, row.data)),
+    items: visible.map((row) => {
+      const authorUid = clean(row?.data?.authorUid);
+      return normalizeComment(row.id, row.data, frames.get(authorUid) || null);
+    }),
     nextCursor:
       hasMore && visible.length
         ? makeCursor(visible[visible.length - 1])
@@ -1468,7 +1479,8 @@ async function listFollowing(db, uid, body) {
   };
 }
 
-function normalizeGiftEvent(id, data = {}) {
+function normalizeGiftEvent(id, data = {}, frame = null) {
+  const currentFrame = frame || currentProfileFrame(data);
   return {
     giftEventId: id,
     giftOperationId: clean(data.giftOperationId || id),
@@ -1477,6 +1489,7 @@ function normalizeGiftEvent(id, data = {}) {
     senderName: clean(data.senderName),
     senderPublicId: clean(data.senderPublicId),
     senderProfileImageUrl: clean(data.senderProfileImageUrl),
+    ...currentFrame,
     receiverId: clean(data.receiverId),
     giftId: clean(data.giftId),
     giftName: clean(data.giftName),
@@ -1513,9 +1526,16 @@ async function listGiftEvents(db, body) {
   });
   const hasMore = rows.length > limit;
   const visible = rows.slice(0, limit);
+  const frames = await loadCurrentProfileFrames(
+    db,
+    visible.map((row) => clean(row?.data?.senderId)),
+  );
   return {
     ok: true,
-    items: visible.map((row) => normalizeGiftEvent(row.id, row.data)),
+    items: visible.map((row) => {
+      const senderId = clean(row?.data?.senderId);
+      return normalizeGiftEvent(row.id, row.data, frames.get(senderId) || null);
+    }),
     nextCursor:
       hasMore && visible.length
         ? makeCursor(visible[visible.length - 1])
