@@ -90,11 +90,11 @@ class _DiaryGiftsSheetState extends State<DiaryGiftsSheet> {
       receiverId: widget.diary.ownerUid,
       receiverName: widget.diary.ownerName,
       diaryId: widget.diary.diaryId,
-      onGiftSent: (quantity, totalCost) {
+      onGiftSent: (quantity, paidCost) {
         if (!mounted) return;
         setState(() {
           _giftCount += quantity;
-          _giftCoins += totalCost;
+          _giftCoins += paidCost;
         });
         widget.onGiftTotalsChanged(_giftCount, _giftCoins);
         _load(reset: true);
