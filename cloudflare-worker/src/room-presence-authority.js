@@ -17,6 +17,7 @@ export async function realtimeRoomParticipantsFromNamespace(
   namespace,
   roomId,
   limit = 24,
+  requiredUid = "",
 ) {
   const stub = realtimeRoomStub(namespace, roomId);
   if (!stub) return null;
@@ -30,6 +31,10 @@ export async function realtimeRoomParticipantsFromNamespace(
       "https://room-realtime.internal/presence/bounded",
     );
     target.searchParams.set("limit", String(boundedLimit));
+    const normalizedRequiredUid = clean(requiredUid);
+    if (normalizedRequiredUid) {
+      target.searchParams.set("requiredUid", normalizedRequiredUid);
+    }
     const response = await stub.fetch(target.toString());
     if (!response.ok) return null;
     const body = await response.json().catch(() => ({}));
@@ -42,6 +47,10 @@ export async function realtimeRoomParticipantsFromNamespace(
       participants,
       onlineCount: Math.max(0, Number(body.onlineCount || 0)),
       truncated: body.truncated === true,
+      requiredUidPresent:
+        typeof body.requiredUidPresent === "boolean"
+          ? body.requiredUidPresent
+          : null,
     };
   } catch (_) {
     return null;
