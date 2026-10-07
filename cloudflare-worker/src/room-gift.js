@@ -24,6 +24,7 @@ import {
   realtimeUserPresentFromNamespace,
 } from "./room-presence-authority.js";
 import {
+  publishGlobalAppEvents,
   publishGlobalRocketEvents,
   publishRoomRealtimeEvent,
 } from "./room-realtime.js";
@@ -32,6 +33,10 @@ import {
   prepareRelationshipGiftContext,
   relationshipGiftWritesForRecipient,
 } from "./relationship-gift.js";
+import {
+  giftVisualPolicy,
+  premiumGiftCelebrationEvent,
+} from "./gift-visual-policy.js";
 import { giftLevelPointAwards, safeAddUserLevelPoints } from "./user-level-policy.js";
 import { vipCosmeticsFromUser } from "./vip-entitlements.js";
 
@@ -505,6 +510,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     const gift = rawCatalog.find((item) => clean(item?.id) === giftId);
     if (!gift) throw new ApiError("gift_not_found", 404);
     if (gift.enabled === false) throw new ApiError("gift_inactive", 409);
+    const visualPolicy = giftVisualPolicy(gift, quantity);
 
     let relationshipGiftContext = null;
     try {
@@ -1367,6 +1373,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
           receiver.username ||
           "مستخدم Shadow Live",
       );
+      const receiverProfileImageUrl = clean(receiver.profileImageUrl);
       writes.push(
         db.writeCreate(
           "gift_transactions/" + subKey,
@@ -1485,6 +1492,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       recipientResults.push({
         receiverId,
         receiverName,
+        receiverProfileImageUrl,
         attractionPointsAwarded:
           recipientLevelAwards.attractionPoints,
         revenueTierId: revenue.tierId,
@@ -1663,6 +1671,18 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
         rocketAdvance.explosions.map(
           (item) => item.explosionId,
         ),
+      roomEffect: visualPolicy.roomEffect
+        ? {
+            eventId: "gift_fx_" + key,
+            giftId,
+            giftName,
+            quantity,
+            ...visualPolicy.roomEffect,
+            recipientUids: recipientIds,
+          }
+        : null,
+      premiumCelebration:
+        visualPolicy.premiumBanner != null,
     };
 
     writes.push(
@@ -1693,11 +1713,33 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       recipientIds.length === 1
         ? first.receiverName
         : String(recipientIds.length) + " مستخدمين";
+    const premiumEvent = premiumGiftCelebrationEvent({
+      operationId: key,
+      gift,
+      quantity,
+      totalCost,
+      sender: {
+        uid: senderUid,
+        displayName: senderName,
+        profileImageUrl: senderPhoto,
+        publicId: clean(sender.publicId),
+      },
+      receiver: recipientIds.length === 1
+        ? {
+            uid: first.receiverId,
+            displayName: first.receiverName,
+            profileImageUrl: first.receiverProfileImageUrl,
+          }
+        : {},
+      roomId,
+      nowMs,
+    });
     return {
       ok: true,
       code: "ok",
       ...resultData,
       _rocketFeedEvents: rocketAdvance.explosions,
+      _globalAppEvents: premiumEvent ? [premiumEvent] : [],
       _chatEvent: {
         roomId,
         message: {
@@ -1728,6 +1770,16 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
           assetKey,
           imageUrl,
           vipLevel: senderVipCosmetics.level,
+          giftEffectEventId:
+            visualPolicy.roomEffect ? "gift_fx_" + key : "",
+          giftEffectMode:
+            visualPolicy.roomEffect?.mode || "none",
+          giftEffectAssetKey:
+            visualPolicy.roomEffect?.assetKey || "",
+          giftEffectDurationMs:
+            visualPolicy.roomEffect?.durationMs || 0,
+          giftEffectRecipientUids:
+            visualPolicy.roomEffect ? recipientIds : [],
           text:
             senderName +
             " أرسل " +
@@ -1767,6 +1819,24 @@ export async function roomGift(request, env, ctx) {
     const rocketFeedEvents = Array.isArray(result?._rocketFeedEvents)
       ? result._rocketFeedEvents
       : [];
+    const globalAppEvents = Array.isArray(result?._globalAppEvents)
+      ? result._globalAppEvents
+      : [];
+    if (globalAppEvents.length > 0) {
+      const publishTask = publishGlobalAppEvents(env, globalAppEvents).catch(
+        (error) => {
+          console.error(
+            "Premium gift celebration publish failed",
+            String(error?.message || error),
+          );
+        },
+      );
+      if (typeof ctx?.waitUntil === "function") {
+        ctx.waitUntil(publishTask);
+      } else {
+        await publishTask;
+      }
+    }
     if (rocketFeedEvents.length > 0) {
       const publishTask = publishGlobalRocketEvents(env, rocketFeedEvents).catch(
         (error) => {
@@ -1860,6 +1930,7 @@ export async function roomGift(request, env, ctx) {
     }
     const {
       _rocketFeedEvents,
+      _globalAppEvents,
       _chatEvent,
       _transactionAttempts,
       _agencyStatsTouched,
