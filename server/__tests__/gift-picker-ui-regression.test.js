@@ -54,12 +54,25 @@ test("room recipient strip keeps owner first and shows mic seat numbers", () => 
   const main = source("../../lib/main.dart");
 
   assert.equal(roomSheet.includes("final String ownerUid"), true);
+  assert.equal(roomSheet.includes("final String ownerPhotoUrl"), true);
   assert.equal(roomSheet.includes("a.uid == ownerUid"), true);
+  assert.equal(roomSheet.includes("if (ownerUid.isNotEmpty) ownerUid"), true);
   assert.equal(roomSheet.includes("seat.index + 1"), true);
   assert.equal(roomSheet.includes("ListView.separated"), true);
   assert.equal(roomSheet.includes("mode: 'all_mics'"), true);
   assert.equal(roomSheet.includes("mode: 'all_room'"), true);
   assert.equal(main.includes("ownerUid: (_roomArguments['ownerUid']"), true);
+  assert.equal(main.includes("ownerPhotoUrl: _ownerPhotoUrl"), true);
+
+  const roomServer = source("../../cloudflare-worker/src/room-gift.js");
+  assert.equal(
+    roomServer.includes("uid !== roomOwnerUid"),
+    true,
+  );
+  assert.equal(
+    roomServer.includes("if (uid === roomOwnerUid) continue;"),
+    true,
+  );
 });
 
 test("gift bag is one bounded catalog source and free sends do not credit paid economy", () => {
@@ -123,4 +136,5 @@ test("Shadow Control exposes an Arabic gift bag grant flow", () => {
   assert.equal(control.includes("من الإدارة"), true);
   assert.equal(control.includes("من فعالية"), true);
   assert.equal(control.includes("هدية مجانية"), true);
+  assert.equal(control.includes("enabledGifts.first.id"), true);
 });
