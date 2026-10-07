@@ -278,7 +278,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     !/^[A-Za-z0-9_-]{1,180}$/.test(roomId) ||
     !recipientMode ||
     !giftId ||
-    ![1, 7, 77, 777].includes(quantity) ||
+    (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 9999) ||
     !validKey(key) ||
     (recipientMode === "users" &&
       (requestedRecipientIds.length < 1 ||
