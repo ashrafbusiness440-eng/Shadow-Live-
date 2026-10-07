@@ -210,7 +210,16 @@ class _RoomPkPanelState extends State<RoomPkPanel> {
                               placeholderColor: Colors.white54,
                               fallbackProfile: <String, dynamic>{
                                 'profileImageUrl': speaker.profileImageUrl,
+                                'activeProfileFrameAssetKey':
+                                    speaker.activeProfileFrameAssetKey,
+                                'activeProfileFrameImageUrl':
+                                    speaker.activeProfileFrameImageUrl,
+                                'activeProfileFrameExpiresAtMs':
+                                    speaker.activeProfileFrameExpiresAtMs,
+                                'activeProfileFramePermanent':
+                                    speaker.activeProfileFramePermanent,
                               },
+                              fallbackIsVisualSnapshot: true,
                             ),
                             title: Text(
                               speaker.displayName,
@@ -347,7 +356,16 @@ class _RoomPkPanelState extends State<RoomPkPanel> {
             placeholderColor: Colors.white54,
             fallbackProfile: <String, dynamic>{
               'profileImageUrl': item.profileImageUrl,
+              'activeProfileFrameAssetKey':
+                  item.activeProfileFrameAssetKey,
+              'activeProfileFrameImageUrl':
+                  item.activeProfileFrameImageUrl,
+              'activeProfileFrameExpiresAtMs':
+                  item.activeProfileFrameExpiresAtMs,
+              'activeProfileFramePermanent':
+                  item.activeProfileFramePermanent,
             },
+            fallbackIsVisualSnapshot: true,
           ),
           const SizedBox(width: 6),
           Expanded(
@@ -588,9 +606,17 @@ class _RoomPkPanelState extends State<RoomPkPanel> {
                             backgroundColor: const Color(0xFF25183F),
                             placeholderColor: Colors.white54,
                             fallbackProfile: <String, dynamic>{
-                              'profileImageUrl':
-                                  supporter.profileImageUrl,
+                              'profileImageUrl': supporter.profileImageUrl,
+                              'activeProfileFrameAssetKey':
+                                  supporter.activeProfileFrameAssetKey,
+                              'activeProfileFrameImageUrl':
+                                  supporter.activeProfileFrameImageUrl,
+                              'activeProfileFrameExpiresAtMs':
+                                  supporter.activeProfileFrameExpiresAtMs,
+                              'activeProfileFramePermanent':
+                                  supporter.activeProfileFramePermanent,
                             },
+                            fallbackIsVisualSnapshot: true,
                           ),
                           const SizedBox(height: 3),
                           Text(
