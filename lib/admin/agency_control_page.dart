@@ -281,7 +281,8 @@ class _AgencyControlPageState extends State<AgencyControlPage> {
           children: [
             ProfileAvatarWithFrame(
               diameter: 52,
-              profile: person,
+              userId: uid,
+              fallbackProfile: person,
               placeholderIcon: Icons.person_outline,
             ),
             const SizedBox(width: 12),
