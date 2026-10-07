@@ -330,6 +330,17 @@ export class RoomRealtimeObject extends DurableObject {
         participants,
       });
     }
+    if (url.pathname === "/presence/bounded" && request.method === "GET") {
+      const requested = Number(url.searchParams.get("limit") || 24);
+      const limit = Math.max(1, Math.min(64, Math.floor(requested)));
+      const participants = this.#presenceSnapshot();
+      return Response.json({
+        ok: true,
+        onlineCount: participants.length,
+        participants: participants.slice(0, limit),
+        truncated: participants.length > limit,
+      });
+    }
     if (url.pathname === "/presence/count" && request.method === "GET") {
       const onlineCount = this.#presenceSnapshot().length;
       recordRealtimeTelemetry(this.env, {
