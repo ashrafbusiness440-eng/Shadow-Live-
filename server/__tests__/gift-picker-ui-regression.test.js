@@ -140,24 +140,31 @@ test("Shadow Control exposes an Arabic gift bag grant flow", () => {
 });
 
 
-test("diary gifts reuse the unified picker and paid totals", () => {
-  const diary = source(
-    "../../lib/features/diaries/widgets/diary_gifts_sheet.dart",
+test("diary gifts open the unified picker directly with no legacy sheet in the active route", () => {
+  const diariesScreen = source(
+    "../../lib/features/diaries/screens/diaries_screen.dart",
   );
   const directUi = source(
     "../../lib/features/gift/widgets/direct_gift_sheet.dart",
   );
 
-  assert.equal(diary.includes("showDirectGiftSheet("), true);
+  assert.equal(diariesScreen.includes("showDirectGiftSheet("), true);
   assert.equal(
-    diary.includes("diaryId: widget.diary.diaryId"),
+    diariesScreen.includes("diaryId: item.diaryId"),
     true,
   );
-  assert.equal(diary.includes("package:http"), false);
+  assert.equal(diariesScreen.includes("DiaryGiftsSheet("), false);
+  assert.equal(
+    diariesScreen.includes("widgets/diary_gifts_sheet.dart"),
+    false,
+  );
   assert.equal(directUi.includes("return UnifiedGiftPickerSheet("), true);
   assert.equal(
     directUi.includes("widget.onGiftSent?.call(quantity, paidCost)"),
     true,
   );
-  assert.equal(diary.includes("_giftCoins += paidCost"), true);
+  assert.equal(
+    diariesScreen.includes("giftCoins: current.giftCoins + paidCost"),
+    true,
+  );
 });
