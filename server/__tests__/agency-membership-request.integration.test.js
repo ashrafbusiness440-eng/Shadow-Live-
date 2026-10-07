@@ -31,6 +31,13 @@ async function seedUser(uid, publicId, extra = {}) {
     publicId,
     ...extra,
   });
+  await adminDb.collection("public_profiles").doc(uid).set({
+    uid,
+    publicId,
+    displayName: extra.displayName || "Shadow Live",
+    profileImageUrl: extra.profileImageUrl || "",
+    profileAvatarAsset: extra.profileAvatarAsset || "",
+  }, { merge: true });
   await adminDb.collection("public_ids").doc(publicId).set({ uid });
 }
 
