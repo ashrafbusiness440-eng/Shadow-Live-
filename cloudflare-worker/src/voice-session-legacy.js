@@ -1861,6 +1861,9 @@ export async function announceRoomEntrance(db,uid,roomId){
     uid,
     displayName:clean(profile.displayName||profile.username||"مستخدم Shadow Live"),
     profileImageUrl:clean(profile.profileImageUrl),
+    publicId:clean(profile.publicId),
+    vipLevel:vipCosmetics.level,
+    badgeLabel:vipCosmetics.level>0?"VIP":"",
     rewardId:hasRewardEntrance?clean(entrance.rewardId):"vip_room_entry",
     assetKey:hasRewardEntrance
       ?clean(entrance.assetKey)
