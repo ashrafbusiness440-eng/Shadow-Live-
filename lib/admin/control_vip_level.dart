@@ -400,17 +400,12 @@ class _VipLevelControlPageState extends State<VipLevelControlPage> {
               children: <Widget>[
                 ProfileAvatarWithFrame(
                   diameter: 48,
+                  userId: user.uid,
                   placeholderIcon: Icons.person_outline,
-                  profile: profileAvatarFrameData(
-                    imageUrl: user.profileImageUrl,
-                    avatarAsset: user.profileAvatarAsset,
-                    frameAssetKey: user.activeProfileFrameAssetKey,
-                    frameImageUrl: user.activeProfileFrameImageUrl,
-                    frameExpiresAtMs:
-                        user.activeProfileFrameExpiresAtMs,
-                    framePermanent:
-                        user.activeProfileFramePermanent,
-                  ),
+                  fallbackProfile: <String, dynamic>{
+                    'profileImageUrl': user.profileImageUrl,
+                    'profileAvatarAsset': user.profileAvatarAsset,
+                  },
                 ),
                 const SizedBox(width: 10),
                 Expanded(
