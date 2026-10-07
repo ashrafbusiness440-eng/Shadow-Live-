@@ -75,6 +75,14 @@ class AdminGate extends StatelessWidget {
           if (data == null || (role != 'owner' && !enabled)) {
             return const AccessDeniedPage();
           }
+          final openAssetStudio =
+              Uri.base.queryParameters['open'] == 'asset-studio';
+          if (role == 'owner' && openAssetStudio) {
+            return ControlAssetManagerPage(
+              initialSearch:
+                  Uri.base.queryParameters['assetSearch']?.trim() ?? '',
+            );
+          }
           return const ControlShell();
         },
       );
