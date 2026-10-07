@@ -31,6 +31,7 @@ class ZegoVoiceService implements VoiceService {
   int? _seatIndex;
   bool _tokenRenewalInFlight = false;
   ZegoMediaPlayer? _roomMediaPlayer;
+  ZegoMediaPlayer? _localEffectPlayer;
   bool _publishingForRoomMedia = false;
 
   @override
@@ -241,6 +242,7 @@ class ZegoVoiceService implements VoiceService {
       return;
     }
     try {
+      await stopLocalEffect();
       await stopRoomMedia();
       if (_publishing) {
         await ZegoExpressEngine.instance.stopPublishingStream();
@@ -370,6 +372,52 @@ class ZegoVoiceService implements VoiceService {
   }
 
   @override
+  Future<void> playLocalEffect(Uint8List mediaData) async {
+    _requireJoined();
+    if (mediaData.isEmpty) return;
+
+    _localEffectPlayer ??=
+        await ZegoExpressEngine.instance.createMediaPlayer();
+    final player = _localEffectPlayer;
+    if (player == null) {
+      throw const VoiceException(
+        'effect_player_unavailable',
+        'Unable to create local effect player.',
+      );
+    }
+
+    try {
+      await player.stop();
+    } catch (_) {}
+    final loaded = await player.loadResourceFromMediaData(mediaData, 0);
+    if (loaded.errorCode != 0) {
+      throw VoiceException(
+        'effect_audio_load_failed',
+        'ZEGO effect audio load failed with code ' +
+            loaded.errorCode.toString() +
+            '.',
+      );
+    }
+
+    // Effect audio is local-only: never mix it into the published room stream.
+    await player.enableAux(false);
+    await player.muteLocal(false);
+    await player.start();
+  }
+
+  @override
+  Future<void> stopLocalEffect() async {
+    final player = _localEffectPlayer;
+    if (player == null) return;
+    try {
+      await player.stop();
+    } catch (_) {}
+    try {
+      await player.enableAux(false);
+    } catch (_) {}
+  }
+
+  @override
   Future<void> takeMicSeat(int seatIndex) async {
     _requireJoined();
     if (seatIndex < 0) {
@@ -415,6 +463,13 @@ class ZegoVoiceService implements VoiceService {
             .destroyMediaPlayer(_roomMediaPlayer!);
       } catch (_) {}
       _roomMediaPlayer = null;
+    }
+    if (_localEffectPlayer != null) {
+      try {
+        await ZegoExpressEngine.instance
+            .destroyMediaPlayer(_localEffectPlayer!);
+      } catch (_) {}
+      _localEffectPlayer = null;
     }
     if (_engineCreated) {
       ZegoExpressEngine.onRoomStreamUpdate = null;
