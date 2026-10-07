@@ -1,6 +1,11 @@
 name: Visual QA Asset Studio
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/visual-qa-asset-studio.mjs
+      - .github/workflows/visual-qa-asset-studio.yml
   workflow_run:
     workflows: ["Deploy Shadow Live + Shadow Control to GitHub Pages"]
     types: [completed]
@@ -11,7 +16,7 @@ permissions:
 
 jobs:
   visual-qa:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
