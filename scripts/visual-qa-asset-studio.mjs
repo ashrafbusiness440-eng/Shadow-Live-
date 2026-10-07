@@ -242,43 +242,42 @@ await page.evaluate(async ({ config, token }) => {
   await auth.signInWithCustomToken(token);
 }, { config: firebaseConfig, token });
 
-async function openStudioSearch(query, screenshotName) {
-  const url = new URL(targetBase);
-  url.searchParams.set("open", "asset-studio");
-  url.searchParams.set("assetSearch", query);
-  await page.goto(url.toString(), {
-    waitUntil: "domcontentloaded",
-    timeout: 90000,
-  });
-  await page.waitForSelector("flt-glass-pane", {
-    state: "attached",
-    timeout: 60000,
-  });
-  await page.waitForTimeout(5500);
-  await page.screenshot({
-    path: `visual-qa/${screenshotName}`,
-    fullPage: false,
-  });
-  const semantics = await semanticsSnapshot(page).catch(() => []);
-  fs.writeFileSync(
-    `visual-qa/${screenshotName.replace(".png", "-semantics.json")}`,
-    JSON.stringify(semantics, null, 2),
-  );
-  return {
-    url: page.url(),
-    semanticsCount: semantics.length,
-  };
+await page.reload({ waitUntil: "domcontentloaded", timeout: 90000 });
+await page.waitForTimeout(4500);
+await enableSemantics(page);
+
+await page.mouse.click(88, 878);
+await page.waitForTimeout(1200);
+await page.screenshot({ path: "visual-qa/02-more.png", fullPage: false });
+
+await clickSemantics(page, "استوديو الأصول");
+await page.waitForTimeout(2500);
+await page.screenshot({ path: "visual-qa/03-studio-initial.png", fullPage: false });
+
+await page.mouse.move(206, 650);
+await page.mouse.wheel(0, 700);
+await page.waitForTimeout(900);
+await page.screenshot({ path: "visual-qa/03b-studio-registry.png", fullPage: false });
+
+async function typeSearch(query, screenshotName) {
+  await page.mouse.click(206, 365);
+  await page.waitForTimeout(250);
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+A" : "Control+A");
+  await page.keyboard.type(query, { delay: 10 });
+  await page.waitForTimeout(2600);
+  await page.screenshot({ path: `visual-qa/${screenshotName}`, fullPage: false });
+  return { query, url: page.url() };
 }
 
-const search26 = await openStudioSearch(
+const search26 = await typeSearch(
   "levels.wealth.lv26_30.profileFrame",
   "04-search-lv26_30.png",
 );
-const search31 = await openStudioSearch(
+const search31 = await typeSearch(
   "levels.wealth.lv31_35.profileFrame",
   "05-search-lv31_35.png",
 );
-const searchAll = await openStudioSearch(
+const searchAll = await typeSearch(
   "profileFrame",
   "06-search-all-profile-frames.png",
 );
