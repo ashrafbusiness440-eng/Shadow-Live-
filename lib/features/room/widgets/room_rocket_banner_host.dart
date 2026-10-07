@@ -165,11 +165,19 @@ class _RoomRocketBannerHostState extends State<RoomRocketBannerHost> {
   void _refreshGlobal() {
     if (!mounted) return;
     final nowMs = DateTime.now().millisecondsSinceEpoch;
+    const celebrationKinds = <String>{
+      'vip10_global_entry',
+      'vip_level_upgrade',
+      'game_win',
+      'relationship_level_up',
+      'premium_gift',
+    };
     final active = _globalEvents
-        .where((event) =>
-            (event.kind == 'vip10_global_entry' ||
-                event.kind == 'vip_level_upgrade') &&
-            event.activeAt(nowMs))
+        .where(
+          (event) =>
+              celebrationKinds.contains(event.kind) &&
+              event.activeAt(nowMs),
+        )
         .toList()
       ..sort((a, b) => a.startsAtMs.compareTo(b.startsAtMs));
     final next = active.isEmpty ? null : active.first;
@@ -463,7 +471,7 @@ class _RoomRocketBannerHostState extends State<RoomRocketBannerHost> {
               bottom: false,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                child: _Vip10GlobalBanner(event: global),
+                child: _CelebrationBanner(event: global),
               ),
             ),
           )
@@ -488,95 +496,146 @@ class _RoomRocketBannerHostState extends State<RoomRocketBannerHost> {
   }
 }
 
-class _Vip10GlobalBanner extends StatelessWidget {
-  const _Vip10GlobalBanner({required this.event});
+class _CelebrationBanner extends StatelessWidget {
+  const _CelebrationBanner({required this.event});
 
   final GlobalAppEvent event;
+
+  String get _headline => switch (event.kind) {
+        'game_win' => event.displayName,
+        'relationship_level_up' =>
+          event.relationshipType == 'cp' ? 'ترقية CP' : 'ترقية علاقة',
+        'premium_gift' => event.displayName,
+        _ => event.displayName,
+      };
+
+  String get _message {
+    if (event.messageAr.trim().isNotEmpty) return event.messageAr.trim();
+    return switch (event.kind) {
+      'vip_level_upgrade' => 'ترقّى إلى VIP${event.vipLevel} 🎉',
+      'vip10_global_entry' => 'دخل التطبيق • VIP10',
+      'game_win' => 'ربح ${event.payoutCoins} كوينز',
+      'relationship_level_up' =>
+        '${event.relationshipType == 'cp' ? 'CP' : 'العلاقة'} → Lv.${event.relationshipLevel}',
+      'premium_gift' =>
+        'أرسل ${event.giftName.isEmpty ? 'هدية فاخرة' : event.giftName} ×${event.giftQuantity}',
+      _ => '',
+    };
+  }
+
+  IconData get _icon => switch (event.kind) {
+        'game_win' => Icons.emoji_events_rounded,
+        'relationship_level_up' => Icons.favorite_rounded,
+        'premium_gift' => Icons.card_giftcard_rounded,
+        _ => Icons.workspace_premium_rounded,
+      };
+
+  Color get _accent => switch (event.kind) {
+        'relationship_level_up' => const Color(0xFFFF6FB2),
+        'game_win' => const Color(0xFFFFD54A),
+        'premium_gift' => const Color(0xFFC8A2FF),
+        _ => const Color(0xFFFFD54A),
+      };
 
   @override
   Widget build(BuildContext context) {
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     final seconds = math.max(0, ((event.endsAtMs - nowMs) / 1000).ceil());
+    final hasSecondary = event.secondaryUid.isNotEmpty;
+
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: Material(
-        color: Colors.transparent,
-        child: Container(
-          height: 70,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [
-                Color(0xFF4A0707),
-                Color(0xFF15101E),
-                Color(0xFF7A451B),
+      child: IgnorePointer(
+        ignoring: true,
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            height: 70,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  _accent.withValues(alpha: .34),
+                  const Color(0xFF15101E),
+                  _accent.withValues(alpha: .18),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: _accent.withValues(alpha: .78)),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x66000000),
+                  blurRadius: 18,
+                  offset: Offset(0, 7),
+                ),
               ],
             ),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: const Color(0xCCFFD54A)),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x66000000),
-                blurRadius: 18,
-                offset: Offset(0, 7),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              ProfileAvatarWithFrame(
-                diameter: 46,
-                userId: event.uid,
-                backgroundColor: const Color(0xFF25183F),
-                placeholderColor: Colors.white70,
-                fallbackProfile: <String, dynamic>{
-                  'profileImageUrl': event.profileImageUrl,
-                },
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      event.displayName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    Text(
-                      event.kind == 'vip_level_upgrade'
-                          ? 'ترقّى إلى VIP${event.vipLevel} 🎉'
-                          : 'دخل التطبيق • VIP10',
-                      textDirection: TextDirection.rtl,
-                      style: const TextStyle(
-                        color: Color(0xFFFFD54A),
-                        fontWeight: FontWeight.w900,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
+            child: Row(
+              children: [
+                ProfileAvatarWithFrame(
+                  diameter: 44,
+                  userId: event.uid,
+                  backgroundColor: const Color(0xFF25183F),
+                  placeholderColor: Colors.white70,
+                  fallbackProfile: <String, dynamic>{
+                    'profileImageUrl': event.profileImageUrl,
+                  },
                 ),
-              ),
-              const Icon(
-                Icons.workspace_premium_rounded,
-                color: Color(0xFFFFD54A),
-                size: 28,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                '${seconds}s',
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 12,
+                if (hasSecondary) ...[
+                  Transform.translate(
+                    offset: const Offset(8, 0),
+                    child: ProfileAvatarWithFrame(
+                      diameter: 38,
+                      userId: event.secondaryUid,
+                      backgroundColor: const Color(0xFF25183F),
+                      placeholderColor: Colors.white70,
+                      fallbackProfile: <String, dynamic>{
+                        'profileImageUrl': event.secondaryProfileImageUrl,
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                ] else
+                  const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _headline,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      Text(
+                        _message,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: _accent,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+                Icon(_icon, color: _accent, size: 27),
+                const SizedBox(width: 7),
+                Text(
+                  '${seconds}s',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
