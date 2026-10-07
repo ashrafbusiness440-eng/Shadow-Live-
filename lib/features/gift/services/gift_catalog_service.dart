@@ -124,6 +124,18 @@ class GiftCatalogService {
     'friends',
   };
 
+  static String categoryLabel(String category) => switch (category) {
+        'general' => 'هدايا',
+        'countries' => 'دول',
+        'celebrities' => 'مشاهير',
+        'vip' => 'امتياز',
+        'lucky' => 'محظوظ',
+        'activities' => 'أنشطة',
+        'cp' => 'CP',
+        'friends' => 'أصدقاء',
+        _ => 'هدايا',
+      };
+
   static const List<GiftCatalogItem> fallbackGifts = <GiftCatalogItem>[
     GiftCatalogItem(
       id: 'rose',
