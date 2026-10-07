@@ -110,6 +110,7 @@ test("VIP4 level guarantee renews on maintenance and downgrade remains live poli
 test("runtime consumers enforce VIP privileges without new polling or listeners", () => {
   const chat = source("cloudflare-worker/src/chat-safety-actions.js");
   const realtime = source("cloudflare-worker/src/room-realtime-object.js");
+  const emojiCatalog = source("cloudflare-worker/src/animated-emoji-catalog.js");
   const ticket = source("cloudflare-worker/src/room-realtime.js");
   const voice = source("cloudflare-worker/src/voice-session-legacy.js");
   const roomGift = source("cloudflare-worker/src/room-gift.js");
@@ -123,8 +124,9 @@ test("runtime consumers enforce VIP privileges without new polling or listeners"
   assert.equal(roomGift.includes("vip_gift_requires_level"), true);
   assert.equal(giftCatalog.includes("minVipLevel"), true);
 
-  assert.equal(realtime.includes("vip4_emoji_required"), true);
-  assert.equal(realtime.includes("vipEmojiToken"), true);
+  assert.equal(emojiCatalog.includes("vip4_emoji_required"), true);
+  assert.equal(realtime.includes("animatedEmojiId"), true);
+  assert.equal(realtime.includes("validateAnimatedEmojiForVip"), true);
   assert.equal(
     realtime.includes("vipLevel: 0,\n        entryEffectKey"),
     false,
