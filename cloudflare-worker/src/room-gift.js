@@ -1040,8 +1040,8 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       }
       const receiverTransforms = [
         db.increment("totalGiftsReceived", quantity),
-        db.increment("totalValueReceived", recipientCost),
-        db.increment("giftSupportReceivedCoins", recipientCost),
+        db.increment("totalValueReceived", paidRecipientCost),
+        db.increment("giftSupportReceivedCoins", paidRecipientCost),
       ];
       if (earningsEnabled) {
         receiverTransforms.push(
@@ -1104,7 +1104,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       );
 
       const receiverStatsTransforms = [
-        db.increment("receivedCoins", recipientCost),
+        db.increment("receivedCoins", paidRecipientCost),
         db.increment("giftCount", quantity),
         db.increment("diamondsEarned", diamondsEarned),
         db.increment("earningCoins", recipientShareCoins),
@@ -1127,7 +1127,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       if (agencyId) {
         agencyStatsTouched = true;
         const agencyStatsTransforms = [
-          db.increment("supportCoins", recipientCost),
+          db.increment("supportCoins", paidRecipientCost),
           db.increment("giftCount", quantity),
           db.increment("hostEarningCoins", recipientShareCoins),
           db.increment("agencyEarningCoins", agencyShareCoins),
@@ -1174,7 +1174,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
             },
             ["agencyId", "month", "shard", "updatedAt"],
             [
-              db.increment("supportCoins", recipientCost),
+              db.increment("supportCoins", paidRecipientCost),
               db.increment("hostShareCoins", recipientShareCoins),
               db.increment("agencyShareCoins", agencyShareCoins),
               db.increment("platformShareCoins", platformShareCoins),
@@ -1237,7 +1237,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
               "updatedAt",
             ],
             [
-              db.increment("supportCoins", recipientCost),
+              db.increment("supportCoins", paidRecipientCost),
               db.increment("hostShareCoins", recipientShareCoins),
               db.increment("agencyShareCoins", agencyShareCoins),
               db.increment(
