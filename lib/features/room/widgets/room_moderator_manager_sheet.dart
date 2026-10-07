@@ -377,7 +377,16 @@ class _RoomModeratorManagerSheetState
                                           moderator.profileImageUrl,
                                       'profileAvatarAsset':
                                           moderator.profileAvatarAsset,
+                                      'activeProfileFrameAssetKey':
+                                          moderator.activeProfileFrameAssetKey,
+                                      'activeProfileFrameImageUrl':
+                                          moderator.activeProfileFrameImageUrl,
+                                      'activeProfileFrameExpiresAtMs':
+                                          moderator.activeProfileFrameExpiresAtMs,
+                                      'activeProfileFramePermanent':
+                                          moderator.activeProfileFramePermanent,
                                     },
+                                    fallbackIsVisualSnapshot: true,
                                   ),
                                   title: Text(
                                     moderator.displayName,
