@@ -18,6 +18,7 @@ class GiftCatalogItem {
     this.isAnimated = false,
     this.effectMode = 'none',
     this.effectAssetKey = '',
+    this.effectSoundAssetKey = '',
     this.effectMinQuantity = 0,
     this.effectDurationMs = 2200,
     this.effectSize = 0,
@@ -38,6 +39,7 @@ class GiftCatalogItem {
   final bool isAnimated;
   final String effectMode;
   final String effectAssetKey;
+  final String effectSoundAssetKey;
   final int effectMinQuantity;
   final int effectDurationMs;
   final int effectSize;
@@ -71,6 +73,8 @@ class GiftCatalogItem {
       isAnimated: map['isAnimated'] == true,
       effectMode: (map['effectMode'] ?? 'none').toString(),
       effectAssetKey: (map['effectAssetKey'] ?? '').toString(),
+      effectSoundAssetKey:
+          (map['effectSoundAssetKey'] ?? '').toString(),
       effectMinQuantity:
           (map['effectMinQuantity'] as num?)?.toInt() ?? 0,
       effectDurationMs:
@@ -97,6 +101,7 @@ class GiftCatalogItem {
         'isAnimated': isAnimated,
         'effectMode': effectMode,
         'effectAssetKey': effectiveEffectAssetKey,
+        'effectSoundAssetKey': effectSoundAssetKey.trim(),
         'effectMinQuantity': effectMinQuantity,
         'effectDurationMs': effectDurationMs,
         'effectSize': effectSize,
