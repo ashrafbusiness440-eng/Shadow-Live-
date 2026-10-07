@@ -1118,7 +1118,16 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
                   userId: message.senderUid,
                   fallbackProfile: <String, dynamic>{
                     'profileImageUrl': message.profileImageUrl,
+                    'activeProfileFrameAssetKey':
+                        message.activeProfileFrameAssetKey,
+                    'activeProfileFrameImageUrl':
+                        message.activeProfileFrameImageUrl,
+                    'activeProfileFrameExpiresAtMs':
+                        message.activeProfileFrameExpiresAtMs,
+                    'activeProfileFramePermanent':
+                        message.activeProfileFramePermanent,
                   },
+                  fallbackIsVisualSnapshot: true,
                   vipLevel: message.vipLevel,
                   useVipFallback: true,
                 ),
