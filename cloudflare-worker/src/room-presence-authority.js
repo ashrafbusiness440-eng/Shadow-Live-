@@ -83,15 +83,36 @@ export async function realtimeResolveRoomUidsFromNamespace(
     );
     if (!response.ok) return null;
     const body = await response.json().catch(() => ({}));
-    return Array.isArray(body.presentUids)
-      ? Array.from(
-          new Set(
-            body.presentUids
-              .map(clean)
-              .filter((uid) => requested.includes(uid)),
-          ),
-        )
-      : [];
+    if (Array.isArray(body.presentUids)) {
+      return Array.from(
+        new Set(
+          body.presentUids
+            .map(clean)
+            .filter((uid) => requested.includes(uid)),
+        ),
+      );
+    }
+
+    // Backward compatibility for an older realtime room object that only
+    // exposes /presence/has. Current production resolves all requested UIDs
+    // in the single bounded POST above; this path is used only when that
+    // endpoint is unavailable during a rolling upgrade.
+    if (typeof body.present === "boolean") {
+      const checks = await Promise.all(
+        requested.map(async (uid) => {
+          const target = new URL(
+            "https://room-realtime.internal/presence/has",
+          );
+          target.searchParams.set("uid", uid);
+          const fallback = await stub.fetch(target.toString());
+          if (!fallback.ok) return null;
+          const payload = await fallback.json().catch(() => ({}));
+          return payload.present === true ? uid : null;
+        }),
+      );
+      return checks.filter(Boolean);
+    }
+    return null;
   } catch (_) {
     return null;
   }
