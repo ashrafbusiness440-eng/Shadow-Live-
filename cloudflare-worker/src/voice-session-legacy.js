@@ -2489,6 +2489,17 @@ async function roomBanList(db,uid,roomId){
       uid:doc.id,
       displayName:clean(pdata.displayName||pdata.username||"مستخدم Shadow Live"),
       profileImageUrl:clean(pdata.profileImageUrl),
+      profileAvatarAsset:clean(pdata.profileAvatarAsset),
+      activeProfileFrameAssetKey:
+        clean(pdata.activeProfileFrameAssetKey),
+      activeProfileFrameImageUrl:
+        clean(pdata.activeProfileFrameImageUrl),
+      activeProfileFrameExpiresAtMs:Math.max(
+        0,
+        Number(pdata.activeProfileFrameExpiresAtMs||0),
+      ),
+      activeProfileFramePermanent:
+        pdata.activeProfileFramePermanent===true,
       permanent:ban.permanent===true,
       durationMinutes:Number(ban.durationMinutes||0),
       expiresAt:expiresMs||null,
