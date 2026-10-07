@@ -108,7 +108,7 @@ function customToken(uid) {
 }
 
 async function enableSemantics(page) {
-  await page.waitForSelector("flt-glass-pane", { timeout: 60000 });
+  await page.waitForSelector("flt-glass-pane", { state: "attached", timeout: 60000 });
   await page.waitForTimeout(800);
   const placeholder = page.locator("flt-semantics-placeholder");
   if (await placeholder.count()) {
@@ -215,6 +215,8 @@ await page.evaluate(async ({ config, token }) => {
 
 await page.reload({ waitUntil: "domcontentloaded", timeout: 90000 });
 await page.waitForTimeout(4500);
+fs.mkdirSync("visual-qa", { recursive: true });
+await page.screenshot({ path: "visual-qa/00-before-semantics.png" }).catch(() => {});
 await enableSemantics(page);
 
 const afterLogin = await semanticsSnapshot(page);
