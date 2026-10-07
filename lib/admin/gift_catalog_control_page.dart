@@ -193,7 +193,9 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                         .map(
                           (value) => DropdownMenuItem(
                             value: value,
-                            child: Text(value),
+                            child: Text(
+                              GiftCatalogService.categoryLabel(value),
+                            ),
                           ),
                         )
                         .toList(),
