@@ -12,11 +12,6 @@ import {
   activeHideRankingLists,
   canInspectHiddenRankingLists,
 } from "./vip-entitlements.js";
-import {
-  loadPublicProfilePresentation,
-  loadPublicProfilePresentations,
-  publicProfilePresentation,
-} from "./public-profile-presentation.js";
 
 const clean = (value) => String(value ?? "").trim();
 const PUBLIC_HOST_PAGE_DEFAULT = 12;
@@ -277,12 +272,33 @@ function rankingSupportCoins(value) {
 }
 
 async function readPublicPeople(db, rows, uidResolver) {
-  const uids = rows.map((row) => clean(uidResolver(row))).filter(Boolean);
-  const profiles = await loadPublicProfilePresentations(db, uids, {
-    limit: PUBLIC_HOST_PAGE_MAX + 1,
-    concurrency: PUBLIC_USER_READ_CONCURRENCY,
-  });
-  return uids.map((uid) => profiles.get(uid) || publicProfilePresentation(uid));
+  const snapshots = [];
+  for (
+    let offset = 0;
+    offset < rows.length;
+    offset += PUBLIC_USER_READ_CONCURRENCY
+  ) {
+    const batch = rows.slice(offset, offset + PUBLIC_USER_READ_CONCURRENCY);
+    const readBatch = await Promise.all(
+      batch.map((row) => db.get("users/" + uidResolver(row))),
+    );
+    snapshots.push(...readBatch);
+  }
+  return snapshots;
+}
+
+function publicPersonSummary(uidInput, userSnap) {
+  const uid = clean(uidInput);
+  const user = userSnap?.exists ? userSnap.data || {} : {};
+  return {
+    uid,
+    publicId: clean(user.publicId) || null,
+    displayName:
+      clean(user.displayName || user.name || user.username) ||
+      "Shadow Live",
+    profileImageUrl: null,
+    profileAvatarAsset: null,
+  };
 }
 
 function membershipCursor(agencyId, row) {
@@ -348,23 +364,19 @@ export async function loadPublicAgencyPage(db, body = {}) {
       clean(membership.status) === "active";
   });
 
-  const hostUids = activeHostRows.map((row) => {
-    const membership = row.data || {};
-    return clean(membership.uid) || membershipCursor(agencyId, row);
-  });
-  const profiles = await loadPublicProfilePresentations(
+  const ownerSnap = await db.get("users/" + ownerUid);
+  if (!ownerSnap.exists) throw new ApiError("agency_owner_missing", 409);
+
+  const hostUserSnaps = await readPublicPeople(
     db,
-    [ownerUid, ...hostUids],
-    {
-      limit: PUBLIC_HOST_PAGE_MAX + 1,
-      concurrency: PUBLIC_USER_READ_CONCURRENCY,
-    },
+    activeHostRows,
+    (row) => clean(row?.data?.uid) || membershipCursor(agencyId, row),
   );
-  const owner = profiles.get(ownerUid);
-  if (!owner) throw new ApiError("agency_owner_missing", 409);
-  const hosts = hostUids.map(
-    (uid) => profiles.get(uid) || publicProfilePresentation(uid),
-  );
+  const hosts = activeHostRows.map((row, index) => {
+    const membership = row.data || {};
+    const uid = clean(membership.uid) || membershipCursor(agencyId, row);
+    return publicPersonSummary(uid, hostUserSnaps[index]);
+  });
 
   return {
     ok: true,
@@ -384,7 +396,7 @@ export async function loadPublicAgencyPage(db, body = {}) {
       memberCount: Math.max(0, Number(agency.memberCount || 0)),
       hostCount: Math.max(0, Number(agency.hostCount || 0)),
     },
-    owner,
+    owner: publicPersonSummary(ownerUid, ownerSnap),
     hosts,
     page: {
       limit,
@@ -465,50 +477,23 @@ export async function loadPublicAgencyRanking(
     cleanViewerUid && viewerIndex < 0
       ? [...normalizedRows, { hostUid: cleanViewerUid }]
       : normalizedRows;
-  const profileUids = peopleRows.map((row) => clean(row.hostUid)).filter(Boolean);
-  const publicProfilesPromise = loadPublicProfilePresentations(
+  const peopleSnaps = await readPublicPeople(
     db,
-    profileUids,
-    {
-      limit: PUBLIC_RANKING_MAX + 1,
-      concurrency: PUBLIC_USER_READ_CONCURRENCY,
-    },
+    peopleRows,
+    (row) => row.hostUid,
   );
-  const privacySnaps = [];
-  for (
-    let offset = 0;
-    offset < profileUids.length;
-    offset += PUBLIC_USER_READ_CONCURRENCY
-  ) {
-    const chunk = profileUids.slice(
-      offset,
-      offset + PUBLIC_USER_READ_CONCURRENCY,
-    );
-    privacySnaps.push(
-      ...(await Promise.all(
-        chunk.map((uid) => db.get("users/" + uid)),
-      )),
-    );
-  }
-  const publicProfiles = await publicProfilesPromise;
-  const userSnaps = privacySnaps.slice(0, normalizedRows.length);
+  const userSnaps = peopleSnaps.slice(0, normalizedRows.length);
   const viewerSnap =
     viewerIndex >= 0
       ? userSnaps[viewerIndex]
       : cleanViewerUid
-        ? privacySnaps[normalizedRows.length]
+        ? peopleSnaps[normalizedRows.length]
         : null;
   const viewerUser = viewerSnap?.exists ? viewerSnap.data || {} : {};
   const canInspectHidden = canInspectHiddenRankingLists(viewerUser);
 
   const visibleRows = normalizedRows
-    .map((row, index) => ({
-      row,
-      userSnap: userSnaps[index],
-      profile:
-        publicProfiles.get(row.hostUid) ||
-        publicProfilePresentation(row.hostUid),
-    }))
+    .map((row, index) => ({ row, userSnap: userSnaps[index] }))
     .filter(({ userSnap }) => {
       if (canInspectHidden) return true;
       if (!userSnap?.exists) return false;
@@ -520,10 +505,10 @@ export async function loadPublicAgencyRanking(
     ok: true,
     month,
     currentMonth,
-    top10: visibleRows.map(({ row, profile }, index) => ({
+    top10: visibleRows.map(({ row, userSnap }, index) => ({
       rank: index + 1,
       supportCoins: row.supportCoins,
-      ...profile,
+      ...publicPersonSummary(row.hostUid, userSnap),
     })),
   };
 }

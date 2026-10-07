@@ -22,9 +22,6 @@ import {
 } from "./economy-policy.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 import { adminInboxUpsertWrite } from "./admin-inbox-index.js";
-import {
-  loadPublicProfilePresentation,
-} from "./public-profile-presentation.js";
 
 const clean = (value) => String(value ?? "").trim();
 
@@ -64,6 +61,19 @@ function validIdempotencyKey(value) {
 function safeAgencyRoomId(value) {
   const roomId = clean(value);
   return /^[A-Za-z0-9_-]{3,180}$/.test(roomId) ? roomId : null;
+}
+
+function personSummary(uidInput, snap) {
+  const uid = clean(uidInput);
+  const user = snap?.exists ? snap.data || {} : {};
+  return {
+    uid,
+    publicId: clean(user.publicId) || null,
+    displayName:
+      clean(user.displayName || user.name || user.username) || "Shadow Live",
+    profileImageUrl: null,
+    profileAvatarAsset: null,
+  };
 }
 
 function targetSummary(target) {
@@ -156,7 +166,8 @@ export async function loadAgencyHostCore(
 
   const ownerUid = clean(agency.ownerUid);
   if (!ownerUid) throw new ApiError("agency_owner_missing", 409);
-  const ownerProfile = await loadPublicProfilePresentation(db, ownerUid);
+  const ownerSnap = await db.get("users/" + ownerUid);
+  if (!ownerSnap.exists) throw new ApiError("agency_owner_missing", 409);
 
   const month = currentAgencyMonthKey(now);
   const targetPolicy =
@@ -232,7 +243,7 @@ export async function loadAgencyHostCore(
       backgroundUrl:
         clean(agency.backgroundUrl || agency.roomBackgroundUrl) || null,
     },
-    owner: ownerProfile,
+    owner: personSummary(ownerUid, ownerSnap),
     membership: {
       role,
       status: membershipStatus,

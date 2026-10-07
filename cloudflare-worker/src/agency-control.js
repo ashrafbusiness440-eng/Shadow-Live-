@@ -26,10 +26,6 @@ import {
 import { overrideAgencyRejoinCooldown } from "./agency-membership.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 import { adminInboxDeleteWrite } from "./admin-inbox-index.js";
-import {
-  loadPublicProfilePresentations,
-  publicProfilePresentation,
-} from "./public-profile-presentation.js";
 
 const clean = (value) => String(value ?? "").trim();
 
@@ -301,14 +297,9 @@ function agencyReviewPerson({
   fallbackPublicId = null,
   userSnap,
   membershipSnap,
-  profile = {},
 } = {}) {
   const user = userSnap?.data || {};
   const membership = membershipSnap?.data || {};
-  const publicProfile = {
-    ...publicProfilePresentation(uid),
-    ...profile,
-  };
   const accountStatus = clean(user.accountStatus || "active");
   const membershipStatus = clean(membership.status);
   const currentAgencyId = clean(user.agencyId || membership.agencyId);
@@ -327,11 +318,13 @@ function agencyReviewPerson({
 
   return {
     uid: clean(uid),
-    publicId: clean(publicProfile.publicId || fallbackPublicId) || null,
+    publicId: clean(user.publicId || fallbackPublicId) || null,
     displayName:
-      clean(publicProfile.displayName || "مستخدم Shadow Live"),
-    profileImageUrl: clean(publicProfile.profileImageUrl) || null,
-    profileAvatarAsset: clean(publicProfile.profileAvatarAsset) || null,
+      clean(user.displayName || user.name || user.username) ||
+      "مستخدم Shadow Live",
+    // Public image/frame are resolved by the shared client identity layer.
+    profileImageUrl: null,
+    profileAvatarAsset: null,
     accountStatus,
     availability,
     currentAgencyId: currentAgencyId || null,
@@ -370,16 +363,9 @@ export async function getAgencyReviewDetails(db, applicationIdInput) {
     })),
   ].filter((item) => item.uid);
 
-  // Review details stay lazy and bounded. Internal account/membership state
-  // is read directly; every user-facing identity comes from public_profiles.
-  const publicProfiles = await loadPublicProfilePresentations(
-    db,
-    participants.map((person) => person.uid),
-    {
-      limit: AGENCY_LIMITS.maxApplicationHostIds + 1,
-      concurrency: 8,
-    },
-  );
+  // Review details stay lazy and bounded. Visual identity is resolved once
+  // by the shared client public_profiles layer, so this endpoint adds no
+  // duplicate profile reads.
   const snapshots = await Promise.all(
     participants.map(async (person) => {
       const [userSnap, membershipSnap] = await Promise.all([
@@ -393,9 +379,6 @@ export async function getAgencyReviewDetails(db, applicationIdInput) {
           fallbackPublicId: person.publicId,
           userSnap,
           membershipSnap,
-          profile:
-            publicProfiles.get(person.uid) ||
-            publicProfilePresentation(person.uid),
         }),
       };
     }),
