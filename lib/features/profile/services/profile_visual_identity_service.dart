@@ -144,7 +144,8 @@ class ProfileVisualIdentityService {
     for (var offset = 0; offset < ids.length; offset += _batchSize) {
       final batch = ids.skip(offset).take(_batchSize).toList(growable: false);
       try {
-        final snapshot = await _firestore
+        final firestore = FirebaseFirestore.instance;
+        final snapshot = await firestore
             .collection('public_profiles')
             .where(FieldPath.documentId, whereIn: batch)
             .get();
