@@ -3637,6 +3637,14 @@ async function enrichSupporterPublicMetadata(db,supporters,viewerUid){
         publicId:clean(data.publicId),
         vipLevel:vipEntitlementsFromUser(data,Date.now()).level,
         badges:rawBadges.map(clean).filter(Boolean).slice(0,12),
+        activeProfileFrameAssetKey:clean(data.activeProfileFrameAssetKey),
+        activeProfileFrameImageUrl:clean(data.activeProfileFrameImageUrl),
+        activeProfileFrameExpiresAtMs:Math.max(
+          0,
+          Number(data.activeProfileFrameExpiresAtMs||0),
+        ),
+        activeProfileFramePermanent:
+          data.activeProfileFramePermanent===true,
         ...levels,
       });
     }
@@ -3649,6 +3657,10 @@ async function enrichSupporterPublicMetadata(db,supporters,viewerUid){
         wealthLevel:0,
         attractionLevel:0,
         gameLevel:0,
+        activeProfileFrameAssetKey:"",
+        activeProfileFrameImageUrl:"",
+        activeProfileFrameExpiresAtMs:0,
+        activeProfileFramePermanent:false,
       }),
     }));
   }catch(_){
