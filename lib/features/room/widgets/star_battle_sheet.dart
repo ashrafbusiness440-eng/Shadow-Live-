@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/star_battle_service.dart';
+import '../../profile/widgets/profile_avatar_with_frame.dart';
 
 class StarBattleSheet extends StatefulWidget {
   const StarBattleSheet({
@@ -341,16 +342,19 @@ class _StarBattleSheetState extends State<StarBattleSheet> {
                               itemBuilder: (_, index) {
                                 final leader = battle.leaders[index];
                                 return ListTile(
-                                  leading: CircleAvatar(
-                                    backgroundImage:
-                                        leader.profileImageUrl.isEmpty
-                                            ? null
-                                            : NetworkImage(
-                                                leader.profileImageUrl,
-                                              ),
-                                    child: leader.profileImageUrl.isEmpty
-                                        ? const Icon(Icons.person_rounded)
-                                        : null,
+                                  leading: ProfileAvatarWithFrame(
+                                    diameter: 40,
+                                    profile: profileAvatarFrameData(
+                                      imageUrl: leader.profileImageUrl,
+                                      frameAssetKey:
+                                          leader.activeProfileFrameAssetKey,
+                                      frameImageUrl:
+                                          leader.activeProfileFrameImageUrl,
+                                      frameExpiresAtMs:
+                                          leader.activeProfileFrameExpiresAtMs,
+                                      framePermanent:
+                                          leader.activeProfileFramePermanent,
+                                    ),
                                   ),
                                   title: Text(
                                     leader.displayName,
