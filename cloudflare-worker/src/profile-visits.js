@@ -4,6 +4,11 @@ import { firestoreClient } from "./firestore.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 import { activeEffectiveVipLevelFromUser } from "./vip-runtime.js";
 import { vipEntitlementsFromUser } from "./vip-entitlements.js";
+import {
+  loadPublicProfilePresentation,
+  loadPublicProfilePresentations,
+  publicProfilePresentation,
+} from "./public-profile-presentation.js";
 
 const clean = (value) => String(value ?? "").trim();
 const UID_PATTERN = /^[A-Za-z0-9_-]{1,180}$/;
@@ -23,27 +28,6 @@ async function actor(request, env) {
     throw new ApiError("account_required", 403);
   }
   return decoded;
-}
-
-function publicSnapshot(data = {}, uid = "") {
-  return {
-    uid,
-    publicId: clean(data.publicId),
-    displayName: clean(data.displayName || data.username || "مستخدم Shadow Live"),
-    profileImageUrl: clean(data.profileImageUrl),
-    activeProfileFrameAssetKey: clean(data.activeProfileFrameAssetKey),
-    activeProfileFrameImageUrl: clean(data.activeProfileFrameImageUrl),
-    activeProfileFrameExpiresAtMs: Math.max(
-      0,
-      Number(data.activeProfileFrameExpiresAtMs || 0),
-    ),
-    activeProfileFramePermanent:
-      data.activeProfileFramePermanent === true,
-    effectiveVipLevel: Math.max(
-      0,
-      Math.min(10, Number(data.effectiveVipLevel ?? data.vipLevel ?? 0) || 0),
-    ),
-  };
 }
 
 function canInspectPrivateVisits(user = {}) {
@@ -72,21 +56,25 @@ export async function recordProfileVisit(db, visitorUid, body, nowMs = Date.now(
   if (!UID_PATTERN.test(targetUid)) throw new ApiError("invalid_target", 400);
   if (targetUid === visitorUid) return { ok: true, recorded: false, self: true };
 
-  const [visitorUserSnap, visitorPublicSnap, targetPublicSnap] = await Promise.all([
+  const [visitorUserSnap, publicProfiles] = await Promise.all([
     db.get(`users/${visitorUid}`),
-    db.get(`public_profiles/${visitorUid}`),
-    db.get(`public_profiles/${targetUid}`),
+    loadPublicProfilePresentations(db, [visitorUid, targetUid], {
+      limit: 2,
+      concurrency: 2,
+    }),
   ]);
   if (!visitorUserSnap.exists) throw new ApiError("user_not_found", 404);
-  if (!targetPublicSnap.exists) throw new ApiError("target_not_found", 404);
+  if (!publicProfiles.has(targetUid)) throw new ApiError("target_not_found", 404);
 
   const visitorUser = visitorUserSnap.data || {};
   const entitlements = vipEntitlementsFromUser(visitorUser, nowMs);
   const hidden =
     visitorUser.hideProfileVisits === true && entitlements.hideProfileVisits;
   const now = new Date(nowMs);
-  const visitor = publicSnapshot(visitorPublicSnap.data || {}, visitorUid);
-  const target = publicSnapshot(targetPublicSnap.data || {}, targetUid);
+  const visitor =
+    publicProfiles.get(visitorUid) || publicProfilePresentation(visitorUid);
+  const target =
+    publicProfiles.get(targetUid) || publicProfilePresentation(targetUid);
 
   if (hidden) {
     await db.commit(null, [
@@ -176,44 +164,6 @@ export async function recordProfileVisit(db, visitorUid, body, nowMs = Date.now(
   return { ok: true, recorded: true, hidden: false };
 }
 
-async function currentFrameByUid(db, uidInputs = []) {
-  const ids = [...new Set(
-    uidInputs.map(clean).filter((value) => UID_PATTERN.test(value)),
-  )].slice(0, HISTORY_LIMIT);
-  const frames = new Map();
-  const concurrency = 8;
-  for (let offset = 0; offset < ids.length; offset += concurrency) {
-    const batch = ids.slice(offset, offset + concurrency);
-    const profiles = await Promise.all(
-      batch.map((targetUid) => db.get(`public_profiles/${targetUid}`)),
-    );
-    for (let index = 0; index < batch.length; index += 1) {
-      const profile = profiles[index];
-      if (!profile?.exists) continue;
-      const data = profile.data || {};
-      frames.set(batch[index], {
-        profileImageUrl: clean(data.profileImageUrl),
-        activeProfileFrameAssetKey: clean(data.activeProfileFrameAssetKey),
-        activeProfileFrameImageUrl: clean(data.activeProfileFrameImageUrl),
-        activeProfileFrameExpiresAtMs: Math.max(
-          0,
-          Number(data.activeProfileFrameExpiresAtMs || 0),
-        ),
-        activeProfileFramePermanent:
-          data.activeProfileFramePermanent === true,
-        effectiveVipLevel: Math.max(
-          0,
-          Math.min(
-            10,
-            Number(data.effectiveVipLevel ?? data.vipLevel ?? 0) || 0,
-          ),
-        ),
-      });
-    }
-  }
-  return frames;
-}
-
 export async function profileVisitHistory(db, uid, body, nowMs = Date.now()) {
   const actorUser = await loadActorState(db, uid);
   if (activeEffectiveVipLevelFromUser(actorUser, nowMs) < 1) {
@@ -231,10 +181,11 @@ export async function profileVisitHistory(db, uid, body, nowMs = Date.now()) {
     limit: HISTORY_LIMIT,
   });
 
-  const frames = await currentFrameByUid(
-    db,
-    rows.map((row) => clean(row.data?.uid || row.id)),
-  );
+  const uids = rows.map((row) => clean(row.data?.uid || row.id));
+  const profiles = await loadPublicProfilePresentations(db, uids, {
+    limit: HISTORY_LIMIT,
+    concurrency: 8,
+  });
 
   return {
     ok: true,
@@ -244,7 +195,7 @@ export async function profileVisitHistory(db, uid, body, nowMs = Date.now()) {
       const targetUid = clean(row.data?.uid || row.id);
       return {
         ...row.data,
-        ...(frames.get(targetUid) || {}),
+        ...(profiles.get(targetUid) || publicProfilePresentation(targetUid)),
         id: row.id,
       };
     }),
@@ -263,10 +214,22 @@ export async function inspectPrivateVisits(db, uid, body) {
     orderBy: [{ field: "lastVisitedAt", direction: "desc" }],
     limit: HISTORY_LIMIT,
   });
+  const uids = rows.map((row) => clean(row.data?.uid || row.id));
+  const profiles = await loadPublicProfilePresentations(db, uids, {
+    limit: HISTORY_LIMIT,
+    concurrency: 8,
+  });
   return {
     ok: true,
     targetUid,
-    items: rows.map((row) => ({ ...row.data, id: row.id })),
+    items: rows.map((row) => {
+      const visitorUid = clean(row.data?.uid || row.id);
+      return {
+        ...row.data,
+        ...(profiles.get(visitorUid) || publicProfilePresentation(visitorUid)),
+        id: row.id,
+      };
+    }),
   };
 }
 
