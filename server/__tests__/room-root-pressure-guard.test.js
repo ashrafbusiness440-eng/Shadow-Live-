@@ -189,7 +189,8 @@ test("Agency application review cards are lazy and open the full profile", () =>
   assert.equal(control.includes("'action': 'reviewDetails'"), true);
   assert.equal(control.includes("PublicProfileScreen(userId: uid)"), true);
   assert.equal(control.includes("reviewPersonCard("), true);
-  assert.equal(control.includes("profileImageUrl"), true);
+  assert.equal(control.includes("ProfileAvatarWithFrame("), true);
+  assert.equal(control.includes("fallbackProfile: person"), true);
   assert.equal(control.includes("accountStatus"), true);
   assert.equal(control.includes("availability"), true);
 
