@@ -14,6 +14,9 @@ test("gift catalog owns reusable effect and relationship metadata", () => {
     "../../lib/features/gift/services/gift_catalog_service.dart",
   );
   const control = source("../../lib/admin/gift_catalog_control_page.dart");
+  const picker = source(
+    "../../lib/features/gift/widgets/unified_gift_picker_sheet.dart",
+  );
 
   for (const key of [
     "isAnimated",
@@ -38,4 +41,8 @@ test("gift catalog owns reusable effect and relationship metadata", () => {
   assert.equal(control.includes("نوع مؤثر الغرفة"), true);
   assert.equal(control.includes("أقل كمية لتشغيل المؤثر"), true);
   assert.equal(control.includes("نقاط العلاقة الأساسية — عدد زوجي"), true);
+  assert.equal(picker.includes("gift.isRelationshipGift ? 'relationship'"), true);
+  assert.equal(picker.includes("? 'علاقة'"), true);
+  assert.equal(picker.includes("gift.category == 'cp' ? 'CP' : 'صديق'"), true);
+  assert.equal(picker.includes("GiftCatalogService.categoryLabel(value)"), true);
 });
