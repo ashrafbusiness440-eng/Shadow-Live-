@@ -9,6 +9,8 @@ class FakeDb {
   constructor(seed = {}) {
     this.getCalls = 0;
     this.queryCalls = 0;
+    this.listCalls = 0;
+    this.commitCalls = 0;
     this.docs = new Map(
       Object.entries(seed).map(([path, data]) => [path, structuredClone(data)]),
     );
@@ -18,6 +20,47 @@ class FakeDb {
     this.getCalls += 1;
     if (!this.docs.has(path)) return { exists: false, data: null };
     return { exists: true, data: structuredClone(this.docs.get(path)) };
+  }
+
+  async list(collection, pageSize = 200) {
+    this.listCalls += 1;
+    return [...this.docs.entries()]
+      .filter(([path]) => path.startsWith(collection + "/"))
+      .filter(([path]) => path.slice(collection.length + 1).indexOf("/") < 0)
+      .slice(0, pageSize)
+      .map(([path, data]) => ({
+        id: path.slice(collection.length + 1),
+        path,
+        data: structuredClone(data),
+      }));
+  }
+
+  writeCreate(path, fields) {
+    return { kind: "create", path, fields: structuredClone(fields) };
+  }
+
+  writeUpdate(path, fields) {
+    return { kind: "update", path, fields: structuredClone(fields) };
+  }
+
+  writeDelete(path) {
+    return { kind: "delete", path };
+  }
+
+  async commit(_transaction, writes = []) {
+    this.commitCalls += 1;
+    for (const write of writes) {
+      if (write.kind === "delete") {
+        this.docs.delete(write.path);
+        continue;
+      }
+      const previous = this.docs.get(write.path) || {};
+      this.docs.set(write.path, {
+        ...structuredClone(previous),
+        ...structuredClone(write.fields || {}),
+      });
+    }
+    return {};
   }
 
   async runQuery(collection, options = {}) {
@@ -163,7 +206,7 @@ test("admin inbox loads read receipts with one bounded query instead of per-item
   const beforeGets = db.getCalls;
   const snapshot = await listInbox(db, actor(["viewReports"]));
   assert.equal(snapshot.items.length, 2);
-  assert.equal(db.getCalls, beforeGets);
+  assert.equal(db.getCalls, beforeGets + 1);
   assert.equal(snapshot.items[0].read, true);
 });
 
@@ -181,6 +224,32 @@ test("admin inbox stays bounded per source and globally", async () => {
   const db = new FakeDb(seed);
   const items = await loadItems(db, actor(["viewReports"]));
   assert.equal(items.length <= 24, true);
+});
+
+test("admin inbox uses unified index after one-time fallback backfill", async () => {
+  const db = new FakeDb({
+    "diary_reports/report_a": {
+      reportId: "report_a",
+      status: "new",
+      targetType: "diary",
+      reasonLabel: "spam",
+      createdAt: new Date(3000),
+    },
+  });
+
+  const first = await listInbox(db, actor(["viewReports"]));
+  assert.equal(first.items.length, 1);
+  const sourceQueriesAfterFirst = db.queryCalls;
+  assert.equal(db.docs.has("admin_inbox_items/__meta"), true);
+  assert.equal(
+    db.docs.has("admin_inbox_items/diary_report__report_a"),
+    true,
+  );
+
+  const second = await listInbox(db, actor(["viewReports"]));
+  assert.equal(second.items.length, 1);
+  assert.equal(db.queryCalls, sourceQueriesAfterFirst);
+  assert.equal(db.listCalls >= 2, true);
 });
 
 test("admin inbox key sanitizer rejects path separators implicitly", () => {
