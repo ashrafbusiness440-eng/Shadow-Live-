@@ -190,7 +190,6 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
   if (
     !/^[A-Za-z0-9_-]{1,180}$/.test(roomId) ||
     !receiverId ||
-    receiverId === senderUid ||
     !giftId ||
     ![1, 7, 77, 777].includes(quantity) ||
     !validKey(key)
