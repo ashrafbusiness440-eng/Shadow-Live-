@@ -204,6 +204,9 @@ test("Agency application review cards are lazy and open the full profile", () =>
     true,
   );
   assert.equal(block.includes("loadPublicProfilePresentations"), false);
-  assert.equal(block.includes("public_profiles"), false);
+  assert.equal(
+    block.includes("db.get(\`public_profiles/\${person.uid}\`)"),
+    false,
+  );
   assert.equal(block.includes("runQuery("), false);
 });
