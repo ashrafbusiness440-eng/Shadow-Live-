@@ -89,7 +89,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
       contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
       leading: ProfileAvatarWithFrame(
         diameter: 40,
-        profile: user,
+        userId: doc.id,
+        fallbackProfile: user,
       ),
       title: Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
       subtitle: Text('ID: ${user['publicId'] ?? doc.id}', style: const TextStyle(color: Colors.white54)),
@@ -379,7 +380,8 @@ class _ConversationTile extends StatelessWidget {
           child: ListTile(
             leading: ProfileAvatarWithFrame(
               diameter: 40,
-              profile: user,
+              userId: otherUid,
+              fallbackProfile: user,
             ),
             title: Text(name, style: TextStyle(color: Colors.white, fontWeight: unread > 0 ? FontWeight.w900 : FontWeight.w700)),
             subtitle: Text(lastMessage.isEmpty ? 'ابدأ المحادثة' : lastMessage, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: unread > 0 ? Colors.white70 : Colors.white54)),
