@@ -416,13 +416,28 @@ export function publicGameWinVisibilityFromOperation(data={}){
   };
 }
 
-function participantPublic(data={},rank=null){
+function participantPublic(data={},rank=null,profile={}){
   const stake=Number(data.totalStakeCoins||0);
   const payout=Number(data.payoutCoins||0);
   return {
     userId:clean(data.userId),
-    displayName:clean(data.displayName),
-    photoUrl:clean(data.photoUrl),
+    displayName:clean(
+      profile.displayName||profile.username||data.displayName
+    ),
+    photoUrl:clean(
+      profile.profileImageUrl||data.photoUrl
+    ),
+    profileAvatarAsset:clean(profile.profileAvatarAsset),
+    activeProfileFrameAssetKey:
+      clean(profile.activeProfileFrameAssetKey),
+    activeProfileFrameImageUrl:
+      clean(profile.activeProfileFrameImageUrl),
+    activeProfileFrameExpiresAtMs:Math.max(
+      0,
+      Number(profile.activeProfileFrameExpiresAtMs||0),
+    ),
+    activeProfileFramePermanent:
+      profile.activeProfileFramePermanent===true,
     stakeCoins:Number.isSafeInteger(stake)&&stake>0?stake:0,
     payoutCoins:Number.isSafeInteger(payout)&&payout>0?payout:0,
     won:Number.isSafeInteger(payout)&&payout>0,
@@ -438,10 +453,25 @@ async function roundResultSummary(db,roundId,uid){
     participants.orderBy("payoutCoins","desc").limit(3).get(),
     participants.doc(uid).get(),
   ]);
+  const ids=[...new Set([
+    ...leadersSnap.docs.map(doc=>clean(doc.data()?.userId||doc.id)),
+    clean(uid),
+  ].filter(Boolean))].slice(0,4);
+  const profiles=new Map();
+  await Promise.all(ids.map(async userId=>{
+    const snap=await db.collection("public_profiles").doc(userId).get();
+    if(snap.exists)profiles.set(userId,snap.data()||{});
+  }));
   const topWinners=leadersSnap.docs
-    .map((doc,index)=>participantPublic(doc.data()||{},index+1))
+    .map((doc,index)=>{
+      const data=doc.data()||{};
+      const userId=clean(data.userId||doc.id);
+      return participantPublic(data,index+1,profiles.get(userId)||{});
+    })
     .filter(item=>item.payoutCoins>0);
-  let myRound=mySnap.exists?participantPublic(mySnap.data()||{}):null;
+  let myRound=mySnap.exists
+    ? participantPublic(mySnap.data()||{},null,profiles.get(clean(uid))||{})
+    : null;
   if(myRound){
     const ranked=topWinners.find(item=>item.userId===uid);
     myRound={...myRound,winnerRank:ranked?.rank??null};
