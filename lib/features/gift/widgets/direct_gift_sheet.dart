@@ -14,7 +14,7 @@ Future<void> showDirectGiftSheet(
   required String receiverName,
   String? conversationId,
   String? diaryId,
-  void Function(int quantity, int totalCost)? onGiftSent,
+  void Function(int quantity, int paidCost)? onGiftSent,
 }) async {
   await showModalBottomSheet<void>(
     context: context,
@@ -46,7 +46,7 @@ class _DirectGiftContext extends StatefulWidget {
   final String receiverName;
   final String? conversationId;
   final String? diaryId;
-  final void Function(int quantity, int totalCost)? onGiftSent;
+  final void Function(int quantity, int paidCost)? onGiftSent;
 
   @override
   State<_DirectGiftContext> createState() => _DirectGiftContextState();
@@ -151,7 +151,7 @@ class _DirectGiftContextState extends State<_DirectGiftContext> {
         (body['paidCost'] as num?)?.toInt() ?? (useGiftBag ? 0 : totalCost);
     final balance = (body['balance'] as num?)?.toInt();
     if (balance != null) GiftCatalogService.updateCachedBalance(balance);
-    widget.onGiftSent?.call(quantity, totalCost);
+    widget.onGiftSent?.call(quantity, paidCost);
     return GiftPickerSendResult(
       balanceCoins: balance,
       wealthDeltaCoins: paidCost,
