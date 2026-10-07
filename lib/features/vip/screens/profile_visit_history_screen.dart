@@ -166,15 +166,12 @@ class _ProfileVisitHistoryScreenState extends State<ProfileVisitHistoryScreen>
       contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 7),
       leading: ProfileAvatarWithFrame(
         diameter: 48,
+        userId: item.uid,
         backgroundColor: const Color(0xFF25183F),
         placeholderColor: const Color(0xFFFFD166),
-        profile: profileAvatarFrameData(
-          imageUrl: item.profileImageUrl,
-          frameAssetKey: item.activeProfileFrameAssetKey,
-          frameImageUrl: item.activeProfileFrameImageUrl,
-          frameExpiresAtMs: item.activeProfileFrameExpiresAtMs,
-          framePermanent: item.activeProfileFramePermanent,
-        ),
+        fallbackProfile: <String, dynamic>{
+          'profileImageUrl': item.profileImageUrl,
+        },
         vipLevel: item.effectiveVipLevel,
         useVipFallback: true,
       ),
