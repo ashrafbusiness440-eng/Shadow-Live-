@@ -2413,10 +2413,11 @@ class _RoomGameOverlaySheetState extends State<RoomGameOverlaySheet> {
                             const SizedBox(height: 4),
                             ProfileAvatarWithFrame(
                               diameter: 36,
+                              userId:
+                                  (winner['userId'] ?? '').toString(),
                               backgroundColor: Colors.white10,
                               placeholderColor: Colors.white54,
-                              profile: <String, dynamic>{
-                                ...winner,
+                              fallbackProfile: <String, dynamic>{
                                 if (photo.isNotEmpty)
                                   'profileImageUrl': photo,
                               },
