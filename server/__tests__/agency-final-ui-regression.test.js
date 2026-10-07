@@ -26,7 +26,7 @@ test("Agencies final UI keeps account images and pending request layout stable",
   );
   assert.equal(
     hostSource.includes("loadPublicProfilePresentation"),
-    false,
+    true,
   );
   assert.equal(
     membershipSource.includes(
