@@ -1542,16 +1542,13 @@ class _OwnerCard extends StatelessWidget {
         ),
         leading: ProfileAvatarWithFrame(
           diameter: 52,
+          userId: owner.uid,
           backgroundColor: const Color(0xFF2A3150),
           placeholderColor: Colors.white70,
-          profile: profileAvatarFrameData(
-            imageUrl: owner.profileImageUrl,
-            avatarAsset: owner.profileAvatarAsset,
-            frameAssetKey: owner.activeProfileFrameAssetKey,
-            frameImageUrl: owner.activeProfileFrameImageUrl,
-            frameExpiresAtMs: owner.activeProfileFrameExpiresAtMs,
-            framePermanent: owner.activeProfileFramePermanent,
-          ),
+          fallbackProfile: <String, dynamic>{
+            'profileImageUrl': owner.profileImageUrl,
+            'profileAvatarAsset': owner.profileAvatarAsset,
+          },
         ),
         title: const Text(
           'مالك الوكالة',
@@ -2295,16 +2292,13 @@ class _HostRankingTile extends StatelessWidget {
         children: [
           ProfileAvatarWithFrame(
             diameter: 30,
+            userId: person.uid,
             backgroundColor: const Color(0xFF2A3150),
             placeholderColor: Colors.white70,
-            profile: profileAvatarFrameData(
-              imageUrl: person.profileImageUrl,
-              avatarAsset: person.profileAvatarAsset,
-              frameAssetKey: person.activeProfileFrameAssetKey,
-              frameImageUrl: person.activeProfileFrameImageUrl,
-              frameExpiresAtMs: person.activeProfileFrameExpiresAtMs,
-              framePermanent: person.activeProfileFramePermanent,
-            ),
+            fallbackProfile: <String, dynamic>{
+              'profileImageUrl': person.profileImageUrl,
+              'profileAvatarAsset': person.profileAvatarAsset,
+            },
           ),
           const SizedBox(width: 8),
           Expanded(
