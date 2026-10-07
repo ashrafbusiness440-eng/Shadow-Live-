@@ -119,7 +119,10 @@ function roomGiftOperationConflicts(data = {}, expected = {}) {
     const storedIds = Array.isArray(data.recipientIds)
       ? data.recipientIds
       : [data.receiverId];
-    if (!sameRecipientSet(storedIds, expected.recipientIds || [])) return true;
+    const expectedIds = Array.isArray(expected.recipientIds)
+      ? expected.recipientIds
+      : [expected.receiverId];
+    if (!sameRecipientSet(storedIds, expectedIds)) return true;
   }
   return false;
 }
