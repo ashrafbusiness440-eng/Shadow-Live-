@@ -282,16 +282,13 @@ class _DiaryCommentsSheetState extends State<DiaryCommentsSheet> {
             onTap: () => _openProfile(item),
             child: ProfileAvatarWithFrame(
               diameter: 36,
+              userId: item.authorUid,
               backgroundColor: const Color(0xFF272C39),
               placeholderColor: Colors.white54,
-              profile: profileAvatarFrameData(
-                imageUrl: item.authorProfileImageUrl,
-                avatarAsset: item.authorProfileAvatarAsset,
-                frameAssetKey: item.activeProfileFrameAssetKey,
-                frameImageUrl: item.activeProfileFrameImageUrl,
-                frameExpiresAtMs: item.activeProfileFrameExpiresAtMs,
-                framePermanent: item.activeProfileFramePermanent,
-              ),
+              fallbackProfile: <String, dynamic>{
+                'profileImageUrl': item.authorProfileImageUrl,
+                'profileAvatarAsset': item.authorProfileAvatarAsset,
+              },
             ),
           ),
           const SizedBox(width: 9),
