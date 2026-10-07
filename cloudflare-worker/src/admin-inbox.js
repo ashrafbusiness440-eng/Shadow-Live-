@@ -300,18 +300,6 @@ async function loadReadKeys(db, uid) {
   );
 }
 
-async function loadReadKeys(db, uid) {
-  const rows = await db.runQuery("admin_notification_reads", {
-    filters: [{ field: "userId", op: "==", value: uid }],
-    limit: MAX_READ_RECEIPTS,
-  });
-  return new Set(
-    rows
-      .map((row) => clean(row?.data?.key))
-      .filter(Boolean),
-  );
-}
-
 async function loadReadState(db, uid) {
   const path = readStatePath(uid);
   const snapshot = await db.get(path);
