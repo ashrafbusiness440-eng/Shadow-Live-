@@ -38,6 +38,7 @@ import {
 
 const TICKET_PREFIX = "ticket:";
 const CUSTOMER_SERVICE_MIC_SCHEDULE_PREFIX = "cs_mic:";
+const ROOM_PRESENCE_CLIENT_SNAPSHOT_LIMIT = 200;
 
 async function ticketStorageKey(ticket) {
   const bytes = new TextEncoder().encode(String(ticket || ""));
@@ -578,6 +579,12 @@ export class RoomRealtimeObject extends DurableObject {
         connectionId,
         onlineCount,
         participantsCount: onlineCount,
+        participants: participants.slice(
+          0,
+          ROOM_PRESENCE_CLIENT_SNAPSHOT_LIMIT,
+        ),
+        participantsTruncated:
+          participants.length > ROOM_PRESENCE_CLIENT_SNAPSHOT_LIMIT,
       }),
     );
     this.#publishOnlineCount(roomId, participants);
