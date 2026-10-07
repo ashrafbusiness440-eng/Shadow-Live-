@@ -40,9 +40,10 @@ void main() {
 
     expect(roomChat.contains('final uid = message.senderUid.trim();'), isTrue);
     expect(roomChat.contains('showQuickProfileSheet(context, userId: uid)'), isTrue);
-    expect(roomChat.contains('Widget _senderAvatar(RoomChatMessage message)'), isTrue);
-    expect(roomChat.contains('errorBuilder: (_, __, ___)'), isTrue);
-    expect(roomChat.contains('child: _senderAvatar(message)'), isTrue);
+    expect(roomChat.contains('ProfileAvatarWithFrame('), isTrue);
+    expect(roomChat.contains('userId: message.senderUid'), isTrue);
+    expect(roomChat.contains("'profileImageUrl': message.profileImageUrl"), isTrue);
+    expect(roomChat.contains('fallbackIsVisualSnapshot: true'), isTrue);
   });
   test('own profile reuses existing user data for levels mood and interests', () {
     final ownProfile = File(
