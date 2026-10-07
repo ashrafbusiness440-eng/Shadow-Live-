@@ -9,7 +9,11 @@ const CATEGORIES = new Set([
   "vip",
   "lucky",
   "activities",
+  "cp",
+  "friends",
 ]);
+
+const EFFECT_MODES = new Set(["none", "seat", "cinematic"]);
 
 function clean(value) {
   return String(value ?? "").trim();
@@ -112,6 +116,23 @@ function publicCatalog(config) {
       localPlaceholder: clean(
         item.localPlaceholder || "assets/images/gifts/gift_placeholder.webp",
       ),
+      isAnimated: item.isAnimated === true,
+      effectMode: EFFECT_MODES.has(clean(item.effectMode))
+        ? clean(item.effectMode)
+        : "none",
+      effectAssetKey: clean(
+        item.effectAssetKey || item.assetKey || "gifts.placeholder.default",
+      ),
+      effectMinQuantity: Math.max(0, Number(item.effectMinQuantity || 0)),
+      effectDurationMs: Math.max(
+        300,
+        Math.min(12000, Number(item.effectDurationMs || 2200)),
+      ),
+      premiumBannerMinQuantity: Math.max(
+        0,
+        Number(item.premiumBannerMinQuantity || 0),
+      ),
+      affinityBasePoints: Math.max(0, Number(item.affinityBasePoints || 0)),
     }))
     .filter((item) =>
       item.id &&
@@ -145,6 +166,16 @@ function validateGifts(raw) {
     const localPlaceholder = clean(
       item?.localPlaceholder || "assets/images/gifts/gift_placeholder.webp",
     );
+    const isAnimated = item?.isAnimated === true;
+    const effectMode = clean(item?.effectMode || "none");
+    const effectAssetKey = clean(item?.effectAssetKey || assetKey);
+    const effectMinQuantity = Number(item?.effectMinQuantity || 0);
+    const effectDurationMs = Number(item?.effectDurationMs || 2200);
+    const premiumBannerMinQuantity = Number(
+      item?.premiumBannerMinQuantity || 0,
+    );
+    const affinityBasePoints = Number(item?.affinityBasePoints || 0);
+    const relationshipGift = category === "cp" || category === "friends";
 
     if (!/^[a-z0-9_]{2,64}$/.test(id)) throw Error("invalid_gift_id");
     if (ids.has(id)) throw Error("duplicate_gift_id");
@@ -169,6 +200,45 @@ function validateGifts(raw) {
     ) {
       throw Error("invalid_placeholder_path");
     }
+    if (!EFFECT_MODES.has(effectMode)) throw Error("invalid_effect_mode");
+    if (
+      !/^[a-z0-9][a-z0-9._-]{2,119}$/.test(effectAssetKey)
+    ) {
+      throw Error("invalid_effect_asset_key");
+    }
+    if (
+      !Number.isSafeInteger(effectMinQuantity) ||
+      effectMinQuantity < 0 ||
+      effectMinQuantity > 777 ||
+      (effectMode === "none" && effectMinQuantity !== 0) ||
+      (effectMode !== "none" && effectMinQuantity < 1)
+    ) {
+      throw Error("invalid_effect_min_quantity");
+    }
+    if (
+      !Number.isSafeInteger(effectDurationMs) ||
+      effectDurationMs < 300 ||
+      effectDurationMs > 12000
+    ) {
+      throw Error("invalid_effect_duration");
+    }
+    if (
+      !Number.isSafeInteger(premiumBannerMinQuantity) ||
+      premiumBannerMinQuantity < 0 ||
+      premiumBannerMinQuantity > 777
+    ) {
+      throw Error("invalid_premium_banner_quantity");
+    }
+    if (
+      !Number.isSafeInteger(affinityBasePoints) ||
+      affinityBasePoints < 0 ||
+      affinityBasePoints > 1000000000 ||
+      (relationshipGift &&
+        (affinityBasePoints < 2 || affinityBasePoints % 2 !== 0)) ||
+      (!relationshipGift && affinityBasePoints !== 0)
+    ) {
+      throw Error("invalid_affinity_base_points");
+    }
 
     return {
       id,
@@ -181,6 +251,13 @@ function validateGifts(raw) {
       sortOrder: index,
       assetKey,
       localPlaceholder,
+      isAnimated,
+      effectMode,
+      effectAssetKey,
+      effectMinQuantity,
+      effectDurationMs,
+      premiumBannerMinQuantity,
+      affinityBasePoints,
     };
   });
 }
@@ -274,6 +351,12 @@ export async function handler(req, res) {
               "invalid_gift_vip_level",
               "invalid_asset_key",
               "invalid_placeholder_path",
+              "invalid_effect_mode",
+              "invalid_effect_asset_key",
+              "invalid_effect_min_quantity",
+              "invalid_effect_duration",
+              "invalid_premium_banner_quantity",
+              "invalid_affinity_base_points",
               "invalid_action",
             ].includes(code)
             ? 400
