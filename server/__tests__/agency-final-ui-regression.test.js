@@ -21,16 +21,24 @@ test("Agencies final UI keeps account images and pending request layout stable",
   const hostSource = source("cloudflare-worker/src/agency-host.js");
 
   assert.equal(
+    membershipSource.includes("loadPublicProfilePresentations"),
+    true,
+  );
+  assert.equal(
+    hostSource.includes("loadPublicProfilePresentation"),
+    true,
+  );
+  assert.equal(
     membershipSource.includes(
       "profileImageUrl || user.photoUrl || user.avatarUrl",
     ),
-    true,
+    false,
   );
   assert.equal(
     hostSource.includes(
       "user.profileImageUrl || user.photoUrl || user.avatarUrl",
     ),
-    true,
+    false,
   );
   assert.equal(
     ownerPage.includes("owner-agency-pending-${request.requestId}"),
@@ -48,12 +56,17 @@ test("Agencies final UI keeps account images and pending request layout stable",
   assert.equal(managerPage.includes("maxLines: 1"), true);
   assert.equal(managerPage.includes("agency-review-copy-id-"), true);
   assert.equal(managerPage.includes("سبب الرفض — اختياري"), true);
+  assert.equal(controlPage.includes("ProfileAvatarWithFrame("), true);
   assert.equal(controlPage.includes("profileImageUrl"), true);
+  assert.equal(
+    controlSource.includes("loadPublicProfilePresentations"),
+    true,
+  );
   assert.equal(
     controlSource.includes(
       "user.profileImageUrl || user.photoUrl || user.avatarUrl",
     ),
-    true,
+    false,
   );
 });
 
