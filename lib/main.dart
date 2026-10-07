@@ -1212,21 +1212,14 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                               contentPadding: EdgeInsets.zero,
                               leading: ProfileAvatarWithFrame(
                                 diameter: 40,
+                                userId: ban.uid,
                                 backgroundColor:
                                     const Color(0xFF25183F),
                                 placeholderColor: Colors.white54,
-                                profile: profileAvatarFrameData(
-                                  imageUrl: ban.profileImageUrl,
-                                  avatarAsset: ban.profileAvatarAsset,
-                                  frameAssetKey:
-                                      ban.activeProfileFrameAssetKey,
-                                  frameImageUrl:
-                                      ban.activeProfileFrameImageUrl,
-                                  frameExpiresAtMs:
-                                      ban.activeProfileFrameExpiresAtMs,
-                                  framePermanent:
-                                      ban.activeProfileFramePermanent,
-                                ),
+                                fallbackProfile: <String, dynamic>{
+                                  'profileImageUrl': ban.profileImageUrl,
+                                  'profileAvatarAsset': ban.profileAvatarAsset,
+                                },
                               ),
                               title: Text(
                                 ban.displayName,
@@ -1458,20 +1451,13 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                               },
                               leading: ProfileAvatarWithFrame(
                                 diameter: 40,
+                                userId: user.uid,
                                 backgroundColor:
                                     const Color(0xFF25183F),
                                 placeholderColor: Colors.white54,
-                                profile: profileAvatarFrameData(
-                                  imageUrl: user.profileImageUrl,
-                                  frameAssetKey:
-                                      user.activeProfileFrameAssetKey,
-                                  frameImageUrl:
-                                      user.activeProfileFrameImageUrl,
-                                  frameExpiresAtMs:
-                                      user.activeProfileFrameExpiresAtMs,
-                                  framePermanent:
-                                      user.activeProfileFramePermanent,
-                                ),
+                                fallbackProfile: <String, dynamic>{
+                                  'profileImageUrl': user.profileImageUrl,
+                                },
                                 vipLevel: user.vipLevel,
                                 useVipFallback: true,
                               ),
@@ -2089,22 +2075,15 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                       },
                                 leading: ProfileAvatarWithFrame(
                                   diameter: 40,
+                                  userId: supporter.uid,
                                   backgroundColor:
                                       const Color(0xFF25183F),
                                   placeholderColor:
                                       const Color(0xFFFFD54A),
-                                  profile: profileAvatarFrameData(
-                                    imageUrl:
+                                  fallbackProfile: <String, dynamic>{
+                                    'profileImageUrl':
                                         supporter.profileImageUrl,
-                                    frameAssetKey: supporter
-                                        .activeProfileFrameAssetKey,
-                                    frameImageUrl: supporter
-                                        .activeProfileFrameImageUrl,
-                                    frameExpiresAtMs: supporter
-                                        .activeProfileFrameExpiresAtMs,
-                                    framePermanent: supporter
-                                        .activeProfileFramePermanent,
-                                  ),
+                                  },
                                   vipLevel: supporter.vipLevel,
                                   useVipFallback: true,
                                 ),
@@ -5445,19 +5424,12 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
               children: [
                 ProfileAvatarWithFrame(
                   diameter: 28,
+                  userId: supporter.uid,
                   backgroundColor: const Color(0xFF25183F),
                   placeholderColor: Colors.white,
-                  profile: profileAvatarFrameData(
-                    imageUrl: supporter.profileImageUrl,
-                    frameAssetKey:
-                        supporter.activeProfileFrameAssetKey,
-                    frameImageUrl:
-                        supporter.activeProfileFrameImageUrl,
-                    frameExpiresAtMs:
-                        supporter.activeProfileFrameExpiresAtMs,
-                    framePermanent:
-                        supporter.activeProfileFramePermanent,
-                  ),
+                  fallbackProfile: <String, dynamic>{
+                    'profileImageUrl': supporter.profileImageUrl,
+                  },
                   vipLevel: supporter.vipLevel,
                   useVipFallback: true,
                 ),
