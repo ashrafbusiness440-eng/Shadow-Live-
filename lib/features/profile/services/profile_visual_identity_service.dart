@@ -73,7 +73,11 @@ class ProfileVisualIdentityService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final Map<String, _CachedVisualIdentity> _cache = {};
   final Map<String, Completer<ProfileVisualIdentity>> _pending = {};
+  final StreamController<String> _invalidations =
+      StreamController<String>.broadcast();
   Timer? _flushTimer;
+
+  Stream<String> get invalidations => _invalidations.stream;
 
   Future<ProfileVisualIdentity> load(String uid) {
     final normalized = uid.trim();
@@ -123,6 +127,7 @@ class ProfileVisualIdentityService {
     final normalized = uid.trim();
     if (normalized.isEmpty) return;
     _cache.remove(normalized);
+    _invalidations.add(normalized);
   }
 
   void clear() {
