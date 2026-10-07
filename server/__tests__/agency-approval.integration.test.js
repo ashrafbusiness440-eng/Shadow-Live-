@@ -32,6 +32,13 @@ async function seedUser(uid, publicId = null, extra = {}) {
     publicId: publicId || "",
     ...extra,
   });
+  await adminDb.collection("public_profiles").doc(uid).set({
+    uid,
+    publicId: publicId || "",
+    displayName: extra.displayName || "Shadow Live",
+    profileImageUrl: extra.profileImageUrl || "",
+    profileAvatarAsset: extra.profileAvatarAsset || "",
+  }, { merge: true });
   if (publicId) {
     await adminDb.collection("public_ids").doc(publicId).set({ uid });
   }
@@ -342,14 +349,24 @@ test("review details lazily return applicant and Host cards with availability", 
     "334901",
     ["334001","334002","334003","334004","334005"],
   );
-  await adminDb.collection("users").doc(seeded.ownerUid).set({
-    displayName: "Review Owner",
-    profileImageUrl: "https://example.test/owner.webp",
-  }, { merge: true });
-  await adminDb.collection("users").doc(seeded.hostUids[0]).set({
-    displayName: "Review Host",
-    profileImageUrl: "https://example.test/host.webp",
-  }, { merge: true });
+  await Promise.all([
+    adminDb.collection("users").doc(seeded.ownerUid).set({
+      displayName: "Review Owner",
+      profileImageUrl: "https://example.test/owner.webp",
+    }, { merge: true }),
+    adminDb.collection("public_profiles").doc(seeded.ownerUid).set({
+      displayName: "Review Owner",
+      profileImageUrl: "https://example.test/owner.webp",
+    }, { merge: true }),
+    adminDb.collection("users").doc(seeded.hostUids[0]).set({
+      displayName: "Review Host",
+      profileImageUrl: "https://example.test/host.webp",
+    }, { merge: true }),
+    adminDb.collection("public_profiles").doc(seeded.hostUids[0]).set({
+      displayName: "Review Host",
+      profileImageUrl: "https://example.test/host.webp",
+    }, { merge: true }),
+  ]);
 
   await startAgencyReview(
     db,
