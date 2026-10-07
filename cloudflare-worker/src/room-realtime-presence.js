@@ -29,6 +29,14 @@ export function presenceSnapshotFromAttachments(
         uid,
         displayName: clean(item.displayName) || "مستخدم Shadow Live",
         profileImageUrl: clean(item.profileImageUrl),
+        activeProfileFrameAssetKey: clean(item.activeProfileFrameAssetKey),
+        activeProfileFrameImageUrl: clean(item.activeProfileFrameImageUrl),
+        activeProfileFrameExpiresAtMs: Math.max(
+          0,
+          Number(item.activeProfileFrameExpiresAtMs || 0),
+        ),
+        activeProfileFramePermanent:
+          item.activeProfileFramePermanent === true,
         vipLevel,
         vipOnlinePriority: vipLevel >= 2,
         joinedAtMs,
@@ -42,6 +50,21 @@ export function presenceSnapshotFromAttachments(
     existing.vipOnlinePriority = existing.vipLevel >= 2;
     if (!existing.profileImageUrl && clean(item.profileImageUrl)) {
       existing.profileImageUrl = clean(item.profileImageUrl);
+    }
+    if (
+      !existing.activeProfileFrameAssetKey &&
+      clean(item.activeProfileFrameAssetKey)
+    ) {
+      existing.activeProfileFrameAssetKey =
+        clean(item.activeProfileFrameAssetKey);
+      existing.activeProfileFrameImageUrl =
+        clean(item.activeProfileFrameImageUrl);
+      existing.activeProfileFrameExpiresAtMs = Math.max(
+        0,
+        Number(item.activeProfileFrameExpiresAtMs || 0),
+      );
+      existing.activeProfileFramePermanent =
+        item.activeProfileFramePermanent === true;
     }
     if (existing.displayName === "مستخدم Shadow Live" && clean(item.displayName)) {
       existing.displayName = clean(item.displayName);
