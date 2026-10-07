@@ -202,5 +202,10 @@ test("Agency application review cards are lazy and open the full profile", () =>
     block.includes("db.get(\`agency_user_memberships/\${person.uid}\`)"),
     true,
   );
+  assert.equal(block.includes("loadPublicProfilePresentations"), true);
+  assert.equal(
+    block.includes("limit: AGENCY_LIMITS.maxApplicationHostIds + 1"),
+    true,
+  );
   assert.equal(block.includes("runQuery("), false);
 });
