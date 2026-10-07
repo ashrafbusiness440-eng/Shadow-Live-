@@ -7,6 +7,7 @@ import '../../../services/navigation_service.dart';
 import '../../../utils/compact_number.dart';
 import '../../wallet/screens/recharge_screen.dart';
 import '../../profile/screens/public_profile_screen.dart';
+import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../services/discovery_service.dart';
 import 'discovery_search_screen.dart';
 
@@ -178,7 +179,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 controller: _scrollController,
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
                 children: [
-                  _header(name, level, coins, diamonds),
+                  _header(
+                    name,
+                    level,
+                    coins,
+                    diamonds,
+                    userData ?? const <String, dynamic>{},
+                  ),
                   if (_loading) ...[
                     const SizedBox(height: 10),
                     const LinearProgressIndicator(
@@ -662,26 +669,20 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _header(String name, String level, String coins, String diamonds) {
-    final image = _profileImage();
+  Widget _header(
+    String name,
+    String level,
+    String coins,
+    String diamonds,
+    Map<String, dynamic> profile,
+  ) {
     return Row(
       children: [
-        Container(
-          width: 50,
-          height: 50,
-          padding: const EdgeInsets.all(2),
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: const LinearGradient(colors: [_gold, _purple]),
-            border: Border.all(color: Colors.white24),
-          ),
-          child: CircleAvatar(
-            backgroundColor: const Color(0xFF171D31),
-            backgroundImage: image,
-            child: image == null
-                ? const Icon(Icons.person_rounded, color: Colors.white, size: 28)
-                : null,
-          ),
+        ProfileAvatarWithFrame(
+          diameter: 50,
+          profile: profile,
+          backgroundColor: const Color(0xFF171D31),
+          placeholderColor: Colors.white,
         ),
         const SizedBox(width: 10),
         Expanded(
@@ -1047,27 +1048,11 @@ class _PersonCard extends StatelessWidget {
             Stack(
               clipBehavior: Clip.none,
               children: [
-                Container(
-                  width: 52,
-                  height: 52,
-                  clipBehavior: Clip.antiAlias,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Color(0xFF281847),
-                  ),
-                  child: person.avatarUrl.isNotEmpty
-                      ? CachedNetworkImage(
-                          imageUrl: person.avatarUrl,
-                          fit: BoxFit.cover,
-                          errorWidget: (_, __, ___) => const Icon(
-                            Icons.person_rounded,
-                            color: Colors.white54,
-                          ),
-                        )
-                      : const Icon(
-                          Icons.person_rounded,
-                          color: Colors.white54,
-                        ),
+                ProfileAvatarWithFrame(
+                  diameter: 52,
+                  profile: person.data,
+                  backgroundColor: const Color(0xFF281847),
+                  placeholderColor: Colors.white54,
                 ),
                 if (person.isOnline)
                   PositionedDirectional(
