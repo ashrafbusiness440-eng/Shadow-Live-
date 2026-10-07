@@ -389,12 +389,14 @@ export async function handler(req, res) {
     }
 
     if (action === "grantBagGift") {
-      const targetUid = clean(req.body?.targetUid);
+      const targetUserId = clean(
+        req.body?.targetUserId || req.body?.targetUid,
+      );
       const giftId = clean(req.body?.giftId);
       const quantity = Number(req.body?.quantity || 0);
       const source = clean(req.body?.source || "admin");
       if (
-        !/^[A-Za-z0-9_-]{1,180}$/.test(targetUid) ||
+        !/^[A-Za-z0-9_-]{1,180}$/.test(targetUserId) ||
         !/^[a-z0-9_]{2,64}$/.test(giftId) ||
         !Number.isSafeInteger(quantity) ||
         quantity < 1 ||
@@ -408,8 +410,19 @@ export async function handler(req, res) {
       const gift = publicCatalog(state.config)
         .find((item) => item.id === giftId);
       if (!gift) throw Error("gift_not_found");
-      const target = await db.collection("users").doc(targetUid).get();
-      if (!target.exists) throw Error("target_not_found");
+
+      let target = await db.collection("users").doc(targetUserId).get();
+      let targetUid = target.exists ? target.id : "";
+      if (!target.exists) {
+        const byPublicId = await db
+          .collection("users")
+          .where("publicId", "==", targetUserId)
+          .limit(2)
+          .get();
+        if (byPublicId.size !== 1) throw Error("target_not_found");
+        target = byPublicId.docs[0];
+        targetUid = target.id;
+      }
 
       const itemRef = db
         .collection("user_gift_bags")
