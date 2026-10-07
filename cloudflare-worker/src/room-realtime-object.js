@@ -334,11 +334,17 @@ export class RoomRealtimeObject extends DurableObject {
       const requested = Number(url.searchParams.get("limit") || 24);
       const limit = Math.max(1, Math.min(64, Math.floor(requested)));
       const participants = this.#presenceSnapshot();
+      const requiredUid = String(
+        url.searchParams.get("requiredUid") || "",
+      ).trim();
       return Response.json({
         ok: true,
         onlineCount: participants.length,
         participants: participants.slice(0, limit),
         truncated: participants.length > limit,
+        requiredUidPresent: requiredUid
+          ? hasPresenceUid(this.#presenceAttachments(), requiredUid)
+          : null,
       });
     }
     if (url.pathname === "/presence/count" && request.method === "GET") {
