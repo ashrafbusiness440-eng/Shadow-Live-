@@ -1204,6 +1204,7 @@ export async function manageAppAsset(request, env) {
 
     const studio = validateAssetStudioMetadata({
       studioVersion: body.studioVersion,
+      assetKey,
       assetType: body.assetType,
       templateId: body.templateId,
       channels: body.channels,
