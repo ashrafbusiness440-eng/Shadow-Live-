@@ -1210,21 +1210,23 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                             final ban = bans[index];
                             return ListTile(
                               contentPadding: EdgeInsets.zero,
-                              leading: CircleAvatar(
+                              leading: ProfileAvatarWithFrame(
+                                diameter: 40,
                                 backgroundColor:
                                     const Color(0xFF25183F),
-                                backgroundImage:
-                                    ban.profileImageUrl.isEmpty
-                                        ? null
-                                        : NetworkImage(
-                                            ban.profileImageUrl,
-                                          ),
-                                child: ban.profileImageUrl.isEmpty
-                                    ? const Icon(
-                                        Icons.person_rounded,
-                                        color: Colors.white54,
-                                      )
-                                    : null,
+                                placeholderColor: Colors.white54,
+                                profile: profileAvatarFrameData(
+                                  imageUrl: ban.profileImageUrl,
+                                  avatarAsset: ban.profileAvatarAsset,
+                                  frameAssetKey:
+                                      ban.activeProfileFrameAssetKey,
+                                  frameImageUrl:
+                                      ban.activeProfileFrameImageUrl,
+                                  frameExpiresAtMs:
+                                      ban.activeProfileFrameExpiresAtMs,
+                                  framePermanent:
+                                      ban.activeProfileFramePermanent,
+                                ),
                               ),
                               title: Text(
                                 ban.displayName,
