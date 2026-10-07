@@ -3180,14 +3180,6 @@ function activeMemberSummary(row, userSnap, profile = {}) {
     displayName: publicProfile.displayName,
     profileImageUrl: publicProfile.profileImageUrl,
     profileAvatarAsset: publicProfile.profileAvatarAsset,
-    activeProfileFrameAssetKey:
-      publicProfile.activeProfileFrameAssetKey,
-    activeProfileFrameImageUrl:
-      publicProfile.activeProfileFrameImageUrl,
-    activeProfileFrameExpiresAtMs:
-      publicProfile.activeProfileFrameExpiresAtMs,
-    activeProfileFramePermanent:
-      publicProfile.activeProfileFramePermanent,
     accountStatus: clean(user.accountStatus || "active"),
   };
 }
@@ -3561,14 +3553,6 @@ function pendingRequestView({
     displayName: publicProfile.displayName,
     profileImageUrl: publicProfile.profileImageUrl,
     profileAvatarAsset: publicProfile.profileAvatarAsset,
-    activeProfileFrameAssetKey:
-      publicProfile.activeProfileFrameAssetKey,
-    activeProfileFrameImageUrl:
-      publicProfile.activeProfileFrameImageUrl,
-    activeProfileFrameExpiresAtMs:
-      publicProfile.activeProfileFrameExpiresAtMs,
-    activeProfileFramePermanent:
-      publicProfile.activeProfileFramePermanent,
     accountStatus: clean(user.accountStatus || "active"),
     conflictStatus: pendingConflictStatus({
       agencyId,
