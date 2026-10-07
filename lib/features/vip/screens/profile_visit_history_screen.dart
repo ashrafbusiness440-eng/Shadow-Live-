@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/profile_visit_service.dart';
+import '../../profile/widgets/profile_avatar_with_frame.dart';
 
 class ProfileVisitHistoryScreen extends StatefulWidget {
   const ProfileVisitHistoryScreen({super.key});
@@ -155,7 +156,6 @@ class _ProfileVisitHistoryScreenState extends State<ProfileVisitHistoryScreen>
   }
 
   Widget _tile(ProfileVisitItem item) {
-    final image = item.profileImageUrl.trim();
     final date = item.lastVisitedAt?.toLocal();
     final dateText = date == null
         ? ''
@@ -164,13 +164,19 @@ class _ProfileVisitHistoryScreenState extends State<ProfileVisitHistoryScreen>
 
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 7),
-      leading: CircleAvatar(
-        radius: 24,
+      leading: ProfileAvatarWithFrame(
+        diameter: 48,
         backgroundColor: const Color(0xFF25183F),
-        backgroundImage: image.isEmpty ? null : NetworkImage(image),
-        child: image.isEmpty
-            ? const Icon(Icons.person_rounded, color: Color(0xFFFFD166))
-            : null,
+        placeholderColor: const Color(0xFFFFD166),
+        profile: profileAvatarFrameData(
+          imageUrl: item.profileImageUrl,
+          frameAssetKey: item.activeProfileFrameAssetKey,
+          frameImageUrl: item.activeProfileFrameImageUrl,
+          frameExpiresAtMs: item.activeProfileFrameExpiresAtMs,
+          framePermanent: item.activeProfileFramePermanent,
+        ),
+        vipLevel: item.effectiveVipLevel,
+        useVipFallback: true,
       ),
       title: Text(
         item.displayName,
