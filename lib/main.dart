@@ -5708,6 +5708,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                   : () => showRoomGiftSheet(
                         context,
                         roomId: roomId,
+                        participants: _voiceSession.roomParticipants,
+                        seats: _roomSeatState?.seats ?? const <VoiceSeat>[],
                       ),
               color: const Color(0xFFFFD54A),
             ),
