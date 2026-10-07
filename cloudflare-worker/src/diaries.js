@@ -3,6 +3,11 @@ import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 import { adminInboxUpsertWrite } from "./admin-inbox-index.js";
+import {
+  loadPublicProfilePresentation,
+  loadPublicProfilePresentations,
+  publicProfilePresentation,
+} from "./public-profile-presentation.js";
 
 const clean = (value) => String(value ?? "").trim();
 const MAX_TEXT_LENGTH = 500;
@@ -166,13 +171,25 @@ function makeCursor(row) {
   return `${createdAtMs}|${diaryId}`;
 }
 
-function publicAuthorSnapshot(user = {}, uid = "") {
+function publicAuthorSnapshot(profile = {}, uid = "") {
+  const current = {
+    ...publicProfilePresentation(uid),
+    ...profile,
+  };
   return {
     ownerUid: uid,
-    ownerName: clean(user.displayName || user.name || "مستخدم Shadow Live").slice(0, 80),
-    ownerPublicId: clean(user.publicId).slice(0, 16),
-    ownerProfileImageUrl: clean(user.profileImageUrl).slice(0, 1000),
-    ownerProfileAvatarAsset: clean(user.profileAvatarAsset).slice(0, 500),
+    ownerName: clean(current.displayName || "مستخدم Shadow Live").slice(0, 80),
+    ownerPublicId: clean(current.publicId).slice(0, 16),
+    ownerProfileImageUrl: clean(current.profileImageUrl).slice(0, 1000),
+    ownerProfileAvatarAsset: clean(current.profileAvatarAsset).slice(0, 500),
+    activeProfileFrameAssetKey:
+      clean(current.activeProfileFrameAssetKey),
+    activeProfileFrameImageUrl:
+      clean(current.activeProfileFrameImageUrl),
+    activeProfileFrameExpiresAtMs:
+      Math.max(0, Number(current.activeProfileFrameExpiresAtMs || 0)),
+    activeProfileFramePermanent:
+      current.activeProfileFramePermanent === true,
   };
 }
 
@@ -314,48 +331,34 @@ function publicImageSnapshot(objectId, object = {}) {
   };
 }
 
-function currentProfileFrame(data = {}) {
-  return {
-    activeProfileFrameAssetKey: clean(data.activeProfileFrameAssetKey),
-    activeProfileFrameImageUrl: clean(data.activeProfileFrameImageUrl),
-    activeProfileFrameExpiresAtMs: Math.max(
-      0,
-      Number(data.activeProfileFrameExpiresAtMs || 0),
-    ),
-    activeProfileFramePermanent: data.activeProfileFramePermanent === true,
+function normalizeDiary(id, data = {}, profile = null) {
+  const ownerUid = clean(data.ownerUid);
+  const current = {
+    ...publicProfilePresentation(ownerUid, {
+      displayName: data.ownerName,
+      publicId: data.ownerPublicId,
+      profileImageUrl: data.ownerProfileImageUrl,
+      profileAvatarAsset: data.ownerProfileAvatarAsset,
+      activeProfileFrameAssetKey: data.activeProfileFrameAssetKey,
+      activeProfileFrameImageUrl: data.activeProfileFrameImageUrl,
+      activeProfileFrameExpiresAtMs: data.activeProfileFrameExpiresAtMs,
+      activeProfileFramePermanent: data.activeProfileFramePermanent,
+    }),
+    ...(profile || {}),
   };
-}
-
-async function loadCurrentProfileFrames(db, uidInputs = []) {
-  const uids = [...new Set(
-    uidInputs.map(clean).filter(Boolean),
-  )].slice(0, MAX_PAGE_SIZE);
-  const frames = new Map();
-  const concurrency = 8;
-  for (let offset = 0; offset < uids.length; offset += concurrency) {
-    const batch = uids.slice(offset, offset + concurrency);
-    const snapshots = await Promise.all(
-      batch.map((uid) => db.get(`public_profiles/${uid}`)),
-    );
-    for (let index = 0; index < batch.length; index += 1) {
-      const snapshot = snapshots[index];
-      if (!snapshot?.exists) continue;
-      frames.set(batch[index], currentProfileFrame(snapshot.data || {}));
-    }
-  }
-  return frames;
-}
-
-function normalizeDiary(id, data = {}, frame = null) {
-  const currentFrame = frame || currentProfileFrame(data);
   return {
     diaryId: id,
-    ownerUid: clean(data.ownerUid),
-    ownerName: clean(data.ownerName),
-    ownerPublicId: clean(data.ownerPublicId),
-    ownerProfileImageUrl: clean(data.ownerProfileImageUrl),
-    ownerProfileAvatarAsset: clean(data.ownerProfileAvatarAsset),
-    ...currentFrame,
+    ownerUid,
+    ownerName: clean(current.displayName),
+    ownerPublicId: clean(current.publicId),
+    ownerProfileImageUrl: clean(current.profileImageUrl),
+    ownerProfileAvatarAsset: clean(current.profileAvatarAsset),
+    activeProfileFrameAssetKey: clean(current.activeProfileFrameAssetKey),
+    activeProfileFrameImageUrl: clean(current.activeProfileFrameImageUrl),
+    activeProfileFrameExpiresAtMs:
+      Math.max(0, Number(current.activeProfileFrameExpiresAtMs || 0)),
+    activeProfileFramePermanent:
+      current.activeProfileFramePermanent === true,
     text: clean(data.text),
     images: Array.isArray(data.images) ? data.images : [],
     commentsEnabled: data.commentsEnabled !== false,
@@ -767,17 +770,35 @@ async function toggleLike(db, uid, body) {
   });
 }
 
-function normalizeComment(id, data = {}, frame = null) {
-  const currentFrame = frame || currentProfileFrame(data);
+function normalizeComment(id, data = {}, profile = null) {
+  const authorUid = clean(data.authorUid);
+  const current = {
+    ...publicProfilePresentation(authorUid, {
+      displayName: data.authorName,
+      publicId: data.authorPublicId,
+      profileImageUrl: data.authorProfileImageUrl,
+      profileAvatarAsset: data.authorProfileAvatarAsset,
+      activeProfileFrameAssetKey: data.activeProfileFrameAssetKey,
+      activeProfileFrameImageUrl: data.activeProfileFrameImageUrl,
+      activeProfileFrameExpiresAtMs: data.activeProfileFrameExpiresAtMs,
+      activeProfileFramePermanent: data.activeProfileFramePermanent,
+    }),
+    ...(profile || {}),
+  };
   return {
     commentId: id,
     diaryId: clean(data.diaryId),
-    authorUid: clean(data.authorUid),
-    authorName: clean(data.authorName),
-    authorPublicId: clean(data.authorPublicId),
-    authorProfileImageUrl: clean(data.authorProfileImageUrl),
-    authorProfileAvatarAsset: clean(data.authorProfileAvatarAsset),
-    ...currentFrame,
+    authorUid,
+    authorName: clean(current.displayName),
+    authorPublicId: clean(current.publicId),
+    authorProfileImageUrl: clean(current.profileImageUrl),
+    authorProfileAvatarAsset: clean(current.profileAvatarAsset),
+    activeProfileFrameAssetKey: clean(current.activeProfileFrameAssetKey),
+    activeProfileFrameImageUrl: clean(current.activeProfileFrameImageUrl),
+    activeProfileFrameExpiresAtMs:
+      Math.max(0, Number(current.activeProfileFrameExpiresAtMs || 0)),
+    activeProfileFramePermanent:
+      current.activeProfileFramePermanent === true,
     text: clean(data.text),
     createdAt: data.createdAt || null,
     createdAtMs: Math.max(0, Number(data.createdAtMs || 0)),
@@ -1479,17 +1500,34 @@ async function listFollowing(db, uid, body) {
   };
 }
 
-function normalizeGiftEvent(id, data = {}, frame = null) {
-  const currentFrame = frame || currentProfileFrame(data);
+function normalizeGiftEvent(id, data = {}, profile = null) {
+  const senderId = clean(data.senderId);
+  const current = {
+    ...publicProfilePresentation(senderId, {
+      displayName: data.senderName,
+      publicId: data.senderPublicId,
+      profileImageUrl: data.senderProfileImageUrl,
+      activeProfileFrameAssetKey: data.activeProfileFrameAssetKey,
+      activeProfileFrameImageUrl: data.activeProfileFrameImageUrl,
+      activeProfileFrameExpiresAtMs: data.activeProfileFrameExpiresAtMs,
+      activeProfileFramePermanent: data.activeProfileFramePermanent,
+    }),
+    ...(profile || {}),
+  };
   return {
     giftEventId: id,
     giftOperationId: clean(data.giftOperationId || id),
     diaryId: clean(data.diaryId),
-    senderId: clean(data.senderId),
-    senderName: clean(data.senderName),
-    senderPublicId: clean(data.senderPublicId),
-    senderProfileImageUrl: clean(data.senderProfileImageUrl),
-    ...currentFrame,
+    senderId,
+    senderName: clean(current.displayName),
+    senderPublicId: clean(current.publicId),
+    senderProfileImageUrl: clean(current.profileImageUrl),
+    activeProfileFrameAssetKey: clean(current.activeProfileFrameAssetKey),
+    activeProfileFrameImageUrl: clean(current.activeProfileFrameImageUrl),
+    activeProfileFrameExpiresAtMs:
+      Math.max(0, Number(current.activeProfileFrameExpiresAtMs || 0)),
+    activeProfileFramePermanent:
+      current.activeProfileFramePermanent === true,
     receiverId: clean(data.receiverId),
     giftId: clean(data.giftId),
     giftName: clean(data.giftName),
