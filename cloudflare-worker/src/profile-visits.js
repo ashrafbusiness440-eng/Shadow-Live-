@@ -31,6 +31,14 @@ function publicSnapshot(data = {}, uid = "") {
     publicId: clean(data.publicId),
     displayName: clean(data.displayName || data.username || "مستخدم Shadow Live"),
     profileImageUrl: clean(data.profileImageUrl),
+    activeProfileFrameAssetKey: clean(data.activeProfileFrameAssetKey),
+    activeProfileFrameImageUrl: clean(data.activeProfileFrameImageUrl),
+    activeProfileFrameExpiresAtMs: Math.max(
+      0,
+      Number(data.activeProfileFrameExpiresAtMs || 0),
+    ),
+    activeProfileFramePermanent:
+      data.activeProfileFramePermanent === true,
     effectiveVipLevel: Math.max(
       0,
       Math.min(10, Number(data.effectiveVipLevel ?? data.vipLevel ?? 0) || 0),
@@ -168,6 +176,44 @@ export async function recordProfileVisit(db, visitorUid, body, nowMs = Date.now(
   return { ok: true, recorded: true, hidden: false };
 }
 
+async function currentFrameByUid(db, uidInputs = []) {
+  const ids = [...new Set(
+    uidInputs.map(clean).filter((value) => UID_PATTERN.test(value)),
+  )].slice(0, HISTORY_LIMIT);
+  const frames = new Map();
+  const concurrency = 8;
+  for (let offset = 0; offset < ids.length; offset += concurrency) {
+    const batch = ids.slice(offset, offset + concurrency);
+    const profiles = await Promise.all(
+      batch.map((targetUid) => db.get(`public_profiles/${targetUid}`)),
+    );
+    for (let index = 0; index < batch.length; index += 1) {
+      const profile = profiles[index];
+      if (!profile?.exists) continue;
+      const data = profile.data || {};
+      frames.set(batch[index], {
+        profileImageUrl: clean(data.profileImageUrl),
+        activeProfileFrameAssetKey: clean(data.activeProfileFrameAssetKey),
+        activeProfileFrameImageUrl: clean(data.activeProfileFrameImageUrl),
+        activeProfileFrameExpiresAtMs: Math.max(
+          0,
+          Number(data.activeProfileFrameExpiresAtMs || 0),
+        ),
+        activeProfileFramePermanent:
+          data.activeProfileFramePermanent === true,
+        effectiveVipLevel: Math.max(
+          0,
+          Math.min(
+            10,
+            Number(data.effectiveVipLevel ?? data.vipLevel ?? 0) || 0,
+          ),
+        ),
+      });
+    }
+  }
+  return frames;
+}
+
 export async function profileVisitHistory(db, uid, body, nowMs = Date.now()) {
   const actorUser = await loadActorState(db, uid);
   if (activeEffectiveVipLevelFromUser(actorUser, nowMs) < 1) {
@@ -185,14 +231,23 @@ export async function profileVisitHistory(db, uid, body, nowMs = Date.now()) {
     limit: HISTORY_LIMIT,
   });
 
+  const frames = await currentFrameByUid(
+    db,
+    rows.map((row) => clean(row.data?.uid || row.id)),
+  );
+
   return {
     ok: true,
     mode,
     limit: HISTORY_LIMIT,
-    items: rows.map((row) => ({
-      ...row.data,
-      id: row.id,
-    })),
+    items: rows.map((row) => {
+      const targetUid = clean(row.data?.uid || row.id);
+      return {
+        ...row.data,
+        ...(frames.get(targetUid) || {}),
+        id: row.id,
+      };
+    }),
   };
 }
 
