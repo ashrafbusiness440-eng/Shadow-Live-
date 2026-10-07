@@ -28,6 +28,13 @@ async function seedUser(uid, publicId, extra = {}) {
     publicId,
     ...extra,
   });
+  await adminDb.collection("public_profiles").doc(uid).set({
+    uid,
+    publicId,
+    displayName: extra.displayName || "Shadow Live",
+    profileImageUrl: extra.profileImageUrl || "",
+    profileAvatarAsset: extra.profileAvatarAsset || "",
+  }, { merge: true });
 }
 
 async function seedAgency(agencyId, ownerUid, ownerPublicId) {
@@ -434,12 +441,20 @@ test("management surface lists active members with bounded profile data and role
   await seedAgency(agencyId, ownerUid, "707901");
   await addMember(agencyId, managerUid, "707101", "manager");
   await addMember(agencyId, hostUid, "707102", "host");
-  await adminDb.collection("users").doc(managerUid).set({
-    displayName: "مدير الاختبار",
-  }, { merge: true });
-  await adminDb.collection("users").doc(hostUid).set({
-    displayName: "مضيف الاختبار",
-  }, { merge: true });
+  await Promise.all([
+    adminDb.collection("users").doc(managerUid).set({
+      displayName: "مدير الاختبار",
+    }, { merge: true }),
+    adminDb.collection("public_profiles").doc(managerUid).set({
+      displayName: "مدير الاختبار",
+    }, { merge: true }),
+    adminDb.collection("users").doc(hostUid).set({
+      displayName: "مضيف الاختبار",
+    }, { merge: true }),
+    adminDb.collection("public_profiles").doc(hostUid).set({
+      displayName: "مضيف الاختبار",
+    }, { merge: true }),
+  ]);
   await adminDb.collection("agencies").doc(agencyId).set({
     memberCount: 3,
     hostCount: 1,
