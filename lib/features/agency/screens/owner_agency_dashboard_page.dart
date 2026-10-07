@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../profile/screens/public_profile_screen.dart';
+import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../services/host_my_agency_service.dart';
 import '../services/owner_agency_service.dart';
-import '../widgets/agency_user_avatar.dart';
 
 class OwnerAgencyDashboardPage extends StatefulWidget {
   const OwnerAgencyDashboardPage({
@@ -1129,10 +1129,6 @@ class _MemberManagementTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final owner = member.role == 'owner';
-    final avatar = agencyUserAvatarProvider(
-      imageUrl: member.profileImageUrl,
-      avatarAsset: member.profileAvatarAsset,
-    );
     final publicId = member.publicId?.trim() ?? '';
     final displayName =
         member.displayName ?? (publicId.isEmpty ? member.uid : publicId);
@@ -1161,14 +1157,18 @@ class _MemberManagementTile extends StatelessWidget {
                 InkWell(
                   onTap: openProfile,
                   borderRadius: BorderRadius.circular(999),
-                  child: CircleAvatar(
+                  child: ProfileAvatarWithFrame(
                     key: Key('owner-member-avatar-${member.uid}'),
-                    radius: 24,
+                    diameter: 48,
                     backgroundColor: const Color(0xFF2A3150),
-                    backgroundImage: avatar,
-                    child: avatar == null
-                        ? const Icon(Icons.person_rounded)
-                        : null,
+                    profile: profileAvatarFrameData(
+                      imageUrl: member.profileImageUrl,
+                      avatarAsset: member.profileAvatarAsset,
+                      frameAssetKey: member.activeProfileFrameAssetKey,
+                      frameImageUrl: member.activeProfileFrameImageUrl,
+                      frameExpiresAtMs: member.activeProfileFrameExpiresAtMs,
+                      framePermanent: member.activeProfileFramePermanent,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -1339,10 +1339,6 @@ class _HostPerformanceSheet extends StatelessWidget {
             }
 
             final data = snapshot.data!;
-            final avatar = agencyUserAvatarProvider(
-              imageUrl: data.profileImageUrl,
-              avatarAsset: data.profileAvatarAsset,
-            );
             final denominator =
                 data.targetCoins <= 0 ? 1 : data.targetCoins;
             final ratio =
@@ -1366,13 +1362,17 @@ class _HostPerformanceSheet extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    CircleAvatar(
-                      radius: 30,
+                    ProfileAvatarWithFrame(
+                      diameter: 60,
                       backgroundColor: const Color(0xFF2A3150),
-                      backgroundImage: avatar,
-                      child: avatar == null
-                          ? const Icon(Icons.person_rounded)
-                          : null,
+                      profile: profileAvatarFrameData(
+                        imageUrl: data.profileImageUrl,
+                        avatarAsset: data.profileAvatarAsset,
+                        frameAssetKey: data.activeProfileFrameAssetKey,
+                        frameImageUrl: data.activeProfileFrameImageUrl,
+                        frameExpiresAtMs: data.activeProfileFrameExpiresAtMs,
+                        framePermanent: data.activeProfileFramePermanent,
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -1609,10 +1609,6 @@ class _PendingManagementTile extends StatelessWidget {
             ? 'طلب انضمام'
             : 'دعوة معلّقة';
     final publicId = request.userPublicId?.trim() ?? '';
-    final avatar = agencyUserAvatarProvider(
-      imageUrl: request.profileImageUrl,
-      avatarAsset: request.profileAvatarAsset,
-    );
     final statusLabel = _pendingConflictLabel(request);
     final displayName =
         request.displayName ?? (publicId.isEmpty ? request.uid : publicId);
@@ -1641,16 +1637,18 @@ class _PendingManagementTile extends StatelessWidget {
                 InkWell(
                   onTap: request.uid.isEmpty ? null : openProfile,
                   borderRadius: BorderRadius.circular(999),
-                  child: CircleAvatar(
-                    radius: 24,
+                  child: ProfileAvatarWithFrame(
+                    diameter: 48,
                     backgroundColor: const Color(0xFF31204F),
-                    backgroundImage: avatar,
-                    child: avatar == null
-                        ? const Icon(
-                            Icons.person_rounded,
-                            color: Colors.white70,
-                          )
-                        : null,
+                    placeholderColor: Colors.white70,
+                    profile: profileAvatarFrameData(
+                      imageUrl: request.profileImageUrl,
+                      avatarAsset: request.profileAvatarAsset,
+                      frameAssetKey: request.activeProfileFrameAssetKey,
+                      frameImageUrl: request.activeProfileFrameImageUrl,
+                      frameExpiresAtMs: request.activeProfileFrameExpiresAtMs,
+                      framePermanent: request.activeProfileFramePermanent,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 10),
