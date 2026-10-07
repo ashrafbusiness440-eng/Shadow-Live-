@@ -139,13 +139,36 @@ async function findSemantics(page, needle, exact = false) {
   const all = page.locator("flt-semantics");
   const count = await all.count();
   const q = needle.trim();
+
+  const entries = [];
   for (let i = 0; i < count; i++) {
     const el = all.nth(i);
-    const label = (await el.getAttribute("aria-label").catch(() => "")) || "";
+    const label = ((await el.getAttribute("aria-label").catch(() => "")) || "").trim();
     const text = ((await el.textContent().catch(() => "")) || "").trim();
-    const hay = (label + " " + text).trim();
-    if ((exact && (label.trim() === q || text === q)) || (!exact && hay.includes(q))) {
-      return el;
+    const role = ((await el.getAttribute("role").catch(() => "")) || "").trim();
+    entries.push({ el, label, text, role, hay: (label + " " + text).trim() });
+  }
+
+  // Prefer the actual interactive target. Flutter often exposes both a parent
+  // semantics container and a child button with the same visible text.
+  for (const entry of entries) {
+    if (!["button", "tab", "textbox"].includes(entry.role)) continue;
+    if (
+      entry.label === q ||
+      entry.text === q ||
+      entry.label.startsWith(q + "\n") ||
+      (!exact && entry.hay.includes(q))
+    ) {
+      return entry.el;
+    }
+  }
+
+  for (const entry of entries) {
+    if (
+      (exact && (entry.label === q || entry.text === q)) ||
+      (!exact && entry.hay.includes(q))
+    ) {
+      return entry.el;
     }
   }
   return null;
