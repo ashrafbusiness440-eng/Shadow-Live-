@@ -163,6 +163,9 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     final effectDurationMs = TextEditingController(
       text: (current?.effectDurationMs ?? 2200).toString(),
     );
+    final effectSize = TextEditingController(
+      text: (current?.effectSize ?? 0).toString(),
+    );
     final premiumBannerMinQuantity = TextEditingController(
       text: (current?.premiumBannerMinQuantity ?? 0).toString(),
     );
@@ -309,6 +312,13 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                   ),
                   const SizedBox(height: 10),
                   field(
+                    effectSize,
+                    'حجم المؤثر (0 = تلقائي، 40–420)',
+                    '0',
+                    numeric: true,
+                  ),
+                  const SizedBox(height: 10),
+                  field(
                     premiumBannerMinQuantity,
                     'أقل كمية للشريط الفاخر (0 = معطل)',
                     '0',
@@ -358,6 +368,8 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                     int.tryParse(effectMinQuantity.text.trim()) ?? 0;
                 final parsedEffectDuration =
                     int.tryParse(effectDurationMs.text.trim()) ?? 2200;
+                final parsedEffectSize =
+                    int.tryParse(effectSize.text.trim()) ?? 0;
                 final parsedPremiumBannerMin =
                     int.tryParse(premiumBannerMinQuantity.text.trim()) ?? 0;
                 final parsedAffinity =
@@ -382,6 +394,9 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                     (effectMode != 'none' && parsedEffectMin < 1) ||
                     parsedEffectDuration < 300 ||
                     parsedEffectDuration > 12000 ||
+                    parsedEffectSize < 0 ||
+                    parsedEffectSize > 420 ||
+                    (parsedEffectSize > 0 && parsedEffectSize < 40) ||
                     parsedPremiumBannerMin < 0 ||
                     parsedPremiumBannerMin > 777 ||
                     (relationshipGift &&
@@ -409,6 +424,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                     effectSoundAssetKey: cleanEffectSoundAssetKey,
                     effectMinQuantity: parsedEffectMin,
                     effectDurationMs: parsedEffectDuration,
+                    effectSize: parsedEffectSize,
                     premiumBannerMinQuantity: parsedPremiumBannerMin,
                     affinityBasePoints: parsedAffinity,
                   ),
@@ -430,6 +446,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     effectSoundAssetKey.dispose();
     effectMinQuantity.dispose();
     effectDurationMs.dispose();
+    effectSize.dispose();
     premiumBannerMinQuantity.dispose();
     affinityBasePoints.dispose();
 
@@ -550,6 +567,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                                           item.effectSoundAssetKey,
                                       effectMinQuantity: item.effectMinQuantity,
                                       effectDurationMs: item.effectDurationMs,
+                                      effectSize: item.effectSize,
                                       premiumBannerMinQuantity:
                                           item.premiumBannerMinQuantity,
                                       affinityBasePoints:
