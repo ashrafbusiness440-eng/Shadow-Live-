@@ -113,6 +113,13 @@ class GiftCatalogService {
   static List<GiftCatalogItem>? _cachedCatalog;
   static DateTime? _loadedAt;
   static Future<List<GiftCatalogItem>>? _inflight;
+  static int? _cachedBalanceCoins;
+
+  static int? get cachedBalanceCoins => _cachedBalanceCoins;
+
+  static void updateCachedBalance(int value) {
+    _cachedBalanceCoins = value < 0 ? 0 : value;
+  }
   static const Set<String> categories = <String>{
     'general',
     'countries',
@@ -363,6 +370,10 @@ class GiftCatalogService {
       if (response.statusCode != 200 || body['ok'] != true) {
         throw StateError((body['code'] ?? 'gift_catalog_failed').toString());
       }
+      final balance = (body['balance'] as num?)?.toInt();
+      if (balance != null && balance >= 0) {
+        _cachedBalanceCoins = balance;
+      }
       return parseCatalog(body['gifts']);
     } finally {
       if (ownedClient) httpClient.close();
@@ -373,6 +384,7 @@ class GiftCatalogService {
     _cachedCatalog = null;
     _loadedAt = null;
     _inflight = null;
+    _cachedBalanceCoins = null;
   }
 
 }
