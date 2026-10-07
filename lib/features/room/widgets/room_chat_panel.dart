@@ -806,40 +806,6 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
         _ => '',
       };
 
-  Widget _senderAvatar(RoomChatMessage message) {
-    final url = message.profileImageUrl.trim();
-    if (url.isEmpty) {
-      return const CircleAvatar(
-        radius: 16,
-        backgroundColor: Color(0xFF25183F),
-        child: Icon(
-          Icons.person_rounded,
-          size: 17,
-          color: Color(0xFFFFD54A),
-        ),
-      );
-    }
-    return ClipOval(
-      child: SizedBox.square(
-        dimension: 32,
-        child: Image.network(
-          url,
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => const ColoredBox(
-            color: Color(0xFF25183F),
-            child: Center(
-              child: Icon(
-                Icons.person_rounded,
-                size: 17,
-                color: Color(0xFFFFD54A),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   Future<void> _openChatQuickProfile(RoomChatMessage message) async {
     final uid = message.senderUid.trim();
     if (uid.isEmpty) return;
