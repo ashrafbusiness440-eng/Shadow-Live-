@@ -13,6 +13,7 @@ import '../../../services/navigation_service.dart';
 import '../../main/screens/main_shell_screen.dart';
 import '../../profile/services/follow_service.dart';
 import '../../profile/widgets/quick_profile_sheet.dart';
+import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../services/chat_safety_service.dart';
 import '../../vip/utils/vip_cosmetic_policy.dart';
 import '../../vip/widgets/vip_cosmetic_asset.dart';
@@ -1107,13 +1108,9 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                       padding: const EdgeInsets.symmetric(vertical: 5),
                       child: Row(
                         children: [
-                          CircleAvatar(
-                            radius: 19,
-                            backgroundColor: const Color(0xFF25183F),
-                            backgroundImage: provider,
-                            child: provider == null
-                                ? const Icon(Icons.person, color: Color(0xFFFFD54A), size: 21)
-                                : null,
+                          ProfileAvatarWithFrame(
+                            diameter: 38,
+                            profile: data ?? const <String, dynamic>{},
                           ),
                           const SizedBox(width: 10),
                           Expanded(
