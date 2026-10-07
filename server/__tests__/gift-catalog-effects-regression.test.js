@@ -22,6 +22,7 @@ test("gift catalog owns reusable effect and relationship metadata", () => {
     "isAnimated",
     "effectMode",
     "effectAssetKey",
+    "effectSoundAssetKey",
     "effectMinQuantity",
     "effectDurationMs",
     "premiumBannerMinQuantity",
@@ -40,6 +41,7 @@ test("gift catalog owns reusable effect and relationship metadata", () => {
   assert.equal(client.includes("'friends' => 'أصدقاء'"), true);
   assert.equal(control.includes("نوع مؤثر الغرفة"), true);
   assert.equal(control.includes("أقل كمية لتشغيل المؤثر"), true);
+  assert.equal(control.includes("مفتاح صوت المؤثر — اختياري"), true);
   assert.equal(control.includes("نقاط العلاقة الأساسية — عدد زوجي"), true);
   assert.equal(picker.includes("gift.isRelationshipGift ? 'relationship'"), true);
   assert.equal(picker.includes("? 'علاقة'"), true);
@@ -59,6 +61,11 @@ test("gift catalog owns reusable effect and relationship metadata", () => {
     control.includes("isAnimated: item.isAnimated"),
     true,
     "enable/disable edits must preserve effect metadata",
+  );
+  assert.equal(
+    control.includes("effectSoundAssetKey:"),
+    true,
+    "enable/disable edits must preserve effect sound metadata",
   );
   assert.equal(
     control.includes("affinityBasePoints: item.affinityBasePoints"),
