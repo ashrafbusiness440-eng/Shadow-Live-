@@ -209,7 +209,8 @@ test("Stage 05-B agency member surface stays bounded", () => {
   assert.equal(listSource.includes('db.runQuery("agency_memberships"'), true);
   assert.equal(listSource.includes('field: "agencyId"'), true);
   assert.equal(listSource.includes('field: "status"'), true);
-  assert.equal(listSource.includes('rows.map((row) =>'), true);
+  assert.equal(listSource.includes('const members = rows'), true);
+  assert.equal(listSource.includes('.map((row, index) =>'), true);
 });
 
 
