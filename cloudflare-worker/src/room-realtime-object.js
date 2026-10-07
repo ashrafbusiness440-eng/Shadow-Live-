@@ -333,7 +333,9 @@ export class RoomRealtimeObject extends DurableObject {
     if (url.pathname === "/presence/bounded" && request.method === "GET") {
       const requested = Number(url.searchParams.get("limit") || 24);
       const limit = Math.max(1, Math.min(64, Math.floor(requested)));
-      const participants = this.#presenceSnapshot();
+      const participants = this.#presenceSnapshot("", {
+        includeGhost: true,
+      });
       const requiredUid = String(
         url.searchParams.get("requiredUid") || "",
       ).trim();
