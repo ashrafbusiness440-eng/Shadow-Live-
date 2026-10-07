@@ -269,7 +269,9 @@ test("asset studio UX exposes safe replace, preview, history and batch guardrail
   assert.equal(worker.includes('url.searchParams.get("family")'), true);
   assert.equal(worker.includes('url.searchParams.get("level")'), true);
   assert.equal(worker.includes('url.searchParams.get("updatedAfter")'), true);
-  assert.equal(worker.includes("maxPages = hasFilters ? 3 : 1"), true);
+  assert.equal(worker.includes('db.list("app_asset_registry", scanCap)'), true);
+  assert.equal(worker.includes("const scanCap = 500"), true);
+  assert.equal(worker.includes("matches.slice(0, boundedLimit)"), true);
   assert.equal(worker.includes("filesWithoutRegistry"), true);
   assert.equal(worker.includes("duplicatePathKeys"), true);
   assert.equal(worker.includes("duplicateFunctionKeys"), true);
