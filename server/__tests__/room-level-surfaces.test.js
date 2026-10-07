@@ -57,6 +57,8 @@ test("supporter privacy uses bounded batch reads and keeps top3 image-only", () 
   assert.equal(snapshots.includes(".get()"), false);
 
   assert.equal(enrich.includes("publicLevelMetadata"), true);
+  assert.equal(enrich.includes("loadPublicProfilePresentations"), true);
+  assert.equal(enrich.includes("{limit:50,concurrency:8}"), true);
   assert.equal(
     enrich.includes("supporterRankingUserSnapshots(db,list,viewerUid,50)"),
     true,
@@ -94,7 +96,7 @@ test("supporter privacy uses bounded batch reads and keeps top3 image-only", () 
   const topEnd = main.indexOf("\n  Widget ", topStart + 20);
   const top = main.slice(topStart, topEnd);
   assert.notEqual(topStart, -1);
-  assert.equal(top.includes("CircleAvatar("), true);
+  assert.equal(top.includes("ProfileAvatarWithFrame("), true);
   assert.equal(top.includes("UserLevelBadges"), false);
   assert.equal(top.includes("RegistryBadge"), false);
 });
