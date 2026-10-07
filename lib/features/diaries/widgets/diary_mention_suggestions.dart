@@ -85,14 +85,11 @@ class DiaryMentionSuggestions extends StatelessWidget {
                   onTap: () => onSelected(item),
                   leading: ProfileAvatarWithFrame(
                     diameter: 36,
-                    profile: profileAvatarFrameData(
-                      imageUrl: item.profileImageUrl,
-                      avatarAsset: item.profileAvatarAsset,
-                      frameAssetKey: item.activeProfileFrameAssetKey,
-                      frameImageUrl: item.activeProfileFrameImageUrl,
-                      frameExpiresAtMs: item.activeProfileFrameExpiresAtMs,
-                      framePermanent: item.activeProfileFramePermanent,
-                    ),
+                    userId: item.uid,
+                    fallbackProfile: <String, dynamic>{
+                      'profileImageUrl': item.profileImageUrl,
+                      'profileAvatarAsset': item.profileAvatarAsset,
+                    },
                   ),
                   title: Text(
                     item.displayName,
