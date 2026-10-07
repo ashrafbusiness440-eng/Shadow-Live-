@@ -258,7 +258,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     try {
       await post({
         'action': 'grantBagGift',
-        'targetUserId': targetUserId,
+        'targetUid': targetUserId,
         'giftId': giftId,
         'quantity': parsedQuantity,
         'source': source,
@@ -490,7 +490,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                   SwitchListTile(
                     value: featured,
                     onChanged: (value) => setLocal(() => featured = value),
-                    title: const Text('هدية مميزة أعلى الواجهة'),
+                    title: const Text('هدية مميزة في الكتالوج'),
                     contentPadding: EdgeInsets.zero,
                   ),
                 ],
