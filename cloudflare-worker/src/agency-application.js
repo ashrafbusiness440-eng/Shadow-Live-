@@ -11,6 +11,7 @@ import {
   normalizeApplicationHostIds,
 } from "./agency-data-model.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
+import { adminInboxUpsertWrite } from "./admin-inbox-index.js";
 
 const clean = (value) => String(value ?? "").trim();
 
@@ -858,6 +859,16 @@ export async function submitAgencyApplication(
             createdAt: nowDate,
           },
         ),
+        adminInboxUpsertWrite(db, {
+          type: "agency_application",
+          title: "طلب إنشاء وكالة",
+          body: name,
+          targetId: applicationId,
+          route: "agency_control",
+          createdAt: nowDate,
+          priority: "high",
+          meta: { status: "pending" },
+        }),
       ];
 
       await db.commit(transaction, writes);
