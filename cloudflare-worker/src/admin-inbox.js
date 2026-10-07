@@ -8,6 +8,7 @@ import { firestoreClient } from "./firestore.js";
 const clean = (value) => String(value ?? "").trim();
 const MAX_SOURCE_ITEMS = 12;
 const MAX_VISIBLE_ITEMS = 40;
+const MAX_READ_RECEIPTS = 1000;
 
 class AdminInboxError extends Error {
   constructor(code, status = 400) {
@@ -260,12 +261,26 @@ async function loadItems(db, actor) {
     .slice(0, MAX_VISIBLE_ITEMS);
 }
 
+async function loadReadKeys(db, uid) {
+  const rows = await db.runQuery("admin_notification_reads", {
+    filters: [{ field: "userId", op: "==", value: uid }],
+    limit: MAX_READ_RECEIPTS,
+  });
+  return new Set(
+    rows
+      .map((row) => clean(row?.data?.key))
+      .filter(Boolean),
+  );
+}
+
 async function listInbox(db, actor) {
-  const items = await loadItems(db, actor);
-  const reads = await Promise.all(items.map((item) => db.get(readPath(actor.uid, item.key))));
+  const [items, readKeys] = await Promise.all([
+    loadItems(db, actor),
+    loadReadKeys(db, actor.uid),
+  ]);
   let unreadCount = 0;
-  const visible = items.map((item, index) => {
-    const read = reads[index]?.exists === true;
+  const visible = items.map((item) => {
+    const read = readKeys.has(item.key);
     if (!read) unreadCount += 1;
     return { ...item, read };
   });
@@ -297,17 +312,18 @@ async function markRead(db, actor, body) {
 }
 
 async function markVisibleRead(db, actor) {
-  const items = await loadItems(db, actor);
-  const paths = items.map((item) => readPath(actor.uid, item.key));
-  const existing = await Promise.all(paths.map((path) => db.get(path)));
+  const [items, readKeys] = await Promise.all([
+    loadItems(db, actor),
+    loadReadKeys(db, actor.uid),
+  ]);
   const now = new Date();
-  const writes = paths.flatMap((path, index) =>
-    existing[index]?.exists
+  const writes = items.flatMap((item) =>
+    readKeys.has(item.key)
       ? []
       : [
-          db.writeCreate(path, {
+          db.writeCreate(readPath(actor.uid, item.key), {
             userId: actor.uid,
-            key: items[index].key,
+            key: item.key,
             readAt: now,
           }),
         ],
@@ -353,5 +369,6 @@ export const adminInboxTestHooks = Object.freeze({
   timestampMs,
   safeKey,
   loadItems,
+  loadReadKeys,
   listInbox,
 });
