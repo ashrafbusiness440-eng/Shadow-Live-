@@ -239,7 +239,7 @@ class RoomPresenceService {
     String? replyPreview,
     String? replySenderUid,
     List<String> mentionUids = const [],
-    String? vipEmojiToken,
+    String? animatedEmojiId,
   }) async {
     final id = roomId.trim();
     final message = text.trim();
@@ -276,8 +276,8 @@ class RoomPresenceService {
                   .where((value) => value.isNotEmpty)
                   .take(10)
                   .toList(growable: false),
-            if (vipEmojiToken != null && vipEmojiToken.trim().isNotEmpty)
-              'vipEmojiToken': vipEmojiToken.trim(),
+            if (animatedEmojiId != null && animatedEmojiId.trim().isNotEmpty)
+              'animatedEmojiId': animatedEmojiId.trim(),
           },
         }),
       );
