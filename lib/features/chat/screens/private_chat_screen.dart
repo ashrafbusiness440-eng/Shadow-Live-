@@ -1110,7 +1110,9 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                         children: [
                           ProfileAvatarWithFrame(
                             diameter: 38,
-                            profile: data ?? const <String, dynamic>{},
+                            userId: widget.otherUid,
+                            fallbackProfile:
+                                data ?? const <String, dynamic>{},
                           ),
                           const SizedBox(width: 10),
                           Expanded(
