@@ -57,7 +57,8 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
     try {
       final catalog = await GiftCatalogService.loadCatalog();
       if (!mounted) return;
-      final categories = catalog.map((gift) => gift.category).toSet();
+      final categories =
+          catalog.map(_uiCategoryForGift).toSet();
       final initialCategory = categories.contains('general')
           ? 'general'
           : (categories.isEmpty ? 'general' : categories.first);
@@ -76,16 +77,26 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
     }
   }
 
+  String _uiCategoryForGift(GiftCatalogItem gift) =>
+      gift.isRelationshipGift ? 'relationship' : gift.category;
+
   List<String> get _categories {
     final values = <String>[];
     for (final gift in _catalog) {
-      if (!values.contains(gift.category)) values.add(gift.category);
+      final value = _uiCategoryForGift(gift);
+      if (!values.contains(value)) values.add(value);
     }
     return values;
   }
 
-  List<GiftCatalogItem> get _visible =>
-      _catalog.where((gift) => gift.category == _category).toList();
+  List<GiftCatalogItem> get _visible => _catalog
+      .where((gift) => _uiCategoryForGift(gift) == _category)
+      .toList(growable: false);
+
+  String _categoryLabel(String value) =>
+      value == 'relationship'
+          ? 'علاقة'
+          : _categoryLabel(value);
 
   List<GiftCatalogItem> get _featured =>
       _catalog.where((gift) => gift.featured).take(8).toList();
@@ -187,7 +198,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
           return InkWell(
             onTap: () => setState(() {
               _selected = gift;
-              _category = gift.category;
+              _category = _uiCategoryForGift(gift);
             }),
             borderRadius: BorderRadius.circular(16),
             child: Container(
@@ -252,7 +263,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
           final value = categories[index];
           final selected = value == _category;
           return ChoiceChip(
-            label: Text(GiftCatalogService.categoryLabel(value)),
+            label: Text(_categoryLabel(value)),
             selected: selected,
             onSelected: (_) => setState(() {
               _category = value;
@@ -300,7 +311,10 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
                       top: 0,
                       left: 0,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xCC6D27D9),
                           borderRadius: BorderRadius.circular(99),
@@ -315,17 +329,44 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
                         ),
                       ),
                     ),
+                  if (gift.isRelationshipGift)
+                    Positioned(
+                      top: 0,
+                      right: 0,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: gift.category == 'cp'
+                              ? const Color(0xDDF15C9A)
+                              : const Color(0xDD27AFCB),
+                          borderRadius: BorderRadius.circular(99),
+                        ),
+                        child: Text(
+                          gift.category == 'cp' ? 'CP' : 'صديق',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 8,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
             const SizedBox(height: 4),
             Text(
               gift.nameAr,
-              maxLines: 1,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
               style: const TextStyle(
                 color: Colors.white,
-                fontSize: 11,
+                fontSize: 10.5,
+                height: 1.1,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -365,40 +406,44 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
       ),
       child: Column(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  balanceText,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: Text(
+              balanceText,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontWeight: FontWeight.w800,
               ),
-              Wrap(
-                spacing: 5,
-                children: [1, 7, 77, 777]
-                    .map(
-                      (value) => ChoiceChip(
-                        label: Text('×$value'),
-                        selected: _quantity == value,
-                        onSelected: _sending
-                            ? null
-                            : (_) => setState(() => _quantity = value),
-                        selectedColor: const Color(0xFF6D27D9),
-                        visualDensity: VisualDensity.compact,
-                        labelStyle: TextStyle(
-                          color: _quantity == value ? Colors.white : Colors.white70,
-                          fontWeight: FontWeight.w800,
-                        ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Align(
+            alignment: AlignmentDirectional.centerEnd,
+            child: Wrap(
+              spacing: 5,
+              runSpacing: 5,
+              children: [1, 7, 77, 777]
+                  .map(
+                    (value) => ChoiceChip(
+                      label: Text('×$value'),
+                      selected: _quantity == value,
+                      onSelected: _sending
+                          ? null
+                          : (_) => setState(() => _quantity = value),
+                      selectedColor: const Color(0xFF6D27D9),
+                      visualDensity: VisualDensity.compact,
+                      labelStyle: TextStyle(
+                        color: _quantity == value
+                            ? Colors.white
+                            : Colors.white70,
+                        fontWeight: FontWeight.w800,
                       ),
-                    )
-                    .toList(),
-              ),
-            ],
+                    ),
+                  )
+                  .toList(),
+            ),
           ),
           const SizedBox(height: 8),
           SizedBox(
@@ -476,11 +521,11 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
                               Expanded(
                                 child: Text(
                                   widget.title,
-                                  maxLines: 1,
+                                  maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
                                     color: Colors.white,
-                                    fontSize: 19,
+                                    fontSize: 18,
                                     fontWeight: FontWeight.w900,
                                   ),
                                 ),
