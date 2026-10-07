@@ -117,6 +117,10 @@ function roomGiftOperationConflicts(data = {}, expected = {}) {
   if (clean(data.roomId) && clean(data.roomId) !== clean(expected.roomId)) return true;
   if (clean(data.giftId) && clean(data.giftId) !== clean(expected.giftId)) return true;
   if (data.quantity != null && Number(data.quantity) !== Number(expected.quantity)) return true;
+  if (
+    data.useGiftBag != null &&
+    (data.useGiftBag === true) !== (expected.useGiftBag === true)
+  ) return true;
 
   const storedMode = normalizeRoomGiftRecipientMode(
     data.recipientMode || (data.receiverId ? "users" : ""),
@@ -272,6 +276,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
   const requestedRecipientIds = normalizeRoomGiftRecipientIds(body);
   const giftId = clean(body.giftId);
   const quantity = Number(body.quantity || 1);
+  const useGiftBag = body.useGiftBag === true;
   const key = clean(body.idempotencyKey);
 
   if (
@@ -320,6 +325,8 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     const rocketGlobalQueuePath = "system_state/room_rocket_global_queue";
     const opPath = "gift_operations/" + key;
     const lockPath = "system_config/emergency_lock";
+    const bagPath =
+      "user_gift_bags/" + senderUid + "/items/" + giftId;
 
     const [
       roomSnap,
@@ -331,6 +338,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       rocketGlobalQueueSnap,
       opSnap,
       lockSnap,
+      bagSnap,
     ] = await Promise.all([
       db.get(roomPath, transaction),
       db.get(senderPath, transaction),
@@ -341,6 +349,9 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       db.get(rocketGlobalQueuePath, transaction),
       db.get(opPath, transaction),
       db.get(lockPath, transaction),
+      useGiftBag
+        ? db.get(bagPath, transaction)
+        : Promise.resolve({ exists: false, data: null }),
     ]);
 
     if (opSnap.exists) {
@@ -350,6 +361,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
           roomId,
           giftId,
           quantity,
+          useGiftBag,
           recipientMode,
           recipientIds: requestedRecipientIds,
           receiverId: requestedRecipientIds[0] || "",
@@ -552,9 +564,27 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       throw new ApiError("invalid_gift_price", 400);
     }
 
+    const requiredBagQuantity = quantity * recipientIds.length;
+    const bagBefore = useGiftBag
+      ? Math.max(0, Number(bagSnap?.data?.quantity || 0))
+      : 0;
+    if (
+      useGiftBag &&
+      (!bagSnap?.exists ||
+        !Number.isSafeInteger(bagBefore) ||
+        bagBefore < requiredBagQuantity)
+    ) {
+      throw new ApiError("gift_bag_insufficient", 409);
+    }
+    const paidRecipientCost = useGiftBag ? 0 : recipientCost;
+    const paidCost = useGiftBag ? 0 : totalCost;
+    const bagQuantityRemaining = useGiftBag
+      ? bagBefore - requiredBagQuantity
+      : null;
+
     const senderLevelAwards = giftLevelPointAwards({
-      nominalCoins: totalCost,
-      paidCoins: totalCost,
+      nominalCoins: paidCost,
+      paidCoins: paidCost,
     });
     const nextWealthPoints = senderLevelAwards
       ? safeAddUserLevelPoints(
@@ -570,8 +600,8 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     if (!Number.isFinite(before) || before < 0) {
       throw new ApiError("invalid_wallet_state", 400);
     }
-    if (before < totalCost) throw new ApiError("insufficient_balance", 409);
-    const after = before - totalCost;
+    if (before < paidCost) throw new ApiError("insufficient_balance", 409);
+    const after = before - paidCost;
 
     const economy = economySnap.data || {};
     const senderName = clean(
@@ -591,7 +621,8 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     const assetKey = clean(gift.assetKey || "gifts.placeholder.default");
     const imageUrl = clean(gift.imageUrl);
 
-    const roomRocketEnabled = roomFeatureEnabled(room, "roomRocketEnabled");
+    const roomRocketEnabled =
+      paidCost > 0 && roomFeatureEnabled(room, "roomRocketEnabled");
     const rocketAdvance = roomRocketEnabled
       ? advanceRoomRocket({
           state: {
@@ -608,7 +639,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
             displayName: senderName,
             profileImageUrl: senderPhoto,
           },
-          contributionCoins: totalCost,
+          contributionCoins: paidCost,
           nowMs,
           operationId: key,
         })
@@ -656,6 +687,16 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
         ],
       ),
     ];
+    if (useGiftBag) {
+      writes.push(
+        db.writeUpdate(
+          bagPath,
+          { updatedAt: now },
+          ["updatedAt"],
+          [db.increment("quantity", -requiredBagQuantity)],
+        ),
+      );
+    }
 
     if (roomRocketEnabled) {
       writes.push(
@@ -667,7 +708,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
             lastContributorUid: senderUid,
             lastContributorDisplayName: senderName,
             lastContributorProfileImageUrl: senderPhoto,
-            lastContributionCoins: totalCost,
+            lastContributionCoins: paidCost,
             lastOperationId: key,
             updatedAt: now,
           },
@@ -710,7 +751,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     }
 
     const roomSupportTransforms = [
-      db.increment("supportCoins", totalCost),
+      db.increment("supportCoins", paidCost),
       db.increment("giftCount", quantity * recipientIds.length),
     ];
     // High-frequency room support lives in the period support documents below.
@@ -788,8 +829,8 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
         recipientRecords.length,
       );
       const recipientLevelAwards = giftLevelPointAwards({
-        nominalCoins: recipientCost,
-        paidCoins: recipientCost,
+        nominalCoins: paidRecipientCost,
+        paidCoins: paidRecipientCost,
       });
       const nextAttractionPoints = recipientLevelAwards
         ? safeAddUserLevelPoints(
@@ -807,7 +848,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
         clean(receiver.giftRevenueMonth) === revenueMonth
           ? Math.max(0, Number(receiver.giftRevenueMonthCoins || 0))
           : 0;
-      const monthlyGrossCoins = previousMonthCoins + recipientCost;
+      const monthlyGrossCoins = previousMonthCoins + paidRecipientCost;
       const previousAgencyPublicSupportCoins =
         agencyId &&
         clean(receiver.agencyPublicSupportAgencyId) === agencyId &&
@@ -818,7 +859,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
             )
           : 0;
       const agencyPublicSupportCoins =
-        previousAgencyPublicSupportCoins + recipientCost;
+        previousAgencyPublicSupportCoins + paidRecipientCost;
       if (
         agencyId &&
         !Number.isSafeInteger(agencyPublicSupportCoins)
@@ -851,20 +892,20 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
         ? revenue.hostShareBps
         : 0;
       const recipientShareCoins = earningsEnabled
-        ? Math.floor((recipientCost * recipientShareBps) / 10000)
+        ? Math.floor((paidRecipientCost * recipientShareBps) / 10000)
         : 0;
       const agencyShareCoins =
         policyEnabled && agencyId
           ? Math.floor(
-              (recipientCost * revenue.agencyShareBps) / 10000,
+              (paidRecipientCost * revenue.agencyShareBps) / 10000,
             )
           : 0;
       const platformShareCoins = policyEnabled
         ? Math.max(
             0,
-            recipientCost - recipientShareCoins - agencyShareCoins,
+            paidRecipientCost - recipientShareCoins - agencyShareCoins,
           )
-        : recipientCost;
+        : paidRecipientCost;
 
       const previousPendingGiftCoins = Math.max(
         0,
@@ -1366,6 +1407,13 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
         }
         throw error;
       }
+      if (useGiftBag) {
+        relationshipGiftAward = {
+          ...relationshipGiftAward,
+          writes: [],
+          affinityPointsAwarded: 0,
+        };
+      }
       writes.push(...relationshipGiftAward.writes);
 
       const receiverName = clean(
@@ -1390,7 +1438,10 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
             quantity,
             unitCoins,
             totalCost: recipientCost,
+            paidCost: paidRecipientCost,
             operationTotalCost: totalCost,
+            operationPaidCost: paidCost,
+            useGiftBag,
             assetKey,
             wealthPointsAwarded:
               recipientIds.length === 1
@@ -1540,33 +1591,35 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       });
     }
 
-    writes.push(
-      db.writeCreate(
-        "financial_ledger/gift_" + key,
-        {
-          userId: senderUid,
-          asset: "coins",
-          delta: -totalCost,
-          openingBalance: before,
-          closingBalance: after,
-          reason: "room_gift_send",
-          sourceType: "gift",
-          sourceId: key,
-          actorUid: senderUid,
-          counterpartyUid:
-            recipientIds.length === 1
-              ? recipientIds[0]
-              : null,
-          counterpartyUids:
-            recipientIds.length > 1 ? recipientIds : null,
-          roomId,
-          recipientMode,
-          recipientCount: recipientIds.length,
-          idempotencyKey: key,
-          createdAt: now,
-        },
-      ),
-    );
+    if (paidCost > 0) {
+      writes.push(
+        db.writeCreate(
+          "financial_ledger/gift_" + key,
+          {
+            userId: senderUid,
+            asset: "coins",
+            delta: -paidCost,
+            openingBalance: before,
+            closingBalance: after,
+            reason: "room_gift_send",
+            sourceType: "gift",
+            sourceId: key,
+            actorUid: senderUid,
+            counterpartyUid:
+              recipientIds.length === 1
+                ? recipientIds[0]
+                : null,
+            counterpartyUids:
+              recipientIds.length > 1 ? recipientIds : null,
+            roomId,
+            recipientMode,
+            recipientCount: recipientIds.length,
+            idempotencyKey: key,
+            createdAt: now,
+          },
+        ),
+      );
+    }
 
     const first = recipientResults[0];
     const resultData = {
@@ -1583,6 +1636,9 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       recipientCount: recipientIds.length,
       quantity,
       totalCost,
+      paidCost,
+      useGiftBag,
+      bagQuantityRemaining,
       balance: after,
       wealthPointsAwarded: senderLevelAwards.wealthPoints,
       attractionPointsAwarded:
@@ -1714,6 +1770,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
         roomId,
         giftId,
         quantity,
+        useGiftBag,
         action: "sendRoomGift",
         status: "completed",
         result: resultData,
@@ -1735,7 +1792,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       operationId: key,
       gift,
       quantity,
-      totalCost,
+      totalCost: paidCost,
       sender: {
         uid: senderUid,
         displayName: senderName,
@@ -1785,6 +1842,8 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
           quantity,
           unitCoins,
           totalCost,
+          paidCost,
+          useGiftBag,
           assetKey,
           imageUrl,
           vipLevel: senderVipCosmetics.level,
@@ -1810,9 +1869,9 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
             String(quantity) +
             " إلى " +
             recipientLabel +
-            " — " +
-            String(totalCost) +
-            " كوينز",
+            (useGiftBag
+              ? " من الحقيبة"
+              : " — " + String(totalCost) + " كوينز"),
           createdAtMs: nowMs,
         },
       },
