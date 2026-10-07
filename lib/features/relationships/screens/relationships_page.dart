@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../profile/screens/public_profile_screen.dart';
+import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../services/relationship_service.dart';
 
 class RelationshipsPage extends StatefulWidget {
@@ -186,7 +187,6 @@ class _RelationshipsPageState extends State<RelationshipsPage> {
     RelationshipItem? item,
   ) {
     final active = item != null;
-    final provider = active ? _avatar(item) : null;
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
@@ -201,21 +201,29 @@ class _RelationshipsPageState extends State<RelationshipsPage> {
       ),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 28,
-            backgroundColor: const Color(0xFF25183F),
-            backgroundImage: provider,
-            child: provider == null
-                ? Icon(
-                    active
-                        ? Icons.favorite_rounded
-                        : Icons.favorite_border_rounded,
-                    color: active
-                        ? const Color(0xFFFFD54A)
-                        : Colors.white38,
-                  )
-                : null,
-          ),
+          if (active)
+            ProfileAvatarWithFrame(
+              diameter: 56,
+              backgroundColor: const Color(0xFF25183F),
+              placeholderColor: const Color(0xFFFFD54A),
+              profile: profileAvatarFrameData(
+                imageUrl: item.partnerProfileImageUrl,
+                avatarAsset: item.partnerProfileAvatarAsset,
+                frameAssetKey: item.partnerActiveProfileFrameAssetKey,
+                frameImageUrl: item.partnerActiveProfileFrameImageUrl,
+                frameExpiresAtMs: item.partnerActiveProfileFrameExpiresAtMs,
+                framePermanent: item.partnerActiveProfileFramePermanent,
+              ),
+            )
+          else
+            const CircleAvatar(
+              radius: 28,
+              backgroundColor: Color(0xFF25183F),
+              child: Icon(
+                Icons.favorite_border_rounded,
+                color: Colors.white38,
+              ),
+            ),
           const SizedBox(width: 12),
           Expanded(
             child: active
