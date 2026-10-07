@@ -586,7 +586,6 @@ class _CelebrationBanner extends StatelessWidget {
                   ),
                 Row(
                   children: [
-              children: [
                     ProfileAvatarWithFrame(
                       diameter: 44,
                       userId: event.uid,
