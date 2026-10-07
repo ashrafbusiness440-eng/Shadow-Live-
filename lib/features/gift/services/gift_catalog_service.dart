@@ -15,6 +15,13 @@ class GiftCatalogItem {
     required this.assetKey,
     required this.localPlaceholder,
     this.minVipLevel = 0,
+    this.isAnimated = false,
+    this.effectMode = 'none',
+    this.effectAssetKey = '',
+    this.effectMinQuantity = 0,
+    this.effectDurationMs = 2200,
+    this.premiumBannerMinQuantity = 0,
+    this.affinityBasePoints = 0,
   });
 
   final String id;
@@ -27,6 +34,19 @@ class GiftCatalogItem {
   final String assetKey;
   final String localPlaceholder;
   final int minVipLevel;
+  final bool isAnimated;
+  final String effectMode;
+  final String effectAssetKey;
+  final int effectMinQuantity;
+  final int effectDurationMs;
+  final int premiumBannerMinQuantity;
+  final int affinityBasePoints;
+
+  bool get isRelationshipGift => category == 'cp' || category == 'friends';
+  bool get hasRoomEffect =>
+      effectMode == 'seat' || effectMode == 'cinematic';
+  String get effectiveEffectAssetKey =>
+      effectAssetKey.trim().isEmpty ? assetKey : effectAssetKey;
 
   int get effectiveMinVipLevel =>
       minVipLevel > 0 ? minVipLevel : (category == 'vip' ? 4 : 0);
@@ -46,6 +66,17 @@ class GiftCatalogItem {
           .toString(),
       minVipLevel: (map['minVipLevel'] as num?)?.toInt() ??
           ((map['category'] ?? '').toString() == 'vip' ? 4 : 0),
+      isAnimated: map['isAnimated'] == true,
+      effectMode: (map['effectMode'] ?? 'none').toString(),
+      effectAssetKey: (map['effectAssetKey'] ?? '').toString(),
+      effectMinQuantity:
+          (map['effectMinQuantity'] as num?)?.toInt() ?? 0,
+      effectDurationMs:
+          (map['effectDurationMs'] as num?)?.toInt() ?? 2200,
+      premiumBannerMinQuantity:
+          (map['premiumBannerMinQuantity'] as num?)?.toInt() ?? 0,
+      affinityBasePoints:
+          (map['affinityBasePoints'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -60,6 +91,13 @@ class GiftCatalogItem {
         'assetKey': assetKey,
         'localPlaceholder': localPlaceholder,
         'minVipLevel': effectiveMinVipLevel,
+        'isAnimated': isAnimated,
+        'effectMode': effectMode,
+        'effectAssetKey': effectiveEffectAssetKey,
+        'effectMinQuantity': effectMinQuantity,
+        'effectDurationMs': effectDurationMs,
+        'premiumBannerMinQuantity': premiumBannerMinQuantity,
+        'affinityBasePoints': affinityBasePoints,
       };
 }
 
@@ -82,6 +120,8 @@ class GiftCatalogService {
     'vip',
     'lucky',
     'activities',
+    'cp',
+    'friends',
   };
 
   static const List<GiftCatalogItem> fallbackGifts = <GiftCatalogItem>[
