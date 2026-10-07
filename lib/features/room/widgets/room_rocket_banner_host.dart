@@ -505,8 +505,13 @@ class _CelebrationBanner extends StatelessWidget {
   String get _headline => switch (event.kind) {
         'game_win' => event.displayName,
         'relationship_level_up' =>
-          event.relationshipType == 'cp' ? 'ترقية CP' : 'ترقية علاقة',
-        'premium_gift' => event.displayName,
+          event.secondaryDisplayName.trim().isEmpty
+              ? event.displayName
+              : '${event.displayName} + ${event.secondaryDisplayName}',
+        'premium_gift' =>
+          event.secondaryDisplayName.trim().isEmpty
+              ? event.displayName
+              : '${event.displayName} → ${event.secondaryDisplayName}',
         _ => event.displayName,
       };
 
