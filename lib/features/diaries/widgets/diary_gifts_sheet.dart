@@ -5,6 +5,7 @@ import '../../../core/assets/shadow_asset_registry.dart';
 import '../../gift/widgets/direct_gift_sheet.dart';
 import '../../profile/screens/public_profile_screen.dart';
 import '../services/diary_service.dart';
+import '../../profile/widgets/profile_avatar_with_frame.dart';
 
 class DiaryGiftsSheet extends StatefulWidget {
   const DiaryGiftsSheet({
@@ -168,15 +169,17 @@ class _DiaryGiftsSheetState extends State<DiaryGiftsSheet> {
           InkWell(
             customBorder: const CircleBorder(),
             onTap: () => _openProfile(item),
-            child: CircleAvatar(
-              radius: 20,
+            child: ProfileAvatarWithFrame(
+              diameter: 40,
               backgroundColor: const Color(0xFF272C39),
-              backgroundImage: item.senderProfileImageUrl.isNotEmpty
-                  ? NetworkImage(item.senderProfileImageUrl)
-                  : null,
-              child: item.senderProfileImageUrl.isEmpty
-                  ? const Icon(Icons.person_rounded, color: Colors.white54)
-                  : null,
+              placeholderColor: Colors.white54,
+              profile: profileAvatarFrameData(
+                imageUrl: item.senderProfileImageUrl,
+                frameAssetKey: item.activeProfileFrameAssetKey,
+                frameImageUrl: item.activeProfileFrameImageUrl,
+                frameExpiresAtMs: item.activeProfileFrameExpiresAtMs,
+                framePermanent: item.activeProfileFramePermanent,
+              ),
             ),
           ),
           const SizedBox(width: 10),
