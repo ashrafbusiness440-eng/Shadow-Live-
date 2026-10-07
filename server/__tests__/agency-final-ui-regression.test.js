@@ -57,7 +57,7 @@ test("Agencies final UI keeps account images and pending request layout stable",
   assert.equal(managerPage.includes("agency-review-copy-id-"), true);
   assert.equal(managerPage.includes("سبب الرفض — اختياري"), true);
   assert.equal(controlPage.includes("ProfileAvatarWithFrame("), true);
-  assert.equal(controlPage.includes("profileImageUrl"), true);
+  assert.equal(controlPage.includes("fallbackProfile: person"), true);
   assert.equal(
     controlSource.includes("loadPublicProfilePresentations"),
     true,
