@@ -5,8 +5,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
-import '../../../core/assets/shadow_asset_registry.dart';
 import '../services/gift_catalog_service.dart';
+import 'unified_gift_picker_sheet.dart';
 
 Future<void> showDirectGiftSheet(
   BuildContext context, {
@@ -22,7 +22,7 @@ Future<void> showDirectGiftSheet(
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
     ),
-    builder: (_) => _DirectGiftSheet(
+    builder: (_) => _DirectGiftContext(
       receiverId: receiverId,
       receiverName: receiverName,
       diaryId: diaryId,
@@ -31,8 +31,8 @@ Future<void> showDirectGiftSheet(
   );
 }
 
-class _DirectGiftSheet extends StatefulWidget {
-  const _DirectGiftSheet({
+class _DirectGiftContext extends StatefulWidget {
+  const _DirectGiftContext({
     required this.receiverId,
     required this.receiverName,
     this.diaryId,
@@ -45,45 +45,16 @@ class _DirectGiftSheet extends StatefulWidget {
   final void Function(int quantity, int totalCost)? onGiftSent;
 
   @override
-  State<_DirectGiftSheet> createState() => _DirectGiftSheetState();
+  State<_DirectGiftContext> createState() => _DirectGiftContextState();
 }
 
-class _DirectGiftSheetState extends State<_DirectGiftSheet> {
+class _DirectGiftContextState extends State<_DirectGiftContext> {
   static const _apiBase = String.fromEnvironment(
     'SHADOW_CLOUDFLARE_API_BASE_URL',
     defaultValue: 'https://shadow-live.ashraf-business-440.workers.dev/api',
   );
 
-  List<GiftCatalogItem> _catalog = const [];
-  int _quantity = 1;
-  bool _loading = true;
-  String? _sendingGiftId;
-  String? _error;
-
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    try {
-      final catalog = await GiftCatalogService.loadCatalog();
-      if (!mounted) return;
-      setState(() {
-        _catalog = catalog;
-        _loading = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _error = 'تعذر تحميل الهدايا حالياً.';
-      });
-    }
-  }
 
   String _conversationId() {
     final ids = [_uid, widget.receiverId]..sort();
@@ -109,309 +80,128 @@ class _DirectGiftSheetState extends State<_DirectGiftSheet> {
     });
   }
 
-  Future<bool> _send(GiftCatalogItem gift) async {
-    if (_uid.isEmpty || widget.receiverId.isEmpty || _uid == widget.receiverId) {
-      _snack('لا يمكن إرسال الهدية لهذا الحساب.');
-      return false;
+  Future<GiftPickerSendResult> _send(
+    GiftCatalogItem gift,
+    int quantity,
+  ) async {
+    if (_uid.isEmpty ||
+        widget.receiverId.isEmpty ||
+        _uid == widget.receiverId) {
+      throw StateError('invalid_receiver');
     }
-    if (_sendingGiftId != null) return false;
-    setState(() => _sendingGiftId = gift.id);
-    try {
-      final diaryId = widget.diaryId?.trim() ?? '';
-      final conversationId = diaryId.isEmpty ? _conversationId() : '';
-      if (diaryId.isEmpty) {
-        await _ensureConversation(conversationId);
-      }
-      final token = await FirebaseAuth.instance.currentUser?.getIdToken();
-      if (token == null || token.isEmpty) throw StateError('not_signed_in');
-      final key = [
-        _uid,
-        DateTime.now().microsecondsSinceEpoch.toString(),
-        gift.id,
-        diaryId.isEmpty ? 'profile' : 'diary',
-      ].join('_');
-      final response = await http.post(
-        Uri.parse('$_apiBase/chat-actions'),
-        headers: {
-          'authorization': 'Bearer $token',
-          'content-type': 'application/json',
-        },
-        body: jsonEncode({
-          'action': 'sendGift',
-          'receiverId': widget.receiverId,
-          'giftId': gift.id,
-          'quantity': _quantity,
-          if (diaryId.isEmpty) 'conversationId': conversationId,
-          if (diaryId.isNotEmpty) 'diaryId': diaryId,
-          'idempotencyKey': key,
-        }),
-      );
-      Map<String, dynamic> body = <String, dynamic>{};
-      try {
-        final decoded = jsonDecode(response.body);
-        if (decoded is Map<String, dynamic>) body = decoded;
-      } catch (_) {}
-      if (response.statusCode == 200 && body['ok'] == true) {
-        final totalCost =
-            (body['totalCost'] as num?)?.toInt() ?? gift.priceCoins * _quantity;
-        widget.onGiftSent?.call(_quantity, totalCost);
-        _snack(
-          'تم إرسال ${gift.nameAr} ×$_quantity إلى ${widget.receiverName}',
-        );
-        return true;
-      }
-      switch (body['code']) {
-        case 'insufficient_balance':
-          _snack('رصيد العملات غير كافٍ لإرسال الهدية.');
-          break;
-        case 'blocked':
-          _snack('لا يمكن إرسال هدية بينكما حالياً بسبب إعدادات الحظر.');
-          break;
-        case 'gift_inactive':
-          _snack('هذه الهدية متوقفة حالياً.');
-          break;
-        case 'vip_gift_requires_level':
-          _snack('هذه هدية VIP وتتطلب مستوى VIP أعلى.');
-          break;
-        case 'emergency_locked':
-          _snack('عمليات الهدايا متوقفة مؤقتاً.');
-          break;
-        default:
-          _snack('تعذر إرسال الهدية حالياً.');
-      }
-    } catch (_) {
-      _snack('تعذر إرسال الهدية حالياً.');
-    } finally {
-      if (mounted) setState(() => _sendingGiftId = null);
+
+    final diaryId = widget.diaryId?.trim() ?? '';
+    final conversationId = diaryId.isEmpty ? _conversationId() : '';
+    if (diaryId.isEmpty) {
+      await _ensureConversation(conversationId);
     }
-    return false;
-  }
 
-  void _snack(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
-  }
-
-  String _giftEmoji(String id) => switch (id) {
-        'rose' => '🌹',
-        'coffee' => '☕',
-        'heart' => '❤️',
-        'chocolate' => '🍫',
-        'crown' => '👑',
-        'ring' => '💍',
-        'sports_car' => '🏎️',
-        'yacht' => '🛥️',
-        'private_jet' => '✈️',
-        'castle' => '🏰',
-        'golden_dragon' => '🐉',
-        'galaxy' => '🌌',
-        _ => '🎁',
-      };
-
-  Widget _giftImage(GiftCatalogItem gift) {
-    final fallback = Text(
-      _giftEmoji(gift.id),
-      style: const TextStyle(fontSize: 40),
-      textAlign: TextAlign.center,
-    );
-    return FutureBuilder<Uri?>(
-      future: ShadowAssetRegistry.remoteUrl(gift.assetKey),
-      builder: (_, snapshot) {
-        final url = snapshot.data;
-        if (url == null) return fallback;
-        return Image.network(
-          url.toString(),
-          fit: BoxFit.contain,
-          errorBuilder: (_, __, ___) => fallback,
-        );
+    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+    if (token == null || token.isEmpty) throw StateError('not_signed_in');
+    final key = [
+      _uid,
+      DateTime.now().microsecondsSinceEpoch.toString(),
+      gift.id,
+      diaryId.isEmpty ? 'profile' : 'diary',
+    ].join('_');
+    final response = await http.post(
+      Uri.parse('$_apiBase/chat-actions'),
+      headers: {
+        'authorization': 'Bearer $token',
+        'content-type': 'application/json',
       },
+      body: jsonEncode({
+        'action': 'sendGift',
+        'receiverId': widget.receiverId,
+        'giftId': gift.id,
+        'quantity': quantity,
+        if (diaryId.isEmpty) 'conversationId': conversationId,
+        if (diaryId.isNotEmpty) 'diaryId': diaryId,
+        'idempotencyKey': key,
+      }),
+    );
+
+    Map<String, dynamic> body = <String, dynamic>{};
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) {
+        body = decoded;
+      }
+    } catch (_) {}
+
+    if (response.statusCode != 200 || body['ok'] != true) {
+      throw StateError((body['code'] ?? 'gift_send_failed').toString());
+    }
+
+    final totalCost =
+        (body['totalCost'] as num?)?.toInt() ?? gift.priceCoins * quantity;
+    final balance = (body['balance'] as num?)?.toInt();
+    if (balance != null) GiftCatalogService.updateCachedBalance(balance);
+    widget.onGiftSent?.call(quantity, totalCost);
+    return GiftPickerSendResult(
+      balanceCoins: balance,
+      message: 'تم إرسال ${gift.nameAr} ×$quantity إلى ${widget.receiverName}',
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: SafeArea(
-        child: SizedBox(
-          height: MediaQuery.sizeOf(context).height * .70,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
-            child: _loading
-                ? const Center(
-                    child: CircularProgressIndicator(
-                      color: Color(0xFF8A3DFF),
-                    ),
-                  )
-                : _error != null
-                    ? Center(
-                        child: Text(
-                          _error!,
-                          style: const TextStyle(color: Colors.white60),
-                        ),
-                      )
-                    : Column(
-                        children: [
-                          Container(
-                            width: 44,
-                            height: 4,
-                            decoration: BoxDecoration(
-                              color: Colors.white24,
-                              borderRadius: BorderRadius.circular(99),
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-                          Row(
-                            children: [
-                              const Icon(
-                                Icons.card_giftcard_rounded,
-                                color: Color(0xFFFFD54A),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'إرسال هدية إلى ${widget.receiverName}',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Wrap(
-                            spacing: 8,
-                            children: [1, 7, 77, 777]
-                                .map(
-                                  (value) => ChoiceChip(
-                                    label: Text('×$value'),
-                                    selected: _quantity == value,
-                                    onSelected: (_) =>
-                                        setState(() => _quantity = value),
-                                    selectedColor: const Color(0xFF7B2DFF),
-                                    labelStyle: TextStyle(
-                                      color: _quantity == value
-                                          ? Colors.white
-                                          : Colors.white70,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                )
-                                .toList(),
-                          ),
-                          const SizedBox(height: 12),
-                          Expanded(
-                            child: _catalog.isEmpty
-                                ? const Center(
-                                    child: Text(
-                                      'لا توجد هدايا مفعلة حالياً',
-                                      style: TextStyle(color: Colors.white54),
-                                    ),
-                                  )
-                                : GridView.builder(
-                                    gridDelegate:
-                                        const SliverGridDelegateWithFixedCrossAxisCount(
-                                      crossAxisCount: 3,
-                                      crossAxisSpacing: 10,
-                                      mainAxisSpacing: 10,
-                                      childAspectRatio: .78,
-                                    ),
-                                    itemCount: _catalog.length,
-                                    itemBuilder: (_, index) {
-                                      final gift = _catalog[index];
-                                      final busy =
-                                          _sendingGiftId == gift.id;
-                                      return InkWell(
-                                        borderRadius:
-                                            BorderRadius.circular(18),
-                                        onTap: busy
-                                            ? null
-                                            : () async {
-                                                final ok =
-                                                    await _send(gift);
-                                                if (ok &&
-                                                    context.mounted) {
-                                                  Navigator.pop(context);
-                                                }
-                                              },
-                                        child: Container(
-                                          padding: const EdgeInsets.all(9),
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFF121725),
-                                            borderRadius:
-                                                BorderRadius.circular(18),
-                                            border: Border.all(
-                                              color: Colors.white10,
-                                            ),
-                                          ),
-                                          child: Column(
-                                            children: [
-                                              Expanded(
-                                                child: Stack(
-                                                  alignment: Alignment.center,
-                                                  children: [
-                                                    _giftImage(gift),
-                                                    if (busy)
-                                                      const CircularProgressIndicator(
-                                                        strokeWidth: 2,
-                                                        color: Color(
-                                                          0xFFFFD54A,
-                                                        ),
-                                                      ),
-                                                  ],
-                                                ),
-                                              ),
-                                              const SizedBox(height: 5),
-                                              Text(
-                                                gift.nameAr,
-                                                maxLines: 1,
-                                                overflow:
-                                                    TextOverflow.ellipsis,
-                                                style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 11,
-                                                  fontWeight:
-                                                      FontWeight.w800,
-                                                ),
-                                              ),
-                                              if (gift.effectiveMinVipLevel > 0)
-                                                Text(
-                                                  'VIP' +
-                                                      gift.effectiveMinVipLevel
-                                                          .toString() +
-                                                      '+',
-                                                  style: const TextStyle(
-                                                    color: Color(0xFFFFD54A),
-                                                    fontSize: 9,
-                                                    fontWeight: FontWeight.w900,
-                                                  ),
-                                                ),
-                                              Text(
-                                                '🪙 ${gift.priceCoins * _quantity}',
-                                                style: const TextStyle(
-                                                  color: Color(0xFFFFD54A),
-                                                  fontSize: 10,
-                                                  fontWeight:
-                                                      FontWeight.w900,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                          ),
-                        ],
-                      ),
-          ),
+    return UnifiedGiftPickerSheet(
+      title: widget.diaryId == null
+          ? 'إرسال هدية إلى ${widget.receiverName}'
+          : 'هدية ليوميات ${widget.receiverName}',
+      canSend: _uid.isNotEmpty &&
+          widget.receiverId.isNotEmpty &&
+          _uid != widget.receiverId,
+      recipientArea: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFF151A28),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.white10),
+        ),
+        child: Row(
+          children: [
+            const CircleAvatar(
+              radius: 17,
+              backgroundColor: Color(0xFF2B2141),
+              child: Icon(
+                Icons.person_rounded,
+                color: Colors.white70,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 9),
+            const Text(
+              'المستلم',
+              style: TextStyle(
+                color: Colors.white54,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(width: 7),
+            Expanded(
+              child: Text(
+                widget.receiverName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            const Icon(
+              Icons.lock_rounded,
+              color: Colors.white38,
+              size: 17,
+            ),
+          ],
         ),
       ),
+      onSend: _send,
     );
   }
 }
