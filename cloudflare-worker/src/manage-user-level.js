@@ -122,9 +122,17 @@ function publicUser(uid, user, summary) {
     profileImageUrl: clean(
       user.profileImageUrl ||
       user.profileImage ||
-      user.avatarUrl ||
-      user.profileAvatarAsset,
+      user.avatarUrl,
     ),
+    profileAvatarAsset: clean(user.profileAvatarAsset),
+    activeProfileFrameAssetKey: clean(user.activeProfileFrameAssetKey),
+    activeProfileFrameImageUrl: clean(user.activeProfileFrameImageUrl),
+    activeProfileFrameExpiresAtMs: Math.max(
+      0,
+      Number(user.activeProfileFrameExpiresAtMs || 0),
+    ),
+    activeProfileFramePermanent:
+      user.activeProfileFramePermanent === true,
     role: clean(user.role || "user") || "user",
     accountStatus: clean(user.accountStatus || "active") || "active",
     levels: {
