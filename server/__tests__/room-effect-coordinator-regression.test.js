@@ -25,6 +25,9 @@ test("room uses one effect coordinator for entrance gift and animated emoji visu
   assert.equal(coordinator.includes("maxCinematicQueue = 8"), true);
   assert.equal(coordinator.includes("maxParallelSeatEffects = 8"), true);
   assert.equal(coordinator.includes("IgnorePointer("), true);
+  assert.equal(coordinator.includes("giftEffectSoundAssetKey"), true);
+  assert.equal(coordinator.includes("_playEffectSound"), true);
+  assert.equal(coordinator.includes("_stopEffectSounds"), true);
 });
 
 test("room effects toggle is visual-only and does not touch gift delivery", () => {
@@ -36,6 +39,7 @@ test("room effects toggle is visual-only and does not touch gift delivery", () =
 
   assert.equal(main.includes("visualEnabled: value"), true);
   assert.equal(coordinator.includes("_clearVisualState()"), true);
+  assert.equal(coordinator.includes("soundChanged && !effectSoundEnabled"), true);
   assert.equal(coordinator.includes("financial_ledger"), false);
   assert.equal(roomGift.includes("effectMinQuantity"), false);
   assert.equal(roomGift.includes("giftVisualPolicy(gift, quantity)"), true);
@@ -67,4 +71,25 @@ test("room and direct messages reuse one animated emoji catalog", () => {
   assert.equal(dm.includes("showAnimatedEmojiPicker("), true);
   assert.equal(dartCatalog.includes("emoji.vip_star.animation"), true);
   assert.equal(serverCatalog.includes("emoji.vip_star.animation"), true);
+});
+
+
+test("room effect sound reuses provider-neutral voice and bounded Asset Studio cache", () => {
+  const contract = source(
+    "../../lib/features/voice/services/voice_service.dart",
+  );
+  const zego = source(
+    "../../lib/features/voice/services/zego_voice_service.dart",
+  );
+  const session = source(
+    "../../lib/features/voice/services/voice_room_session_controller.dart",
+  );
+
+  assert.equal(contract.includes("playLocalEffect("), true);
+  assert.equal(contract.includes("stopLocalEffect("), true);
+  assert.equal(zego.includes("_localEffectPlayer"), true);
+  assert.equal(zego.includes("enableAux(false)"), true);
+  assert.equal(session.includes("_maxEffectSoundCacheEntries = 8"), true);
+  assert.equal(session.includes("_maxEffectSoundBytes = 4 * 1024 * 1024"), true);
+  assert.equal(session.includes("ShadowAssetRegistry.remoteUrl(key)"), true);
 });
