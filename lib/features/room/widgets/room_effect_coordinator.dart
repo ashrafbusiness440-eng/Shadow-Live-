@@ -175,7 +175,8 @@ class RoomEffectCoordinator extends ChangeNotifier {
     final durationMs = ((message['giftEffectDurationMs'] as num?)
                 ?.toInt() ??
             2200)
-        .clamp(300, 12000);
+        .clamp(300, 12000)
+        .toInt();
     final rawRecipients = message['giftEffectRecipientUids'];
     final recipients = rawRecipients is List
         ? rawRecipients
@@ -261,7 +262,9 @@ class RoomEffectCoordinator extends ChangeNotifier {
       (left, right) => left < right ? left : right,
     );
     _seatCleanupTimer = Timer(
-      Duration(milliseconds: (nextExpiry - nowMs).clamp(20, 12000)),
+      Duration(
+        milliseconds: (nextExpiry - nowMs).clamp(20, 12000).toInt(),
+      ),
       _cleanupSeatEffects,
     );
   }
