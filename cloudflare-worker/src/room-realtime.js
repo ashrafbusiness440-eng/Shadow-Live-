@@ -24,6 +24,9 @@ import {
   rocketFeedRoomIds,
 } from "./room-rocket-feed.js";
 import { normalizeGlobalAppFeedEvent } from "./global-app-feed.js";
+import {
+  loadPublicProfilePresentation,
+} from "./public-profile-presentation.js";
 
 const REALTIME_TICKET_FIRESTORE_CONCURRENCY = 32;
 const REALTIME_ROOM_CACHE_TTL_MS = 30000;
@@ -397,17 +400,21 @@ export async function roomRealtime(request, env) {
 
       const db = firestoreClient(env);
       const uid = String(payload.sub || "");
-      const [room, user, ban, levelPolicy] = await Promise.all([
-        roomAdmissionCache.get(
-          roomId,
-          () => ticketFirestoreLimiter.run(() => db.get(`rooms/${roomId}`)),
-        ),
-        ticketFirestoreLimiter.run(() => db.get(`users/${uid}`)),
-        ticketFirestoreLimiter.run(
-          () => db.get(`room_bans/${roomId}/users/${uid}`),
-        ),
-        loadUserLevelPolicy(db).catch(() => null),
-      ]);
+      const [room, user, ban, levelPolicy, publicProfile] =
+        await Promise.all([
+          roomAdmissionCache.get(
+            roomId,
+            () => ticketFirestoreLimiter.run(() => db.get(`rooms/${roomId}`)),
+          ),
+          ticketFirestoreLimiter.run(() => db.get(`users/${uid}`)),
+          ticketFirestoreLimiter.run(
+            () => db.get(`room_bans/${roomId}/users/${uid}`),
+          ),
+          loadUserLevelPolicy(db).catch(() => null),
+          ticketFirestoreLimiter.run(() =>
+            loadPublicProfilePresentation(db, uid)
+          ),
+        ]);
       if (!room.exists || room.data?.isActive === false) {
         return json(request, env, { ok: false, code: "room_unavailable" }, 404);
       }
@@ -465,27 +472,26 @@ export async function roomRealtime(request, env) {
           ticket,
           expiresAtMs,
           displayName: String(
-            profileData.displayName ||
-            profileData.username ||
+            publicProfile.displayName ||
             payload.name ||
             "مستخدم Shadow Live",
           ),
           profileImageUrl: String(
-            profileData.profileImageUrl || payload.picture || "",
+            publicProfile.profileImageUrl || payload.picture || "",
           ),
           activeProfileFrameAssetKey: String(
-            profileData.activeProfileFrameAssetKey || "",
+            publicProfile.activeProfileFrameAssetKey || "",
           ),
           activeProfileFrameImageUrl: String(
-            profileData.activeProfileFrameImageUrl || "",
+            publicProfile.activeProfileFrameImageUrl || "",
           ),
           activeProfileFrameExpiresAtMs: Math.max(
             0,
-            Number(profileData.activeProfileFrameExpiresAtMs || 0),
+            Number(publicProfile.activeProfileFrameExpiresAtMs || 0),
           ),
           activeProfileFramePermanent:
-            profileData.activeProfileFramePermanent === true,
-          publicId: String(profileData.publicId || ""),
+            publicProfile.activeProfileFramePermanent === true,
+          publicId: String(publicProfile.publicId || ""),
           wealthLevel: levelMetadata.wealthLevel,
           attractionLevel: levelMetadata.attractionLevel,
           gameLevel: levelMetadata.gameLevel,
