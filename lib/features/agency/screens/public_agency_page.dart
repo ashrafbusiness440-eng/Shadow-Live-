@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../profile/screens/public_profile_screen.dart';
+import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../services/agency_membership_service.dart';
 import '../services/public_agency_service.dart';
 import '../widgets/agency_user_avatar.dart';
@@ -603,10 +604,6 @@ class _RankingTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final person = entry.person;
-    final avatar = agencyUserAvatarProvider(
-      imageUrl: person.profileImageUrl,
-      avatarAsset: person.profileAvatarAsset,
-    );
     return Material(
       color: Colors.black26,
       borderRadius: BorderRadius.circular(13),
@@ -628,17 +625,18 @@ class _RankingTile extends StatelessWidget {
         ),
         title: Row(
           children: [
-            CircleAvatar(
-              radius: 16,
+            ProfileAvatarWithFrame(
+              diameter: 32,
               backgroundColor: const Color(0xFF2A3150),
-              backgroundImage: avatar,
-              child: avatar == null
-                  ? const Icon(
-                      Icons.person_rounded,
-                      size: 17,
-                      color: Colors.white70,
-                    )
-                  : null,
+              placeholderColor: Colors.white70,
+              profile: profileAvatarFrameData(
+                imageUrl: person.profileImageUrl,
+                avatarAsset: person.profileAvatarAsset,
+                frameAssetKey: person.activeProfileFrameAssetKey,
+                frameImageUrl: person.activeProfileFrameImageUrl,
+                frameExpiresAtMs: person.activeProfileFrameExpiresAtMs,
+                framePermanent: person.activeProfileFramePermanent,
+              ),
             ),
             const SizedBox(width: 8),
             Expanded(
@@ -924,12 +922,18 @@ class _PersonTile extends StatelessWidget {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
         ),
-        leading: CircleAvatar(
+        leading: ProfileAvatarWithFrame(
+          diameter: 40,
           backgroundColor: const Color(0xFF2A3150),
-          backgroundImage: avatar,
-          child: avatar == null
-              ? const Icon(Icons.person_rounded, color: Colors.white70)
-              : null,
+          placeholderColor: Colors.white70,
+          profile: profileAvatarFrameData(
+            imageUrl: person.profileImageUrl,
+            avatarAsset: person.profileAvatarAsset,
+            frameAssetKey: person.activeProfileFrameAssetKey,
+            frameImageUrl: person.activeProfileFrameImageUrl,
+            frameExpiresAtMs: person.activeProfileFrameExpiresAtMs,
+            framePermanent: person.activeProfileFramePermanent,
+          ),
         ),
         title: Text(
           person.displayName,
