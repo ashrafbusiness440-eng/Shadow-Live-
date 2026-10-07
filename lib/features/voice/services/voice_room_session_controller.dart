@@ -327,7 +327,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
     String? replyPreview,
     String? replySenderUid,
     List<String> mentionUids = const [],
-    String? vipEmojiToken,
+    String? animatedEmojiId,
   }) {
     if (!_active || roomId.isEmpty) {
       throw StateError('room_realtime_not_connected');
@@ -339,7 +339,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
       replyPreview: replyPreview,
       replySenderUid: replySenderUid,
       mentionUids: mentionUids,
-      vipEmojiToken: vipEmojiToken,
+      animatedEmojiId: animatedEmojiId,
     );
   }
 
