@@ -124,6 +124,10 @@ class RoomEffectCoordinator extends ChangeNotifier {
         (message['giftEffectEventId'] ?? '').toString().trim();
     if (eventId.isEmpty || !_markSeen('gift:$eventId')) return;
     if (!_visualEnabled) return;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final createdAtMs =
+        (message['createdAtMs'] as num?)?.toInt() ?? nowMs;
+    if (createdAtMs <= 0 || nowMs - createdAtMs > 12000) return;
 
     final mode = (message['giftEffectMode'] ?? 'none').toString();
     if (mode != 'seat' && mode != 'cinematic') return;
