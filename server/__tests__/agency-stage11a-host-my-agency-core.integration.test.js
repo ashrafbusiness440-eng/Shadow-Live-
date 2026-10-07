@@ -398,10 +398,14 @@ test("11-A pressure contract is five direct reads with zero query/write", async 
           },
         };
       }
-      if (path === "users/" + ownerUid) {
+      if (path === "public_profiles/" + ownerUid) {
         return {
           exists: true,
-          data: { displayName: "Pressure Owner", publicId: "930003" },
+          data: {
+            uid: ownerUid,
+            displayName: "Pressure Owner",
+            publicId: "930003",
+          },
         };
       }
       throw new Error("unexpected_get:" + path);
@@ -430,7 +434,7 @@ test("11-A pressure contract is five direct reads with zero query/write", async 
     "agency_user_memberships/" + uid,
     "agencies/" + agencyId,
     "system_config/gift_economy",
-    "users/" + ownerUid,
+    "public_profiles/" + ownerUid,
   ]);
   assert.equal(calls.queries, 0);
   assert.equal(calls.writes, 0);
