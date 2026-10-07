@@ -365,26 +365,19 @@ class _RoomModeratorManagerSheetState
                                   contentPadding: EdgeInsets.zero,
                                   leading: ProfileAvatarWithFrame(
                                     diameter: 40,
+                                    userId: moderator.uid,
                                     backgroundColor:
                                         const Color(0xFF25183F),
                                     placeholderColor:
                                         const Color(0xFFFFD54A),
                                     placeholderIcon:
                                         Icons.shield_rounded,
-                                    profile: profileAvatarFrameData(
-                                      imageUrl:
+                                    fallbackProfile: <String, dynamic>{
+                                      'profileImageUrl':
                                           moderator.profileImageUrl,
-                                      avatarAsset:
+                                      'profileAvatarAsset':
                                           moderator.profileAvatarAsset,
-                                      frameAssetKey: moderator
-                                          .activeProfileFrameAssetKey,
-                                      frameImageUrl: moderator
-                                          .activeProfileFrameImageUrl,
-                                      frameExpiresAtMs: moderator
-                                          .activeProfileFrameExpiresAtMs,
-                                      framePermanent: moderator
-                                          .activeProfileFramePermanent,
-                                    ),
+                                    },
                                   ),
                                   title: Text(
                                     moderator.displayName,
