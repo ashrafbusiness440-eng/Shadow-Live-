@@ -45,15 +45,17 @@ void main() {
     expect(source.contains('sparkleAngles'), isFalse);
   });
 
-  test('equipped permanent level frame is allowed on the profile', () {
-    final source =
+  test('equipped permanent level frame is resolved by shared profile identity', () {
+    final profile =
         File('lib/features/user/screens/profile_screen.dart').readAsStringSync();
+    final shared = File(
+      'lib/features/profile/widgets/profile_avatar_with_frame.dart',
+    ).readAsStringSync();
 
-    expect(
-      source.contains('(item.permanent || item.expiresAtMs > now)'),
-      isTrue,
-    );
-    expect(source.contains('AnimatedProfileFrameVisual('), isTrue);
+    expect(profile.contains('ProfileAvatarWithFrame('), isTrue);
+    expect(profile.contains('AnimatedProfileFrameVisual('), isFalse);
+    expect(shared.contains("profile['activeProfileFramePermanent'] == true"), isTrue);
+    expect(shared.contains('AnimatedProfileFrameVisual('), isTrue);
   });
 
   test('My Items previews the POC through the native animated wrapper', () {
