@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../../../utils/compact_number.dart';
+import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../services/diamond_wallet_service.dart';
 import '../services/recharge_config_service.dart';
 import 'recharge_checkout_screen.dart';
@@ -738,6 +739,7 @@ class _RechargeScreenState extends State<RechargeScreen> {
     final name =
         (user['displayName'] ?? user['username'] ?? 'مستخدم').toString();
     final id = (user['publicId'] ?? '').toString();
+    final uid = (user['uid'] ?? '').toString().trim();
     final url =
         (user['profileImageUrl'] ?? user['avatarUrl'] ?? '').toString();
     return Container(
@@ -748,10 +750,14 @@ class _RechargeScreenState extends State<RechargeScreen> {
       ),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 24,
-            backgroundImage: url.isNotEmpty ? NetworkImage(url) : null,
-            child: url.isEmpty ? const Icon(Icons.person) : null,
+          ProfileAvatarWithFrame(
+            diameter: 48,
+            userId: uid,
+            fallbackProfile: <String, dynamic>{
+              'profileImageUrl': url,
+              'profileAvatarAsset':
+                  (user['profileAvatarAsset'] ?? '').toString(),
+            },
           ),
           const SizedBox(width: 10),
           Expanded(
