@@ -230,8 +230,23 @@ function safeDirectoryWithinRoot(value, root) {
     directory.startsWith(`${normalizedRoot}/`);
 }
 
+function canonicalTemplateIdForAssetIdentity({ assetKey, fileName, directory }) {
+  const key = clean(assetKey).toLowerCase();
+  const name = clean(fileName).toLowerCase();
+  const path = `${clean(directory).toLowerCase()}/${name}`;
+  if (
+    key.endsWith(".profileframe") ||
+    name.includes("_profile_frame.") ||
+    path.includes("_profile_frame.")
+  ) {
+    return "frame.base.v1";
+  }
+  return "";
+}
+
 export function validateAssetStudioMetadata({
   studioVersion,
+  assetKey,
   assetType,
   templateId,
   channels,
@@ -260,8 +275,18 @@ export function validateAssetStudioMetadata({
     return { ok: false, code: "invalid_studio_version" };
   }
 
-  const template = assetStudioTemplateById(templateId);
-  if (!template || clean(assetType) !== template.type) {
+  const canonicalTemplateId = canonicalTemplateIdForAssetIdentity({
+    assetKey,
+    fileName,
+    directory,
+  });
+  const template = assetStudioTemplateById(canonicalTemplateId || templateId);
+  const expectedType = template?.type || "";
+  const suppliedType = clean(assetType);
+  const typeMatches = canonicalTemplateId
+    ? true
+    : suppliedType === expectedType;
+  if (!template || !typeMatches) {
     return { ok: false, code: "invalid_asset_template" };
   }
 
