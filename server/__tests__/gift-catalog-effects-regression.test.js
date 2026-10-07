@@ -45,4 +45,24 @@ test("gift catalog owns reusable effect and relationship metadata", () => {
   assert.equal(picker.includes("? 'علاقة'"), true);
   assert.equal(picker.includes("gift.category == 'cp' ? 'CP' : 'صديق'"), true);
   assert.equal(picker.includes("GiftCatalogService.categoryLabel(value)"), true);
+  assert.equal(
+    control.match(/Future<void> editGift/g)?.length ?? 0,
+    1,
+    "gift editor must not be duplicated",
+  );
+  assert.equal(
+    control.match(/Widget build\\(BuildContext context\\)/g)?.length ?? 0,
+    1,
+    "gift catalog page must have one build tree",
+  );
+  assert.equal(
+    control.includes("isAnimated: item.isAnimated"),
+    true,
+    "enable/disable edits must preserve effect metadata",
+  );
+  assert.equal(
+    control.includes("affinityBasePoints: item.affinityBasePoints"),
+    true,
+    "enable/disable edits must preserve relationship metadata",
+  );
 });
