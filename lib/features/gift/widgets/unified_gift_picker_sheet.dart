@@ -800,7 +800,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
                       keyboardType: TextInputType.number,
                       textInputAction: TextInputAction.done,
                       onSubmitted: (_) => _confirmCustomQuantity(),
-                      inputFormatters: const [
+                      inputFormatters: [
                         FilteringTextInputFormatter.digitsOnly,
                         LengthLimitingTextInputFormatter(4),
                       ],
