@@ -130,14 +130,16 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   }
 
   Future<void> grantBagGift() async {
-    if (gifts.isEmpty) {
-      message('لا توجد هدايا متاحة للمنح.');
+    final enabledGifts =
+        gifts.where((item) => item.enabled).toList(growable: false);
+    if (enabledGifts.isEmpty) {
+      message('لا توجد هدايا مفعلة متاحة للمنح.');
       return;
     }
 
     final userId = TextEditingController();
     final quantity = TextEditingController(text: '1');
-    var giftId = gifts.first.id;
+    var giftId = enabledGifts.first.id;
     var source = 'admin';
 
     final confirmed = await showDialog<bool>(
@@ -163,8 +165,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                       labelText: 'الهدية',
                       border: OutlineInputBorder(),
                     ),
-                    items: gifts
-                        .where((item) => item.enabled)
+                    items: enabledGifts
                         .map(
                           (item) => DropdownMenuItem<String>(
                             value: item.id,
