@@ -680,7 +680,8 @@ class _HomeScreenState extends State<HomeScreen> {
       children: [
         ProfileAvatarWithFrame(
           diameter: 50,
-          profile: profile,
+          userId: _loadedForUid ?? '',
+          fallbackProfile: profile,
           backgroundColor: const Color(0xFF171D31),
           placeholderColor: Colors.white,
         ),
@@ -1050,7 +1051,8 @@ class _PersonCard extends StatelessWidget {
               children: [
                 ProfileAvatarWithFrame(
                   diameter: 52,
-                  profile: person.data,
+                  userId: person.id,
+                  fallbackProfile: person.data,
                   backgroundColor: const Color(0xFF281847),
                   placeholderColor: Colors.white54,
                 ),
