@@ -138,3 +138,26 @@ test("Shadow Control exposes an Arabic gift bag grant flow", () => {
   assert.equal(control.includes("هدية مجانية"), true);
   assert.equal(control.includes("enabledGifts.first.id"), true);
 });
+
+
+test("diary gifts reuse the unified picker and paid totals", () => {
+  const diary = source(
+    "../../lib/features/diaries/widgets/diary_gifts_sheet.dart",
+  );
+  const directUi = source(
+    "../../lib/features/gift/widgets/direct_gift_sheet.dart",
+  );
+
+  assert.equal(diary.includes("showDirectGiftSheet("), true);
+  assert.equal(
+    diary.includes("diaryId: widget.diary.diaryId"),
+    true,
+  );
+  assert.equal(diary.includes("package:http"), false);
+  assert.equal(directUi.includes("return UnifiedGiftPickerSheet("), true);
+  assert.equal(
+    directUi.includes("widget.onGiftSent?.call(quantity, paidCost)"),
+    true,
+  );
+  assert.equal(diary.includes("_giftCoins += paidCost"), true);
+});
