@@ -3286,6 +3286,18 @@ function normalizePkState(room){
         uid:clean(item?.uid),
         displayName:clean(item?.displayName||"مستخدم Shadow Live"),
         profileImageUrl:clean(item?.profileImageUrl),
+        activeProfileFrameAssetKey:clean(
+          item?.activeProfileFrameAssetKey||item?.frameAssetKey,
+        ),
+        activeProfileFrameImageUrl:clean(
+          item?.activeProfileFrameImageUrl||item?.frameImageUrl,
+        ),
+        activeProfileFrameExpiresAtMs:Math.max(
+          0,
+          Number(item?.activeProfileFrameExpiresAtMs||item?.frameExpiresAtMs||0),
+        ),
+        activeProfileFramePermanent:
+          item?.activeProfileFramePermanent===true,
         seatIndex:Number.isInteger(Number(item?.seatIndex))?Number(item.seatIndex):-1,
         team:clean(item?.team)==="b"?"b":"a",
         accepted:item?.accepted===true,
@@ -3316,6 +3328,18 @@ function normalizePkState(room){
           uid:clean(item?.uid),
           displayName:clean(item?.displayName||"مستخدم Shadow Live"),
           profileImageUrl:clean(item?.profileImageUrl),
+          activeProfileFrameAssetKey:clean(
+            item?.activeProfileFrameAssetKey||item?.frameAssetKey,
+          ),
+          activeProfileFrameImageUrl:clean(
+            item?.activeProfileFrameImageUrl||item?.frameImageUrl,
+          ),
+          activeProfileFrameExpiresAtMs:Math.max(
+            0,
+            Number(item?.activeProfileFrameExpiresAtMs||item?.frameExpiresAtMs||0),
+          ),
+          activeProfileFramePermanent:
+            item?.activeProfileFramePermanent===true,
           coins:Math.max(0,Number(item?.coins||0)),
         })).filter(item=>item.uid).sort((a,b)=>b.coins-a.coins).slice(0,3)
       : [],
@@ -3374,6 +3398,13 @@ async function createPk(db,uid,body){
         uid:targetUid,
         displayName:clean(seat.displayName||"مستخدم Shadow Live"),
         profileImageUrl:clean(seat.profileImageUrl),
+        activeProfileFrameAssetKey:clean(seat.frameAssetKey),
+        activeProfileFrameImageUrl:clean(seat.frameImageUrl),
+        activeProfileFrameExpiresAtMs:Math.max(
+          0,
+          Number(seat.frameExpiresAtMs||0),
+        ),
+        activeProfileFramePermanent:false,
         seatIndex:Number(seat.index),
         team:index<half?"a":"b",
         accepted:targetUid===uid,
