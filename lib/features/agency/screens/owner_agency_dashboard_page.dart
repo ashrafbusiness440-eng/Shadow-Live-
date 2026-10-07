@@ -1160,15 +1160,12 @@ class _MemberManagementTile extends StatelessWidget {
                   child: ProfileAvatarWithFrame(
                     key: Key('owner-member-avatar-${member.uid}'),
                     diameter: 48,
+                    userId: member.uid,
                     backgroundColor: const Color(0xFF2A3150),
-                    profile: profileAvatarFrameData(
-                      imageUrl: member.profileImageUrl,
-                      avatarAsset: member.profileAvatarAsset,
-                      frameAssetKey: member.activeProfileFrameAssetKey,
-                      frameImageUrl: member.activeProfileFrameImageUrl,
-                      frameExpiresAtMs: member.activeProfileFrameExpiresAtMs,
-                      framePermanent: member.activeProfileFramePermanent,
-                    ),
+                    fallbackProfile: <String, dynamic>{
+                      'profileImageUrl': member.profileImageUrl,
+                      'profileAvatarAsset': member.profileAvatarAsset,
+                    },
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -1364,15 +1361,12 @@ class _HostPerformanceSheet extends StatelessWidget {
                   children: [
                     ProfileAvatarWithFrame(
                       diameter: 60,
+                      userId: data.uid,
                       backgroundColor: const Color(0xFF2A3150),
-                      profile: profileAvatarFrameData(
-                        imageUrl: data.profileImageUrl,
-                        avatarAsset: data.profileAvatarAsset,
-                        frameAssetKey: data.activeProfileFrameAssetKey,
-                        frameImageUrl: data.activeProfileFrameImageUrl,
-                        frameExpiresAtMs: data.activeProfileFrameExpiresAtMs,
-                        framePermanent: data.activeProfileFramePermanent,
-                      ),
+                      fallbackProfile: <String, dynamic>{
+                        'profileImageUrl': data.profileImageUrl,
+                        'profileAvatarAsset': data.profileAvatarAsset,
+                      },
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -1639,16 +1633,13 @@ class _PendingManagementTile extends StatelessWidget {
                   borderRadius: BorderRadius.circular(999),
                   child: ProfileAvatarWithFrame(
                     diameter: 48,
+                    userId: request.uid,
                     backgroundColor: const Color(0xFF31204F),
                     placeholderColor: Colors.white70,
-                    profile: profileAvatarFrameData(
-                      imageUrl: request.profileImageUrl,
-                      avatarAsset: request.profileAvatarAsset,
-                      frameAssetKey: request.activeProfileFrameAssetKey,
-                      frameImageUrl: request.activeProfileFrameImageUrl,
-                      frameExpiresAtMs: request.activeProfileFrameExpiresAtMs,
-                      framePermanent: request.activeProfileFramePermanent,
-                    ),
+                    fallbackProfile: <String, dynamic>{
+                      'profileImageUrl': request.profileImageUrl,
+                      'profileAvatarAsset': request.profileAvatarAsset,
+                    },
                   ),
                 ),
                 const SizedBox(width: 10),
