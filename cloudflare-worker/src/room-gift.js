@@ -707,6 +707,9 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       db.increment("supportCoins", totalCost),
       db.increment("giftCount", quantity * recipientIds.length),
     ];
+    // High-frequency room support lives in the period support documents below.
+    // Do not mutate rooms/{roomId} for every gift: room-root listeners fan this
+    // write out to every connected participant.
     const roomDailyPath =
       roomPath + "/support_daily/" + periods.day;
     const roomWeeklyPath =
@@ -1107,7 +1110,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
           );
         }
 
-        const agencyShard = agencyAccrualShard(subKey);
+        const agencyShard = agencyAccrualShard(key);
         writes.push(
           db.writeUpdate(
             "agency_monthly_accrual_shards/" +
