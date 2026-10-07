@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../services/room_moderator_service.dart';
+import '../../profile/widgets/profile_avatar_with_frame.dart';
 
 class RoomModeratorManagerSheet extends StatefulWidget {
   const RoomModeratorManagerSheet({
@@ -362,21 +363,28 @@ class _RoomModeratorManagerSheetState
                                     .join(' • ');
                                 return ListTile(
                                   contentPadding: EdgeInsets.zero,
-                                  leading: CircleAvatar(
+                                  leading: ProfileAvatarWithFrame(
+                                    diameter: 40,
                                     backgroundColor:
                                         const Color(0xFF25183F),
-                                    backgroundImage:
-                                        moderator.profileImageUrl.isEmpty
-                                            ? null
-                                            : NetworkImage(
-                                                moderator.profileImageUrl,
-                                              ),
-                                    child: moderator.profileImageUrl.isEmpty
-                                        ? const Icon(
-                                            Icons.shield_rounded,
-                                            color: Color(0xFFFFD54A),
-                                          )
-                                        : null,
+                                    placeholderColor:
+                                        const Color(0xFFFFD54A),
+                                    placeholderIcon:
+                                        Icons.shield_rounded,
+                                    profile: profileAvatarFrameData(
+                                      imageUrl:
+                                          moderator.profileImageUrl,
+                                      avatarAsset:
+                                          moderator.profileAvatarAsset,
+                                      frameAssetKey: moderator
+                                          .activeProfileFrameAssetKey,
+                                      frameImageUrl: moderator
+                                          .activeProfileFrameImageUrl,
+                                      frameExpiresAtMs: moderator
+                                          .activeProfileFrameExpiresAtMs,
+                                      framePermanent: moderator
+                                          .activeProfileFramePermanent,
+                                    ),
                                   ),
                                   title: Text(
                                     moderator.displayName,
