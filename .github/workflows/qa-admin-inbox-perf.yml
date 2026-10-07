@@ -1,0 +1,90 @@
+name: QA Admin Inbox Performance
+
+on:
+  push:
+    branches: [qa-admin-inbox-perf-20261007]
+    paths:
+      - .github/workflows/qa-admin-inbox-perf.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Firebase Admin
+        run: npm install --no-save firebase-admin@13
+
+      - name: Measure production admin inbox
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          node --input-type=module <<'NODE'
+          import admin from "firebase-admin";
+
+          let serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || "{}");
+          if (typeof serviceAccount === "string") serviceAccount = JSON.parse(serviceAccount);
+          admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+          const db = admin.firestore();
+
+          const owners = await db.collection("users").where("role", "==", "owner").limit(1).get();
+          if (owners.empty) throw new Error("owner_not_found");
+          const uid = owners.docs[0].id;
+
+          const customToken = await admin.auth().createCustomToken(uid);
+          const authResponse = await fetch(
+            "https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=AIzaSyAjDi9RdObZXHF16ecWt4J4zj2_1rdDmf8",
+            {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ token: customToken, returnSecureToken: true }),
+            },
+          );
+          const authBody = await authResponse.json();
+          if (!authResponse.ok || !authBody.idToken) {
+            throw new Error("firebase_signin_failed");
+          }
+
+          const endpoint = "https://shadow-live.ashraf-business-440.workers.dev/api/admin-inbox";
+          const samples = [];
+          for (let i = 0; i < 7; i += 1) {
+            const started = performance.now();
+            const response = await fetch(endpoint, {
+              method: "POST",
+              headers: {
+                authorization: "Bearer " + authBody.idToken,
+                "content-type": "application/json",
+              },
+              body: JSON.stringify({ action: "list" }),
+            });
+            const body = await response.json().catch(() => ({}));
+            const ms = Math.round(performance.now() - started);
+            samples.push(ms);
+            if (!response.ok || body.ok !== true) {
+              throw new Error("admin_inbox_failed_" + response.status + "_" + JSON.stringify(body));
+            }
+            console.log("ADMIN_INBOX_SAMPLE", i + 1, ms, "ms", "items", Array.isArray(body.items) ? body.items.length : 0);
+          }
+
+          const sorted = [...samples].sort((a, b) => a - b);
+          const median = sorted[Math.floor(sorted.length / 2)];
+          const p95 = sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.95) - 1)];
+          const average = Math.round(samples.reduce((a, b) => a + b, 0) / samples.length);
+          const result = { samples, medianMs: median, averageMs: average, p95Ms: p95, maxMs: Math.max(...samples) };
+          console.log("ADMIN_INBOX_PERF_RESULT", JSON.stringify(result));
+
+          if (median > 1200 || p95 > 2000) {
+            throw new Error("admin_inbox_latency_still_high_" + JSON.stringify(result));
+          }
+          NODE
