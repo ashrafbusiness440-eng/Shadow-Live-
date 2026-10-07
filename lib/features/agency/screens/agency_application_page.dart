@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../services/navigation_service.dart';
+import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../../../shared/widgets/country_selector.dart';
 import '../services/agency_application_service.dart';
 
@@ -680,24 +681,12 @@ class _HostAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final photo = host.photoUrl;
-    if (photo == null || photo.isEmpty) {
-      return const CircleAvatar(
-        radius: 24,
-        child: Icon(Icons.person_rounded),
-      );
-    }
-    return ClipOval(
-      child: Image.network(
-        photo,
-        width: 48,
-        height: 48,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => const CircleAvatar(
-          radius: 24,
-          child: Icon(Icons.person_rounded),
-        ),
-      ),
+    return ProfileAvatarWithFrame(
+      diameter: 48,
+      userId: host.uid,
+      fallbackProfile: <String, dynamic>{
+        'profileImageUrl': host.photoUrl ?? '',
+      },
     );
   }
 }
