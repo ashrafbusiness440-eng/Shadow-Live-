@@ -576,10 +576,6 @@ class _VipControlUser {
     required this.publicId,
     required this.profileImageUrl,
     required this.profileAvatarAsset,
-    required this.activeProfileFrameAssetKey,
-    required this.activeProfileFrameImageUrl,
-    required this.activeProfileFrameExpiresAtMs,
-    required this.activeProfileFramePermanent,
     required this.role,
     required this.earnedVipLevel,
     required this.effectiveVipLevel,
@@ -596,10 +592,6 @@ class _VipControlUser {
   final String publicId;
   final String profileImageUrl;
   final String profileAvatarAsset;
-  final String activeProfileFrameAssetKey;
-  final String activeProfileFrameImageUrl;
-  final int activeProfileFrameExpiresAtMs;
-  final bool activeProfileFramePermanent;
   final String role;
   final int earnedVipLevel;
   final int effectiveVipLevel;
@@ -622,14 +614,6 @@ class _VipControlUser {
       profileImageUrl: '${json['profileImageUrl'] ?? ''}'.trim(),
       profileAvatarAsset:
           '${json['profileAvatarAsset'] ?? ''}'.trim(),
-      activeProfileFrameAssetKey:
-          '${json['activeProfileFrameAssetKey'] ?? ''}'.trim(),
-      activeProfileFrameImageUrl:
-          '${json['activeProfileFrameImageUrl'] ?? ''}'.trim(),
-      activeProfileFrameExpiresAtMs:
-          int.tryParse('${json['activeProfileFrameExpiresAtMs'] ?? 0}') ?? 0,
-      activeProfileFramePermanent:
-          json['activeProfileFramePermanent'] == true,
       role: '${json['role'] ?? 'user'}'.trim(),
       earnedVipLevel: value('earnedVipLevel'),
       effectiveVipLevel: value('effectiveVipLevel'),
