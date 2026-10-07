@@ -1796,6 +1796,8 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
             visualPolicy.roomEffect?.assetKey || "",
           giftEffectSoundAssetKey:
             visualPolicy.roomEffect?.soundAssetKey || "",
+          giftEffectSize:
+            visualPolicy.roomEffect?.size || 0,
           giftEffectDurationMs:
             visualPolicy.roomEffect?.durationMs || 0,
           giftEffectRecipientUids:
