@@ -348,7 +348,16 @@ class _StarBattleSheetState extends State<StarBattleSheet> {
                                     fallbackProfile: <String, dynamic>{
                                       'profileImageUrl':
                                           leader.profileImageUrl,
+                                      'activeProfileFrameAssetKey':
+                                          leader.activeProfileFrameAssetKey,
+                                      'activeProfileFrameImageUrl':
+                                          leader.activeProfileFrameImageUrl,
+                                      'activeProfileFrameExpiresAtMs':
+                                          leader.activeProfileFrameExpiresAtMs,
+                                      'activeProfileFramePermanent':
+                                          leader.activeProfileFramePermanent,
                                     },
+                                    fallbackIsVisualSnapshot: true,
                                   ),
                                   title: Text(
                                     leader.displayName,
