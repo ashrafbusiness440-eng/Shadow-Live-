@@ -5776,6 +5776,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                 _roomArguments['hostId'] ??
                                 '')
                             .toString(),
+                        ownerPhotoUrl: _ownerPhotoUrl,
                         participants: _voiceSession.roomParticipants,
                         seats: _roomSeatState?.seats ?? const <VoiceSeat>[],
                       ),
