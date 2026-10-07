@@ -28,6 +28,10 @@ import {
   publishRoomRealtimeEvent,
 } from "./room-realtime.js";
 import { writePressureDataPoint } from "./pressure-telemetry.js";
+import {
+  prepareRelationshipGiftContext,
+  relationshipGiftWritesForRecipient,
+} from "./relationship-gift.js";
 import { giftLevelPointAwards, safeAddUserLevelPoints } from "./user-level-policy.js";
 import { vipCosmeticsFromUser } from "./vip-entitlements.js";
 
@@ -501,6 +505,24 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     const gift = rawCatalog.find((item) => clean(item?.id) === giftId);
     if (!gift) throw new ApiError("gift_not_found", 404);
     if (gift.enabled === false) throw new ApiError("gift_inactive", 409);
+
+    let relationshipGiftContext = null;
+    try {
+      relationshipGiftContext = await prepareRelationshipGiftContext(
+        db,
+        transaction,
+        {
+          senderUid,
+          gift,
+        },
+      );
+    } catch (error) {
+      const code = clean(error?.message);
+      if (code === "invalid_affinity_base_points") {
+        throw new ApiError(code, 409);
+      }
+      throw error;
+    }
 
     const sender = senderSnap.data || {};
     const senderVip = vipCosmeticsFromUser(sender, nowMs).level;
@@ -1302,6 +1324,41 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
         );
       }
 
+      let relationshipGiftAward = {
+        writes: [],
+        relationshipId: null,
+        relationshipType: null,
+        affinityBasePoints: 0,
+        affinityPointsAwarded: 0,
+      };
+      try {
+        relationshipGiftAward =
+          await relationshipGiftWritesForRecipient(
+            db,
+            transaction,
+            relationshipGiftContext,
+            {
+              receiverId,
+              giftId,
+              quantity,
+              operationId: subKey,
+              now,
+            },
+          );
+      } catch (error) {
+        const code = clean(error?.message);
+        if (
+          code === "relationship_gift_not_eligible" ||
+          code === "invalid_affinity_points" ||
+          code === "invalid_affinity_quantity" ||
+          code === "invalid_relationship_gift_operation"
+        ) {
+          throw new ApiError(code, 409);
+        }
+        throw error;
+      }
+      writes.push(...relationshipGiftAward.writes);
+
       const receiverName = clean(
         receiver.displayName ||
           receiver.username ||
@@ -1389,6 +1446,14 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
                 : "applied",
             periods,
             agencyId: agencyId || null,
+            relationshipId: relationshipGiftAward.relationshipId,
+            relationshipType: relationshipGiftAward.relationshipType,
+            affinityBasePoints:
+              relationshipGiftAward.affinityBasePoints,
+            affinityPointsAwarded:
+              relationshipGiftAward.affinityPointsAwarded,
+            affinityMultiplierBps:
+              relationshipGiftAward.relationshipId ? 15000 : 0,
             createdAt: now,
           },
         ),
@@ -1455,6 +1520,12 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
           agencyTarget?.paidDiamonds || 0,
         salaryDeltaDiamonds:
           agencyTarget?.salaryDeltaDiamonds || 0,
+        relationshipId: relationshipGiftAward.relationshipId,
+        relationshipType: relationshipGiftAward.relationshipType,
+        affinityBasePoints:
+          relationshipGiftAward.affinityBasePoints,
+        affinityPointsAwarded:
+          relationshipGiftAward.affinityPointsAwarded,
       });
     }
 
