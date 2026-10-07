@@ -767,35 +767,21 @@ async function toggleLike(db, uid, body) {
   });
 }
 
-function normalizeComment(id, data = {}, profile = null) {
-  const authorUid = clean(data.authorUid);
-  const current = {
-    ...publicProfilePresentation(authorUid, {
-      displayName: data.authorName,
-      publicId: data.authorPublicId,
-      profileImageUrl: data.authorProfileImageUrl,
-      profileAvatarAsset: data.authorProfileAvatarAsset,
-      activeProfileFrameAssetKey: data.activeProfileFrameAssetKey,
-      activeProfileFrameImageUrl: data.activeProfileFrameImageUrl,
-      activeProfileFrameExpiresAtMs: data.activeProfileFrameExpiresAtMs,
-      activeProfileFramePermanent: data.activeProfileFramePermanent,
-    }),
-    ...(profile || {}),
-  };
+function normalizeComment(id, data = {}) {
   return {
     commentId: id,
     diaryId: clean(data.diaryId),
-    authorUid,
-    authorName: clean(current.displayName),
-    authorPublicId: clean(current.publicId),
-    authorProfileImageUrl: clean(current.profileImageUrl),
-    authorProfileAvatarAsset: clean(current.profileAvatarAsset),
-    activeProfileFrameAssetKey: clean(current.activeProfileFrameAssetKey),
-    activeProfileFrameImageUrl: clean(current.activeProfileFrameImageUrl),
+    authorUid: clean(data.authorUid),
+    authorName: clean(data.authorName),
+    authorPublicId: clean(data.authorPublicId),
+    authorProfileImageUrl: clean(data.authorProfileImageUrl),
+    authorProfileAvatarAsset: clean(data.authorProfileAvatarAsset),
+    activeProfileFrameAssetKey: clean(data.activeProfileFrameAssetKey),
+    activeProfileFrameImageUrl: clean(data.activeProfileFrameImageUrl),
     activeProfileFrameExpiresAtMs:
-      Math.max(0, Number(current.activeProfileFrameExpiresAtMs || 0)),
+      Math.max(0, Number(data.activeProfileFrameExpiresAtMs || 0)),
     activeProfileFramePermanent:
-      current.activeProfileFramePermanent === true,
+      data.activeProfileFramePermanent === true,
     text: clean(data.text),
     createdAt: data.createdAt || null,
     createdAtMs: Math.max(0, Number(data.createdAtMs || 0)),
@@ -865,7 +851,7 @@ async function createComment(db, uid, body) {
       diaryId,
       commentId,
       commentCount,
-      comment: normalizeComment(commentId, comment, publicProfile),
+      comment: normalizeComment(commentId, comment),
     };
 
     const writes = [
@@ -960,16 +946,9 @@ async function listComments(db, body) {
   });
   const hasMore = rows.length > limit;
   const visible = rows.slice(0, limit);
-  const profiles = await loadPublicProfilePresentations(
-    db,
-    visible.map((row) => clean(row?.data?.authorUid)),
-  );
   return {
     ok: true,
-    items: visible.map((row) => {
-      const authorUid = clean(row?.data?.authorUid);
-      return normalizeComment(row.id, row.data, profiles.get(authorUid) || null);
-    }),
+    items: visible.map((row) => normalizeComment(row.id, row.data)),
     nextCursor:
       hasMore && visible.length
         ? makeCursor(visible[visible.length - 1])
@@ -1473,34 +1452,21 @@ async function listFollowing(db, uid, body) {
   };
 }
 
-function normalizeGiftEvent(id, data = {}, profile = null) {
-  const senderId = clean(data.senderId);
-  const current = {
-    ...publicProfilePresentation(senderId, {
-      displayName: data.senderName,
-      publicId: data.senderPublicId,
-      profileImageUrl: data.senderProfileImageUrl,
-      activeProfileFrameAssetKey: data.activeProfileFrameAssetKey,
-      activeProfileFrameImageUrl: data.activeProfileFrameImageUrl,
-      activeProfileFrameExpiresAtMs: data.activeProfileFrameExpiresAtMs,
-      activeProfileFramePermanent: data.activeProfileFramePermanent,
-    }),
-    ...(profile || {}),
-  };
+function normalizeGiftEvent(id, data = {}) {
   return {
     giftEventId: id,
     giftOperationId: clean(data.giftOperationId || id),
     diaryId: clean(data.diaryId),
-    senderId,
-    senderName: clean(current.displayName),
-    senderPublicId: clean(current.publicId),
-    senderProfileImageUrl: clean(current.profileImageUrl),
-    activeProfileFrameAssetKey: clean(current.activeProfileFrameAssetKey),
-    activeProfileFrameImageUrl: clean(current.activeProfileFrameImageUrl),
+    senderId: clean(data.senderId),
+    senderName: clean(data.senderName),
+    senderPublicId: clean(data.senderPublicId),
+    senderProfileImageUrl: clean(data.senderProfileImageUrl),
+    activeProfileFrameAssetKey: clean(data.activeProfileFrameAssetKey),
+    activeProfileFrameImageUrl: clean(data.activeProfileFrameImageUrl),
     activeProfileFrameExpiresAtMs:
-      Math.max(0, Number(current.activeProfileFrameExpiresAtMs || 0)),
+      Math.max(0, Number(data.activeProfileFrameExpiresAtMs || 0)),
     activeProfileFramePermanent:
-      current.activeProfileFramePermanent === true,
+      data.activeProfileFramePermanent === true,
     receiverId: clean(data.receiverId),
     giftId: clean(data.giftId),
     giftName: clean(data.giftName),
@@ -1537,16 +1503,9 @@ async function listGiftEvents(db, body) {
   });
   const hasMore = rows.length > limit;
   const visible = rows.slice(0, limit);
-  const profiles = await loadPublicProfilePresentations(
-    db,
-    visible.map((row) => clean(row?.data?.senderId)),
-  );
   return {
     ok: true,
-    items: visible.map((row) => {
-      const senderId = clean(row?.data?.senderId);
-      return normalizeGiftEvent(row.id, row.data, profiles.get(senderId) || null);
-    }),
+    items: visible.map((row) => normalizeGiftEvent(row.id, row.data)),
     nextCursor:
       hasMore && visible.length
         ? makeCursor(visible[visible.length - 1])
