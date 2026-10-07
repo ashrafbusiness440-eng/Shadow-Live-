@@ -1658,6 +1658,24 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
         recipientIds.length === 1
           ? first.salaryDeltaDiamonds
           : 0,
+      relationshipId:
+        recipientIds.length === 1
+          ? first.relationshipId
+          : null,
+      relationshipType:
+        recipientIds.length === 1
+          ? first.relationshipType
+          : null,
+      affinityBasePoints:
+        recipientIds.length === 1
+          ? first.affinityBasePoints
+          : 0,
+      affinityPointsAwarded:
+        recipientResults.reduce(
+          (sum, item) =>
+            sum + Number(item.affinityPointsAwarded || 0),
+          0,
+        ),
       recipients: recipientResults,
       messageId,
       roomRocketEnabled,
