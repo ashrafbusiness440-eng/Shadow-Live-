@@ -230,33 +230,26 @@ async function ownedRoomRefs(db,uid){
 }
 
 async function updatePublicProfileFrame(db,uid,item,active){
-  const refs=[
-    db.collection("users").doc(uid),
-    db.collection("public_profiles").doc(uid),
-  ];
-  const batch=db.batch();
-  for(const ref of refs){
-    if(active){
-      batch.set(ref,{
-        activeProfileFrameRewardId:clean(item.rewardId),
-        activeProfileFrameAssetKey:clean(item.assetKey),
-        activeProfileFrameImageUrl:clean(item.imageUrl),
-        activeProfileFrameExpiresAtMs:Number(item.expiresAtMs||0),
-        activeProfileFramePermanent:item.permanent===true,
-        profileFrameUpdatedAt:FieldValue.serverTimestamp(),
-      },{merge:true});
-    }else{
-      batch.set(ref,{
-        activeProfileFrameRewardId:FieldValue.delete(),
-        activeProfileFrameAssetKey:FieldValue.delete(),
-        activeProfileFrameImageUrl:FieldValue.delete(),
-        activeProfileFrameExpiresAtMs:FieldValue.delete(),
-        activeProfileFramePermanent:FieldValue.delete(),
-        profileFrameUpdatedAt:FieldValue.serverTimestamp(),
-      },{merge:true});
-    }
+  const ref=db.collection("public_profiles").doc(uid);
+  if(active){
+    await ref.set({
+      activeProfileFrameRewardId:clean(item.rewardId),
+      activeProfileFrameAssetKey:clean(item.assetKey),
+      activeProfileFrameImageUrl:clean(item.imageUrl),
+      activeProfileFrameExpiresAtMs:Number(item.expiresAtMs||0),
+      activeProfileFramePermanent:item.permanent===true,
+      profileFrameUpdatedAt:FieldValue.serverTimestamp(),
+    },{merge:true});
+  }else{
+    await ref.set({
+      activeProfileFrameRewardId:FieldValue.delete(),
+      activeProfileFrameAssetKey:FieldValue.delete(),
+      activeProfileFrameImageUrl:FieldValue.delete(),
+      activeProfileFrameExpiresAtMs:FieldValue.delete(),
+      activeProfileFramePermanent:FieldValue.delete(),
+      profileFrameUpdatedAt:FieldValue.serverTimestamp(),
+    },{merge:true});
   }
-  await batch.commit();
 }
 
 async function updateOwnedRoomBackground(db,uid,item,active){
