@@ -358,34 +358,7 @@ export async function sendMessage(db, uid, body) {
     );
 
     await db.commit(transaction, writes);
-    const premiumEvent = premiumGiftCelebrationEvent({
-      operationId: key,
-      gift: giftData,
-      quantity,
-      totalCost,
-      sender: {
-        uid,
-        displayName: senderName,
-        profileImageUrl: senderProfileImageUrl,
-        publicId: senderPublicId,
-      },
-      receiver: {
-        uid: receiverId,
-        displayName: clean(
-          receiverData.displayName ||
-            receiverData.username ||
-            "مستخدم Shadow Live",
-        ),
-        profileImageUrl: clean(receiverData.profileImageUrl),
-      },
-      nowMs: now.getTime(),
-    });
-    return {
-      ok: true,
-      code: "ok",
-      ...resultData,
-      _globalAppEvents: premiumEvent ? [premiumEvent] : [],
-    };
+    return { ok: true, code: "ok", ...resultData };
   });
 }
 
@@ -1344,7 +1317,34 @@ export async function sendGift(db, uid, body, options = {}) {
     );
 
     await db.commit(transaction, writes);
-    return { ok: true, code: "ok", ...resultData };
+    const premiumEvent = premiumGiftCelebrationEvent({
+      operationId: key,
+      gift: giftData,
+      quantity,
+      totalCost,
+      sender: {
+        uid,
+        displayName: senderName,
+        profileImageUrl: senderProfileImageUrl,
+        publicId: senderPublicId,
+      },
+      receiver: {
+        uid: receiverId,
+        displayName: clean(
+          receiverData.displayName ||
+            receiverData.username ||
+            "مستخدم Shadow Live",
+        ),
+        profileImageUrl: clean(receiverData.profileImageUrl),
+      },
+      nowMs: now.getTime(),
+    });
+    return {
+      ok: true,
+      code: "ok",
+      ...resultData,
+      _globalAppEvents: premiumEvent ? [premiumEvent] : [],
+    };
   });
 }
 
