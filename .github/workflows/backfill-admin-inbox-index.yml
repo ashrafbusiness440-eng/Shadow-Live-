@@ -1,0 +1,36 @@
+name: Backfill Admin Inbox Index
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - cloudflare-worker/src/admin-inbox.js
+      - cloudflare-worker/src/admin-inbox-index.js
+      - cloudflare-worker/scripts/backfill-admin-inbox-index.mjs
+      - .github/workflows/backfill-admin-inbox-index.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shadow-live-admin-inbox-backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Backfill unified admin inbox
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node cloudflare-worker/scripts/backfill-admin-inbox-index.mjs
