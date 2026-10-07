@@ -7,6 +7,10 @@ class RoomChatMessage {
     required this.senderUid,
     required this.displayName,
     required this.profileImageUrl,
+    this.activeProfileFrameAssetKey = '',
+    this.activeProfileFrameImageUrl = '',
+    this.activeProfileFrameExpiresAtMs = 0,
+    this.activeProfileFramePermanent = false,
     this.publicId = '',
     this.wealthLevel = 0,
     this.attractionLevel = 0,
@@ -33,6 +37,10 @@ class RoomChatMessage {
   final String senderUid;
   final String displayName;
   final String profileImageUrl;
+  final String activeProfileFrameAssetKey;
+  final String activeProfileFrameImageUrl;
+  final int activeProfileFrameExpiresAtMs;
+  final bool activeProfileFramePermanent;
   final String publicId;
   final int wealthLevel;
   final int attractionLevel;
@@ -62,6 +70,14 @@ class RoomChatMessage {
       displayName:
           (data['displayName'] ?? 'مستخدم Shadow Live').toString(),
       profileImageUrl: (data['profileImageUrl'] ?? '').toString(),
+      activeProfileFrameAssetKey:
+          (data['activeProfileFrameAssetKey'] ?? '').toString(),
+      activeProfileFrameImageUrl:
+          (data['activeProfileFrameImageUrl'] ?? '').toString(),
+      activeProfileFrameExpiresAtMs:
+          (data['activeProfileFrameExpiresAtMs'] as num?)?.toInt() ?? 0,
+      activeProfileFramePermanent:
+          data['activeProfileFramePermanent'] == true,
       publicId: (data['publicId'] ?? '').toString(),
       wealthLevel: (data['wealthLevel'] as num?)?.toInt() ?? 0,
       attractionLevel: (data['attractionLevel'] as num?)?.toInt() ?? 0,
