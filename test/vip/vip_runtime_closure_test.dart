@@ -23,6 +23,9 @@ void main() {
     final directGift = File(
       'lib/features/gift/widgets/direct_gift_sheet.dart',
     ).readAsStringSync();
+    final unifiedGift = File(
+      'lib/features/gift/widgets/unified_gift_picker_sheet.dart',
+    ).readAsStringSync();
 
     expect(presence, contains('vipOnlinePriority'));
     expect(presence, contains('vipLevel'));
@@ -39,8 +42,9 @@ void main() {
       RegExp(r'value:\s*4').hasMatch(giftControl),
       isTrue,
     );
-    expect(roomGift, contains('vip_gift_requires_level'));
-    expect(directGift, contains('vip_gift_requires_level'));
+    expect(roomGift, contains('UnifiedGiftPickerSheet'));
+    expect(directGift, contains('UnifiedGiftPickerSheet'));
+    expect(unifiedGift, contains('vip_gift_requires_level'));
 
     expect(control, contains('VIP1+ — خدمة عملاء VIP'));
     expect(control, contains('VIP4+ — قناة حصرية 1-to-1'));
