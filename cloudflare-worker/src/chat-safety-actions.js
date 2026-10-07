@@ -23,6 +23,8 @@ import {
 import { giftLevelPointAwards, safeAddUserLevelPoints } from "./user-level-policy.js";
 import { activeEffectiveVipLevelFromUser } from "./vip-runtime.js";
 import { vipCosmeticAssetKey } from "./vip-entitlements.js";
+import { publishGlobalAppEvents } from "./room-realtime.js";
+import { premiumGiftCelebrationEvent } from "./gift-visual-policy.js";
 import {
   prepareRelationshipGiftContext,
   relationshipGiftWritesForRecipient,
@@ -356,7 +358,34 @@ export async function sendMessage(db, uid, body) {
     );
 
     await db.commit(transaction, writes);
-    return { ok: true, code: "ok", ...resultData };
+    const premiumEvent = premiumGiftCelebrationEvent({
+      operationId: key,
+      gift: giftData,
+      quantity,
+      totalCost,
+      sender: {
+        uid,
+        displayName: senderName,
+        profileImageUrl: senderProfileImageUrl,
+        publicId: senderPublicId,
+      },
+      receiver: {
+        uid: receiverId,
+        displayName: clean(
+          receiverData.displayName ||
+            receiverData.username ||
+            "مستخدم Shadow Live",
+        ),
+        profileImageUrl: clean(receiverData.profileImageUrl),
+      },
+      nowMs: now.getTime(),
+    });
+    return {
+      ok: true,
+      code: "ok",
+      ...resultData,
+      _globalAppEvents: premiumEvent ? [premiumEvent] : [],
+    };
   });
 }
 
@@ -1720,7 +1749,7 @@ async function reportUser(db, uid, body) {
   });
 }
 
-export async function chatSafetyActions(request, env) {
+export async function chatSafetyActions(request, env, ctx) {
   if (request.method !== "POST") {
     return json(request, env, { ok: false, code: "method_not_allowed" }, 405);
   }
@@ -1763,7 +1792,26 @@ export async function chatSafetyActions(request, env) {
       default:
         throw new ApiError("invalid_action", 400);
     }
-    return json(request, env, result, 200);
+    const globalAppEvents = Array.isArray(result?._globalAppEvents)
+      ? result._globalAppEvents
+      : [];
+    if (globalAppEvents.length > 0) {
+      const publishTask = publishGlobalAppEvents(env, globalAppEvents).catch(
+        (error) => {
+          console.error(
+            "Premium gift celebration publish failed",
+            String(error?.message || error),
+          );
+        },
+      );
+      if (typeof ctx?.waitUntil === "function") {
+        ctx.waitUntil(publishTask);
+      } else {
+        await publishTask;
+      }
+    }
+    const { _globalAppEvents, ...publicResult } = result || {};
+    return json(request, env, publicResult, 200);
   } catch (error) {
     if (error instanceof ApiError) {
       return json(request, env, { ok: false, code: error.code }, error.status);
