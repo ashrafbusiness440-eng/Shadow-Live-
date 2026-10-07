@@ -34,6 +34,12 @@ class RoomVisualEffect {
 }
 
 class RoomEffectCoordinator extends ChangeNotifier {
+  RoomEffectCoordinator({
+    Future<void> Function(String assetKey)? playEffectSound,
+    Future<void> Function()? stopEffectSounds,
+  })  : _playEffectSound = playEffectSound,
+        _stopEffectSounds = stopEffectSounds;
+
   static const int maxCinematicQueue = 8;
   static const int maxParallelSeatEffects = 8;
   static const int maxSeenEvents = 96;
@@ -50,6 +56,8 @@ class RoomEffectCoordinator extends ChangeNotifier {
   Timer? _seatCleanupTimer;
   bool _visualEnabled = true;
   bool _effectSoundEnabled = true;
+  final Future<void> Function(String assetKey)? _playEffectSound;
+  final Future<void> Function()? _stopEffectSounds;
 
   RoomVisualEffect? get currentCinematic => _currentCinematic;
   bool get visualEnabled => _visualEnabled;
@@ -63,10 +71,15 @@ class RoomEffectCoordinator extends ChangeNotifier {
     required bool effectSoundEnabled,
   }) {
     final visualChanged = _visualEnabled != visualEnabled;
+    final soundChanged = _effectSoundEnabled != effectSoundEnabled;
     _visualEnabled = visualEnabled;
     _effectSoundEnabled = effectSoundEnabled;
     if (visualChanged && !visualEnabled) {
       _clearVisualState();
+    }
+    if (soundChanged && !effectSoundEnabled) {
+      final stop = _stopEffectSounds;
+      if (stop != null) unawaited(stop());
     }
   }
 
@@ -84,7 +97,6 @@ class RoomEffectCoordinator extends ChangeNotifier {
     if (raw == null) return;
     final eventId = (raw['eventId'] ?? '').toString().trim();
     if (!_markSeen('entrance:$eventId')) return;
-    if (!_visualEnabled) return;
 
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     final eventAtMs = (raw['eventAtMs'] as num?)?.toInt() ?? 0;
@@ -92,6 +104,11 @@ class RoomEffectCoordinator extends ChangeNotifier {
         (raw['rewardExpiresAtMs'] as num?)?.toInt() ?? 0;
     if (eventAtMs <= 0 || nowMs - eventAtMs > 12000) return;
     if (rewardExpiresAtMs > 0 && rewardExpiresAtMs <= nowMs) return;
+
+    final soundAssetKey =
+        (raw['soundAssetKey'] ?? '').toString().trim();
+    _playSound(soundAssetKey);
+    if (!_visualEnabled) return;
 
     final assetKey = (raw['assetKey'] ?? '').toString().trim();
     final imageUrl = (raw['imageUrl'] ?? '').toString().trim();
@@ -161,11 +178,15 @@ class RoomEffectCoordinator extends ChangeNotifier {
     final eventId =
         (message['giftEffectEventId'] ?? '').toString().trim();
     if (eventId.isEmpty || !_markSeen('gift:$eventId')) return;
-    if (!_visualEnabled) return;
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     final createdAtMs =
         (message['createdAtMs'] as num?)?.toInt() ?? nowMs;
     if (createdAtMs <= 0 || nowMs - createdAtMs > 12000) return;
+
+    final soundAssetKey =
+        (message['giftEffectSoundAssetKey'] ?? '').toString().trim();
+    _playSound(soundAssetKey);
+    if (!_visualEnabled) return;
 
     final mode = (message['giftEffectMode'] ?? 'none').toString();
     if (mode != 'seat' && mode != 'cinematic') return;
@@ -203,6 +224,13 @@ class RoomEffectCoordinator extends ChangeNotifier {
     } else {
       _showSeatEffect(event);
     }
+  }
+
+  void _playSound(String assetKey) {
+    final key = assetKey.trim();
+    final play = _playEffectSound;
+    if (!_effectSoundEnabled || key.isEmpty || play == null) return;
+    unawaited(play(key));
   }
 
   void _enqueueCinematic(RoomVisualEffect event) {
@@ -299,6 +327,8 @@ class RoomEffectCoordinator extends ChangeNotifier {
   void dispose() {
     _cinematicTimer?.cancel();
     _seatCleanupTimer?.cancel();
+    final stop = _stopEffectSounds;
+    if (stop != null) unawaited(stop());
     super.dispose();
   }
 }
