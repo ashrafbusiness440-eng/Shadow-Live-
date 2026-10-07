@@ -291,6 +291,21 @@ test("asset studio UX exposes safe replace, preview, history and batch guardrail
   );
 });
 
+test("level profile frames use the frame template and stay searchable as frames", () => {
+  const frame = ASSET_STUDIO_TEMPLATES.find((item) => item.id === "frame.base.v1");
+  assert.ok(frame);
+  assert.equal(frame.directories.includes("assets/images/levels"), true);
+
+  const worker = source("cloudflare-worker/src/manage-app-asset.js");
+  const control = source("lib/admin/control_asset_manager_page.dart");
+  assert.equal(worker.includes("assetStudioEffectiveType"), true);
+  assert.equal(worker.includes(".profileframe"), true);
+  assert.equal(worker.includes("_profile_frame."), true);
+  assert.equal(control.includes("_effectiveAssetType"), true);
+  assert.equal(control.includes("'frame.base.v1'"), true);
+  assert.equal(control.includes("preferredTemplateId"), true);
+});
+
 test("login header is a first-class Asset Studio surface with bundled fallback", () => {
   const template = ASSET_STUDIO_TEMPLATES.find(
     (item) => item.id === "auth_screen.base.v1",
