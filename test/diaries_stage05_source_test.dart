@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('Diary gifts reuse DirectGiftSheet without forcing chat', () {
+  test('Diary gifts open DirectGiftSheet directly without legacy sheet', () {
     final sheet = File(
       'lib/features/gift/widgets/direct_gift_sheet.dart',
     ).readAsStringSync();
@@ -24,8 +24,11 @@ void main() {
     expect(diarySheet.contains('FirebaseFirestore'), isFalse);
     expect(diarySheet.contains("diaryId: widget.diary.diaryId"), isTrue);
 
-    expect(screen.contains('DiaryGiftsSheet'), isTrue);
-    expect(screen.contains('onGiftTotalsChanged'), isTrue);
+    expect(screen.contains('showDirectGiftSheet('), isTrue);
+    expect(screen.contains('diaryId: item.diaryId'), isTrue);
+    expect(screen.contains('DiaryGiftsSheet('), isFalse);
+    expect(screen.contains("widgets/diary_gifts_sheet.dart"), isFalse);
+    expect(screen.contains('giftCoins: current.giftCoins + paidCost'), isTrue);
   });
 
   test('Diary gift backend keeps one financial path and diary context', () {
