@@ -3189,6 +3189,18 @@ function normalizeStarBattleState(room){
       uid:clean(uid),
       displayName:clean(item.displayName||"مستخدم Shadow Live"),
       profileImageUrl:clean(item.profileImageUrl),
+      activeProfileFrameAssetKey:clean(
+        item.activeProfileFrameAssetKey||item.frameAssetKey,
+      ),
+      activeProfileFrameImageUrl:clean(
+        item.activeProfileFrameImageUrl||item.frameImageUrl,
+      ),
+      activeProfileFrameExpiresAtMs:Math.max(
+        0,
+        Number(item.activeProfileFrameExpiresAtMs||item.frameExpiresAtMs||0),
+      ),
+      activeProfileFramePermanent:
+        item.activeProfileFramePermanent===true,
       coins:Math.max(0,Math.floor(Number(item.coins||0))),
     };
   }).filter(item=>item.uid).sort((a,b)=>b.coins-a.coins).slice(0,99);
