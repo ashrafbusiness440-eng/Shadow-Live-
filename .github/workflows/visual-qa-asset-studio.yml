@@ -11,6 +11,10 @@ on:
     types: [completed]
   workflow_dispatch:
 
+concurrency:
+  group: shadow-live-asset-studio-visual-qa
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
