@@ -147,7 +147,12 @@ class _RoomGiftSheetState extends State<_RoomGiftSheet> {
       placeholderColor: Colors.white70,
       fallbackProfile: <String, dynamic>{
         'profileImageUrl': user.profileImageUrl,
+        'activeProfileFrameAssetKey': user.activeProfileFrameAssetKey,
+        'activeProfileFrameImageUrl': user.activeProfileFrameImageUrl,
+        'activeProfileFrameExpiresAtMs': user.activeProfileFrameExpiresAtMs,
+        'activeProfileFramePermanent': user.activeProfileFramePermanent,
       },
+      fallbackIsVisualSnapshot: true,
       vipLevel: user.vipLevel,
       useVipFallback: true,
     );
