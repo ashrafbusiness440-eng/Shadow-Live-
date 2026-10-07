@@ -114,3 +114,90 @@ test("friends-only preference cannot be enabled without active VIP1", async () =
   );
   assert.equal(off.friendsOnlyMessages, false);
 });
+
+
+test("animated emoji in DM uses shared catalog and persists one asset identity", async () => {
+  const suffix = Date.now().toString() + "_emoji";
+  const sender = "emoji_sender_" + suffix;
+  const receiver = "emoji_receiver_" + suffix;
+  const conversationId = "emoji_chat_" + suffix;
+  const nowMs = Date.now();
+
+  await Promise.all([
+    seedUser(sender, 4, nowMs),
+    seedUser(receiver, 0, nowMs),
+    seedConversation(sender, receiver, conversationId),
+    db.collection("follows").doc(sender + "__" + receiver).set({
+      followerUid: sender,
+      followingUid: receiver,
+    }),
+    db.collection("follows").doc(receiver + "__" + sender).set({
+      followerUid: receiver,
+      followingUid: sender,
+    }),
+  ]);
+
+  const result = await sendMessage(cloudflareDb, sender, {
+    receiverId: receiver,
+    conversationId,
+    text: "🌟",
+    animatedEmojiId: "vip_star",
+    idempotencyKey: "dm_emoji_send_" + suffix,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.animatedEmojiId, "vip_star");
+
+  const message = await db.collection("conversations")
+    .doc(conversationId)
+    .collection("messages")
+    .doc(result.messageId)
+    .get();
+  assert.equal(message.exists, true);
+  assert.equal(message.data().type, "animated_emoji");
+  assert.equal(message.data().animatedEmojiId, "vip_star");
+  assert.equal(
+    message.data().animatedEmojiAssetKey,
+    "emoji.vip_star.animation",
+  );
+  assert.equal(message.data().animatedEmojiFallbackGlyph, "🌟");
+  assert.equal(message.data().vipLevel, 4);
+});
+
+test("animated emoji in DM is rejected server-side below its VIP requirement", async () => {
+  const suffix = Date.now().toString() + "_emoji_guard";
+  const sender = "emoji_guard_sender_" + suffix;
+  const receiver = "emoji_guard_receiver_" + suffix;
+  const conversationId = "emoji_guard_chat_" + suffix;
+  const nowMs = Date.now();
+
+  await Promise.all([
+    seedUser(sender, 3, nowMs),
+    seedUser(receiver, 0, nowMs),
+    seedConversation(sender, receiver, conversationId),
+    db.collection("follows").doc(sender + "__" + receiver).set({
+      followerUid: sender,
+      followingUid: receiver,
+    }),
+    db.collection("follows").doc(receiver + "__" + sender).set({
+      followerUid: receiver,
+      followingUid: sender,
+    }),
+  ]);
+
+  await assert.rejects(
+    sendMessage(cloudflareDb, sender, {
+      receiverId: receiver,
+      conversationId,
+      text: "🌟",
+      animatedEmojiId: "vip_star",
+      idempotencyKey: "dm_emoji_guard_" + suffix,
+    }),
+    /vip4_emoji_required/,
+  );
+
+  const messages = await db.collection("conversations")
+    .doc(conversationId)
+    .collection("messages")
+    .get();
+  assert.equal(messages.size, 0);
+});
