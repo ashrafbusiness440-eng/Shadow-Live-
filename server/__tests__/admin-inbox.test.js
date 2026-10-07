@@ -3,21 +3,25 @@ import test from "node:test";
 
 import { adminInboxTestHooks } from "../../cloudflare-worker/src/admin-inbox.js";
 
-const { safeKey, loadItems, listInbox } = adminInboxTestHooks;
+const { safeKey, loadItems, loadReadKeys, listInbox } = adminInboxTestHooks;
 
 class FakeDb {
   constructor(seed = {}) {
+    this.getCalls = 0;
+    this.queryCalls = 0;
     this.docs = new Map(
       Object.entries(seed).map(([path, data]) => [path, structuredClone(data)]),
     );
   }
 
   async get(path) {
+    this.getCalls += 1;
     if (!this.docs.has(path)) return { exists: false, data: null };
     return { exists: true, data: structuredClone(this.docs.get(path)) };
   }
 
   async runQuery(collection, options = {}) {
+    this.queryCalls += 1;
     const filters = Array.isArray(options.filters) ? options.filters : [];
     const limit = Math.max(0, Number(options.limit || 100));
     return [...this.docs.entries()]
@@ -128,6 +132,39 @@ test("admin inbox merges pending work and overlays per-admin read receipts", asy
   assert.equal(snapshot.items[1].type, "agency_application");
   assert.equal(snapshot.items[1].read, false);
   assert.equal(snapshot.unreadCount, 1);
+});
+
+test("admin inbox loads read receipts with one bounded query instead of per-item gets", async () => {
+  const db = new FakeDb({
+    "diary_reports/report_a": {
+      reportId: "report_a",
+      status: "new",
+      targetType: "diary",
+      reasonLabel: "spam",
+      createdAt: new Date(3000),
+    },
+    "diary_reports/report_b": {
+      reportId: "report_b",
+      status: "under_review",
+      targetType: "diary",
+      reasonLabel: "spam",
+      createdAt: new Date(2000),
+    },
+    "admin_notification_reads/admin_uid__diary_report_report_a": {
+      userId: "admin_uid",
+      key: "diary_report_report_a",
+      readAt: new Date(),
+    },
+  });
+
+  const readKeys = await loadReadKeys(db, "admin_uid");
+  assert.equal(readKeys.has("diary_report_report_a"), true);
+
+  const beforeGets = db.getCalls;
+  const snapshot = await listInbox(db, actor(["viewReports"]));
+  assert.equal(snapshot.items.length, 2);
+  assert.equal(db.getCalls, beforeGets);
+  assert.equal(snapshot.items[0].read, true);
 });
 
 test("admin inbox stays bounded per source and globally", async () => {
