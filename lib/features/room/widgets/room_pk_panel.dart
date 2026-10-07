@@ -205,19 +205,12 @@ class _RoomPkPanelState extends State<RoomPkPanel> {
                             activeColor: const Color(0xFF6D27D9),
                             secondary: ProfileAvatarWithFrame(
                               diameter: 40,
+                              userId: speaker.uid,
                               backgroundColor: const Color(0xFF25183F),
                               placeholderColor: Colors.white54,
-                              profile: profileAvatarFrameData(
-                                imageUrl: speaker.profileImageUrl,
-                                frameAssetKey:
-                                    speaker.activeProfileFrameAssetKey,
-                                frameImageUrl:
-                                    speaker.activeProfileFrameImageUrl,
-                                frameExpiresAtMs:
-                                    speaker.activeProfileFrameExpiresAtMs,
-                                framePermanent:
-                                    speaker.activeProfileFramePermanent,
-                              ),
+                              fallbackProfile: <String, dynamic>{
+                                'profileImageUrl': speaker.profileImageUrl,
+                              },
                             ),
                             title: Text(
                               speaker.displayName,
@@ -349,15 +342,12 @@ class _RoomPkPanelState extends State<RoomPkPanel> {
         children: [
           ProfileAvatarWithFrame(
             diameter: 28,
+            userId: item.uid,
             backgroundColor: const Color(0xFF25183F),
             placeholderColor: Colors.white54,
-            profile: profileAvatarFrameData(
-              imageUrl: item.profileImageUrl,
-              frameAssetKey: item.activeProfileFrameAssetKey,
-              frameImageUrl: item.activeProfileFrameImageUrl,
-              frameExpiresAtMs: item.activeProfileFrameExpiresAtMs,
-              framePermanent: item.activeProfileFramePermanent,
-            ),
+            fallbackProfile: <String, dynamic>{
+              'profileImageUrl': item.profileImageUrl,
+            },
           ),
           const SizedBox(width: 6),
           Expanded(
@@ -594,19 +584,13 @@ class _RoomPkPanelState extends State<RoomPkPanel> {
                         children: [
                           ProfileAvatarWithFrame(
                             diameter: 34,
+                            userId: supporter.uid,
                             backgroundColor: const Color(0xFF25183F),
                             placeholderColor: Colors.white54,
-                            profile: profileAvatarFrameData(
-                              imageUrl: supporter.profileImageUrl,
-                              frameAssetKey:
-                                  supporter.activeProfileFrameAssetKey,
-                              frameImageUrl:
-                                  supporter.activeProfileFrameImageUrl,
-                              frameExpiresAtMs:
-                                  supporter.activeProfileFrameExpiresAtMs,
-                              framePermanent:
-                                  supporter.activeProfileFramePermanent,
-                            ),
+                            fallbackProfile: <String, dynamic>{
+                              'profileImageUrl':
+                                  supporter.profileImageUrl,
+                            },
                           ),
                           const SizedBox(height: 3),
                           Text(
