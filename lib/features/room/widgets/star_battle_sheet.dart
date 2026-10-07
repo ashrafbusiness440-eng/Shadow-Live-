@@ -344,17 +344,11 @@ class _StarBattleSheetState extends State<StarBattleSheet> {
                                 return ListTile(
                                   leading: ProfileAvatarWithFrame(
                                     diameter: 40,
-                                    profile: profileAvatarFrameData(
-                                      imageUrl: leader.profileImageUrl,
-                                      frameAssetKey:
-                                          leader.activeProfileFrameAssetKey,
-                                      frameImageUrl:
-                                          leader.activeProfileFrameImageUrl,
-                                      frameExpiresAtMs:
-                                          leader.activeProfileFrameExpiresAtMs,
-                                      framePermanent:
-                                          leader.activeProfileFramePermanent,
-                                    ),
+                                    userId: leader.uid,
+                                    fallbackProfile: <String, dynamic>{
+                                      'profileImageUrl':
+                                          leader.profileImageUrl,
+                                    },
                                   ),
                                   title: Text(
                                     leader.displayName,
