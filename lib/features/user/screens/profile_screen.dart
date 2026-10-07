@@ -15,12 +15,10 @@ import '../../wallet/screens/recharge_screen.dart';
 import '../../profile/screens/my_items_screen.dart';
 import '../../profile/screens/user_level_screen.dart';
 import '../../profile/widgets/user_level_badges.dart';
-import '../../profile/services/reward_inventory_service.dart';
-import '../../room/widgets/cosmetic_effect_widgets.dart';
+import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../../agency/screens/agency_package_grant_page.dart';
 import '../../relationships/screens/relationships_page.dart';
 import '../../vip/screens/vip_screen.dart';
-import '../../vip/widgets/vip_profile_avatar.dart';
 import '../../vip/widgets/vip_profile_identity.dart';
 import '../bloc/user_bloc.dart';
 
@@ -39,8 +37,6 @@ class _ProfileScreenState extends State<ProfileScreen>
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _profileSub;
   StreamSubscription<User?>? _authSub;
   String? _boundUid;
-  final RewardInventoryService _inventoryService = RewardInventoryService();
-  MyItemReward? _activeFrame;
 
   @override
   void initState() {
@@ -70,7 +66,6 @@ class _ProfileScreenState extends State<ProfileScreen>
   void dispose() {
     _authSub?.cancel();
     _profileSub?.cancel();
-    _inventoryService.close();
     _tabs.dispose();
     super.dispose();
   }
@@ -118,28 +113,6 @@ class _ProfileScreenState extends State<ProfileScreen>
 
     if (uid != null && uid.isNotEmpty) {
       context.read<UserBloc>().add(LoadUserProfile(uid));
-      unawaited(_loadActiveFrame());
-    }
-  }
-
-  Future<void> _loadActiveFrame() async {
-    try {
-      final items = await _inventoryService.load();
-      final now = DateTime.now().millisecondsSinceEpoch;
-      MyItemReward? active;
-      for (final item in items) {
-        if (item.type == 'frame' &&
-            item.active &&
-            !item.expired &&
-            (item.permanent || item.expiresAtMs > now)) {
-          active = item;
-          break;
-        }
-      }
-      if (!mounted) return;
-      setState(() => _activeFrame = active);
-    } catch (_) {
-      // Profile still works if cosmetic metadata cannot be loaded.
     }
   }
 
@@ -212,9 +185,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
     return 0;
   }
-
-  ImageProvider? _avatar(Map<String, dynamic> profile) =>
-      effectiveProfileAvatarProvider(profile);
 
   List<String> _ids(Map<String, dynamic> profile) {
     final result = <String>[];
@@ -504,7 +474,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _header(Map<String, dynamic> profile) {
-    final image = _avatar(profile);
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     final cover = _text(
       profile,
       'coverImageUrl',
@@ -569,28 +539,15 @@ class _ProfileScreenState extends State<ProfileScreen>
                       colors: [Color(0xFFFFC84A), Color(0xFF8A3DFF)],
                     ),
                   ),
-                  child: CircleAvatar(
-                    radius: 50,
+                  child: ProfileAvatarWithFrame(
+                    diameter: 96,
+                    frameScale: 1.12,
+                    userId: uid,
                     backgroundColor: const Color(0xFF171D31),
-                    backgroundImage: image,
-                    child: image == null
-                        ? const Icon(
-                            Icons.person_rounded,
-                            size: 56,
-                            color: Colors.white54,
-                          )
-                        : null,
+                    placeholderColor: Colors.white54,
+                    fallbackProfile: profile,
                   ),
                 ),
-                if (_activeFrame != null)
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: AnimatedProfileFrameVisual(
-                        assetKey: _activeFrame!.assetKey,
-                        imageUrl: _activeFrame!.imageUrl,
-                      ),
-                    ),
-                  ),
               ],
             ),
           ),
