@@ -199,8 +199,8 @@ test("10-A pressure contract caps the query at 25 and performs no writes", async
           },
         };
       }
-      if (path.startsWith("users/")) {
-        const uid = path.replace("users/", "");
+      if (path.startsWith("public_profiles/")) {
+        const uid = path.replace("public_profiles/", "");
         calls.activeHostGets += 1;
         calls.maxActiveHostGets = Math.max(
           calls.maxActiveHostGets,
@@ -208,7 +208,7 @@ test("10-A pressure contract caps the query at 25 and performs no writes", async
         );
         await new Promise((resolve) => setTimeout(resolve, 1));
         calls.activeHostGets -= 1;
-        return { exists: true, data: user(uid, "920000", uid) };
+        return { exists: true, data: profile(uid, "920000", uid) };
       }
       throw new Error("unexpected_get_" + path);
     },
@@ -243,7 +243,7 @@ test("10-A pressure contract caps the query at 25 and performs no writes", async
   );
   assert.equal(calls.writes, 0);
   assert.equal(
-    calls.gets.filter((path) => path.startsWith("users/")).length,
+    calls.gets.filter((path) => path.startsWith("public_profiles/")).length,
     PUBLIC_HOST_PAGE_MAX + 1,
   );
   assert.ok(calls.maxActiveHostGets <= 4);
