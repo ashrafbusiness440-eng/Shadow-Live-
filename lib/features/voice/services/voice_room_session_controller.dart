@@ -4,7 +4,9 @@ import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 
+import '../../../core/assets/shadow_asset_registry.dart';
 import '../../room/services/room_presence_service.dart';
 import '../../room/services/room_seat_service.dart';
 import 'voice_service.dart';
@@ -31,6 +33,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
   final VoiceService _voiceService = ZegoVoiceService();
   final RoomPresenceService _presenceService = RoomPresenceService();
   final RoomSeatService _seatService = RoomSeatService();
+  final http.Client _effectSoundHttp = http.Client();
 
   StreamSubscription<User?>? _authSubscription;
   StreamSubscription<VoiceConnectionState>? _connectionSubscription;
@@ -41,6 +44,10 @@ class VoiceRoomSessionController extends ChangeNotifier {
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
       _roomBanSubscription;
   final Map<String, Uint8List> _localRoomMusic = <String, Uint8List>{};
+  final Map<String, Uint8List> _effectSoundCache =
+      <String, Uint8List>{};
+  static const int _maxEffectSoundCacheEntries = 8;
+  static const int _maxEffectSoundBytes = 4 * 1024 * 1024;
   final StreamController<Map<String, dynamic>> _roomStateController =
       StreamController<Map<String, dynamic>>.broadcast();
   static const int _maxRoomParticipants = 200;
@@ -211,6 +218,54 @@ class VoiceRoomSessionController extends ChangeNotifier {
       await _voiceService.stopRoomMedia();
     } catch (_) {}
     _localRoomMusic.clear();
+  }
+
+  Future<Uint8List?> _loadEffectSound(String assetKey) async {
+    final key = assetKey.trim();
+    if (key.isEmpty) return null;
+    final cached = _effectSoundCache.remove(key);
+    if (cached != null) {
+      _effectSoundCache[key] = cached;
+      return cached;
+    }
+
+    final uri = await ShadowAssetRegistry.remoteUrl(key);
+    if (uri == null) return null;
+    try {
+      final response = await _effectSoundHttp
+          .get(uri)
+          .timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) return null;
+      final bytes = response.bodyBytes;
+      if (bytes.isEmpty || bytes.length > _maxEffectSoundBytes) {
+        return null;
+      }
+      while (_effectSoundCache.length >= _maxEffectSoundCacheEntries) {
+        _effectSoundCache.remove(_effectSoundCache.keys.first);
+      }
+      _effectSoundCache[key] = bytes;
+      return bytes;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> playRoomEffectSound(String assetKey) async {
+    if (!_active ||
+        _connectionState != VoiceConnectionState.connected) {
+      return;
+    }
+    final bytes = await _loadEffectSound(assetKey);
+    if (bytes == null || !_active) return;
+    try {
+      await _voiceService.playLocalEffect(bytes);
+    } catch (_) {}
+  }
+
+  Future<void> stopRoomEffectSounds() async {
+    try {
+      await _voiceService.stopLocalEffect();
+    } catch (_) {}
   }
 
   void _sortRoomParticipants() {
@@ -725,6 +780,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
     final activeRoomId = roomId;
     await _stopPresence(activeRoomId);
     await _stopRoomMusicWatch();
+    await stopRoomEffectSounds();
     await _roomLifecycleSubscription?.cancel();
     _roomLifecycleSubscription = null;
     await _roomBanSubscription?.cancel();
@@ -764,6 +820,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
     }
     _presenceService.close();
     _seatService.close();
+    _effectSoundHttp.close();
+    _effectSoundCache.clear();
     _serviceInitialized = false;
   }
 }
