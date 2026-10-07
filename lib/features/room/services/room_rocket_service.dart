@@ -40,6 +40,18 @@ class GlobalAppEvent {
     required this.publicId,
     required this.vipLevel,
     required this.assetKey,
+    required this.secondaryUid,
+    required this.secondaryDisplayName,
+    required this.secondaryProfileImageUrl,
+    required this.relationshipType,
+    required this.relationshipLevel,
+    required this.giftId,
+    required this.giftName,
+    required this.giftQuantity,
+    required this.giftTotalCoins,
+    required this.payoutCoins,
+    required this.roomId,
+    required this.messageAr,
   });
 
   final String id;
@@ -52,6 +64,18 @@ class GlobalAppEvent {
   final String publicId;
   final int vipLevel;
   final String assetKey;
+  final String secondaryUid;
+  final String secondaryDisplayName;
+  final String secondaryProfileImageUrl;
+  final String relationshipType;
+  final int relationshipLevel;
+  final String giftId;
+  final String giftName;
+  final int giftQuantity;
+  final int giftTotalCoins;
+  final int payoutCoins;
+  final String roomId;
+  final String messageAr;
 
   bool activeAt(int nowMs) => nowMs >= startsAtMs && nowMs < endsAtMs;
 
@@ -67,6 +91,21 @@ class GlobalAppEvent {
         publicId: (data['publicId'] ?? '').toString(),
         vipLevel: (data['vipLevel'] as num?)?.toInt() ?? 0,
         assetKey: (data['assetKey'] ?? '').toString(),
+        secondaryUid: (data['secondaryUid'] ?? '').toString(),
+        secondaryDisplayName:
+            (data['secondaryDisplayName'] ?? '').toString(),
+        secondaryProfileImageUrl:
+            (data['secondaryProfileImageUrl'] ?? '').toString(),
+        relationshipType: (data['relationshipType'] ?? '').toString(),
+        relationshipLevel:
+            (data['relationshipLevel'] as num?)?.toInt() ?? 0,
+        giftId: (data['giftId'] ?? '').toString(),
+        giftName: (data['giftName'] ?? '').toString(),
+        giftQuantity: (data['giftQuantity'] as num?)?.toInt() ?? 0,
+        giftTotalCoins: (data['giftTotalCoins'] as num?)?.toInt() ?? 0,
+        payoutCoins: (data['payoutCoins'] as num?)?.toInt() ?? 0,
+        roomId: (data['roomId'] ?? '').toString(),
+        messageAr: (data['messageAr'] ?? '').toString(),
       );
 }
 
