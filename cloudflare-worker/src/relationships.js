@@ -865,6 +865,14 @@ async function listMine(db, uid) {
         partnerPublicId: clean(profile.publicId),
         partnerProfileImageUrl: clean(profile.profileImageUrl),
         partnerProfileAvatarAsset: clean(profile.profileAvatarAsset),
+        partnerActiveProfileFrameAssetKey:
+          clean(profile.activeProfileFrameAssetKey),
+        partnerActiveProfileFrameImageUrl:
+          clean(profile.activeProfileFrameImageUrl),
+        partnerActiveProfileFrameExpiresAtMs:
+          Math.max(0, Number(profile.activeProfileFrameExpiresAtMs || 0)),
+        partnerActiveProfileFramePermanent:
+          profile.activeProfileFramePermanent === true,
       };
     }),
     types,
