@@ -19,8 +19,49 @@ import {
   loadUserLevelPolicy,
 } from "../user-level-policy.js";
 import { vip4PrivacyPreferencesFromUser } from "../vip-entitlements.js";
+import { publishGlobalAppEvents } from "../room-realtime.js";
 const clean=(value)=>String(value??"").trim();
 const validRoomId=(value)=>/^[A-Za-z0-9_-]{1,180}$/.test(clean(value));
+
+function gameWinCelebrationEvent(operation={},user={},nowMs=Date.now()){
+  const payout=Math.max(0,Number(operation.payoutCoins||0));
+  if(
+    !Number.isSafeInteger(payout)||
+    payout<=0||
+    operation.publicWinBannerHidden===true
+  )return null;
+  const operationId=clean(operation.operationId);
+  const uid=clean(operation.userId||user.uid||user.userId);
+  if(!operationId||!uid)return null;
+  const startsAtMs=Math.max(1,Math.trunc(Number(nowMs)||Date.now()));
+  return {
+    eventId:"game_win_"+operationId,
+    kind:"game_win",
+    startsAtMs,
+    endsAtMs:startsAtMs+6500,
+    uid,
+    displayName:clean(
+      user.displayName||user.name||user.publicName||user.username||uid
+    ),
+    profileImageUrl:clean(
+      user.photoUrl||user.photoURL||user.profileImageUrl||user.avatarUrl||""
+    ),
+    publicId:clean(user.publicId),
+    payoutCoins:payout,
+    roomId:clean(operation.roomId),
+    assetKey:"celebrations.game_win.default",
+  };
+}
+
+async function publishGameWinCelebrations(events=[]){
+  const normalized=events.filter(Boolean).slice(0,50);
+  for(let index=0;index<normalized.length;index+=20){
+    await publishGlobalAppEvents(
+      legacyEnv,
+      normalized.slice(index,index+20),
+    ).catch(()=>({ok:false}));
+  }
+}
 
 function realtimeRoomStub(roomId){
   const namespace=legacyEnv.ROOM_REALTIME;
@@ -732,10 +773,15 @@ export async function placeGameBet(
       });
     }
 
+    const publicResult=publicOperation(operation);
+    const celebration=settled
+      ?gameWinCelebrationEvent(operation,user,nowMs)
+      :null;
     return {
       ok:true,
       code:"ok",
-      ...publicOperation(operation),
+      ...publicResult,
+      _globalAppEvents:celebration?[celebration]:[],
     };
   });
 }
@@ -841,10 +887,22 @@ async function settleOperationRef(db,operationRef,nowMs,{workerTag=""}={}){
       updatedAt:now,
     },{merge:true});
 
+    const settledOperation={
+      ...operation,
+      status:"settled",
+      balanceAfter:after,
+      publicWinBannerHidden:vipPrivacy.hideGameWinBanner,
+    };
+    const celebration=gameWinCelebrationEvent(
+      settledOperation,
+      user,
+      nowMs,
+    );
     return {
       ok:true,
       code:"ok",
-      ...publicOperation({...operation,status:"settled",balanceAfter:after}),
+      ...publicOperation(settledOperation),
+      _globalAppEvents:celebration?[celebration]:[],
     };
   });
 }
@@ -876,11 +934,22 @@ export async function settleDueGameOperations(
     .limit(boundedLimit)
     .get();
   const results=[];
+  const celebrations=[];
   for(const doc of snapshot.docs){
     const operationId=clean(doc.data()?.operationId||doc.id);
     const operationRef=db.collection("game_operations").doc(operationId);
     try{
-      results.push(await settleOperationRef(db,operationRef,nowMs,{workerTag}));
+      const result=await settleOperationRef(
+        db,
+        operationRef,
+        nowMs,
+        {workerTag},
+      );
+      if(Array.isArray(result?._globalAppEvents)){
+        celebrations.push(...result._globalAppEvents);
+      }
+      const {_globalAppEvents,...publicResult}=result||{};
+      results.push(publicResult);
     }catch(error){
       const code=clean(error?.message)||"settlement_failed";
       if(code==="operation_not_found"){
@@ -892,6 +961,9 @@ export async function settleDueGameOperations(
         code,
       });
     }
+  }
+  if(celebrations.length){
+    await publishGameWinCelebrations(celebrations);
   }
   return {checked:snapshot.size,settled:results.filter(x=>x.ok).length,results};
 }
@@ -942,6 +1014,7 @@ export async function gameState(db,uid,body={},options={}){
   const nowMs=Number(options.nowMs||Date.now());
 
   let userOperationsSnapshot=null;
+  const settlementCelebrations=[];
   try{
     // Pressure Root Fix Step 12: game state only consumes pending operations.
     // Filter settled history in Firestore instead of reading up to 50 historical
@@ -956,7 +1029,10 @@ export async function gameState(db,uid,body={},options={}){
       if(operation.status!=="pending")continue;
       if(Number(operation.closesAtMs||0)>nowMs)continue;
       try{
-        await settleOperationRef(db,doc.ref,nowMs);
+        const settlement=await settleOperationRef(db,doc.ref,nowMs);
+        if(Array.isArray(settlement?._globalAppEvents)){
+          settlementCelebrations.push(...settlement._globalAppEvents);
+        }
       }catch(error){
         const code=clean(error?.message);
         if(!["operation_not_found","invalid_operation_state"].includes(code)){
@@ -966,6 +1042,9 @@ export async function gameState(db,uid,body={},options={}){
     }
   }catch(error){
     if(!transientFirestoreError(error))throw error;
+  }
+  if(settlementCelebrations.length){
+    await publishGameWinCelebrations(settlementCelebrations);
   }
 
   const config=await loadRuntimeConfig(db,{allowFallback:true});
@@ -1179,11 +1258,19 @@ export async function handler(req,res){
     }
     if(action==="placeBet"){
       const result=await placeGameBet(db,uid,req.body||{});
-      return out(res,200,result);
+      if(Array.isArray(result?._globalAppEvents)&&result._globalAppEvents.length){
+        await publishGameWinCelebrations(result._globalAppEvents);
+      }
+      const {_globalAppEvents,...publicResult}=result||{};
+      return out(res,200,publicResult);
     }
     if(action==="settleOperation"){
       const result=await settleGameOperation(db,uid,req.body||{});
-      return out(res,200,result);
+      if(Array.isArray(result?._globalAppEvents)&&result._globalAppEvents.length){
+        await publishGameWinCelebrations(result._globalAppEvents);
+      }
+      const {_globalAppEvents,...publicResult}=result||{};
+      return out(res,200,publicResult);
     }
     if(action==="state"){
       const result=await gameState(db,uid,req.body||{});
