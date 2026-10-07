@@ -17,6 +17,7 @@ import '../services/profile_action_service.dart';
 import '../services/user_level_service.dart';
 import 'registry_badge.dart';
 import 'user_level_badges.dart';
+import 'profile_avatar_with_frame.dart';
 
 class QuickProfileAction {
   const QuickProfileAction({
@@ -260,22 +261,12 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                     onTap: _openFull,
                     child: Stack(
                       children: [
-                        VipAvatarFrame(
+                        ProfileAvatarWithFrame(
+                          diameter: 96,
+                          profile: data,
                           vipLevel: vip,
-                          frameLevel: vipFrameLevel,
-                          avatarDiameter: 96,
-                          child: CircleAvatar(
-                            radius: 48,
-                            backgroundColor: const Color(0xFF25183F),
-                            backgroundImage: provider,
-                            child: provider == null
-                                ? const Icon(
-                                    Icons.person,
-                                    color: Color(0xFFFFD54A),
-                                    size: 44,
-                                  )
-                                : null,
-                          ),
+                          vipFrameLevel: vipFrameLevel,
+                          useVipFallback: true,
                         ),
                         if (online)
                           Positioned(
