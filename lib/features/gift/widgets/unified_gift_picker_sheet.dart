@@ -892,10 +892,16 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
   Widget build(BuildContext context) {
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: SafeArea(
-        child: SizedBox(
-          height: MediaQuery.sizeOf(context).height * .55,
-          child: Padding(
+      child: AnimatedPadding(
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOut,
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(context).bottom,
+        ),
+        child: SafeArea(
+          child: SizedBox(
+            height: MediaQuery.sizeOf(context).height * .55,
+            child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
             child: _loading
                 ? const Center(
@@ -950,6 +956,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
                           _bottomBar(),
                         ],
                       ),
+            ),
           ),
         ),
       ),
