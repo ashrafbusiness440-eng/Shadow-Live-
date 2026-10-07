@@ -1,0 +1,131 @@
+import 'package:flutter/material.dart';
+
+class MysteriousIdentityAvatar extends StatelessWidget {
+  const MysteriousIdentityAvatar({
+    super.key,
+    required this.diameter,
+  });
+
+  final double diameter;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: diameter,
+      height: diameter,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: const LinearGradient(
+          begin: Alignment.topRight,
+          end: Alignment.bottomLeft,
+          colors: [
+            Color(0xFF3B1764),
+            Color(0xFF111827),
+            Color(0xFF050814),
+          ],
+        ),
+        border: Border.all(
+          color: const Color(0xFF8B5CF6),
+          width: diameter >= 36 ? 2 : 1.4,
+        ),
+      ),
+      alignment: Alignment.center,
+      child: Icon(
+        Icons.theater_comedy_rounded,
+        color: const Color(0xFFFFD166),
+        size: diameter * .56,
+      ),
+    );
+  }
+}
+
+Future<void> showMysteriousIdentitySheet(
+  BuildContext context, {
+  required String mysteriousId,
+  int? rank,
+  num? support,
+}) {
+  final id = mysteriousId.trim();
+  return showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: const Color(0xFF0C101A),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    ),
+    builder: (sheetContext) => Directionality(
+      textDirection: TextDirection.rtl,
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 26),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const MysteriousIdentityAvatar(diameter: 74),
+              const SizedBox(height: 12),
+              const Text(
+                'الشخص الغامض',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                id.isEmpty ? 'ID غامض' : 'ID: $id',
+                textDirection: TextDirection.ltr,
+                style: const TextStyle(
+                  color: Color(0xFFFFD166),
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              if (rank != null || support != null) ...[
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    if (rank != null)
+                      _InfoChip(label: 'المركز $rank'),
+                    if (support != null)
+                      _InfoChip(label: 'الدعم $support'),
+                  ],
+                ),
+              ],
+              const SizedBox(height: 16),
+              const Text(
+                'هذا المستخدم فعّل وضع الشخص الغامض. هويته الحقيقية مخفية في هذا المكان.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white60, height: 1.5),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _InfoChip extends StatelessWidget {
+  const _InfoChip({required this.label});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: .06),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.white12),
+        ),
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white70,
+            fontWeight: FontWeight.w700,
+            fontSize: 12,
+          ),
+        ),
+      );
+}

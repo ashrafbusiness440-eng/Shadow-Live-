@@ -21,6 +21,8 @@ class RoomSupporter {
     this.activeProfileFrameImageUrl = '',
     this.activeProfileFrameExpiresAtMs = 0,
     this.activeProfileFramePermanent = false,
+    this.mysteriousMode = false,
+    this.mysteriousId = '',
   });
 
   final String uid;
@@ -39,6 +41,8 @@ class RoomSupporter {
   final String activeProfileFrameImageUrl;
   final int activeProfileFrameExpiresAtMs;
   final bool activeProfileFramePermanent;
+  final bool mysteriousMode;
+  final String mysteriousId;
 
   factory RoomSupporter.fromJson(Map<String, dynamic> json) => RoomSupporter(
         uid: (json['uid'] ?? '').toString(),
@@ -67,6 +71,8 @@ class RoomSupporter {
             (json['activeProfileFrameExpiresAtMs'] as num?)?.toInt() ?? 0,
         activeProfileFramePermanent:
             json['activeProfileFramePermanent'] == true,
+        mysteriousMode: json['mysteriousMode'] == true,
+        mysteriousId: (json['mysteriousId'] ?? '').toString(),
       );
 }
 

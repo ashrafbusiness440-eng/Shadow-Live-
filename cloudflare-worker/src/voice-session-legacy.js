@@ -20,6 +20,7 @@ import {
   vipCosmeticsFromUser,
 } from "./vip-entitlements.js";
 import {timestampToEpochMs} from "./vip-runtime.js";
+import {applyMysteriousIdentityPresentation} from "./mysterious-identity.js";
 import {
   loadPublicProfilePresentations,
   publicProfilePresentation,
@@ -3744,7 +3745,11 @@ async function filterSupporterRankingVisibility(db,supporters,viewerUid){
   if(!list.length)return list;
   try{
     const byUid=await supporterRankingUserSnapshots(db,list,viewerUid,3);
-    return filterHiddenSupporters(list,byUid,viewerUid);
+    return filterHiddenSupporters(list,byUid,viewerUid)
+      .map(item=>applyMysteriousIdentityPresentation(
+        item,
+        byUid.get(clean(item.uid))||{},
+      ));
   }catch(_){
     // Privacy fails closed: never expose a possibly hidden supporter.
     return [];
@@ -3811,24 +3816,31 @@ async function enrichSupporterPublicMetadata(db,supporters,viewerUid){
         ...levels,
       });
     }
-    return visible.map(item=>({
-      ...item,
-      ...(byUid.get(clean(item.uid))||{
-        displayName:"Shadow Live",
-        profileImageUrl:"",
-        profileAvatarAsset:"",
-        publicId:"",
-        vipLevel:0,
-        badges:[],
-        wealthLevel:0,
-        attractionLevel:0,
-        gameLevel:0,
-        activeProfileFrameAssetKey:"",
-        activeProfileFrameImageUrl:"",
-        activeProfileFrameExpiresAtMs:0,
-        activeProfileFramePermanent:false,
-      }),
-    }));
+    return visible.map(item=>{
+      const userId=clean(item.uid);
+      const merged={
+        ...item,
+        ...(byUid.get(userId)||{
+          displayName:"Shadow Live",
+          profileImageUrl:"",
+          profileAvatarAsset:"",
+          publicId:"",
+          vipLevel:0,
+          badges:[],
+          wealthLevel:0,
+          attractionLevel:0,
+          gameLevel:0,
+          activeProfileFrameAssetKey:"",
+          activeProfileFrameImageUrl:"",
+          activeProfileFrameExpiresAtMs:0,
+          activeProfileFramePermanent:false,
+        }),
+      };
+      return applyMysteriousIdentityPresentation(
+        merged,
+        byUidData.get(userId)||{},
+      );
+    });
   }catch(_){
     // Privacy fails closed: do not leak supporter visibility on lookup errors.
     return [];

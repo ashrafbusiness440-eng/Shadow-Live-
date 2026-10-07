@@ -40,6 +40,7 @@ import 'features/agency/screens/agency_application_page.dart';
 import 'features/agency/screens/agency_search_page.dart';
 import 'features/notifications/screens/notifications_page.dart';
 import 'features/profile/widgets/quick_profile_sheet.dart';
+import 'features/mysterious/widgets/mysterious_identity_widgets.dart';
 import 'features/profile/widgets/profile_avatar_with_frame.dart';
 import 'features/profile/widgets/registry_badge.dart';
 import 'features/profile/widgets/user_level_badges.dart';
@@ -2130,41 +2131,59 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                   supporter.badges.isNotEmpty;
                               return ListTile(
                                 contentPadding: EdgeInsets.zero,
-                                onTap: supporter.uid.isEmpty
-                                    ? null
-                                    : () {
+                                onTap: supporter.mysteriousMode
+                                    ? () {
                                         Navigator.of(sheetContext).pop();
                                         Future<void>.microtask(() async {
                                           if (!mounted) return;
-                                          await showQuickProfileSheet(
+                                          await showMysteriousIdentitySheet(
                                             context,
-                                            userId: supporter.uid,
+                                            mysteriousId:
+                                                supporter.mysteriousId,
+                                            rank: supporter.rank,
+                                            support: supporter.totalSupport,
                                           );
                                         });
-                                      },
-                                leading: ProfileAvatarWithFrame(
-                                  diameter: 40,
-                                  userId: supporter.uid,
-                                  backgroundColor:
-                                      const Color(0xFF25183F),
-                                  placeholderColor:
-                                      const Color(0xFFFFD54A),
-                                  fallbackProfile: <String, dynamic>{
-                                    'profileImageUrl':
-                                        supporter.profileImageUrl,
-                                    'activeProfileFrameAssetKey':
-                                        supporter.activeProfileFrameAssetKey,
-                                    'activeProfileFrameImageUrl':
-                                        supporter.activeProfileFrameImageUrl,
-                                    'activeProfileFrameExpiresAtMs':
-                                        supporter.activeProfileFrameExpiresAtMs,
-                                    'activeProfileFramePermanent':
-                                        supporter.activeProfileFramePermanent,
-                                  },
-                                  fallbackIsVisualSnapshot: true,
-                                  vipLevel: supporter.vipLevel,
-                                  useVipFallback: true,
-                                ),
+                                      }
+                                    : supporter.uid.isEmpty
+                                        ? null
+                                        : () {
+                                            Navigator.of(sheetContext).pop();
+                                            Future<void>.microtask(() async {
+                                              if (!mounted) return;
+                                              await showQuickProfileSheet(
+                                                context,
+                                                userId: supporter.uid,
+                                              );
+                                            });
+                                          },
+                                leading: supporter.mysteriousMode
+                                    ? const MysteriousIdentityAvatar(
+                                        diameter: 40,
+                                      )
+                                    : ProfileAvatarWithFrame(
+                                        diameter: 40,
+                                        userId: supporter.uid,
+                                        backgroundColor:
+                                            const Color(0xFF25183F),
+                                        placeholderColor:
+                                            const Color(0xFFFFD54A),
+                                        fallbackProfile: <String, dynamic>{
+                                          'profileImageUrl':
+                                              supporter.profileImageUrl,
+                                          'activeProfileFrameAssetKey':
+                                              supporter.activeProfileFrameAssetKey,
+                                          'activeProfileFrameImageUrl':
+                                              supporter.activeProfileFrameImageUrl,
+                                          'activeProfileFrameExpiresAtMs':
+                                              supporter.activeProfileFrameExpiresAtMs,
+                                          'activeProfileFramePermanent':
+                                              supporter.activeProfileFramePermanent,
+                                        },
+                                        fallbackIsVisualSnapshot: true,
+                                        vipLevel: supporter.vipLevel,
+                                        useVipFallback: true,
+                                      ),
                                 title: Text(
                                   supporter.displayName,
                                   style: const TextStyle(
@@ -5520,26 +5539,28 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             child: Stack(
               clipBehavior: Clip.none,
               children: [
-                ProfileAvatarWithFrame(
-                  diameter: 28,
-                  userId: supporter.uid,
-                  backgroundColor: const Color(0xFF25183F),
-                  placeholderColor: Colors.white,
-                  fallbackProfile: <String, dynamic>{
-                    'profileImageUrl': supporter.profileImageUrl,
-                    'activeProfileFrameAssetKey':
-                        supporter.activeProfileFrameAssetKey,
-                    'activeProfileFrameImageUrl':
-                        supporter.activeProfileFrameImageUrl,
-                    'activeProfileFrameExpiresAtMs':
-                        supporter.activeProfileFrameExpiresAtMs,
-                    'activeProfileFramePermanent':
-                        supporter.activeProfileFramePermanent,
-                  },
-                  fallbackIsVisualSnapshot: true,
-                  vipLevel: supporter.vipLevel,
-                  useVipFallback: true,
-                ),
+                supporter.mysteriousMode
+                    ? const MysteriousIdentityAvatar(diameter: 28)
+                    : ProfileAvatarWithFrame(
+                        diameter: 28,
+                        userId: supporter.uid,
+                        backgroundColor: const Color(0xFF25183F),
+                        placeholderColor: Colors.white,
+                        fallbackProfile: <String, dynamic>{
+                          'profileImageUrl': supporter.profileImageUrl,
+                          'activeProfileFrameAssetKey':
+                              supporter.activeProfileFrameAssetKey,
+                          'activeProfileFrameImageUrl':
+                              supporter.activeProfileFrameImageUrl,
+                          'activeProfileFrameExpiresAtMs':
+                              supporter.activeProfileFrameExpiresAtMs,
+                          'activeProfileFramePermanent':
+                              supporter.activeProfileFramePermanent,
+                        },
+                        fallbackIsVisualSnapshot: true,
+                        vipLevel: supporter.vipLevel,
+                        useVipFallback: true,
+                      ),
                 Positioned(
                   right: -2,
                   top: -4,
