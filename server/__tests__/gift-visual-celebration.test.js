@@ -15,6 +15,7 @@ test("gift room effect threshold is SKU metadata, never a gift-id rule", () => {
     assetKey: "gifts.anything.default",
     effectMode: "cinematic",
     effectAssetKey: "gifts.anything.effect",
+    effectSoundAssetKey: "gifts.anything.sound",
     effectMinQuantity: 7,
     effectDurationMs: 3200,
     premiumBannerMinQuantity: 77,
@@ -24,6 +25,7 @@ test("gift room effect threshold is SKU metadata, never a gift-id rule", () => {
   assert.deepEqual(giftVisualPolicy(gift, 7).roomEffect, {
     mode: "cinematic",
     assetKey: "gifts.anything.effect",
+    soundAssetKey: "gifts.anything.sound",
     durationMs: 3200,
     minQuantity: 7,
   });
