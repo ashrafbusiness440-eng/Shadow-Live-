@@ -54,16 +54,6 @@ test("12-A Agency Owner reuses Host core with five direct reads and no query/wri
           },
         };
       }
-      if (path === "public_profiles/" + uid) {
-        return {
-          exists: true,
-          data: {
-            uid,
-            publicId: "812901",
-            displayName: "Owner Dashboard",
-          },
-        };
-      }
       throw new Error("unexpected_get:" + path);
     },
     async runQuery() {
@@ -92,7 +82,7 @@ test("12-A Agency Owner reuses Host core with five direct reads and no query/wri
     "agency_user_memberships/" + uid,
     "agencies/" + agencyId,
     "system_config/gift_economy",
-    "public_profiles/" + uid,
+    "users/" + uid,
   ]);
   assert.equal(calls.queries, 0);
   assert.equal(calls.writes, 0);
