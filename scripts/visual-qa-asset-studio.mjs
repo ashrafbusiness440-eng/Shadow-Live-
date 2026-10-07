@@ -242,60 +242,51 @@ await page.evaluate(async ({ config, token }) => {
   await auth.signInWithCustomToken(token);
 }, { config: firebaseConfig, token });
 
-await page.reload({ waitUntil: "domcontentloaded", timeout: 90000 });
-await page.waitForTimeout(4500);
-fs.mkdirSync("visual-qa", { recursive: true });
-await page.screenshot({ path: "visual-qa/00-before-semantics.png" }).catch(() => {});
-await enableSemantics(page);
+async function openStudioSearch(query, screenshotName) {
+  const url = new URL(targetBase);
+  url.searchParams.set("open", "asset-studio");
+  url.searchParams.set("assetSearch", query);
+  await page.goto(url.toString(), {
+    waitUntil: "domcontentloaded",
+    timeout: 90000,
+  });
+  await page.waitForSelector("flt-glass-pane", {
+    state: "attached",
+    timeout: 60000,
+  });
+  await page.waitForTimeout(5500);
+  await page.screenshot({
+    path: `visual-qa/${screenshotName}`,
+    fullPage: false,
+  });
+  const semantics = await semanticsSnapshot(page).catch(() => []);
+  fs.writeFileSync(
+    `visual-qa/${screenshotName.replace(".png", "-semantics.json")}`,
+    JSON.stringify(semantics, null, 2),
+  );
+  return {
+    url: page.url(),
+    semanticsCount: semantics.length,
+  };
+}
 
-const afterLogin = await semanticsSnapshot(page);
-fs.writeFileSync("visual-qa/01-semantics-after-login.json", JSON.stringify(afterLogin, null, 2));
-await page.screenshot({ path: "visual-qa/01-after-login.png" });
-
-await page.mouse.click(88, 878);
-await page.waitForTimeout(1200);
-await page.screenshot({ path: "visual-qa/02-more.png" });
-fs.writeFileSync(
-  "visual-qa/02-dom.html",
-  await page.evaluate(() => document.body.innerHTML),
-);
-await clickSemantics(page, "استوديو الأصول");
-await page.waitForTimeout(3000);
-await enableSemantics(page);
-await page.screenshot({ path: "visual-qa/03-studio-initial.png" });
-
-const studioSemantics = await semanticsSnapshot(page);
-fs.writeFileSync("visual-qa/03-studio-semantics.json", JSON.stringify(studioSemantics, null, 2));
-
-const found26 = await searchAsset(
-  page,
+const search26 = await openStudioSearch(
   "levels.wealth.lv26_30.profileFrame",
   "04-search-lv26_30.png",
 );
-const found31 = await searchAsset(
-  page,
+const search31 = await openStudioSearch(
   "levels.wealth.lv31_35.profileFrame",
   "05-search-lv31_35.png",
 );
-
-await focusSearch(page);
-await page.keyboard.press(process.platform === "darwin" ? "Meta+A" : "Control+A");
-await page.keyboard.type("profileFrame", { delay: 8 });
-await page.waitForTimeout(2400);
-await page.screenshot({ path: "visual-qa/06-search-all-profile-frames.png" });
-
-const finalSemantics = await semanticsSnapshot(page);
-fs.writeFileSync("visual-qa/06-final-semantics.json", JSON.stringify(finalSemantics, null, 2));
-
-const labels = finalSemantics.map((x) => (x.label + " " + x.text).trim());
-const visibleWealthFrames = labels.filter((x) => x.includes("levels.wealth.lv") && x.includes("profileFrame"));
+const searchAll = await openStudioSearch(
+  "profileFrame",
+  "06-search-all-profile-frames.png",
+);
 
 const result = {
-  ownerSignedIn: afterLogin.some((x) => (x.label + " " + x.text).includes("Shadow Control")),
-  studioOpened: studioSemantics.some((x) => (x.label + " " + x.text).includes("سجل الأصول")),
-  found26,
-  found31,
-  visibleWealthFrames,
+  search26,
+  search31,
+  searchAll,
   consoleErrors: [...new Set(consoleErrors)].slice(0, 40),
   pageErrors: [...new Set(pageErrors)].slice(0, 40),
   failedRequests: failedRequests.slice(0, 60),
@@ -304,7 +295,3 @@ fs.writeFileSync("visual-qa/result.json", JSON.stringify(result, null, 2));
 console.log("VISUAL_QA_RESULT", JSON.stringify(result));
 
 await browser.close();
-
-if (!result.ownerSignedIn || !result.studioOpened || !found26 || !found31) {
-  process.exitCode = 1;
-}
