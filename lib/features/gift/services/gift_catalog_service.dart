@@ -123,11 +123,26 @@ class GiftCatalogService {
   static DateTime? _loadedAt;
   static Future<List<GiftCatalogItem>>? _inflight;
   static int? _cachedBalanceCoins;
+  static Map<String, int> _cachedBagQuantities = <String, int>{};
 
   static int? get cachedBalanceCoins => _cachedBalanceCoins;
+  static Map<String, int> get cachedBagQuantities =>
+      Map<String, int>.unmodifiable(_cachedBagQuantities);
 
   static void updateCachedBalance(int value) {
     _cachedBalanceCoins = value < 0 ? 0 : value;
+  }
+
+  static void updateCachedBagQuantity(String giftId, int quantity) {
+    final id = giftId.trim();
+    if (id.isEmpty) return;
+    final next = Map<String, int>.from(_cachedBagQuantities);
+    if (quantity <= 0) {
+      next.remove(id);
+    } else {
+      next[id] = quantity;
+    }
+    _cachedBagQuantities = next;
   }
   static const Set<String> categories = <String>{
     'general',
@@ -383,6 +398,18 @@ class GiftCatalogService {
       if (balance != null && balance >= 0) {
         _cachedBalanceCoins = balance;
       }
+      final bag = <String, int>{};
+      final rawBag = body['bag'];
+      if (rawBag is List) {
+        for (final raw in rawBag.whereType<Map>()) {
+          final giftId = (raw['giftId'] ?? '').toString().trim();
+          final quantity = (raw['quantity'] as num?)?.toInt() ?? 0;
+          if (giftId.isNotEmpty && quantity > 0) {
+            bag[giftId] = quantity;
+          }
+        }
+      }
+      _cachedBagQuantities = bag;
       return parseCatalog(body['gifts']);
     } finally {
       if (ownedClient) httpClient.close();
@@ -394,6 +421,7 @@ class GiftCatalogService {
     _loadedAt = null;
     _inflight = null;
     _cachedBalanceCoins = null;
+    _cachedBagQuantities = <String, int>{};
   }
 
 }

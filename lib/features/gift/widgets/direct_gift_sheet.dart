@@ -87,6 +87,7 @@ class _DirectGiftContextState extends State<_DirectGiftContext> {
   Future<GiftPickerSendResult> _send(
     GiftCatalogItem gift,
     int quantity,
+    bool useGiftBag,
   ) async {
     if (_uid.isEmpty ||
         widget.receiverId.isEmpty ||
@@ -125,6 +126,7 @@ class _DirectGiftContextState extends State<_DirectGiftContext> {
         'receiverId': widget.receiverId,
         'giftId': gift.id,
         'quantity': quantity,
+        'useGiftBag': useGiftBag,
         if (diaryId.isEmpty) 'conversationId': conversationId,
         if (diaryId.isNotEmpty) 'diaryId': diaryId,
         'idempotencyKey': key,
@@ -145,11 +147,16 @@ class _DirectGiftContextState extends State<_DirectGiftContext> {
 
     final totalCost =
         (body['totalCost'] as num?)?.toInt() ?? gift.priceCoins * quantity;
+    final paidCost =
+        (body['paidCost'] as num?)?.toInt() ?? (useGiftBag ? 0 : totalCost);
     final balance = (body['balance'] as num?)?.toInt();
     if (balance != null) GiftCatalogService.updateCachedBalance(balance);
     widget.onGiftSent?.call(quantity, totalCost);
     return GiftPickerSendResult(
       balanceCoins: balance,
+      wealthDeltaCoins: paidCost,
+      bagQuantityRemaining:
+          (body['bagQuantityRemaining'] as num?)?.toInt(),
       message: 'تم إرسال ${gift.nameAr} ×$quantity إلى ${widget.receiverName}',
     );
   }
@@ -164,31 +171,23 @@ class _DirectGiftContextState extends State<_DirectGiftContext> {
           widget.receiverId.isNotEmpty &&
           _uid != widget.receiverId,
       recipientArea: Container(
+        height: 44,
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
-          color: const Color(0xFF151A28),
-          borderRadius: BorderRadius.circular(14),
+          color: const Color(0xFF151A24),
+          borderRadius: BorderRadius.circular(13),
           border: Border.all(color: Colors.white10),
         ),
         child: Row(
           children: [
             const CircleAvatar(
-              radius: 17,
+              radius: 14,
               backgroundColor: Color(0xFF2B2141),
               child: Icon(
                 Icons.person_rounded,
                 color: Colors.white70,
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 9),
-            const Text(
-              'المستلم',
-              style: TextStyle(
-                color: Colors.white54,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
+                size: 17,
               ),
             ),
             const SizedBox(width: 7),
@@ -199,14 +198,15 @@ class _DirectGiftContextState extends State<_DirectGiftContext> {
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: Colors.white,
+                  fontSize: 11,
                   fontWeight: FontWeight.w900,
                 ),
               ),
             ),
             const Icon(
               Icons.lock_rounded,
-              color: Colors.white38,
-              size: 17,
+              color: Colors.white30,
+              size: 14,
             ),
           ],
         ),

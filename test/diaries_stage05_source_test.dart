@@ -44,7 +44,7 @@ void main() {
     expect(source.contains('invalid_diary_receiver'), isTrue);
     expect(source.contains('...financialContext'), isTrue);
     expect(source.contains('db.increment("giftCount", quantity)'), isTrue);
-    expect(source.contains('db.increment("giftCoins", totalCost)'), isTrue);
+    expect(source.contains('db.increment("giftCoins", paidCost)'), isTrue);
     expect(
       source.contains(r'const diaryPath = diaryId ? `diaries/${diaryId}` : "";'),
       isTrue,

@@ -5771,6 +5771,12 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                   : () => showRoomGiftSheet(
                         context,
                         roomId: roomId,
+                        ownerUid: (_roomArguments['ownerUid'] ??
+                                _roomArguments['ownerId'] ??
+                                _roomArguments['hostId'] ??
+                                '')
+                            .toString(),
+                        ownerPhotoUrl: _ownerPhotoUrl,
                         participants: _voiceSession.roomParticipants,
                         seats: _roomSeatState?.seats ?? const <VoiceSeat>[],
                       ),

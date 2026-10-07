@@ -99,6 +99,28 @@ function giftMinVipLevel(item = {}) {
   return clean(item.category) === "vip" ? 4 : 0;
 }
 
+async function publicGiftBag(db, uid) {
+  const snapshot = await db
+    .collection("user_gift_bags")
+    .doc(uid)
+    .collection("items")
+    .limit(100)
+    .get();
+  return snapshot.docs
+    .map((doc) => {
+      const data = doc.data() || {};
+      const quantity = Number(data.quantity || 0);
+      return {
+        giftId: clean(data.giftId || doc.id),
+        quantity:
+          Number.isSafeInteger(quantity) && quantity > 0 ? quantity : 0,
+        source: clean(data.source || "admin"),
+      };
+    })
+    .filter((item) => item.giftId && item.quantity > 0)
+    .slice(0, 100);
+}
+
 function publicCatalog(config) {
   const raw = Array.isArray(config?.gifts) ? config.gifts : [];
   return raw
@@ -298,9 +320,10 @@ export async function handler(req, res) {
     if (action === "catalog") {
       const decoded = await authenticatedUser(req);
       const db = getFirestore();
-      const [state, userSnap] = await Promise.all([
+      const [state, userSnap, bag] = await Promise.all([
         cachedCatalogState(db),
         db.collection("users").doc(decoded.uid).get(),
+        publicGiftBag(db, decoded.uid),
       ]);
       if (!userSnap.exists) throw Error("forbidden");
       const user = userSnap.data() || {};
@@ -309,6 +332,7 @@ export async function handler(req, res) {
       return out(res, 200, {
         ok: true,
         gifts: publicCatalog(state.config),
+        bag,
         balance: Number.isSafeInteger(balance) ? balance : 0,
       });
     }
@@ -364,6 +388,81 @@ export async function handler(req, res) {
       return out(res, 200, { ok: true, gifts });
     }
 
+    if (action === "grantBagGift") {
+      const targetUserId = clean(
+        req.body?.targetUserId || req.body?.targetUid,
+      );
+      const giftId = clean(req.body?.giftId);
+      const quantity = Number(req.body?.quantity || 0);
+      const source = clean(req.body?.source || "admin");
+      if (
+        !/^[A-Za-z0-9_-]{1,180}$/.test(targetUserId) ||
+        !/^[a-z0-9_]{2,64}$/.test(giftId) ||
+        !Number.isSafeInteger(quantity) ||
+        quantity < 1 ||
+        quantity > 9999 ||
+        !["admin", "event", "free"].includes(source)
+      ) {
+        throw Error("invalid_bag_grant");
+      }
+
+      const state = await cachedCatalogState(db);
+      const gift = publicCatalog(state.config)
+        .find((item) => item.id === giftId);
+      if (!gift) throw Error("gift_not_found");
+
+      let target = await db.collection("users").doc(targetUserId).get();
+      let targetUid = target.exists ? target.id : "";
+      if (!target.exists) {
+        const byPublicId = await db
+          .collection("users")
+          .where("publicId", "==", targetUserId)
+          .limit(2)
+          .get();
+        if (byPublicId.size !== 1) throw Error("target_not_found");
+        target = byPublicId.docs[0];
+        targetUid = target.id;
+      }
+
+      const itemRef = db
+        .collection("user_gift_bags")
+        .doc(targetUid)
+        .collection("items")
+        .doc(giftId);
+      const auditRef = db.collection("admin_audit_logs").doc();
+      const now = FieldValue.serverTimestamp();
+      const batch = db.batch();
+      batch.set(
+        itemRef,
+        {
+          giftId,
+          quantity: FieldValue.increment(quantity),
+          source,
+          lastGrantedBy: uid,
+          updatedAt: now,
+        },
+        { merge: true },
+      );
+      batch.create(auditRef, {
+        actorUid: uid,
+        action: "grantGiftBagItem",
+        targetType: "user",
+        targetId: targetUid,
+        giftId,
+        quantity,
+        source,
+        createdAt: now,
+      });
+      await batch.commit();
+      return out(res, 200, {
+        ok: true,
+        targetUid,
+        giftId,
+        quantityGranted: quantity,
+        source,
+      });
+    }
+
     return out(res, 400, { ok: false, code: "invalid_action" });
   } catch (error) {
     const code = clean(error?.message) || "server_error";
@@ -389,6 +488,9 @@ export async function handler(req, res) {
               "invalid_effect_duration",
               "invalid_premium_banner_quantity",
               "invalid_affinity_base_points",
+              "invalid_bag_grant",
+              "gift_not_found",
+              "target_not_found",
               "invalid_action",
             ].includes(code)
             ? 400
