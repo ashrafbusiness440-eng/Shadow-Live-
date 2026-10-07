@@ -51,7 +51,7 @@ test("gift catalog owns reusable effect and relationship metadata", () => {
     "gift editor must not be duplicated",
   );
   assert.equal(
-    control.match(/Widget build\\(BuildContext context\\)/g)?.length ?? 0,
+    control.match(/Widget build\(BuildContext context\)/g)?.length ?? 0,
     1,
     "gift catalog page must have one build tree",
   );
