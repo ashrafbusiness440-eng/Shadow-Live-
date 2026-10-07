@@ -42,6 +42,7 @@ test("gift catalog owns reusable effect and relationship metadata", () => {
   assert.equal(control.includes("نوع مؤثر الغرفة"), true);
   assert.equal(control.includes("أقل كمية لتشغيل المؤثر"), true);
   assert.equal(control.includes("مفتاح صوت المؤثر — اختياري"), true);
+  assert.equal(control.includes("حجم المؤثر (0 = تلقائي، 40–420)"), true);
   assert.equal(control.includes("نقاط العلاقة الأساسية — عدد زوجي"), true);
   assert.equal(picker.includes("gift.isRelationshipGift ? 'relationship'"), true);
   assert.equal(picker.includes("? 'علاقة'"), true);
