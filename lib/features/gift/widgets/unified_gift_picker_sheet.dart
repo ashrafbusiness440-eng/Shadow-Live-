@@ -399,7 +399,6 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
 
   Widget _bottomBar() {
     final gift = _selected;
-    final total = gift == null ? 0 : gift.priceCoins * _quantity;
     final balanceText = _balanceCoins == null
         ? 'الرصيد: —'
         : 'الرصيد: $_balanceCoins كوينز';
@@ -473,7 +472,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
                     )
                   : const Icon(Icons.card_giftcard_rounded),
               label: Text(
-                gift == null ? 'اختر هدية' : 'إهداء • 🪙 $total',
+                gift == null ? 'اختر هدية' : 'إهداء',
                 style: const TextStyle(fontWeight: FontWeight.w900),
               ),
             ),
