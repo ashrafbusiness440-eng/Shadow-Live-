@@ -12,6 +12,7 @@ Future<void> showRoomGiftSheet(
   BuildContext context, {
   required String roomId,
   required String ownerUid,
+  required String ownerPhotoUrl,
   required List<RoomPresenceUser> participants,
   required List<VoiceSeat> seats,
 }) {
@@ -25,6 +26,7 @@ Future<void> showRoomGiftSheet(
     builder: (_) => _RoomGiftContext(
       roomId: roomId,
       ownerUid: ownerUid,
+      ownerPhotoUrl: ownerPhotoUrl,
       participants: participants,
       seats: seats,
     ),
@@ -35,12 +37,14 @@ class _RoomGiftContext extends StatefulWidget {
   const _RoomGiftContext({
     required this.roomId,
     required this.ownerUid,
+    required this.ownerPhotoUrl,
     required this.participants,
     required this.seats,
   });
 
   final String roomId;
   final String ownerUid;
+  final String ownerPhotoUrl;
   final List<RoomPresenceUser> participants;
   final List<VoiceSeat> seats;
 
@@ -131,6 +135,20 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
   Widget _avatar(String uid, {double diameter = 38}) {
     final user = _participant(uid);
     if (user == null) {
+      final ownerUid = widget.ownerUid.trim();
+      if (uid == ownerUid && ownerUid.isNotEmpty) {
+        return ProfileAvatarWithFrame(
+          diameter: diameter,
+          userId: ownerUid,
+          backgroundColor: const Color(0xFF25183F),
+          placeholderColor: Colors.white70,
+          fallbackProfile: <String, dynamic>{
+            'profileImageUrl': widget.ownerPhotoUrl.trim(),
+          },
+          fallbackIsVisualSnapshot: true,
+          useVipFallback: true,
+        );
+      }
       return CircleAvatar(
         radius: diameter / 2,
         backgroundColor: const Color(0xFF2B2141),
@@ -238,7 +256,13 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
   }
 
   Widget _recipientArea() {
-    final users = _participants;
+    final ownerUid = widget.ownerUid.trim();
+    final users = <String>[
+      if (ownerUid.isNotEmpty) ownerUid,
+      ..._participants
+          .map((user) => user.uid)
+          .where((uid) => uid != ownerUid),
+    ];
     return SizedBox(
       height: 52,
       child: Row(
@@ -262,8 +286,7 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
                 itemCount: users.length,
                 separatorBuilder: (_, __) => const SizedBox(width: 7),
                 itemBuilder: (_, index) {
-                  final user = users[index];
-                  final uid = user.uid;
+                  final uid = users[index];
                   final selected =
                       _recipientMode == 'users' && _selectedIds.contains(uid);
                   final seatNumber = _seatNumber(uid);
