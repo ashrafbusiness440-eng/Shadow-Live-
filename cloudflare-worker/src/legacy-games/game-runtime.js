@@ -19,6 +19,10 @@ import {
   loadUserLevelPolicy,
 } from "../user-level-policy.js";
 import { vip4PrivacyPreferencesFromUser } from "../vip-entitlements.js";
+import {
+  loadPublicProfilePresentations,
+  publicProfilePresentation,
+} from "../public-profile-presentation.js";
 
 const clean=(value)=>String(value??"").trim();
 const validRoomId=(value)=>/^[A-Za-z0-9_-]{1,180}$/.test(clean(value));
@@ -457,20 +461,28 @@ async function roundResultSummary(db,roundId,uid){
     ...leadersSnap.docs.map(doc=>clean(doc.data()?.userId||doc.id)),
     clean(uid),
   ].filter(Boolean))].slice(0,4);
-  const profiles=new Map();
-  await Promise.all(ids.map(async userId=>{
-    const snap=await db.collection("public_profiles").doc(userId).get();
-    if(snap.exists)profiles.set(userId,snap.data()||{});
-  }));
+  const profiles=await loadPublicProfilePresentations(
+    db,
+    ids,
+    {limit:4,concurrency:4},
+  );
   const topWinners=leadersSnap.docs
     .map((doc,index)=>{
       const data=doc.data()||{};
       const userId=clean(data.userId||doc.id);
-      return participantPublic(data,index+1,profiles.get(userId)||{});
+      return participantPublic(
+        data,
+        index+1,
+        profiles.get(userId)||publicProfilePresentation(userId),
+      );
     })
     .filter(item=>item.payoutCoins>0);
   let myRound=mySnap.exists
-    ? participantPublic(mySnap.data()||{},null,profiles.get(clean(uid))||{})
+    ? participantPublic(
+        mySnap.data()||{},
+        null,
+        profiles.get(clean(uid))||publicProfilePresentation(clean(uid)),
+      )
     : null;
   if(myRound){
     const ranked=topWinners.find(item=>item.userId===uid);
