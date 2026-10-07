@@ -8,6 +8,11 @@ class RoomBanEntry {
     required this.uid,
     required this.displayName,
     required this.profileImageUrl,
+    required this.profileAvatarAsset,
+    required this.activeProfileFrameAssetKey,
+    required this.activeProfileFrameImageUrl,
+    required this.activeProfileFrameExpiresAtMs,
+    required this.activeProfileFramePermanent,
     required this.permanent,
     required this.durationMinutes,
     required this.expiresAt,
@@ -18,6 +23,11 @@ class RoomBanEntry {
   final String uid;
   final String displayName;
   final String profileImageUrl;
+  final String profileAvatarAsset;
+  final String activeProfileFrameAssetKey;
+  final String activeProfileFrameImageUrl;
+  final int activeProfileFrameExpiresAtMs;
+  final bool activeProfileFramePermanent;
   final bool permanent;
   final int durationMinutes;
   final DateTime? expiresAt;
@@ -31,6 +41,16 @@ class RoomBanEntry {
       displayName:
           (json['displayName'] ?? 'مستخدم Shadow Live').toString(),
       profileImageUrl: (json['profileImageUrl'] ?? '').toString(),
+      profileAvatarAsset:
+          (json['profileAvatarAsset'] ?? '').toString(),
+      activeProfileFrameAssetKey:
+          (json['activeProfileFrameAssetKey'] ?? '').toString(),
+      activeProfileFrameImageUrl:
+          (json['activeProfileFrameImageUrl'] ?? '').toString(),
+      activeProfileFrameExpiresAtMs:
+          (json['activeProfileFrameExpiresAtMs'] as num?)?.toInt() ?? 0,
+      activeProfileFramePermanent:
+          json['activeProfileFramePermanent'] == true,
       permanent: json['permanent'] == true,
       durationMinutes: (json['durationMinutes'] as num?)?.toInt() ?? 0,
       expiresAt: expiresMs == null
