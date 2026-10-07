@@ -63,6 +63,10 @@ class DiaryItem {
     required this.ownerPublicId,
     required this.ownerProfileImageUrl,
     required this.ownerProfileAvatarAsset,
+    required this.activeProfileFrameAssetKey,
+    required this.activeProfileFrameImageUrl,
+    required this.activeProfileFrameExpiresAtMs,
+    required this.activeProfileFramePermanent,
     required this.text,
     required this.images,
     required this.commentsEnabled,
@@ -80,6 +84,10 @@ class DiaryItem {
   final String ownerPublicId;
   final String ownerProfileImageUrl;
   final String ownerProfileAvatarAsset;
+  final String activeProfileFrameAssetKey;
+  final String activeProfileFrameImageUrl;
+  final int activeProfileFrameExpiresAtMs;
+  final bool activeProfileFramePermanent;
   final String text;
   final List<DiaryImageItem> images;
   final bool commentsEnabled;
@@ -105,6 +113,10 @@ class DiaryItem {
       ownerPublicId: ownerPublicId,
       ownerProfileImageUrl: ownerProfileImageUrl,
       ownerProfileAvatarAsset: ownerProfileAvatarAsset,
+      activeProfileFrameAssetKey: activeProfileFrameAssetKey,
+      activeProfileFrameImageUrl: activeProfileFrameImageUrl,
+      activeProfileFrameExpiresAtMs: activeProfileFrameExpiresAtMs,
+      activeProfileFramePermanent: activeProfileFramePermanent,
       text: text,
       images: images,
       commentsEnabled: commentsEnabled ?? this.commentsEnabled,
@@ -129,6 +141,14 @@ class DiaryItem {
           (data['ownerProfileImageUrl'] ?? '').toString().trim(),
       ownerProfileAvatarAsset:
           (data['ownerProfileAvatarAsset'] ?? '').toString().trim(),
+      activeProfileFrameAssetKey:
+          (data['activeProfileFrameAssetKey'] ?? '').toString().trim(),
+      activeProfileFrameImageUrl:
+          (data['activeProfileFrameImageUrl'] ?? '').toString().trim(),
+      activeProfileFrameExpiresAtMs:
+          (data['activeProfileFrameExpiresAtMs'] as num?)?.toInt() ?? 0,
+      activeProfileFramePermanent:
+          data['activeProfileFramePermanent'] == true,
       text: (data['text'] ?? '').toString(),
       images: rawImages is List
           ? rawImages
