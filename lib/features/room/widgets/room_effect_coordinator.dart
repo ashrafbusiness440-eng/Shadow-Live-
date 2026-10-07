@@ -14,6 +14,7 @@ class RoomVisualEffect {
     required this.imageUrl,
     required this.durationMs,
     required this.recipientUids,
+    this.size = 0,
     this.displayName = '',
     this.profileImageUrl = '',
     this.badgeLabel = '',
@@ -27,6 +28,7 @@ class RoomVisualEffect {
   final String imageUrl;
   final int durationMs;
   final List<String> recipientUids;
+  final int size;
   final String displayName;
   final String profileImageUrl;
   final String badgeLabel;
@@ -198,6 +200,9 @@ class RoomEffectCoordinator extends ChangeNotifier {
             2200)
         .clamp(300, 12000)
         .toInt();
+    final size = ((message['giftEffectSize'] as num?)?.toInt() ?? 0)
+        .clamp(0, 420)
+        .toInt();
     final rawRecipients = message['giftEffectRecipientUids'];
     final recipients = rawRecipients is List
         ? rawRecipients
@@ -216,6 +221,7 @@ class RoomEffectCoordinator extends ChangeNotifier {
       imageUrl: '',
       durationMs: durationMs,
       recipientUids: recipients,
+      size: size,
       displayName: (message['displayName'] ?? '').toString(),
       profileImageUrl: (message['profileImageUrl'] ?? '').toString(),
     );
@@ -357,8 +363,8 @@ class RoomEffectCoordinatorHost extends StatelessWidget {
             children: [
               Center(
                 child: SizedBox(
-                  width: 320,
-                  height: 320,
+                  width: event.size > 0 ? event.size.toDouble() : 320,
+                  height: event.size > 0 ? event.size.toDouble() : 320,
                   child: CosmeticAssetVisual(
                     assetKey: event.assetKey,
                     imageUrl: event.imageUrl,
