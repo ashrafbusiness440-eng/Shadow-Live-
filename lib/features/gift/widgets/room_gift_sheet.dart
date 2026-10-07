@@ -142,15 +142,12 @@ class _RoomGiftSheetState extends State<_RoomGiftSheet> {
   Widget _avatar(RoomPresenceUser user, {double radius = 24}) {
     return ProfileAvatarWithFrame(
       diameter: radius * 2,
+      userId: user.uid,
       backgroundColor: const Color(0xFF25183F),
       placeholderColor: Colors.white70,
-      profile: profileAvatarFrameData(
-        imageUrl: user.profileImageUrl,
-        frameAssetKey: user.activeProfileFrameAssetKey,
-        frameImageUrl: user.activeProfileFrameImageUrl,
-        frameExpiresAtMs: user.activeProfileFrameExpiresAtMs,
-        framePermanent: user.activeProfileFramePermanent,
-      ),
+      fallbackProfile: <String, dynamic>{
+        'profileImageUrl': user.profileImageUrl,
+      },
       vipLevel: user.vipLevel,
       useVipFallback: true,
     );
