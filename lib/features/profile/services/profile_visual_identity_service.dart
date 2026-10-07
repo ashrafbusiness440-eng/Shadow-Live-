@@ -67,6 +67,8 @@ class ProfileVisualIdentityService {
 
   static const Duration _ttl = Duration(seconds: 45);
   static const int _batchSize = 10;
+  static const int _maxPendingPerFlush = 40;
+  static const int _maxCacheEntries = 160;
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final Map<String, _CachedVisualIdentity> _cache = {};
@@ -100,10 +102,21 @@ class ProfileVisualIdentityService {
   void prime(String uid, Map<String, dynamic> data) {
     final normalized = uid.trim();
     if (normalized.isEmpty) return;
-    _cache[normalized] = _CachedVisualIdentity(
-      value: ProfileVisualIdentity.fromMap(normalized, data),
+    _putCache(
+      normalized,
+      ProfileVisualIdentity.fromMap(normalized, data),
+    );
+  }
+
+  void _putCache(String uid, ProfileVisualIdentity value) {
+    _cache.remove(uid);
+    _cache[uid] = _CachedVisualIdentity(
+      value: value,
       loadedAt: DateTime.now(),
     );
+    while (_cache.length > _maxCacheEntries) {
+      _cache.remove(_cache.keys.first);
+    }
   }
 
   void invalidate(String uid) {
@@ -118,7 +131,9 @@ class ProfileVisualIdentityService {
 
   Future<void> _flushPending() async {
     _flushTimer = null;
-    final ids = _pending.keys.toList(growable: false);
+    final ids = _pending.keys
+        .take(_maxPendingPerFlush)
+        .toList(growable: false);
     if (ids.isEmpty) return;
 
     for (var offset = 0; offset < ids.length; offset += _batchSize) {
@@ -133,18 +148,12 @@ class ProfileVisualIdentityService {
         for (final doc in snapshot.docs) {
           final value = ProfileVisualIdentity.fromMap(doc.id, doc.data());
           found[doc.id] = value;
-          _cache[doc.id] = _CachedVisualIdentity(
-            value: value,
-            loadedAt: DateTime.now(),
-          );
+          _putCache(doc.id, value);
         }
 
         for (final uid in batch) {
           final value = found[uid] ?? ProfileVisualIdentity.empty(uid);
-          _cache[uid] = _CachedVisualIdentity(
-            value: value,
-            loadedAt: DateTime.now(),
-          );
+          _putCache(uid, value);
           final completer = _pending.remove(uid);
           if (completer != null && !completer.isCompleted) {
             completer.complete(value);
