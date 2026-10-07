@@ -12,7 +12,7 @@ import '../../profile/screens/public_profile_screen.dart';
 import '../services/diary_service.dart';
 import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../widgets/diary_comments_sheet.dart';
-import '../widgets/diary_gifts_sheet.dart';
+import '../../gift/widgets/direct_gift_sheet.dart';
 import '../widgets/diary_report_sheet.dart';
 import '../widgets/diary_mention_suggestions.dart';
 
@@ -567,28 +567,26 @@ class _DiariesScreenState extends State<DiariesScreen> {
   Future<void> _openGifts(DiaryItem item) async {
     await _recordView(item);
     if (!mounted) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFF080B12),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (_) => DiaryGiftsSheet(
-        diary: item,
-        service: _service,
-        onGuestAction: _guestAction,
-        onGiftTotalsChanged: (giftCount, giftCoins) {
-          if (!mounted) return;
-          _replaceDiary(
-            item.diaryId,
-            (current) => current.copyWith(
-              giftCount: giftCount,
-              giftCoins: giftCoins,
-            ),
-          );
-        },
-      ),
+    if (_guest || !_signedIn) {
+      await _guestAction();
+      return;
+    }
+
+    await showDirectGiftSheet(
+      context,
+      receiverId: item.ownerUid,
+      receiverName: item.ownerName,
+      diaryId: item.diaryId,
+      onGiftSent: (quantity, paidCost) {
+        if (!mounted) return;
+        _replaceDiary(
+          item.diaryId,
+          (current) => current.copyWith(
+            giftCount: current.giftCount + quantity,
+            giftCoins: current.giftCoins + paidCost,
+          ),
+        );
+      },
     );
   }
 
