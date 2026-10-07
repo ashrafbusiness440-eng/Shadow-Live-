@@ -513,6 +513,16 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       "مستخدم Shadow Live",
     );
     const senderPhoto = clean(sender.profileImageUrl);
+    const senderFrameAssetKey =
+      clean(sender.activeProfileFrameAssetKey);
+    const senderFrameImageUrl =
+      clean(sender.activeProfileFrameImageUrl);
+    const senderFrameExpiresAtMs = Math.max(
+      0,
+      Number(sender.activeProfileFrameExpiresAtMs || 0),
+    );
+    const senderFramePermanent =
+      sender.activeProfileFramePermanent === true;
     const senderVipCosmetics = vipCosmeticsFromUser(sender, nowMs);
     const giftName = clean(gift.nameAr || "هدية");
     const assetKey = clean(gift.assetKey || "gifts.placeholder.default");
@@ -757,9 +767,22 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
             uid: senderUid,
             displayName: senderName,
             profileImageUrl: senderPhoto,
+            activeProfileFrameAssetKey: senderFrameAssetKey,
+            activeProfileFrameImageUrl: senderFrameImageUrl,
+            activeProfileFrameExpiresAtMs: senderFrameExpiresAtMs,
+            activeProfileFramePermanent: senderFramePermanent,
             updatedAt: now,
           },
-          ["uid", "displayName", "profileImageUrl", "updatedAt"],
+          [
+            "uid",
+            "displayName",
+            "profileImageUrl",
+            "activeProfileFrameAssetKey",
+            "activeProfileFrameImageUrl",
+            "activeProfileFrameExpiresAtMs",
+            "activeProfileFramePermanent",
+            "updatedAt",
+          ],
           supportTransforms,
         ),
       );
@@ -1146,6 +1169,10 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
           receiverUid: receiverId,
           displayName: senderName,
           profileImageUrl: senderPhoto,
+          activeProfileFrameAssetKey: senderFrameAssetKey,
+          activeProfileFrameImageUrl: senderFrameImageUrl,
+          activeProfileFrameExpiresAtMs: senderFrameExpiresAtMs,
+          activeProfileFramePermanent: senderFramePermanent,
           giftId,
           giftName,
           quantity,
