@@ -822,7 +822,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
             children: [
               IconButton(
                 tooltip: 'هدية',
-                onPressed: _sendingGiftId != null ? null : _openGiftPicker,
+                onPressed: _sending ? null : _openGiftPicker,
                 color: const Color(0xFFFFD54A),
                 icon: const Icon(Icons.card_giftcard_rounded),
               ),
