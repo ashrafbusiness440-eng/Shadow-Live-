@@ -41,6 +41,10 @@ class RelationshipItem {
     required this.partnerPublicId,
     required this.partnerProfileImageUrl,
     required this.partnerProfileAvatarAsset,
+    required this.partnerActiveProfileFrameAssetKey,
+    required this.partnerActiveProfileFrameImageUrl,
+    required this.partnerActiveProfileFrameExpiresAtMs,
+    required this.partnerActiveProfileFramePermanent,
   });
 
   final String relationshipId;
@@ -52,6 +56,10 @@ class RelationshipItem {
   final String partnerPublicId;
   final String partnerProfileImageUrl;
   final String partnerProfileAvatarAsset;
+  final String partnerActiveProfileFrameAssetKey;
+  final String partnerActiveProfileFrameImageUrl;
+  final int partnerActiveProfileFrameExpiresAtMs;
+  final bool partnerActiveProfileFramePermanent;
 
   factory RelationshipItem.fromMap(Map<String, dynamic> data) {
     return RelationshipItem(
@@ -67,6 +75,14 @@ class RelationshipItem {
           (data['partnerProfileImageUrl'] ?? '').toString().trim(),
       partnerProfileAvatarAsset:
           (data['partnerProfileAvatarAsset'] ?? '').toString().trim(),
+      partnerActiveProfileFrameAssetKey:
+          (data['partnerActiveProfileFrameAssetKey'] ?? '').toString().trim(),
+      partnerActiveProfileFrameImageUrl:
+          (data['partnerActiveProfileFrameImageUrl'] ?? '').toString().trim(),
+      partnerActiveProfileFrameExpiresAtMs:
+          (data['partnerActiveProfileFrameExpiresAtMs'] as num?)?.toInt() ?? 0,
+      partnerActiveProfileFramePermanent:
+          data['partnerActiveProfileFramePermanent'] == true,
     );
   }
 }
