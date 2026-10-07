@@ -36,6 +36,7 @@ export function giftVisualPolicy(gift = {}, quantity = 1) {
               gift.assetKey ||
               "gifts.placeholder.default",
           ),
+          soundAssetKey: clean(gift.effectSoundAssetKey),
           durationMs: Math.max(
             300,
             Math.min(12000, safeInteger(gift.effectDurationMs, 2200)),
