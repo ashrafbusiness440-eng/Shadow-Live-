@@ -3172,6 +3172,14 @@ function activeMemberSummary(row, userSnap) {
     profileImageUrl:
       clean(user.profileImageUrl || user.photoUrl || user.avatarUrl) || null,
     profileAvatarAsset: clean(user.profileAvatarAsset) || null,
+    activeProfileFrameAssetKey:
+      clean(user.activeProfileFrameAssetKey) || null,
+    activeProfileFrameImageUrl:
+      clean(user.activeProfileFrameImageUrl) || null,
+    activeProfileFrameExpiresAtMs:
+      Math.max(0, Number(user.activeProfileFrameExpiresAtMs || 0)),
+    activeProfileFramePermanent:
+      user.activeProfileFramePermanent === true,
     accountStatus: clean(user.accountStatus || "active"),
   };
 }
@@ -3347,6 +3355,14 @@ export async function loadAgencyMemberPerformance(
           targetUser.avatarUrl,
         ) || null,
       profileAvatarAsset: clean(targetUser.profileAvatarAsset) || null,
+      activeProfileFrameAssetKey:
+        clean(targetUser.activeProfileFrameAssetKey) || null,
+      activeProfileFrameImageUrl:
+        clean(targetUser.activeProfileFrameImageUrl) || null,
+      activeProfileFrameExpiresAtMs:
+        Math.max(0, Number(targetUser.activeProfileFrameExpiresAtMs || 0)),
+      activeProfileFramePermanent:
+        targetUser.activeProfileFramePermanent === true,
       role: clean(targetMembership.role),
       status: clean(targetMembership.status),
       accountStatus: clean(targetUser.accountStatus || "active"),
@@ -3537,6 +3553,14 @@ function pendingRequestView({
     profileImageUrl:
       clean(user.profileImageUrl || user.photoUrl || user.avatarUrl) || null,
     profileAvatarAsset: clean(user.profileAvatarAsset) || null,
+    activeProfileFrameAssetKey:
+      clean(user.activeProfileFrameAssetKey) || null,
+    activeProfileFrameImageUrl:
+      clean(user.activeProfileFrameImageUrl) || null,
+    activeProfileFrameExpiresAtMs:
+      Math.max(0, Number(user.activeProfileFrameExpiresAtMs || 0)),
+    activeProfileFramePermanent:
+      user.activeProfileFramePermanent === true,
     accountStatus: clean(user.accountStatus || "active"),
     conflictStatus: pendingConflictStatus({
       agencyId,
