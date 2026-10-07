@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../../../services/navigation_service.dart';
 import '../../../utils/search_index.dart';
 import '../../profile/screens/public_profile_screen.dart';
+import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../services/discovery_service.dart';
 
 class DiscoverySearchScreen extends StatefulWidget {
@@ -449,7 +450,6 @@ class _DiscoverySearchScreenState extends State<DiscoverySearchScreen> {
   }
 
   Widget _personCard(Map<String, dynamic> person) {
-    final avatar = _avatar(person);
     final isOnline = person['isOnline'] == true;
 
     return Card(
@@ -459,9 +459,10 @@ class _DiscoverySearchScreenState extends State<DiscoverySearchScreen> {
         leading: Stack(
           clipBehavior: Clip.none,
           children: [
-            CircleAvatar(
-              backgroundImage: avatar,
-              child: avatar == null ? const Icon(Icons.person) : null,
+            ProfileAvatarWithFrame(
+              diameter: 40,
+              profile: person,
+              placeholderColor: Colors.white70,
             ),
             if (isOnline)
               PositionedDirectional(
