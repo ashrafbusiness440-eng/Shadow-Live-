@@ -461,7 +461,8 @@ class _DiscoverySearchScreenState extends State<DiscoverySearchScreen> {
           children: [
             ProfileAvatarWithFrame(
               diameter: 40,
-              profile: person,
+              userId: (person['uid'] ?? '').toString(),
+              fallbackProfile: person,
               placeholderColor: Colors.white70,
             ),
             if (isOnline)
