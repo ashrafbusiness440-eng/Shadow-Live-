@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/diary_service.dart';
+import '../../profile/widgets/profile_avatar_with_frame.dart';
 
 String? activeDiaryMentionQuery(TextEditingController controller) {
   final selection = controller.selection;
@@ -79,18 +80,19 @@ class DiaryMentionSuggestions extends StatelessWidget {
               itemCount: items.length,
               itemBuilder: (context, index) {
                 final item = items[index];
-                final avatar = item.profileImageUrl.isNotEmpty
-                    ? NetworkImage(item.profileImageUrl)
-                    : null;
                 return ListTile(
                   dense: true,
                   onTap: () => onSelected(item),
-                  leading: CircleAvatar(
-                    radius: 18,
-                    backgroundImage: avatar,
-                    child: avatar == null
-                        ? const Icon(Icons.person_rounded, size: 18)
-                        : null,
+                  leading: ProfileAvatarWithFrame(
+                    diameter: 36,
+                    profile: profileAvatarFrameData(
+                      imageUrl: item.profileImageUrl,
+                      avatarAsset: item.profileAvatarAsset,
+                      frameAssetKey: item.activeProfileFrameAssetKey,
+                      frameImageUrl: item.activeProfileFrameImageUrl,
+                      frameExpiresAtMs: item.activeProfileFrameExpiresAtMs,
+                      framePermanent: item.activeProfileFramePermanent,
+                    ),
                   ),
                   title: Text(
                     item.displayName,
