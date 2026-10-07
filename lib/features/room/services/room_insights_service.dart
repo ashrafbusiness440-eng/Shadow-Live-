@@ -17,6 +17,10 @@ class RoomSupporter {
     this.wealthLevel = 0,
     this.attractionLevel = 0,
     this.gameLevel = 0,
+    this.activeProfileFrameAssetKey = '',
+    this.activeProfileFrameImageUrl = '',
+    this.activeProfileFrameExpiresAtMs = 0,
+    this.activeProfileFramePermanent = false,
   });
 
   final String uid;
@@ -31,6 +35,10 @@ class RoomSupporter {
   final int wealthLevel;
   final int attractionLevel;
   final int gameLevel;
+  final String activeProfileFrameAssetKey;
+  final String activeProfileFrameImageUrl;
+  final int activeProfileFrameExpiresAtMs;
+  final bool activeProfileFramePermanent;
 
   factory RoomSupporter.fromJson(Map<String, dynamic> json) => RoomSupporter(
         uid: (json['uid'] ?? '').toString(),
@@ -51,6 +59,14 @@ class RoomSupporter {
         wealthLevel: (json['wealthLevel'] as num?)?.toInt() ?? 0,
         attractionLevel: (json['attractionLevel'] as num?)?.toInt() ?? 0,
         gameLevel: (json['gameLevel'] as num?)?.toInt() ?? 0,
+        activeProfileFrameAssetKey:
+            (json['activeProfileFrameAssetKey'] ?? '').toString(),
+        activeProfileFrameImageUrl:
+            (json['activeProfileFrameImageUrl'] ?? '').toString(),
+        activeProfileFrameExpiresAtMs:
+            (json['activeProfileFrameExpiresAtMs'] as num?)?.toInt() ?? 0,
+        activeProfileFramePermanent:
+            json['activeProfileFramePermanent'] == true,
       );
 }
 
