@@ -204,16 +204,13 @@ class _RelationshipsPageState extends State<RelationshipsPage> {
           if (active)
             ProfileAvatarWithFrame(
               diameter: 56,
+              userId: item.partnerUid,
               backgroundColor: const Color(0xFF25183F),
               placeholderColor: const Color(0xFFFFD54A),
-              profile: profileAvatarFrameData(
-                imageUrl: item.partnerProfileImageUrl,
-                avatarAsset: item.partnerProfileAvatarAsset,
-                frameAssetKey: item.partnerActiveProfileFrameAssetKey,
-                frameImageUrl: item.partnerActiveProfileFrameImageUrl,
-                frameExpiresAtMs: item.partnerActiveProfileFrameExpiresAtMs,
-                framePermanent: item.partnerActiveProfileFramePermanent,
-              ),
+              fallbackProfile: <String, dynamic>{
+                'profileImageUrl': item.partnerProfileImageUrl,
+                'profileAvatarAsset': item.partnerProfileAvatarAsset,
+              },
             )
           else
             const CircleAvatar(
