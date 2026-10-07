@@ -158,6 +158,7 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
     final totalCost = (result['totalCost'] as num?)?.toInt() ?? 0;
     return GiftPickerSendResult(
       balanceCoins: balance,
+      wealthDeltaCoins: totalCost,
       message: recipientCount <= 1
           ? 'تم إرسال ${gift.nameAr} ×$quantity — $totalCost كوينز'
           : 'تم إرسال ${gift.nameAr} إلى $recipientCount مستلمين — $totalCost كوينز',
