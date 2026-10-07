@@ -16,6 +16,7 @@ test("gift room effect threshold is SKU metadata, never a gift-id rule", () => {
     effectMode: "cinematic",
     effectAssetKey: "gifts.anything.effect",
     effectSoundAssetKey: "gifts.anything.sound",
+    effectSize: 280,
     effectMinQuantity: 7,
     effectDurationMs: 3200,
     premiumBannerMinQuantity: 77,
@@ -26,6 +27,7 @@ test("gift room effect threshold is SKU metadata, never a gift-id rule", () => {
     mode: "cinematic",
     assetKey: "gifts.anything.effect",
     soundAssetKey: "gifts.anything.sound",
+    size: 280,
     durationMs: 3200,
     minQuantity: 7,
   });
