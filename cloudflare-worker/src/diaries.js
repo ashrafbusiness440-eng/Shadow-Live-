@@ -182,14 +182,6 @@ function publicAuthorSnapshot(profile = {}, uid = "") {
     ownerPublicId: clean(current.publicId).slice(0, 16),
     ownerProfileImageUrl: clean(current.profileImageUrl).slice(0, 1000),
     ownerProfileAvatarAsset: clean(current.profileAvatarAsset).slice(0, 500),
-    activeProfileFrameAssetKey:
-      clean(current.activeProfileFrameAssetKey),
-    activeProfileFrameImageUrl:
-      clean(current.activeProfileFrameImageUrl),
-    activeProfileFrameExpiresAtMs:
-      Math.max(0, Number(current.activeProfileFrameExpiresAtMs || 0)),
-    activeProfileFramePermanent:
-      current.activeProfileFramePermanent === true,
   };
 }
 
@@ -296,14 +288,6 @@ async function searchMentions(db, uid, body) {
       publicId: clean(profile.publicId).slice(0, 16),
       profileImageUrl: clean(profile.profileImageUrl).slice(0, 1000),
       profileAvatarAsset: clean(profile.profileAvatarAsset).slice(0, 500),
-      activeProfileFrameAssetKey:
-        clean(profile.activeProfileFrameAssetKey),
-      activeProfileFrameImageUrl:
-        clean(profile.activeProfileFrameImageUrl),
-      activeProfileFrameExpiresAtMs:
-        Math.max(0, Number(profile.activeProfileFrameExpiresAtMs || 0)),
-      activeProfileFramePermanent:
-        profile.activeProfileFramePermanent === true,
     });
   };
 
@@ -347,12 +331,6 @@ function normalizeDiary(id, data = {}) {
     ownerPublicId: clean(data.ownerPublicId),
     ownerProfileImageUrl: clean(data.ownerProfileImageUrl),
     ownerProfileAvatarAsset: clean(data.ownerProfileAvatarAsset),
-    activeProfileFrameAssetKey: clean(data.activeProfileFrameAssetKey),
-    activeProfileFrameImageUrl: clean(data.activeProfileFrameImageUrl),
-    activeProfileFrameExpiresAtMs:
-      Math.max(0, Number(data.activeProfileFrameExpiresAtMs || 0)),
-    activeProfileFramePermanent:
-      data.activeProfileFramePermanent === true,
     text: clean(data.text),
     images: Array.isArray(data.images) ? data.images : [],
     commentsEnabled: data.commentsEnabled !== false,
@@ -776,12 +754,6 @@ function normalizeComment(id, data = {}) {
     authorPublicId: clean(data.authorPublicId),
     authorProfileImageUrl: clean(data.authorProfileImageUrl),
     authorProfileAvatarAsset: clean(data.authorProfileAvatarAsset),
-    activeProfileFrameAssetKey: clean(data.activeProfileFrameAssetKey),
-    activeProfileFrameImageUrl: clean(data.activeProfileFrameImageUrl),
-    activeProfileFrameExpiresAtMs:
-      Math.max(0, Number(data.activeProfileFrameExpiresAtMs || 0)),
-    activeProfileFramePermanent:
-      data.activeProfileFramePermanent === true,
     text: clean(data.text),
     createdAt: data.createdAt || null,
     createdAtMs: Math.max(0, Number(data.createdAtMs || 0)),
@@ -1461,12 +1433,6 @@ function normalizeGiftEvent(id, data = {}) {
     senderName: clean(data.senderName),
     senderPublicId: clean(data.senderPublicId),
     senderProfileImageUrl: clean(data.senderProfileImageUrl),
-    activeProfileFrameAssetKey: clean(data.activeProfileFrameAssetKey),
-    activeProfileFrameImageUrl: clean(data.activeProfileFrameImageUrl),
-    activeProfileFrameExpiresAtMs:
-      Math.max(0, Number(data.activeProfileFrameExpiresAtMs || 0)),
-    activeProfileFramePermanent:
-      data.activeProfileFramePermanent === true,
     receiverId: clean(data.receiverId),
     giftId: clean(data.giftId),
     giftName: clean(data.giftName),
