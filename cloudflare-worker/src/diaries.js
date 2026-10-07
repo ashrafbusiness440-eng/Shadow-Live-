@@ -289,13 +289,21 @@ async function searchMentions(db, uid, body) {
     if (!targetUid || targetUid === uid || results.has(targetUid)) return;
     const publicId = clean(data.publicId);
     if (!publicId) return;
+    const profile = publicProfilePresentation(targetUid, data);
     results.set(targetUid, {
       uid: targetUid,
-      displayName: clean(data.displayName || data.name || "مستخدم Shadow Live").slice(0, 80),
-      publicId: publicId.slice(0, 16),
-      profileImageUrl: clean(data.profileImageUrl).slice(0, 1000),
-      profileAvatarAsset: clean(data.profileAvatarAsset).slice(0, 500),
-      ...currentProfileFrame(data),
+      displayName: clean(profile.displayName).slice(0, 80),
+      publicId: clean(profile.publicId).slice(0, 16),
+      profileImageUrl: clean(profile.profileImageUrl).slice(0, 1000),
+      profileAvatarAsset: clean(profile.profileAvatarAsset).slice(0, 500),
+      activeProfileFrameAssetKey:
+        clean(profile.activeProfileFrameAssetKey),
+      activeProfileFrameImageUrl:
+        clean(profile.activeProfileFrameImageUrl),
+      activeProfileFrameExpiresAtMs:
+        Math.max(0, Number(profile.activeProfileFrameExpiresAtMs || 0)),
+      activeProfileFramePermanent:
+        profile.activeProfileFramePermanent === true,
     });
   };
 
@@ -422,7 +430,10 @@ async function createDiary(db, uid, body) {
       return { ok: true, code: "duplicate", ...(operation.data?.result || {}) };
     }
 
-    const user = await requireRegisteredUser(db, uid, transaction);
+    const [user, publicProfile] = await Promise.all([
+      requireRegisteredUser(db, uid, transaction),
+      loadPublicProfilePresentation(db, uid, { transaction }),
+    ]);
     const objectSnaps = await Promise.all(
       imageObjectIds.map((objectId) => db.get(`storage_objects/${objectId}`, transaction)),
     );
@@ -452,7 +463,7 @@ async function createDiary(db, uid, body) {
     const diaryId = randomId("diary");
     const now = new Date();
     const nowMs = Date.now();
-    const author = publicAuthorSnapshot(user, uid);
+    const author = publicAuthorSnapshot(publicProfile, uid);
     const mentionTargets = await resolveMentionTargets(db, text, transaction);
     const mentionedUids = mentionTargets
       .map((target) => target.uid)
@@ -721,11 +732,11 @@ async function toggleLike(db, uid, body) {
 
     if (liked && ownerUid !== uid) {
       const notificationPath = diaryNotificationPath("diary_like", diaryId, ownerUid);
-      const [actor, existingNotification] = await Promise.all([
-        db.get(`users/${uid}`, transaction),
+      const [actorProfile, existingNotification] = await Promise.all([
+        loadPublicProfilePresentation(db, uid, { transaction }),
         db.get(notificationPath, transaction),
       ]);
-      const actorSnapshot = publicAuthorSnapshot(actor.data || {}, uid);
+      const actorSnapshot = publicAuthorSnapshot(actorProfile, uid);
       const notificationData = diarySocialNotification({
         type: "diary_like_aggregate",
         recipientUid: ownerUid,
@@ -812,10 +823,11 @@ async function createComment(db, uid, body) {
 
   return runTransaction(db, async (transaction) => {
     const operationPath = `diary_operations/${operationKey}`;
-    const [operation, diary, user] = await Promise.all([
+    const [operation, diary, user, publicProfile] = await Promise.all([
       db.get(operationPath, transaction),
       db.get(`diaries/${diaryId}`, transaction),
       db.get(`users/${uid}`, transaction),
+      loadPublicProfilePresentation(db, uid, { transaction }),
     ]);
 
     if (operation.exists) {
@@ -843,8 +855,7 @@ async function createComment(db, uid, body) {
     const commentId = randomId("diarycomment");
     const now = new Date();
     const nowMs = Date.now();
-    const author = publicAuthorSnapshot(user.data || {}, uid);
-    const authorFrame = currentProfileFrame(user.data || {});
+    const author = publicAuthorSnapshot(publicProfile, uid);
     const mentionTargets = await resolveMentionTargets(db, text, transaction);
     const mentionedUids = mentionTargets
       .map((target) => target.uid)
@@ -868,7 +879,7 @@ async function createComment(db, uid, body) {
       diaryId,
       commentId,
       commentCount,
-      comment: normalizeComment(commentId, comment, authorFrame),
+      comment: normalizeComment(commentId, comment, publicProfile),
     };
 
     const writes = [
@@ -963,7 +974,7 @@ async function listComments(db, body) {
   });
   const hasMore = rows.length > limit;
   const visible = rows.slice(0, limit);
-  const frames = await loadCurrentProfileFrames(
+  const profiles = await loadPublicProfilePresentations(
     db,
     visible.map((row) => clean(row?.data?.authorUid)),
   );
@@ -971,7 +982,7 @@ async function listComments(db, body) {
     ok: true,
     items: visible.map((row) => {
       const authorUid = clean(row?.data?.authorUid);
-      return normalizeComment(row.id, row.data, frames.get(authorUid) || null);
+      return normalizeComment(row.id, row.data, profiles.get(authorUid) || null);
     }),
     nextCursor:
       hasMore && visible.length
@@ -1356,13 +1367,13 @@ async function getDiary(db, body) {
   const diary = await db.get(`diaries/${diaryId}`);
   if (!diary.exists) throw new DiaryApiError("diary_not_found", 404);
   const ownerUid = clean(diary.data?.ownerUid);
-  const frames = await loadCurrentProfileFrames(db, ownerUid ? [ownerUid] : []);
+  const profiles = await loadPublicProfilePresentations(db, ownerUid ? [ownerUid] : []);
   return {
     ok: true,
     diary: normalizeDiary(
       diaryId,
       diary.data || {},
-      frames.get(ownerUid) || null,
+      profiles.get(ownerUid) || null,
     ),
   };
 }
@@ -1385,7 +1396,7 @@ async function listLatest(db, body) {
   });
   const hasMore = rows.length > limit;
   const visible = rows.slice(0, limit);
-  const frames = await loadCurrentProfileFrames(
+  const profiles = await loadPublicProfilePresentations(
     db,
     visible.map((row) => clean(row?.data?.ownerUid)),
   );
@@ -1393,7 +1404,7 @@ async function listLatest(db, body) {
     ok: true,
     items: visible.map((row) => {
       const ownerUid = clean(row?.data?.ownerUid);
-      return normalizeDiary(row.id, row.data, frames.get(ownerUid) || null);
+      return normalizeDiary(row.id, row.data, profiles.get(ownerUid) || null);
     }),
     nextCursor:
       hasMore && visible.length
@@ -1423,11 +1434,11 @@ async function listUser(db, body) {
   });
   const hasMore = rows.length > limit;
   const visible = rows.slice(0, limit);
-  const frames = await loadCurrentProfileFrames(db, [userId]);
+  const profiles = await loadPublicProfilePresentations(db, [userId]);
   return {
     ok: true,
     items: visible.map((row) =>
-      normalizeDiary(row.id, row.data, frames.get(userId) || null)
+      normalizeDiary(row.id, row.data, profiles.get(userId) || null)
     ),
     nextCursor:
       hasMore && visible.length
@@ -1481,7 +1492,7 @@ async function listFollowing(db, uid, body) {
   const visible = scanned.filter((row) =>
     followedOwnerIds.has(clean(row?.data?.ownerUid))
   );
-  const frames = await loadCurrentProfileFrames(
+  const profiles = await loadPublicProfilePresentations(
     db,
     visible.map((row) => clean(row?.data?.ownerUid)),
   );
@@ -1490,7 +1501,7 @@ async function listFollowing(db, uid, body) {
     ok: true,
     items: visible.map((row) => {
       const ownerUid = clean(row?.data?.ownerUid);
-      return normalizeDiary(row.id, row.data, frames.get(ownerUid) || null);
+      return normalizeDiary(row.id, row.data, profiles.get(ownerUid) || null);
     }),
     nextCursor:
       hasMore && scanned.length
@@ -1564,7 +1575,7 @@ async function listGiftEvents(db, body) {
   });
   const hasMore = rows.length > limit;
   const visible = rows.slice(0, limit);
-  const frames = await loadCurrentProfileFrames(
+  const profiles = await loadPublicProfilePresentations(
     db,
     visible.map((row) => clean(row?.data?.senderId)),
   );
@@ -1572,7 +1583,7 @@ async function listGiftEvents(db, body) {
     ok: true,
     items: visible.map((row) => {
       const senderId = clean(row?.data?.senderId);
-      return normalizeGiftEvent(row.id, row.data, frames.get(senderId) || null);
+      return normalizeGiftEvent(row.id, row.data, profiles.get(senderId) || null);
     }),
     nextCursor:
       hasMore && visible.length
