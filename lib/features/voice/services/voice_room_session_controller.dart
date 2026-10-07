@@ -43,8 +43,10 @@ class VoiceRoomSessionController extends ChangeNotifier {
   final Map<String, Uint8List> _localRoomMusic = <String, Uint8List>{};
   final StreamController<Map<String, dynamic>> _roomStateController =
       StreamController<Map<String, dynamic>>.broadcast();
+  static const int _maxRoomParticipants = 200;
   final List<Map<String, dynamic>> _roomChatMessages =
       <Map<String, dynamic>>[];
+  final List<RoomPresenceUser> _roomParticipants = <RoomPresenceUser>[];
   Map<String, dynamic>? _roomChatReplyTarget;
   Map<String, dynamic>? _roomChatMentionTarget;
   int _roomChatComposerIntentRevision = 0;
@@ -78,6 +80,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
       List<Map<String, dynamic>>.unmodifiable(
         _roomChatMessages.reversed,
       );
+  List<RoomPresenceUser> get roomParticipants =>
+      List<RoomPresenceUser>.unmodifiable(_roomParticipants);
   Map<String, dynamic>? get roomChatReplyTarget =>
       _roomChatReplyTarget == null
           ? null
@@ -209,6 +213,59 @@ class VoiceRoomSessionController extends ChangeNotifier {
     _localRoomMusic.clear();
   }
 
+  void _sortRoomParticipants() {
+    _roomParticipants.sort((a, b) {
+      final priority =
+          (b.vipOnlinePriority ? 1 : 0) - (a.vipOnlinePriority ? 1 : 0);
+      if (priority != 0) return priority;
+      final joined = a.joinedAtMs.compareTo(b.joinedAtMs);
+      if (joined != 0) return joined;
+      return a.uid.compareTo(b.uid);
+    });
+    if (_roomParticipants.length > _maxRoomParticipants) {
+      _roomParticipants.removeRange(
+        _maxRoomParticipants,
+        _roomParticipants.length,
+      );
+    }
+  }
+
+  bool _replaceRoomParticipants(dynamic raw) {
+    if (raw is! List) return false;
+    final next = raw
+        .whereType<Map>()
+        .map(
+          (item) => RoomPresenceUser.fromMap(
+            Map<String, dynamic>.from(item),
+          ),
+        )
+        .where((item) => item.uid.isNotEmpty)
+        .take(_maxRoomParticipants)
+        .toList(growable: false);
+    _roomParticipants
+      ..clear()
+      ..addAll(next);
+    _sortRoomParticipants();
+    return true;
+  }
+
+  bool _upsertRoomParticipant(Map<String, dynamic> raw) {
+    final participant = RoomPresenceUser.fromMap(raw);
+    if (participant.uid.isEmpty) return false;
+    _roomParticipants.removeWhere((item) => item.uid == participant.uid);
+    _roomParticipants.add(participant);
+    _sortRoomParticipants();
+    return true;
+  }
+
+  bool _removeRoomParticipant(String uid) {
+    final target = uid.trim();
+    if (target.isEmpty) return false;
+    final before = _roomParticipants.length;
+    _roomParticipants.removeWhere((item) => item.uid == target);
+    return before != _roomParticipants.length;
+  }
+
   void _appendRoomChat(Map<String, dynamic> message) {
     final id = (message['id'] ?? '').toString().trim();
     if (id.isNotEmpty &&
@@ -287,11 +344,21 @@ class VoiceRoomSessionController extends ChangeNotifier {
   }
 
   void _handleRealtimeEvent(RoomRealtimeEvent event) {
-    if (!_active) return;
+    if (!_active && !_joining) return;
     final eventRoomId = (event.payload['roomId'] ?? '').toString();
     if (eventRoomId.isNotEmpty && eventRoomId != roomId) return;
 
     var changed = false;
+    if (event.type == 'server.ready') {
+      changed = _replaceRoomParticipants(event.payload['participants']) ||
+          changed;
+    } else if (event.type == 'room.presence_left') {
+      changed = _removeRoomParticipant(
+            (event.payload['uid'] ?? '').toString(),
+          ) ||
+          changed;
+    }
+
     final onlineRaw = event.payload['onlineCount'];
     if (onlineRaw is num) {
       final onlineCount = onlineRaw.toInt().clamp(0, 1000000000);
@@ -330,6 +397,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
               .toString()
               .trim();
       if (uid.isNotEmpty) {
+        changed = _upsertRoomParticipant(event.payload) || changed;
         final vipLevel =
             (event.payload['vipLevel'] as num?)?.toInt() ?? 0;
         _appendRoomChat({
@@ -439,6 +507,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
     _error = 'room_banned';
     _connectionState = VoiceConnectionState.disconnected;
     _roomChatMessages.clear();
+    _roomParticipants.clear();
     _roomChatReplyTarget = null;
     _roomChatMentionTarget = null;
     notifyListeners();
@@ -520,6 +589,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
     _error = 'room_closed';
     _connectionState = VoiceConnectionState.disconnected;
     _roomChatMessages.clear();
+    _roomParticipants.clear();
     _roomChatReplyTarget = null;
     _roomChatMentionTarget = null;
     notifyListeners();
@@ -570,6 +640,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
 
     await _ensureService();
     _roomChatMessages.clear();
+    _roomParticipants.clear();
     _roomChatReplyTarget = null;
     _roomChatMentionTarget = null;
     _roomArguments = Map<String, dynamic>.from(arguments)
@@ -671,6 +742,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
     _connectionState = VoiceConnectionState.disconnected;
     _roomArguments = <String, dynamic>{};
     _roomChatMessages.clear();
+    _roomParticipants.clear();
     _roomChatReplyTarget = null;
     _roomChatMentionTarget = null;
     _sessionUserUid = null;
