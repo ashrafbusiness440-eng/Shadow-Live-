@@ -1219,7 +1219,16 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                 fallbackProfile: <String, dynamic>{
                                   'profileImageUrl': ban.profileImageUrl,
                                   'profileAvatarAsset': ban.profileAvatarAsset,
+                                  'activeProfileFrameAssetKey':
+                                      ban.activeProfileFrameAssetKey,
+                                  'activeProfileFrameImageUrl':
+                                      ban.activeProfileFrameImageUrl,
+                                  'activeProfileFrameExpiresAtMs':
+                                      ban.activeProfileFrameExpiresAtMs,
+                                  'activeProfileFramePermanent':
+                                      ban.activeProfileFramePermanent,
                                 },
+                                fallbackIsVisualSnapshot: true,
                               ),
                               title: Text(
                                 ban.displayName,
@@ -1457,7 +1466,16 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                 placeholderColor: Colors.white54,
                                 fallbackProfile: <String, dynamic>{
                                   'profileImageUrl': user.profileImageUrl,
+                                  'activeProfileFrameAssetKey':
+                                      user.activeProfileFrameAssetKey,
+                                  'activeProfileFrameImageUrl':
+                                      user.activeProfileFrameImageUrl,
+                                  'activeProfileFrameExpiresAtMs':
+                                      user.activeProfileFrameExpiresAtMs,
+                                  'activeProfileFramePermanent':
+                                      user.activeProfileFramePermanent,
                                 },
+                                fallbackIsVisualSnapshot: true,
                                 vipLevel: user.vipLevel,
                                 useVipFallback: true,
                               ),
@@ -2083,7 +2101,16 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                   fallbackProfile: <String, dynamic>{
                                     'profileImageUrl':
                                         supporter.profileImageUrl,
+                                    'activeProfileFrameAssetKey':
+                                        supporter.activeProfileFrameAssetKey,
+                                    'activeProfileFrameImageUrl':
+                                        supporter.activeProfileFrameImageUrl,
+                                    'activeProfileFrameExpiresAtMs':
+                                        supporter.activeProfileFrameExpiresAtMs,
+                                    'activeProfileFramePermanent':
+                                        supporter.activeProfileFramePermanent,
                                   },
+                                  fallbackIsVisualSnapshot: true,
                                   vipLevel: supporter.vipLevel,
                                   useVipFallback: true,
                                 ),
@@ -5441,7 +5468,16 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                   placeholderColor: Colors.white,
                   fallbackProfile: <String, dynamic>{
                     'profileImageUrl': supporter.profileImageUrl,
+                    'activeProfileFrameAssetKey':
+                        supporter.activeProfileFrameAssetKey,
+                    'activeProfileFrameImageUrl':
+                        supporter.activeProfileFrameImageUrl,
+                    'activeProfileFrameExpiresAtMs':
+                        supporter.activeProfileFrameExpiresAtMs,
+                    'activeProfileFramePermanent':
+                        supporter.activeProfileFramePermanent,
                   },
+                  fallbackIsVisualSnapshot: true,
                   vipLevel: supporter.vipLevel,
                   useVipFallback: true,
                 ),
