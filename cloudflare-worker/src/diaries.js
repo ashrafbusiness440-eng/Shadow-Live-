@@ -2,6 +2,7 @@ import { json, readJson, firestoreQuotaResponse } from "./http.js";
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
+import { adminInboxUpsertWrite } from "./admin-inbox-index.js";
 
 const clean = (value) => String(value ?? "").trim();
 const MAX_TEXT_LENGTH = 500;
@@ -1186,6 +1187,20 @@ async function reportDiary(db, uid, body) {
     await db.commit(transaction, [
       db.writeCreate(reportPath, report),
       db.writeCreate(`diary_reports/${reportId}`, report),
+      adminInboxUpsertWrite(db, {
+        type: "diary_report",
+        title: "بلاغ على يومية",
+        body: report.reasonLabel,
+        targetId: reportId,
+        route: "diary_reports",
+        createdAt: now,
+        priority: "high",
+        meta: {
+          diaryId,
+          commentId: null,
+          status: "new",
+        },
+      }),
     ]);
     return { ok: true, code: "created", reportId, diaryId };
   });
@@ -1251,6 +1266,20 @@ async function reportComment(db, uid, body) {
     await db.commit(transaction, [
       db.writeCreate(reportPath, report),
       db.writeCreate(`diary_reports/${reportId}`, report),
+      adminInboxUpsertWrite(db, {
+        type: "diary_report",
+        title: "بلاغ على تعليق يومية",
+        body: report.reasonLabel,
+        targetId: reportId,
+        route: "diary_reports",
+        createdAt: now,
+        priority: "high",
+        meta: {
+          diaryId,
+          commentId,
+          status: "new",
+        },
+      }),
     ]);
     return { ok: true, code: "created", reportId, diaryId, commentId };
   });
