@@ -56,7 +56,6 @@ import 'features/room/services/room_insights_service.dart';
 import 'features/room/services/room_bootstrap_service.dart';
 import 'features/room/services/room_moderation_service.dart';
 import 'features/room/services/room_moderator_service.dart';
-import 'features/room/services/room_presence_service.dart';
 import 'features/room/widgets/room_chat_panel.dart';
 import 'features/gift/widgets/room_gift_sheet.dart';
 import 'features/room/widgets/room_moderator_manager_sheet.dart';
@@ -190,7 +189,6 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   final RoomBootstrapService _roomBootstrapService = RoomBootstrapService();
   final RoomModerationService _roomModeration = RoomModerationService();
   final RoomModeratorService _roomModeratorService = RoomModeratorService();
-  final RoomPresenceService _roomPresence = RoomPresenceService();
   final RoomSeatService _roomSeatService = RoomSeatService();
   bool _voiceStarted = false;
 
@@ -1348,20 +1346,12 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                   ),
                   const SizedBox(height: 12),
                   Expanded(
-                    child: FutureBuilder<List<RoomPresenceUser>>(
-                      future: _roomPresence.load(roomId),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState !=
-                            ConnectionState.done) {
-                          return const Center(
-                            child: CircularProgressIndicator(
-                              color: Color(0xFF8A3DFF),
-                            ),
-                          );
-                        }
-                        final users = (snapshot.data ?? const [])
+                    child: AnimatedBuilder(
+                      animation: _voiceSession,
+                      builder: (context, _) {
+                        final users = _voiceSession.roomParticipants
                             .where((user) => user.uid != me)
-                            .toList();
+                            .toList(growable: false);
                         if (users.isEmpty) {
                           return const Center(
                             child: Text(
@@ -1392,14 +1382,17 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                 adminActions.add(
                                   QuickProfileAction(
                                     icon: Icons.mic_external_on_rounded,
-                                    label: invited ? 'تمت دعوته للمايك' : 'دعوة إلى المايك',
+                                    label: invited
+                                        ? 'تمت دعوته للمايك'
+                                        : 'دعوة إلى المايك',
                                     color: const Color(0xFFFFD54A),
                                     onTap: invited
                                         ? () {}
                                         : () {
                                             unawaited(
                                               _runSeatAction(
-                                                () => _roomSeatService.inviteToMic(
+                                                () => _roomSeatService
+                                                    .inviteToMic(
                                                   roomId: roomId,
                                                   targetUid: user.uid,
                                                 ),
@@ -1421,7 +1414,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                     onTap: () {
                                       unawaited(
                                         _runSeatAction(
-                                          () => _roomSeatService.setTargetSeatMuted(
+                                          () => _roomSeatService
+                                              .setTargetSeatMuted(
                                             roomId: roomId,
                                             targetUid: user.uid,
                                             muted: !seat.muted,
@@ -1497,7 +1491,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                   ? onMic
                                       ? const Chip(
                                           label: Text('على المايك'),
-                                          visualDensity: VisualDensity.compact,
+                                          visualDensity:
+                                              VisualDensity.compact,
                                         )
                                       : FilledButton(
                                           onPressed: invited
@@ -1505,13 +1500,15 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                               : () async {
                                                   try {
                                                     final state =
-                                                        await _roomSeatService.inviteToMic(
+                                                        await _roomSeatService
+                                                            .inviteToMic(
                                                       roomId: roomId,
                                                       targetUid: user.uid,
                                                     );
                                                     if (mounted) {
                                                       setState(
-                                                        () => _roomSeatState = state,
+                                                        () => _roomSeatState =
+                                                            state,
                                                       );
                                                     }
                                                   } catch (_) {}
@@ -1533,7 +1530,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         );
                       },
                     ),
-                  ),
+                  ),,
                 ],
               ),
             ),
@@ -4543,7 +4540,6 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     _roomInsightsService.close();
     _roomModeration.close();
     _roomModeratorService.close();
-    _roomPresence.close();
     _roomSeatService.close();
     super.dispose();
   }
