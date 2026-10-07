@@ -112,8 +112,14 @@ async function enableSemantics(page) {
   await page.waitForTimeout(800);
   const placeholder = page.locator("flt-semantics-placeholder");
   if (await placeholder.count()) {
-    await placeholder.click({ force: true }).catch(() => {});
-    await page.waitForTimeout(500);
+    await page.evaluate(() => {
+      const el = document.querySelector("flt-semantics-placeholder");
+      if (!el) return;
+      try { el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); } catch (_) {}
+      try { el.dispatchEvent(new PointerEvent("pointerup", { bubbles: true })); } catch (_) {}
+      try { el.click(); } catch (_) {}
+    }).catch(() => {});
+    await page.waitForTimeout(700);
   }
   await page.keyboard.press("Tab").catch(() => {});
   await page.waitForTimeout(300);
@@ -223,8 +229,19 @@ const afterLogin = await semanticsSnapshot(page);
 fs.writeFileSync("visual-qa/01-semantics-after-login.json", JSON.stringify(afterLogin, null, 2));
 await page.screenshot({ path: "visual-qa/01-after-login.png" });
 
-await clickSemantics(page, "المزيد");
+try {
+  await clickSemantics(page, "المزيد");
+} catch (_) {
+  // Flutter Web can render bottom-navigation labels without exposing semantics.
+  // On the fixed 412px mobile viewport, "المزيد" is the second destination from the left.
+  await page.mouse.click(88, 878);
+  await page.waitForTimeout(1200);
+}
 await page.screenshot({ path: "visual-qa/02-more.png" });
+fs.writeFileSync(
+  "visual-qa/02-dom.html",
+  await page.evaluate(() => document.body.innerHTML),
+);
 await clickSemantics(page, "استوديو الأصول");
 await page.waitForTimeout(3000);
 await enableSemantics(page);
