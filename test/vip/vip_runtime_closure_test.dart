@@ -25,11 +25,11 @@ void main() {
     ).readAsStringSync();
 
     expect(presence, contains('vipOnlinePriority'));
-    expect(presence, contains('vipEmojiToken'));
+    expect(presence, contains('vipLevel'));
 
-    expect(composer, contains('إيموجي VIP الحصري'));
-    expect(composer, contains('vipEmojiToken'));
-    expect(composer, contains('VIP Emoji'));
+    expect(composer, contains('إيموجي متحرك'));
+    expect(composer, contains('animatedEmojiId'));
+    expect(composer, contains('AnimatedEmojiVisual'));
     expect(composer, isNot(contains('Timer.periodic')));
 
     expect(giftCatalog, contains('minVipLevel'));
@@ -55,8 +55,8 @@ void main() {
       'lib/features/room/services/room_chat_service.dart',
     ).readAsStringSync();
 
-    expect(session, contains('vipEmojiToken'));
-    expect(chat, contains('vipEmojiToken'));
+    expect(session, contains('animatedEmojiId'));
+    expect(chat, contains('animatedEmojiId'));
     expect(session, isNot(contains('Timer.periodic')));
     expect(chat, isNot(contains('FirebaseFirestore')));
   });
