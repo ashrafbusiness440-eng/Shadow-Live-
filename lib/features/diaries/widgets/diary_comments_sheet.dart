@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../profile/screens/public_profile_screen.dart';
 import '../services/diary_service.dart';
+import '../../profile/widgets/profile_avatar_with_frame.dart';
 import 'diary_mention_suggestions.dart';
 import 'diary_report_sheet.dart';
 
@@ -279,13 +280,18 @@ class _DiaryCommentsSheetState extends State<DiaryCommentsSheet> {
           InkWell(
             customBorder: const CircleBorder(),
             onTap: () => _openProfile(item),
-            child: CircleAvatar(
-              radius: 18,
+            child: ProfileAvatarWithFrame(
+              diameter: 36,
               backgroundColor: const Color(0xFF272C39),
-              backgroundImage: avatar,
-              child: avatar == null
-                  ? const Icon(Icons.person_rounded, size: 18, color: Colors.white54)
-                  : null,
+              placeholderColor: Colors.white54,
+              profile: profileAvatarFrameData(
+                imageUrl: item.authorProfileImageUrl,
+                avatarAsset: item.authorProfileAvatarAsset,
+                frameAssetKey: item.activeProfileFrameAssetKey,
+                frameImageUrl: item.activeProfileFrameImageUrl,
+                frameExpiresAtMs: item.activeProfileFrameExpiresAtMs,
+                framePermanent: item.activeProfileFramePermanent,
+              ),
             ),
           ),
           const SizedBox(width: 9),
