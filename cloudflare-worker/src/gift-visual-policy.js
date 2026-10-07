@@ -16,6 +16,10 @@ export function giftVisualPolicy(gift = {}, quantity = 1) {
     0,
     safeInteger(gift.premiumBannerMinQuantity, 0),
   );
+  const effectSize = Math.max(
+    0,
+    Math.min(420, safeInteger(gift.effectSize, 0)),
+  );
   const effectEligible =
     count > 0 &&
     effectMinQuantity > 0 &&
@@ -37,6 +41,7 @@ export function giftVisualPolicy(gift = {}, quantity = 1) {
               "gifts.placeholder.default",
           ),
           soundAssetKey: clean(gift.effectSoundAssetKey),
+          size: effectSize,
           durationMs: Math.max(
             300,
             Math.min(12000, safeInteger(gift.effectDurationMs, 2200)),
