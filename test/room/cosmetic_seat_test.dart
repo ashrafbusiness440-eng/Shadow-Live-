@@ -25,6 +25,9 @@ void main() {
     expect(strip.contains('if (isOwnerTile)'), isTrue);
     expect(strip.contains('showQuickProfileSheet('), isTrue);
     expect(strip.contains("Key('room-audience-count')"), isTrue);
+    expect(strip.contains("'presenceDegraded'"), isTrue);
+    expect(strip.contains('_voiceSession.ensureRoomPresenceReady()'), isTrue);
+    expect(strip.contains("Icons.sync_problem_rounded"), isTrue);
     expect(strip.contains('showQuickProfileSheet('), isTrue);
     expect(strip.contains('showMysteriousIdentitySheet('), isTrue);
     expect(strip.contains('FirebaseFirestore'), isFalse);
