@@ -24,6 +24,8 @@ const LEVEL_CAPABILITIES = new Set([
   "manageGameLevel",
   "manageVipLevels",
   "manageVipPolicy",
+  "revealMysteriousIdentity",
+  "manageMysteriousPerson",
 ]);
 
 const ALLOWED_CAPABILITIES = new Set([

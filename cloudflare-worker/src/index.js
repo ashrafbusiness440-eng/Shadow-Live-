@@ -16,6 +16,7 @@ import { vipActions } from "./vip-actions.js";
 import { vipFancyId } from "./vip-fancy-id.js";
 import { profileVisits } from "./profile-visits.js";
 import { mysteriousPerson } from "./mysterious-person.js";
+import { manageMysteriousPerson } from "./manage-mysterious-person.js";
 import { chatSafetyActions } from "./chat-safety-actions.js";
 import { storageHealth } from "./storage-health.js";
 import { systemHealth } from "./system-health.js";
@@ -130,6 +131,10 @@ async function dispatchRequest(request, env, ctx) {
   if (url.pathname === "/api/mysterious-person") {
     annotatePressureRequest(request, { action: "mysteriousPerson" });
     return mysteriousPerson(request, env);
+  }
+  if (url.pathname === "/api/manage-mysterious-person") {
+    annotatePressureRequest(request, { action: "manageMysteriousPerson" });
+    return manageMysteriousPerson(request, env);
   }
   if (url.pathname === "/api/chat-actions") {
     return chatSafetyActions(request, env, ctx);

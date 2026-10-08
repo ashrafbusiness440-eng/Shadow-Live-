@@ -62,6 +62,8 @@ class OwnerUserAccessCard extends StatelessWidget {
     'manageVip': 'إدارة VIP القديمة — توافق فقط',
     'manageVipLevels': 'إدارة مستويات VIP',
     'manageVipPolicy': 'إدارة إعدادات وعروض VIP',
+    'manageMysteriousPerson': 'منح وسحب الشخص الغامض',
+    'revealMysteriousIdentity': 'كشف هوية الشخص الغامض',
     'manageSpecialIds': 'إدارة IDs المميزة',
     'manageIds': 'إدارة IDs المستخدمين والغرف',
     'manageStore': 'إدارة المتجر',
@@ -101,6 +103,9 @@ class OwnerUserAccessCard extends StatelessWidget {
     ],
     'VIP': [
       'manageVipLevels', 'manageVipPolicy',
+    ],
+    'الشخص الغامض': [
+      'manageMysteriousPerson', 'revealMysteriousIdentity',
     ],
     'الإدارة العامة': [
       'manageVip', 'manageStore', 'manageCampaigns', 'manageRoles', 'viewAuditLog', 'emergencyLock',
