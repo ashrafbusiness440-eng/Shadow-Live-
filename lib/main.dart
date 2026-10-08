@@ -1384,6 +1384,139 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     );
   }
 
+  int get _roomAudienceTotalCount => max(
+        (_roomArguments['onlineCount'] as num?)?.toInt() ?? 0,
+        _voiceSession.roomParticipants.length,
+      );
+
+  Widget _buildRoomAudienceStrip() {
+    // Reuse the same room presence snapshot, without a second listener.
+    final seatedUids = (_roomSeatState?.seats ?? const <VoiceSeat>[])
+        .where((seat) => seat.occupied)
+        .map((seat) => seat.uid)
+        .toSet();
+    final listeners = _voiceSession.roomParticipants
+        .where((user) => !seatedUids.contains(user.uid))
+        .take(20)
+        .toList(growable: false);
+    final total = _roomAudienceTotalCount;
+
+    return SizedBox(
+      height: 57,
+      child: Row(
+        children: [
+          InkWell(
+            key: const Key('room-audience-count'),
+            onTap: _showRoomParticipantsSheet,
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              width: 58,
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              decoration: BoxDecoration(
+                color: const Color(0xFF171321).withValues(alpha: .85),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white24),
+              ),
+              child: Column(
+                children: [
+                  const Icon(Icons.people_alt_rounded,
+                      color: Color(0xFFFFD54A), size: 18),
+                  Text(
+                    '$total',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const Text('الحضور',
+                      style: TextStyle(color: Colors.white70, fontSize: 8)),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: listeners.isEmpty
+                ? const Align(
+                    alignment: Alignment.centerRight,
+                    child: Text('لا يوجد مستمعون خارج المايكات',
+                        style: TextStyle(
+                            color: Colors.white54, fontSize: 10)),
+                  )
+                : ListView.separated(
+                    key: const Key('room-audience-strip'),
+                    scrollDirection: Axis.horizontal,
+                    itemCount: listeners.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 7),
+                    itemBuilder: (context, index) {
+                      final user = listeners[index];
+                      return InkWell(
+                        onTap: () {
+                          if (user.mysteriousMode) {
+                            showMysteriousIdentitySheet(
+                              context,
+                              mysteriousId: user.mysteriousId,
+                            );
+                          } else {
+                            showQuickProfileSheet(
+                              context,
+                              userId: user.uid,
+                            );
+                          }
+                        },
+                        borderRadius: BorderRadius.circular(99),
+                        child: Center(
+                          child: user.mysteriousMode
+                              ? const MysteriousIdentityAvatar(diameter: 38)
+                              : Stack(
+                                  alignment: Alignment.center,
+                                  clipBehavior: Clip.none,
+                                  children: [
+                                    CircleAvatar(
+                                      radius: 19,
+                                      backgroundColor: const Color(0xFF25183F),
+                                      backgroundImage:
+                                          user.profileImageUrl.isEmpty
+                                              ? null
+                                              : NetworkImage(
+                                                  user.profileImageUrl),
+                                      child: user.profileImageUrl.isEmpty
+                                          ? const Icon(Icons.person_rounded,
+                                              color: Colors.white70, size: 18)
+                                          : null,
+                                    ),
+                                    if (user.activeProfileFrameAssetKey.isNotEmpty &&
+                                        (user.activeProfileFramePermanent ||
+                                            user.activeProfileFrameExpiresAtMs <= 0 ||
+                                            user.activeProfileFrameExpiresAtMs >
+                                                DateTime.now()
+                                                    .millisecondsSinceEpoch))
+                                      Positioned(
+                                        left: -5,
+                                        top: -5,
+                                        child: IgnorePointer(
+                                          child: SizedBox.square(
+                                            dimension: 48,
+                                            child: CosmeticAssetVisual(
+                                              assetKey: user.activeProfileFrameAssetKey,
+                                              imageUrl: user.activeProfileFrameImageUrl,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _showRoomParticipantsSheet() async {
     final roomId = (_roomArguments['roomId'] ?? '').toString();
     if (roomId.isEmpty) return;
@@ -1436,8 +1569,15 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                     child: AnimatedBuilder(
                       animation: _voiceSession,
                       builder: (context, _) {
+                        final seatedUids =
+                            (_roomSeatState?.seats ?? const <VoiceSeat>[])
+                                .where((seat) => seat.occupied)
+                                .map((seat) => seat.uid)
+                                .toSet();
                         final users = _voiceSession.roomParticipants
-                            .where((user) => user.uid != me)
+                            .where((user) =>
+                                user.uid != me &&
+                                !seatedUids.contains(user.uid))
                             .toList(growable: false);
                         if (users.isEmpty) {
                           return const Center(
@@ -3127,8 +3267,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             .where((value) => value.trim().isNotEmpty)
             .toList()
         : const <String>[];
-    final online =
-        (_roomArguments['onlineCount'] ?? 0).toString();
+    final online = _roomAudienceTotalCount.toString();
     final level = _roomInsights?.level ??
         ((_roomArguments['level'] as num?)?.toInt() ?? 1);
 
@@ -5145,7 +5284,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        (_roomArguments['onlineCount'] ?? 0).toString(),
+                        _roomAudienceTotalCount.toString(),
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 9,
@@ -6116,7 +6255,14 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         height: micHeight,
                         child: SingleChildScrollView(
                           physics: const BouncingScrollPhysics(),
-                          child: _buildVoiceSeats(),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _buildVoiceSeats(),
+                              const SizedBox(height: 5),
+                              _buildRoomAudienceStrip(),
+                            ],
+                          ),
                         ),
                       ),
                       Positioned.fill(
