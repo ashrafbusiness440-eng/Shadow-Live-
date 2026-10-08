@@ -215,9 +215,18 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
     int quantity,
     bool useGiftBag,
   ) async {
-    // Room WebSocket may be reconnecting even while the backend already
-    // recognizes the live room. The server enforces authoritative presence
-    // during gift mutation; a local preflight must not reject valid gifts.
+    // Recover the EXISTING room connection on demand (no new listener).
+    // Even if reconnect is unavailable, send the request and let the
+    // server independently verify sender/recipient live-room presence.
+    final ensurePresence = widget.ensurePresence;
+    if (ensurePresence != null) {
+      try {
+        await ensurePresence();
+      } catch (_) {
+        // Never replace the authoritative gift response with this
+        // non-authoritative local connectivity error.
+      }
+    }
     final result = await _gifts.send(
       roomId: widget.roomId,
       giftId: gift.id,
