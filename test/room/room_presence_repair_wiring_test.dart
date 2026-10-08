@@ -19,6 +19,28 @@ void main() {
     expect(controller.contains("'presenceDegraded': true"), isTrue);
   });
 
+  test('room presence retries stay bounded until server.ready', () {
+    final presence = File(
+      'lib/features/room/services/room_presence_service.dart',
+    ).readAsStringSync();
+
+    final connectStart = presence.indexOf('Future<void> _connect(');
+    final joinStart = presence.indexOf('Future<void> join(', connectStart);
+    expect(connectStart, greaterThanOrEqualTo(0));
+    expect(joinStart, greaterThan(connectStart));
+    final connect = presence.substring(connectStart, joinStart);
+
+    final readyWait = connect.indexOf('await ready.future.timeout(');
+    final resetBudget = connect.indexOf('_reconnectAttempt = 0;');
+    expect(readyWait, greaterThanOrEqualTo(0));
+    expect(resetBudget, greaterThan(readyWait));
+    expect(connect.contains('await failedSocket.close();'), isTrue);
+    expect(connect.contains('await failedSubscription?.cancel();'), isTrue);
+    expect(connect.contains('_scheduleReconnect(roomId, generation);'), isTrue);
+    expect(presence.contains('if (isReadyFor(id)) return;'), isTrue);
+    expect(presence.contains('if (_reconnectAttempt >= 3) return;'), isTrue);
+  });
+
   test('room gift checks existing presence service before mutation', () {
     final sheet = File(
       'lib/features/gift/widgets/room_gift_sheet.dart',
