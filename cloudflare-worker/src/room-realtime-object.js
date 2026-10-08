@@ -1270,6 +1270,7 @@ export class RoomRealtimeObject extends DurableObject {
       roomId,
       uid,
       dueAtMs,
+      endedAtMs: nowMs,
       attempts: 0,
     });
     const currentAlarm = await this.ctx.storage.getAlarm();
@@ -1316,7 +1317,12 @@ export class RoomRealtimeObject extends DurableObject {
         // Reuse the SAME transactional seat release and host mic activity
         // accounting as a normal client leave; no duplicated economy logic.
         db ??= getFirestoreForEnv(this.env);
-        await roomSessionLeave(db, uid, roomId);
+        await roomSessionLeave(
+          db,
+          uid,
+          roomId,
+          Number(task.endedAtMs || nowMs),
+        );
         deletes.push(key);
         processed += 1;
       } catch (_) {
@@ -1337,11 +1343,13 @@ export class RoomRealtimeObject extends DurableObject {
       }
     }
     if (deletes.length > 0) await this.ctx.storage.delete(deletes);
-    if (pending.size === SEAT_DEPARTURE_BATCH_LIMIT) {
-      // A finite backlog beyond the bounded page must make progress.
-      const nextBatchAtMs = nowMs + 1000;
-      nextAtMs =
-        nextAtMs === null ? nextBatchAtMs : Math.min(nextAtMs, nextBatchAtMs);
+    if (
+      pending.size === SEAT_DEPARTURE_BATCH_LIMIT &&
+      nextAtMs === null
+    ) {
+      // An overflow of already-due tasks gets only one follow-up alarm.
+      // Future work waits for its due time, avoiding unnecessary polling.
+      nextAtMs = nowMs + 1000;
     }
     recordRealtimeTelemetry(this.env, {
       event: "seat_departure_cleanup",
