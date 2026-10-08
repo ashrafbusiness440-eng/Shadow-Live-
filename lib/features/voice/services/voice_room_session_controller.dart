@@ -529,6 +529,9 @@ class VoiceRoomSessionController extends ChangeNotifier {
           'type': 'system',
           'systemKind': 'room_join',
           'senderUid': uid,
+          'joinedAtMs': (event.payload['joinedAtMs'] as num?)?.toInt() ??
+              event.serverTimeMs,
+          'mysteriousMode': event.payload['mysteriousMode'] == true,
           'displayName': displayName,
           'profileImageUrl':
               (event.payload['profileImageUrl'] ?? '').toString(),
