@@ -1,4 +1,22 @@
 import { firestoreClient } from "./firestore.js";
+import { getFirestoreForEnv } from "./legacy-firebase-admin-shim.js";
+import { roomSessionLeave } from "./voice-session-legacy.js";
+
+// Keep durable room transport/presence separate from persistent seat state.
+// The same transaction handles both explicit leave and lost connections.
+export async function reclaimDepartedRoomSeat(
+  env,
+  roomId,
+  uid,
+  endedAtMs = Date.now(),
+) {
+  return roomSessionLeave(
+    getFirestoreForEnv(env),
+    uid,
+    roomId,
+    endedAtMs,
+  );
+}
 
 export async function applyCustomerServiceMicExpiries(
   env,
