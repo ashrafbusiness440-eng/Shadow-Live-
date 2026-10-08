@@ -440,6 +440,11 @@ class LegacyFirestore {
   }
 }
 
+export function getFirestoreForEnv(env) {
+  // Explicit environment avoids mutating the global legacy request context.
+  return new LegacyFirestore(env);
+}
+
 export function getFirestore() {
   return new LegacyFirestore(currentEnv);
 }
