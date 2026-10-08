@@ -517,12 +517,18 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           );
           return;
         }
-        await _runSeatAction(
+        final taken = await _runSeatAction(
           () => _roomSeatService.takeSeat(
             roomId: roomId,
             seatIndex: emptySeats.first.index,
           ),
         );
+        // A failed seat action must never open the live microphone.
+        if (taken == null ||
+            !(taken.isOwner ||
+                taken.seats.any((seat) => seat.uid == uid))) {
+          return;
+        }
         try {
           await _voiceSession.setMicMuted(false);
           if (mounted) setState(() => _voiceMicMuted = false);
@@ -546,15 +552,25 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     }
 
     try {
-      await _voiceSession.toggleMic();
-      final muted = _voiceSession.micMuted;
+      final muted = !_voiceSession.micMuted;
+      // Apply the local mute immediately; the seat update uses the same
+      // existing server action and must confirm a remote unmute.
+      await _voiceSession.setMicMuted(muted);
       if (hasSeat && roomId.isNotEmpty) {
-        await _runSeatAction(
+        final updated = await _runSeatAction(
           () => _roomSeatService.setSeatMuted(
             roomId: roomId,
             muted: muted,
           ),
         );
+        if (updated == null ||
+            !(updated.isOwner ||
+                updated.seats.any((seat) => seat.uid == uid))) {
+          if (!muted && _voiceSession.active) {
+            await _voiceSession.setMicMuted(true);
+          }
+          return;
+        }
       }
       if (mounted) {
         setState(() => _voiceMicMuted = muted);
@@ -726,7 +742,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   void _applyRoomSeatSafety(RoomSeatState state) {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     final hasSeat = state.seats.any((seat) => seat.uid == uid);
-    if (!hasSeat && !_voiceSession.micMuted && _voiceSession.active) {
+    if (!state.isOwner && !hasSeat && !_voiceSession.micMuted && _voiceSession.active) {
       unawaited(_voiceSession.setMicMuted(true));
     }
     if (!state.isActive && _voiceSession.active) {
@@ -904,14 +920,19 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   }
 
 
-  Future<void> _runSeatAction(
+  Future<RoomSeatState?> _runSeatAction(
     Future<RoomSeatState> Function() action,
   ) async {
-    if (_changingSeat) return;
+    if (_changingSeat) return null;
     setState(() => _changingSeat = true);
     try {
       final state = await action();
-      if (mounted) setState(() => _roomSeatState = state);
+      if (!mounted) return null;
+      setState(() => _roomSeatState = state);
+      // Reuse the existing seat safety check on an acknowledged mutation
+      // instead of waiting for a second network snapshot.
+      _applyRoomSeatSafety(state);
+      return state;
     } on StateError catch (error) {
       if (!mounted) return;
       final code = error.message.toString();
@@ -927,6 +948,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message)),
       );
+      return null;
     } finally {
       if (mounted) setState(() => _changingSeat = false);
     }
@@ -1079,9 +1101,15 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             ),
             onTap: () {
               Navigator.pop(sheetContext);
-              unawaited(
-                _runSeatAction(() => _roomSeatService.leaveSeat(roomId)),
-              );
+              unawaited(() async {
+                // Stop local audio before waiting for the seat release.
+                try {
+                  await _voiceSession.setMicMuted(true);
+                } catch (_) {}
+                await _runSeatAction(
+                  () => _roomSeatService.leaveSeat(roomId),
+                );
+              }());
             },
           ),
         ),
