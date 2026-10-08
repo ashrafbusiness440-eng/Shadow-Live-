@@ -1571,21 +1571,42 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     );
   }
 
-  int get _roomAudienceTotalCount => max(
-        (_roomArguments['onlineCount'] as num?)?.toInt() ?? 0,
-        _voiceSession.roomParticipants.length,
-      );
+  int get _roomAudienceTotalCount {
+    // Presence is authoritative when ready. A room snapshot may be a
+    // moment behind it, but the count must never show ZERO while seated
+    // members are plainly visible on the stage.
+    final seated = (_roomSeatState?.seats ?? const <VoiceSeat>[])
+        .where((seat) => seat.occupied)
+        .length;
+    final reported = (_roomArguments['onlineCount'] as num?)?.toInt() ?? 0;
+    return max(max(reported, _voiceSession.roomParticipants.length), seated);
+  }
 
   Widget _buildRoomAudienceStrip() {
-    // Reuse the same room presence snapshot, without a second listener.
+    // Reuse the existing owner profile and the SAME realtime participant
+    // snapshot; do not create a second listener for the audience bar.
+    final ownerUid = (_roomArguments['ownerUid'] ??
+            _roomArguments['ownerId'] ??
+            _roomArguments['hostId'] ??
+            '')
+        .toString()
+        .trim();
+    final participants = _voiceSession.roomParticipants;
+    final ownerMatches = participants.where((user) => user.uid == ownerUid);
+    final ownerPresence = ownerMatches.isEmpty ? null : ownerMatches.first;
     final seatedUids = (_roomSeatState?.seats ?? const <VoiceSeat>[])
         .where((seat) => seat.occupied)
         .map((seat) => seat.uid)
         .toSet();
-    final listeners = _voiceSession.roomParticipants
-        .where((user) => !seatedUids.contains(user.uid))
-        .take(20)
+    final listeners = participants
+        .where((user) =>
+            user.uid != ownerUid && !seatedUids.contains(user.uid))
+        .take(ownerUid.isEmpty ? 20 : 19)
         .toList(growable: false);
+    final entries = <RoomPresenceUser?>[
+      if (ownerUid.isNotEmpty) ownerPresence,
+      ...listeners,
+    ];
     final total = _roomAudienceTotalCount;
 
     return SizedBox(
@@ -1624,76 +1645,100 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: listeners.isEmpty
+            child: entries.isEmpty
                 ? const Align(
                     alignment: Alignment.centerRight,
-                    child: Text('لا يوجد مستمعون خارج المايكات',
+                    child: Text('الموجودون حاليًا على المايكات فقط',
                         style: TextStyle(
                             color: Colors.white54, fontSize: 10)),
                   )
                 : ListView.separated(
                     key: const Key('room-audience-strip'),
                     scrollDirection: Axis.horizontal,
-                    itemCount: listeners.length,
+                    itemCount: entries.length,
                     separatorBuilder: (_, __) => const SizedBox(width: 7),
                     itemBuilder: (context, index) {
-                      final user = listeners[index];
+                      final isOwnerTile = ownerUid.isNotEmpty && index == 0;
+                      final user = entries[index];
+                      final isMysterious = user?.mysteriousMode == true;
+                      final profileUid = isOwnerTile ? ownerUid : user!.uid;
+                      final profileImage = isMysterious
+                          ? ''
+                          : isOwnerTile
+                              ? ((user?.profileImageUrl.isNotEmpty == true)
+                                  ? user!.profileImageUrl
+                                  : _ownerPhotoUrl)
+                              : user!.profileImageUrl;
+                      final frameAssetKey =
+                          user?.activeProfileFrameAssetKey ?? '';
+                      final frameImageUrl =
+                          user?.activeProfileFrameImageUrl ?? '';
+                      final frameValid = user != null &&
+                          frameAssetKey.isNotEmpty &&
+                          (user.activeProfileFramePermanent ||
+                              user.activeProfileFrameExpiresAtMs <= 0 ||
+                              user.activeProfileFrameExpiresAtMs >
+                                  DateTime.now().millisecondsSinceEpoch);
+
                       return InkWell(
                         onTap: () {
-                          if (user.mysteriousMode) {
+                          if (isMysterious) {
                             showMysteriousIdentitySheet(
                               context,
-                              mysteriousId: user.mysteriousId,
+                              mysteriousId: user!.mysteriousId,
                             );
                           } else {
                             showQuickProfileSheet(
                               context,
-                              userId: user.uid,
+                              userId: profileUid,
                             );
                           }
                         },
                         borderRadius: BorderRadius.circular(99),
                         child: Center(
-                          child: user.mysteriousMode
-                              ? const MysteriousIdentityAvatar(diameter: 38)
-                              : Stack(
-                                  alignment: Alignment.center,
-                                  clipBehavior: Clip.none,
-                                  children: [
-                                    CircleAvatar(
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            alignment: Alignment.center,
+                            children: [
+                              isMysterious
+                                  ? const MysteriousIdentityAvatar(diameter: 38)
+                                  : CircleAvatar(
                                       radius: 19,
                                       backgroundColor: const Color(0xFF25183F),
-                                      backgroundImage:
-                                          user.profileImageUrl.isEmpty
-                                              ? null
-                                              : NetworkImage(
-                                                  user.profileImageUrl),
-                                      child: user.profileImageUrl.isEmpty
+                                      backgroundImage: profileImage.isEmpty
+                                          ? null
+                                          : NetworkImage(profileImage),
+                                      child: profileImage.isEmpty
                                           ? const Icon(Icons.person_rounded,
                                               color: Colors.white70, size: 18)
                                           : null,
                                     ),
-                                    if (user.activeProfileFrameAssetKey.isNotEmpty &&
-                                        (user.activeProfileFramePermanent ||
-                                            user.activeProfileFrameExpiresAtMs <= 0 ||
-                                            user.activeProfileFrameExpiresAtMs >
-                                                DateTime.now()
-                                                    .millisecondsSinceEpoch))
-                                      Positioned(
-                                        left: -5,
-                                        top: -5,
-                                        child: IgnorePointer(
-                                          child: SizedBox.square(
-                                            dimension: 48,
-                                            child: CosmeticAssetVisual(
-                                              assetKey: user.activeProfileFrameAssetKey,
-                                              imageUrl: user.activeProfileFrameImageUrl,
-                                            ),
-                                          ),
-                                        ),
+                              if (!isMysterious && frameValid)
+                                Positioned(
+                                  left: -5,
+                                  top: -5,
+                                  child: IgnorePointer(
+                                    child: SizedBox.square(
+                                      dimension: 48,
+                                      child: CosmeticAssetVisual(
+                                        assetKey: frameAssetKey,
+                                        imageUrl: frameImageUrl,
                                       ),
-                                  ],
+                                    ),
+                                  ),
                                 ),
+                              if (isOwnerTile)
+                                const Positioned(
+                                  right: -3,
+                                  bottom: -3,
+                                  child: Icon(
+                                    Icons.star_rounded,
+                                    size: 16,
+                                    color: Color(0xFFFFD54A),
+                                  ),
+                                ),
+                            ],
+                          ),
                         ),
                       );
                     },
