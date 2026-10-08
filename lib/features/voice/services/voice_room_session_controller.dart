@@ -67,6 +67,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
   bool _minimized = false;
   bool _micMuted = true;
   bool _mysteriousModeEnabled = false;
+  String _mysteriousVoiceId = 'original';
   String? _error;
   VoiceConnectionState _connectionState = VoiceConnectionState.idle;
   Map<String, dynamic> _roomArguments = <String, dynamic>{};
@@ -78,6 +79,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
   bool get minimized => _minimized;
   bool get micMuted => _micMuted;
   bool get mysteriousModeEnabled => _mysteriousModeEnabled;
+  String get mysteriousVoiceId => _mysteriousVoiceId;
   String? get error => _error;
   VoiceConnectionState get connectionState => _connectionState;
   Map<String, dynamic> get roomArguments =>
@@ -106,6 +108,32 @@ class VoiceRoomSessionController extends ChangeNotifier {
   void setMysteriousModeEnabled(bool enabled) {
     if (_mysteriousModeEnabled == enabled) return;
     _mysteriousModeEnabled = enabled;
+    notifyListeners();
+  }
+
+  VoiceChangerPreset _mysteriousPreset(String voiceId) => switch (voiceId) {
+        'men_to_child' => VoiceChangerPreset.menToChild,
+        'men_to_women' => VoiceChangerPreset.menToWomen,
+        'women_to_child' => VoiceChangerPreset.womenToChild,
+        'women_to_men' => VoiceChangerPreset.womenToMen,
+        'foreigner' => VoiceChangerPreset.foreigner,
+        'android' => VoiceChangerPreset.android,
+        'ethereal' => VoiceChangerPreset.ethereal,
+        'minions' => VoiceChangerPreset.minions,
+        _ => VoiceChangerPreset.original,
+      };
+
+  Future<void> applyMysteriousVoice({
+    required bool enabled,
+    required String voiceId,
+  }) async {
+    _mysteriousModeEnabled = enabled;
+    _mysteriousVoiceId = voiceId.trim().isEmpty ? 'original' : voiceId.trim();
+    await _voiceService.setVoiceChanger(
+      enabled
+          ? _mysteriousPreset(_mysteriousVoiceId)
+          : VoiceChangerPreset.original,
+    );
     notifyListeners();
   }
 

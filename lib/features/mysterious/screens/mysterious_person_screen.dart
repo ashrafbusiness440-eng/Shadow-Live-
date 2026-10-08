@@ -43,8 +43,12 @@ class _MysteriousPersonScreenState extends State<MysteriousPersonScreen> {
     try {
       final state = await _service.loadState();
       if (!mounted) return;
-      VoiceRoomSessionController.instance
-          .setMysteriousModeEnabled(state.enabled);
+      unawaited(
+        VoiceRoomSessionController.instance.applyMysteriousVoice(
+          enabled: state.enabled,
+          voiceId: state.selectedVoiceId,
+        ),
+      );
       setState(() {
         _state = state;
         _loading = false;
@@ -135,8 +139,32 @@ class _MysteriousPersonScreenState extends State<MysteriousPersonScreen> {
     setState(() => _saving = true);
     try {
       final state = await _service.setEnabled(!current.enabled);
-      VoiceRoomSessionController.instance
-          .setMysteriousModeEnabled(state.enabled);
+      await VoiceRoomSessionController.instance.applyMysteriousVoice(
+        enabled: state.enabled,
+        voiceId: state.selectedVoiceId,
+      );
+      if (!mounted) return;
+      setState(() {
+        _state = state;
+        _saving = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      _message(_friendlyError(error));
+    }
+  }
+
+  Future<void> _setVoice(MysteriousVoiceOption option) async {
+    final current = _state;
+    if (current == null || _saving || !current.active) return;
+    setState(() => _saving = true);
+    try {
+      final state = await _service.setVoice(option.id);
+      await VoiceRoomSessionController.instance.applyMysteriousVoice(
+        enabled: state.enabled,
+        voiceId: state.selectedVoiceId,
+      );
       if (!mounted) return;
       setState(() {
         _state = state;
@@ -180,6 +208,9 @@ class _MysteriousPersonScreenState extends State<MysteriousPersonScreen> {
     }
     if (code.contains('mysterious_subscription_required')) {
       return 'لا توجد مدة صالحة للشخص الغامض.';
+    }
+    if (code.contains('mysterious_voice_unavailable')) {
+      return 'هذا الصوت غير متاح حالياً.';
     }
     return 'تعذر إكمال العملية حالياً.';
   }
@@ -307,6 +338,41 @@ class _MysteriousPersonScreenState extends State<MysteriousPersonScreen> {
                   ),
                 ),
               ],
+            ),
+          ],
+          if (state.active && state.voiceOptions.isNotEmpty) ...[
+            const SizedBox(height: 18),
+            const Text(
+              'تغيير الصوت',
+              key: Key('mysterious-voice-options'),
+              style: TextStyle(
+                color: Color(0xFFFFD166),
+                fontSize: 17,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: state.voiceOptions
+                  .map(
+                    (option) => ChoiceChip(
+                      label: Text(option.labelAr),
+                      selected: state.selectedVoiceId == option.id,
+                      onSelected: _saving
+                          ? null
+                          : (_) => unawaited(_setVoice(option)),
+                    ),
+                  )
+                  .toList(growable: false),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              state.enabled
+                  ? 'الصوت المحدد يعمل الآن داخل غرف الصوت.'
+                  : 'يمكنك اختيار الصوت الآن، ويعمل فقط عند تشغيل وضع الشخص الغامض.',
+              style: const TextStyle(color: Colors.white54, fontSize: 12),
             ),
           ],
           const SizedBox(height: 18),

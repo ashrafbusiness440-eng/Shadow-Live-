@@ -33,6 +33,7 @@ class ZegoVoiceService implements VoiceService {
   ZegoMediaPlayer? _roomMediaPlayer;
   ZegoMediaPlayer? _localEffectPlayer;
   bool _publishingForRoomMedia = false;
+  VoiceChangerPreset _voiceChangerPreset = VoiceChangerPreset.original;
 
   @override
   Stream<VoiceConnectionState> get connectionStates =>
@@ -64,6 +65,9 @@ class ZegoVoiceService implements VoiceService {
     _engineCreated = true;
     _appId = appId;
     await ZegoExpressEngine.instance.enableCamera(false);
+    await ZegoExpressEngine.instance.setVoiceChangerPreset(
+      _zegoVoiceChangerPreset(_voiceChangerPreset),
+    );
 
     ZegoExpressEngine.onRoomStreamUpdate = (
       String roomID,
@@ -263,6 +267,29 @@ class ZegoVoiceService implements VoiceService {
       _micController.add(VoiceMicState.muted);
       _connectionController.add(VoiceConnectionState.disconnected);
     }
+  }
+
+  ZegoVoiceChangerPreset _zegoVoiceChangerPreset(VoiceChangerPreset preset) {
+    return switch (preset) {
+      VoiceChangerPreset.original => ZegoVoiceChangerPreset.None,
+      VoiceChangerPreset.menToChild => ZegoVoiceChangerPreset.MenToChild,
+      VoiceChangerPreset.menToWomen => ZegoVoiceChangerPreset.MenToWomen,
+      VoiceChangerPreset.womenToChild => ZegoVoiceChangerPreset.WomenToChild,
+      VoiceChangerPreset.womenToMen => ZegoVoiceChangerPreset.WomenToMen,
+      VoiceChangerPreset.foreigner => ZegoVoiceChangerPreset.Foreigner,
+      VoiceChangerPreset.android => ZegoVoiceChangerPreset.Android,
+      VoiceChangerPreset.ethereal => ZegoVoiceChangerPreset.Ethereal,
+      VoiceChangerPreset.minions => ZegoVoiceChangerPreset.Minions,
+    };
+  }
+
+  @override
+  Future<void> setVoiceChanger(VoiceChangerPreset preset) async {
+    _voiceChangerPreset = preset;
+    if (!_engineCreated) return;
+    await ZegoExpressEngine.instance.setVoiceChangerPreset(
+      _zegoVoiceChangerPreset(preset),
+    );
   }
 
   @override

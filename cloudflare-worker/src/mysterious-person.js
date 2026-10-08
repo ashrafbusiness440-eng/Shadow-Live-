@@ -12,6 +12,17 @@ const DEFAULT_PACKAGES = Object.freeze({
   15: Object.freeze({ days: 15, coinPrice: 1990000, idChanges: 1 }),
   30: Object.freeze({ days: 30, coinPrice: 2990000, idChanges: 4 }),
 });
+const DEFAULT_VOICE_OPTIONS = Object.freeze([
+  Object.freeze({ id: "original", labelAr: "الصوت الأصلي", preset: "None", order: 0 }),
+  Object.freeze({ id: "men_to_child", labelAr: "صوت طفولي 1", preset: "MenToChild", order: 1 }),
+  Object.freeze({ id: "men_to_women", labelAr: "صوت أنثوي", preset: "MenToWomen", order: 2 }),
+  Object.freeze({ id: "women_to_child", labelAr: "صوت طفولي 2", preset: "WomenToChild", order: 3 }),
+  Object.freeze({ id: "women_to_men", labelAr: "صوت رجولي", preset: "WomenToMen", order: 4 }),
+  Object.freeze({ id: "foreigner", labelAr: "صوت أجنبي", preset: "Foreigner", order: 5 }),
+  Object.freeze({ id: "android", labelAr: "صوت روبوت", preset: "Android", order: 6 }),
+  Object.freeze({ id: "ethereal", labelAr: "صوت غامض", preset: "Ethereal", order: 7 }),
+  Object.freeze({ id: "minions", labelAr: "صوت مينيونز", preset: "Minions", order: 8 }),
+]);
 
 class ApiError extends Error {
   constructor(code, status = 400) {
@@ -26,9 +37,33 @@ function positiveInt(value, fallback) {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+export function mysteriousVoiceOptionsFromConfig(config = {}) {
+  const raw = Array.isArray(config.voiceOptions) ? config.voiceOptions : [];
+  const overrides = new Map(
+    raw
+      .filter((item) => item && typeof item === "object")
+      .map((item) => [clean(item.id), item]),
+  );
+  return DEFAULT_VOICE_OPTIONS
+    .map((base) => {
+      const override = overrides.get(base.id) || {};
+      const rawOrder = Number(override.order);
+      const order = Number.isSafeInteger(rawOrder) && rawOrder >= 0 && rawOrder <= 100
+        ? rawOrder
+        : base.order;
+      return {
+        ...base,
+        enabled: base.id === "original" ? true : override.enabled !== false,
+        order,
+      };
+    })
+    .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+}
+
 export function mysteriousPolicyFromConfig(config = {}) {
   return {
     enabled: config.enabled !== false,
+    voiceOptions: mysteriousVoiceOptionsFromConfig(config),
     packages: {
       7: {
         ...DEFAULT_PACKAGES[7],
@@ -70,6 +105,14 @@ export function mysteriousStateFromUser(
     0,
     Number(user.mysteriousIdChangesRemaining || 0) || 0,
   );
+  const enabledVoiceOptions = (policy.voiceOptions || [])
+    .filter((option) => option.enabled !== false);
+  const requestedVoiceId = clean(user.mysteriousVoiceId) || "original";
+  const selectedVoiceId = enabledVoiceOptions.some(
+    (option) => option.id === requestedVoiceId,
+  )
+    ? requestedVoiceId
+    : "original";
   return {
     active,
     enabled: active && user.mysteriousEnabled === true,
@@ -79,6 +122,13 @@ export function mysteriousStateFromUser(
     mysteriousId: clean(user.mysteriousId),
     idChangesRemaining,
     serverNowMs: nowMs,
+    selectedVoiceId,
+    voiceOptions: enabledVoiceOptions.map((option) => ({
+      id: option.id,
+      labelAr: option.labelAr,
+      preset: option.preset,
+      order: option.order,
+    })),
     offers: Object.values(policy.packages),
   };
 }
@@ -288,10 +338,14 @@ async function setEnabled(db, uid, body, nowMs = Date.now()) {
   }
   const transaction = await db.beginTransaction();
   try {
-    const userSnap = await db.get("users/" + uid, transaction);
+    const [userSnap, configSnap] = await Promise.all([
+      db.get("users/" + uid, transaction),
+      db.get("system_config/mysterious_person", transaction),
+    ]);
     if (!userSnap.exists) throw new ApiError("user_not_found", 404);
     const user = userSnap.data || {};
-    const current = mysteriousStateFromUser(user, nowMs);
+    const policy = mysteriousPolicyFromConfig(configSnap.data || {});
+    const current = mysteriousStateFromUser(user, nowMs, policy);
     if (body.enabled === true && !current.active) {
       throw new ApiError("mysterious_subscription_required", 403);
     }
@@ -325,6 +379,7 @@ async function setEnabled(db, uid, body, nowMs = Date.now()) {
       ...mysteriousStateFromUser(
         { ...user, mysteriousEnabled: enabled },
         nowMs,
+        policy,
       ),
     };
   } catch (error) {
@@ -339,9 +394,10 @@ async function changeId(db, uid, body, nowMs = Date.now()) {
   for (let attempt = 0; attempt < MAX_ID_ATTEMPTS; attempt++) {
     const transaction = await db.beginTransaction();
     try {
-      const [userSnap, operationSnap] = await Promise.all([
+      const [userSnap, operationSnap, configSnap] = await Promise.all([
         db.get("users/" + uid, transaction),
         db.get("mysterious_operations/" + uid + "__" + key, transaction),
+        db.get("system_config/mysterious_person", transaction),
       ]);
       if (!userSnap.exists) throw new ApiError("user_not_found", 404);
       if (operationSnap.exists) {
@@ -354,7 +410,8 @@ async function changeId(db, uid, body, nowMs = Date.now()) {
       }
 
       const user = userSnap.data || {};
-      const current = mysteriousStateFromUser(user, nowMs);
+      const policy = mysteriousPolicyFromConfig(configSnap.data || {});
+      const current = mysteriousStateFromUser(user, nowMs, policy);
       if (!current.active) {
         throw new ApiError("mysterious_subscription_required", 403);
       }
@@ -382,6 +439,7 @@ async function changeId(db, uid, body, nowMs = Date.now()) {
             mysteriousIdChangesRemaining: nextChanges,
           },
           nowMs,
+          policy,
         ),
         mysteriousId: candidate,
         idChangesRemaining: nextChanges,
@@ -449,6 +507,61 @@ async function changeId(db, uid, body, nowMs = Date.now()) {
   throw new ApiError("mysterious_id_capacity_retry", 503);
 }
 
+async function setVoice(db, uid, body, nowMs = Date.now()) {
+  const voiceId = clean(body?.voiceId);
+  if (!voiceId) throw new ApiError("invalid_mysterious_voice", 400);
+  const transaction = await db.beginTransaction();
+  try {
+    const [userSnap, configSnap] = await Promise.all([
+      db.get("users/" + uid, transaction),
+      db.get("system_config/mysterious_person", transaction),
+    ]);
+    if (!userSnap.exists) throw new ApiError("user_not_found", 404);
+    const user = userSnap.data || {};
+    const policy = mysteriousPolicyFromConfig(configSnap.data || {});
+    const current = mysteriousStateFromUser(user, nowMs, policy);
+    if (!current.active) {
+      throw new ApiError("mysterious_subscription_required", 403);
+    }
+    const option = policy.voiceOptions.find(
+      (item) => item.id === voiceId && item.enabled !== false,
+    );
+    if (!option) throw new ApiError("mysterious_voice_unavailable", 409);
+
+    await db.commit(transaction, [
+      db.writeUpdate(
+        "users/" + uid,
+        {
+          mysteriousVoiceId: voiceId,
+          mysteriousVoiceUpdatedAt: new Date(nowMs),
+        },
+        ["mysteriousVoiceId", "mysteriousVoiceUpdatedAt"],
+      ),
+      db.writeCreate(
+        "mysterious_audit_logs/" + uid + "__voice__" + nowMs,
+        {
+          actorUid: uid,
+          targetUid: uid,
+          action: "set_voice",
+          voiceId,
+          createdAt: new Date(nowMs),
+        },
+      ),
+    ]);
+    return {
+      ok: true,
+      ...mysteriousStateFromUser(
+        { ...user, mysteriousVoiceId: voiceId },
+        nowMs,
+        policy,
+      ),
+    };
+  } catch (error) {
+    await db.rollback(transaction);
+    throw error;
+  }
+}
+
 export async function mysteriousPerson(request, env) {
   if (request.method !== "POST") {
     return json(request, env, { ok: false, code: "method_not_allowed" }, 405);
@@ -471,6 +584,9 @@ export async function mysteriousPerson(request, env) {
     }
     if (action === "changeId") {
       return json(request, env, await changeId(db, decoded.sub, body));
+    }
+    if (action === "setVoice") {
+      return json(request, env, await setVoice(db, decoded.sub, body));
     }
     throw new ApiError("invalid_action", 400);
   } catch (error) {

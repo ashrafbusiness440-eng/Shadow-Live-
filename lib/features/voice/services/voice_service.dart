@@ -21,6 +21,7 @@ abstract interface class VoiceService {
   Future<void> muteMic();
   Future<void> unmuteMic();
   Future<void> setPlaybackEnabled(bool enabled);
+  Future<void> setVoiceChanger(VoiceChangerPreset preset);
   Future<void> playRoomMedia(Uint8List mediaData);
   Future<void> stopRoomMedia();
   Future<void> playLocalEffect(Uint8List mediaData);
@@ -36,6 +37,18 @@ abstract interface class VoiceService {
   Stream<VoiceMicState> get micStates;
 
   Future<void> dispose();
+}
+
+enum VoiceChangerPreset {
+  original,
+  menToChild,
+  menToWomen,
+  womenToChild,
+  womenToMen,
+  foreigner,
+  android,
+  ethereal,
+  minions,
 }
 
 enum VoiceConnectionState {

@@ -21,6 +21,22 @@ class MysteriousOffer {
       );
 }
 
+class MysteriousVoiceOption {
+  const MysteriousVoiceOption({
+    required this.id,
+    required this.labelAr,
+  });
+
+  final String id;
+  final String labelAr;
+
+  factory MysteriousVoiceOption.fromJson(Map<String, dynamic> json) =>
+      MysteriousVoiceOption(
+        id: (json['id'] ?? '').toString(),
+        labelAr: (json['labelAr'] ?? 'صوت').toString(),
+      );
+}
+
 class MysteriousPersonState {
   const MysteriousPersonState({
     required this.active,
@@ -31,6 +47,8 @@ class MysteriousPersonState {
     required this.mysteriousId,
     required this.idChangesRemaining,
     required this.serverNowMs,
+    required this.selectedVoiceId,
+    required this.voiceOptions,
     required this.offers,
     this.coins,
   });
@@ -43,6 +61,8 @@ class MysteriousPersonState {
   final String mysteriousId;
   final int idChangesRemaining;
   final int serverNowMs;
+  final String selectedVoiceId;
+  final List<MysteriousVoiceOption> voiceOptions;
   final List<MysteriousOffer> offers;
   final int? coins;
 
@@ -61,6 +81,16 @@ class MysteriousPersonState {
       mysteriousId: (json['mysteriousId'] ?? '').toString().trim(),
       idChangesRemaining: value('idChangesRemaining'),
       serverNowMs: value('serverNowMs'),
+      selectedVoiceId: (json['selectedVoiceId'] ?? 'original').toString(),
+      voiceOptions: json['voiceOptions'] is List
+          ? (json['voiceOptions'] as List)
+              .whereType<Map>()
+              .map((item) => MysteriousVoiceOption.fromJson(
+                    Map<String, dynamic>.from(item),
+                  ))
+              .where((item) => item.id.isNotEmpty)
+              .toList(growable: false)
+          : const <MysteriousVoiceOption>[],
       offers: rawOffers is List
           ? rawOffers
               .whereType<Map>()
@@ -155,6 +185,11 @@ class MysteriousPersonService {
   Future<MysteriousPersonState> setEnabled(bool enabled) async =>
       MysteriousPersonState.fromJson(
         await _post({'action': 'setEnabled', 'enabled': enabled}),
+      );
+
+  Future<MysteriousPersonState> setVoice(String voiceId) async =>
+      MysteriousPersonState.fromJson(
+        await _post({'action': 'setVoice', 'voiceId': voiceId}),
       );
 
   Future<MysteriousPersonState> changeId() async =>
