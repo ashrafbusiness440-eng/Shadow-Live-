@@ -27,10 +27,10 @@ void main() {
       bootstrap.contains("moderator['authoritySuppressed'] == true"),
       isTrue,
     );
-    expect(controller.contains('setMysteriousModeEnabled'), isTrue);
+    expect(controller.contains('applyMysteriousVoice'), isTrue);
     expect(room.contains('_roomAuthoritySuppressed'), isTrue);
     expect(
-      mysterious.contains('.setMysteriousModeEnabled(state.enabled)'),
+      mysterious.contains('applyMysteriousVoice('),
       isTrue,
     );
   });
