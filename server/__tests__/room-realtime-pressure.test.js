@@ -5,6 +5,7 @@ import {
   createAsyncLimiter,
   createAsyncTtlCache,
 } from "../../cloudflare-worker/src/room-realtime-pressure.js";
+import { roomDepartureCandidatesFromSnapshot } from "../../cloudflare-worker/src/room-realtime-persistence.js";
 
 test("realtime ticket limiter bounds concurrent Firestore work", async () => {
   const limiter = createAsyncLimiter(3);
@@ -58,4 +59,28 @@ test("realtime room cache single-flights concurrent misses", async () => {
 
   assert.equal(loads, 2);
   assert.equal(refreshed.data.isActive, false);
+});
+
+
+test("abandoned seat reconciliation ignores listeners and caps candidates to one page", () => {
+  const pending = ["listener-1", "speaker-1", "speaker-2", "music-1"];
+  const result = roomDepartureCandidatesFromSnapshot({
+    seats: [
+      { uid: "speaker-1", muted: false },
+      { uid: "speaker-2", muted: true },
+      { uid: "other-speaker", muted: false },
+    ],
+    musicState: { status: "playing", sourceOwnerUid: "music-1" },
+  }, pending);
+  assert.deepEqual(Array.from(result).sort(), ["music-1", "speaker-1", "speaker-2"]);
+  assert.deepEqual(Array.from(roomDepartureCandidatesFromSnapshot({
+    seats: [{ uid: "speaker-1" }],
+    musicState: { status: "stopped", sourceOwnerUid: "music-1" },
+  }, ["listener-1", "music-1"])), []);
+
+  const over = Array.from({ length: 30 }, (_, i) => "u" + i);
+  const capped = roomDepartureCandidatesFromSnapshot({
+    seats: [{ uid: "u24" }, { uid: "u23" }, { uid: "u2" }],
+  }, over);
+  assert.deepEqual(Array.from(capped).sort(), ["u2", "u23"]);
 });
