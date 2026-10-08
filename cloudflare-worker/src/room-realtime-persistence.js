@@ -2,6 +2,38 @@ import { firestoreClient } from "./firestore.js";
 import { getFirestoreForEnv } from "./legacy-firebase-admin-shim.js";
 import { roomSessionLeave } from "./voice-session-legacy.js";
 
+// Read a SINGLE room document for a bounded alarm batch. Most room
+// departures are listeners, so do not open a write transaction for each one.
+export async function roomDepartureCleanupCandidates(
+  env,
+  roomId,
+  uids = [],
+) {
+  const allowed = new Set(
+    (Array.isArray(uids) ? uids : [])
+      .map((uid) => String(uid || "").trim())
+      .filter(Boolean)
+      .slice(0, 24),
+  );
+  if (!allowed.size) return new Set();
+  const db = getFirestoreForEnv(env);
+  const roomSnap = await db.collection("rooms").doc(roomId).get();
+  if (!roomSnap.exists) return new Set();
+  const room = roomSnap.data() || {};
+  const candidates = new Set();
+  const seats = Array.isArray(room.seats) ? room.seats : [];
+  for (const seat of seats) {
+    const uid = String(seat?.uid || "").trim();
+    if (allowed.has(uid)) candidates.add(uid);
+  }
+  const music = room.musicState || {};
+  const sourceUid = String(music.sourceOwnerUid || "").trim();
+  if (music.status === "playing" && allowed.has(sourceUid)) {
+    candidates.add(sourceUid);
+  }
+  return candidates;
+}
+
 // Keep durable room transport/presence separate from persistent seat state.
 // The same transaction handles both explicit leave and lost connections.
 export async function reclaimDepartedRoomSeat(
