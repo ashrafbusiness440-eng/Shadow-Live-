@@ -1234,6 +1234,8 @@ function normalizeSeats(room){
       displayName:String(found.displayName||""),
       profileImageUrl:String(found.profileImageUrl||""),
       muted:found.muted!==false,
+      locked:found.locked===true,
+      muteLocked:found.muteLocked===true,
       micStartedAtMs:Number(found.micStartedAtMs||0),
       customerServiceMicExpiresAtMs:
         Number(found.customerServiceMicExpiresAtMs||0),
@@ -2054,7 +2056,39 @@ export async function roomSeatAction(db,uid,body){
         : seat);
     };
 
-    if(action==="setMicInviteOnly"){
+    if(action==="lockSeat"||action==="unlockSeat"||
+       action==="muteLockSeat"||action==="unmuteLockSeat"){
+      if(!canManageMic)throw new ApiError("forbidden",403);
+      if(!Number.isInteger(seatIndex)||seatIndex<0||seatIndex>=seats.length){
+        throw new ApiError("invalid_seat",400);
+      }
+      const selected=seats[seatIndex];
+      if(action==="lockSeat"||action==="unlockSeat"){
+        if(action==="lockSeat"&&selected.uid){
+          throw new ApiError("seat_occupied",409);
+        }
+        seats[seatIndex]={...selected,locked:action==="lockSeat"};
+      }else if(action==="muteLockSeat"){
+        if(selected.uid&&selected.muted===false){
+          const protectedSnap=await tx.get(
+            db.collection("users").doc(selected.uid),
+          );
+          const muteProtected=vipEntitlementsFromUser(
+            protectedSnap.data()||{},Date.now(),
+          ).muteProtection;
+          if(muteProtected&&!canOverrideVipRoomProtection(actor)){
+            throw new ApiError("vip_mute_protected",403);
+          }
+          await recordMicActivity(tx,db,selected.uid,selected);
+        }
+        seats[seatIndex]={
+          ...selected,muteLocked:true,muted:true,micStartedAtMs:0,
+        };
+      }else{
+        // Never auto-unmute when the owner unlocks a seat.
+        seats[seatIndex]={...selected,muteLocked:false};
+      }
+    }else if(action==="setMicInviteOnly"){
       if(!canManageMic)throw new ApiError("forbidden",403);
       micInviteOnly=body.enabled===true;
       if(!micInviteOnly)requests=[];
@@ -2113,6 +2147,7 @@ export async function roomSeatAction(db,uid,body){
       if(reserved&&reserved.uid!==uid)throw new ApiError("pk_seat_reserved",409);
       if(mine&&mine.seatIndex!==seatIndex)throw new ApiError("pk_original_seat_required",409);
       if(seat.uid&&seat.uid!==uid)throw new ApiError("seat_occupied",409);
+      if(seat.locked)throw new ApiError("seat_locked",403);
       if(customerService){
         if(seatIndex<2&&!canManageMic){
           throw new ApiError("customer_service_manager_mic_required",403);
@@ -2174,7 +2209,10 @@ export async function roomSeatAction(db,uid,body){
       const existingSeat=currentSeatIndex>=0?seats[currentSeatIndex]:null;
       const keepMicActive=
         existingSeat?.muted===false&&Number(existingSeat?.micStartedAtMs||0)>0;
-      const micStartedAtMs=keepMicActive
+      if(seat.muteLocked&&existingSeat?.muted===false){
+        await recordMicActivity(tx,db,uid,existingSeat);
+      }
+      const micStartedAtMs=keepMicActive&&!seat.muteLocked
         ?Number(existingSeat.micStartedAtMs)
         :0;
       const previousCsExpiry=
@@ -2187,6 +2225,7 @@ export async function roomSeatAction(db,uid,body){
           : 0;
       clearUserSeat(uid);
       seats[seatIndex]={
+        ...seat,
         index:seatIndex,
         uid,
         displayName:mysteriousActive
@@ -2197,7 +2236,7 @@ export async function roomSeatAction(db,uid,body){
           :String(profile.profileImageUrl||""),
         mysteriousMode:mysteriousActive,
         mysteriousId,
-        muted:!keepMicActive,
+        muted:seat.muteLocked===true||!keepMicActive,
         micStartedAtMs,
         frameRewardId:clean(frame.rewardId),
         frameAssetKey:effectiveFrameAssetKey,
@@ -2231,6 +2270,7 @@ export async function roomSeatAction(db,uid,body){
         if(currentSeat.muted===false)await recordMicActivity(tx,db,uid,currentSeat);
         seats[seatIndex]={...currentSeat,muted:true,micStartedAtMs:0};
       }else{
+        if(currentSeat.muteLocked)throw new ApiError("seat_mute_locked",403);
         seats[seatIndex]={
           ...currentSeat,
           muted:false,
@@ -2282,6 +2322,7 @@ export async function roomSeatAction(db,uid,body){
         }
         seats[targetSeatIndex]={...targetSeat,muted:true,micStartedAtMs:0};
       }else{
+        if(targetSeat.muteLocked)throw new ApiError("seat_mute_locked",403);
         seats[targetSeatIndex]={
           ...targetSeat,
           muted:false,
@@ -2320,6 +2361,7 @@ export async function roomSeatAction(db,uid,body){
     const privilegedMicActions=new Set([
       "setMicInviteOnly","inviteToMic","approveMicRequest","rejectMicRequest",
       "muteTargetSeat","unmuteTargetSeat","removeFromMic",
+      "lockSeat","unlockSeat","muteLockSeat","unmuteLockSeat",
     ]);
     if(privilegedMicActions.has(action)&&absoluteRoomAccessAudit(room,actor,uid).absoluteRoomAccess===true){
       tx.create(
