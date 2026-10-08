@@ -40,6 +40,7 @@ import {
 import { giftLevelPointAwards, safeAddUserLevelPoints } from "./user-level-policy.js";
 import { userLevelSupportAggregateWrites } from "./user-level-support.js";
 import { vipCosmeticsFromUser } from "./vip-entitlements.js";
+import { activeMysteriousIdentity } from "./mysterious-identity.js";
 
 const clean = (value) => String(value ?? "").trim();
 const validKey = (value) => /^[A-Za-z0-9_-]{12,220}$/.test(clean(value));
@@ -626,7 +627,33 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     );
     const senderFramePermanent =
       sender.activeProfileFramePermanent === true;
+    const senderMysteriousMode = activeMysteriousIdentity(sender, nowMs);
+    const senderMysteriousId = senderMysteriousMode
+      ? clean(sender.mysteriousId)
+      : "";
+    const roomSenderName = senderMysteriousMode
+      ? "الشخص الغامض"
+      : senderName;
+    const roomSenderPhoto = senderMysteriousMode ? "" : senderPhoto;
+    const roomSenderPublicId = senderMysteriousMode
+      ? senderMysteriousId
+      : senderPublicId;
+    const roomSenderFrameAssetKey = senderMysteriousMode
+      ? ""
+      : senderFrameAssetKey;
+    const roomSenderFrameImageUrl = senderMysteriousMode
+      ? ""
+      : senderFrameImageUrl;
+    const roomSenderFrameExpiresAtMs = senderMysteriousMode
+      ? 0
+      : senderFrameExpiresAtMs;
+    const roomSenderFramePermanent = senderMysteriousMode
+      ? false
+      : senderFramePermanent;
     const senderVipCosmetics = vipCosmeticsFromUser(sender, nowMs);
+    const roomSenderVipLevel = senderMysteriousMode
+      ? 0
+      : senderVipCosmetics.level;
     const giftName = clean(gift.nameAr || "هدية");
     const assetKey = clean(gift.assetKey || "gifts.placeholder.default");
     const imageUrl = clean(gift.imageUrl);
@@ -646,8 +673,10 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
           roomId,
           sender: {
             uid: senderUid,
-            displayName: senderName,
-            profileImageUrl: senderPhoto,
+            displayName: roomSenderName,
+            profileImageUrl: roomSenderPhoto,
+            mysteriousMode: senderMysteriousMode,
+            mysteriousId: senderMysteriousId,
           },
           contributionCoins: paidCost,
           nowMs,
@@ -716,8 +745,10 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
             ...rocketAdvance.nextState,
             roomId,
             lastContributorUid: senderUid,
-            lastContributorDisplayName: senderName,
-            lastContributorProfileImageUrl: senderPhoto,
+            lastContributorDisplayName: roomSenderName,
+            lastContributorProfileImageUrl: roomSenderPhoto,
+            lastContributorMysteriousMode: senderMysteriousMode,
+            lastContributorMysteriousId: senderMysteriousId,
             lastContributionCoins: paidCost,
             lastOperationId: key,
             updatedAt: now,
@@ -1433,6 +1464,20 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       );
       const receiverProfileImageUrl = clean(receiver.profileImageUrl);
       const receiverPublicId = clean(receiver.publicId);
+      const receiverMysteriousMode =
+        activeMysteriousIdentity(receiver, nowMs);
+      const receiverMysteriousId = receiverMysteriousMode
+        ? clean(receiver.mysteriousId)
+        : "";
+      const roomReceiverName = receiverMysteriousMode
+        ? "الشخص الغامض"
+        : receiverName;
+      const roomReceiverProfileImageUrl = receiverMysteriousMode
+        ? ""
+        : receiverProfileImageUrl;
+      const roomReceiverPublicId = receiverMysteriousMode
+        ? receiverMysteriousId
+        : receiverPublicId;
       writes.push(
         ...userLevelSupportAggregateWrites(db, {
           senderUid,
@@ -1573,6 +1618,12 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
         receiverId,
         receiverName,
         receiverProfileImageUrl,
+        receiverPublicId,
+        roomReceiverName,
+        roomReceiverProfileImageUrl,
+        roomReceiverPublicId,
+        receiverMysteriousMode,
+        receiverMysteriousId,
         attractionPointsAwarded:
           recipientLevelAwards.attractionPoints,
         revenueTierId: revenue.tierId,
@@ -1815,7 +1866,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
 
     const recipientLabel =
       recipientIds.length === 1
-        ? first.receiverName
+        ? first.roomReceiverName
         : String(recipientIds.length) + " مستخدمين";
     const premiumEvent = premiumGiftCelebrationEvent({
       operationId: key,
@@ -1856,16 +1907,19 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
           receiverUids:
             recipientIds.length > 1 ? recipientIds : null,
           recipientCount: recipientIds.length,
-          displayName: senderName,
-          profileImageUrl: senderPhoto,
+          displayName: roomSenderName,
+          profileImageUrl: roomSenderPhoto,
+          publicId: roomSenderPublicId,
+          mysteriousMode: senderMysteriousMode,
+          mysteriousId: senderMysteriousId,
           activeProfileFrameAssetKey:
-            senderFrameAssetKey,
+            roomSenderFrameAssetKey,
           activeProfileFrameImageUrl:
-            senderFrameImageUrl,
+            roomSenderFrameImageUrl,
           activeProfileFrameExpiresAtMs:
-            senderFrameExpiresAtMs,
+            roomSenderFrameExpiresAtMs,
           activeProfileFramePermanent:
-            senderFramePermanent,
+            roomSenderFramePermanent,
           giftId,
           giftName,
           quantity,
@@ -1875,7 +1929,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
           useGiftBag,
           assetKey,
           imageUrl,
-          vipLevel: senderVipCosmetics.level,
+          vipLevel: roomSenderVipLevel,
           giftEffectEventId:
             visualPolicy.roomEffect ? "gift_fx_" + key : "",
           giftEffectMode:
@@ -1891,7 +1945,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
           giftEffectRecipientUids:
             visualPolicy.roomEffect ? recipientIds : [],
           text:
-            senderName +
+            roomSenderName +
             " أرسل " +
             giftName +
             " ×" +
