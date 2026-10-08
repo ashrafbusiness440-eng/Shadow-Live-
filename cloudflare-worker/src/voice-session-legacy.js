@@ -3187,6 +3187,7 @@ export async function roomSessionLeave(db,uid,roomId,endedAtMs=Date.now()){
             profileImageUrl:"",
             muted:true,
             micStartedAtMs:0,
+            customerServiceMicExpiresAtMs:0,
             frameRewardId:"",
             frameAssetKey:"",
             frameImageUrl:"",
