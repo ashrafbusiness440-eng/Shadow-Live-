@@ -57,3 +57,27 @@ test("cross-room absolute actions carry an audit source", () => {
   assert.match(voice, /authoritySource:"ownerAbsoluteRoomAccess"/);
   assert.match(voice, /action:"ownerAbsoluteRoomAccess:"\+action/);
 });
+
+
+test("room mic locks are authoritative: empty lock blocks join, persistent mute blocks unmute", () => {
+  const normalizeStart = voice.indexOf("function normalizeSeats(room)");
+  const normalizeEnd = voice.indexOf("function roomControlPolicySnapshot(", normalizeStart);
+  const normalized = voice.slice(normalizeStart, normalizeEnd);
+  assert.equal(normalized.includes("locked:found.locked===true"), true);
+  assert.equal(normalized.includes("muteLocked:found.muteLocked===true"), true);
+
+  const actionStart = voice.indexOf("export async function roomSeatAction(");
+  const actionEnd = voice.indexOf("async function sendRoomChat(", actionStart);
+  assert.ok(actionStart >= 0 && actionEnd > actionStart);
+  const action = voice.slice(actionStart, actionEnd);
+  assert.equal(action.includes('action==="lockSeat"||action==="unlockSeat"'), true);
+  assert.equal(action.includes('action==="muteLockSeat"||action==="unmuteLockSeat"'), true);
+  assert.equal(action.includes('if(!canManageMic)throw new ApiError("forbidden",403);'), true);
+  assert.equal(action.includes('if(seat.locked)throw new ApiError("seat_locked",403);'), true);
+  assert.equal(action.includes('if(currentSeat.muteLocked)throw new ApiError("seat_mute_locked",403);'), true);
+  assert.equal(action.includes('if(targetSeat.muteLocked)throw new ApiError("seat_mute_locked",403);'), true);
+  assert.equal(action.includes("muted:seat.muteLocked===true||!keepMicActive"), true);
+  assert.equal(action.includes("await recordMicActivity(tx,db,selected.uid,selected)"), true);
+  assert.equal(action.includes('if(muteProtected&&!canOverrideVipRoomProtection(actor))'), true);
+  assert.equal(action.includes('"lockSeat","unlockSeat","muteLockSeat","unmuteLockSeat"'), true);
+});
