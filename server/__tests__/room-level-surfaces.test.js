@@ -12,9 +12,11 @@ test("room chat embeds level metadata without per-message Firestore reads", () =
   const feed = source("lib/features/room/widgets/room_chat_panel.dart");
 
   assert.equal(realtime.includes("loadUserLevelPolicy(db).catch(() => null)"), true);
-  assert.equal(realtime.includes("wealthLevel: levelMetadata.wealthLevel"), true);
-  assert.equal(realtime.includes("attractionLevel: levelMetadata.attractionLevel"), true);
-  assert.equal(realtime.includes("gameLevel: levelMetadata.gameLevel"), true);
+  assert.equal(realtime.includes("roomRealtimeIdentityPresentation("), true);
+  assert.equal(realtime.includes("wealthLevel: Math.max("), true);
+  assert.equal(realtime.includes("identityPresentation.wealthLevel"), true);
+  assert.equal(realtime.includes("identityPresentation.attractionLevel"), true);
+  assert.equal(realtime.includes("identityPresentation.gameLevel"), true);
 
   const start = object.indexOf("#handleRoomChatMessage(webSocket, raw)");
   const end = object.indexOf("\n  async webSocketMessage", start);
