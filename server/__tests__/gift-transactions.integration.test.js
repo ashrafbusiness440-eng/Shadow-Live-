@@ -4,6 +4,7 @@ import {deleteApp, getApps, initializeApp} from "firebase-admin/app";
 import {getFirestore} from "firebase-admin/firestore";
 
 import {sendGift as sendChatGift} from "../../cloudflare-worker/src/chat-safety-actions.js";
+import {diaryCoreTestHooks} from "../../cloudflare-worker/src/diaries.js";
 import {settleAgencyMonth} from "../economy/economy-control.js";
 import {saveGiftEconomyPolicy} from "../economy/gift-economy-config.js";
 import {calculateAgencyCycleSettlement} from "../economy/economy-policy.js";
@@ -600,6 +601,54 @@ test("chat gift uses the same monthly target salary and sharded accrual as room 
   const receiverAfter=await db.collection("users").doc(receiverId).get();
   assert.equal(receiverAfter.data().attractionPoints,1000000);
   assert.equal(accrualAfter.data().supportCoins,100000);
+});
+
+test("gift sent to a real newly-created diary is recorded once", async () => {
+  await seedSharedConfig();
+  const suffix = Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+  const senderId = "sender_realdiary_" + suffix;
+  const ownerId = "owner_realdiary_" + suffix;
+  const key = "realdiary_gift_" + suffix;
+  await Promise.all([
+    db.collection("users").doc(senderId).set({
+      accountStatus: "active", role: "user", coins: 2000000,
+      diamonds: 0, wealthPoints: 0, displayName: "Sender",
+      publicId: "79000001",
+    }),
+    db.collection("users").doc(ownerId).set({
+      accountStatus: "active", role: "user", coins: 0,
+      diamonds: 0, attractionPoints: 0, displayName: "Owner",
+      publicId: "79000002",
+    }),
+  ]);
+  const created = await diaryCoreTestHooks.createDiary(cloudflareDb, ownerId, {
+    text: "يومية اختبار هدية فعلية",
+    imageObjectIds: [],
+    commentsEnabled: true,
+    idempotencyKey: "realdiary_create_" + suffix,
+  });
+  assert.equal(created.ok, true);
+  const request = {
+    receiverId: ownerId, diaryId: created.diaryId,
+    giftId: "integration_gift", quantity: 1, idempotencyKey: key,
+  };
+  const sent = await sendChatGift(cloudflareDb, senderId, request);
+  assert.equal(sent.ok, true);
+  assert.equal(sent.contextType, "diary");
+  const repeated = await sendChatGift(cloudflareDb, senderId, request);
+  assert.equal(repeated.code, "duplicate");
+  const [root, mirror, event, sender] = await Promise.all([
+    db.collection("diaries").doc(created.diaryId).get(),
+    db.collection("users").doc(ownerId).collection("diaries")
+      .doc(created.diaryId).get(),
+    db.collection("diaries").doc(created.diaryId).collection("gifts")
+      .doc(key).get(),
+    db.collection("users").doc(senderId).get(),
+  ]);
+  assert.equal(root.data().giftCount, 1);
+  assert.equal(mirror.data().giftCount, 1);
+  assert.equal(event.exists, true);
+  assert.equal(sender.data().coins, 1900000);
 });
 
 test("diary gift reuses chat gift economy without creating chat side effects",async()=>{
