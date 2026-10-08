@@ -808,8 +808,14 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
 
   void _applyRoomSeatSafety(RoomSeatState state) {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    final hasSeat = state.seats.any((seat) => seat.uid == uid);
-    if (!state.isOwner && !hasSeat && !_voiceSession.micMuted && _voiceSession.active) {
+    final ownSeat = state.seats.where((seat) => seat.uid == uid);
+    final hasSeat = ownSeat.isNotEmpty;
+    final serverMuted = hasSeat && ownSeat.first.muted;
+    // Respect the very same acknowledged room seat state. Moderator mute
+    // must silence live audio even before the next socket snapshot arrives.
+    if (((!state.isOwner && !hasSeat) || serverMuted) &&
+        !_voiceSession.micMuted &&
+        _voiceSession.active) {
       unawaited(_voiceSession.setMicMuted(true));
     }
     if (!state.isActive && _voiceSession.active) {
