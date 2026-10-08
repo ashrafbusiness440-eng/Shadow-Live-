@@ -1890,6 +1890,67 @@ export async function announceRoomEntrance(db,uid,roomId){
   return {ok:true,announced:true,roomId,event,delivered};
 }
 
+async function syncMysteriousRoomIdentity(db,uid,roomId){
+  if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId)){
+    throw new ApiError("invalid_room_id",400);
+  }
+  const roomRef=db.collection("rooms").doc(roomId);
+  const userRef=db.collection("users").doc(uid);
+  const profileRef=db.collection("public_profiles").doc(uid);
+  const presenceRef=
+    db.collection("room_presence").doc(roomId).collection("users").doc(uid);
+  return db.runTransaction(async tx=>{
+    const [roomSnap,userSnap,profileSnap,presenceSnap]=await Promise.all([
+      tx.get(roomRef),
+      tx.get(userRef),
+      tx.get(profileRef),
+      tx.get(presenceRef),
+    ]);
+    if(!roomSnap.exists)throw new ApiError("room_not_found",404);
+    if(!userSnap.exists)throw new ApiError("user_not_found",404);
+    const room=roomSnap.data()||{};
+    const user=userSnap.data()||{};
+    const profile=profileSnap.data()||{};
+    const mysteriousMode=activeMysteriousIdentity(user);
+    const mysteriousId=mysteriousMode?clean(user.mysteriousId):"";
+    const displayName=mysteriousMode
+      ?"الشخص الغامض"
+      :clean(
+        profile.displayName||
+        profile.username||
+        user.displayName||
+        user.username||
+        "مستخدم Shadow Live"
+      );
+    const profileImageUrl=mysteriousMode
+      ?""
+      :clean(profile.profileImageUrl||user.profileImageUrl);
+
+    const seats=normalizeSeats(room);
+    const index=seats.findIndex(item=>item.uid===uid);
+    if(index>=0){
+      seats[index]={
+        ...seats[index],
+        displayName,
+        profileImageUrl,
+        mysteriousMode,
+        mysteriousId,
+      };
+      tx.update(roomRef,{seats,updatedAt:FieldValue.serverTimestamp()});
+    }
+    if(presenceSnap.exists){
+      tx.set(presenceRef,{
+        displayName,
+        profileImageUrl,
+        mysteriousMode,
+        mysteriousId,
+        lastSeenAtMs:Date.now(),
+      },{merge:true});
+    }
+    return {ok:true,roomId,mysteriousMode,mysteriousId};
+  });
+}
+
 async function roomSeatState(db,uid,roomId){
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
   const [snap,actorSnap,liveOnlineCount]=await Promise.all([
@@ -2060,6 +2121,8 @@ export async function roomSeatAction(db,uid,body){
 
       const profileSnap=await tx.get(myProfileRef);
       const profile=profileSnap.data()||{};
+      const mysteriousActive=activeMysteriousIdentity(actor);
+      const mysteriousId=mysteriousActive?clean(actor.mysteriousId):"";
       const cosmetics=await activeCosmetics(
         db,
         uid,
@@ -2109,8 +2172,14 @@ export async function roomSeatAction(db,uid,body){
       seats[seatIndex]={
         index:seatIndex,
         uid,
-        displayName:String(profile.displayName||profile.username||"مستخدم Shadow Live"),
-        profileImageUrl:String(profile.profileImageUrl||""),
+        displayName:mysteriousActive
+          ?"الشخص الغامض"
+          :String(profile.displayName||profile.username||"مستخدم Shadow Live"),
+        profileImageUrl:mysteriousActive
+          ?""
+          :String(profile.profileImageUrl||""),
+        mysteriousMode:mysteriousActive,
+        mysteriousId,
         muted:!keepMicActive,
         micStartedAtMs,
         frameRewardId:clean(frame.rewardId),
@@ -3150,12 +3219,20 @@ async function roomPresenceJoin(db,uid,roomId){
   const ghostMode=activeRoomGhostMode(user,now);
   const vipLevel=entitlements.level;
   const vipExpiresAtMs=timestampToEpochMs(user.vipExpiresAt);
-  const displayName=clean(profile.displayName||profile.username||user.displayName||user.username||"مستخدم Shadow Live");
-  const profileImageUrl=clean(profile.profileImageUrl||user.profileImageUrl);
+  const mysteriousMode=activeMysteriousIdentity(user);
+  const mysteriousId=mysteriousMode?clean(user.mysteriousId):"";
+  const displayName=mysteriousMode
+    ?"الشخص الغامض"
+    :clean(profile.displayName||profile.username||user.displayName||user.username||"مستخدم Shadow Live");
+  const profileImageUrl=mysteriousMode
+    ?""
+    :clean(profile.profileImageUrl||user.profileImageUrl);
   await presenceRef.set({
     uid,
     displayName,
     profileImageUrl,
+    mysteriousMode,
+    mysteriousId,
     activeProfileFrameAssetKey:
       clean(profile.activeProfileFrameAssetKey||user.activeProfileFrameAssetKey),
     activeProfileFrameImageUrl:
@@ -3201,8 +3278,16 @@ async function roomPresenceHeartbeat(db,uid,roomId){
     const entitlements=vipEntitlementsFromUser(user,now);
     await presenceRef.set({
       uid,
-      displayName:clean(data.displayName||data.username||"مستخدم Shadow Live"),
-      profileImageUrl:clean(data.profileImageUrl||user.profileImageUrl),
+      displayName:activeMysteriousIdentity(user)
+        ?"الشخص الغامض"
+        :clean(data.displayName||data.username||"مستخدم Shadow Live"),
+      profileImageUrl:activeMysteriousIdentity(user)
+        ?""
+        :clean(data.profileImageUrl||user.profileImageUrl),
+      mysteriousMode:activeMysteriousIdentity(user),
+      mysteriousId:activeMysteriousIdentity(user)
+        ?clean(user.mysteriousId)
+        :"",
       activeProfileFrameAssetKey:
         clean(data.activeProfileFrameAssetKey||user.activeProfileFrameAssetKey),
       activeProfileFrameImageUrl:
@@ -4494,6 +4579,18 @@ export default async function handler(req,res){
         res,
         200,
         await announceRoomEntrance(getFirestore(),decoded.uid,roomId),
+      );
+    }
+    if(action==="syncMysteriousRoomIdentity"){
+      const roomId=clean(req.body?.roomId);
+      return out(
+        res,
+        200,
+        await syncMysteriousRoomIdentity(
+          getFirestore(),
+          decoded.uid,
+          roomId,
+        ),
       );
     }
     if(action==="roomSeatState"){
