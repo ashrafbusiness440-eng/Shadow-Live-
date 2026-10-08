@@ -86,6 +86,52 @@ void main() {
     expect(lifecycle.contains('Timer.periodic'), isFalse);
   });
 
+  test('stale mic cleanup is delayed and bounded on last socket departure', () {
+    final realtime = File(
+      'cloudflare-worker/src/room-realtime-object.js',
+    ).readAsStringSync();
+    final leave = File(
+      'cloudflare-worker/src/voice-session-legacy.js',
+    ).readAsStringSync();
+    final shim = File(
+      'cloudflare-worker/src/legacy-firebase-admin-shim.js',
+    ).readAsStringSync();
+
+    expect(realtime.contains('const SEAT_DEPARTURE_GRACE_MS = 20_000;'),
+        isTrue);
+    expect(realtime.contains('const SEAT_DEPARTURE_BATCH_LIMIT = 24;'),
+        isTrue);
+    expect(realtime.contains('async #scheduleSeatDeparture('), isTrue);
+    expect(realtime.contains('async #processSeatDepartures('), isTrue);
+    expect(realtime.contains('limit: SEAT_DEPARTURE_BATCH_LIMIT,'), isTrue);
+    expect(realtime.contains('if (hasPresenceUid(live, uid)) {'), isTrue);
+    expect(realtime.contains('await this.#scheduleSeatDeparture(roomId, uid);'),
+        isTrue);
+    expect(realtime.contains('if (attempts >= 2)'), isTrue);
+    expect(realtime.contains('const seatDepartures = await this.#processSeatDepartures(nowMs);'),
+        isTrue);
+    expect(realtime.contains('Number(task.endedAtMs || nowMs)'), isTrue);
+    expect(realtime.contains('Timer.periodic'), isFalse);
+    expect(realtime.contains('setInterval('), isFalse);
+    expect(realtime.contains('RoomPresenceService('), isFalse);
+
+    expect(
+      leave.contains(
+        'export async function roomSessionLeave(db,uid,roomId,endedAtMs=Date.now())',
+      ),
+      isTrue,
+    );
+    final cleanupStart = leave.indexOf('export async function roomSessionLeave(');
+    final cleanupEnd = leave.indexOf('async function roomPresenceJoin(', cleanupStart);
+    expect(cleanupStart, greaterThanOrEqualTo(0));
+    expect(cleanupEnd, greaterThan(cleanupStart));
+    final cleanup = leave.substring(cleanupStart, cleanupEnd);
+    expect(cleanup.contains('await recordMicActivity(tx,db,uid,seat,endedAtMs);'),
+        isTrue);
+    expect(cleanup.contains('tx.update(roomRef,update);'), isTrue);
+    expect(shim.contains('export function getFirestoreForEnv(env)'), isTrue);
+  });
+
   test('room gift checks existing presence service before mutation', () {
     final sheet = File(
       'lib/features/gift/widgets/room_gift_sheet.dart',
