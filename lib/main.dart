@@ -1437,26 +1437,43 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         child: Center(
                           child: user.mysteriousMode
                               ? const MysteriousIdentityAvatar(diameter: 38)
-                              : ProfileAvatarWithFrame(
-                                  diameter: 38,
-                                  userId: user.uid,
-                                  backgroundColor:
-                                      const Color(0xFF25183F),
-                                  placeholderColor: Colors.white54,
-                                  fallbackProfile: <String, dynamic>{
-                                    'profileImageUrl': user.profileImageUrl,
-                                    'activeProfileFrameAssetKey':
-                                        user.activeProfileFrameAssetKey,
-                                    'activeProfileFrameImageUrl':
-                                        user.activeProfileFrameImageUrl,
-                                    'activeProfileFrameExpiresAtMs':
-                                        user.activeProfileFrameExpiresAtMs,
-                                    'activeProfileFramePermanent':
-                                        user.activeProfileFramePermanent,
-                                  },
-                                  fallbackIsVisualSnapshot: true,
-                                  vipLevel: user.vipLevel,
-                                  useVipFallback: true,
+                              : Stack(
+                                  alignment: Alignment.center,
+                                  clipBehavior: Clip.none,
+                                  children: [
+                                    CircleAvatar(
+                                      radius: 19,
+                                      backgroundColor: const Color(0xFF25183F),
+                                      backgroundImage:
+                                          user.profileImageUrl.isEmpty
+                                              ? null
+                                              : NetworkImage(
+                                                  user.profileImageUrl),
+                                      child: user.profileImageUrl.isEmpty
+                                          ? const Icon(Icons.person_rounded,
+                                              color: Colors.white70, size: 18)
+                                          : null,
+                                    ),
+                                    if (user.activeProfileFrameAssetKey.isNotEmpty &&
+                                        (user.activeProfileFramePermanent ||
+                                            user.activeProfileFrameExpiresAtMs <= 0 ||
+                                            user.activeProfileFrameExpiresAtMs >
+                                                DateTime.now()
+                                                    .millisecondsSinceEpoch))
+                                      Positioned(
+                                        left: -5,
+                                        top: -5,
+                                        child: IgnorePointer(
+                                          child: SizedBox.square(
+                                            dimension: 48,
+                                            child: CosmeticAssetVisual(
+                                              assetKey: user.activeProfileFrameAssetKey,
+                                              imageUrl: user.activeProfileFrameImageUrl,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                  ],
                                 ),
                         ),
                       );
