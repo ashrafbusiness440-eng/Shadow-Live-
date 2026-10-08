@@ -1198,7 +1198,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     if (state == null || !mounted) return;
     final roomId = (_roomArguments['roomId'] ?? '').toString();
     if (roomId.isEmpty) return;
-    final manage = _canManageMic && state.canManageMic;
+    final manage = _canManageMic;
 
     await showModalBottomSheet<void>(
       context: context,
