@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../profile/widgets/profile_avatar_with_frame.dart';
+import '../../mysterious/widgets/mysterious_identity_widgets.dart';
 import '../../room/services/room_presence_service.dart';
 import '../../room/services/room_seat_service.dart';
 import '../services/gift_catalog_service.dart';
@@ -186,6 +187,11 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
           size: diameter * .55,
         ),
       );
+    }
+    if (user.mysteriousMode) {
+      // Anonymous identities must never resolve their real profile photo,
+      // even when a seat snapshot arrives before the realtime roster.
+      return MysteriousIdentityAvatar(diameter: diameter);
     }
     return ProfileAvatarWithFrame(
       diameter: diameter,
