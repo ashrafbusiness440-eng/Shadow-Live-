@@ -67,7 +67,7 @@ void main() {
 
   test('empty mic opens options instead of moving immediately', () {
     final source = File('lib/main.dart').readAsStringSync();
-    final start = source.indexOf('Future<void> _handleSeatTap(');
+    final start = source.indexOf('Future<void> _selectVacantRoomSeat(');
     final end = source.indexOf('Future<void> _showKickOptions(', start);
     expect(start, greaterThanOrEqualTo(0));
     expect(end, greaterThan(start));
