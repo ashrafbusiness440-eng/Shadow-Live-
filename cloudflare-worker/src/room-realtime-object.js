@@ -4,6 +4,7 @@ import {
   applyCustomerServiceMicExpiries,
   persistRoomChatReport,
   reclaimDepartedRoomSeat,
+  roomDepartureCleanupCandidates,
 } from "./room-realtime-persistence.js";
 
 import { validateAnimatedEmojiForVip } from "./animated-emoji-catalog.js";
@@ -1291,6 +1292,7 @@ export class RoomRealtimeObject extends DurableObject {
     let processed = 0;
     let failed = 0;
     const live = this.#presenceAttachments();
+    const candidatesByRoom = new Map();
 
     for (const [key, task] of pending) {
       const uid = String(task?.uid || "").trim();
@@ -1312,6 +1314,29 @@ export class RoomRealtimeObject extends DurableObject {
       }
 
       try {
+        // Resolve one room snapshot for the entire bounded departure page.
+        // Listeners without an occupied mic or active music need no
+        // expensive write transaction. Failed reads are shared rather than
+        // retried once per UID inside the same alarm.
+        if (!candidatesByRoom.has(roomId)) {
+          const roomUids = Array.from(pending.values())
+            .filter((item) => normalizeRoomId(item?.roomId) === roomId)
+            .map((item) => String(item?.uid || "").trim());
+          candidatesByRoom.set(
+            roomId,
+            roomDepartureCleanupCandidates(this.env, roomId, roomUids),
+          );
+        }
+        const candidates = await candidatesByRoom.get(roomId);
+        if (!candidates.has(uid)) {
+          deletes.push(key);
+          continue;
+        }
+        // Recheck presence after the network read before any seat release.
+        if (hasPresenceUid(this.#presenceAttachments(), uid)) {
+          deletes.push(key);
+          continue;
+        }
         // Delegate persistent seat cleanup to the existing room
         // persistence module. This object only owns live presence.
         await reclaimDepartedRoomSeat(
