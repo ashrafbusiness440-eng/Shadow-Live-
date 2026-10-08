@@ -190,6 +190,8 @@ function normalizeContributorMap(raw) {
       coins: Math.floor(coins),
       displayName: clean(item?.displayName),
       profileImageUrl: clean(item?.profileImageUrl),
+      mysteriousMode: item?.mysteriousMode === true,
+      mysteriousId: clean(item?.mysteriousId).slice(0, 9),
     };
   }
   return result;
@@ -208,12 +210,20 @@ function addContribution(map, sender, coins) {
     coins: 0,
     displayName: sender.displayName,
     profileImageUrl: sender.profileImageUrl,
+    mysteriousMode: sender.mysteriousMode === true,
+    mysteriousId: clean(sender.mysteriousId).slice(0, 9),
   };
   map[sender.uid] = {
     uid: sender.uid,
     coins: previous.coins + coins,
     displayName: sender.displayName || previous.displayName,
-    profileImageUrl: sender.profileImageUrl || previous.profileImageUrl,
+    profileImageUrl: sender.mysteriousMode === true
+      ? ""
+      : (sender.profileImageUrl || previous.profileImageUrl),
+    mysteriousMode: sender.mysteriousMode === true,
+    mysteriousId: sender.mysteriousMode === true
+      ? clean(sender.mysteriousId).slice(0, 9)
+      : "",
   };
 }
 
@@ -290,6 +300,10 @@ export function advanceRoomRocket({
       triggerUid: sender.uid,
       triggerDisplayName: clean(sender.displayName),
       triggerProfileImageUrl: clean(sender.profileImageUrl),
+      triggerMysteriousMode: sender.mysteriousMode === true,
+      triggerMysteriousId: sender.mysteriousMode === true
+        ? clean(sender.mysteriousId).slice(0, 9)
+        : "",
       contributors: ranked,
       contributorIds: ranked.map((item) => item.uid),
       top3: ranked.slice(0, 3),

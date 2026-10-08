@@ -119,6 +119,8 @@ class RoomRocketEvent {
     required this.triggerUid,
     required this.triggerDisplayName,
     required this.triggerProfileImageUrl,
+    required this.triggerMysteriousMode,
+    required this.triggerMysteriousId,
     required this.contributorIds,
     required this.top3Ids,
   });
@@ -131,6 +133,8 @@ class RoomRocketEvent {
   final String triggerUid;
   final String triggerDisplayName;
   final String triggerProfileImageUrl;
+  final bool triggerMysteriousMode;
+  final String triggerMysteriousId;
   final List<String> contributorIds;
   final List<String> top3Ids;
 
@@ -150,6 +154,9 @@ class RoomRocketEvent {
           (data['triggerDisplayName'] ?? 'مستخدم Shadow Live').toString(),
       triggerProfileImageUrl:
           (data['triggerProfileImageUrl'] ?? '').toString(),
+      triggerMysteriousMode: data['triggerMysteriousMode'] == true,
+      triggerMysteriousId:
+          (data['triggerMysteriousId'] ?? '').toString(),
       contributorIds: data['contributorIds'] is List
           ? (data['contributorIds'] as List)
               .map((e) => e.toString())

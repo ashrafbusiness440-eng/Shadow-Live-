@@ -76,6 +76,10 @@ export function normalizeRocketFeedEvent(raw, nowMs = Date.now()) {
         .slice(0, 3)
         .map((item) => ({
           uid: clean(item?.uid),
+          displayName: clean(item?.displayName),
+          profileImageUrl: clean(item?.profileImageUrl),
+          mysteriousMode: item?.mysteriousMode === true,
+          mysteriousId: clean(item?.mysteriousId).slice(0, 9),
         }))
         .filter((item) => item.uid)
     : [];
@@ -89,6 +93,8 @@ export function normalizeRocketFeedEvent(raw, nowMs = Date.now()) {
     triggerUid: clean(raw.triggerUid),
     triggerDisplayName: clean(raw.triggerDisplayName) || "مستخدم Shadow Live",
     triggerProfileImageUrl: clean(raw.triggerProfileImageUrl),
+    triggerMysteriousMode: raw.triggerMysteriousMode === true,
+    triggerMysteriousId: clean(raw.triggerMysteriousId).slice(0, 9),
     contributorIds,
     top3,
   };

@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../../../services/navigation_service.dart';
 import '../../voice/services/voice_room_session_controller.dart';
 import '../../profile/widgets/profile_avatar_with_frame.dart';
+import '../../mysterious/widgets/mysterious_identity_widgets.dart';
 import '../services/room_rocket_service.dart';
 import 'cosmetic_effect_widgets.dart';
 import '../../vip/services/vip_service.dart';
@@ -714,15 +715,18 @@ class _RocketBanner extends StatelessWidget {
             ),
             child: Row(
               children: [
-                ProfileAvatarWithFrame(
-                  diameter: 44,
-                  userId: event.triggerUid,
-                  backgroundColor: const Color(0xFF25183F),
-                  placeholderColor: Colors.white70,
-                  fallbackProfile: <String, dynamic>{
-                    'profileImageUrl': event.triggerProfileImageUrl,
-                  },
-                ),
+                event.triggerMysteriousMode
+                    ? const MysteriousIdentityAvatar(diameter: 44)
+                    : ProfileAvatarWithFrame(
+                        diameter: 44,
+                        userId: event.triggerUid,
+                        backgroundColor: const Color(0xFF25183F),
+                        placeholderColor: Colors.white70,
+                        fallbackProfile: <String, dynamic>{
+                          'profileImageUrl':
+                              event.triggerProfileImageUrl,
+                        },
+                      ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
