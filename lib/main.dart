@@ -229,7 +229,9 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     }
     for (final message in _voiceSession.roomChatMessages.take(8)) {
       final systemKind = (message['systemKind'] ?? '').toString();
-      if (systemKind == 'gift') {
+      if (systemKind == 'room_join') {
+        _roomEffectCoordinator.ingestRoomJoin(message);
+      } else if (systemKind == 'gift') {
         _roomEffectCoordinator.ingestGiftMessage(message);
       } else if (
         systemKind == 'animated_emoji' ||
