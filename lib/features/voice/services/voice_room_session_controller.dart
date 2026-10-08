@@ -465,6 +465,20 @@ class VoiceRoomSessionController extends ChangeNotifier {
     if (event.type == 'server.ready') {
       changed = _replaceRoomParticipants(event.payload['participants']) ||
           changed;
+      _roomArguments = <String, dynamic>{
+        ..._roomArguments,
+        'presenceDegraded': false,
+      };
+      changed = true;
+    } else if (event.type == 'room.connection_lost') {
+      // Do not keep displaying stale off-mic listeners after a socket loss.
+      // Occupied seat snapshots remain available from the existing room doc.
+      _roomParticipants.clear();
+      _roomArguments = <String, dynamic>{
+        ..._roomArguments,
+        'presenceDegraded': true,
+      };
+      changed = true;
     } else if (event.type == 'room.presence_updated') {
       final rawParticipant = event.payload['participant'];
       if (rawParticipant is Map) {
