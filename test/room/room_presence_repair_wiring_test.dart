@@ -69,6 +69,23 @@ void main() {
     expect(closed.contains('await _stopPresence('), isFalse);
   });
 
+  test('remote room mute is enforced on the existing room state stream', () {
+    final controller = File(
+      'lib/features/voice/services/voice_room_session_controller.dart',
+    ).readAsStringSync();
+    final lifecycle = controller.substring(
+      controller.indexOf('void _watchRoomLifecycle('),
+      controller.indexOf('Future<void> _leaveClosedRoom('),
+    );
+    expect(lifecycle.contains("final rawSeats = data['seats'];"), isTrue);
+    expect(lifecycle.contains("final serverMuted = mySeat?['muted'] != false;"),
+        isTrue);
+    expect(lifecycle.contains('hasSeat && serverMuted'), isTrue);
+    expect(lifecycle.contains('unawaited(setMicMuted(true));'), isTrue);
+    expect(lifecycle.contains('RoomSeatService().watch('), isFalse);
+    expect(lifecycle.contains('Timer.periodic'), isFalse);
+  });
+
   test('room gift checks existing presence service before mutation', () {
     final sheet = File(
       'lib/features/gift/widgets/room_gift_sheet.dart',
