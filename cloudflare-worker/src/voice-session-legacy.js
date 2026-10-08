@@ -1853,12 +1853,15 @@ export async function announceRoomEntrance(db,uid,roomId){
   ]);
   const entrance=cosmetics.entrance||{};
   const user=userSnap.data()||{};
+  const mysteriousMode=activeMysteriousIdentity(user);
+  const mysteriousId=mysteriousMode?clean(user.mysteriousId):"";
   const vipCosmetics=vipCosmeticsFromUser(user,Date.now());
   const hasRewardEntrance=
     clean(entrance.assetKey).length>0||clean(entrance.imageUrl).length>0;
   const hasVipRoomEntrance=
     vipCosmetics.level>=9&&clean(vipCosmetics.keys.entryStrip).length>0;
-  if(!hasRewardEntrance&&!hasVipRoomEntrance){
+  const hasMysteriousEntrance=mysteriousMode;
+  if(!hasRewardEntrance&&!hasVipRoomEntrance&&!hasMysteriousEntrance){
     return {ok:true,announced:false,roomId};
   }
 
@@ -1866,20 +1869,34 @@ export async function announceRoomEntrance(db,uid,roomId){
   const eventAtMs=Date.now();
   const event={
     eventId:uid+"_"+eventAtMs.toString(36),
-    uid,
-    displayName:clean(profile.displayName||profile.username||"مستخدم Shadow Live"),
-    profileImageUrl:clean(profile.profileImageUrl),
-    publicId:clean(profile.publicId),
-    vipLevel:vipCosmetics.level,
-    badgeLabel:vipCosmetics.level>0?"VIP":"",
-    rewardId:hasRewardEntrance?clean(entrance.rewardId):"vip_room_entry",
-    assetKey:hasRewardEntrance
-      ?clean(entrance.assetKey)
-      :clean(vipCosmetics.keys.entryStrip),
-    imageUrl:hasRewardEntrance?clean(entrance.imageUrl):"",
-    rewardExpiresAtMs:hasRewardEntrance
-      ?Number(entrance.expiresAtMs||0)
-      :timestampToEpochMs(user.vipExpiresAt),
+    uid:mysteriousMode?"":uid,
+    displayName:mysteriousMode
+      ?"الشخص الغامض"
+      :clean(profile.displayName||profile.username||"مستخدم Shadow Live"),
+    profileImageUrl:mysteriousMode?"":clean(profile.profileImageUrl),
+    publicId:mysteriousMode?mysteriousId:clean(profile.publicId),
+    mysteriousMode,
+    mysteriousId,
+    vipLevel:mysteriousMode?0:vipCosmetics.level,
+    badgeLabel:mysteriousMode
+      ?"الشخص الغامض"
+      :(vipCosmetics.level>0?"VIP":""),
+    rewardId:mysteriousMode
+      ?"mysterious_person_entry"
+      :(hasRewardEntrance?clean(entrance.rewardId):"vip_room_entry"),
+    assetKey:mysteriousMode
+      ?"mysterious.entrance"
+      :(hasRewardEntrance
+        ?clean(entrance.assetKey)
+        :clean(vipCosmetics.keys.entryStrip)),
+    imageUrl:mysteriousMode
+      ?""
+      :(hasRewardEntrance?clean(entrance.imageUrl):""),
+    rewardExpiresAtMs:mysteriousMode
+      ?timestampToEpochMs(user.mysteriousExpiresAt)
+      :(hasRewardEntrance
+        ?Number(entrance.expiresAtMs||0)
+        :timestampToEpochMs(user.vipExpiresAt)),
     eventAtMs,
   };
   const delivered=await broadcastRoomRealtimeEvent(

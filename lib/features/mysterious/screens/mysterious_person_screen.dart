@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../services/mysterious_person_service.dart';
+import '../widgets/mysterious_identity_widgets.dart';
+import '../../../core/assets/shadow_asset_registry.dart';
 import '../../voice/services/voice_room_session_controller.dart';
 
 class MysteriousPersonScreen extends StatefulWidget {
@@ -362,6 +364,14 @@ class _MysteriousPersonScreenState extends State<MysteriousPersonScreen> {
               children: state.voiceOptions
                   .map(
                     (option) => ChoiceChip(
+                      avatar: MysteriousAssetIcon(
+                        assetKey:
+                            ShadowAssetKeys.mysteriousVoiceOptionIcon(option.id),
+                        fallbackIcon: option.id == 'original'
+                            ? Icons.record_voice_over_rounded
+                            : Icons.graphic_eq_rounded,
+                        size: 20,
+                      ),
                       label: Text(option.labelAr),
                       selected: state.selectedVoiceId == option.id,
                       onSelected: _saving

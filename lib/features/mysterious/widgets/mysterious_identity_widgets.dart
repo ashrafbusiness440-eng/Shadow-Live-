@@ -46,6 +46,78 @@ class _MysteriousAssetVisual extends StatelessWidget {
       );
 }
 
+class MysteriousAssetIcon extends StatelessWidget {
+  const MysteriousAssetIcon({
+    super.key,
+    required this.assetKey,
+    required this.fallbackIcon,
+    this.size = 22,
+  });
+
+  final String assetKey;
+  final IconData fallbackIcon;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => SizedBox.square(
+        dimension: size,
+        child: _MysteriousAssetVisual(
+          assetKey: assetKey,
+          fit: BoxFit.contain,
+          fallback: Icon(
+            fallbackIcon,
+            size: size,
+            color: const Color(0xFFFFD166),
+          ),
+        ),
+      );
+}
+
+class MysteriousRoomPresenceSkin extends StatelessWidget {
+  const MysteriousRoomPresenceSkin({
+    super.key,
+    required this.enabled,
+    required this.child,
+  });
+
+  final bool enabled;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!enabled) return child;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: const Color(0xFF171020),
+                border: Border.all(color: const Color(0x338B5CF6)),
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Opacity(
+                opacity: .34,
+                child: _MysteriousAssetVisual(
+                  assetKey: ShadowAssetKeys.mysteriousRoomPresenceSkin,
+                  fit: BoxFit.cover,
+                  fallback: const SizedBox.shrink(),
+                ),
+              ),
+            ),
+          ),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
 class MysteriousIdentityAvatar extends StatelessWidget {
   const MysteriousIdentityAvatar({
     super.key,
@@ -133,13 +205,24 @@ Future<void> showMysteriousIdentitySheet(
                 children: [
               const MysteriousIdentityAvatar(diameter: 74),
               const SizedBox(height: 12),
-              const Text(
-                'الشخص الغامض',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
-                ),
+              const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  MysteriousAssetIcon(
+                    assetKey: ShadowAssetKeys.mysteriousBadge,
+                    fallbackIcon: Icons.visibility_off_rounded,
+                    size: 24,
+                  ),
+                  SizedBox(width: 7),
+                  Text(
+                    'الشخص الغامض',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 8),
               Stack(

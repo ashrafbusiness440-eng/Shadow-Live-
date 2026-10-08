@@ -1501,7 +1501,9 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                 ]);
                               }
                             }
-                            return ListTile(
+                            return MysteriousRoomPresenceSkin(
+                              enabled: user.mysteriousMode,
+                              child: ListTile(
                               contentPadding: EdgeInsets.zero,
                               onTap: () {
                                 Navigator.pop(sheetContext);
@@ -1607,6 +1609,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                       Icons.chevron_left_rounded,
                                       color: Colors.white38,
                                     ),
+                              ),
                             );
                           },
                         );
