@@ -4,6 +4,7 @@ import { firestoreClient } from "./firestore.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 import { activeEffectiveVipLevelFromUser } from "./vip-runtime.js";
 import { vipEntitlementsFromUser } from "./vip-entitlements.js";
+import { activeMysteriousIdentity } from "./mysterious-identity.js";
 import {
   loadPublicProfilePresentation,
   loadPublicProfilePresentations,
@@ -68,8 +69,10 @@ export async function recordProfileVisit(db, visitorUid, body, nowMs = Date.now(
 
   const visitorUser = visitorUserSnap.data || {};
   const entitlements = vipEntitlementsFromUser(visitorUser, nowMs);
-  const hidden =
+  const hiddenByVip =
     visitorUser.hideProfileVisits === true && entitlements.hideProfileVisits;
+  const hiddenByMysterious = activeMysteriousIdentity(visitorUser, nowMs);
+  const hidden = hiddenByVip || hiddenByMysterious;
   const now = new Date(nowMs);
   const visitor =
     publicProfiles.get(visitorUid) || publicProfilePresentation(visitorUid);

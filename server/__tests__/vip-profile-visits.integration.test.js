@@ -158,3 +158,18 @@ test("profile visit history is unavailable below VIP1 and hide preference below 
   assert.equal(disabled.hideProfileVisits, false);
   assert.equal(disabled.canHideProfileVisits, false);
 });
+
+
+test("mysterious person hides profile visits independently from VIP", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const source = await readFile(
+    new URL("../../cloudflare-worker/src/profile-visits.js", import.meta.url),
+    "utf8",
+  );
+  assert.equal(source.includes("activeMysteriousIdentity(visitorUser, nowMs)"), true);
+  assert.equal(source.includes("const hidden = hiddenByVip || hiddenByMysterious"), true);
+  assert.equal(
+    source.includes("visitorUser.hideProfileVisits === true && entitlements.hideProfileVisits"),
+    true,
+  );
+});
