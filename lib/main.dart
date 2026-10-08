@@ -502,6 +502,24 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     final hasSeat =
         state?.seats.any((seat) => seat.uid == uid) == true;
     final canSpeak = state?.isOwner == true || hasSeat;
+    final mySeat = state?.seats.where((item) => item.uid == uid);
+    if (!_voiceSession.micMuted &&
+        mySeat != null &&
+        mySeat.isNotEmpty &&
+        mySeat.first.muteLocked) {
+      await _voiceSession.setMicMuted(true);
+      if (mounted) setState(() => _voiceMicMuted = true);
+      return;
+    }
+    if (_voiceSession.micMuted &&
+        mySeat != null &&
+        mySeat.isNotEmpty &&
+        mySeat.first.muteLocked) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('هذا المايك مكتوم من الإدارة.')),
+      );
+      return;
+    }
 
     if (!canSpeak) {
       if (state == null) return;
@@ -516,6 +534,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             .where(
               (seat) =>
                   !seat.occupied &&
+                  !seat.locked &&
                   (!customerService ||
                       state.isHost ||
                       state.canManageMic ||
@@ -1026,6 +1045,28 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                     roomId: roomId,
                     targetUid: seat.uid,
                     muted: !seat.muted,
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+        actions.add(
+          QuickProfileAction(
+            icon: seat.muteLocked
+                ? Icons.lock_open_rounded
+                : Icons.mic_off_rounded,
+            label: seat.muteLocked
+                ? 'إلغاء الكتم الإجباري للمايك'
+                : 'كتم هذا المايك إجباريًا',
+            color: Colors.orangeAccent,
+            onTap: () {
+              unawaited(
+                _runSeatAction(
+                  () => _roomSeatService.setSeatMuteLocked(
+                    roomId: roomId,
+                    seatIndex: seat.index,
+                    muteLocked: !seat.muteLocked,
                   ),
                 ),
               );
@@ -2423,16 +2464,24 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                     )
                                   : null)
                               : Icon(
-                                  _isCustomerServiceRoom
-                                      ? (seat.index < 2
-                                          ? Icons.admin_panel_settings_rounded
-                                          : Icons.lock_open_rounded)
-                                      : Icons.add_rounded,
+                                  seat.locked
+                                      ? Icons.lock_rounded
+                                      : seat.muteLocked
+                                          ? Icons.mic_off_rounded
+                                          : _isCustomerServiceRoom
+                                              ? (seat.index < 2
+                                                  ? Icons.admin_panel_settings_rounded
+                                                  : Icons.lock_open_rounded)
+                                              : Icons.add_rounded,
                                   size: compact ? 19 : 24,
-                                  color: _isCustomerServiceRoom &&
-                                          seat.index < 2
-                                      ? const Color(0xFFFFD54A)
-                                      : Colors.white38,
+                                  color: seat.locked
+                                      ? Colors.orangeAccent
+                                      : seat.muteLocked
+                                          ? const Color(0xFFFFD54A)
+                                          : _isCustomerServiceRoom &&
+                                                  seat.index < 2
+                                              ? const Color(0xFFFFD54A)
+                                              : Colors.white38,
                                 ),
                         ),
                   if (seat.frameActive && !seat.mysteriousMode)
@@ -2468,8 +2517,10 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                           ),
                         ),
                         child: Icon(
-                          seat.muted
-                              ? Icons.mic_off_rounded
+                          seat.muteLocked
+                              ? Icons.lock_rounded
+                              : seat.muted
+                                  ? Icons.mic_off_rounded
                               : Icons.mic_rounded,
                           size: compact ? 9 : 11,
                           color: Colors.white,
@@ -2482,7 +2533,11 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
               Text(
                 seat.occupied
                     ? (seat.displayName.isEmpty ? 'متحدث' : seat.displayName)
-                    : _isCustomerServiceRoom
+                    : seat.locked
+                        ? 'مايك مقفل'
+                        : seat.muteLocked
+                            ? 'مايك مكتوم'
+                            : _isCustomerServiceRoom
                         ? (seat.index < 2
                             ? 'إدارة ' + (seat.index + 1).toString()
                             : 'دعوة ' + (seat.index - 1).toString())
