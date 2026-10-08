@@ -123,10 +123,20 @@ class VoiceRoomSessionController extends ChangeNotifier {
         _ => VoiceChangerPreset.original,
       };
 
+  Future<void> refreshMysteriousRoomIdentity() async {
+    final id = roomId.trim();
+    if (!_active || id.isEmpty) return;
+    await Future.wait<void>([
+      _presenceService.refreshIdentity(id).catchError((_) {}),
+      _seatService.syncMysteriousIdentity(id).catchError((_) {}),
+    ]);
+  }
+
   Future<void> applyMysteriousVoice({
     required bool enabled,
     required String voiceId,
   }) async {
+    final modeChanged = _mysteriousModeEnabled != enabled;
     _mysteriousModeEnabled = enabled;
     _mysteriousVoiceId = voiceId.trim().isEmpty ? 'original' : voiceId.trim();
     await _voiceService.setVoiceChanger(
@@ -134,6 +144,9 @@ class VoiceRoomSessionController extends ChangeNotifier {
           ? _mysteriousPreset(_mysteriousVoiceId)
           : VoiceChangerPreset.original,
     );
+    if (modeChanged) {
+      await refreshMysteriousRoomIdentity();
+    }
     notifyListeners();
   }
 
@@ -444,6 +457,14 @@ class VoiceRoomSessionController extends ChangeNotifier {
     if (event.type == 'server.ready') {
       changed = _replaceRoomParticipants(event.payload['participants']) ||
           changed;
+    } else if (event.type == 'room.presence_updated') {
+      final rawParticipant = event.payload['participant'];
+      if (rawParticipant is Map) {
+        changed = _upsertRoomParticipant(
+              Map<String, dynamic>.from(rawParticipant),
+            ) ||
+            changed;
+      }
     } else if (event.type == 'room.presence_left') {
       changed = _removeRoomParticipant(
             (event.payload['uid'] ?? '').toString(),

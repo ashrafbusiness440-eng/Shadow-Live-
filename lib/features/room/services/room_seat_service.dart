@@ -20,6 +20,8 @@ class VoiceSeat {
     this.voiceWaveAssetKey = '',
     this.voiceWaveImageUrl = '',
     this.voiceWaveExpiresAtMs = 0,
+    this.mysteriousMode = false,
+    this.mysteriousId = '',
   });
 
   final int index;
@@ -36,6 +38,8 @@ class VoiceSeat {
   final String voiceWaveAssetKey;
   final String voiceWaveImageUrl;
   final int voiceWaveExpiresAtMs;
+  final bool mysteriousMode;
+  final String mysteriousId;
 
   bool get occupied => uid.isNotEmpty;
   bool get frameActive =>
@@ -61,6 +65,8 @@ class VoiceSeat {
         voiceWaveImageUrl: (json['voiceWaveImageUrl'] ?? '').toString(),
         voiceWaveExpiresAtMs:
             (json['voiceWaveExpiresAtMs'] as num?)?.toInt() ?? 0,
+        mysteriousMode: json['mysteriousMode'] == true,
+        mysteriousId: (json['mysteriousId'] ?? '').toString(),
       );
 }
 
@@ -288,6 +294,15 @@ class RoomSeatService {
         exists: snapshot.exists,
       ),
     );
+  }
+
+  Future<void> syncMysteriousIdentity(String roomId) async {
+    final id = roomId.trim();
+    if (id.isEmpty) return;
+    await _post({
+      'action': 'syncMysteriousRoomIdentity',
+      'roomId': id,
+    });
   }
 
   Future<RoomSeatState> load(String roomId) async {

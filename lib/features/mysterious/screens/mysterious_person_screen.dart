@@ -187,6 +187,10 @@ class _MysteriousPersonScreenState extends State<MysteriousPersonScreen> {
     setState(() => _saving = true);
     try {
       final state = await _service.changeId();
+      if (state.enabled) {
+        await VoiceRoomSessionController.instance
+            .refreshMysteriousRoomIdentity();
+      }
       if (!mounted) return;
       setState(() {
         _state = state;

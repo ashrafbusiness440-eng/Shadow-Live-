@@ -15,6 +15,8 @@ class RoomPresenceUser {
     this.activeProfileFrameImageUrl = '',
     this.activeProfileFrameExpiresAtMs = 0,
     this.activeProfileFramePermanent = false,
+    this.mysteriousMode = false,
+    this.mysteriousId = '',
     required this.vipLevel,
     required this.vipOnlinePriority,
     required this.joinedAtMs,
@@ -28,6 +30,8 @@ class RoomPresenceUser {
   final String activeProfileFrameImageUrl;
   final int activeProfileFrameExpiresAtMs;
   final bool activeProfileFramePermanent;
+  final bool mysteriousMode;
+  final String mysteriousId;
   final int vipLevel;
   final bool vipOnlinePriority;
   final int joinedAtMs;
@@ -47,6 +51,8 @@ class RoomPresenceUser {
             (data['activeProfileFrameExpiresAtMs'] as num?)?.toInt() ?? 0,
         activeProfileFramePermanent:
             data['activeProfileFramePermanent'] == true,
+        mysteriousMode: data['mysteriousMode'] == true,
+        mysteriousId: (data['mysteriousId'] ?? '').toString(),
         vipLevel: (data['vipLevel'] as num?)?.toInt() ?? 0,
         vipOnlinePriority: data['vipOnlinePriority'] == true,
         joinedAtMs: (data['joinedAtMs'] as num?)?.toInt() ?? 0,
@@ -427,6 +433,15 @@ class RoomPresenceService {
     if (id.isEmpty) return;
     await _post('voice-session', {
       'action': 'roomSessionLeave',
+      'roomId': id,
+    });
+  }
+
+  Future<void> refreshIdentity(String roomId) async {
+    final id = roomId.trim();
+    if (id.isEmpty) return;
+    await _post('room-realtime', {
+      'action': 'refreshIdentity',
       'roomId': id,
     });
   }
