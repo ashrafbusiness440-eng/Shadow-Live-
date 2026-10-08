@@ -21,6 +21,7 @@ import {
   realtimeUserPresentFromNamespace,
 } from "./room-presence-authority.js";
 import { giftLevelPointAwards, safeAddUserLevelPoints } from "./user-level-policy.js";
+import { userLevelSupportAggregateWrites } from "./user-level-support.js";
 import { activeEffectiveVipLevelFromUser } from "./vip-runtime.js";
 import { validateAnimatedEmojiForVip } from "./animated-emoji-catalog.js";
 import { vipCosmeticAssetKey } from "./vip-entitlements.js";
@@ -758,6 +759,13 @@ export async function sendGift(db, uid, body, options = {}) {
     );
     const senderPublicId = clean(senderData.publicId);
     const senderProfileImageUrl = clean(senderData.profileImageUrl);
+    const receiverDisplayName = clean(
+      receiverData.displayName ||
+      receiverData.username ||
+      "مستخدم Shadow Live",
+    );
+    const receiverPublicId = clean(receiverData.publicId);
+    const receiverProfileImageUrl = clean(receiverData.profileImageUrl);
     const messageId = contextType === "chat" ? randomDocId("msg") : null;
     const messagePath = contextType === "chat"
       ? `${conversationPath}/messages/${messageId}`
@@ -839,6 +847,26 @@ export async function sendGift(db, uid, body, options = {}) {
         ),
       );
     }
+    writes.push(
+      ...userLevelSupportAggregateWrites(db, {
+        senderUid: uid,
+        receiverUid: receiverId,
+        sender: {
+          displayName: senderName,
+          profileImageUrl: senderProfileImageUrl,
+          publicId: senderPublicId,
+        },
+        receiver: {
+          displayName: receiverDisplayName,
+          profileImageUrl: receiverProfileImageUrl,
+          publicId: receiverPublicId,
+        },
+        wealthPoints: levelPointAwards.wealthPoints,
+        attractionPoints: levelPointAwards.attractionPoints,
+        giftCount: quantity,
+        now,
+      }),
+    );
 
     const receiverFields = {
       giftRevenueMonth: revenueMonth,

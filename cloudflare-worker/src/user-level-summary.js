@@ -9,6 +9,7 @@ import {
   loadUserLevelPolicy,
   userLevelSummaries,
 } from "./user-level-policy.js";
+import { loadUserLevelSupportPage } from "./user-level-support.js";
 import {
   applyUserLevelVisibilityForViewer,
   effectiveVipLevel,
@@ -233,6 +234,32 @@ async function updateLevelVisibility(db, decoded, body) {
   }
 }
 
+async function visibleSupportMetric(
+  db,
+  decoded,
+  actorUid,
+  targetUid,
+  metric,
+) {
+  const summary = await materializeUserLevelSummary(db, targetUid);
+  let actorUser = null;
+  if (
+    actorUid !== targetUid &&
+    summary?.visibility?.hasAnyHiddenLevel === true
+  ) {
+    const actorSnap = await db.get(`users/${actorUid}`);
+    actorUser = actorSnap.exists ? actorSnap.data || {} : {};
+    if (actorSnap.exists) assertUserDocumentSessionState(decoded, actorUser);
+  }
+  const visible = applyUserLevelVisibilityForViewer(summary, {
+    actorUid,
+    targetUid,
+    actorUser,
+  });
+  const section = metric === "wealth" ? visible.wealth : visible.attraction;
+  if (!section || section.hidden === true) throw new Error("level_hidden");
+}
+
 export async function userLevelSummary(request, env) {
   try {
     if (request.method !== "GET" && request.method !== "POST") {
@@ -260,6 +287,30 @@ export async function userLevelSummary(request, env) {
     const targetUid = safeUserId(url.searchParams.get("uid") || actorUid);
     if (!targetUid) {
       return json(request, env, { ok: false, code: "invalid_user" }, 400);
+    }
+
+    const supportMetric = clean(url.searchParams.get("supportMetric"));
+    if (supportMetric) {
+      if (!["wealth", "attraction"].includes(supportMetric)) {
+        return json(request, env, { ok: false, code: "invalid_support_metric" }, 400);
+      }
+      await visibleSupportMetric(
+        db,
+        decoded,
+        actorUid,
+        targetUid,
+        supportMetric,
+      );
+      const support = await loadUserLevelSupportPage(
+        db,
+        targetUid,
+        supportMetric,
+        {
+          cursor: clean(url.searchParams.get("cursor")),
+          limit: Math.min(20, Math.max(1, Number(url.searchParams.get("limit") || 20))),
+        },
+      );
+      return json(request, env, { ok: true, support });
     }
 
     const summary = await materializeUserLevelSummary(db, targetUid);

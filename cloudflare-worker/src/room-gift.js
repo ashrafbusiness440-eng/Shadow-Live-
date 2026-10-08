@@ -38,6 +38,7 @@ import {
   premiumGiftCelebrationEvent,
 } from "./gift-visual-policy.js";
 import { giftLevelPointAwards, safeAddUserLevelPoints } from "./user-level-policy.js";
+import { userLevelSupportAggregateWrites } from "./user-level-support.js";
 import { vipCosmeticsFromUser } from "./vip-entitlements.js";
 
 const clean = (value) => String(value ?? "").trim();
@@ -616,6 +617,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       sender.displayName || sender.username || "مستخدم Shadow Live",
     );
     const senderPhoto = clean(sender.profileImageUrl);
+    const senderPublicId = clean(sender.publicId);
     const senderFrameAssetKey = clean(sender.activeProfileFrameAssetKey);
     const senderFrameImageUrl = clean(sender.activeProfileFrameImageUrl);
     const senderFrameExpiresAtMs = Math.max(
@@ -1430,7 +1432,26 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
           "مستخدم Shadow Live",
       );
       const receiverProfileImageUrl = clean(receiver.profileImageUrl);
+      const receiverPublicId = clean(receiver.publicId);
       writes.push(
+        ...userLevelSupportAggregateWrites(db, {
+          senderUid,
+          receiverUid: receiverId,
+          sender: {
+            displayName: senderName,
+            profileImageUrl: senderPhoto,
+            publicId: senderPublicId,
+          },
+          receiver: {
+            displayName: receiverName,
+            profileImageUrl: receiverProfileImageUrl,
+            publicId: receiverPublicId,
+          },
+          wealthPoints: paidRecipientCost,
+          attractionPoints: recipientLevelAwards.attractionPoints,
+          giftCount: quantity,
+          now,
+        }),
         db.writeCreate(
           "gift_transactions/" + subKey,
           {
