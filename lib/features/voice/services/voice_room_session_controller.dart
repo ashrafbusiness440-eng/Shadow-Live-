@@ -693,12 +693,19 @@ class VoiceRoomSessionController extends ChangeNotifier {
             (data['ownerUid'] ?? data['ownerId'] ?? data['hostId'] ?? '')
                 .toString();
         final rawSeats = data['seats'];
-        final hasSeat = rawSeats is List &&
-            rawSeats.whereType<Map>().any(
+        final mySeat = rawSeats is List
+            ? rawSeats.whereType<Map>().where(
                   (seat) => (seat['uid'] ?? '').toString() == uid,
-                );
+                ).firstOrNull
+            : null;
+        final hasSeat = mySeat != null;
         final isOwner = uid.isNotEmpty && ownerUid == uid;
-        if (!isOwner && !hasSeat && !_micMuted) {
+        // A moderator's server-side mute must silence the live ZEGO mic,
+        // including when this room is minimized. Reuse this same room
+        // snapshot; do not open an extra seat listener or poll for mutes.
+        final serverMuted = mySeat?['muted'] != false;
+        if (!_micMuted &&
+            ((!isOwner && !hasSeat) || (hasSeat && serverMuted))) {
           unawaited(setMicMuted(true));
         }
         notifyListeners();
