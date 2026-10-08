@@ -3166,7 +3166,7 @@ async function roomPresenceAnnounceJoin(db,uid,roomId){
   return {ok:true,roomId};
 }
 
-export async function roomSessionLeave(db,uid,roomId){
+export async function roomSessionLeave(db,uid,roomId,endedAtMs=Date.now()){
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
   const roomRef=db.collection("rooms").doc(roomId);
 
@@ -3178,7 +3178,7 @@ export async function roomSessionLeave(db,uid,roomId){
     const seat=seats.find(item=>item.uid===uid);
     const update={};
     if(seat){
-      await recordMicActivity(tx,db,uid,seat);
+      await recordMicActivity(tx,db,uid,seat,endedAtMs);
       seats=seats.map(item=>item.uid===uid
         ? {
             ...item,
