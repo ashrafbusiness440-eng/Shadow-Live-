@@ -93,3 +93,37 @@ test("room effect sound reuses provider-neutral voice and bounded Asset Studio c
   assert.equal(session.includes("_maxEffectSoundBytes = 4 * 1024 * 1024"), true);
   assert.equal(session.includes("ShadowAssetRegistry.remoteUrl(key)"), true);
 });
+
+
+test("room join alerts are ephemeral overlays, not persistent chat bubbles", () => {
+  const main = source("../../lib/main.dart");
+  const session = source(
+    "../../lib/features/voice/services/voice_room_session_controller.dart",
+  );
+  const coordinator = source(
+    "../../lib/features/room/widgets/room_effect_coordinator.dart",
+  );
+  const chat = source("../../lib/features/room/widgets/room_chat_panel.dart");
+
+  assert.equal(
+    main.includes("_roomEffectCoordinator.ingestRoomJoin(message);"),
+    true,
+  );
+  assert.equal(session.includes("'systemKind': 'room_join'"), true);
+  assert.equal(session.includes("'mysteriousMode': event.payload['mysteriousMode'] == true"),
+    true);
+  assert.equal(coordinator.includes("void ingestRoomJoin("), true);
+  assert.equal(coordinator.includes("_markSeen('join:$id')"), true);
+  assert.equal(coordinator.includes("Timer(const Duration(milliseconds: 2800)"), true);
+  assert.equal(coordinator.includes("final roomJoin = coordinator.currentRoomJoin;"),
+    true);
+  assert.equal(coordinator.includes("child: _EntranceWelcomeStrip(event: roomJoin)"),
+    true);
+  assert.equal(coordinator.includes("mysterious\n          ? 'الشخص الغامض'"), true);
+  assert.equal(coordinator.includes("_roomJoinTimer?.cancel();"), true);
+  assert.equal(coordinator.includes("Timer.periodic("), false);
+  assert.equal(
+    chat.split(".where((message) => message.systemKind != 'room_join')")
+      .length - 1, 2,
+  );
+});
