@@ -280,6 +280,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   bool _changingRoomFavorite = false;
   RoomSeatState? _roomSeatState;
   bool _changingSeat = false;
+  bool _micActionInFlight = false;
   RoomModeratorState? _roomModeratorState;
   StreamSubscription<Map<String, dynamic>>? _roomLiveSubscription;
   RoomRocketState? _bootstrapRocketState;
@@ -484,6 +485,16 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   }
 
   Future<void> _toggleVoiceMic() async {
+    if (_micActionInFlight) return;
+    _micActionInFlight = true;
+    try {
+      await _performToggleVoiceMic();
+    } finally {
+      _micActionInFlight = false;
+    }
+  }
+
+  Future<void> _performToggleVoiceMic() async {
     if (_voiceJoining || _voiceError != null) return;
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     final state = _roomSeatState;
