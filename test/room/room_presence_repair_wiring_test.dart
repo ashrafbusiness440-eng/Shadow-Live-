@@ -23,6 +23,9 @@ void main() {
     final presence = File(
       'lib/features/room/services/room_presence_service.dart',
     ).readAsStringSync();
+    final controller = File(
+      'lib/features/voice/services/voice_room_session_controller.dart',
+    ).readAsStringSync();
 
     final connectStart = presence.indexOf('Future<void> _connect(');
     final joinStart = presence.indexOf('Future<void> join(', connectStart);
