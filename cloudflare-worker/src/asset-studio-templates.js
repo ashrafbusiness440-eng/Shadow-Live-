@@ -53,14 +53,14 @@ export const ASSET_STUDIO_TEMPLATES = Object.freeze([
     directories: ["assets/images/mysterious"],
     extensions: ALPHA_IMAGE_EXTS,
     transparency: "required",
-    prompt: "Mysterious Person room identity artwork for Shadow Live. Keep the avatar center readable. Never bake a real user photo, UID, Public ID, name, level, VIP badge, or mutable account data into the asset.",
+    prompt: "Shadow Live Mysterious Person room identity inspired by the approved reference: anonymous hooded figure, deep violet/purple cloak, dark metallic faceless mask with restrained gold trim and glowing amber eyes, black-violet atmosphere, premium mysterious tone. Keep the avatar center readable and recognizable at 32–48px. No text. Never bake a real user photo, UID, Public ID, name, level, VIP badge, or mutable account data into the asset.",
   }),
   template({
     id: "mysterious.identity_card.v1",
     type: "profile_card",
     labelAr: "بطاقة الشخص الغامض",
     directories: ["assets/images/mysterious"],
-    prompt: "Mysterious Person identity card skin for Shadow Live. The 9-digit mysterious ID, rank, support values and all actions remain dynamic UI layers. Never include real account identity.",
+    prompt: "Shadow Live Mysterious Person identity card skin using the approved black-violet + royal purple + antique-gold visual language. Use subtle ornamental edges and a faint hooded-mask motif only as decoration. Reserve clean dynamic safe zones for the 9-digit mysterious ID, rank, support values and actions. Never include real account identity or baked text.",
   }),
   template({
     id: "mysterious.id_plate.v1",
@@ -70,7 +70,7 @@ export const ASSET_STUDIO_TEMPLATES = Object.freeze([
     extensions: ALPHA_IMAGE_EXTS,
     transparency: "required",
     motion: "static",
-    prompt: "Decorative plate for a dynamic 9-digit Mysterious Person ID. Do not bake any digits, UID, Public ID, name or user-specific text into the artwork.",
+    prompt: "Long compact ID plate in royal purple with antique-gold ornamental border, matching the approved Mysterious Person reference. The center must remain visually quiet for a dynamic 9-digit ID. Do not bake any digits, UID, Public ID, name or user-specific text into the artwork.",
   }),
   template({
     id: "mysterious.badge.v1",
@@ -80,7 +80,7 @@ export const ASSET_STUDIO_TEMPLATES = Object.freeze([
     extensions: ALPHA_IMAGE_EXTS,
     transparency: "required",
     motion: "static_or_animated",
-    prompt: "Small Mysterious Person badge for voice-room surfaces. No real user identity or mutable text.",
+    prompt: "Small readable Mysterious Person badge derived from the approved reference: simplified anonymous mask/hood emblem, dark violet body, gold mask/highlights, transparent background, readable at tiny size. No text, real identity, or mutable data.",
   }),
   template({
     id: "mysterious.entrance.v1",
@@ -89,7 +89,7 @@ export const ASSET_STUDIO_TEMPLATES = Object.freeze([
     directories: ["assets/images/mysterious"],
     extensions: ALPHA_IMAGE_EXTS,
     transparency: "required",
-    prompt: "Animated or static Mysterious Person entrance effect for Shadow Live voice rooms. Keep all names and IDs dynamic and do not reveal the real account.",
+    prompt: "Premium Mysterious Person entrance effect for Shadow Live voice rooms using violet smoke/energy, black shadow, antique-gold sparks and the hooded-mask silhouette from the approved reference. The effect should reveal the anonymous emblem, not a real person. Keep all names and IDs dynamic and do not reveal the real account.",
   }),
   template({
     id: "mysterious.vehicle.v1",
@@ -98,14 +98,14 @@ export const ASSET_STUDIO_TEMPLATES = Object.freeze([
     directories: ["assets/images/mysterious"],
     extensions: ALPHA_IMAGE_EXTS,
     transparency: "required",
-    prompt: "Mysterious Person entrance vehicle cosmetic for Shadow Live. It is presentation-only; never include real user identity or dynamic account data.",
+    prompt: "Presentation-only Mysterious Person entrance vehicle/cosmetic using the same black-violet and antique-gold identity. Treat the hooded-mask emblem as the system signature; avoid unrelated VIP, noble, agency, or real-user symbols. Never include real user identity or dynamic account data.",
   }),
   template({
     id: "mysterious.room_presence_skin.v1",
     type: "profile_card",
     labelAr: "مظهر الشخص الغامض في قائمة الغرفة",
     directories: ["assets/images/mysterious"],
-    prompt: "Room-presence card skin for Mysterious Person. Keep the mysterious 9-digit ID and any rank/support values dynamic. Never include real UID, Public ID, name or photo.",
+    prompt: "Room-presence/ranking skin based on the approved reference ranking screen: tall premium gold banner/shield with subtle geometric texture, crown-safe top area and a centered simplified anonymous mask emblem. This is intentionally distinct from the purple hooded avatar. Keep name, mysterious 9-digit ID, rank, support value and crown number dynamic. Never include real UID, Public ID, name or photo.",
   }),
   template({
     id: "mysterious.voice_option_icon.v1",
@@ -115,7 +115,7 @@ export const ASSET_STUDIO_TEMPLATES = Object.freeze([
     extensions: ALPHA_IMAGE_EXTS,
     transparency: "required",
     motion: "static",
-    prompt: "Small icon for a Mysterious Person voice-changer option. The sound effect remains ZEGO logic; this asset is icon-only and contains no user data.",
+    prompt: "Small circular voice-option icon set matching the approved black-violet/gold Mysterious Person theme. Use one consistent frame system and distinct pictograms per voice (original, child, female, child-2, male, foreigner, robot, ethereal, minions). The sound remains ZEGO logic; icons contain no user data or text.",
   }),
   template({
     id: "frame.base.v1",
