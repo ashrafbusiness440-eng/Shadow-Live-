@@ -22,7 +22,7 @@ test("rocket feed uses stable bounded sharding", () => {
   assert.equal(new Set(ids).size, ROCKET_FEED_SHARD_COUNT);
 });
 
-test("rocket feed payload keeps only banner and claim metadata", () => {
+test("rocket feed payload keeps only banner claim and safe identity metadata", () => {
   const event = normalizeRocketFeedEvent(
     {
       explosionId: "exp-1",
@@ -50,11 +50,29 @@ test("rocket feed payload keeps only banner and claim metadata", () => {
     triggerUid: "u1",
     triggerDisplayName: "Sender",
     triggerProfileImageUrl: "https://example.test/u.webp",
+    triggerMysteriousMode: false,
+    triggerMysteriousId: "",
     contributorIds: ["u1", "u2"],
-    top3: [{ uid: "u1" }, { uid: "u2" }],
+    top3: [
+      {
+        uid: "u1",
+        displayName: "",
+        profileImageUrl: "",
+        mysteriousMode: false,
+        mysteriousId: "",
+      },
+      {
+        uid: "u2",
+        displayName: "",
+        profileImageUrl: "",
+        mysteriousMode: false,
+        mysteriousId: "",
+      },
+    ],
   });
   assert.equal("rewardPool" in event, false);
   assert.equal("contributors" in event, false);
+  assert.equal("coins" in event.top3[0], false);
 });
 
 test("expired rocket feed payloads are rejected", () => {
