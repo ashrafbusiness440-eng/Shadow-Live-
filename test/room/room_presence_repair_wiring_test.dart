@@ -38,7 +38,12 @@ void main() {
     expect(connect.contains('await failedSubscription?.cancel();'), isTrue);
     expect(connect.contains('_scheduleReconnect(roomId, generation);'), isTrue);
     expect(presence.contains('if (isReadyFor(id)) return;'), isTrue);
-    expect(presence.contains('if (_reconnectAttempt >= 3) return;'), isTrue);
+    expect(presence.contains('if (_reconnectAttempt >= _maxReconnectAttempts) return;'), isTrue);
+    expect(presence.contains('static const int _maxReconnectAttempts = 6;'), isTrue);
+    expect(presence.contains("type: 'room.connection_lost'"), isTrue);
+    expect(controller.contains("event.type == 'room.connection_lost'"), isTrue);
+    expect(controller.contains("'presenceDegraded': false"), isTrue);
+    expect(controller.contains("'presenceDegraded': true"), isTrue);
   });
 
   test('terminal ZEGO disconnect reuses exactly one room leave path', () {
