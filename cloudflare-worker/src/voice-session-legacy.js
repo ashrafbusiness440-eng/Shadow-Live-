@@ -3166,7 +3166,7 @@ async function roomPresenceAnnounceJoin(db,uid,roomId){
   return {ok:true,roomId};
 }
 
-async function roomSessionLeave(db,uid,roomId){
+export async function roomSessionLeave(db,uid,roomId){
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
   const roomRef=db.collection("rooms").doc(roomId);
 
