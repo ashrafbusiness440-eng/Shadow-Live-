@@ -1692,6 +1692,30 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
               ),
             ),
           ),
+          if (_roomArguments['presenceDegraded'] == true)
+            IconButton(
+              tooltip: 'إعادة اتصال الموجودين',
+              visualDensity: VisualDensity.compact,
+              onPressed: () {
+                unawaited(() async {
+                  final restored =
+                      await _voiceSession.ensureRoomPresenceReady();
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(restored
+                          ? 'عاد اتصال الغرفة بالموجودين.'
+                          : 'تعذر إعادة الاتصال. تحقق من الإنترنت.'),
+                    ),
+                  );
+                }());
+              },
+              icon: const Icon(
+                Icons.sync_problem_rounded,
+                size: 19,
+                color: Colors.orangeAccent,
+              ),
+            ),
           const SizedBox(width: 8),
           Expanded(
             child: visibleUids.isEmpty
