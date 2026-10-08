@@ -121,7 +121,10 @@ class RoomEffectCoordinator extends ChangeNotifier {
       assetKey: '',
       imageUrl: '',
       durationMs: 2800,
-      recipientUids: const [],
+      recipientUids: [
+        if ((raw['senderUid'] ?? '').toString().trim().isNotEmpty)
+          (raw['senderUid'] ?? '').toString().trim(),
+      ],
       displayName: mysterious
           ? 'الشخص الغامض'
           : (raw['displayName'] ?? 'مستخدم Shadow Live').toString(),
@@ -403,6 +406,10 @@ class RoomEffectCoordinatorHost extends StatelessWidget {
         if (!coordinator.visualEnabled) return const SizedBox.shrink();
         final event = coordinator.currentCinematic;
         final roomJoin = coordinator.currentRoomJoin;
+        final duplicateEntrance = event != null &&
+            roomJoin != null &&
+            event.kind == 'entrance' &&
+            event.recipientUids.any(roomJoin.recipientUids.contains);
         if (event == null && roomJoin == null) {
           return const SizedBox.shrink();
         }
@@ -429,9 +436,11 @@ class RoomEffectCoordinatorHost extends StatelessWidget {
                   alignment: const Alignment(0, -.72),
                   child: _EntranceWelcomeStrip(event: event),
                 ),
-              if (roomJoin != null && event?.kind != 'entrance')
+              if (roomJoin != null && !duplicateEntrance)
                 Align(
-                  alignment: const Alignment(0, -.72),
+                  alignment: event?.kind == 'entrance'
+                      ? const Alignment(0, -.95)
+                      : const Alignment(0, -.72),
                   child: _EntranceWelcomeStrip(event: roomJoin),
                 ),
             ],
