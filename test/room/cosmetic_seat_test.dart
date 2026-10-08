@@ -18,6 +18,8 @@ void main() {
     expect(strip.contains('showMysteriousIdentitySheet('), isTrue);
     expect(strip.contains('FirebaseFirestore'), isFalse);
     expect(strip.contains('Timer.periodic'), isFalse);
+    expect(strip.contains('ProfileAvatarWithFrame('), isFalse);
+    expect(strip.contains('CosmeticAssetVisual('), isTrue);
     expect(source.contains('_buildRoomAudienceStrip(),'), isTrue);
 
     final sheetStart = source.indexOf(
