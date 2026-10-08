@@ -63,7 +63,21 @@ test("user-level support endpoint applies mysterious identity server-side", asyn
     "utf8",
   );
   assert.equal(support.includes("applyMysteriousIdentityPresentation("), true);
-  assert.equal(support.includes("Promise.all("), true);
+  assert.equal(support.includes("db.getMany("), true);
+  assert.equal(support.includes("Promise.all("), false);
   assert.equal(support.includes("MAX_PAGE_SIZE = 20"), true);
   assert.equal(support.includes("MAX_RESULTS = 100"), true);
+});
+
+
+test("firestore helper exposes one bounded batchGet for support enrichment", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const source = await readFile(
+    new URL("../../cloudflare-worker/src/firestore.js", import.meta.url),
+    "utf8",
+  );
+  assert.equal(source.includes("async getMany(paths"), true);
+  assert.equal(source.includes("documents:batchGet"), true);
+  assert.equal(source.includes('readMode: "batch"'), true);
+  assert.equal(source.includes("requested.length > 100"), true);
 });

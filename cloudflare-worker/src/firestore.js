@@ -255,6 +255,16 @@ export function firestoreClient(env) {
           rows.reduce((count, row) => count + (row?.document ? 1 : 0), 0),
         );
       }
+      if (readMode === "batch") {
+        const rows = Array.isArray(body) ? body : [];
+        return Math.max(
+          1,
+          rows.reduce(
+            (count, row) => count + (row?.found || row?.missing ? 1 : 0),
+            0,
+          ),
+        );
+      }
       return 0;
     };
 
@@ -448,6 +458,57 @@ export function firestoreClient(env) {
         data: decodeFields(body.fields || {}),
         updateTime: body.updateTime || null,
       };
+    },
+
+    async getMany(paths, transaction = null) {
+      const requested = Array.isArray(paths)
+        ? paths.map((path) => String(path || "").trim()).filter(Boolean)
+        : [];
+      if (!requested.length) return [];
+      if (requested.length > 100) throw new Error("batch_get_limit_exceeded");
+
+      const { body } = await call(
+        `${root}/documents:batchGet`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            documents: requested.map((path) => documentName(path)),
+            ...(transaction ? { transaction } : {}),
+          }),
+        },
+        {
+          retryTransient: true,
+          operation: "batch_get",
+          readMode: "batch",
+          resource: requested.slice(0, 20).join(","),
+        },
+      );
+
+      const byName = new Map();
+      for (const row of Array.isArray(body) ? body : []) {
+        if (row?.found?.name) {
+          byName.set(row.found.name, {
+            exists: true,
+            data: decodeFields(row.found.fields || {}),
+            updateTime: row.found.updateTime || null,
+          });
+        } else if (row?.missing) {
+          byName.set(row.missing, {
+            exists: false,
+            data: null,
+            updateTime: null,
+          });
+        }
+      }
+
+      return requested.map(
+        (path) =>
+          byName.get(documentName(path)) || {
+            exists: false,
+            data: null,
+            updateTime: null,
+          },
+      );
     },
 
     async commit(transaction, writes) {

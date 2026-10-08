@@ -170,14 +170,9 @@ export async function loadUserLevelSupportPage(
     .map((row) => clean(row.data?.counterpartUid || row.id))
     .filter((id) => UID_PATTERN.test(id));
 
-  // Bounded server-side enrichment: max 20 current user snapshots.
-  const currentUsers = await Promise.all(
-    counterpartUids.map((counterpartUid) =>
-      db.get(`users/${counterpartUid}`).catch(() => ({
-        exists: false,
-        data: null,
-      })),
-    ),
+  // One bounded Firestore batch for the current identity of max 20 rows.
+  const currentUsers = await db.getMany(
+    counterpartUids.map((counterpartUid) => `users/${counterpartUid}`),
   );
   const byUid = new Map();
   counterpartUids.forEach((counterpartUid, index) => {
