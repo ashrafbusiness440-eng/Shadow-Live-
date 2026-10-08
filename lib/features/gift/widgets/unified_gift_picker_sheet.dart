@@ -304,7 +304,11 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
       }
     } on StateError catch (error) {
       if (!mounted) return;
-      final message = switch (error.message.toString()) {
+      final failureCode = error.message.toString().trim();
+      final safeCode = RegExp(r'^[A-Za-z0-9_-]{1,40}$').hasMatch(failureCode)
+          ? failureCode
+          : '';
+      final message = switch (failureCode) {
         'insufficient_balance' => 'رصيد العملات غير كافٍ.',
         'receiver_not_in_room' => 'أحد المستلمين غادر الغرفة.',
         'recipient_not_in_room' => 'أحد المستلمين غادر الغرفة.',
@@ -327,6 +331,14 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
           'حساب المستلم لم يعد متاحاً.',
         'diary_not_found' =>
           'هذه اليومية لم تعد موجودة. حدّث الصفحة وحاول مجدداً.',
+        'gift_connection_timeout' =>
+          'لم يصل رد الخادم. تحقّق من رصيدك قبل إعادة الإرسال.',
+        'gift_network_unavailable' =>
+          'تعذر الاتصال بالخادم. تأكد من الإنترنت وأعد المحاولة.',
+        'not_found' || 'gift_not_found' =>
+          'هذه الهدية غير موجودة في المتجر حاليًا. اختر هدية أخرى.',
+        'room_gifts_disabled' =>
+          'هدايا هذه الغرفة متوقفة من الإعدادات.',
         'conversation_not_found' =>
           'المحادثة لم تعد متاحة.',
         'invalid_diary_receiver' =>
@@ -337,7 +349,9 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
           'انتهت جلسة الدخول. سجّل الدخول من جديد.',
         'server_failed' || 'transaction_failed' =>
           'تعذر إتمام عملية الهدية على الخادم. حاول مرة ثانية.',
-        _ => 'تعذر إرسال الهدية حالياً.',
+        _ => safeCode.isNotEmpty
+            ? 'تعذر إرسال الهدية. رمز السبب: $safeCode'
+            : 'تعذر إرسال الهدية من الخادم. حاول مجددًا.',
       };
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message)),

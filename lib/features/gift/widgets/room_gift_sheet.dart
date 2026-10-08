@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../profile/widgets/profile_avatar_with_frame.dart';
+import '../../mysterious/widgets/mysterious_identity_widgets.dart';
 import '../../room/services/room_presence_service.dart';
 import '../../room/services/room_seat_service.dart';
 import '../services/gift_catalog_service.dart';
@@ -66,7 +67,19 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
   @override
   void initState() {
     super.initState();
-    if (_uid.isNotEmpty) _selectedIds.add(_uid);
+    // Default to the room owner, not silently to gifting yourself.
+    final ownerId = widget.ownerUid.trim();
+    if (ownerId.isNotEmpty && ownerId != _uid) {
+      _selectedIds.add(ownerId);
+    } else {
+      // With two people on mic, choose the other person instead of
+      // silently preselecting the sender's own account.
+      final other = _participants
+          .where((user) => user.uid.isNotEmpty && user.uid != _uid)
+          .map((user) => user.uid)
+          .firstOrNull;
+      if (other != null) _selectedIds.add(other);
+    }
   }
 
   @override
@@ -80,6 +93,18 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
     final items = widget.participants
         .where((item) => item.uid.isNotEmpty && seen.add(item.uid))
         .toList(growable: true);
+    // The seat snapshot is already present in this sheet. Do not hide real
+    // microphone occupants if realtime roster has not arrived yet.
+    for (final seat in widget.seats) {
+      if (!seat.occupied || !seen.add(seat.uid)) continue;
+      items.add(RoomPresenceUser.fromMap(<String, dynamic>{
+        'uid': seat.uid,
+        'displayName': seat.displayName,
+        'profileImageUrl': seat.profileImageUrl,
+        'mysteriousMode': seat.mysteriousMode,
+        'mysteriousId': seat.mysteriousId,
+      }));
+    }
     final ownerUid = widget.ownerUid.trim();
     items.sort((a, b) {
       if (ownerUid.isNotEmpty) {
@@ -163,9 +188,15 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
         ),
       );
     }
+    if (user.mysteriousMode) {
+      // Anonymous identities must never resolve their real profile photo,
+      // even when a seat snapshot arrives before the realtime roster.
+      return MysteriousIdentityAvatar(diameter: diameter);
+    }
     return ProfileAvatarWithFrame(
       diameter: diameter,
       userId: user.uid,
+      snapshotOnly: true,
       backgroundColor: const Color(0xFF25183F),
       placeholderColor: Colors.white70,
       fallbackProfile: <String, dynamic>{
@@ -191,11 +222,16 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
     int quantity,
     bool useGiftBag,
   ) async {
+    // Recover the EXISTING room connection on demand (no new listener).
+    // Even if reconnect is unavailable, send the request and let the
+    // server independently verify sender/recipient live-room presence.
     final ensurePresence = widget.ensurePresence;
     if (ensurePresence != null) {
-      final presenceReady = await ensurePresence();
-      if (!presenceReady) {
-        throw StateError('room_presence_unavailable');
+      try {
+        await ensurePresence();
+      } catch (_) {
+        // Never replace the authoritative gift response with this
+        // non-authoritative local connectivity error.
       }
     }
     final result = await _gifts.send(
