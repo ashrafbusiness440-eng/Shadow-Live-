@@ -229,7 +229,9 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     }
     for (final message in _voiceSession.roomChatMessages.take(8)) {
       final systemKind = (message['systemKind'] ?? '').toString();
-      if (systemKind == 'gift') {
+      if (systemKind == 'room_join') {
+        _roomEffectCoordinator.ingestRoomJoin(message);
+      } else if (systemKind == 'gift') {
         _roomEffectCoordinator.ingestGiftMessage(message);
       } else if (
         systemKind == 'animated_emoji' ||
@@ -502,6 +504,24 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     final hasSeat =
         state?.seats.any((seat) => seat.uid == uid) == true;
     final canSpeak = state?.isOwner == true || hasSeat;
+    final mySeat = state?.seats.where((item) => item.uid == uid);
+    if (!_voiceSession.micMuted &&
+        mySeat != null &&
+        mySeat.isNotEmpty &&
+        mySeat.first.muteLocked) {
+      await _voiceSession.setMicMuted(true);
+      if (mounted) setState(() => _voiceMicMuted = true);
+      return;
+    }
+    if (_voiceSession.micMuted &&
+        mySeat != null &&
+        mySeat.isNotEmpty &&
+        mySeat.first.muteLocked) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('هذا المايك مكتوم من الإدارة.')),
+      );
+      return;
+    }
 
     if (!canSpeak) {
       if (state == null) return;
@@ -516,6 +536,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             .where(
               (seat) =>
                   !seat.occupied &&
+                  !seat.locked &&
                   (!customerService ||
                       state.isHost ||
                       state.canManageMic ||
@@ -789,8 +810,14 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
 
   void _applyRoomSeatSafety(RoomSeatState state) {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    final hasSeat = state.seats.any((seat) => seat.uid == uid);
-    if (!state.isOwner && !hasSeat && !_voiceSession.micMuted && _voiceSession.active) {
+    final ownSeat = state.seats.where((seat) => seat.uid == uid);
+    final hasSeat = ownSeat.isNotEmpty;
+    final serverMuted = hasSeat && ownSeat.first.muted;
+    // Respect the very same acknowledged room seat state. Moderator mute
+    // must silence live audio even before the next socket snapshot arrives.
+    if (((!state.isOwner && !hasSeat) || serverMuted) &&
+        !_voiceSession.micMuted &&
+        _voiceSession.active) {
       unawaited(_voiceSession.setMicMuted(true));
     }
     if (!state.isActive && _voiceSession.active) {
@@ -992,6 +1019,10 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                   ? 'هذا المايك مخصص للإدارة.'
                   : code == 'seat_occupied'
                       ? 'هذا المقعد مستخدم حالياً.'
+                      : code == 'seat_locked'
+                          ? 'هذا المايك مقفل من الإدارة.'
+                          : code == 'seat_mute_locked'
+                              ? 'هذا المايك مكتوم إجباريًا من الإدارة.'
                       : 'تعذر تنفيذ العملية حالياً.';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message)),
@@ -1022,6 +1053,28 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                     roomId: roomId,
                     targetUid: seat.uid,
                     muted: !seat.muted,
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+        actions.add(
+          QuickProfileAction(
+            icon: seat.muteLocked
+                ? Icons.lock_open_rounded
+                : Icons.mic_off_rounded,
+            label: seat.muteLocked
+                ? 'إلغاء الكتم الإجباري للمايك'
+                : 'كتم هذا المايك إجباريًا',
+            color: Colors.orangeAccent,
+            onTap: () {
+              unawaited(
+                _runSeatAction(
+                  () => _roomSeatService.setSeatMuteLocked(
+                    roomId: roomId,
+                    seatIndex: seat.index,
+                    muteLocked: !seat.muteLocked,
                   ),
                 ),
               );
@@ -1083,56 +1136,191 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     );
   }
 
+  Future<void> _selectVacantRoomSeat(
+    VoiceSeat seat,
+    RoomSeatState state,
+  ) async {
+    if (!mounted || _changingSeat) return;
+    final roomId = (_roomArguments['roomId'] ?? '').toString();
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (roomId.isEmpty || uid.isEmpty) return;
+    if (seat.locked) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('هذا المايك مقفل من الإدارة.')),
+      );
+      return;
+    }
+    final hasSeat = state.seats.any((current) => current.uid == uid);
+    if (_isCustomerServiceRoom &&
+        seat.index < 2 &&
+        !state.isHost &&
+        !state.canManageMic) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('هذا المايك مخصص للإدارة.')),
+      );
+      return;
+    }
+
+    if (hasSeat) {
+      await _runSeatAction(
+        () => _roomSeatService.switchSeat(
+          roomId: roomId,
+          seatIndex: seat.index,
+        ),
+      );
+    } else if (state.isOwner ||
+        state.isHost ||
+        state.canManageMic ||
+        state.invited(uid) ||
+        (!_isCustomerServiceRoom && !state.micInviteOnly)) {
+      await _runSeatAction(
+        () => _roomSeatService.takeSeat(
+          roomId: roomId,
+          seatIndex: seat.index,
+        ),
+      );
+    } else if (state.requested(uid)) {
+      await _runSeatAction(
+        () => _roomSeatService.cancelMicRequest(roomId),
+      );
+    } else {
+      await _runSeatAction(
+        () => _roomSeatService.requestMic(roomId),
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم إرسال طلب المايك للإدارة.')),
+        );
+      }
+    }
+  }
+
+  Future<void> _showVacantRoomSeatOptions(VoiceSeat seat) async {
+    final state = _roomSeatState;
+    if (state == null || !mounted) return;
+    final roomId = (_roomArguments['roomId'] ?? '').toString();
+    if (roomId.isEmpty) return;
+    final manage = _canManageMic;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF111522),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'خيارات المايك ${seat.index + 1}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                if (!seat.locked)
+                  ListTile(
+                    leading: const Icon(
+                      Icons.mic_external_on_rounded,
+                      color: Color(0xFFFFD54A),
+                    ),
+                    title: Text(
+                      state.seats.any((item) =>
+                              item.uid ==
+                              (FirebaseAuth.instance.currentUser?.uid ?? ''))
+                          ? 'الانتقال إلى هذا المايك'
+                          : 'الصعود إلى هذا المايك',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      unawaited(_selectVacantRoomSeat(seat, state));
+                    },
+                  )
+                else
+                  const ListTile(
+                    leading: Icon(Icons.lock_rounded, color: Colors.orangeAccent),
+                    title: Text(
+                      'هذا المايك مقفل من الإدارة',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                  ),
+                if (manage) ...[
+                  const Divider(height: 1, color: Colors.white12),
+                  ListTile(
+                    leading: Icon(
+                      seat.locked
+                          ? Icons.lock_open_rounded
+                          : Icons.lock_rounded,
+                      color: const Color(0xFFFFD54A),
+                    ),
+                    title: Text(
+                      seat.locked ? 'فتح قفل المايك' : 'قفل المايك',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      unawaited(_runSeatAction(
+                        () => _roomSeatService.setSeatLocked(
+                          roomId: roomId,
+                          seatIndex: seat.index,
+                          locked: !seat.locked,
+                        ),
+                      ));
+                    },
+                  ),
+                  ListTile(
+                    leading: Icon(
+                      seat.muteLocked
+                          ? Icons.mic_rounded
+                          : Icons.mic_off_rounded,
+                      color: Colors.orangeAccent,
+                    ),
+                    title: Text(
+                      seat.muteLocked
+                          ? 'إلغاء الكتم الإجباري للمايك'
+                          : 'كتم المايك إجباريًا',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    subtitle: const Text(
+                      'لا يستطيع الجالس فتح الصوت حتى تفك الإدارة الكتم.',
+                      style: TextStyle(color: Colors.white54, fontSize: 11),
+                    ),
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      unawaited(_runSeatAction(
+                        () => _roomSeatService.setSeatMuteLocked(
+                          roomId: roomId,
+                          seatIndex: seat.index,
+                          muteLocked: !seat.muteLocked,
+                        ),
+                      ));
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _handleSeatTap(VoiceSeat seat) async {
     final roomId = (_roomArguments['roomId'] ?? '').toString();
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     final state = _roomSeatState;
     if (roomId.isEmpty || uid.isEmpty || state == null) return;
-    final hasSeat = state.seats.any((current) => current.uid == uid);
 
     if (!seat.occupied) {
-      if (_isCustomerServiceRoom &&
-          seat.index < 2 &&
-          !state.isHost &&
-          !state.canManageMic) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('هذا المايك مخصص للإدارة.')),
-        );
-        return;
-      }
-
-      if (hasSeat) {
-        await _runSeatAction(
-          () => _roomSeatService.switchSeat(
-            roomId: roomId,
-            seatIndex: seat.index,
-          ),
-        );
-      } else if (state.isOwner ||
-          state.isHost ||
-          state.canManageMic ||
-          state.invited(uid) ||
-          (!_isCustomerServiceRoom && !state.micInviteOnly)) {
-        await _runSeatAction(
-          () => _roomSeatService.takeSeat(
-            roomId: roomId,
-            seatIndex: seat.index,
-          ),
-        );
-      } else if (state.requested(uid)) {
-        await _runSeatAction(
-          () => _roomSeatService.cancelMicRequest(roomId),
-        );
-      } else {
-        await _runSeatAction(
-          () => _roomSeatService.requestMic(roomId),
-        );
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('تم إرسال طلب المايك للإدارة.')),
-          );
-        }
-      }
+      await _showVacantRoomSeatOptions(seat);
       return;
     }
 
@@ -1432,21 +1620,44 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     );
   }
 
-  int get _roomAudienceTotalCount => max(
-        (_roomArguments['onlineCount'] as num?)?.toInt() ?? 0,
-        _voiceSession.roomParticipants.length,
-      );
+  int get _roomAudienceTotalCount {
+    // One unique set from the EXISTING live presence + current mic snapshot.
+    // This also handles the short delay before socket presence becomes ready.
+    final activeUids = <String>{
+      for (final user in _voiceSession.roomParticipants)
+        if (user.uid.isNotEmpty) user.uid,
+      for (final seat in _roomSeatState?.seats ?? const <VoiceSeat>[])
+        if (seat.occupied) seat.uid,
+    };
+    final reported = (_roomArguments['onlineCount'] as num?)?.toInt() ?? 0;
+    return max(reported, activeUids.length);
+  }
 
   Widget _buildRoomAudienceStrip() {
-    // Reuse the same room presence snapshot, without a second listener.
-    final seatedUids = (_roomSeatState?.seats ?? const <VoiceSeat>[])
-        .where((seat) => seat.occupied)
-        .map((seat) => seat.uid)
-        .toSet();
-    final listeners = _voiceSession.roomParticipants
-        .where((user) => !seatedUids.contains(user.uid))
-        .take(20)
-        .toList(growable: false);
+    // Reuse the existing owner profile and the SAME realtime participant
+    // snapshot; do not create a second listener for the audience bar.
+    final ownerUid = (_roomArguments['ownerUid'] ??
+            _roomArguments['ownerId'] ??
+            _roomArguments['hostId'] ??
+            '')
+        .toString()
+        .trim();
+    final participants = _voiceSession.roomParticipants;
+    final profileByUid = {
+      for (final user in participants) user.uid: user,
+    };
+    final seatByUid = {
+      for (final seat in _roomSeatState?.seats ?? const <VoiceSeat>[])
+        if (seat.occupied) seat.uid: seat,
+    };
+    // Show BOTH people on microphones and listeners. A seat snapshot may
+    // arrive before the websocket roster, so never hide its occupied UIDs.
+    final visibleUids = <String>[
+      if (ownerUid.isNotEmpty) ownerUid,
+      ...seatByUid.keys.where((uid) => uid != ownerUid),
+      ...profileByUid.keys.where((uid) =>
+          uid != ownerUid && !seatByUid.containsKey(uid)),
+    ].take(20).toList(growable: false);
     final total = _roomAudienceTotalCount;
 
     return SizedBox(
@@ -1483,78 +1694,132 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
               ),
             ),
           ),
+          if (_roomArguments['presenceDegraded'] == true)
+            IconButton(
+              tooltip: 'إعادة اتصال الموجودين',
+              visualDensity: VisualDensity.compact,
+              onPressed: () {
+                unawaited(() async {
+                  final restored =
+                      await _voiceSession.ensureRoomPresenceReady();
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(restored
+                          ? 'عاد اتصال الغرفة بالموجودين.'
+                          : 'تعذر إعادة الاتصال. تحقق من الإنترنت.'),
+                    ),
+                  );
+                }());
+              },
+              icon: const Icon(
+                Icons.sync_problem_rounded,
+                size: 19,
+                color: Colors.orangeAccent,
+              ),
+            ),
           const SizedBox(width: 8),
           Expanded(
-            child: listeners.isEmpty
+            child: visibleUids.isEmpty
                 ? const Align(
                     alignment: Alignment.centerRight,
-                    child: Text('لا يوجد مستمعون خارج المايكات',
+                    child: Text('الموجودون حاليًا على المايكات فقط',
                         style: TextStyle(
                             color: Colors.white54, fontSize: 10)),
                   )
                 : ListView.separated(
                     key: const Key('room-audience-strip'),
                     scrollDirection: Axis.horizontal,
-                    itemCount: listeners.length,
+                    itemCount: visibleUids.length,
                     separatorBuilder: (_, __) => const SizedBox(width: 7),
                     itemBuilder: (context, index) {
-                      final user = listeners[index];
+                      final profileUid = visibleUids[index];
+                      final isOwnerTile = profileUid == ownerUid;
+                      final user = profileByUid[profileUid];
+                      final seat = seatByUid[profileUid];
+                      final isMysterious = user?.mysteriousMode == true ||
+                          seat?.mysteriousMode == true;
+                      final mysteriousId =
+                          user?.mysteriousId.isNotEmpty == true
+                              ? user!.mysteriousId
+                              : (seat?.mysteriousId ?? '');
+                      final profileImage = isMysterious
+                          ? ''
+                          : user?.profileImageUrl.isNotEmpty == true
+                              ? user!.profileImageUrl
+                              : seat?.profileImageUrl.isNotEmpty == true
+                                  ? seat!.profileImageUrl
+                                  : isOwnerTile ? _ownerPhotoUrl : '';
+                      final frameAssetKey =
+                          user?.activeProfileFrameAssetKey ?? '';
+                      final frameImageUrl =
+                          user?.activeProfileFrameImageUrl ?? '';
+                      final frameValid = user != null &&
+                          frameAssetKey.isNotEmpty &&
+                          (user.activeProfileFramePermanent ||
+                              user.activeProfileFrameExpiresAtMs <= 0 ||
+                              user.activeProfileFrameExpiresAtMs >
+                                  DateTime.now().millisecondsSinceEpoch);
+
                       return InkWell(
                         onTap: () {
-                          if (user.mysteriousMode) {
+                          if (isMysterious) {
                             showMysteriousIdentitySheet(
                               context,
-                              mysteriousId: user.mysteriousId,
+                              mysteriousId: mysteriousId,
                             );
                           } else {
                             showQuickProfileSheet(
                               context,
-                              userId: user.uid,
+                              userId: profileUid,
                             );
                           }
                         },
                         borderRadius: BorderRadius.circular(99),
                         child: Center(
-                          child: user.mysteriousMode
-                              ? const MysteriousIdentityAvatar(diameter: 38)
-                              : Stack(
-                                  alignment: Alignment.center,
-                                  clipBehavior: Clip.none,
-                                  children: [
-                                    CircleAvatar(
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            alignment: Alignment.center,
+                            children: [
+                              isMysterious
+                                  ? const MysteriousIdentityAvatar(diameter: 38)
+                                  : CircleAvatar(
                                       radius: 19,
                                       backgroundColor: const Color(0xFF25183F),
-                                      backgroundImage:
-                                          user.profileImageUrl.isEmpty
-                                              ? null
-                                              : NetworkImage(
-                                                  user.profileImageUrl),
-                                      child: user.profileImageUrl.isEmpty
+                                      backgroundImage: profileImage.isEmpty
+                                          ? null
+                                          : NetworkImage(profileImage),
+                                      child: profileImage.isEmpty
                                           ? const Icon(Icons.person_rounded,
                                               color: Colors.white70, size: 18)
                                           : null,
                                     ),
-                                    if (user.activeProfileFrameAssetKey.isNotEmpty &&
-                                        (user.activeProfileFramePermanent ||
-                                            user.activeProfileFrameExpiresAtMs <= 0 ||
-                                            user.activeProfileFrameExpiresAtMs >
-                                                DateTime.now()
-                                                    .millisecondsSinceEpoch))
-                                      Positioned(
-                                        left: -5,
-                                        top: -5,
-                                        child: IgnorePointer(
-                                          child: SizedBox.square(
-                                            dimension: 48,
-                                            child: CosmeticAssetVisual(
-                                              assetKey: user.activeProfileFrameAssetKey,
-                                              imageUrl: user.activeProfileFrameImageUrl,
-                                            ),
-                                          ),
-                                        ),
+                              if (!isMysterious && frameValid)
+                                Positioned(
+                                  left: -5,
+                                  top: -5,
+                                  child: IgnorePointer(
+                                    child: SizedBox.square(
+                                      dimension: 48,
+                                      child: CosmeticAssetVisual(
+                                        assetKey: frameAssetKey,
+                                        imageUrl: frameImageUrl,
                                       ),
-                                  ],
+                                    ),
+                                  ),
                                 ),
+                              if (isOwnerTile)
+                                const Positioned(
+                                  right: -3,
+                                  bottom: -3,
+                                  child: Icon(
+                                    Icons.star_rounded,
+                                    size: 16,
+                                    color: Color(0xFFFFD54A),
+                                  ),
+                                ),
+                            ],
+                          ),
                         ),
                       );
                     },
@@ -2239,16 +2504,24 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                     )
                                   : null)
                               : Icon(
-                                  _isCustomerServiceRoom
-                                      ? (seat.index < 2
-                                          ? Icons.admin_panel_settings_rounded
-                                          : Icons.lock_open_rounded)
-                                      : Icons.add_rounded,
+                                  seat.locked
+                                      ? Icons.lock_rounded
+                                      : seat.muteLocked
+                                          ? Icons.mic_off_rounded
+                                          : _isCustomerServiceRoom
+                                              ? (seat.index < 2
+                                                  ? Icons.admin_panel_settings_rounded
+                                                  : Icons.lock_open_rounded)
+                                              : Icons.add_rounded,
                                   size: compact ? 19 : 24,
-                                  color: _isCustomerServiceRoom &&
-                                          seat.index < 2
-                                      ? const Color(0xFFFFD54A)
-                                      : Colors.white38,
+                                  color: seat.locked
+                                      ? Colors.orangeAccent
+                                      : seat.muteLocked
+                                          ? const Color(0xFFFFD54A)
+                                          : _isCustomerServiceRoom &&
+                                                  seat.index < 2
+                                              ? const Color(0xFFFFD54A)
+                                              : Colors.white38,
                                 ),
                         ),
                   if (seat.frameActive && !seat.mysteriousMode)
@@ -2284,8 +2557,10 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                           ),
                         ),
                         child: Icon(
-                          seat.muted
-                              ? Icons.mic_off_rounded
+                          seat.muteLocked
+                              ? Icons.lock_rounded
+                              : seat.muted
+                                  ? Icons.mic_off_rounded
                               : Icons.mic_rounded,
                           size: compact ? 9 : 11,
                           color: Colors.white,
@@ -2298,7 +2573,11 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
               Text(
                 seat.occupied
                     ? (seat.displayName.isEmpty ? 'متحدث' : seat.displayName)
-                    : _isCustomerServiceRoom
+                    : seat.locked
+                        ? 'مايك مقفل'
+                        : seat.muteLocked
+                            ? 'مايك مكتوم'
+                            : _isCustomerServiceRoom
                         ? (seat.index < 2
                             ? 'إدارة ' + (seat.index + 1).toString()
                             : 'دعوة ' + (seat.index - 1).toString())
@@ -6317,34 +6596,21 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         top: feedTop,
                         bottom: 57,
                         child: DraggableScrollableSheet(
-                          initialChildSize: .56,
-                          minChildSize: .22,
+                          // Display messages directly on the room background.
+                          // Dragging is still possible without an opaque panel.
+                          initialChildSize: 1,
+                          minChildSize: .56,
                           maxChildSize: 1,
                           snap: true,
-                          snapSizes: const [.22, .56, 1],
+                          snapSizes: const [.56, 1],
                           builder: (context, scrollController) => Container(
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF090C13)
-                                  .withValues(alpha: .94),
-                              borderRadius: const BorderRadius.vertical(
-                                top: Radius.circular(22),
-                              ),
-                              border: Border.all(color: Colors.white10),
-                            ),
+                            // No black sheet covering the voice-room background.
+                            color: Colors.transparent,
                             child: Stack(
                               children: [
                                 Column(
                                   children: [
-                                    const SizedBox(height: 7),
-                                Container(
-                                  width: 42,
-                                  height: 4,
-                                  decoration: BoxDecoration(
-                                    color: Colors.white24,
-                                    borderRadius: BorderRadius.circular(99),
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
+                                    const SizedBox(height: 3),
                                 Expanded(
                                   child: const bool.fromEnvironment('E2E_ROOM_TEST')
                                       ? ListView(

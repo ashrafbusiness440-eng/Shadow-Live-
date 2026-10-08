@@ -590,6 +590,7 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
               builder: (context, _) {
                 final messages = _session.roomChatMessages
                     .map(RoomChatMessage.fromMap)
+                    .where((message) => message.systemKind != 'room_join')
                     .toList(growable: false);
                 if (messages.isNotEmpty) {
                   final latest = messages.first;
@@ -1270,6 +1271,7 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
       builder: (context, _) {
         final messages = _session.roomChatMessages
             .map(RoomChatMessage.fromMap)
+            .where((message) => message.systemKind != 'room_join')
             .toList(growable: false);
         if (messages.isNotEmpty) {
           final latest = messages.first;

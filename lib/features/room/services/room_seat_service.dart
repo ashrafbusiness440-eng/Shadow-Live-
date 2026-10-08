@@ -11,6 +11,8 @@ class VoiceSeat {
     required this.displayName,
     required this.profileImageUrl,
     required this.muted,
+    this.locked = false,
+    this.muteLocked = false,
     this.starBattleCoins = 0,
     this.frameRewardId = '',
     this.frameAssetKey = '',
@@ -29,6 +31,8 @@ class VoiceSeat {
   final String displayName;
   final String profileImageUrl;
   final bool muted;
+  final bool locked;
+  final bool muteLocked;
   final int starBattleCoins;
   final String frameRewardId;
   final String frameAssetKey;
@@ -55,6 +59,8 @@ class VoiceSeat {
         displayName: (json['displayName'] ?? '').toString(),
         profileImageUrl: (json['profileImageUrl'] ?? '').toString(),
         muted: json['muted'] != false,
+        locked: json['locked'] == true,
+        muteLocked: json['muteLocked'] == true,
         starBattleCoins: (json['starBattleCoins'] as num?)?.toInt() ?? 0,
         frameRewardId: (json['frameRewardId'] ?? '').toString(),
         frameAssetKey: (json['frameAssetKey'] ?? '').toString(),
@@ -404,6 +410,28 @@ class RoomSeatService {
       _action(
         roomId: roomId,
         seatAction: 'switchSeat',
+        seatIndex: seatIndex,
+      );
+
+  Future<RoomSeatState> setSeatLocked({
+    required String roomId,
+    required int seatIndex,
+    required bool locked,
+  }) =>
+      _action(
+        roomId: roomId,
+        seatAction: locked ? 'lockSeat' : 'unlockSeat',
+        seatIndex: seatIndex,
+      );
+
+  Future<RoomSeatState> setSeatMuteLocked({
+    required String roomId,
+    required int seatIndex,
+    required bool muteLocked,
+  }) =>
+      _action(
+        roomId: roomId,
+        seatAction: muteLocked ? 'muteLockSeat' : 'unmuteLockSeat',
         seatIndex: seatIndex,
       );
 

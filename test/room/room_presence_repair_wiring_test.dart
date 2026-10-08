@@ -23,6 +23,9 @@ void main() {
     final presence = File(
       'lib/features/room/services/room_presence_service.dart',
     ).readAsStringSync();
+    final controller = File(
+      'lib/features/voice/services/voice_room_session_controller.dart',
+    ).readAsStringSync();
 
     final connectStart = presence.indexOf('Future<void> _connect(');
     final joinStart = presence.indexOf('Future<void> join(', connectStart);
@@ -38,7 +41,12 @@ void main() {
     expect(connect.contains('await failedSubscription?.cancel();'), isTrue);
     expect(connect.contains('_scheduleReconnect(roomId, generation);'), isTrue);
     expect(presence.contains('if (isReadyFor(id)) return;'), isTrue);
-    expect(presence.contains('if (_reconnectAttempt >= 3) return;'), isTrue);
+    expect(presence.contains('if (_reconnectAttempt >= _maxReconnectAttempts) return;'), isTrue);
+    expect(presence.contains('static const int _maxReconnectAttempts = 6;'), isTrue);
+    expect(presence.contains("type: 'room.connection_lost'"), isTrue);
+    expect(controller.contains("event.type == 'room.connection_lost'"), isTrue);
+    expect(controller.contains("'presenceDegraded': false"), isTrue);
+    expect(controller.contains("'presenceDegraded': true"), isTrue);
   });
 
   test('terminal ZEGO disconnect reuses exactly one room leave path', () {
@@ -158,8 +166,8 @@ void main() {
     expect(sheet.contains('Future<bool> Function()? ensurePresence'), isTrue);
     expect(sheet.contains('final ensurePresence = widget.ensurePresence;'), isTrue);
     expect(sheet.contains('await ensurePresence();'), isTrue);
-    // The one-shot reconnect may fail locally, but the server has final
-    // authority over presence when handling the actual gift transaction.
+    // Reuse the existing connection on demand; the backend alone
+    // decides whether the sender may gift within this room.
     expect(sheet.contains("StateError('room_presence_unavailable')"), isFalse);
     expect(sheet.contains('final result = await _gifts.send('), isTrue);
     expect(main.contains('_voiceSession.ensureRoomPresenceReady'), isTrue);
