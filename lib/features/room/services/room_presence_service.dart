@@ -102,6 +102,7 @@ class RoomPresenceService {
   String _desiredRoomId = '';
   int _generation = 0;
   int _reconnectAttempt = 0;
+  static const int _maxReconnectAttempts = 6;
   Completer<void>? _readyCompleter;
   String _readyRoomId = '';
 
@@ -326,7 +327,7 @@ class RoomPresenceService {
   void _scheduleReconnect(String roomId, int generation) {
     if (_desiredRoomId != roomId || generation != _generation) return;
     if (_reconnectTimer?.isActive == true) return;
-    if (_reconnectAttempt >= 3) return;
+    if (_reconnectAttempt >= _maxReconnectAttempts) return;
 
     final delaySeconds = 1 << _reconnectAttempt;
     _reconnectAttempt += 1;
@@ -349,6 +350,7 @@ class RoomPresenceService {
   ) {
     if (generation != _generation || _desiredRoomId != roomId) return;
     if (!identical(_socket, connection)) return;
+    final wasReady = _readyRoomId == roomId;
     _socket = null;
     _socketSubscription = null;
     _readyRoomId = '';
@@ -358,6 +360,14 @@ class RoomPresenceService {
     }
     _readyCompleter = null;
     _failPendingChat('room_realtime_disconnected');
+    if (wasReady && !_eventsController.isClosed) {
+      _eventsController.add(RoomRealtimeEvent(
+        type: 'room.connection_lost',
+        payload: <String, dynamic>{'roomId': roomId},
+        serverTimeMs: DateTime.now().millisecondsSinceEpoch,
+      ));
+    }
+    // Bounded event-driven reconnect, not polling or a new listener.
     _scheduleReconnect(roomId, generation);
   }
 
