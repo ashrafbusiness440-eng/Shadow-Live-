@@ -17,6 +17,19 @@ void main() {
     expect(source.contains("Timer.periodic"), isFalse);
   });
 
+  test('recipient avatars use existing snapshot without N profile subscriptions', () {
+    final picker = File(
+      'lib/features/gift/widgets/room_gift_sheet.dart',
+    ).readAsStringSync();
+    final avatar = File(
+      'lib/features/profile/widgets/profile_avatar_with_frame.dart',
+    ).readAsStringSync();
+    expect(picker.contains('userId: user.uid,\n      snapshotOnly: true,'), isTrue);
+    expect(avatar.contains('if (widget.snapshotOnly) return _render(fallback);'),
+        isTrue);
+    expect(avatar.contains('if (widget.snapshotOnly) return;'), isTrue);
+  });
+
   test('direct diary gifting reports connection and backend cause', () {
     final direct = File(
       'lib/features/gift/widgets/direct_gift_sheet.dart',
