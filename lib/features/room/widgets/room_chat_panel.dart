@@ -13,6 +13,7 @@ import '../../profile/screens/user_level_screen.dart';
 import '../../profile/widgets/quick_profile_sheet.dart';
 import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../../profile/widgets/user_level_badges.dart';
+import '../../mysterious/widgets/mysterious_identity_widgets.dart';
 import '../../vip/widgets/vip_avatar_frame.dart';
 import 'cosmetic_effect_widgets.dart';
 import '../../vip/utils/vip_cosmetic_policy.dart';
@@ -281,9 +282,8 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
     }
 
     if (message.type == 'system') {
-      final vipEntry = widget.roomEffectsEnabled &&
+      final roomEntry = widget.roomEffectsEnabled &&
           message.systemKind == 'room_join' &&
-          message.vipLevel >= 8 &&
           message.entryEffectKey.trim().isNotEmpty;
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
@@ -300,7 +300,7 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
               child: Stack(
                 alignment: Alignment.center,
                 children: [
-                  if (vipEntry)
+                  if (roomEntry)
                     Positioned.fill(
                       child: IgnorePointer(
                         child: CosmeticAssetVisual(
@@ -311,11 +311,11 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
                     ),
                   Container(
                     padding: EdgeInsets.symmetric(
-                      horizontal: vipEntry ? 14 : 10,
-                      vertical: vipEntry ? 7 : 5,
+                      horizontal: roomEntry ? 14 : 10,
+                      vertical: roomEntry ? 7 : 5,
                     ),
                     decoration: BoxDecoration(
-                      gradient: vipEntry
+                      gradient: roomEntry
                           ? LinearGradient(
                               colors: [
                                 Colors.black.withValues(alpha: .18),
@@ -324,11 +324,11 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
                               ],
                             )
                           : null,
-                      color: vipEntry
+                      color: roomEntry
                           ? null
                           : Colors.white.withValues(alpha: .05),
                       borderRadius: BorderRadius.circular(999),
-                      border: vipEntry
+                      border: roomEntry
                           ? Border.all(
                               color: const Color(0xFFFFD54A)
                                   .withValues(alpha: .55),
@@ -338,7 +338,7 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (vipEntry) ...[
+                        if (roomEntry) ...[
                           const Icon(
                             Icons.workspace_premium_rounded,
                             color: Color(0xFFFFE08A),
@@ -352,9 +352,9 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               color:
-                                  vipEntry ? Colors.white : Colors.white54,
-                              fontSize: vipEntry ? 11 : 10,
-                              fontWeight: vipEntry
+                                  roomEntry ? Colors.white : Colors.white54,
+                              fontSize: roomEntry ? 11 : 10,
+                              fontWeight: roomEntry
                                   ? FontWeight.w800
                                   : FontWeight.w400,
                             ),
@@ -793,12 +793,30 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
   Future<void> _openChatQuickProfile(RoomChatMessage message) async {
+    if (message.mysteriousMode) {
+      await showMysteriousIdentitySheet(
+        context,
+        mysteriousId: message.mysteriousId.isNotEmpty
+            ? message.mysteriousId
+            : message.publicId,
+      );
+      return;
+    }
     final uid = message.senderUid.trim();
     if (uid.isEmpty) return;
     await showQuickProfileSheet(context, userId: uid);
   }
 
   void _openChatLevel(RoomChatMessage message, int tabIndex) {
+    if (message.mysteriousMode) {
+      showMysteriousIdentitySheet(
+        context,
+        mysteriousId: message.mysteriousId.isNotEmpty
+            ? message.mysteriousId
+            : message.publicId,
+      );
+      return;
+    }
     final uid = message.senderUid.trim();
     if (uid.isEmpty) return;
     Navigator.of(context).push(
@@ -918,6 +936,8 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
         'wealthLevel': message.wealthLevel,
         'attractionLevel': message.attractionLevel,
         'gameLevel': message.gameLevel,
+        'mysteriousMode': message.mysteriousMode,
+        'mysteriousId': message.mysteriousId,
         'text': message.text,
         'mentionUids': message.mentionUids,
         'replyTo': message.replyTo,
@@ -1018,9 +1038,9 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
     final isGift =
         message.type == 'gift' || message.systemKind.contains('gift');
     if (isSystem || isGift) {
-      final vipEntry = widget.roomEffectsEnabled &&
+      final roomEntry = widget.roomEffectsEnabled &&
           message.systemKind == 'room_join' &&
-          message.vipLevel > 0;
+          message.entryEffectKey.trim().isNotEmpty;
       final activity = Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Align(
@@ -1028,13 +1048,13 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
           child: VipCosmeticSurface(
             assetKey: isGift
                 ? VipCosmeticPolicy.giftVisualKey(message.vipLevel)
-                : '',
+                : (roomEntry ? message.entryEffectKey : ''),
             borderRadius: BorderRadius.circular(12),
             assetOpacity: .28,
             fallbackDecoration: BoxDecoration(
               color: isGift
                   ? const Color(0xFFFFD54A).withValues(alpha: .12)
-                  : vipEntry
+                  : roomEntry
                       ? const Color(0xFF8A3DFF).withValues(alpha: .18)
                       : Colors.white.withValues(alpha: .04),
               border: Border.all(
@@ -1051,7 +1071,7 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
                 Icon(
                   isGift
                       ? Icons.card_giftcard_rounded
-                      : vipEntry
+                      : roomEntry
                           ? Icons.auto_awesome_rounded
                           : Icons.login_rounded,
                   size: 14,
@@ -1101,24 +1121,26 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
               InkWell(
                 onTap: () => _openChatQuickProfile(message),
                 customBorder: const CircleBorder(),
-                child: ProfileAvatarWithFrame(
-                  diameter: 32,
-                  userId: message.senderUid,
-                  fallbackProfile: <String, dynamic>{
-                    'profileImageUrl': message.profileImageUrl,
-                    'activeProfileFrameAssetKey':
-                        message.activeProfileFrameAssetKey,
-                    'activeProfileFrameImageUrl':
-                        message.activeProfileFrameImageUrl,
-                    'activeProfileFrameExpiresAtMs':
-                        message.activeProfileFrameExpiresAtMs,
-                    'activeProfileFramePermanent':
-                        message.activeProfileFramePermanent,
-                  },
-                  fallbackIsVisualSnapshot: true,
-                  vipLevel: message.vipLevel,
-                  useVipFallback: true,
-                ),
+                child: message.mysteriousMode
+                    ? const MysteriousIdentityAvatar(diameter: 32)
+                    : ProfileAvatarWithFrame(
+                        diameter: 32,
+                        userId: message.senderUid,
+                        fallbackProfile: <String, dynamic>{
+                          'profileImageUrl': message.profileImageUrl,
+                          'activeProfileFrameAssetKey':
+                              message.activeProfileFrameAssetKey,
+                          'activeProfileFrameImageUrl':
+                              message.activeProfileFrameImageUrl,
+                          'activeProfileFrameExpiresAtMs':
+                              message.activeProfileFrameExpiresAtMs,
+                          'activeProfileFramePermanent':
+                              message.activeProfileFramePermanent,
+                        },
+                        fallbackIsVisualSnapshot: true,
+                        vipLevel: message.vipLevel,
+                        useVipFallback: true,
+                      ),
               ),
               const SizedBox(width: 8),
               Flexible(
@@ -1146,7 +1168,8 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
                             ),
                           ),
                         ),
-                        if (VipCosmeticPolicy.nameEffectKey(
+                        if (!message.mysteriousMode &&
+                            VipCosmeticPolicy.nameEffectKey(
                               message.vipLevel,
                             ).isNotEmpty) ...[
                           const SizedBox(width: 4),
@@ -1160,7 +1183,8 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
                             ),
                           ),
                         ],
-                        if (message.vipLevel > 0) ...[
+                        if (!message.mysteriousMode &&
+                            message.vipLevel > 0) ...[
                           const SizedBox(width: 5),
                           VipInlineBadge(
                             vipLevel: message.vipLevel,
@@ -1169,9 +1193,10 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
                         ],
                       ],
                     ),
-                    if (message.wealthLevel > 0 ||
-                        message.attractionLevel > 0 ||
-                        message.gameLevel > 0) ...[
+                    if (!message.mysteriousMode &&
+                        (message.wealthLevel > 0 ||
+                            message.attractionLevel > 0 ||
+                            message.gameLevel > 0)) ...[
                       const SizedBox(height: 4),
                       UserLevelBadges.fromLevels(
                         wealthLevel: message.wealthLevel,
@@ -1254,7 +1279,8 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
           } else if (latest.id != _lastEffectMessageId) {
             _lastEffectMessageId = latest.id;
             final shouldPlayEffectSound = widget.effectSoundEnabled &&
-                ((latest.systemKind == 'room_join' && latest.vipLevel > 0) ||
+                ((latest.systemKind == 'room_join' &&
+                        latest.entryEffectKey.trim().isNotEmpty) ||
                     latest.systemKind.contains('gift'));
             if (shouldPlayEffectSound) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
