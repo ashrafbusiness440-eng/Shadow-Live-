@@ -3867,8 +3867,10 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                     tags: tags,
                                     visibility: visibility,
                                     chatEnabled: chatEnabled,
-                                    coverImageUrl: nextCoverImageUrl,
-                                    coverImageObjectId: nextCoverObjectId,
+                                    coverImageUrl:
+                                        isAgencyRoom ? '' : nextCoverImageUrl,
+                                    coverImageObjectId:
+                                        isAgencyRoom ? null : nextCoverObjectId,
                                     password:
                                         passwordController.text.isEmpty
                                             ? null
@@ -3962,6 +3964,47 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                       'room_password_required') {
                                     message =
                                         'أدخل كلمة مرور للغرفة.';
+                                  } else if (error.message == 'forbidden') {
+                                    message =
+                                        'لا تملك صلاحية تعديل إعدادات هذه الغرفة.';
+                                  } else if (error.message ==
+                                      'invalid_room_name') {
+                                    message =
+                                        'اسم الغرفة يجب أن يكون بين حرفين و60 حرفاً.';
+                                  } else if (error.message ==
+                                      'invalid_room_description') {
+                                    message =
+                                        'وصف الغرفة أطول من الحد المسموح.';
+                                  } else if (error.message ==
+                                      'invalid_room_category') {
+                                    message =
+                                        'تصنيف الغرفة غير صالح.';
+                                  } else if (error.message ==
+                                      'invalid_room_tags') {
+                                    message =
+                                        'أحد وسوم الغرفة أطول من الحد المسموح.';
+                                  } else if (error.message ==
+                                          'invalid_room_image' ||
+                                      error.message ==
+                                          'invalid_room_image_object' ||
+                                      error.message ==
+                                          'room_image_object_not_found' ||
+                                      error.message ==
+                                          'room_image_object_mismatch') {
+                                    message =
+                                        'صورة الغرفة غير متوافقة مع نوع الغرفة. أعد اختيار الصورة وحاول مجدداً.';
+                                  } else if (error.message ==
+                                      'room_not_found') {
+                                    message =
+                                        'الغرفة غير موجودة أو لم تعد متاحة.';
+                                  } else if (error.message ==
+                                          'unauthorized' ||
+                                      error.message ==
+                                          'not_signed_in' ||
+                                      error.message ==
+                                          'session_revoked') {
+                                    message =
+                                        'انتهت جلسة الدخول. سجّل الدخول من جديد.';
                                   }
                                   ScaffoldMessenger.of(sheetContext)
                                       .showSnackBar(
