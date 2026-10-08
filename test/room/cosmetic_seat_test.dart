@@ -11,6 +11,9 @@ void main() {
     expect(end, greaterThan(start));
     final strip = source.substring(start, end);
     expect(strip.contains('_voiceSession.roomParticipants'), isTrue);
+    expect(source.contains('int get _roomAudienceTotalCount => max('), isTrue);
+    expect(strip.contains('final total = _roomAudienceTotalCount;'), isTrue);
+    expect(source.contains('_roomAudienceTotalCount.toString(),'), isTrue);
     expect(strip.contains('!seatedUids.contains(user.uid)'), isTrue);
     expect(strip.contains('.take(20)'), isTrue);
     expect(strip.contains("Key('room-audience-count')"), isTrue);
