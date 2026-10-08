@@ -4,6 +4,8 @@ import '../../../core/assets/shadow_asset_registry.dart';
 import '../../../utils/compact_number.dart';
 import '../services/user_level_service.dart';
 import '../widgets/level_asset_image.dart';
+import '../widgets/quick_profile_sheet.dart';
+import '../../mysterious/widgets/mysterious_identity_widgets.dart';
 
 typedef UpdateUserLevelVisibility = Future<UserLevelVisibility> Function({
   required bool hideWealthLevel,
@@ -213,9 +215,21 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
                 currentSlice: _sliceFor(summary.wealth.level, 5),
                 previewSlice: _wealthPreviewSlice,
                 onSliceSelected: (index) => setState(() => _wealthPreviewSlice = index),
-                footer: _wealthPrivilegesForSlice(
-                  _wealthPreviewSlice ?? _sliceFor(summary.wealth.level, 5),
-                  _sliceFor(summary.wealth.level, 5),
+                footer: Column(
+                  children: [
+                    _wealthPrivilegesForSlice(
+                      _wealthPreviewSlice ??
+                          _sliceFor(summary.wealth.level, 5),
+                      _sliceFor(summary.wealth.level, 5),
+                    ),
+                    const SizedBox(height: 12),
+                    _supportDetailsEntry(
+                      metric: 'wealth',
+                      title: 'تفاصيل دعم الثروة',
+                      subtitle:
+                          'الأشخاص الذين أرسلت لهم هدايا، مرتبين حسب قيمة الدعم.',
+                    ),
+                  ],
                 ),
                 canEditVisibility: summary.visibility.canEdit,
                 hiddenPreference: summary.visibility.hideWealthLevel,
@@ -241,11 +255,23 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
                 previewSlice: _attractionPreviewSlice,
                 onSliceSelected: (index) =>
                     setState(() => _attractionPreviewSlice = index),
-                footer: _rankPreview(
-                  metric: 'attraction',
-                  selectedSlice:
-                      _attractionPreviewSlice ?? _sliceFor(summary.attraction.level, 5),
-                  currentSlice: _sliceFor(summary.attraction.level, 5),
+                footer: Column(
+                  children: [
+                    _rankPreview(
+                      metric: 'attraction',
+                      selectedSlice: _attractionPreviewSlice ??
+                          _sliceFor(summary.attraction.level, 5),
+                      currentSlice:
+                          _sliceFor(summary.attraction.level, 5),
+                    ),
+                    const SizedBox(height: 12),
+                    _supportDetailsEntry(
+                      metric: 'attraction',
+                      title: 'تفاصيل دعم الجاذبية',
+                      subtitle:
+                          'الأشخاص الذين أرسلوا لك هدايا، مرتبين حسب قيمة الدعم.',
+                    ),
+                  ],
                 ),
                 canEditVisibility: summary.visibility.canEdit,
                 hiddenPreference: summary.visibility.hideAttractionLevel,
@@ -529,6 +555,77 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
         const SizedBox(height: 14),
         footer,
       ],
+    );
+  }
+
+  Widget _supportDetailsEntry({
+    required String metric,
+    required String title,
+    required String subtitle,
+  }) {
+    return Material(
+      color: const Color(0xFF0C1728),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: const BorderSide(color: Colors.white10),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
+        key: Key('level-support-details-$metric'),
+        leading: const CircleAvatar(
+          backgroundColor: Color(0xFF22163A),
+          child: Icon(
+            Icons.people_alt_rounded,
+            color: Color(0xFFFFD54A),
+          ),
+        ),
+        title: Text(
+          title,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        subtitle: Text(
+          subtitle,
+          style: const TextStyle(
+            color: Colors.white54,
+            fontSize: 11,
+            height: 1.4,
+          ),
+        ),
+        trailing: const Icon(
+          Icons.chevron_left_rounded,
+          color: Colors.white54,
+        ),
+        onTap: () => _openSupportDetails(metric),
+      ),
+    );
+  }
+
+  Future<void> _openSupportDetails(String metric) async {
+    final summary = _summary;
+    if (summary == null) return;
+    final targetUid =
+        (widget.userId?.trim().isNotEmpty ?? false)
+            ? widget.userId!.trim()
+            : summary.uid;
+    if (targetUid.isEmpty) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF050814),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      ),
+      builder: (_) => FractionallySizedBox(
+        heightFactor: .84,
+        child: _UserLevelSupportSheet(
+          targetUid: targetUid,
+          metric: metric,
+        ),
+      ),
     );
   }
 
@@ -1062,6 +1159,331 @@ class _InfoCard extends StatelessWidget {
               height: 1.45,
               fontSize: 12,
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+class _UserLevelSupportSheet extends StatefulWidget {
+  const _UserLevelSupportSheet({
+    required this.targetUid,
+    required this.metric,
+  });
+
+  final String targetUid;
+  final String metric;
+
+  @override
+  State<_UserLevelSupportSheet> createState() =>
+      _UserLevelSupportSheetState();
+}
+
+class _UserLevelSupportSheetState extends State<_UserLevelSupportSheet> {
+  final UserLevelService _service = UserLevelService();
+  final List<UserLevelSupportItem> _items = <UserLevelSupportItem>[];
+  bool _loading = true;
+  bool _loadingMore = false;
+  String? _nextCursor;
+  String? _error;
+
+  bool get _isWealth => widget.metric == 'wealth';
+
+  @override
+  void initState() {
+    super.initState();
+    _load(reset: true);
+  }
+
+  @override
+  void dispose() {
+    _service.close();
+    super.dispose();
+  }
+
+  Future<void> _load({required bool reset}) async {
+    if (reset) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    } else {
+      if (_loadingMore || _nextCursor == null) return;
+      setState(() => _loadingMore = true);
+    }
+
+    try {
+      final page = await _service.loadSupportPage(
+        uid: widget.targetUid,
+        metric: widget.metric,
+        cursor: reset ? null : _nextCursor,
+      );
+      if (!mounted) return;
+      setState(() {
+        if (reset) _items.clear();
+        _items.addAll(page.items);
+        _nextCursor = page.nextCursor;
+        _loading = false;
+        _loadingMore = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      final code = error.toString().replaceFirst('Bad state: ', '');
+      setState(() {
+        _loading = false;
+        _loadingMore = false;
+        _error = code.contains('level_hidden')
+            ? 'تفاصيل هذا المستوى مخفية.'
+            : 'تعذر تحميل تفاصيل الدعم حالياً.';
+      });
+    }
+  }
+
+  Future<void> _openIdentity(UserLevelSupportItem item) async {
+    if (item.mysteriousMode) {
+      await showMysteriousIdentitySheet(
+        context,
+        mysteriousId: item.mysteriousId.isNotEmpty
+            ? item.mysteriousId
+            : item.publicId,
+        rank: item.rank,
+        support: item.points,
+      );
+      return;
+    }
+    if (item.uid.isEmpty) return;
+    await showQuickProfileSheet(context, userId: item.uid);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: SafeArea(
+        child: Column(
+          children: [
+            const SizedBox(height: 10),
+            Container(
+              width: 42,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(99),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _isWealth
+                              ? 'تفاصيل دعم الثروة'
+                              : 'تفاصيل دعم الجاذبية',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 19,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _isWealth
+                              ? 'من أرسلت لهم هدايا — أعلى 100 حساب'
+                              : 'من أرسلوا لك هدايا — أعلى 100 حساب',
+                          style: const TextStyle(
+                            color: Colors.white54,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(
+                      Icons.close_rounded,
+                      color: Colors.white70,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: Colors.white10),
+            Expanded(child: _body()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _body() {
+    if (_loading && _items.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null && _items.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _error!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white60),
+              ),
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: () => _load(reset: true),
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('إعادة المحاولة'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (_items.isEmpty) {
+      return const Center(
+        child: Text(
+          'لا توجد بيانات دعم حتى الآن.',
+          style: TextStyle(color: Colors.white54),
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: () => _load(reset: true),
+      child: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 24),
+        itemCount: _items.length + (_nextCursor != null ? 1 : 0),
+        itemBuilder: (context, index) {
+          if (index >= _items.length) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              child: Center(
+                child: _loadingMore
+                    ? const CircularProgressIndicator()
+                    : OutlinedButton.icon(
+                        key: Key(
+                          'level-support-load-more-${widget.metric}',
+                        ),
+                        onPressed: () => _load(reset: false),
+                        icon: const Icon(Icons.expand_more_rounded),
+                        label: const Text('تحميل المزيد'),
+                      ),
+              ),
+            );
+          }
+          final item = _items[index];
+          return _supportRow(item);
+        },
+      ),
+    );
+  }
+
+  Widget _supportRow(UserLevelSupportItem item) {
+    final identity = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _openIdentity(item),
+      child: Row(
+        children: [
+          if (item.mysteriousMode)
+            const MysteriousIdentityAvatar(diameter: 44)
+          else
+            CircleAvatar(
+              radius: 22,
+              backgroundColor: const Color(0xFF20162F),
+              backgroundImage: item.profileImageUrl.isEmpty
+                  ? null
+                  : NetworkImage(item.profileImageUrl),
+              child: item.profileImageUrl.isEmpty
+                  ? const Icon(
+                      Icons.person_rounded,
+                      color: Colors.white54,
+                    )
+                  : null,
+            ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.displayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  item.publicId.isEmpty
+                      ? 'ID غير متاح'
+                      : 'ID: ${item.publicId}',
+                  textDirection: TextDirection.ltr,
+                  style: const TextStyle(
+                    color: Colors.white38,
+                    fontSize: 10,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0C1728),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 40,
+            child: Text(
+              '#${item.rank}',
+              textDirection: TextDirection.ltr,
+              style: const TextStyle(
+                color: Color(0xFFFFD54A),
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          Expanded(child: identity),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                formatCompactAmount(item.points),
+                textDirection: TextDirection.ltr,
+                style: const TextStyle(
+                  color: Color(0xFFFFD54A),
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              Text(
+                '${item.giftCount} هدية',
+                style: const TextStyle(
+                  color: Colors.white38,
+                  fontSize: 10,
+                ),
+              ),
+            ],
           ),
         ],
       ),

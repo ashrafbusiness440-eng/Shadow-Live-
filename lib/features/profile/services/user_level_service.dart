@@ -204,6 +204,83 @@ class UserLevelSummary {
   }
 }
 
+class UserLevelSupportItem {
+  const UserLevelSupportItem({
+    required this.uid,
+    required this.displayName,
+    required this.profileImageUrl,
+    required this.publicId,
+    required this.rank,
+    required this.points,
+    required this.giftCount,
+    required this.mysteriousMode,
+    required this.mysteriousId,
+  });
+
+  final String uid;
+  final String displayName;
+  final String profileImageUrl;
+  final String publicId;
+  final int rank;
+  final int points;
+  final int giftCount;
+  final bool mysteriousMode;
+  final String mysteriousId;
+
+  factory UserLevelSupportItem.fromJson(Map<String, dynamic> json) =>
+      UserLevelSupportItem(
+        uid: (json['uid'] ?? '').toString(),
+        displayName: (json['displayName'] ?? 'مستخدم Shadow Live').toString(),
+        profileImageUrl: (json['profileImageUrl'] ?? '').toString(),
+        publicId: (json['publicId'] ?? '').toString(),
+        rank: UserLevelSectionSummary._int(json['rank']),
+        points: UserLevelSectionSummary._int(json['points']),
+        giftCount: UserLevelSectionSummary._int(json['giftCount']),
+        mysteriousMode: json['mysteriousMode'] == true,
+        mysteriousId: (json['mysteriousId'] ?? '').toString(),
+      );
+}
+
+class UserLevelSupportPage {
+  const UserLevelSupportPage({
+    required this.metric,
+    required this.items,
+    required this.nextCursor,
+    required this.totalCap,
+    required this.pageSize,
+  });
+
+  final String metric;
+  final List<UserLevelSupportItem> items;
+  final String? nextCursor;
+  final int totalCap;
+  final int pageSize;
+
+  bool get hasMore => nextCursor != null && nextCursor!.isNotEmpty;
+
+  factory UserLevelSupportPage.fromJson(Map<String, dynamic> json) {
+    final rawItems = json['items'];
+    return UserLevelSupportPage(
+      metric: (json['metric'] ?? '').toString(),
+      items: rawItems is List
+          ? rawItems
+              .whereType<Map>()
+              .map(
+                (item) => UserLevelSupportItem.fromJson(
+                  Map<String, dynamic>.from(item),
+                ),
+              )
+              .toList(growable: false)
+          : const <UserLevelSupportItem>[],
+      nextCursor: json['nextCursor'] == null
+          ? null
+          : (json['nextCursor'] ?? '').toString(),
+      totalCap: UserLevelSectionSummary._int(json['totalCap']),
+      pageSize: UserLevelSectionSummary._int(json['pageSize']),
+    );
+  }
+}
+
 class UserLevelService {
   UserLevelService({
     FirebaseAuth? auth,
@@ -257,6 +334,52 @@ class UserLevelService {
     final raw = body['summary'];
     if (raw is! Map) throw StateError('invalid_user_level_summary');
     return UserLevelSummary.fromJson(Map<String, dynamic>.from(raw));
+  }
+
+  Future<UserLevelSupportPage> loadSupportPage({
+    required String uid,
+    required String metric,
+    String? cursor,
+  }) async {
+    final targetUid = uid.trim();
+    final normalizedMetric = metric.trim();
+    if (targetUid.isEmpty || targetUid.contains('/')) {
+      throw StateError('invalid_user');
+    }
+    if (normalizedMetric != 'wealth' && normalizedMetric != 'attraction') {
+      throw StateError('invalid_support_metric');
+    }
+
+    final user = _auth.currentUser;
+    final token = await user?.getIdToken();
+    if (user == null || token == null || token.isEmpty) {
+      throw StateError('not_signed_in');
+    }
+
+    final query = <String, String>{
+      'uid': targetUid,
+      'supportMetric': normalizedMetric,
+      'limit': '20',
+      if (cursor != null && cursor.trim().isNotEmpty)
+        'cursor': cursor.trim(),
+    };
+    final response = await _client.get(
+      Uri.parse('$_baseUrl/user-level').replace(queryParameters: query),
+      headers: {
+        'authorization': 'Bearer $token',
+        'accept': 'application/json',
+      },
+    );
+
+    final body = _decode(response.body);
+    if (response.statusCode != 200 || body['ok'] != true) {
+      throw StateError(
+        (body['code'] ?? 'user_level_support_failed').toString(),
+      );
+    }
+    final raw = body['support'];
+    if (raw is! Map) throw StateError('invalid_user_level_support');
+    return UserLevelSupportPage.fromJson(Map<String, dynamic>.from(raw));
   }
 
   Future<UserLevelVisibility> updateVisibility({
