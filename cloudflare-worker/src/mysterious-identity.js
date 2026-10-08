@@ -44,3 +44,12 @@ export function applyMysteriousIdentityPresentation(
     mysteriousId,
   };
 }
+
+
+export function mysteriousRoomAuthoritySuppressed(
+  user = {},
+  nowMs = Date.now(),
+) {
+  if (clean(user.role) === "owner") return false;
+  return activeMysteriousIdentity(user, nowMs);
+}

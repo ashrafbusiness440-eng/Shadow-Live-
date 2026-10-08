@@ -19,8 +19,9 @@ class VoiceRoomSessionController extends ChangeNotifier {
       final nextUid = user?.uid;
       final changed = _observedAuthUid != nextUid;
       _observedAuthUid = nextUid;
-      if (changed && (_active || _joining)) {
-        unawaited(leave());
+      if (changed) {
+        _mysteriousModeEnabled = false;
+        if (_active || _joining) unawaited(leave());
       }
     });
     _realtimeSubscription =
@@ -65,6 +66,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
   bool _active = false;
   bool _minimized = false;
   bool _micMuted = true;
+  bool _mysteriousModeEnabled = false;
   String? _error;
   VoiceConnectionState _connectionState = VoiceConnectionState.idle;
   Map<String, dynamic> _roomArguments = <String, dynamic>{};
@@ -75,6 +77,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
   bool get active => _active;
   bool get minimized => _minimized;
   bool get micMuted => _micMuted;
+  bool get mysteriousModeEnabled => _mysteriousModeEnabled;
   String? get error => _error;
   VoiceConnectionState get connectionState => _connectionState;
   Map<String, dynamic> get roomArguments =>
@@ -100,6 +103,12 @@ class VoiceRoomSessionController extends ChangeNotifier {
   int get roomChatComposerIntentRevision => _roomChatComposerIntentRevision;
 
   String get roomId => (_roomArguments['roomId'] ?? '').toString();
+  void setMysteriousModeEnabled(bool enabled) {
+    if (_mysteriousModeEnabled == enabled) return;
+    _mysteriousModeEnabled = enabled;
+    notifyListeners();
+  }
+
   String get roomTitle =>
       (_roomArguments['name'] ??
               _roomArguments['title'] ??

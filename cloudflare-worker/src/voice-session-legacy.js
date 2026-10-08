@@ -20,7 +20,7 @@ import {
   vipCosmeticsFromUser,
 } from "./vip-entitlements.js";
 import {timestampToEpochMs} from "./vip-runtime.js";
-import {applyMysteriousIdentityPresentation} from "./mysterious-identity.js";
+import {activeMysteriousIdentity,applyMysteriousIdentityPresentation,mysteriousRoomAuthoritySuppressed} from "./mysterious-identity.js";
 import {
   loadPublicProfilePresentations,
   publicProfilePresentation,
@@ -558,6 +558,7 @@ function hasRoomCapability(room,uid,capability){
 }
 
 function canManageRoomAction(room,actor,uid,capability){
+  if(mysteriousRoomAuthoritySuppressed(actor))return false;
   const global=roomPermissions(actor);
   const agencyCapabilities=agencyRoomManagementCapabilities(room,actor,uid);
   return (!isOfficialRoom(room)&&roomOwnerUid(room)===uid)
@@ -584,29 +585,35 @@ async function roomModeratorState(db,uid,roomId){
     : [];
   const agencyCapabilities=agencyRoomManagementCapabilities(room,actor,uid);
   const actualOwner=!isOfficialRoom(room)&&ownerUid===uid;
+  const authoritySuppressed=mysteriousRoomAuthoritySuppressed(actor);
   return {
     ok:true,
     roomId,
     ownerUid,
     hostUid,
-    isOwner:actualOwner,
-    isHost:isOfficialRoom(room)&&hostUid===uid,
+    isOwner:actualOwner&&!authoritySuppressed,
+    isHost:isOfficialRoom(room)&&hostUid===uid&&!authoritySuppressed,
     platformOwner:global.appOwner,
     ownerAbsoluteRoomAccess:global.ownerAbsoluteRoomAccess,
-    globalRoomManage:global.manageRooms,
-    canManage:actualOwner
+    globalRoomManage:authoritySuppressed?false:global.manageRooms,
+    authoritySuppressed,
+    canManage:!authoritySuppressed&&(
+      actualOwner
       ||global.manageRooms
       ||hostCapabilities.length>0
-      ||agencyCapabilities.length>0,
+      ||agencyCapabilities.length>0
+    ),
     limit:roomModeratorLimit(room),
     capabilities:ROOM_MODERATOR_CAPABILITIES,
-    myCapabilities:(actualOwner||global.manageRooms)
-      ? ROOM_MODERATOR_CAPABILITIES
-      : [...new Set([
-          ...hostCapabilities,
-          ...agencyCapabilities,
-          ...(myModerator?.capabilities||[]),
-        ])],
+    myCapabilities:authoritySuppressed
+      ? []
+      : (actualOwner||global.manageRooms)
+        ? ROOM_MODERATOR_CAPABILITIES
+        : [...new Set([
+            ...hostCapabilities,
+            ...agencyCapabilities,
+            ...(myModerator?.capabilities||[]),
+          ])],
     moderators:normalizeRoomModerators(room),
   };
 }
@@ -4086,13 +4093,16 @@ async function roomBootstrap(db,decoded,body){
     : [];
   const agencyCapabilities=agencyRoomManagementCapabilities(room,actor,uid);
   const actualOwner=!official&&ownerUid===uid;
-  const myCapabilities=(actualOwner||global.manageRooms)
-    ? ROOM_MODERATOR_CAPABILITIES
-    : [...new Set([
-        ...hostCapabilities,
-        ...agencyCapabilities,
-        ...(myModerator?.capabilities||[]),
-      ])];
+  const authoritySuppressed=mysteriousRoomAuthoritySuppressed(actor);
+  const myCapabilities=authoritySuppressed
+    ? []
+    : (actualOwner||global.manageRooms)
+      ? ROOM_MODERATOR_CAPABILITIES
+      : [...new Set([
+          ...hostCapabilities,
+          ...agencyCapabilities,
+          ...(myModerator?.capabilities||[]),
+        ])];
   const onlineCount=liveRoomCount??Math.max(
     0,
     Number(room.onlineCount||room.participantsCount||0),
@@ -4205,15 +4215,18 @@ async function roomBootstrap(db,decoded,body){
       roomId,
       ownerUid,
       hostUid,
-      isOwner:actualOwner,
-      isHost:official&&hostUid===uid,
+      isOwner:actualOwner&&!authoritySuppressed,
+      isHost:official&&hostUid===uid&&!authoritySuppressed,
       platformOwner:global.appOwner,
       ownerAbsoluteRoomAccess:global.ownerAbsoluteRoomAccess,
-      globalRoomManage:global.manageRooms,
-      canManage:actualOwner
+      globalRoomManage:authoritySuppressed?false:global.manageRooms,
+      authoritySuppressed,
+      canManage:!authoritySuppressed&&(
+        actualOwner
         ||global.manageRooms
         ||hostCapabilities.length>0
-        ||agencyCapabilities.length>0,
+        ||agencyCapabilities.length>0
+      ),
       limit:roomModeratorLimit(room),
       capabilities:ROOM_MODERATOR_CAPABILITIES,
       myCapabilities,

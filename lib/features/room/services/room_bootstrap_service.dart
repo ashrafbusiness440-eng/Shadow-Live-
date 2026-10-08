@@ -83,6 +83,7 @@ class RoomBootstrapSnapshot {
         ownerAbsoluteRoomAccess:
             moderator['ownerAbsoluteRoomAccess'] == true,
         globalRoomManage: moderator['globalRoomManage'] == true,
+        authoritySuppressed: moderator['authoritySuppressed'] == true,
       ),
       insights: RoomInsights.fromJson(insights),
       rocketState: RoomRocketState.fromMap(rocket),

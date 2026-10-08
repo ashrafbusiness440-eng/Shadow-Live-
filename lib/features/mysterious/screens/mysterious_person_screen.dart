@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../services/mysterious_person_service.dart';
+import '../../voice/services/voice_room_session_controller.dart';
 
 class MysteriousPersonScreen extends StatefulWidget {
   const MysteriousPersonScreen({super.key, this.embedded = false});
@@ -42,6 +43,8 @@ class _MysteriousPersonScreenState extends State<MysteriousPersonScreen> {
     try {
       final state = await _service.loadState();
       if (!mounted) return;
+      VoiceRoomSessionController.instance
+          .setMysteriousModeEnabled(state.enabled);
       setState(() {
         _state = state;
         _loading = false;
@@ -132,6 +135,8 @@ class _MysteriousPersonScreenState extends State<MysteriousPersonScreen> {
     setState(() => _saving = true);
     try {
       final state = await _service.setEnabled(!current.enabled);
+      VoiceRoomSessionController.instance
+          .setMysteriousModeEnabled(state.enabled);
       if (!mounted) return;
       setState(() {
         _state = state;

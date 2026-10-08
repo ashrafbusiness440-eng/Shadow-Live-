@@ -763,6 +763,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           ownerAbsoluteRoomAccess:
               previousModeratorState?.ownerAbsoluteRoomAccess == true,
           globalRoomManage: globalRoomManage,
+          authoritySuppressed:
+              previousModeratorState?.authoritySuppressed == true,
         );
         setState(() {
           _roomArguments = <String, dynamic>{
@@ -848,33 +850,44 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     }
   }
 
+  bool get _roomAuthoritySuppressed =>
+      (_roomModeratorState?.authoritySuppressed == true) ||
+      (_voiceSession.mysteriousModeEnabled &&
+          _roomModeratorState?.platformOwner != true);
+
   bool get _canManageMic =>
-      _voiceSession.isOwner ||
-      (_roomModeratorState?.has('manageMic') ?? false);
+      !_roomAuthoritySuppressed && (_voiceSession.isOwner ||
+      (_roomModeratorState?.has('manageMic') ?? false));
 
   bool get _canModerateUsers =>
-      _voiceSession.isOwner ||
-      (_roomModeratorState?.has('moderateUsers') ?? false);
+      !_roomAuthoritySuppressed &&
+      (_voiceSession.isOwner ||
+          (_roomModeratorState?.has('moderateUsers') ?? false));
 
   bool get _canModerateChat =>
-      _voiceSession.isOwner ||
-      (_roomModeratorState?.has('moderateChat') ?? false);
+      !_roomAuthoritySuppressed &&
+      (_voiceSession.isOwner ||
+          (_roomModeratorState?.has('moderateChat') ?? false));
 
   bool get _canManageMusic =>
-      _voiceSession.isOwner ||
-      (_roomModeratorState?.has('manageMusic') ?? false);
+      !_roomAuthoritySuppressed &&
+      (_voiceSession.isOwner ||
+          (_roomModeratorState?.has('manageMusic') ?? false));
 
   bool get _canManageMusicPolicy =>
-      _voiceSession.isOwner ||
-      (_roomModeratorState?.has('manageMusicPolicy') ?? false);
+      !_roomAuthoritySuppressed &&
+      (_voiceSession.isOwner ||
+          (_roomModeratorState?.has('manageMusicPolicy') ?? false));
 
   bool get _canManagePk =>
-      _voiceSession.isOwner ||
-      (_roomModeratorState?.has('managePk') ?? false);
+      !_roomAuthoritySuppressed &&
+      (_voiceSession.isOwner ||
+          (_roomModeratorState?.has('managePk') ?? false));
 
   bool get _canManageIds =>
-      _voiceSession.isOwner ||
-      (_roomModeratorState?.has('manageIds') ?? false);
+      !_roomAuthoritySuppressed &&
+      (_voiceSession.isOwner ||
+          (_roomModeratorState?.has('manageIds') ?? false));
 
   Future<void> _showRoomModeratorsSheet() async {
     final roomId = (_roomArguments['roomId'] ?? '').toString().trim();
@@ -3245,8 +3258,9 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
 
   Future<void> _showRoomSettingsSheet() async {
     final roomId = (_roomArguments['roomId'] ?? '').toString().trim();
-    final canEditRoomSettings = _voiceSession.isOwner ||
-        (_roomModeratorState?.ownerAbsoluteRoomAccess ?? false);
+    final canEditRoomSettings = !_roomAuthoritySuppressed &&
+        (_voiceSession.isOwner ||
+            (_roomModeratorState?.ownerAbsoluteRoomAccess ?? false));
     if (roomId.isEmpty || !canEditRoomSettings) return;
     final isAgencyRoom = _roomAgencyId.isNotEmpty;
 
@@ -4146,9 +4160,11 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   }
   Future<void> _showRoomMenu() async {
     final personal = (_roomArguments['roomType'] ?? '').toString() == 'personal';
-    final actualOwner = _voiceSession.isOwner;
-    final owner = actualOwner ||
-        (_roomModeratorState?.ownerAbsoluteRoomAccess ?? false);
+    final actualOwner =
+        !_roomAuthoritySuppressed && _voiceSession.isOwner;
+    final owner = !_roomAuthoritySuppressed &&
+        (actualOwner ||
+            (_roomModeratorState?.ownerAbsoluteRoomAccess ?? false));
     final ghostMode = _roomGhostMode;
     if (!mounted) return;
     // Open immediately; refresh this non-critical preference in parallel.

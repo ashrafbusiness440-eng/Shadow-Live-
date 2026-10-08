@@ -61,6 +61,7 @@ class RoomModeratorState {
     this.platformOwner = false,
     this.ownerAbsoluteRoomAccess = false,
     this.globalRoomManage = false,
+    this.authoritySuppressed = false,
   });
 
   final String roomId;
@@ -71,14 +72,17 @@ class RoomModeratorState {
   final bool platformOwner;
   final bool ownerAbsoluteRoomAccess;
   final bool globalRoomManage;
+  final bool authoritySuppressed;
 
   bool has(String capability) =>
-      isOwner || globalRoomManage || myCapabilities.contains(capability);
+      !authoritySuppressed &&
+      (isOwner || globalRoomManage || myCapabilities.contains(capability));
 
   RoomModeratorState copyWithPlatformAccess({
     required bool platformOwner,
     required bool ownerAbsoluteRoomAccess,
     required bool globalRoomManage,
+    bool? authoritySuppressed,
   }) {
     return RoomModeratorState(
       roomId: roomId,
@@ -89,6 +93,8 @@ class RoomModeratorState {
       platformOwner: platformOwner,
       ownerAbsoluteRoomAccess: ownerAbsoluteRoomAccess,
       globalRoomManage: globalRoomManage,
+      authoritySuppressed:
+          authoritySuppressed ?? this.authoritySuppressed,
     );
   }
 }
