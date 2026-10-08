@@ -62,6 +62,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
   String _activeRoomMediaKey = '';
 
   bool _serviceInitialized = false;
+  Future<void>? _leaveInFlight;
   bool _joining = false;
   bool _active = false;
   bool _minimized = false;
@@ -182,6 +183,12 @@ class VoiceRoomSessionController extends ChangeNotifier {
     if (_serviceInitialized) return;
     _connectionSubscription =
         _voiceService.connectionStates.listen((state) {
+      // A kick or terminal voice failure must use the same cleanup path as
+      // normal leave, otherwise room presence and the seat can remain stale.
+      final unexpectedLoss = _active &&
+          _leaveInFlight == null &&
+          (state == VoiceConnectionState.disconnected ||
+              state == VoiceConnectionState.failed);
       _connectionState = state;
       if (state == VoiceConnectionState.connected) {
         _active = true;
@@ -194,6 +201,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
         _joining = false;
       }
       notifyListeners();
+      if (unexpectedLoss) unawaited(leave());
     });
     _micSubscription = _voiceService.micStates.listen((state) {
       _micMuted = state == VoiceMicState.muted;
@@ -630,24 +638,11 @@ class VoiceRoomSessionController extends ChangeNotifier {
   }
 
   Future<void> _leaveBannedRoom() async {
-    final activeRoomId = roomId;
-    await _stopPresence(activeRoomId);
-    await _stopRoomMusicWatch();
-    if (_serviceInitialized) {
-      try {
-        await _voiceService.leaveRoom();
-      } catch (_) {}
-    }
-    _active = false;
-    _joining = false;
-    _minimized = false;
-    _micMuted = true;
+    final departingRoomId = roomId;
+    if (departingRoomId.isEmpty) return;
+    await leave();
+    if (_active && roomId != departingRoomId) return;
     _error = 'room_banned';
-    _connectionState = VoiceConnectionState.disconnected;
-    _roomChatMessages.clear();
-    _roomParticipants.clear();
-    _roomChatReplyTarget = null;
-    _roomChatMentionTarget = null;
     notifyListeners();
   }
 
@@ -712,24 +707,11 @@ class VoiceRoomSessionController extends ChangeNotifier {
   }
 
   Future<void> _leaveClosedRoom() async {
-    final activeRoomId = roomId;
-    await _stopPresence(activeRoomId);
-    await _stopRoomMusicWatch();
-    if (_serviceInitialized) {
-      try {
-        await _voiceService.leaveRoom();
-      } catch (_) {}
-    }
-    _active = false;
-    _joining = false;
-    _minimized = false;
-    _micMuted = true;
+    final departingRoomId = roomId;
+    if (departingRoomId.isEmpty) return;
+    await leave();
+    if (_active && roomId != departingRoomId) return;
     _error = 'room_closed';
-    _connectionState = VoiceConnectionState.disconnected;
-    _roomChatMessages.clear();
-    _roomParticipants.clear();
-    _roomChatReplyTarget = null;
-    _roomChatMentionTarget = null;
     notifyListeners();
   }
 
@@ -859,7 +841,18 @@ class VoiceRoomSessionController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> leave() async {
+  Future<void> leave() {
+    final pending = _leaveInFlight;
+    if (pending != null) return pending;
+    late final Future<void> operation;
+    operation = _leaveRoomSession().whenComplete(() {
+      if (identical(_leaveInFlight, operation)) _leaveInFlight = null;
+    });
+    _leaveInFlight = operation;
+    return operation;
+  }
+
+  Future<void> _leaveRoomSession() async {
     final activeRoomId = roomId;
     await _stopPresence(activeRoomId);
     await _stopRoomMusicWatch();
