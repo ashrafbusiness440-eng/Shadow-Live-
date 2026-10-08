@@ -2069,7 +2069,7 @@ export async function roomSeatAction(db,uid,body){
         }
         seats[seatIndex]={...selected,locked:action==="lockSeat"};
       }else if(action==="muteLockSeat"){
-        if(selected.uid&&selected.muted===false){
+        if(selected.uid){
           const protectedSnap=await tx.get(
             db.collection("users").doc(selected.uid),
           );
@@ -2079,7 +2079,9 @@ export async function roomSeatAction(db,uid,body){
           if(muteProtected&&!canOverrideVipRoomProtection(actor)){
             throw new ApiError("vip_mute_protected",403);
           }
-          await recordMicActivity(tx,db,selected.uid,selected);
+          if(selected.muted===false){
+            await recordMicActivity(tx,db,selected.uid,selected);
+          }
         }
         seats[seatIndex]={
           ...selected,muteLocked:true,muted:true,micStartedAtMs:0,
