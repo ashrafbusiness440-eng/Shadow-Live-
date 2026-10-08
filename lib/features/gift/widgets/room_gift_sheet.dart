@@ -70,8 +70,14 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
     final ownerId = widget.ownerUid.trim();
     if (ownerId.isNotEmpty && ownerId != _uid) {
       _selectedIds.add(ownerId);
-    } else if (_uid.isNotEmpty) {
-      _selectedIds.add(_uid);
+    } else {
+      // With two people on mic, choose the other person instead of
+      // silently preselecting the sender's own account.
+      final other = _participants
+          .where((user) => user.uid.isNotEmpty && user.uid != _uid)
+          .map((user) => user.uid)
+          .firstOrNull;
+      if (other != null) _selectedIds.add(other);
     }
   }
 
