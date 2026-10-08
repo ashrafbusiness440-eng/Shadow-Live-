@@ -54,6 +54,8 @@ class RoomEffectCoordinator extends ChangeNotifier {
   final LinkedHashSet<String> _seenEventIds = LinkedHashSet<String>();
 
   RoomVisualEffect? _currentCinematic;
+  RoomVisualEffect? _currentRoomJoin;
+  Timer? _roomJoinTimer;
   Timer? _cinematicTimer;
   Timer? _seatCleanupTimer;
   bool _visualEnabled = true;
@@ -62,6 +64,7 @@ class RoomEffectCoordinator extends ChangeNotifier {
   final Future<void> Function()? _stopEffectSounds;
 
   RoomVisualEffect? get currentCinematic => _currentCinematic;
+  RoomVisualEffect? get currentRoomJoin => _currentRoomJoin;
   bool get visualEnabled => _visualEnabled;
   bool get effectSoundEnabled => _effectSoundEnabled;
 
@@ -93,6 +96,47 @@ class RoomEffectCoordinator extends ChangeNotifier {
       _seenEventIds.remove(_seenEventIds.first);
     }
     return true;
+  }
+
+  void ingestRoomJoin(Map<String, dynamic>? raw) {
+    if (raw == null) return;
+    final id = (raw['id'] ?? '').toString().trim();
+    if (id.isEmpty || !_markSeen('join:$id')) return;
+    if (!_visualEnabled) return;
+
+    final joinedAtMs = (raw['joinedAtMs'] as num?)?.toInt() ?? 0;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    // Session events are ephemeral: don't replay old joins on rebuild.
+    if (joinedAtMs > 0 &&
+        (nowMs - joinedAtMs).abs() > 10000) {
+      return;
+    }
+    final mysterious = raw['mysteriousMode'] == true;
+    final vipLevel = mysterious ? 0 : (raw['vipLevel'] as num?)?.toInt() ?? 0;
+    _roomJoinTimer?.cancel();
+    _currentRoomJoin = RoomVisualEffect(
+      eventId: id,
+      kind: 'room_join',
+      mode: 'strip',
+      assetKey: '',
+      imageUrl: '',
+      durationMs: 2800,
+      recipientUids: const [],
+      displayName: mysterious
+          ? 'الشخص الغامض'
+          : (raw['displayName'] ?? 'مستخدم Shadow Live').toString(),
+      profileImageUrl: mysterious
+          ? ''
+          : (raw['profileImageUrl'] ?? '').toString(),
+      badgeLabel: 'دخل الغرفة',
+      levelLabel: vipLevel > 0 ? 'VIP $vipLevel' : '',
+    );
+    notifyListeners();
+    _roomJoinTimer = Timer(const Duration(milliseconds: 2800), () {
+      _roomJoinTimer = null;
+      _currentRoomJoin = null;
+      notifyListeners();
+    });
   }
 
   void ingestEntrance(Map<String, dynamic>? raw) {
@@ -320,6 +364,9 @@ class RoomEffectCoordinator extends ChangeNotifier {
   void _clearVisualState() {
     _cinematicTimer?.cancel();
     _cinematicTimer = null;
+    _roomJoinTimer?.cancel();
+    _roomJoinTimer = null;
+    _currentRoomJoin = null;
     _seatCleanupTimer?.cancel();
     _seatCleanupTimer = null;
     _cinematicQueue.clear();
@@ -332,6 +379,7 @@ class RoomEffectCoordinator extends ChangeNotifier {
   @override
   void dispose() {
     _cinematicTimer?.cancel();
+    _roomJoinTimer?.cancel();
     _seatCleanupTimer?.cancel();
     final stop = _stopEffectSounds;
     if (stop != null) unawaited(stop());
@@ -354,28 +402,37 @@ class RoomEffectCoordinatorHost extends StatelessWidget {
       builder: (context, _) {
         if (!coordinator.visualEnabled) return const SizedBox.shrink();
         final event = coordinator.currentCinematic;
-        if (event == null) return const SizedBox.shrink();
+        final roomJoin = coordinator.currentRoomJoin;
+        if (event == null && roomJoin == null) {
+          return const SizedBox.shrink();
+        }
 
         return IgnorePointer(
           ignoring: true,
           child: Stack(
             fit: StackFit.expand,
             children: [
-              Center(
-                child: SizedBox(
-                  width: event.size > 0 ? event.size.toDouble() : 320,
-                  height: event.size > 0 ? event.size.toDouble() : 320,
-                  child: CosmeticAssetVisual(
-                    assetKey: event.assetKey,
-                    imageUrl: event.imageUrl,
-                    fit: BoxFit.contain,
+              if (event != null)
+                Center(
+                  child: SizedBox(
+                    width: event.size > 0 ? event.size.toDouble() : 320,
+                    height: event.size > 0 ? event.size.toDouble() : 320,
+                    child: CosmeticAssetVisual(
+                      assetKey: event.assetKey,
+                      imageUrl: event.imageUrl,
+                      fit: BoxFit.contain,
+                    ),
                   ),
                 ),
-              ),
-              if (event.kind == 'entrance')
+              if (event != null && event.kind == 'entrance')
                 Align(
                   alignment: const Alignment(0, -.72),
                   child: _EntranceWelcomeStrip(event: event),
+                ),
+              if (roomJoin != null && event?.kind != 'entrance')
+                Align(
+                  alignment: const Alignment(0, -.72),
+                  child: _EntranceWelcomeStrip(event: roomJoin),
                 ),
             ],
           ),
