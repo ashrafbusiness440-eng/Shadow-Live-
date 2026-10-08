@@ -33,9 +33,15 @@ test("asset studio catalog has unique stable templates and approved channels", (
     assert.ok(template.directories.length > 0);
     assert.ok(template.extensions.length > 0);
     assert.equal(template.maxBytes, 2500000);
-    assert.equal(template.dimensionsStatus, "tbd");
-    assert.equal(template.width, null);
-    assert.equal(template.height, null);
+    if (template.dimensionsStatus === "fixed") {
+      assert.ok(Number.isInteger(template.width) && template.width > 0);
+      assert.ok(Number.isInteger(template.height) && template.height > 0);
+      assert.match(template.noteAr, /المقاس معتمد رسميًا/);
+    } else {
+      assert.equal(template.dimensionsStatus, "tbd");
+      assert.equal(template.width, null);
+      assert.equal(template.height, null);
+    }
     assert.ok(template.prompt.length > 20);
   }
 });
