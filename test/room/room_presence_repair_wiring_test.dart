@@ -41,6 +41,34 @@ void main() {
     expect(presence.contains('if (_reconnectAttempt >= 3) return;'), isTrue);
   });
 
+  test('terminal ZEGO disconnect reuses exactly one room leave path', () {
+    final controller = File(
+      'lib/features/voice/services/voice_room_session_controller.dart',
+    ).readAsStringSync();
+    expect(controller.contains('final unexpectedLoss = _active &&'), isTrue);
+    expect(controller.contains('if (unexpectedLoss) unawaited(leave());'),
+        isTrue);
+    expect(controller.contains('Future<void>? _leaveInFlight;'), isTrue);
+    expect(controller.contains('if (pending != null) return pending;'),
+        isTrue);
+    expect(controller.contains('operation = _leaveRoomSession().whenComplete'),
+        isTrue);
+
+    final start = controller.indexOf('Future<void> _leaveBannedRoom()');
+    final end = controller.indexOf('void _watchRoomLifecycle', start);
+    final ban = controller.substring(start, end);
+    expect(ban.contains('await leave();'), isTrue);
+    expect(ban.contains('await _stopPresence('), isFalse);
+
+    final closedStart =
+        controller.indexOf('Future<void> _leaveClosedRoom()');
+    final closedEnd =
+        controller.indexOf('String _displayNameForJoin(', closedStart);
+    final closed = controller.substring(closedStart, closedEnd);
+    expect(closed.contains('await leave();'), isTrue);
+    expect(closed.contains('await _stopPresence('), isFalse);
+  });
+
   test('room gift checks existing presence service before mutation', () {
     final sheet = File(
       'lib/features/gift/widgets/room_gift_sheet.dart',
