@@ -6570,34 +6570,21 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         top: feedTop,
                         bottom: 57,
                         child: DraggableScrollableSheet(
-                          initialChildSize: .56,
-                          minChildSize: .22,
+                          // Display messages directly on the room background.
+                          // Dragging is still possible without an opaque panel.
+                          initialChildSize: 1,
+                          minChildSize: .56,
                           maxChildSize: 1,
                           snap: true,
-                          snapSizes: const [.22, .56, 1],
+                          snapSizes: const [.56, 1],
                           builder: (context, scrollController) => Container(
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF090C13)
-                                  .withValues(alpha: .94),
-                              borderRadius: const BorderRadius.vertical(
-                                top: Radius.circular(22),
-                              ),
-                              border: Border.all(color: Colors.white10),
-                            ),
+                            // No black sheet covering the voice-room background.
+                            color: Colors.transparent,
                             child: Stack(
                               children: [
                                 Column(
                                   children: [
-                                    const SizedBox(height: 7),
-                                Container(
-                                  width: 42,
-                                  height: 4,
-                                  decoration: BoxDecoration(
-                                    color: Colors.white24,
-                                    borderRadius: BorderRadius.circular(99),
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
+                                    const SizedBox(height: 3),
                                 Expanded(
                                   child: const bool.fromEnvironment('E2E_ROOM_TEST')
                                       ? ListView(
