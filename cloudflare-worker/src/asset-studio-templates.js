@@ -105,7 +105,7 @@ export const ASSET_STUDIO_TEMPLATES = Object.freeze([
     type: "profile_card",
     labelAr: "مظهر الشخص الغامض في قائمة الغرفة",
     directories: ["assets/images/mysterious"],
-    prompt: "Room-presence/ranking skin based on the approved reference ranking screen: tall premium gold banner/shield with subtle geometric texture, crown-safe top area and a centered simplified anonymous mask emblem. This is intentionally distinct from the purple hooded avatar. Keep name, mysterious 9-digit ID, rank, support value and crown number dynamic. Never include real UID, Public ID, name or photo.",
+    prompt: "Subtle horizontal room-presence row skin for Mysterious Person: translucent black-violet glass, restrained purple haze and thin antique-gold edge accents. Keep avatar/name/9-digit mysterious ID areas clean and readable. Ranking/Top3 cards must continue using the existing ranking UI; only the identity avatar/name/ID swap to the mysterious presentation. Never include real UID, Public ID, name or photo.",
   }),
   template({
     id: "mysterious.voice_option_icon.v1",

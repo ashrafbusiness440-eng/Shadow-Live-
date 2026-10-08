@@ -6,9 +6,10 @@ Status: CODE/Asset Studio wiring is verified. This file defines only the final v
 
 The primary identity is a premium anonymous hooded figure: royal/deep violet cloak, dark metallic faceless mask, restrained antique-gold armor/trim, warm amber eye glow, black-violet atmosphere. It must read as mysterious and premium, not as VIP, Nobles, Agency, Wealth or Attraction.
 
-The ranking presentation is intentionally different from the avatar. In the reference, the mysterious user appears in the #1 ranking slot as a tall antique-gold banner/shield with a simple anonymous-mask emblem. Shadow Live should preserve that separation:
-- room_identity = hooded masked avatar/emblem.
-- room_presence_skin = gold ranking/presence banner treatment.
+In the reference ranking screen, the mysterious user occupies the normal #1 ranking card while their identity is replaced by the anonymous mask/avatar and the name «الشخص الغامض». The gold banner/shield belongs to the existing ranking UI, not to the Mysterious Person asset system. Shadow Live must reuse that existing ranking card and swap identity only:
+- room_identity = hooded masked avatar/emblem used wherever the account image is hidden.
+- room_presence_skin = subtle horizontal skin for the ordinary room-presence list only.
+- Wealth/Attraction/Top3 ranking card shape, crowns and rank colors remain owned by the existing ranking UI.
 - dynamic user text always stays in Flutter UI.
 
 ## Family rules
@@ -32,7 +33,7 @@ Use the same identity, but as an effect: violet smoke/energy + black shadow + re
 Keep the same black-violet/gold system signature and anonymous emblem. This remains presentation-only. Do not create a separate runtime or bake user data into it.
 
 ### mysterious.room_presence_skin
-Use the reference ranking language: tall gold banner/shield, subtle geometric texture, crown-safe top region, centered anonymous-mask emblem. It must NOT simply reuse the purple avatar art. All name/ID/rank/support/crown text remains dynamic.
+Use a lightweight horizontal black-violet glass treatment for the ordinary room-presence row, with restrained purple haze and a thin antique-gold edge. It must not override or duplicate ranking cards. Wealth/Attraction/Top3 keep their existing rank skins/crowns and only substitute room_identity + «الشخص الغامض» + mysterious ID dynamically.
 
 ### mysterious.voice_option_icons
 Nine icons on one consistent visual system. Black/violet base, gold highlight, compact circular composition. Individual pictograms distinguish the sound options, but no labels/text are baked into the image.
