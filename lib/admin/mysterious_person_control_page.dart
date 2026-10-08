@@ -21,6 +21,7 @@ class _MysteriousPersonControlPageState
   final _price15 = TextEditingController();
   final _price30 = TextEditingController();
   final _priceReason = TextEditingController();
+  final _voiceReason = TextEditingController();
   final _revealId = TextEditingController();
   final _revealReason = TextEditingController();
 
@@ -29,9 +30,11 @@ class _MysteriousPersonControlPageState
   bool _canManage = false;
   bool _canReveal = false;
   bool _canUpdatePrices = false;
+  bool _canConfigureVoices = false;
   bool _canGrantPermanent = false;
   String? _error;
   Map<String, dynamic>? _revealed;
+  List<_MysteriousVoiceControlOption> _voiceOptions = const [];
   List<_MysteriousControlUser> _results = const [];
 
   @override
@@ -47,6 +50,7 @@ class _MysteriousPersonControlPageState
     _price15.dispose();
     _price30.dispose();
     _priceReason.dispose();
+    _voiceReason.dispose();
     _revealId.dispose();
     _revealReason.dispose();
     super.dispose();
@@ -120,12 +124,24 @@ class _MysteriousPersonControlPageState
       final prices = body['prices'] is Map
           ? Map<String, dynamic>.from(body['prices'] as Map)
           : <String, dynamic>{};
+      final rawVoices = body['voiceOptions'];
+      final voices = rawVoices is List
+          ? rawVoices
+              .whereType<Map>()
+              .map((item) => _MysteriousVoiceControlOption.fromJson(
+                    Map<String, dynamic>.from(item),
+                  ))
+              .where((item) => item.id.isNotEmpty)
+              .toList(growable: false)
+          : const <_MysteriousVoiceControlOption>[];
       if (!mounted) return;
       setState(() {
         _canManage = access['canManage'] == true;
         _canReveal = access['canReveal'] == true;
         _canUpdatePrices = access['canUpdatePrices'] == true;
+        _canConfigureVoices = access['canConfigureVoices'] == true;
         _canGrantPermanent = access['canGrantPermanent'] == true;
+        _voiceOptions = voices;
         _price7.text = '${prices['7'] ?? prices[7] ?? 990000}';
         _price15.text = '${prices['15'] ?? prices[15] ?? 1990000}';
         _price30.text = '${prices['30'] ?? prices[30] ?? 2990000}';
@@ -207,6 +223,61 @@ class _MysteriousPersonControlPageState
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تم تحديث الأسعار وتسجيل العملية.')),
+      );
+      await _loadState();
+    } on _ControlError catch (error) {
+      if (mounted) setState(() => _error = _message(error.code));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  void _toggleVoice(int index, bool enabled) {
+    if (!_canConfigureVoices || _busy) return;
+    final current = _voiceOptions[index];
+    if (current.id == 'original') return;
+    final next = List<_MysteriousVoiceControlOption>.from(_voiceOptions);
+    next[index] = current.copyWith(enabled: enabled);
+    setState(() => _voiceOptions = next);
+  }
+
+  void _moveVoice(int index, int delta) {
+    if (!_canConfigureVoices || _busy) return;
+    final nextIndex = index + delta;
+    if (index <= 0 || nextIndex <= 0 || nextIndex >= _voiceOptions.length) {
+      return;
+    }
+    final next = List<_MysteriousVoiceControlOption>.from(_voiceOptions);
+    final item = next.removeAt(index);
+    next.insert(nextIndex, item);
+    setState(() => _voiceOptions = next);
+  }
+
+  Future<void> _saveVoiceOptions() async {
+    if (!_canConfigureVoices || _busy || _voiceOptions.length != 9) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await _post({
+        'action': 'controlUpdateVoices',
+        'voiceOptions': [
+          for (var index = 0; index < _voiceOptions.length; index++)
+            {
+              'id': _voiceOptions[index].id,
+              'enabled': _voiceOptions[index].id == 'original'
+                  ? true
+                  : _voiceOptions[index].enabled,
+              'order': index,
+            },
+        ],
+        'reason': _voiceReason.text.trim(),
+        'idempotencyKey': _key('voices'),
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم حفظ ترتيب الأصوات وحالتها.')),
       );
       await _loadState();
     } on _ControlError catch (error) {
@@ -462,6 +533,93 @@ class _MysteriousPersonControlPageState
             ),
             const SizedBox(height: 16),
           ],
+          if (_canConfigureVoices) ...[
+            _title('أصوات الشخص الغامض', Icons.graphic_eq_rounded),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  children: [
+                    for (var index = 0;
+                        index < _voiceOptions.length;
+                        index++)
+                      ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: CircleAvatar(
+                          child: Text('${index + 1}'),
+                        ),
+                        title: Text(
+                          _voiceOptions[index].labelAr,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        subtitle: Text(
+                          _voiceOptions[index].id == 'original'
+                              ? 'Fallback ثابت — لا يمكن تعطيله'
+                              : (_voiceOptions[index].enabled
+                                  ? 'مفعّل'
+                                  : 'معطّل'),
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              tooltip: 'أعلى',
+                              onPressed: index <= 1 || _busy
+                                  ? null
+                                  : () => _moveVoice(index, -1),
+                              icon: const Icon(Icons.keyboard_arrow_up_rounded),
+                            ),
+                            IconButton(
+                              tooltip: 'أسفل',
+                              onPressed:
+                                  index <= 0 ||
+                                          index >= _voiceOptions.length - 1 ||
+                                          _busy
+                                      ? null
+                                      : () => _moveVoice(index, 1),
+                              icon:
+                                  const Icon(Icons.keyboard_arrow_down_rounded),
+                            ),
+                            Switch(
+                              value: _voiceOptions[index].id == 'original'
+                                  ? true
+                                  : _voiceOptions[index].enabled,
+                              onChanged:
+                                  _voiceOptions[index].id == 'original' || _busy
+                                      ? null
+                                      : (value) =>
+                                          _toggleVoice(index, value),
+                            ),
+                          ],
+                        ),
+                      ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _voiceReason,
+                      maxLength: 160,
+                      decoration: const InputDecoration(
+                        labelText: 'سبب التعديل — اختياري',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        key: const Key('mysterious-control-save-voices'),
+                        onPressed: _busy ? null : _saveVoiceOptions,
+                        icon: const Icon(Icons.save_outlined),
+                        label: const Text('حفظ الأصوات وترتيبها'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
           if (_canManage) ...[
             _title('إدارة الامتياز', Icons.manage_accounts_outlined),
             Card(
@@ -708,6 +866,32 @@ class _MysteriousState {
         idChangesRemaining:
             (json['idChangesRemaining'] as num?)?.toInt() ?? 0,
         mysteriousId: (json['mysteriousId'] ?? '').toString(),
+      );
+}
+
+class _MysteriousVoiceControlOption {
+  const _MysteriousVoiceControlOption({
+    required this.id,
+    required this.labelAr,
+    required this.enabled,
+  });
+
+  final String id;
+  final String labelAr;
+  final bool enabled;
+
+  factory _MysteriousVoiceControlOption.fromJson(Map<String, dynamic> json) =>
+      _MysteriousVoiceControlOption(
+        id: (json['id'] ?? '').toString(),
+        labelAr: (json['labelAr'] ?? 'صوت').toString(),
+        enabled: json['enabled'] != false,
+      );
+
+  _MysteriousVoiceControlOption copyWith({bool? enabled}) =>
+      _MysteriousVoiceControlOption(
+        id: id,
+        labelAr: labelAr,
+        enabled: enabled ?? this.enabled,
       );
 }
 

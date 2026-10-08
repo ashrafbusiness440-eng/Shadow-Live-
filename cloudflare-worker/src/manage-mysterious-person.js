@@ -9,6 +9,7 @@ import {
   mysteriousCandidateFromUint32,
   mysteriousPolicyFromConfig,
   mysteriousStateFromUser,
+  mysteriousVoiceOptionsFromConfig,
 } from "./mysterious-person.js";
 
 const clean = (value) => String(value ?? "").trim();
@@ -51,6 +52,7 @@ export function mysteriousControlAccess(actor = {}) {
       caps.has(CONTROL_CAPABILITY) || caps.has(REVEAL_CAPABILITY)
     )),
     canUpdatePrices: isOwner,
+    canConfigureVoices: isOwner,
     canGrantPermanent: isOwner,
   };
 }
@@ -138,6 +140,7 @@ async function controlState(db, actor) {
       15: policy.packages[15].coinPrice,
       30: policy.packages[30].coinPrice,
     },
+    voiceOptions: mysteriousVoiceOptionsFromConfig(configSnap.data || {}),
   };
 }
 
@@ -258,6 +261,96 @@ async function controlUpdatePrices(db, actor, body) {
       }),
     ]);
     return { ok: true, prices: { 7: p7, 15: p15, 30: p30 } };
+  } catch (error) {
+    await db.rollback(tx).catch(() => {});
+    throw error;
+  }
+}
+
+async function controlUpdateVoices(db, actor, body) {
+  if (!actor.access.canConfigureVoices) throw new ApiError("forbidden", 403);
+  const key = clean(body?.idempotencyKey);
+  const reason = clean(body?.reason);
+  const raw = Array.isArray(body?.voiceOptions) ? body.voiceOptions : [];
+  if (!validKey(key) || reason.length > 160 || raw.length !== 9) {
+    throw new ApiError("invalid_request", 400);
+  }
+
+  const allowedIds = new Set([
+    "original",
+    "men_to_child",
+    "men_to_women",
+    "women_to_child",
+    "women_to_men",
+    "foreigner",
+    "android",
+    "ethereal",
+    "minions",
+  ]);
+  const seen = new Set();
+  const voiceOptions = [];
+  for (let index = 0; index < raw.length; index += 1) {
+    const item = raw[index] && typeof raw[index] === "object" ? raw[index] : {};
+    const id = clean(item.id);
+    if (!allowedIds.has(id) || seen.has(id)) {
+      throw new ApiError("invalid_mysterious_voice_config", 400);
+    }
+    seen.add(id);
+    voiceOptions.push({
+      id,
+      enabled: id === "original" ? true : item.enabled !== false,
+      order: index,
+    });
+  }
+  if (!seen.has("original")) {
+    throw new ApiError("invalid_mysterious_voice_config", 400);
+  }
+
+  const tx = await db.beginTransaction();
+  try {
+    const [opSnap, configSnap] = await Promise.all([
+      db.get("control_operations/" + key, tx),
+      db.get("system_config/mysterious_person", tx),
+    ]);
+    if (opSnap.exists) {
+      await db.rollback(tx);
+      return { ok: true, code: "duplicate", ...(opSnap.data?.result || {}) };
+    }
+
+    const before = mysteriousVoiceOptionsFromConfig(configSnap.data || {});
+    const now = new Date();
+    const result = { voiceOptions };
+    await db.commit(tx, [
+      db.writeUpdate(
+        "system_config/mysterious_person",
+        {
+          voiceOptions,
+          voiceOptionsUpdatedAt: now,
+          voiceOptionsUpdatedBy: actor.uid,
+        },
+        ["voiceOptions", "voiceOptionsUpdatedAt", "voiceOptionsUpdatedBy"],
+      ),
+      db.writeCreate("mysterious_audit_logs/control_voices_" + key, {
+        actorUid: actor.uid,
+        action: "update_voice_options",
+        beforeVoiceOptions: before.map((item) => ({
+          id: item.id,
+          enabled: item.enabled !== false,
+          order: item.order,
+        })),
+        afterVoiceOptions: voiceOptions,
+        reason: reason || null,
+        createdAt: now,
+      }),
+      db.writeCreate("control_operations/" + key, {
+        action: "manageMysteriousVoices",
+        actorUid: actor.uid,
+        status: "completed",
+        result,
+        createdAt: now,
+      }),
+    ]);
+    return { ok: true, ...result };
   } catch (error) {
     await db.rollback(tx).catch(() => {});
     throw error;
@@ -521,6 +614,7 @@ export async function manageMysteriousPerson(request, env) {
     const db = firestoreClient(env);
     const need = action === "controlReveal" ? "canReveal"
       : action === "controlUpdatePrices" ? "canUpdatePrices"
+      : action === "controlUpdateVoices" ? "canConfigureVoices"
       : action === "controlState" ? "canOpen"
       : "canManage";
     const actor = await requireRecentControlActor(request, env, db, need);
@@ -529,6 +623,9 @@ export async function manageMysteriousPerson(request, env) {
     if (action === "controlSearch") return json(request, env, await controlSearch(db, actor, body));
     if (action === "controlUpdatePrices") {
       return json(request, env, await controlUpdatePrices(db, actor, body));
+    }
+    if (action === "controlUpdateVoices") {
+      return json(request, env, await controlUpdateVoices(db, actor, body));
     }
     if (action === "controlGrant") return json(request, env, await controlGrant(db, actor, body));
     if (action === "controlRevoke") return json(request, env, await controlRevoke(db, actor, body));
