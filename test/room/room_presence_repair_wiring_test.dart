@@ -145,6 +145,7 @@ void main() {
     expect(cleanup.contains('await recordMicActivity(tx,db,uid,seat,endedAtMs);'),
         isTrue);
     expect(cleanup.contains('tx.update(roomRef,update);'), isTrue);
+    expect(cleanup.contains('customerServiceMicExpiresAtMs:0,'), isTrue);
     expect(shim.contains('export function getFirestoreForEnv(env)'), isTrue);
   });
 
