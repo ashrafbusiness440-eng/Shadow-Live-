@@ -25,11 +25,24 @@ export function applyMysteriousIdentityPresentation(
   }
 
   const mysteriousId = clean(user.mysteriousId);
+  const {
+    uid: _uid,
+    userId: _userId,
+    targetUid: _targetUid,
+    ownerUid: _ownerUid,
+    hostUid: _hostUid,
+    realUid: _realUid,
+    ...safePresentation
+  } = presentation;
   return {
-    ...presentation,
+    ...safePresentation,
     displayName: "الشخص الغامض",
+    name: "الشخص الغامض",
+    username: "الشخص الغامض",
     profileImageUrl: "",
     profileAvatarAsset: "",
+    photoUrl: "",
+    avatarUrl: "",
     publicId: mysteriousId,
     vipLevel: 0,
     badges: [],
