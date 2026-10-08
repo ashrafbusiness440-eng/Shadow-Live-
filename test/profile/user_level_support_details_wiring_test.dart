@@ -16,7 +16,7 @@ void main() {
     expect(service.contains('class UserLevelSupportPage'), isTrue);
     expect(service.contains('class UserLevelSupportItem'), isTrue);
 
-    expect(screen.contains("Key('level-support-details-$metric')"), isTrue);
+    expect(screen.contains("Key('level-support-details-\$metric')"), isTrue);
     expect(screen.contains('class _UserLevelSupportSheet'), isTrue);
     expect(screen.contains('loadSupportPage('), isTrue);
     expect(screen.contains("'تحميل المزيد'"), isTrue);
