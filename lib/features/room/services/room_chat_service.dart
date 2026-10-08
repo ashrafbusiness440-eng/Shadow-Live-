@@ -15,6 +15,8 @@ class RoomChatMessage {
     this.wealthLevel = 0,
     this.attractionLevel = 0,
     this.gameLevel = 0,
+    this.mysteriousMode = false,
+    this.mysteriousId = '',
     required this.text,
     required this.mentionUids,
     required this.replyTo,
@@ -47,6 +49,8 @@ class RoomChatMessage {
   final int wealthLevel;
   final int attractionLevel;
   final int gameLevel;
+  final bool mysteriousMode;
+  final String mysteriousId;
   final String text;
   final List<String> mentionUids;
   final String? replyTo;
@@ -86,6 +90,8 @@ class RoomChatMessage {
       wealthLevel: (data['wealthLevel'] as num?)?.toInt() ?? 0,
       attractionLevel: (data['attractionLevel'] as num?)?.toInt() ?? 0,
       gameLevel: (data['gameLevel'] as num?)?.toInt() ?? 0,
+      mysteriousMode: data['mysteriousMode'] == true,
+      mysteriousId: (data['mysteriousId'] ?? '').toString(),
       text: (data['text'] ?? data['systemText'] ?? '').toString(),
       mentionUids: data['mentionUids'] is List
           ? (data['mentionUids'] as List)

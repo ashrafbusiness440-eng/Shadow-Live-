@@ -988,6 +988,24 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       }
     }
 
+    if (seat.mysteriousMode) {
+      await showMysteriousIdentitySheet(
+        context,
+        mysteriousId: seat.mysteriousId,
+        actions: actions
+            .map(
+              (action) => MysteriousIdentityAction(
+                icon: action.icon,
+                label: action.label,
+                color: action.color,
+                onTap: action.onTap,
+              ),
+            )
+            .toList(growable: false),
+      );
+      return;
+    }
+
     await showQuickProfileSheet(
       context,
       userId: seat.uid,
@@ -1487,33 +1505,56 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                               contentPadding: EdgeInsets.zero,
                               onTap: () {
                                 Navigator.pop(sheetContext);
+                                if (user.mysteriousMode) {
+                                  showMysteriousIdentitySheet(
+                                    context,
+                                    mysteriousId: user.mysteriousId,
+                                    actions: adminActions
+                                        .map(
+                                          (action) =>
+                                              MysteriousIdentityAction(
+                                            icon: action.icon,
+                                            label: action.label,
+                                            color: action.color,
+                                            onTap: action.onTap,
+                                          ),
+                                        )
+                                        .toList(growable: false),
+                                  );
+                                  return;
+                                }
                                 showQuickProfileSheet(
                                   context,
                                   userId: user.uid,
                                   adminActions: adminActions,
                                 );
                               },
-                              leading: ProfileAvatarWithFrame(
-                                diameter: 40,
-                                userId: user.uid,
-                                backgroundColor:
-                                    const Color(0xFF25183F),
-                                placeholderColor: Colors.white54,
-                                fallbackProfile: <String, dynamic>{
-                                  'profileImageUrl': user.profileImageUrl,
-                                  'activeProfileFrameAssetKey':
-                                      user.activeProfileFrameAssetKey,
-                                  'activeProfileFrameImageUrl':
-                                      user.activeProfileFrameImageUrl,
-                                  'activeProfileFrameExpiresAtMs':
-                                      user.activeProfileFrameExpiresAtMs,
-                                  'activeProfileFramePermanent':
-                                      user.activeProfileFramePermanent,
-                                },
-                                fallbackIsVisualSnapshot: true,
-                                vipLevel: user.vipLevel,
-                                useVipFallback: true,
-                              ),
+                              leading: user.mysteriousMode
+                                  ? const MysteriousIdentityAvatar(
+                                      diameter: 40,
+                                    )
+                                  : ProfileAvatarWithFrame(
+                                      diameter: 40,
+                                      userId: user.uid,
+                                      backgroundColor:
+                                          const Color(0xFF25183F),
+                                      placeholderColor: Colors.white54,
+                                      fallbackProfile: <String, dynamic>{
+                                        'profileImageUrl':
+                                            user.profileImageUrl,
+                                        'activeProfileFrameAssetKey':
+                                            user.activeProfileFrameAssetKey,
+                                        'activeProfileFrameImageUrl':
+                                            user.activeProfileFrameImageUrl,
+                                        'activeProfileFrameExpiresAtMs':
+                                            user.activeProfileFrameExpiresAtMs,
+                                        'activeProfileFramePermanent':
+                                            user.activeProfileFramePermanent,
+                                      },
+                                      fallbackIsVisualSnapshot: true,
+                                      vipLevel: user.vipLevel,
+                                      useVipFallback: true,
+                                    ),
                               title: Text(
                                 user.displayName,
                                 style: const TextStyle(
@@ -1932,7 +1973,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         ),
                       ),
                     ),
-                  if (seat.voiceWaveActive)
+                  if (seat.voiceWaveActive && !seat.mysteriousMode)
                     Positioned(
                       left: -8,
                       top: -8,
@@ -1947,46 +1988,51 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         ),
                       ),
                     ),
-                  Container(
-                    width: micSize,
-                    height: micSize,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: const Color(0xFF151B29),
-                      border: Border.all(
-                        color: seat.occupied
-                            ? const Color(0xFF8A3DFF)
-                            : Colors.white12,
-                        width: seat.occupied ? 2 : 1,
-                      ),
-                      image: seat.profileImageUrl.isEmpty
-                          ? null
-                          : DecorationImage(
-                              image: NetworkImage(seat.profileImageUrl),
-                              fit: BoxFit.cover,
+                  seat.mysteriousMode
+                      ? MysteriousIdentityAvatar(diameter: micSize)
+                      : Container(
+                          width: micSize,
+                          height: micSize,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: const Color(0xFF151B29),
+                            border: Border.all(
+                              color: seat.occupied
+                                  ? const Color(0xFF8A3DFF)
+                                  : Colors.white12,
+                              width: seat.occupied ? 2 : 1,
                             ),
-                    ),
-                    child: seat.occupied
-                        ? (seat.profileImageUrl.isEmpty
-                            ? Icon(
-                                Icons.person_rounded,
-                                size: compact ? 20 : 24,
-                                color: Colors.white70,
-                              )
-                            : null)
-                        : Icon(
-                            _isCustomerServiceRoom
-                                ? (seat.index < 2
-                                    ? Icons.admin_panel_settings_rounded
-                                    : Icons.lock_open_rounded)
-                                : Icons.add_rounded,
-                            size: compact ? 19 : 24,
-                            color: _isCustomerServiceRoom && seat.index < 2
-                                ? const Color(0xFFFFD54A)
-                                : Colors.white38,
+                            image: seat.profileImageUrl.isEmpty
+                                ? null
+                                : DecorationImage(
+                                    image: NetworkImage(
+                                      seat.profileImageUrl,
+                                    ),
+                                    fit: BoxFit.cover,
+                                  ),
                           ),
-                  ),
-                  if (seat.frameActive)
+                          child: seat.occupied
+                              ? (seat.profileImageUrl.isEmpty
+                                  ? Icon(
+                                      Icons.person_rounded,
+                                      size: compact ? 20 : 24,
+                                      color: Colors.white70,
+                                    )
+                                  : null)
+                              : Icon(
+                                  _isCustomerServiceRoom
+                                      ? (seat.index < 2
+                                          ? Icons.admin_panel_settings_rounded
+                                          : Icons.lock_open_rounded)
+                                      : Icons.add_rounded,
+                                  size: compact ? 19 : 24,
+                                  color: _isCustomerServiceRoom &&
+                                          seat.index < 2
+                                      ? const Color(0xFFFFD54A)
+                                      : Colors.white38,
+                                ),
+                        ),
+                  if (seat.frameActive && !seat.mysteriousMode)
                     Positioned(
                       left: -6,
                       top: -6,

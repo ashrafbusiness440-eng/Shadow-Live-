@@ -1,5 +1,19 @@
 import 'package:flutter/material.dart';
 
+class MysteriousIdentityAction {
+  const MysteriousIdentityAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.color = Colors.white,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final Color color;
+}
+
 class MysteriousIdentityAvatar extends StatelessWidget {
   const MysteriousIdentityAvatar({
     super.key,
@@ -44,6 +58,7 @@ Future<void> showMysteriousIdentitySheet(
   required String mysteriousId,
   int? rank,
   num? support,
+  List<MysteriousIdentityAction> actions = const [],
 }) {
   final id = mysteriousId.trim();
   return showModalBottomSheet<void>(
@@ -91,6 +106,26 @@ Future<void> showMysteriousIdentitySheet(
                     if (support != null)
                       _InfoChip(label: 'الدعم $support'),
                   ],
+                ),
+              ],
+              if (actions.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                ...actions.map(
+                  (action) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(action.icon, color: action.color),
+                    title: Text(
+                      action.label,
+                      style: TextStyle(
+                        color: action.color,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      action.onTap();
+                    },
+                  ),
                 ),
               ],
               const SizedBox(height: 16),
