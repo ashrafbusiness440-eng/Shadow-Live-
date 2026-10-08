@@ -540,10 +540,32 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                 taken.seats.any((seat) => seat.uid == uid))) {
           return;
         }
+        // A newly occupied seat starts server-muted. Acknowledge unmute
+        // through the existing seat endpoint BEFORE enabling live audio.
+        final opened = await _runSeatAction(
+          () => _roomSeatService.setSeatMuted(
+            roomId: roomId,
+            muted: false,
+          ),
+        );
+        if (opened == null ||
+            !opened.seats.any(
+              (seat) => seat.uid == uid && !seat.muted,
+            )) {
+          return;
+        }
         try {
           await _voiceSession.setMicMuted(false);
           if (mounted) setState(() => _voiceMicMuted = false);
-        } catch (_) {}
+        } catch (_) {
+          // Keep server mic accounting in sync if ZEGO refuses to unmute.
+          await _runSeatAction(
+            () => _roomSeatService.setSeatMuted(
+              roomId: roomId,
+              muted: true,
+            ),
+          );
+        }
         return;
       }
 
@@ -564,9 +586,11 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
 
     try {
       final muted = !_voiceSession.micMuted;
-      // Apply the local mute immediately; the seat update uses the same
-      // existing server action and must confirm a remote unmute.
-      await _voiceSession.setMicMuted(muted);
+      // Muting is immediate for safety. Unmuting must be acknowledged by
+      // the existing seat authority before opening the local microphone.
+      if (muted) {
+        await _voiceSession.setMicMuted(true);
+      }
       if (hasSeat && roomId.isNotEmpty) {
         final updated = await _runSeatAction(
           () => _roomSeatService.setSeatMuted(
@@ -575,12 +599,25 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           ),
         );
         if (updated == null ||
-            !(updated.isOwner ||
-                updated.seats.any((seat) => seat.uid == uid))) {
-          if (!muted && _voiceSession.active) {
-            await _voiceSession.setMicMuted(true);
-          }
+            !updated.seats.any(
+              (seat) => seat.uid == uid && seat.muted == muted,
+            )) {
           return;
+        }
+      }
+      if (!muted) {
+        try {
+          await _voiceSession.setMicMuted(false);
+        } catch (_) {
+          if (hasSeat && roomId.isNotEmpty) {
+            await _runSeatAction(
+              () => _roomSeatService.setSeatMuted(
+                roomId: roomId,
+                muted: true,
+              ),
+            );
+          }
+          rethrow;
         }
       }
       if (mounted) {
