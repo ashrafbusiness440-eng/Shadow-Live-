@@ -382,6 +382,14 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     const roomOwnerUid = clean(
       room.ownerUid || room.ownerId || room.hostId || "",
     );
+    // A verified room seat is already persisted by roomSeatAction.
+    // During a degraded socket connection, retain that existing room
+    // authority for seated speakers; never extend it to arbitrary UIDs.
+    const occupiedMicUids = new Set(
+      (Array.isArray(room.seats) ? room.seats : [])
+        .map((seat) => clean(seat?.uid))
+        .filter(Boolean),
+    );
     if (!roomFeatureEnabled(room, "giftsEnabled")) {
       throw new ApiError("room_gifts_disabled", 409);
     }
@@ -401,34 +409,29 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       recipientIds = requestedRecipientIds;
       if (realtimeSelection !== null) {
         const present = new Set(realtimeSelection.map(clean));
-        if (!present.has(senderUid)) {
+        if (!present.has(senderUid) && !occupiedMicUids.has(senderUid)) {
           throw new ApiError("sender_not_in_room", 409);
         }
         if (
           recipientIds.some(
-            (uid) => !present.has(uid) && uid !== roomOwnerUid,
+            (uid) =>
+              !present.has(uid) &&
+              !occupiedMicUids.has(uid) &&
+              uid !== roomOwnerUid,
           )
         ) {
           throw new ApiError("receiver_not_in_room", 409);
         }
       } else {
-        await assertRoomPresence(
-          db,
-          transaction,
-          null,
-          roomId,
-          senderUid,
-          "sender_not_in_room",
-        );
-        for (const uid of recipientIds) {
-          if (uid === roomOwnerUid) continue;
+        if (!occupiedMicUids.has(senderUid)) {
           await assertRoomPresence(
-            db,
-            transaction,
-            null,
-            roomId,
-            uid,
-            "receiver_not_in_room",
+            db, transaction, null, roomId, senderUid, "sender_not_in_room",
+          );
+        }
+        for (const uid of recipientIds) {
+          if (uid === roomOwnerUid || occupiedMicUids.has(uid)) continue;
+          await assertRoomPresence(
+            db, transaction, null, roomId, uid, "receiver_not_in_room",
           );
         }
       }
@@ -468,14 +471,21 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
         roomId,
         [senderUid, ...seatIds],
       );
-      if (presentIds === null) {
-        throw new ApiError("room_presence_unavailable", 503);
+      const present = new Set((presentIds || []).map(clean));
+      if (!present.has(senderUid) && !occupiedMicUids.has(senderUid)) {
+        if (presentIds !== null) {
+          throw new ApiError("sender_not_in_room", 409);
+        }
+        await assertRoomPresence(
+          db, transaction, null, roomId, senderUid, "sender_not_in_room",
+        );
       }
-      const present = new Set(presentIds.map(clean));
-      if (!present.has(senderUid)) {
-        throw new ApiError("sender_not_in_room", 409);
-      }
-      recipientIds = seatIds.filter((uid) => present.has(uid));
+      // The server room seat document is already read in this
+      // transaction. Retain seated gift recipients while their socket
+      // presence reconnects; absent/non-seated users remain excluded.
+      recipientIds = seatIds.filter(
+        (uid) => present.has(uid) || occupiedMicUids.has(uid),
+      );
     }
 
     recipientIds = Array.from(new Set(recipientIds.map(clean).filter(Boolean)));
