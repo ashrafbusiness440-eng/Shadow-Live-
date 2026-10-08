@@ -1,0 +1,186 @@
+{
+  "batch": "I",
+  "feature": "mysterious_person",
+  "status": "ready_to_generate",
+  "source": "Trello Batch I + approved reference videos",
+  "assets": [
+    {
+      "assetKey": "mysterious.room_identity",
+      "templateId": "mysterious.room_identity.v1",
+      "fullPath": "assets/images/mysterious/mysterious_room_identity.webp",
+      "width": 1024,
+      "height": 1024,
+      "format": "webp",
+      "transparent": true,
+      "mode": "remote_cached"
+    },
+    {
+      "assetKey": "mysterious.identity_card",
+      "templateId": "mysterious.identity_card.v1",
+      "fullPath": "assets/images/mysterious/mysterious_identity_card.webp",
+      "width": 1280,
+      "height": 640,
+      "format": "webp",
+      "transparent": true,
+      "mode": "remote_cached"
+    },
+    {
+      "assetKey": "mysterious.id_plate",
+      "templateId": "mysterious.id_plate.v1",
+      "fullPath": "assets/images/mysterious/mysterious_id_plate.webp",
+      "width": 1280,
+      "height": 320,
+      "format": "webp",
+      "transparent": true,
+      "mode": "remote_cached"
+    },
+    {
+      "assetKey": "mysterious.badge",
+      "templateId": "mysterious.badge.v1",
+      "fullPath": "assets/images/mysterious/mysterious_badge.webp",
+      "width": 512,
+      "height": 512,
+      "format": "webp",
+      "transparent": true,
+      "mode": "remote_cached"
+    },
+    {
+      "assetKey": "mysterious.entrance",
+      "templateId": "mysterious.entrance.v1",
+      "fullPath": "assets/images/mysterious/mysterious_entrance.webp",
+      "width": 1280,
+      "height": 320,
+      "format": "animated_webp_preferred",
+      "transparent": true,
+      "mode": "remote_cached"
+    },
+    {
+      "assetKey": "mysterious.vehicle",
+      "templateId": "mysterious.vehicle.v1",
+      "fullPath": "assets/images/mysterious/mysterious_vehicle.webp",
+      "width": 1280,
+      "height": 720,
+      "format": "webp",
+      "transparent": true,
+      "mode": "remote_cached",
+      "runtime": "family_ready_no_independent_runtime"
+    },
+    {
+      "assetKey": "mysterious.room_presence_skin",
+      "templateId": "mysterious.room_presence_skin.v1",
+      "fullPath": "assets/images/mysterious/mysterious_room_presence_skin.webp",
+      "width": 1280,
+      "height": 320,
+      "format": "webp",
+      "transparent": true,
+      "mode": "remote_cached",
+      "scope": "ordinary_room_presence_row_only"
+    },
+    {
+      "assetKey": "mysterious.voice_option_icons.original",
+      "templateId": "mysterious.voice_option_icon.v1",
+      "fullPath": "assets/images/mysterious/voices/voice_original.webp",
+      "width": 256,
+      "height": 256,
+      "format": "webp",
+      "transparent": true,
+      "mode": "remote_cached"
+    },
+    {
+      "assetKey": "mysterious.voice_option_icons.men_to_child",
+      "templateId": "mysterious.voice_option_icon.v1",
+      "fullPath": "assets/images/mysterious/voices/voice_men_to_child.webp",
+      "width": 256,
+      "height": 256,
+      "format": "webp",
+      "transparent": true,
+      "mode": "remote_cached"
+    },
+    {
+      "assetKey": "mysterious.voice_option_icons.men_to_women",
+      "templateId": "mysterious.voice_option_icon.v1",
+      "fullPath": "assets/images/mysterious/voices/voice_men_to_women.webp",
+      "width": 256,
+      "height": 256,
+      "format": "webp",
+      "transparent": true,
+      "mode": "remote_cached"
+    },
+    {
+      "assetKey": "mysterious.voice_option_icons.women_to_child",
+      "templateId": "mysterious.voice_option_icon.v1",
+      "fullPath": "assets/images/mysterious/voices/voice_women_to_child.webp",
+      "width": 256,
+      "height": 256,
+      "format": "webp",
+      "transparent": true,
+      "mode": "remote_cached"
+    },
+    {
+      "assetKey": "mysterious.voice_option_icons.women_to_men",
+      "templateId": "mysterious.voice_option_icon.v1",
+      "fullPath": "assets/images/mysterious/voices/voice_women_to_men.webp",
+      "width": 256,
+      "height": 256,
+      "format": "webp",
+      "transparent": true,
+      "mode": "remote_cached"
+    },
+    {
+      "assetKey": "mysterious.voice_option_icons.foreigner",
+      "templateId": "mysterious.voice_option_icon.v1",
+      "fullPath": "assets/images/mysterious/voices/voice_foreigner.webp",
+      "width": 256,
+      "height": 256,
+      "format": "webp",
+      "transparent": true,
+      "mode": "remote_cached"
+    },
+    {
+      "assetKey": "mysterious.voice_option_icons.android",
+      "templateId": "mysterious.voice_option_icon.v1",
+      "fullPath": "assets/images/mysterious/voices/voice_android.webp",
+      "width": 256,
+      "height": 256,
+      "format": "webp",
+      "transparent": true,
+      "mode": "remote_cached"
+    },
+    {
+      "assetKey": "mysterious.voice_option_icons.ethereal",
+      "templateId": "mysterious.voice_option_icon.v1",
+      "fullPath": "assets/images/mysterious/voices/voice_ethereal.webp",
+      "width": 256,
+      "height": 256,
+      "format": "webp",
+      "transparent": true,
+      "mode": "remote_cached"
+    },
+    {
+      "assetKey": "mysterious.voice_option_icons.minions",
+      "templateId": "mysterious.voice_option_icon.v1",
+      "fullPath": "assets/images/mysterious/voices/voice_minions.webp",
+      "width": 256,
+      "height": 256,
+      "format": "webp",
+      "transparent": true,
+      "mode": "remote_cached"
+    }
+  ],
+  "rules": {
+    "dynamicOnly": [
+      "real user photo",
+      "real name",
+      "UID",
+      "Public ID",
+      "mysterious 9-digit ID",
+      "rank",
+      "support value",
+      "prices",
+      "duration",
+      "voice labels"
+    ],
+    "rankingUi": "reuse_existing_ranking_skin_swap_identity_only",
+    "pipeline": "Asset Studio -> app_asset_registry -> ShadowAssetRegistry -> cache/fallback"
+  }
+}
