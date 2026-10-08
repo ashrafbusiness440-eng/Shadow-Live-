@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -115,23 +116,30 @@ class _DirectGiftContextState extends State<_DirectGiftContext> {
       gift.id,
       diaryId.isEmpty ? 'profile' : 'diary',
     ].join('_');
-    final response = await http.post(
-      Uri.parse('$_apiBase/chat-actions'),
-      headers: {
-        'authorization': 'Bearer $token',
-        'content-type': 'application/json',
-      },
-      body: jsonEncode({
-        'action': 'sendGift',
-        'receiverId': widget.receiverId,
-        'giftId': gift.id,
-        'quantity': quantity,
-        'useGiftBag': useGiftBag,
-        if (diaryId.isEmpty) 'conversationId': conversationId,
-        if (diaryId.isNotEmpty) 'diaryId': diaryId,
-        'idempotencyKey': key,
-      }),
-    );
+    late final http.Response response;
+    try {
+      response = await http.post(
+        Uri.parse('$_apiBase/chat-actions'),
+        headers: {
+          'authorization': 'Bearer $token',
+          'content-type': 'application/json',
+        },
+        body: jsonEncode({
+          'action': 'sendGift',
+          'receiverId': widget.receiverId,
+          'giftId': gift.id,
+          'quantity': quantity,
+          'useGiftBag': useGiftBag,
+          if (diaryId.isEmpty) 'conversationId': conversationId,
+          if (diaryId.isNotEmpty) 'diaryId': diaryId,
+          'idempotencyKey': key,
+        }),
+      ).timeout(const Duration(seconds: 25));
+    } on TimeoutException {
+      throw StateError('gift_connection_timeout');
+    } on http.ClientException {
+      throw StateError('gift_network_unavailable');
+    }
 
     Map<String, dynamic> body = <String, dynamic>{};
     try {
