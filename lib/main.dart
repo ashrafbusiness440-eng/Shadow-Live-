@@ -1356,6 +1356,11 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     );
   }
 
+  int get _roomAudienceTotalCount => max(
+        (_roomArguments['onlineCount'] as num?)?.toInt() ?? 0,
+        _voiceSession.roomParticipants.length,
+      );
+
   Widget _buildRoomAudienceStrip() {
     // Reuse the same room presence snapshot, without a second listener.
     final seatedUids = (_roomSeatState?.seats ?? const <VoiceSeat>[])
@@ -1366,8 +1371,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         .where((user) => !seatedUids.contains(user.uid))
         .take(20)
         .toList(growable: false);
-    final total = (_roomArguments['onlineCount'] as num?)?.toInt() ??
-        _voiceSession.roomParticipants.length;
+    final total = _roomAudienceTotalCount;
 
     return SizedBox(
       height: 57,
@@ -3235,8 +3239,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             .where((value) => value.trim().isNotEmpty)
             .toList()
         : const <String>[];
-    final online =
-        (_roomArguments['onlineCount'] ?? 0).toString();
+    final online = _roomAudienceTotalCount.toString();
     final level = _roomInsights?.level ??
         ((_roomArguments['level'] as num?)?.toInt() ?? 1);
 
@@ -5253,7 +5256,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        (_roomArguments['onlineCount'] ?? 0).toString(),
+                        _roomAudienceTotalCount.toString(),
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 9,
