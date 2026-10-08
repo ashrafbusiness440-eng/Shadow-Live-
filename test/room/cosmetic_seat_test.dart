@@ -11,11 +11,16 @@ void main() {
     expect(end, greaterThan(start));
     final strip = source.substring(start, end);
     expect(strip.contains('_voiceSession.roomParticipants'), isTrue);
-    expect(source.contains('int get _roomAudienceTotalCount => max('), isTrue);
+    expect(source.contains('int get _roomAudienceTotalCount {'), isTrue);
+    expect(source.contains('.where((seat) => seat.occupied)'), isTrue);
+    expect(source.contains('max(max(reported, _voiceSession.roomParticipants.length), seated)'), isTrue);
     expect(strip.contains('final total = _roomAudienceTotalCount;'), isTrue);
     expect(source.contains('_roomAudienceTotalCount.toString(),'), isTrue);
     expect(strip.contains('!seatedUids.contains(user.uid)'), isTrue);
-    expect(strip.contains('.take(20)'), isTrue);
+    expect(strip.contains('.take(ownerUid.isEmpty ? 20 : 19)'), isTrue);
+    expect(strip.contains('if (ownerUid.isNotEmpty) ownerPresence,'), isTrue);
+    expect(strip.contains('if (isOwnerTile)'), isTrue);
+    expect(strip.contains('showQuickProfileSheet('), isTrue);
     expect(strip.contains("Key('room-audience-count')"), isTrue);
     expect(strip.contains('showQuickProfileSheet('), isTrue);
     expect(strip.contains('showMysteriousIdentitySheet('), isTrue);
@@ -32,6 +37,49 @@ void main() {
     expect(sheetEnd, greaterThan(sheetStart));
     final sheet = source.substring(sheetStart, sheetEnd);
     expect(sheet.contains('!seatedUids.contains(user.uid)'), isTrue);
+  });
+
+  test('locked and muted mic flags roundtrip without affecting normal seats', () {
+    final blocked = VoiceSeat.fromJson({
+      'index': 2,
+      'uid': '',
+      'displayName': '',
+      'profileImageUrl': '',
+      'muted': true,
+      'locked': true,
+      'muteLocked': true,
+    });
+    final available = VoiceSeat.fromJson({
+      'index': 3,
+      'uid': '',
+      'displayName': '',
+      'profileImageUrl': '',
+      'muted': true,
+    });
+    expect(blocked.locked, isTrue);
+    expect(blocked.muteLocked, isTrue);
+    expect(available.locked, isFalse);
+    expect(available.muteLocked, isFalse);
+  });
+
+  test('empty mic opens options instead of moving immediately', () {
+    final source = File('lib/main.dart').readAsStringSync();
+    final start = source.indexOf('Future<void> _handleSeatTap(');
+    final end = source.indexOf('Future<void> _showKickOptions(', start);
+    expect(start, greaterThanOrEqualTo(0));
+    expect(end, greaterThan(start));
+    final actions = source.substring(start, end);
+    expect(actions.contains('await _showVacantRoomSeatOptions(seat);'), isTrue);
+    expect(actions.contains("'قفل المايك'"), isTrue);
+    expect(actions.contains("'كتم المايك إجباريًا'"), isTrue);
+    expect(actions.contains('setSeatLocked('), isTrue);
+    expect(actions.contains('setSeatMuteLocked('), isTrue);
+    expect(actions.contains('if (seat.locked)'), isTrue);
+    expect(actions.contains('Navigator.pop(sheetContext);'), isTrue);
+    expect(source.contains('!seat.locked &&'), isTrue);
+    expect(source.contains('mySeat.first.muteLocked'), isTrue);
+    expect(source.contains("'مايك مقفل'"), isTrue);
+    expect(source.contains("'مايك مكتوم'"), isTrue);
   });
 
   test('active frame is visible only before expiry', () {
