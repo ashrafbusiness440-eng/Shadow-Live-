@@ -26,7 +26,8 @@ void main() {
     final main = File('lib/main.dart').readAsStringSync();
 
     expect(sheet.contains('Future<bool> Function()? ensurePresence'), isTrue);
-    expect(sheet.contains('await widget.ensurePresence'), isTrue);
+    expect(sheet.contains('final ensurePresence = widget.ensurePresence;'), isTrue);
+    expect(sheet.contains('await ensurePresence();'), isTrue);
     expect(sheet.contains("StateError('room_presence_unavailable')"), isTrue);
     expect(main.contains('_voiceSession.ensureRoomPresenceReady'), isTrue);
   });
