@@ -66,7 +66,13 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
   @override
   void initState() {
     super.initState();
-    if (_uid.isNotEmpty) _selectedIds.add(_uid);
+    // Default to the room owner, not silently to gifting yourself.
+    final ownerId = widget.ownerUid.trim();
+    if (ownerId.isNotEmpty && ownerId != _uid) {
+      _selectedIds.add(ownerId);
+    } else if (_uid.isNotEmpty) {
+      _selectedIds.add(_uid);
+    }
   }
 
   @override
@@ -80,6 +86,18 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
     final items = widget.participants
         .where((item) => item.uid.isNotEmpty && seen.add(item.uid))
         .toList(growable: true);
+    // The seat snapshot is already present in this sheet. Do not hide real
+    // microphone occupants if realtime roster has not arrived yet.
+    for (final seat in widget.seats) {
+      if (!seat.occupied || !seen.add(seat.uid)) continue;
+      items.add(RoomPresenceUser.fromMap(<String, dynamic>{
+        'uid': seat.uid,
+        'displayName': seat.displayName,
+        'profileImageUrl': seat.profileImageUrl,
+        'mysteriousMode': seat.mysteriousMode,
+        'mysteriousId': seat.mysteriousId,
+      }));
+    }
     final ownerUid = widget.ownerUid.trim();
     items.sort((a, b) {
       if (ownerUid.isNotEmpty) {
@@ -191,13 +209,9 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
     int quantity,
     bool useGiftBag,
   ) async {
-    final ensurePresence = widget.ensurePresence;
-    if (ensurePresence != null) {
-      final presenceReady = await ensurePresence();
-      if (!presenceReady) {
-        throw StateError('room_presence_unavailable');
-      }
-    }
+    // Room WebSocket may be reconnecting even while the backend already
+    // recognizes the live room. The server enforces authoritative presence
+    // during gift mutation; a local preflight must not reject valid gifts.
     final result = await _gifts.send(
       roomId: widget.roomId,
       giftId: gift.id,
