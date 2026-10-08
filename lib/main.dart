@@ -992,6 +992,10 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                   ? 'هذا المايك مخصص للإدارة.'
                   : code == 'seat_occupied'
                       ? 'هذا المقعد مستخدم حالياً.'
+                      : code == 'seat_locked'
+                          ? 'هذا المايك مقفل من الإدارة.'
+                          : code == 'seat_mute_locked'
+                              ? 'هذا المايك مكتوم إجباريًا من الإدارة.'
                       : 'تعذر تنفيذ العملية حالياً.';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message)),
@@ -1083,56 +1087,191 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     );
   }
 
+  Future<void> _selectVacantRoomSeat(
+    VoiceSeat seat,
+    RoomSeatState state,
+  ) async {
+    if (!mounted || _changingSeat) return;
+    final roomId = (_roomArguments['roomId'] ?? '').toString();
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (roomId.isEmpty || uid.isEmpty) return;
+    if (seat.locked) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('هذا المايك مقفل من الإدارة.')),
+      );
+      return;
+    }
+    final hasSeat = state.seats.any((current) => current.uid == uid);
+    if (_isCustomerServiceRoom &&
+        seat.index < 2 &&
+        !state.isHost &&
+        !state.canManageMic) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('هذا المايك مخصص للإدارة.')),
+      );
+      return;
+    }
+
+    if (hasSeat) {
+      await _runSeatAction(
+        () => _roomSeatService.switchSeat(
+          roomId: roomId,
+          seatIndex: seat.index,
+        ),
+      );
+    } else if (state.isOwner ||
+        state.isHost ||
+        state.canManageMic ||
+        state.invited(uid) ||
+        (!_isCustomerServiceRoom && !state.micInviteOnly)) {
+      await _runSeatAction(
+        () => _roomSeatService.takeSeat(
+          roomId: roomId,
+          seatIndex: seat.index,
+        ),
+      );
+    } else if (state.requested(uid)) {
+      await _runSeatAction(
+        () => _roomSeatService.cancelMicRequest(roomId),
+      );
+    } else {
+      await _runSeatAction(
+        () => _roomSeatService.requestMic(roomId),
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم إرسال طلب المايك للإدارة.')),
+        );
+      }
+    }
+  }
+
+  Future<void> _showVacantRoomSeatOptions(VoiceSeat seat) async {
+    final state = _roomSeatState;
+    if (state == null || !mounted) return;
+    final roomId = (_roomArguments['roomId'] ?? '').toString();
+    if (roomId.isEmpty) return;
+    final manage = _canManageMic && state.canManageMic;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF111522),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'خيارات المايك ${seat.index + 1}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                if (!seat.locked)
+                  ListTile(
+                    leading: const Icon(
+                      Icons.mic_external_on_rounded,
+                      color: Color(0xFFFFD54A),
+                    ),
+                    title: Text(
+                      state.seats.any((item) =>
+                              item.uid ==
+                              (FirebaseAuth.instance.currentUser?.uid ?? ''))
+                          ? 'الانتقال إلى هذا المايك'
+                          : 'الصعود إلى هذا المايك',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      unawaited(_selectVacantRoomSeat(seat, state));
+                    },
+                  )
+                else
+                  const ListTile(
+                    leading: Icon(Icons.lock_rounded, color: Colors.orangeAccent),
+                    title: Text(
+                      'هذا المايك مقفل من الإدارة',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                  ),
+                if (manage) ...[
+                  const Divider(height: 1, color: Colors.white12),
+                  ListTile(
+                    leading: Icon(
+                      seat.locked
+                          ? Icons.lock_open_rounded
+                          : Icons.lock_rounded,
+                      color: const Color(0xFFFFD54A),
+                    ),
+                    title: Text(
+                      seat.locked ? 'فتح قفل المايك' : 'قفل المايك',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      unawaited(_runSeatAction(
+                        () => _roomSeatService.setSeatLocked(
+                          roomId: roomId,
+                          seatIndex: seat.index,
+                          locked: !seat.locked,
+                        ),
+                      ));
+                    },
+                  ),
+                  ListTile(
+                    leading: Icon(
+                      seat.muteLocked
+                          ? Icons.mic_rounded
+                          : Icons.mic_off_rounded,
+                      color: Colors.orangeAccent,
+                    ),
+                    title: Text(
+                      seat.muteLocked
+                          ? 'إلغاء الكتم الإجباري للمايك'
+                          : 'كتم المايك إجباريًا',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    subtitle: const Text(
+                      'لا يستطيع الجالس فتح الصوت حتى تفك الإدارة الكتم.',
+                      style: TextStyle(color: Colors.white54, fontSize: 11),
+                    ),
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      unawaited(_runSeatAction(
+                        () => _roomSeatService.setSeatMuteLocked(
+                          roomId: roomId,
+                          seatIndex: seat.index,
+                          muteLocked: !seat.muteLocked,
+                        ),
+                      ));
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _handleSeatTap(VoiceSeat seat) async {
     final roomId = (_roomArguments['roomId'] ?? '').toString();
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     final state = _roomSeatState;
     if (roomId.isEmpty || uid.isEmpty || state == null) return;
-    final hasSeat = state.seats.any((current) => current.uid == uid);
 
     if (!seat.occupied) {
-      if (_isCustomerServiceRoom &&
-          seat.index < 2 &&
-          !state.isHost &&
-          !state.canManageMic) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('هذا المايك مخصص للإدارة.')),
-        );
-        return;
-      }
-
-      if (hasSeat) {
-        await _runSeatAction(
-          () => _roomSeatService.switchSeat(
-            roomId: roomId,
-            seatIndex: seat.index,
-          ),
-        );
-      } else if (state.isOwner ||
-          state.isHost ||
-          state.canManageMic ||
-          state.invited(uid) ||
-          (!_isCustomerServiceRoom && !state.micInviteOnly)) {
-        await _runSeatAction(
-          () => _roomSeatService.takeSeat(
-            roomId: roomId,
-            seatIndex: seat.index,
-          ),
-        );
-      } else if (state.requested(uid)) {
-        await _runSeatAction(
-          () => _roomSeatService.cancelMicRequest(roomId),
-        );
-      } else {
-        await _runSeatAction(
-          () => _roomSeatService.requestMic(roomId),
-        );
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('تم إرسال طلب المايك للإدارة.')),
-          );
-        }
-      }
+      await _showVacantRoomSeatOptions(seat);
       return;
     }
 
