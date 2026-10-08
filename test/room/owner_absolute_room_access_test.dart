@@ -96,7 +96,7 @@ void main() {
     expect(action.contains('_applyRoomSeatSafety(state);'), isTrue);
     expect(action.contains('return null;'), isTrue);
     expect(source.contains(
-        'if (!state.isOwner && !hasSeat && !_voiceSession.micMuted'), isTrue);
+        '((!state.isOwner && !hasSeat) || serverMuted)'), isTrue);
 
     final leaveSeat = source.indexOf(
         '// Stop local audio before waiting for the seat release.');
