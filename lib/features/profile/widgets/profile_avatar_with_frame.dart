@@ -14,6 +14,7 @@ class ProfileAvatarWithFrame extends StatefulWidget {
     required this.userId,
     this.fallbackProfile = const <String, dynamic>{},
     this.fallbackIsVisualSnapshot = false,
+    this.snapshotOnly = false,
     this.vipLevel = 0,
     this.vipFrameLevel,
     this.backgroundColor = const Color(0xFF25183F),
@@ -27,6 +28,9 @@ class ProfileAvatarWithFrame extends StatefulWidget {
   final String userId;
   final Map<String, dynamic> fallbackProfile;
   final bool fallbackIsVisualSnapshot;
+  // Existing in-room seat/presence snapshots are already authoritative for
+  // rendering. Skip separate profile loads and invalidation subscriptions.
+  final bool snapshotOnly;
   final int vipLevel;
   final int? vipFrameLevel;
   final Color backgroundColor;
@@ -46,6 +50,7 @@ class _ProfileAvatarWithFrameState extends State<ProfileAvatarWithFrame> {
   @override
   void initState() {
     super.initState();
+    if (widget.snapshotOnly) return;
     _invalidationSub =
         ProfileVisualIdentityService.instance.invalidations.listen((uid) {
       if (!mounted || uid != widget.userId.trim()) return;
@@ -57,6 +62,21 @@ class _ProfileAvatarWithFrameState extends State<ProfileAvatarWithFrame> {
   @override
   void didUpdateWidget(covariant ProfileAvatarWithFrame oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.snapshotOnly) {
+      _invalidationSub?.cancel();
+      _invalidationSub = null;
+      _future = null;
+      return;
+    }
+    if (oldWidget.snapshotOnly) {
+      _invalidationSub = ProfileVisualIdentityService.instance.invalidations
+          .listen((uid) {
+        if (!mounted || uid != widget.userId.trim()) return;
+        setState(() => _reload(allowPrime: false));
+      });
+      _reload();
+      return;
+    }
     final snapshotChanged = widget.fallbackIsVisualSnapshot &&
         _snapshotSignature(oldWidget.fallbackProfile) !=
             _snapshotSignature(widget.fallbackProfile);
@@ -81,6 +101,10 @@ class _ProfileAvatarWithFrameState extends State<ProfileAvatarWithFrame> {
       ].join('|');
 
   void _reload({bool allowPrime = true}) {
+    if (widget.snapshotOnly) {
+      _future = null;
+      return;
+    }
     final uid = widget.userId.trim();
     if (uid.isEmpty) {
       _future = null;
@@ -173,6 +197,7 @@ class _ProfileAvatarWithFrameState extends State<ProfileAvatarWithFrame> {
   @override
   Widget build(BuildContext context) {
     final fallback = widget.fallbackProfile;
+    if (widget.snapshotOnly) return _render(fallback);
     final future = _future;
     if (future == null) return _render(fallback);
 
