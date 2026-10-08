@@ -115,11 +115,18 @@ void main() {
         isTrue);
     expect(realtime.contains('Number(task.endedAtMs || nowMs)'), isTrue);
     expect(realtime.contains('await reclaimDepartedRoomSeat('), isTrue);
+    expect(realtime.contains('roomDepartureCleanupCandidates('), isTrue);
+    expect(realtime.contains('const candidatesByRoom = new Map();'), isTrue);
+    expect(realtime.contains('if (!candidates.has(uid)) {'), isTrue);
     expect(realtime.toLowerCase().contains('firestore'), isFalse);
     expect(realtime.toLowerCase().contains('firebase'), isFalse);
     expect(persistence.contains('export async function reclaimDepartedRoomSeat('),
         isTrue);
     expect(persistence.contains('return roomSessionLeave('), isTrue);
+    expect(
+      persistence.contains('export function roomDepartureCandidatesFromSnapshot('),
+      isTrue,
+    );
     expect(realtime.contains('Timer.periodic'), isFalse);
     expect(realtime.contains('setInterval('), isFalse);
     expect(realtime.contains('RoomPresenceService('), isFalse);
