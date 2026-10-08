@@ -350,6 +350,9 @@ export class RoomRealtimeObject extends DurableObject {
           : null,
       });
     }
+    if (url.pathname === "/presence/identity" && request.method === "POST") {
+      return this.#updatePresenceIdentity(request);
+    }
     if (url.pathname === "/presence/count" && request.method === "GET") {
       const onlineCount = this.#presenceSnapshot().length;
       recordRealtimeTelemetry(this.env, {
@@ -444,6 +447,8 @@ export class RoomRealtimeObject extends DurableObject {
     const activeProfileFramePermanent =
       body.activeProfileFramePermanent === true;
     const publicId = String(body.publicId || "").trim().slice(0, 16);
+    const mysteriousMode = body.mysteriousMode === true;
+    const mysteriousId = String(body.mysteriousId || "").trim().slice(0, 9);
     const wealthLevel = Math.max(0, Math.min(35, Number(body.wealthLevel || 0)));
     const attractionLevel = Math.max(0, Math.min(35, Number(body.attractionLevel || 0)));
     const gameLevel = Math.max(0, Math.min(21, Number(body.gameLevel || 0)));
@@ -480,6 +485,8 @@ export class RoomRealtimeObject extends DurableObject {
       activeProfileFrameExpiresAtMs,
       activeProfileFramePermanent,
       publicId,
+      mysteriousMode,
+      mysteriousId,
       wealthLevel,
       attractionLevel,
       gameLevel,
@@ -600,6 +607,8 @@ export class RoomRealtimeObject extends DurableObject {
       activeProfileFramePermanent:
         record.activeProfileFramePermanent === true,
       publicId: String(record.publicId || "").trim().slice(0, 16),
+      mysteriousMode: record.mysteriousMode === true,
+      mysteriousId: String(record.mysteriousId || "").trim().slice(0, 9),
       wealthLevel: Math.max(0, Math.min(35, Number(record.wealthLevel || 0))),
       attractionLevel: Math.max(0, Math.min(35, Number(record.attractionLevel || 0))),
       gameLevel: Math.max(0, Math.min(21, Number(record.gameLevel || 0))),
@@ -656,6 +665,8 @@ export class RoomRealtimeObject extends DurableObject {
         activeProfileFramePermanent:
           record.activeProfileFramePermanent === true,
         publicId: String(record.publicId || "").trim().slice(0, 16),
+        mysteriousMode: record.mysteriousMode === true,
+        mysteriousId: String(record.mysteriousId || "").trim().slice(0, 9),
         wealthLevel: Math.max(0, Math.min(35, Number(record.wealthLevel || 0))),
         attractionLevel: Math.max(0, Math.min(35, Number(record.attractionLevel || 0))),
         gameLevel: Math.max(0, Math.min(21, Number(record.gameLevel || 0))),
@@ -953,6 +964,69 @@ export class RoomRealtimeObject extends DurableObject {
     return true;
   }
 
+  async #updatePresenceIdentity(request) {
+    const body = await request.json().catch(() => ({}));
+    const roomId = normalizeRoomId(body.roomId);
+    const uid = String(body.uid || "").trim();
+    if (!roomId || !uid) {
+      return Response.json(
+        { ok: false, code: "invalid_presence_identity" },
+        { status: 400 },
+      );
+    }
+    const patch = {
+      displayName: String(body.displayName || "مستخدم Shadow Live").trim(),
+      profileImageUrl: String(body.profileImageUrl || "").trim(),
+      activeProfileFrameAssetKey:
+        String(body.activeProfileFrameAssetKey || "").trim(),
+      activeProfileFrameImageUrl:
+        String(body.activeProfileFrameImageUrl || "").trim(),
+      activeProfileFrameExpiresAtMs: Math.max(
+        0,
+        Number(body.activeProfileFrameExpiresAtMs || 0),
+      ),
+      activeProfileFramePermanent:
+        body.activeProfileFramePermanent === true,
+      publicId: String(body.publicId || "").trim().slice(0, 16),
+      mysteriousMode: body.mysteriousMode === true,
+      mysteriousId: String(body.mysteriousId || "").trim().slice(0, 9),
+      wealthLevel: Math.max(0, Math.min(35, Number(body.wealthLevel || 0))),
+      attractionLevel:
+        Math.max(0, Math.min(35, Number(body.attractionLevel || 0))),
+      gameLevel: Math.max(0, Math.min(21, Number(body.gameLevel || 0))),
+      vipLevel: Math.max(0, Math.min(10, Number(body.vipLevel || 0))),
+      entryEffectKey: String(body.entryEffectKey || "").trim(),
+      canModerateChat: body.canModerateChat === true,
+    };
+    let updated = 0;
+    let hidden = false;
+    for (const socket of this.ctx.getWebSockets()) {
+      let attachment = {};
+      try {
+        attachment = socket.deserializeAttachment() || {};
+      } catch {}
+      if (String(attachment.mode || "room") !== "room") continue;
+      if (normalizeRoomId(attachment.roomId) !== roomId) continue;
+      if (String(attachment.uid || "").trim() !== uid) continue;
+      hidden = hidden || attachment.ghostMode === true;
+      try {
+        socket.serializeAttachment({ ...attachment, ...patch });
+        updated += 1;
+      } catch {}
+    }
+    if (updated > 0 && !hidden) {
+      const participant = this.#presenceSnapshot("", { includeGhost: true })
+        .find((item) => String(item.uid || "") === uid);
+      if (participant) {
+        this.#broadcastEvent("room.presence_updated", {
+          roomId,
+          participant,
+        });
+      }
+    }
+    return Response.json({ ok: true, roomId, uid, updated });
+  }
+
   async #updateChatPolicy(request) {
     const body = await request.json().catch(() => ({}));
     const roomId = normalizeRoomId(body.roomId);
@@ -1112,6 +1186,8 @@ export class RoomRealtimeObject extends DurableObject {
         activeProfileFramePermanent:
           attachment.activeProfileFramePermanent === true,
         publicId: String(attachment.publicId || "").trim().slice(0, 16),
+        mysteriousMode: attachment.mysteriousMode === true,
+        mysteriousId: String(attachment.mysteriousId || "").trim().slice(0, 9),
         wealthLevel: Math.max(0, Math.min(35, Number(attachment.wealthLevel || 0))),
         attractionLevel: Math.max(0, Math.min(35, Number(attachment.attractionLevel || 0))),
         gameLevel: Math.max(0, Math.min(21, Number(attachment.gameLevel || 0))),

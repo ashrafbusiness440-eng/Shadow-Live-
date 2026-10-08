@@ -27,6 +27,10 @@ import { normalizeGlobalAppFeedEvent } from "./global-app-feed.js";
 import {
   loadPublicProfilePresentation,
 } from "./public-profile-presentation.js";
+import {
+  applyMysteriousIdentityPresentation,
+  mysteriousRoomAuthoritySuppressed,
+} from "./mysterious-identity.js";
 
 const REALTIME_TICKET_FIRESTORE_CONCURRENCY = 32;
 const REALTIME_ROOM_CACHE_TTL_MS = 30000;
@@ -118,11 +122,93 @@ function agencyRoomChatAllowed(room = {}, user = {}, uid) {
 function canModerateRoomChat(room = {}, user = {}, uid) {
   const id = clean(uid);
   if (!id) return false;
+  if (mysteriousRoomAuthoritySuppressed(user)) return false;
   if (!isOfficialRoom(room) && roomOwnerUid(room) === id) return true;
   if (isOfficialRoom(room) && roomHostUid(room) === id) return true;
   return globalRoomManageAllowed(user) ||
     agencyRoomChatAllowed(room, user, id) ||
     roomModeratorCan(room, id, "moderateChat");
+}
+
+function roomRealtimeIdentityPresentation(
+  publicProfile = {},
+  user = {},
+  levelMetadata = {},
+) {
+  const vipCosmetics = vipCosmeticsFromUser(user, Date.now());
+  return applyMysteriousIdentityPresentation(
+    {
+      displayName: clean(
+        publicProfile.displayName ||
+        user.displayName ||
+        user.username ||
+        "مستخدم Shadow Live"
+      ),
+      profileImageUrl: clean(
+        publicProfile.profileImageUrl || user.profileImageUrl
+      ),
+      activeProfileFrameAssetKey: clean(
+        publicProfile.activeProfileFrameAssetKey
+      ),
+      activeProfileFrameImageUrl: clean(
+        publicProfile.activeProfileFrameImageUrl
+      ),
+      activeProfileFrameExpiresAtMs: Math.max(
+        0,
+        Number(publicProfile.activeProfileFrameExpiresAtMs || 0),
+      ),
+      activeProfileFramePermanent:
+        publicProfile.activeProfileFramePermanent === true,
+      publicId: clean(publicProfile.publicId || user.publicId),
+      wealthLevel: Math.max(0, Number(levelMetadata.wealthLevel || 0)),
+      attractionLevel: Math.max(0, Number(levelMetadata.attractionLevel || 0)),
+      gameLevel: Math.max(0, Number(levelMetadata.gameLevel || 0)),
+      vipLevel: vipCosmetics.level,
+      entryEffectKey: vipCosmetics.keys.entryStrip,
+    },
+    user,
+  );
+}
+
+async function refreshRealtimeIdentity(env, db, roomId, uid) {
+  const [room, user, levelPolicy, publicProfile] = await Promise.all([
+    roomAdmissionCache.get(
+      roomId,
+      () => ticketFirestoreLimiter.run(() => db.get(`rooms/${roomId}`)),
+    ),
+    ticketFirestoreLimiter.run(() => db.get(`users/${uid}`)),
+    loadUserLevelPolicy(db).catch(() => null),
+    ticketFirestoreLimiter.run(() =>
+      loadPublicProfilePresentation(db, uid)
+    ),
+  ]);
+  if (!room.exists || room.data?.isActive === false) {
+    throw new Error("room_unavailable");
+  }
+  if (!user.exists) throw new Error("user_not_found");
+  const roomData = room.data || {};
+  const userData = user.data || {};
+  const levelMetadata = roomUserLevelMetadata(levelPolicy, uid, userData);
+  const presentation = roomRealtimeIdentityPresentation(
+    publicProfile,
+    userData,
+    levelMetadata,
+  );
+  const response = await roomObject(env, roomId).fetch(
+    "https://room-realtime.internal/presence/identity",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        roomId,
+        uid,
+        ...presentation,
+        canModerateChat: canModerateRoomChat(roomData, userData, uid),
+      }),
+    },
+  );
+  if (!response.ok) throw new Error("realtime_identity_refresh_failed");
+  return response.json().catch(() => ({ ok: true, updated: 0 }));
 }
 
 function activeBan(ban = {}, nowMs = Date.now()) {
@@ -385,6 +471,24 @@ export async function roomRealtime(request, env) {
       }
 
       const stub = roomObject(env, roomId);
+      if (action === "refreshIdentity") {
+        const db = firestoreClient(env);
+        const uid = String(payload.sub || "").trim();
+        if (!uid) {
+          return json(request, env, { ok: false, code: "unauthorized" }, 401);
+        }
+        const refreshed = await refreshRealtimeIdentity(
+          env,
+          db,
+          roomId,
+          uid,
+        );
+        return json(request, env, {
+          ok: true,
+          roomId,
+          updated: Math.max(0, Number(refreshed.updated || 0)),
+        });
+      }
       if (action === "presenceState") {
         const state = await readPresence(stub);
         return json(request, env, {
@@ -425,6 +529,11 @@ export async function roomRealtime(request, env) {
       const roomData = room.data || {};
       const profileData = user.data || {};
       const levelMetadata = roomUserLevelMetadata(levelPolicy, uid, profileData);
+      const identityPresentation = roomRealtimeIdentityPresentation(
+        publicProfile,
+        profileData,
+        levelMetadata,
+      );
       const vipCosmetics = vipCosmeticsFromUser(profileData, Date.now());
       const roomType = clean(roomData.roomType || roomData.type || "personal");
       const customerServiceMinVipLevel =
@@ -471,30 +580,35 @@ export async function roomRealtime(request, env) {
           uid,
           ticket,
           expiresAtMs,
-          displayName: String(
-            publicProfile.displayName ||
-            payload.name ||
-            "مستخدم Shadow Live",
-          ),
-          profileImageUrl: String(
-            publicProfile.profileImageUrl || payload.picture || "",
-          ),
-          activeProfileFrameAssetKey: String(
-            publicProfile.activeProfileFrameAssetKey || "",
-          ),
-          activeProfileFrameImageUrl: String(
-            publicProfile.activeProfileFrameImageUrl || "",
-          ),
+          displayName:
+            String(identityPresentation.displayName || "مستخدم Shadow Live"),
+          profileImageUrl:
+            String(identityPresentation.profileImageUrl || ""),
+          activeProfileFrameAssetKey:
+            String(identityPresentation.activeProfileFrameAssetKey || ""),
+          activeProfileFrameImageUrl:
+            String(identityPresentation.activeProfileFrameImageUrl || ""),
           activeProfileFrameExpiresAtMs: Math.max(
             0,
-            Number(publicProfile.activeProfileFrameExpiresAtMs || 0),
+            Number(identityPresentation.activeProfileFrameExpiresAtMs || 0),
           ),
           activeProfileFramePermanent:
-            publicProfile.activeProfileFramePermanent === true,
-          publicId: String(publicProfile.publicId || ""),
-          wealthLevel: levelMetadata.wealthLevel,
-          attractionLevel: levelMetadata.attractionLevel,
-          gameLevel: levelMetadata.gameLevel,
+            identityPresentation.activeProfileFramePermanent === true,
+          publicId: String(identityPresentation.publicId || ""),
+          mysteriousMode: identityPresentation.mysteriousMode === true,
+          mysteriousId: String(identityPresentation.mysteriousId || ""),
+          wealthLevel: Math.max(
+            0,
+            Number(identityPresentation.wealthLevel || 0),
+          ),
+          attractionLevel: Math.max(
+            0,
+            Number(identityPresentation.attractionLevel || 0),
+          ),
+          gameLevel: Math.max(
+            0,
+            Number(identityPresentation.gameLevel || 0),
+          ),
           chatEnabled: roomData.chatEnabled !== false,
           canModerateChat: canModerateRoomChat(
             roomData,
@@ -503,8 +617,8 @@ export async function roomRealtime(request, env) {
           ),
           ghostMode: activeRoomGhostMode(profileData, Date.now()),
           hiddenRoomEntry: activeHiddenRoomEntry(profileData, Date.now()),
-          vipLevel: vipCosmetics.level,
-          entryEffectKey: vipCosmetics.keys.entryStrip,
+          vipLevel: Math.max(0, Number(identityPresentation.vipLevel || 0)),
+          entryEffectKey: String(identityPresentation.entryEffectKey || ""),
           reconnectAttempt: Math.max(
             0,
             Math.min(3, Number(body.reconnectAttempt || 0)),

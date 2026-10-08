@@ -37,8 +37,11 @@ export function presenceSnapshotFromAttachments(
         ),
         activeProfileFramePermanent:
           item.activeProfileFramePermanent === true,
-        vipLevel,
-        vipOnlinePriority: vipLevel >= 2,
+        publicId: clean(item.publicId),
+        mysteriousMode: item.mysteriousMode === true,
+        mysteriousId: clean(item.mysteriousId).slice(0, 9),
+        vipLevel: item.mysteriousMode === true ? 0 : vipLevel,
+        vipOnlinePriority: item.mysteriousMode === true ? false : vipLevel >= 2,
         joinedAtMs,
         lastSeenAtMs: Number(nowMs),
       });
@@ -46,8 +49,17 @@ export function presenceSnapshotFromAttachments(
     }
 
     existing.joinedAtMs = Math.min(existing.joinedAtMs, joinedAtMs);
-    existing.vipLevel = Math.max(existing.vipLevel || 0, vipLevel);
-    existing.vipOnlinePriority = existing.vipLevel >= 2;
+    existing.mysteriousMode =
+      existing.mysteriousMode === true || item.mysteriousMode === true;
+    if (item.mysteriousMode === true) {
+      existing.mysteriousId = clean(item.mysteriousId).slice(0, 9);
+      existing.publicId = clean(item.publicId);
+      existing.vipLevel = 0;
+      existing.vipOnlinePriority = false;
+    } else if (!existing.mysteriousMode) {
+      existing.vipLevel = Math.max(existing.vipLevel || 0, vipLevel);
+      existing.vipOnlinePriority = existing.vipLevel >= 2;
+    }
     if (!existing.profileImageUrl && clean(item.profileImageUrl)) {
       existing.profileImageUrl = clean(item.profileImageUrl);
     }

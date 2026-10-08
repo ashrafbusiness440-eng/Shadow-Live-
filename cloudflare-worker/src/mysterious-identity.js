@@ -53,6 +53,7 @@ export function applyMysteriousIdentityPresentation(
     activeProfileFrameImageUrl: "",
     activeProfileFrameExpiresAtMs: 0,
     activeProfileFramePermanent: false,
+    entryEffectKey: "",
     mysteriousMode: true,
     mysteriousId,
   };
