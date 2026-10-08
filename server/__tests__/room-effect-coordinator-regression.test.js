@@ -119,6 +119,9 @@ test("room join alerts are ephemeral overlays, not persistent chat bubbles", () 
     true);
   assert.equal(coordinator.includes("child: _EntranceWelcomeStrip(event: roomJoin)"),
     true);
+  assert.equal(coordinator.includes("final duplicateEntrance = event != null"), true);
+  assert.equal(coordinator.includes("event.recipientUids.any(roomJoin.recipientUids.contains)"), true);
+  assert.equal(coordinator.includes("if (roomJoin != null && !duplicateEntrance)"), true);
   assert.equal(coordinator.includes("mysterious\n          ? 'الشخص الغامض'"), true);
   assert.equal(coordinator.includes("_roomJoinTimer?.cancel();"), true);
   assert.equal(coordinator.includes("Timer.periodic("), false);
