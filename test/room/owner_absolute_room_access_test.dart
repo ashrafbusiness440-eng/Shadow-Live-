@@ -127,6 +127,27 @@ void main() {
     expect(gate.contains('.listen('), isFalse);
   });
 
+  test('room mic unmute requires an acknowledged server seat', () {
+    final source = File('lib/main.dart').readAsStringSync();
+    final start = source.indexOf('Future<void> _performToggleVoiceMic()');
+    final end = source.indexOf('Future<void> _leaveVoiceRoom()', start);
+    expect(start, greaterThanOrEqualTo(0));
+    expect(end, greaterThan(start));
+    final mic = source.substring(start, end);
+
+    final take = mic.indexOf('final taken = await _runSeatAction(');
+    final serverUnmute = mic.indexOf('final opened = await _runSeatAction(');
+    final localUnmute = mic.indexOf('await _voiceSession.setMicMuted(false);');
+    expect(take, greaterThanOrEqualTo(0));
+    expect(serverUnmute, greaterThan(take));
+    expect(localUnmute, greaterThan(serverUnmute));
+    expect(mic.contains('seat.uid == uid && !seat.muted'), isTrue);
+    expect(mic.contains('seat.uid == uid && seat.muted == muted'), isTrue);
+    expect(mic.contains('if (muted) {'), isTrue);
+    expect(mic.contains('await _voiceSession.setMicMuted(true);'), isTrue);
+    expect(mic.contains('if (!muted) {'), isTrue);
+  });
+
   test('Shadow Control exposes Owner-only absolute room toggle', () {
     final source = File('lib/main_control.dart').readAsStringSync();
     expect(source.contains('صلاحيات غرف مطلقة'), isTrue);
