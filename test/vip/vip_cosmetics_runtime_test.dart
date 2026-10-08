@@ -26,7 +26,8 @@ void main() {
     expect(room.contains('vipChatBubble'), isTrue);
     expect(room.contains('vipNameEffect'), isTrue);
     expect(room.contains('vipGiftVisual'), isTrue);
-    expect(room.contains("message.vipLevel >= 8"), isTrue);
+    expect(room.contains("message.systemKind == 'room_join'"), isTrue);
+    expect(room.contains("message.entryEffectKey.trim().isNotEmpty"), isTrue);
     expect(room.contains('message.entryEffectKey'), isTrue);
 
     expect(chat.contains('VipCosmeticSurface'), isTrue);
