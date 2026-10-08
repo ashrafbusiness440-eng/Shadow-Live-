@@ -102,8 +102,18 @@ class RoomPresenceService {
   String _desiredRoomId = '';
   int _generation = 0;
   int _reconnectAttempt = 0;
+  Completer<void>? _readyCompleter;
+  String _readyRoomId = '';
 
   Stream<RoomRealtimeEvent> get events => _eventsController.stream;
+
+  bool isReadyFor(String roomId) {
+    final id = roomId.trim();
+    return id.isNotEmpty &&
+        _desiredRoomId == id &&
+        _readyRoomId == id &&
+        _socket != null;
+  }
 
   Future<Map<String, dynamic>> _post(
     String endpoint,
@@ -151,6 +161,11 @@ class RoomPresenceService {
       final map = Map<String, dynamic>.from(decoded);
       final type = (map['type'] ?? '').toString().trim();
       if (type.isEmpty) return;
+      if (type == 'server.ready') {
+        _readyRoomId = _desiredRoomId;
+        final ready = _readyCompleter;
+        if (ready != null && !ready.isCompleted) ready.complete();
+      }
       final rawPayload = map['payload'];
       final payload = rawPayload is Map
           ? Map<String, dynamic>.from(rawPayload)
@@ -336,6 +351,12 @@ class RoomPresenceService {
     if (!identical(_socket, connection)) return;
     _socket = null;
     _socketSubscription = null;
+    _readyRoomId = '';
+    final ready = _readyCompleter;
+    if (ready != null && !ready.isCompleted) {
+      ready.completeError(StateError('room_realtime_disconnected'));
+    }
+    _readyCompleter = null;
     _failPendingChat('room_realtime_disconnected');
     _scheduleReconnect(roomId, generation);
   }
@@ -376,12 +397,22 @@ class RoomPresenceService {
         await oldSocket.close();
       }
 
+      final ready = Completer<void>();
+      _readyCompleter = ready;
+      _readyRoomId = '';
       _socketSubscription = connection.messages.listen(
         _handleSocketMessage,
         onError: (_) => _handleSocketEnded(roomId, generation, connection),
         onDone: () => _handleSocketEnded(roomId, generation, connection),
         cancelOnError: false,
       );
+
+      await ready.future.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () =>
+            throw StateError('room_realtime_ready_timeout'),
+      );
+      if (_desiredRoomId != roomId || generation != _generation) return;
 
       if (announceOnReady && ticket['alreadyPresent'] != true) {
         unawaited(_announceJoin(roomId));
@@ -400,6 +431,7 @@ class RoomPresenceService {
     _generation += 1;
     final generation = _generation;
     _desiredRoomId = id;
+    _readyRoomId = '';
     _reconnectAttempt = 0;
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
@@ -412,10 +444,49 @@ class RoomPresenceService {
     await _connect(id, generation, announceOnReady: true);
   }
 
+  Future<bool> ensureReady(String roomId) async {
+    final id = roomId.trim();
+    if (id.isEmpty) return false;
+    if (isReadyFor(id)) return true;
+
+    try {
+      final pending = _readyCompleter;
+      if (_desiredRoomId == id &&
+          _socket != null &&
+          pending != null &&
+          !pending.isCompleted) {
+        await pending.future.timeout(const Duration(seconds: 3));
+        if (isReadyFor(id)) return true;
+      }
+
+      if (_desiredRoomId == id && _socket != null) {
+        _generation += 1;
+        _readyRoomId = '';
+        _reconnectTimer?.cancel();
+        _reconnectTimer = null;
+        await _socketSubscription?.cancel();
+        _socketSubscription = null;
+        final old = _socket;
+        _socket = null;
+        if (old != null) {
+          try {
+            await old.close();
+          } catch (_) {}
+        }
+      }
+
+      await join(id);
+      return isReadyFor(id);
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> leave(String roomId) async {
     final id = roomId.trim();
     _generation += 1;
     _desiredRoomId = '';
+    _readyRoomId = '';
     _reconnectAttempt = 0;
     _failPendingChat('room_left');
     _reconnectTimer?.cancel();
@@ -467,6 +538,8 @@ class RoomPresenceService {
   void close() {
     _generation += 1;
     _desiredRoomId = '';
+    _readyRoomId = '';
+    _readyCompleter = null;
     _failPendingChat('room_realtime_closed');
     _reconnectTimer?.cancel();
     _reconnectTimer = null;

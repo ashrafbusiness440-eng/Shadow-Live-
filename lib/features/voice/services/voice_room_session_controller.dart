@@ -557,15 +557,40 @@ class VoiceRoomSessionController extends ChangeNotifier {
     }
   }
 
+  Future<bool> ensureRoomPresenceReady() async {
+    final id = roomId.trim();
+    if (!_active || id.isEmpty) return false;
+    if (_presenceService.isReadyFor(id)) return true;
+    final ready = await _presenceService.ensureReady(id);
+    if (_roomArguments['presenceDegraded'] == ready) {
+      _roomArguments = <String, dynamic>{
+        ..._roomArguments,
+        'presenceDegraded': !ready,
+      };
+      notifyListeners();
+    }
+    return ready;
+  }
+
   Future<void> _startPresence(String targetRoomId) async {
     try {
       await _presenceService.join(targetRoomId);
+      _roomArguments = <String, dynamic>{
+        ..._roomArguments,
+        'presenceDegraded': false,
+      };
       if (_active && roomId == targetRoomId) {
         await _announceEntrance(targetRoomId);
       }
+      notifyListeners();
     } catch (_) {
-      // Voice join must stay independent from realtime presence startup.
-      // The presence service performs a small bounded reconnect sequence.
+      // Voice stays connected, but room mutations must know presence is degraded.
+      _roomArguments = <String, dynamic>{
+        ..._roomArguments,
+        'presenceDegraded': true,
+      };
+      notifyListeners();
+      // The presence service keeps its bounded reconnect sequence.
     }
   }
 

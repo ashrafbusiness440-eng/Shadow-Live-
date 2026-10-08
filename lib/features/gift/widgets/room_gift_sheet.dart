@@ -15,6 +15,7 @@ Future<void> showRoomGiftSheet(
   required String ownerPhotoUrl,
   required List<RoomPresenceUser> participants,
   required List<VoiceSeat> seats,
+  Future<bool> Function()? ensurePresence,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -29,6 +30,7 @@ Future<void> showRoomGiftSheet(
       ownerPhotoUrl: ownerPhotoUrl,
       participants: participants,
       seats: seats,
+      ensurePresence: ensurePresence,
     ),
   );
 }
@@ -40,6 +42,7 @@ class _RoomGiftContext extends StatefulWidget {
     required this.ownerPhotoUrl,
     required this.participants,
     required this.seats,
+    this.ensurePresence,
   });
 
   final String roomId;
@@ -47,6 +50,7 @@ class _RoomGiftContext extends StatefulWidget {
   final String ownerPhotoUrl;
   final List<RoomPresenceUser> participants;
   final List<VoiceSeat> seats;
+  final Future<bool> Function()? ensurePresence;
 
   @override
   State<_RoomGiftContext> createState() => _RoomGiftContextState();
@@ -187,6 +191,13 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
     int quantity,
     bool useGiftBag,
   ) async {
+    final ensurePresence = widget.ensurePresence;
+    if (ensurePresence != null) {
+      final presenceReady = await ensurePresence();
+      if (!presenceReady) {
+        throw StateError('room_presence_unavailable');
+      }
+    }
     final result = await _gifts.send(
       roomId: widget.roomId,
       giftId: gift.id,

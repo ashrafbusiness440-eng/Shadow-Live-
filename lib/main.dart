@@ -5908,6 +5908,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         ownerPhotoUrl: _ownerPhotoUrl,
                         participants: _voiceSession.roomParticipants,
                         seats: _roomSeatState?.seats ?? const <VoiceSeat>[],
+                        ensurePresence:
+                            _voiceSession.ensureRoomPresenceReady,
                       ),
               color: const Color(0xFFFFD54A),
             ),
