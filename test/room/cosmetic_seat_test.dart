@@ -24,9 +24,10 @@ void main() {
 
     final sheetStart = source.indexOf(
         'Future<void> _showRoomParticipantsSheet()');
-    final sheetEnd = source.indexOf('Future<void> _build', sheetStart);
-    final sheet = source.substring(
-        sheetStart, sheetEnd == -1 ? source.length : sheetEnd);
+    final sheetEnd = source.indexOf(
+        'Future<void> _showMicRequestsSheet(', sheetStart);
+    expect(sheetEnd, greaterThan(sheetStart));
+    final sheet = source.substring(sheetStart, sheetEnd);
     expect(sheet.contains('!seatedUids.contains(user.uid)'), isTrue);
   });
 
