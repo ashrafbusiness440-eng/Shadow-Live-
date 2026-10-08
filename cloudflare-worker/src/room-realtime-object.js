@@ -3,6 +3,8 @@ import { recordRealtimeTelemetry } from "./pressure-telemetry.js";
 import {
   applyCustomerServiceMicExpiries,
   persistRoomChatReport,
+  reclaimDepartedRoomSeat,
+  roomDepartureCleanupCandidates,
 } from "./room-realtime-persistence.js";
 
 import { validateAnimatedEmojiForVip } from "./animated-emoji-catalog.js";
@@ -38,6 +40,10 @@ import {
 } from "./global-app-feed.js";
 
 const TICKET_PREFIX = "ticket:";
+const SEAT_DEPARTURE_PREFIX = "seat_departure:";
+const SEAT_DEPARTURE_GRACE_MS = 20_000;
+const SEAT_DEPARTURE_RETRY_MS = 60_000;
+const SEAT_DEPARTURE_BATCH_LIMIT = 24;
 const CUSTOMER_SERVICE_MIC_SCHEDULE_PREFIX = "cs_mic:";
 const ROOM_PRESENCE_CLIENT_SNAPSHOT_LIMIT = 200;
 
@@ -1256,7 +1262,128 @@ export class RoomRealtimeObject extends DurableObject {
     if (parsed.response) safeSend(webSocket, parsed.response);
   }
 
-  #handleDeparture(webSocket, reason = "close") {
+  async #scheduleSeatDeparture(roomId, uid, nowMs = Date.now()) {
+    // One delayed task per disconnected UID, only when their last live
+    // socket leaves. Reconnects are verified in the existing DO on expiry.
+    const dueAtMs = nowMs + SEAT_DEPARTURE_GRACE_MS;
+    await this.ctx.storage.put(SEAT_DEPARTURE_PREFIX + uid, {
+      roomId,
+      uid,
+      dueAtMs,
+      endedAtMs: nowMs,
+      attempts: 0,
+    });
+    const currentAlarm = await this.ctx.storage.getAlarm();
+    if (currentAlarm === null || currentAlarm > dueAtMs) {
+      await this.ctx.storage.setAlarm(dueAtMs);
+    }
+  }
+
+  async #processSeatDepartures(nowMs = Date.now()) {
+    // No timer, room scan, or database listener: work is bounded and only
+    // runs after an actual room websocket disconnect (or a bounded retry).
+    const pending = await this.ctx.storage.list({
+      prefix: SEAT_DEPARTURE_PREFIX,
+      limit: SEAT_DEPARTURE_BATCH_LIMIT,
+    });
+    if (!pending.size) return { nextAtMs: null, processed: 0, failed: 0 };
+    const deletes = [];
+    let nextAtMs = null;
+    let processed = 0;
+    let failed = 0;
+    const live = this.#presenceAttachments();
+    const candidatesByRoom = new Map();
+
+    for (const [key, task] of pending) {
+      const uid = String(task?.uid || "").trim();
+      const roomId = normalizeRoomId(task?.roomId);
+      const dueAtMs = Number(task?.dueAtMs || 0);
+      if (!uid || !roomId) {
+        deletes.push(key);
+        continue;
+      }
+      if (hasPresenceUid(live, uid)) {
+        // User returned inside the grace window; never drop their mic.
+        deletes.push(key);
+        continue;
+      }
+      if (dueAtMs > nowMs) {
+        nextAtMs =
+          nextAtMs === null ? dueAtMs : Math.min(nextAtMs, dueAtMs);
+        continue;
+      }
+
+      try {
+        // Resolve one room snapshot for the entire bounded departure page.
+        // Listeners without an occupied mic or active music need no
+        // expensive write transaction. Failed reads are shared rather than
+        // retried once per UID inside the same alarm.
+        if (!candidatesByRoom.has(roomId)) {
+          const roomUids = Array.from(pending.values())
+            .filter((item) => normalizeRoomId(item?.roomId) === roomId)
+            .map((item) => String(item?.uid || "").trim());
+          candidatesByRoom.set(
+            roomId,
+            roomDepartureCleanupCandidates(this.env, roomId, roomUids),
+          );
+        }
+        const candidates = await candidatesByRoom.get(roomId);
+        if (!candidates.has(uid)) {
+          deletes.push(key);
+          continue;
+        }
+        // Recheck presence after the network read before any seat release.
+        if (hasPresenceUid(this.#presenceAttachments(), uid)) {
+          deletes.push(key);
+          continue;
+        }
+        // Delegate persistent seat cleanup to the existing room
+        // persistence module. This object only owns live presence.
+        await reclaimDepartedRoomSeat(
+          this.env,
+          roomId,
+          uid,
+          Number(task.endedAtMs || nowMs),
+        );
+        deletes.push(key);
+        processed += 1;
+      } catch (_) {
+        failed += 1;
+        const attempts = Math.max(0, Number(task?.attempts || 0)) + 1;
+        if (attempts >= 2) {
+          deletes.push(key); // No unbounded database retry loops.
+        } else {
+          const retryAtMs = nowMs + SEAT_DEPARTURE_RETRY_MS;
+          await this.ctx.storage.put(key, {
+            ...task,
+            attempts,
+            dueAtMs: retryAtMs,
+          });
+          nextAtMs =
+            nextAtMs === null ? retryAtMs : Math.min(nextAtMs, retryAtMs);
+        }
+      }
+    }
+    if (deletes.length > 0) await this.ctx.storage.delete(deletes);
+    if (
+      pending.size === SEAT_DEPARTURE_BATCH_LIMIT &&
+      nextAtMs === null
+    ) {
+      // An overflow of already-due tasks gets only one follow-up alarm.
+      // Future work waits for its due time, avoiding unnecessary polling.
+      nextAtMs = nowMs + 1000;
+    }
+    recordRealtimeTelemetry(this.env, {
+      event: "seat_departure_cleanup",
+      outcome: failed ? "partial_error" : "done",
+      fanout: processed,
+      error: failed > 0,
+      onlineCount: this.#presenceSnapshot().length,
+    });
+    return { nextAtMs, processed, failed };
+  }
+
+  async #handleDeparture(webSocket, reason = "close") {
     let attachment = {};
     try {
       attachment = webSocket.deserializeAttachment() || {};
@@ -1301,18 +1428,27 @@ export class RoomRealtimeObject extends DurableObject {
         uid,
         onlineCount,
       });
+      try {
+        await this.#scheduleSeatDeparture(roomId, uid);
+      } catch (_) {
+        recordRealtimeTelemetry(this.env, {
+          event: "seat_departure_schedule",
+          outcome: "error",
+          error: true,
+        });
+      }
     }
   }
 
-  webSocketClose(webSocket, code, reason) {
-    this.#handleDeparture(webSocket, "close");
+  async webSocketClose(webSocket, code, reason) {
+    await this.#handleDeparture(webSocket, "close");
     try {
       webSocket.close(code || 1000, reason || "room_leave");
     } catch {}
   }
 
-  webSocketError(webSocket) {
-    this.#handleDeparture(webSocket, "error");
+  async webSocketError(webSocket) {
+    await this.#handleDeparture(webSocket, "error");
     try {
       webSocket.close(1011, "realtime_error");
     } catch {}
@@ -1328,6 +1464,7 @@ export class RoomRealtimeObject extends DurableObject {
     const rocketFeed = await this.#processRocketFeed(nowMs);
     const customerServiceMic =
       await this.#processCustomerServiceMicSchedules(nowMs);
+    const seatDepartures = await this.#processSeatDepartures(nowMs);
     const deletes = [];
     let nextAlarmAtMs = rocketFeed.nextAtMs;
     if (
@@ -1336,6 +1473,13 @@ export class RoomRealtimeObject extends DurableObject {
         customerServiceMic.nextAtMs < nextAlarmAtMs)
     ) {
       nextAlarmAtMs = customerServiceMic.nextAtMs;
+    }
+    if (
+      seatDepartures.nextAtMs !== null &&
+      (nextAlarmAtMs === null ||
+        seatDepartures.nextAtMs < nextAlarmAtMs)
+    ) {
+      nextAlarmAtMs = seatDepartures.nextAtMs;
     }
 
     for (const [key, value] of tickets) {
@@ -1380,7 +1524,8 @@ export class RoomRealtimeObject extends DurableObject {
       fanout:
         schedules.size +
         Number(rocketFeed.delivered || 0) +
-        Number(customerServiceMic.expired || 0),
+        Number(customerServiceMic.expired || 0) +
+        Number(seatDepartures.processed || 0),
       onlineCount: this.#presenceSnapshot().length,
     });
   }
