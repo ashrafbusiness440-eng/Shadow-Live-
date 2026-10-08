@@ -320,6 +320,23 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
         'emergency_locked' => 'عمليات الهدايا متوقفة مؤقتاً.',
         'blocked' => 'لا يمكن إرسال الهدية بسبب إعدادات الحظر.',
         'gift_bag_insufficient' => 'الكمية الموجودة في الحقيبة لا تكفي.',
+        'invalid_receiver' => 'لا يمكن إرسال الهدية لهذا الحساب.',
+        'sender_not_found' =>
+          'تعذر العثور على حسابك في النظام. أعد تسجيل الدخول ثم حاول مجدداً.',
+        'receiver_not_found' =>
+          'حساب المستلم لم يعد متاحاً.',
+        'diary_not_found' =>
+          'هذه اليومية لم تعد موجودة. حدّث الصفحة وحاول مجدداً.',
+        'conversation_not_found' =>
+          'المحادثة لم تعد متاحة.',
+        'invalid_diary_receiver' =>
+          'بيانات صاحب اليومية تغيرت. حدّث الصفحة قبل إرسال الهدية.',
+        'invalid_request' =>
+          'بيانات إرسال الهدية غير صالحة. حدّث الصفحة وحاول مجدداً.',
+        'unauthorized' || 'not_signed_in' || 'session_revoked' =>
+          'انتهت جلسة الدخول. سجّل الدخول من جديد.',
+        'server_failed' || 'transaction_failed' =>
+          'تعذر إتمام عملية الهدية على الخادم. حاول مرة ثانية.',
         _ => 'تعذر إرسال الهدية حالياً.',
       };
       ScaffoldMessenger.of(context).showSnackBar(

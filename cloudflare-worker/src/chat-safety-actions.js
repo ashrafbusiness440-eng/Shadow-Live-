@@ -486,8 +486,17 @@ export async function sendGift(db, uid, body, options = {}) {
       await db.rollback(transaction);
       return { ok: true, code: "duplicate", ...(op.data?.result || {}) };
     }
-    if (!sender.exists || !receiver.exists || !contextDoc.exists) {
-      throw new ApiError("not_found", 404);
+    if (!sender.exists) {
+      throw new ApiError("sender_not_found", 404);
+    }
+    if (!receiver.exists) {
+      throw new ApiError("receiver_not_found", 404);
+    }
+    if (!contextDoc.exists) {
+      throw new ApiError(
+        contextType === "diary" ? "diary_not_found" : "conversation_not_found",
+        404,
+      );
     }
 
     const contextData = contextDoc.data || {};
