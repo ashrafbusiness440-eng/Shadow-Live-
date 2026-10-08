@@ -61,6 +61,8 @@ const ALLOWED_CAPABILITIES = new Set([
   "manageVip",
   "manageVipLevels",
   "manageVipPolicy",
+  "manageMysteriousPerson",
+  "revealMysteriousIdentity",
   "manageSpecialIds",
   "manageIds",
   "manageStore",

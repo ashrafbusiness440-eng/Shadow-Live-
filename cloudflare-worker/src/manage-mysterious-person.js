@@ -47,6 +47,9 @@ export function mysteriousControlAccess(actor = {}) {
     isOwner,
     canManage: isOwner || (enabled && eligibleRole && caps.has(CONTROL_CAPABILITY)),
     canReveal: isOwner || (enabled && eligibleRole && caps.has(REVEAL_CAPABILITY)),
+    canOpen: isOwner || (enabled && eligibleRole && (
+      caps.has(CONTROL_CAPABILITY) || caps.has(REVEAL_CAPABILITY)
+    )),
     canUpdatePrices: isOwner,
     canGrantPermanent: isOwner,
   };
@@ -518,6 +521,7 @@ export async function manageMysteriousPerson(request, env) {
     const db = firestoreClient(env);
     const need = action === "controlReveal" ? "canReveal"
       : action === "controlUpdatePrices" ? "canUpdatePrices"
+      : action === "controlState" ? "canOpen"
       : "canManage";
     const actor = await requireRecentControlActor(request, env, db, need);
 

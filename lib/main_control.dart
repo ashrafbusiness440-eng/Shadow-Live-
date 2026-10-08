@@ -25,6 +25,7 @@ import 'admin/system_health_card.dart';
 import 'admin/control_user_level.dart';
 import 'admin/control_vip_level.dart';
 import 'admin/control_vip_information.dart';
+import 'admin/mysterious_person_control_page.dart';
 
 
 Future<void> main() async {
@@ -2997,6 +2998,10 @@ class MorePage extends StatelessWidget {
             (adminEnabled&&(
               capabilities.contains('manageIds')||
               capabilities.contains('manageSpecialIds')));
+        final canOpenMysterious=isOwner||
+            (adminEnabled&&(
+              capabilities.contains('manageMysteriousPerson')||
+              capabilities.contains('revealMysteriousIdentity')));
         final items=<ControlItem>[
           if(canOpenAgencies)
             const ControlItem('الوكالات','طلبات الإنشاء والمراجعة والإنشاء المباشر',Icons.apartment_outlined),
@@ -3008,6 +3013,8 @@ class MorePage extends StatelessWidget {
             const ControlItem('إدارة VIP','بحث المستخدم ومنح/تغيير/سحب VIP حسب الصلاحيات',Icons.workspace_premium_outlined),
           if(canOpenVipInformation)
             const ControlItem('عروض VIP السريعة','إدارة عروض Growth السريعة داخل مركز معلومات VIP',Icons.bolt_outlined),
+          if(canOpenMysterious)
+            const ControlItem('الشخص الغامض','الأسعار + المنح/السحب + كشف الهوية حسب الصلاحية',Icons.theater_comedy_outlined),
           if(canOpenIds)
             const ControlItem('IDs الخاصة','إدارة المعرّفات الخاصة',Icons.badge_outlined),
           if(isOwner)
@@ -3044,6 +3051,7 @@ class ControlList extends StatelessWidget {
     if (item.title == 'تسجيل الدخول والربط') return const AuthLoginControlPage();
     if (item.title == 'إدارة VIP') return const VipLevelControlPage();
     if (item.title == 'عروض VIP السريعة') return const VipInformationControlPage();
+    if (item.title == 'الشخص الغامض') return const MysteriousPersonControlPage();
     return DetailPage(item:item);
   }
 
