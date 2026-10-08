@@ -96,6 +96,9 @@ void main() {
     final shim = File(
       'cloudflare-worker/src/legacy-firebase-admin-shim.js',
     ).readAsStringSync();
+    final persistence = File(
+      'cloudflare-worker/src/room-realtime-persistence.js',
+    ).readAsStringSync();
 
     expect(realtime.contains('const SEAT_DEPARTURE_GRACE_MS = 20_000;'),
         isTrue);
@@ -111,6 +114,12 @@ void main() {
     expect(realtime.contains('const seatDepartures = await this.#processSeatDepartures(nowMs);'),
         isTrue);
     expect(realtime.contains('Number(task.endedAtMs || nowMs)'), isTrue);
+    expect(realtime.contains('await reclaimDepartedRoomSeat('), isTrue);
+    expect(realtime.toLowerCase().contains('firestore'), isFalse);
+    expect(realtime.toLowerCase().contains('firebase'), isFalse);
+    expect(persistence.contains('export async function reclaimDepartedRoomSeat('),
+        isTrue);
+    expect(persistence.contains('return roomSessionLeave('), isTrue);
     expect(realtime.contains('Timer.periodic'), isFalse);
     expect(realtime.contains('setInterval('), isFalse);
     expect(realtime.contains('RoomPresenceService('), isFalse);
