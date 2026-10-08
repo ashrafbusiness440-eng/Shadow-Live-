@@ -1,10 +1,9 @@
 import { DurableObject } from "cloudflare:workers";
-import { getFirestoreForEnv } from "./legacy-firebase-admin-shim.js";
-import { roomSessionLeave } from "./voice-session-legacy.js";
 import { recordRealtimeTelemetry } from "./pressure-telemetry.js";
 import {
   applyCustomerServiceMicExpiries,
   persistRoomChatReport,
+  reclaimDepartedRoomSeat,
 } from "./room-realtime-persistence.js";
 
 import { validateAnimatedEmojiForVip } from "./animated-emoji-catalog.js";
@@ -1280,7 +1279,7 @@ export class RoomRealtimeObject extends DurableObject {
   }
 
   async #processSeatDepartures(nowMs = Date.now()) {
-    // No timer, room scan, or Firestore listener: work is bounded and only
+    // No timer, room scan, or database listener: work is bounded and only
     // runs after an actual room websocket disconnect (or a bounded retry).
     const pending = await this.ctx.storage.list({
       prefix: SEAT_DEPARTURE_PREFIX,
@@ -1291,7 +1290,6 @@ export class RoomRealtimeObject extends DurableObject {
     let nextAtMs = null;
     let processed = 0;
     let failed = 0;
-    let db = null;
     const live = this.#presenceAttachments();
 
     for (const [key, task] of pending) {
@@ -1314,13 +1312,12 @@ export class RoomRealtimeObject extends DurableObject {
       }
 
       try {
-        // Reuse the SAME transactional seat release and host mic activity
-        // accounting as a normal client leave; no duplicated economy logic.
-        db ??= getFirestoreForEnv(this.env);
-        await roomSessionLeave(
-          db,
-          uid,
+        // Delegate persistent seat cleanup to the existing room
+        // persistence module. This object only owns live presence.
+        await reclaimDepartedRoomSeat(
+          this.env,
           roomId,
+          uid,
           Number(task.endedAtMs || nowMs),
         );
         deletes.push(key);
