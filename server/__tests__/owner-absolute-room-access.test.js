@@ -33,10 +33,14 @@ test("bootstrap exposes one authoritative management state", () => {
     voice,
     /ownerAbsoluteRoomAccess:global\.ownerAbsoluteRoomAccess/,
   );
-  assert.match(voice, /globalRoomManage:global\.manageRooms/);
   assert.match(
     voice,
-    /myCapabilities:\(actualOwner\|\|global\.manageRooms\)/,
+    /globalRoomManage:authoritySuppressed\?false:global\.manageRooms/,
+  );
+  assert.match(voice, /authoritySuppressed/);
+  assert.match(
+    voice,
+    /myCapabilities:authoritySuppressed[\s\S]*\? \[\][\s\S]*\(actualOwner\|\|global\.manageRooms\)/,
   );
 });
 
