@@ -158,7 +158,10 @@ void main() {
     expect(sheet.contains('Future<bool> Function()? ensurePresence'), isTrue);
     expect(sheet.contains('final ensurePresence = widget.ensurePresence;'), isTrue);
     expect(sheet.contains('await ensurePresence();'), isTrue);
-    expect(sheet.contains("StateError('room_presence_unavailable')"), isTrue);
+    // The one-shot reconnect may fail locally, but the server has final
+    // authority over presence when handling the actual gift transaction.
+    expect(sheet.contains("StateError('room_presence_unavailable')"), isFalse);
+    expect(sheet.contains('final result = await _gifts.send('), isTrue);
     expect(main.contains('_voiceSession.ensureRoomPresenceReady'), isTrue);
   });
 }
