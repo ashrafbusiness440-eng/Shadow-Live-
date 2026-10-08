@@ -27,6 +27,7 @@ abstract final class ControlAssetPolicy {
     'assets/images/events',
     'assets/images/agencies',
     'assets/images/system',
+    'assets/images/mysterious',
     'assets/images/misc',
   ];
 

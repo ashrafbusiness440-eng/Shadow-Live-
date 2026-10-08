@@ -43,6 +43,20 @@ abstract final class ShadowAssetKeys {
   static const ownerBadge = 'role.owner';
   static const adminBadge = 'role.admin';
   static const moderatorBadge = 'role.moderator';
+
+  // Mysterious Person visual identity. These keys are presentation-only:
+  // subscription, mysterious ID, permissions and voice logic stay outside
+  // Asset Studio.
+  static const mysteriousRoomIdentity = 'mysterious.room_identity';
+  static const mysteriousIdentityCard = 'mysterious.identity_card';
+  static const mysteriousIdPlate = 'mysterious.id_plate';
+  static const mysteriousBadge = 'mysterious.badge';
+  static const mysteriousEntrance = 'mysterious.entrance';
+  static const mysteriousVehicle = 'mysterious.vehicle';
+  static const mysteriousRoomPresenceSkin =
+      'mysterious.room_presence_skin';
+  static String mysteriousVoiceOptionIcon(String voiceId) =>
+      'mysterious.voice_option_icons.${voiceId.trim()}';
   // Legacy VIP keys remain for already-published surfaces.
   static String vipBadge(int level) => 'vip.badge.$level';
   static String vipFrame(int level) => 'vip.frame.$level';
