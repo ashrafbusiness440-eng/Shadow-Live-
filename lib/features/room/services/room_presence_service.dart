@@ -389,7 +389,8 @@ class RoomPresenceService {
       final oldSubscription = _socketSubscription;
       final oldSocket = _socket;
       _socket = connection;
-      _reconnectAttempt = 0;
+      // A TCP/WebSocket connection is not room presence until server.ready.
+      // Keep the retry budget spent on transports that never become ready.
       _reconnectTimer?.cancel();
       _reconnectTimer = null;
       await oldSubscription?.cancel();
@@ -413,11 +414,32 @@ class RoomPresenceService {
             throw StateError('room_realtime_ready_timeout'),
       );
       if (_desiredRoomId != roomId || generation != _generation) return;
+      // Reset retry budget only after the server admitted this room session.
+      _reconnectAttempt = 0;
 
       if (announceOnReady && ticket['alreadyPresent'] != true) {
         unawaited(_announceJoin(roomId));
       }
     } catch (_) {
+      // A socket without server.ready is unusable. Close it before retrying
+      // so no stale transport can appear connected to the next room session.
+      if (_desiredRoomId == roomId &&
+          generation == _generation &&
+          _readyRoomId != roomId) {
+        final failedSocket = _socket;
+        final failedSubscription = _socketSubscription;
+        _socket = null;
+        _socketSubscription = null;
+        _readyCompleter = null;
+        try {
+          await failedSubscription?.cancel();
+        } catch (_) {}
+        if (failedSocket != null) {
+          try {
+            await failedSocket.close();
+          } catch (_) {}
+        }
+      }
       _scheduleReconnect(roomId, generation);
       rethrow;
     }
@@ -426,7 +448,7 @@ class RoomPresenceService {
   Future<void> join(String roomId) async {
     final id = roomId.trim();
     if (id.isEmpty) throw StateError('room_id_missing');
-    if (_desiredRoomId == id && _socket != null) return;
+    if (isReadyFor(id)) return;
 
     _generation += 1;
     final generation = _generation;
