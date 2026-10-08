@@ -23,6 +23,8 @@ function template({
   extensions = COMMON_IMAGE_EXTS,
   transparency = "optional",
   motion = "static_or_animated",
+  width = null,
+  height = null,
   prompt,
 }) {
   return Object.freeze({
@@ -33,21 +35,26 @@ function template({
     directories: Object.freeze([...directories]),
     extensions: Object.freeze([...extensions]),
     maxBytes: 2500000,
-    width: null,
-    height: null,
-    dimensionsStatus: "tbd",
+    width,
+    height,
+    dimensionsStatus:
+      Number.isInteger(width) && Number.isInteger(height) ? "fixed" : "tbd",
     transparency,
     motion,
     prompt,
     noteAr:
-      "الأبعاد غير مثبتة رسميًا على Trello بعد؛ لا يتم اختراع مقاس. " +
-      "عند اعتماد width/height لاحقًا يصبح التحقق صارمًا تلقائيًا.",
+      Number.isInteger(width) && Number.isInteger(height)
+        ? `المقاس معتمد رسميًا: ${width}×${height}. Shadow Control يرفض أي ملف لا يطابقه.`
+        : "الأبعاد غير مثبتة رسميًا على Trello بعد؛ لا يتم اختراع مقاس. " +
+          "عند اعتماد width/height لاحقًا يصبح التحقق صارمًا تلقائيًا.",
   });
 }
 
 export const ASSET_STUDIO_TEMPLATES = Object.freeze([
   template({
     id: "mysterious.room_identity.v1",
+    width: 1024,
+    height: 1024,
     type: "mic_effect",
     labelAr: "هوية الشخص الغامض داخل الغرفة",
     directories: ["assets/images/mysterious"],
@@ -57,6 +64,8 @@ export const ASSET_STUDIO_TEMPLATES = Object.freeze([
   }),
   template({
     id: "mysterious.identity_card.v1",
+    width: 1280,
+    height: 640,
     type: "profile_card",
     labelAr: "بطاقة الشخص الغامض",
     directories: ["assets/images/mysterious"],
@@ -64,6 +73,8 @@ export const ASSET_STUDIO_TEMPLATES = Object.freeze([
   }),
   template({
     id: "mysterious.id_plate.v1",
+    width: 1280,
+    height: 320,
     type: "profile_card",
     labelAr: "لوحة ID الشخص الغامض",
     directories: ["assets/images/mysterious"],
@@ -74,6 +85,8 @@ export const ASSET_STUDIO_TEMPLATES = Object.freeze([
   }),
   template({
     id: "mysterious.badge.v1",
+    width: 512,
+    height: 512,
     type: "badge",
     labelAr: "شارة الشخص الغامض",
     directories: ["assets/images/mysterious"],
@@ -84,6 +97,8 @@ export const ASSET_STUDIO_TEMPLATES = Object.freeze([
   }),
   template({
     id: "mysterious.entrance.v1",
+    width: 1280,
+    height: 320,
     type: "entrance",
     labelAr: "دخوليّة الشخص الغامض",
     directories: ["assets/images/mysterious"],
@@ -93,6 +108,8 @@ export const ASSET_STUDIO_TEMPLATES = Object.freeze([
   }),
   template({
     id: "mysterious.vehicle.v1",
+    width: 1280,
+    height: 720,
     type: "system_cosmetic",
     labelAr: "مركبة الشخص الغامض",
     directories: ["assets/images/mysterious"],
@@ -102,6 +119,8 @@ export const ASSET_STUDIO_TEMPLATES = Object.freeze([
   }),
   template({
     id: "mysterious.room_presence_skin.v1",
+    width: 1280,
+    height: 320,
     type: "profile_card",
     labelAr: "مظهر الشخص الغامض في قائمة الغرفة",
     directories: ["assets/images/mysterious"],
@@ -109,6 +128,8 @@ export const ASSET_STUDIO_TEMPLATES = Object.freeze([
   }),
   template({
     id: "mysterious.voice_option_icon.v1",
+    width: 256,
+    height: 256,
     type: "badge",
     labelAr: "أيقونة صوت الشخص الغامض",
     directories: ["assets/images/mysterious"],
