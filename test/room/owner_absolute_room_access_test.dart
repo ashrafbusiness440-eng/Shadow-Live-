@@ -67,6 +67,48 @@ void main() {
     expect(menu.contains('personal && actualOwner'), isTrue);
   });
 
+  test('room seat acknowledgement gates local microphone opening', () {
+    final source = File('lib/main.dart').readAsStringSync();
+    final start = source.indexOf('Future<void> _toggleVoiceMic()');
+    final end = source.indexOf('Future<void> _leaveVoiceRoom()', start);
+    expect(start, greaterThanOrEqualTo(0));
+    expect(end, greaterThan(start));
+    final toggle = source.substring(start, end);
+
+    expect(toggle.contains('final taken = await _runSeatAction('), isTrue);
+    expect(toggle.contains('if (taken == null ||'), isTrue);
+    expect(toggle.indexOf('if (taken == null ||'),
+        lessThan(toggle.indexOf('await _voiceSession.setMicMuted(false);')));
+    expect(toggle.contains('final muted = !_voiceSession.micMuted;'), isTrue);
+    expect(toggle.contains('final updated = await _runSeatAction('), isTrue);
+    expect(toggle.contains('if (updated == null ||'), isTrue);
+    expect(toggle.contains('await _voiceSession.setMicMuted(true);'), isTrue);
+  });
+
+  test('seat release immediately mutes and shares existing safety path', () {
+    final source = File('lib/main.dart').readAsStringSync();
+    final start = source.indexOf('Future<RoomSeatState?> _runSeatAction(');
+    final end = source.indexOf('Future<void> _showSeatQuickProfile', start);
+    expect(start, greaterThanOrEqualTo(0));
+    expect(end, greaterThan(start));
+    final action = source.substring(start, end);
+
+    expect(action.contains('_applyRoomSeatSafety(state);'), isTrue);
+    expect(action.contains('return null;'), isTrue);
+    expect(source.contains(
+        'if (!state.isOwner && !hasSeat && !_voiceSession.micMuted'), isTrue);
+
+    final leaveSeat = source.indexOf(
+        '// Stop local audio before waiting for the seat release.');
+    expect(leaveSeat, greaterThanOrEqualTo(0));
+    final mute = source.indexOf('await _voiceSession.setMicMuted(true);',
+        leaveSeat);
+    final leave = source.indexOf('_roomSeatService.leaveSeat(roomId)',
+        leaveSeat);
+    expect(mute, greaterThan(leaveSeat));
+    expect(leave, greaterThan(mute));
+  });
+
   test('Shadow Control exposes Owner-only absolute room toggle', () {
     final source = File('lib/main_control.dart').readAsStringSync();
     expect(source.contains('صلاحيات غرف مطلقة'), isTrue);
