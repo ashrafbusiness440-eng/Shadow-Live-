@@ -60,5 +60,12 @@ test("Batch H runtime is remote cached and Asset Studio preserves animation", ()
   assert.equal(registry.includes("vipFancyIdPlate(value)"), true);
   assert.equal(registry.includes("vipEmojiPack(value)"), true);
   assert.equal(registry.includes("vipDynamicFx(value)"), true);
-  assert.equal(registry.toLowerCase().includes("vehicle"), false);
+  for (const forbiddenVipVehicle of [
+    "vipVehicle",
+    "vip.vehicle",
+    "vipVehicleAssetKey",
+  ]) {
+    assert.equal(registry.includes(forbiddenVipVehicle), false);
+  }
+  assert.equal(registry.includes("mysteriousVehicle"), true);
 });
