@@ -2,13 +2,9 @@ import { firestoreClient } from "./firestore.js";
 import { getFirestoreForEnv } from "./legacy-firebase-admin-shim.js";
 import { roomSessionLeave } from "./voice-session-legacy.js";
 
-// Read a SINGLE room document for a bounded alarm batch. Most room
-// departures are listeners, so do not open a write transaction for each one.
-export async function roomDepartureCleanupCandidates(
-  env,
-  roomId,
-  uids = [],
-) {
+// Identify only disconnected users who actually own a mic or live room
+// music. The pure selector makes this optimization unit-testable.
+export function roomDepartureCandidatesFromSnapshot(room = {}, uids = []) {
   const allowed = new Set(
     (Array.isArray(uids) ? uids : [])
       .map((uid) => String(uid || "").trim())
@@ -16,22 +12,33 @@ export async function roomDepartureCleanupCandidates(
       .slice(0, 24),
   );
   if (!allowed.size) return new Set();
-  const db = getFirestoreForEnv(env);
-  const roomSnap = await db.collection("rooms").doc(roomId).get();
-  if (!roomSnap.exists) return new Set();
-  const room = roomSnap.data() || {};
   const candidates = new Set();
-  const seats = Array.isArray(room.seats) ? room.seats : [];
+  const seats = Array.isArray(room?.seats) ? room.seats : [];
   for (const seat of seats) {
     const uid = String(seat?.uid || "").trim();
     if (allowed.has(uid)) candidates.add(uid);
   }
-  const music = room.musicState || {};
+  const music = room?.musicState || {};
   const sourceUid = String(music.sourceOwnerUid || "").trim();
   if (music.status === "playing" && allowed.has(sourceUid)) {
     candidates.add(sourceUid);
   }
   return candidates;
+}
+
+// Read ONE room document for each bounded alarm batch; most departed
+// listeners require no extra transaction or mic-activity write.
+export async function roomDepartureCleanupCandidates(
+  env,
+  roomId,
+  uids = [],
+) {
+  const requested = Array.isArray(uids) ? uids.slice(0, 24) : [];
+  if (!requested.length) return new Set();
+  const db = getFirestoreForEnv(env);
+  const roomSnap = await db.collection("rooms").doc(roomId).get();
+  if (!roomSnap.exists) return new Set();
+  return roomDepartureCandidatesFromSnapshot(roomSnap.data() || {}, requested);
 }
 
 // Keep durable room transport/presence separate from persistent seat state.
