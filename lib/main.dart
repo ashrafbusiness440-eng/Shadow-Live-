@@ -1619,14 +1619,16 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   }
 
   int get _roomAudienceTotalCount {
-    // Presence is authoritative when ready. A room snapshot may be a
-    // moment behind it, but the count must never show ZERO while seated
-    // members are plainly visible on the stage.
-    final seated = (_roomSeatState?.seats ?? const <VoiceSeat>[])
-        .where((seat) => seat.occupied)
-        .length;
+    // One unique set from the EXISTING live presence + current mic snapshot.
+    // This also handles the short delay before socket presence becomes ready.
+    final activeUids = <String>{
+      for (final user in _voiceSession.roomParticipants)
+        if (user.uid.isNotEmpty) user.uid,
+      for (final seat in _roomSeatState?.seats ?? const <VoiceSeat>[])
+        if (seat.occupied) seat.uid,
+    };
     final reported = (_roomArguments['onlineCount'] as num?)?.toInt() ?? 0;
-    return max(max(reported, _voiceSession.roomParticipants.length), seated);
+    return max(reported, activeUids.length);
   }
 
   Widget _buildRoomAudienceStrip() {
@@ -1639,21 +1641,21 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         .toString()
         .trim();
     final participants = _voiceSession.roomParticipants;
-    final ownerMatches = participants.where((user) => user.uid == ownerUid);
-    final ownerPresence = ownerMatches.isEmpty ? null : ownerMatches.first;
-    final seatedUids = (_roomSeatState?.seats ?? const <VoiceSeat>[])
-        .where((seat) => seat.occupied)
-        .map((seat) => seat.uid)
-        .toSet();
-    final listeners = participants
-        .where((user) =>
-            user.uid != ownerUid && !seatedUids.contains(user.uid))
-        .take(ownerUid.isEmpty ? 20 : 19)
-        .toList(growable: false);
-    final entries = <RoomPresenceUser?>[
-      if (ownerUid.isNotEmpty) ownerPresence,
-      ...listeners,
-    ];
+    final profileByUid = {
+      for (final user in participants) user.uid: user,
+    };
+    final seatByUid = {
+      for (final seat in _roomSeatState?.seats ?? const <VoiceSeat>[])
+        if (seat.occupied) seat.uid: seat,
+    };
+    // Show BOTH people on microphones and listeners. A seat snapshot may
+    // arrive before the websocket roster, so never hide its occupied UIDs.
+    final visibleUids = <String>[
+      if (ownerUid.isNotEmpty) ownerUid,
+      ...seatByUid.keys.where((uid) => uid != ownerUid),
+      ...profileByUid.keys.where((uid) =>
+          uid != ownerUid && !seatByUid.containsKey(uid)),
+    ].take(20).toList(growable: false);
     final total = _roomAudienceTotalCount;
 
     return SizedBox(
@@ -1692,7 +1694,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: entries.isEmpty
+            child: visibleUids.isEmpty
                 ? const Align(
                     alignment: Alignment.centerRight,
                     child: Text('الموجودون حاليًا على المايكات فقط',
@@ -1702,20 +1704,26 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                 : ListView.separated(
                     key: const Key('room-audience-strip'),
                     scrollDirection: Axis.horizontal,
-                    itemCount: entries.length,
+                    itemCount: visibleUids.length,
                     separatorBuilder: (_, __) => const SizedBox(width: 7),
                     itemBuilder: (context, index) {
-                      final isOwnerTile = ownerUid.isNotEmpty && index == 0;
-                      final user = entries[index];
-                      final isMysterious = user?.mysteriousMode == true;
-                      final profileUid = isOwnerTile ? ownerUid : user!.uid;
+                      final profileUid = visibleUids[index];
+                      final isOwnerTile = profileUid == ownerUid;
+                      final user = profileByUid[profileUid];
+                      final seat = seatByUid[profileUid];
+                      final isMysterious = user?.mysteriousMode == true ||
+                          seat?.mysteriousMode == true;
+                      final mysteriousId =
+                          user?.mysteriousId.isNotEmpty == true
+                              ? user!.mysteriousId
+                              : (seat?.mysteriousId ?? '');
                       final profileImage = isMysterious
                           ? ''
-                          : isOwnerTile
-                              ? ((user?.profileImageUrl.isNotEmpty == true)
-                                  ? user!.profileImageUrl
-                                  : _ownerPhotoUrl)
-                              : user!.profileImageUrl;
+                          : user?.profileImageUrl.isNotEmpty == true
+                              ? user!.profileImageUrl
+                              : seat?.profileImageUrl.isNotEmpty == true
+                                  ? seat!.profileImageUrl
+                                  : isOwnerTile ? _ownerPhotoUrl : '';
                       final frameAssetKey =
                           user?.activeProfileFrameAssetKey ?? '';
                       final frameImageUrl =
@@ -1732,7 +1740,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                           if (isMysterious) {
                             showMysteriousIdentitySheet(
                               context,
-                              mysteriousId: user!.mysteriousId,
+                              mysteriousId: mysteriousId,
                             );
                           } else {
                             showQuickProfileSheet(
