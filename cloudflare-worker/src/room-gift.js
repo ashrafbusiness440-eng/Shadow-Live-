@@ -837,7 +837,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
         recipientRecords.length,
       );
       const recipientLevelAwards = giftLevelPointAwards({
-        nominalCoins: paidRecipientCost,
+        nominalCoins: recipientCost,
         paidCoins: paidRecipientCost,
       });
       const nextAttractionPoints = recipientLevelAwards

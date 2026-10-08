@@ -597,7 +597,7 @@ export async function sendGift(db, uid, body, options = {}) {
       "giftVisual",
     );
     const levelPointAwards = giftLevelPointAwards({
-      nominalCoins: paidCost,
+      nominalCoins: totalCost,
       paidCoins: paidCost,
     });
     const nextWealthPoints = levelPointAwards
