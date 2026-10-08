@@ -268,6 +268,58 @@ test("room gift pays agency target salary immediately and records sharded monthl
   assert.equal(explosionsAfter.size,1);
 });
 
+test("room gift can target occupied microphones during a missing websocket roster", async () => {
+  await seedSharedConfig();
+  const suffix = Date.now() + "_seatbackup";
+  const senderId = "sender_" + suffix;
+  const speakerId = "speaker_" + suffix;
+  const outsiderId = "outsider_" + suffix;
+  const roomId = "room_" + suffix;
+  const key = "roomgift_seatbackup_" + suffix;
+  await Promise.all([
+    db.collection("users").doc(senderId).set({
+      role: "user", coins: 500000, diamonds: 0, wealthPoints: 0,
+    }),
+    db.collection("users").doc(speakerId).set({
+      role: "user", coins: 0, diamonds: 0, attractionPoints: 0,
+    }),
+    db.collection("users").doc(outsiderId).set({
+      role: "user", coins: 0, diamonds: 0, attractionPoints: 0,
+    }),
+    db.collection("rooms").doc(roomId).set({
+      isActive: true,
+      totalSupport: 0,
+      seats: [
+        {index: 0, uid: senderId, muted: true},
+        {index: 1, uid: speakerId, muted: false},
+      ],
+    }),
+  ]);
+  const offlineSocket = realtimeNamespaceWithPresentUids([]);
+  await assert.rejects(
+    () => sendRoomGift(cloudflareDb, senderId, {
+      roomId, recipientMode: "users", recipientIds: [outsiderId],
+      giftId: "integration_gift", quantity: 1,
+      idempotencyKey: key + "_reject",
+    }, {realtimeNamespace: offlineSocket}),
+    /receiver_not_in_room/,
+  );
+  const success = await sendRoomGift(cloudflareDb, senderId, {
+    roomId, recipientMode: "users", recipientIds: [speakerId],
+    giftId: "integration_gift", quantity: 1, idempotencyKey: key,
+  }, {realtimeNamespace: offlineSocket});
+  assert.equal(success.ok, true);
+  assert.equal(success.recipientCount, 1);
+  const [sender, speaker, ledger] = await Promise.all([
+    db.collection("users").doc(senderId).get(),
+    db.collection("users").doc(speakerId).get(),
+    db.collection("financial_ledger").doc("gift_" + key).get(),
+  ]);
+  assert.equal(sender.data().coins, 400000);
+  assert.equal(speaker.data().totalGiftsReceived, 1);
+  assert.equal(ledger.data().delta, -100000);
+});
+
 test("room gift fanout charges once and commits all recipients atomically",async()=>{
   await seedSharedConfig();
   const suffix=Date.now().toString()+"_fanout";
