@@ -190,6 +190,7 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
     return ProfileAvatarWithFrame(
       diameter: diameter,
       userId: user.uid,
+      snapshotOnly: true,
       backgroundColor: const Color(0xFF25183F),
       placeholderColor: Colors.white70,
       fallbackProfile: <String, dynamic>{
