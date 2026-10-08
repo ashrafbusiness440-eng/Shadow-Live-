@@ -934,7 +934,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       _applyRoomSeatSafety(state);
       return state;
     } on StateError catch (error) {
-      if (!mounted) return;
+      if (!mounted) return null;
       final code = error.message.toString();
       final message = code == 'mic_invite_required'
           ? 'لازم الإدارة توافق على طلب المايك أولاً.'
