@@ -298,6 +298,8 @@ const cleanup=new Set([
   `room_rocket_state/${roomId}`,
   `gift_operations/${key}`,
   starBattleScorePath,
+  `rooms/${roomId}/star_battle_history/${starBattleId}`,
+  `room_audit_logs/${roomId}/items/star_battle_finish_${starBattleId}`,
   `gift_transactions/${key}`,
   `financial_ledger/gift_${key}`,
   `financial_ledger/gift_earnings_${key}`,
@@ -533,6 +535,25 @@ try{
     throw new Error("duplicate room gift credited Star Battle twice");
   }
   console.log("PASS room gift idempotency");
+  // End the isolated real round and verify archived Top99 from paid score docs.
+  const finishResponse=await fetch(`${workerBase}/api/voice-session`,{
+    method:"POST",
+    headers:{"authorization":`Bearer ${receiverToken}`,"content-type":"application/json"},
+    body:JSON.stringify({action:"finishStarBattle",roomId}),
+  });
+  const finishBody=await finishResponse.json().catch(()=>({}));
+  if(!finishResponse.ok||finishBody?.battle?.status!=="finished"||
+     finishBody?.battle?.leaders?.[0]?.uid!==receiverUid||
+     finishBody?.battle?.leaders?.[0]?.coins!==totalCost){
+    throw new Error("finished Star Battle did not capture paid Top99 leader");
+  }
+  const historyDoc=await fsGet(`rooms/${roomId}/star_battle_history/${starBattleId}`);
+  if(historyDoc?.data?.status!=="finished"||
+     historyDoc?.data?.leaders?.[0]?.coins!==totalCost){
+    throw new Error("Star Battle paid leaderboard was not archived");
+  }
+  console.log("PASS Star Battle finalized Top99 and persisted history");
+
   console.log("ALL CLOUDFLARE ROOM GIFT E2E CHECKS PASSED");
 }finally{
   for(const socket of [senderSocket,receiverSocket]){
