@@ -30,6 +30,14 @@ class _StarBattleSheetState extends State<StarBattleSheet> {
     super.initState();
     _subscription = _service.watch(widget.roomId).listen((value) {
       if (mounted) setState(() => _battle = value);
+      // A previous finalization can resume from its persisted marker on
+      // reopening this sheet, without a new poll or Firestore subscription.
+      if (value?.status == 'finalizing' && !_syncing) {
+        _syncing = true;
+        unawaited(
+          _service.sync(widget.roomId).whenComplete(() => _syncing = false),
+        );
+      }
     });
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
