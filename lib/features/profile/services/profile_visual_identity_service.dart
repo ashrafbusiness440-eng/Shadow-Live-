@@ -7,6 +7,7 @@ class ProfileVisualIdentity {
     required this.uid,
     required this.profileImageUrl,
     required this.profileAvatarAsset,
+    required this.profileAvatarAnimationUrl,
     required this.activeProfileFrameAssetKey,
     required this.activeProfileFrameImageUrl,
     required this.activeProfileFrameExpiresAtMs,
@@ -16,6 +17,7 @@ class ProfileVisualIdentity {
   final String uid;
   final String profileImageUrl;
   final String profileAvatarAsset;
+  final String profileAvatarAnimationUrl;
   final String activeProfileFrameAssetKey;
   final String activeProfileFrameImageUrl;
   final int activeProfileFrameExpiresAtMs;
@@ -31,6 +33,8 @@ class ProfileVisualIdentity {
           (data['profileImageUrl'] ?? '').toString().trim(),
       profileAvatarAsset:
           (data['profileAvatarAsset'] ?? '').toString().trim(),
+      profileAvatarAnimationUrl:
+          (data['profileAvatarAnimationUrl'] ?? '').toString().trim(),
       activeProfileFrameAssetKey:
           (data['activeProfileFrameAssetKey'] ?? '').toString().trim(),
       activeProfileFrameImageUrl:
@@ -52,6 +56,7 @@ class ProfileVisualIdentity {
   Map<String, dynamic> toProfileMap() => <String, dynamic>{
         'profileImageUrl': profileImageUrl,
         'profileAvatarAsset': profileAvatarAsset,
+        'profileAvatarAnimationUrl': profileAvatarAnimationUrl,
         'activeProfileFrameAssetKey': activeProfileFrameAssetKey,
         'activeProfileFrameImageUrl': activeProfileFrameImageUrl,
         'activeProfileFrameExpiresAtMs': activeProfileFrameExpiresAtMs,
@@ -106,10 +111,19 @@ class ProfileVisualIdentityService {
   void prime(String uid, Map<String, dynamic> data) {
     final normalized = uid.trim();
     if (normalized.isEmpty) return;
-    _putCache(
-      normalized,
-      ProfileVisualIdentity.fromMap(normalized, data),
-    );
+    final candidate = ProfileVisualIdentity.fromMap(normalized, data);
+    // A room snapshot may have no picture at all. Never let such a partial
+    // snapshot hide an actual avatar already loaded from public_profiles.
+    final hasAvatar = candidate.profileImageUrl.isNotEmpty ||
+        candidate.profileAvatarAsset.isNotEmpty ||
+        candidate.profileAvatarAnimationUrl.isNotEmpty;
+    if (!hasAvatar) return;
+    final cached = _cache[normalized];
+    if (cached != null &&
+        DateTime.now().difference(cached.loadedAt) < _ttl) {
+      return;
+    }
+    _putCache(normalized, candidate);
   }
 
   void _putCache(String uid, ProfileVisualIdentity value) {
