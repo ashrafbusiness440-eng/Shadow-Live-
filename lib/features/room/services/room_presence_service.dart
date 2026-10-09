@@ -105,6 +105,11 @@ class RoomPresenceService {
   static const int _maxReconnectAttempts = 6;
   Completer<void>? _readyCompleter;
   String _readyRoomId = '';
+  String _lastConnectionError = 'room_realtime_not_connected';
+
+  // Safe, bounded failure codes from the existing ticket/socket path.
+  // No telemetry listener or additional backend request is required.
+  String get lastConnectionError => _lastConnectionError;
 
   Stream<RoomRealtimeEvent> get events => _eventsController.stream;
 
@@ -163,6 +168,7 @@ class RoomPresenceService {
       final type = (map['type'] ?? '').toString().trim();
       if (type.isEmpty) return;
       if (type == 'server.ready') {
+        _lastConnectionError = '';
         _readyRoomId = _desiredRoomId;
         final ready = _readyCompleter;
         if (ready != null && !ready.isCompleted) ready.complete();
@@ -354,6 +360,7 @@ class RoomPresenceService {
     _socket = null;
     _socketSubscription = null;
     _readyRoomId = '';
+    _lastConnectionError = 'room_realtime_disconnected';
     final ready = _readyCompleter;
     if (ready != null && !ready.isCompleted) {
       ready.completeError(StateError('room_realtime_disconnected'));
@@ -430,7 +437,13 @@ class RoomPresenceService {
       if (announceOnReady && ticket['alreadyPresent'] != true) {
         unawaited(_announceJoin(roomId));
       }
-    } catch (_) {
+    } catch (error) {
+      _lastConnectionError = switch (error) {
+        TimeoutException() => 'room_realtime_ready_timeout',
+        http.ClientException() => 'room_network_unavailable',
+        StateError() => error.message.toString(),
+        _ => 'room_realtime_connection_failed',
+      };
       // A socket without server.ready is unusable. Close it before retrying
       // so no stale transport can appear connected to the next room session.
       if (_desiredRoomId == roomId &&
