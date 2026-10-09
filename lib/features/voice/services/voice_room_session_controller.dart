@@ -441,9 +441,20 @@ class VoiceRoomSessionController extends ChangeNotifier {
     String? replySenderUid,
     List<String> mentionUids = const [],
     String? animatedEmojiId,
-  }) {
+  }) async {
     if (!_active || roomId.isEmpty) {
       throw StateError('room_realtime_not_connected');
+    }
+    // A room can be visible while its separate presence socket failed.
+    // On an explicit send only, recover the EXISTING socket before chatting.
+    // Never send or acknowledge a message until the server confirms admission.
+    if (!_presenceService.isReadyFor(roomId)) {
+      final ready = await _presenceService.ensureReady(roomId);
+      if (!ready) {
+        throw StateError(_presenceService.lastConnectionError.isEmpty
+            ? 'room_realtime_not_connected'
+            : _presenceService.lastConnectionError);
+      }
     }
     return _presenceService.sendChat(
       roomId: roomId,
