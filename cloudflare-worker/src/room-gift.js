@@ -665,6 +665,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       sender.displayName || sender.username || "مستخدم Shadow Live",
     );
     const senderPhoto = clean(sender.profileImageUrl);
+    const senderAvatarAsset = clean(sender.profileAvatarAsset);
     const senderPublicId = clean(sender.publicId);
     const senderFrameAssetKey = clean(sender.activeProfileFrameAssetKey);
     const senderFrameImageUrl = clean(sender.activeProfileFrameImageUrl);
@@ -877,6 +878,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
             uid: senderUid,
             displayName: senderName,
             profileImageUrl: senderPhoto,
+            profileAvatarAsset: senderAvatarAsset,
             activeProfileFrameAssetKey: senderFrameAssetKey,
             activeProfileFrameImageUrl: senderFrameImageUrl,
             activeProfileFrameExpiresAtMs: senderFrameExpiresAtMs,
@@ -887,6 +889,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
             "uid",
             "displayName",
             "profileImageUrl",
+            "profileAvatarAsset",
             "activeProfileFrameAssetKey",
             "activeProfileFrameImageUrl",
             "activeProfileFrameExpiresAtMs",
