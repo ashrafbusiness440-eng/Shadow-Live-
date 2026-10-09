@@ -18,6 +18,10 @@ void main() {
     expect(server.contains('const snapshots=await db.client.getMany(paths);'),
         isTrue);
     expect(server.contains('starBattleSnapshot=battle?{'), isTrue);
+    expect(
+      server.contains('const starScoreByUid=await loadActiveStarBattleMicScores('),
+      isTrue,
+    );
     expect(seat.contains("'action': 'syncStarBattle'"), isTrue);
     expect(controller.contains("event.type == 'room.connection_lost'"), isTrue);
     expect(controller.contains('if (_refreshScoresAfterReconnect)'), isTrue);
