@@ -335,6 +335,8 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
           'لم يصل رد الخادم. تحقّق من رصيدك قبل إعادة الإرسال.',
         'gift_network_unavailable' =>
           'تعذر الاتصال بالخادم. تأكد من الإنترنت وأعد المحاولة.',
+        'gift_auth_failed' =>
+          'تعذر تأكيد جلسة حسابك. أعد تسجيل الدخول ثم حاول مجددًا.',
         'not_found' || 'gift_not_found' =>
           'هذه الهدية غير موجودة في المتجر حاليًا. اختر هدية أخرى.',
         'room_gifts_disabled' =>
