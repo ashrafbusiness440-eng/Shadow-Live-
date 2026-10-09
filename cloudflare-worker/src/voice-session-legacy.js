@@ -4260,7 +4260,9 @@ async function roomBootstrap(db,decoded,body){
   );
   const battle=activeStarBattle(room);
   const seats=normalizeSeats(room).map((seat)=>{
-    const scoreRaw=battle?.scores?.[seat.uid];
+    // The normalized battle is a leaderboard view and intentionally omits scores.
+    // Read the persisted per-seat score from the existing room snapshot instead.
+    const scoreRaw=battle ? room.starBattleState?.scores?.[seat.uid] : null;
     const score=scoreRaw&&typeof scoreRaw==="object"?scoreRaw:{};
     return {
       ...seat,
