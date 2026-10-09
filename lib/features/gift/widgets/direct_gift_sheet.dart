@@ -118,7 +118,15 @@ class _DirectGiftContextState extends State<_DirectGiftContext> {
       await _ensureConversation(conversationId);
     }
 
-    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+    String? token;
+    try {
+      token = await FirebaseAuth.instance.currentUser?.getIdToken();
+    } on FirebaseAuthException catch (error) {
+      // Refreshing a session token can fail before any gift reaches the API.
+      throw StateError(error.code == 'network-request-failed'
+          ? 'gift_network_unavailable'
+          : 'gift_auth_failed');
+    }
     if (token == null || token.isEmpty) throw StateError('not_signed_in');
     // A request may have committed even when its response times out. Reuse
     // the original key for exactly the same gift, instead of charging again.
