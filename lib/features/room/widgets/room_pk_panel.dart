@@ -96,7 +96,9 @@ class _RoomPkPanelState extends State<RoomPkPanel> {
     final dueEnd = pk.status == 'active' &&
         pk.endsAtMs > 0 &&
         now >= pk.endsAtMs;
-    if (!dueCountdown && !dueEnd) return;
+    // The backend can resume after a transient final score read failure.
+    final pendingFinish = pk.status == 'finalizing';
+    if (!dueCountdown && !dueEnd && !pendingFinish) return;
 
     final key = pk.id +
         ':' +

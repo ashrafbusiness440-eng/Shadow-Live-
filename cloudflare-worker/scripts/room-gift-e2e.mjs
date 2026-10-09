@@ -635,6 +635,49 @@ try{
   }
   console.log("PASS Star Battle finalized Top99 and persisted history");
 
+  // PK sync reads the same paid score docs, including first x10.5 and Top3.
+  const pkLiveResponse=await fetch(`${workerBase}/api/voice-session`,{
+    method:"POST",
+    headers:{"authorization":`Bearer ${receiverToken}`,"content-type":"application/json"},
+    body:JSON.stringify({action:"pkState",roomId}),
+  });
+  const pkLive=await pkLiveResponse.json().catch(()=>({}));
+  const liveReceiver=pkLive?.pk?.participants?.find(x=>x?.uid===receiverUid);
+  if(!pkLiveResponse.ok||pkLive?.pk?.status!=="active"||
+     liveReceiver?.score!==totalCost*10.5 ||
+     pkLive?.pk?.supporters?.[0]?.uid!==senderUid||
+     pkLive?.pk?.supporters?.[0]?.coins!==totalCost){
+    throw new Error("PK live snapshot missing settled paid scores and Top3");
+  }
+  // Expire only the isolated test fixture, then exercise the real finalizer.
+  const roomBeforePkFinish=await fsGet(`rooms/${roomId}`);
+  await fsSet(`rooms/${roomId}`,{
+    ...roomBeforePkFinish.data,
+    pkState:{
+      ...roomBeforePkFinish.data.pkState,
+      endsAtMs:Date.now()-1000,
+    },
+  });
+  const pkFinishResponse=await fetch(`${workerBase}/api/voice-session`,{
+    method:"POST",
+    headers:{"authorization":`Bearer ${receiverToken}`,"content-type":"application/json"},
+    body:JSON.stringify({action:"syncPk",roomId}),
+  });
+  const pkFinished=await pkFinishResponse.json().catch(()=>({}));
+  const finalReceiver=pkFinished?.pk?.participants?.find(x=>x?.uid===receiverUid);
+  if(!pkFinishResponse.ok||pkFinished?.pk?.status!=="finished"||
+     pkFinished?.pk?.winner!=="a"||
+     finalReceiver?.score!==totalCost*10.5 ||
+     pkFinished?.pk?.supporters?.[0]?.coins!==totalCost){
+    throw new Error("PK final winner or supporter was not settled from paid gifts");
+  }
+  const roomWithPkFinish=await fsGet(`rooms/${roomId}`);
+  if(roomWithPkFinish?.data?.pkState?.status!=="finished"||
+     roomWithPkFinish?.data?.pkState?.winner!=="a"){
+    throw new Error("PK finished paid winner was not persisted");
+  }
+  console.log("PASS PK authoritative live scores, Top3, final winner");
+
   console.log("ALL CLOUDFLARE ROOM GIFT E2E CHECKS PASSED");
 }finally{
   for(const socket of [senderSocket,receiverSocket]){

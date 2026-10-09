@@ -6,6 +6,7 @@ import {gameCatalog} from "./legacy-games/game-runtime.js";
 import {loadUserLevelPolicy} from "./user-level-policy.js";
 import {summarizeUserLevelData} from "./user-level-summary.js";
 import {publicLevelMetadata} from "./user-level-visibility.js";
+import {pkRoundDecision} from "./pk-gift-scoring.js";
 import {
   activeHideRankingLists,
   activeHiddenRoomEntry,
@@ -3718,11 +3719,49 @@ function activePk(room){
   return ["awaiting_acceptance","countdown","active"].includes(pk.status)?pk:null;
 }
 
+// Snapshot reads only the exact 2–8 accepted PK participant documents and
+// the best three supporter docs. No room-root update for every gift.
+async function loadPkPaidRoundScores(db,roomId,pk){
+  if(!pk||!/^[A-Za-z0-9_-]{1,180}$/.test(pk.id))return pk;
+  const participants=Array.isArray(pk.participants)
+    ?pk.participants.slice(0,8):[];
+  const uids=[...new Set(participants.map(item=>clean(item.uid))
+    .filter(id=>id.length>0&&id.length<=180&&!id.includes("/")))];
+  const paths=uids.map(uid=>
+    "rooms/"+roomId+"/pk_round_scores/"+pk.id+"/participants/"+uid
+  );
+  const scoreRows=paths.length?await db.client.getMany(paths):[];
+  const scoreByUid=new Map(uids.map((uid,index)=>[uid,scoreRows[index]]));
+  const scoredParticipants=participants.map((participant)=>{
+    const row=scoreByUid.get(clean(participant.uid));
+    const twice=row?.exists
+      ?Number(row.data?.scoreTwice||0):0;
+    return {
+      ...participant,
+      score:Number.isSafeInteger(twice)&&twice>0?twice/2:0,
+    };
+  });
+  const supporterSnap=await db.collection("rooms").doc(roomId)
+    .collection("pk_round_scores").doc(pk.id)
+    .collection("supporters").orderBy("coins","desc").limit(3).get();
+  const supporters=supporterSnap.docs.map(doc=>({
+    uid:doc.id,
+    displayName:clean(doc.data()?.displayName||"مستخدم Shadow Live"),
+    profileImageUrl:clean(doc.data()?.profileImageUrl),
+    coins:Math.max(0,Number(doc.data()?.coins||0)),
+  }));
+  return {...pk,participants:scoredParticipants,supporters};
+}
+
 async function pkState(db,roomId){
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
   const snap=await db.collection("rooms").doc(roomId).get();
   if(!snap.exists)throw new ApiError("room_not_found",404);
-  return {ok:true,roomId,pk:normalizePkState(snap.data()||{})};
+  const pk=normalizePkState(snap.data()||{});
+  if(!pk||!["active","countdown","finalizing"].includes(pk.status)){
+    return {ok:true,roomId,pk};
+  }
+  return {ok:true,roomId,pk:await loadPkPaidRoundScores(db,roomId,pk)};
 }
 
 async function createPk(db,uid,body){
@@ -3746,7 +3785,7 @@ async function createPk(db,uid,body){
     if(!canManageRoomAction(room,actorSnap.data()||{},uid,"managePk")){
       throw new ApiError("forbidden",403);
     }
-    if(activePk(room))throw new ApiError("pk_already_active",409);
+    if(activePk(room)||room.pkState?.status==="finalizing")throw new ApiError("pk_already_active",409);
 
     const seats=normalizeSeats(room);
     const participantSeats=requested.map(targetUid=>{
@@ -3869,13 +3908,17 @@ async function syncPk(db,uid,body){
   const roomId=clean(body.roomId);
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
   const roomRef=db.collection("rooms").doc(roomId);
-  return db.runTransaction(async tx=>{
+  // Close the gift-scoring window atomically before reading final scores.
+  // Concurrent paid gifts either commit before this marker or retry and
+  // see status=finalizing, so no points are lost after settlement starts.
+  const state=await db.runTransaction(async tx=>{
     const snap=await tx.get(roomRef);
     if(!snap.exists)throw new ApiError("room_not_found",404);
     const room=snap.data()||{};
-    const pk=activePk(room);
-    if(!pk)return {ok:true,roomId,pk:normalizePkState(room)};
-
+    const pk=normalizePkState(room);
+    if(!pk||!["awaiting_acceptance","countdown","active","finalizing"].includes(pk.status)){
+      return pk;
+    }
     const now=Date.now();
     let next=pk;
     if(pk.status==="countdown"&&pk.countdownEndsAtMs>0&&now>=pk.countdownEndsAtMs){
@@ -3883,31 +3926,59 @@ async function syncPk(db,uid,body){
     }
     if((next.status==="active"||next.status==="countdown")&&
         next.endsAtMs>0&&now>=next.endsAtMs){
-      const scoreA=Number(next.teamScores?.a||0);
-      const scoreB=Number(next.teamScores?.b||0);
-      if(scoreA===scoreB&&!next.overtimeUsed){
-        next={
-          ...next,
-          status:"active",
-          overtimeUsed:true,
-          endsAtMs:now+60000,
-        };
-      }else{
-        next={
-          ...next,
-          status:"finished",
-          winner:scoreA===scoreB?"draw":(scoreA>scoreB?"a":"b"),
-          finishedAtMs:now,
-        };
-      }
+      next={...next,status:"finalizing"};
     }
     if(JSON.stringify(next)!==JSON.stringify(pk)){
       tx.update(roomRef,{pkState:next,updatedAt:FieldValue.serverTimestamp()});
     }
-    return {ok:true,roomId,pk:next};
+    return next;
+  });
+  if(!state)return {ok:true,roomId,pk:null};
+  if(!["active","countdown","finalizing"].includes(state.status)){
+    return {ok:true,roomId,pk:state};
+  }
+  const scored=await loadPkPaidRoundScores(db,roomId,state);
+  if(state.status!=="finalizing"){
+    return {ok:true,roomId,pk:scored};
+  }
+  // This second transaction is retryable after a transient query failure.
+  // It writes the room root only for overtime/finish, never for each gift.
+  return db.runTransaction(async tx=>{
+    const roomSnap=await tx.get(roomRef);
+    if(!roomSnap.exists)throw new ApiError("room_not_found",404);
+    const room=roomSnap.data()||{};
+    const current=normalizePkState(room);
+    if(!current||current.id!==state.id||current.status!=="finalizing"){
+      return {ok:true,roomId,pk:current};
+    }
+    const scoreA=scored.participants.filter(item=>item.team==="a")
+      .reduce((sum,item)=>sum+Number(item.score||0),0);
+    const scoreB=scored.participants.filter(item=>item.team==="b")
+      .reduce((sum,item)=>sum+Number(item.score||0),0);
+    const now=Date.now();
+    const decision=pkRoundDecision(scoreA,scoreB,current.overtimeUsed);
+    if(!decision)throw new ApiError("invalid_pk_score",409);
+    const next=decision.overtime
+      ?{
+          ...current,
+          status:"active",
+          participants:scored.participants,
+          supporters:scored.supporters,
+          overtimeUsed:true,
+          endsAtMs:now+60000,
+        }
+      :{
+          ...current,
+          status:"finished",
+          participants:scored.participants,
+          supporters:scored.supporters,
+          winner:decision.winner,
+          finishedAtMs:now,
+        };
+    tx.update(roomRef,{pkState:next,updatedAt:FieldValue.serverTimestamp()});
+    return {ok:true,roomId,pk:normalizePkState({pkState:next})};
   });
 }
-
 function timestampMillis(value){
   if(!value)return 0;
   if(typeof value.toMillis==="function")return Number(value.toMillis()||0);

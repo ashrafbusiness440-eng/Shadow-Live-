@@ -7,3 +7,15 @@ export function pkGiftScoreTwice(paidRecipientCoins, isFirstGift) {
   const pointsTwice = paidRecipientCoins * (isFirstGift ? 21 : 20);
   return Number.isSafeInteger(pointsTwice) ? pointsTwice : null;
 }
+
+export function pkRoundDecision(scoreA, scoreB, overtimeUsed = false) {
+  if (!Number.isFinite(scoreA) || !Number.isFinite(scoreB) ||
+      scoreA < 0 || scoreB < 0) return null;
+  if (scoreA === scoreB && !overtimeUsed) {
+    return { overtime: true, winner: "" };
+  }
+  return {
+    overtime: false,
+    winner: scoreA === scoreB ? "draw" : (scoreA > scoreB ? "a" : "b"),
+  };
+}
