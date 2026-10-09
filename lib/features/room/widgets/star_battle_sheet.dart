@@ -35,7 +35,9 @@ class _StarBattleSheetState extends State<StarBattleSheet> {
       if (value?.status == 'finalizing' && !_syncing) {
         _syncing = true;
         unawaited(
-          _service.sync(widget.roomId).whenComplete(() => _syncing = false),
+          _service.sync(widget.roomId)
+              .catchError((Object _) {})
+              .whenComplete(() => _syncing = false),
         );
       }
     });
