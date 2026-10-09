@@ -149,6 +149,7 @@ class PkScoreOverlay {
           'displayName': (rawSupporter['displayName'] ?? '').toString(),
           'profileImageUrl':
               (rawSupporter['profileImageUrl'] ?? '').toString(),
+          'mysteriousMode': rawSupporter['mysteriousMode'] == true,
         };
         _addSupport(uid, coins, profile);
         _recentSupport[op] = (
