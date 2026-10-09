@@ -69,6 +69,7 @@ import 'features/room/services/room_rocket_service.dart';
 import 'core/assets/shadow_asset_registry.dart';
 import 'features/room/widgets/star_battle_sheet.dart';
 import 'features/room/services/room_seat_service.dart';
+import 'features/room/services/room_presence_service.dart';
 import 'features/games/services/game_runtime_service.dart';
 import 'features/games/widgets/room_game_overlay.dart';
 import 'features/profile/screens/my_items_screen.dart';
