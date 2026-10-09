@@ -283,6 +283,8 @@ async function deleteAuthUser(idToken){
 }
 
 const periods=utcPeriodKeys();
+const starBattleId=`star_e2e_${runId}`;
+const starBattleScorePath=`rooms/${roomId}/star_battle_scores/${starBattleId}/users/${receiverUid}`;
 let senderToken=null;
 let receiverToken=null;
 let senderSocket=null;
@@ -295,6 +297,7 @@ const cleanup=new Set([
   `rooms/${roomId}`,
   `room_rocket_state/${roomId}`,
   `gift_operations/${key}`,
+  starBattleScorePath,
   `gift_transactions/${key}`,
   `financial_ledger/gift_${key}`,
   `financial_ledger/gift_earnings_${key}`,
@@ -369,6 +372,7 @@ try{
     dailySupport:0,
     weeklySupport:0,
     monthlySupport:0,
+    starBattleState:{id:starBattleId,status:"active",durationMinutes:60,createdBy:receiverUid,createdAtMs:nowMs,endsAtMs:nowMs+3600000,scores:{}},
     createdAt:new Date(),
   });
   await fsSet(`room_rocket_state/${roomId}`,{
@@ -446,6 +450,11 @@ try{
   if(liveGiftEvent?.payload?.message?.id!==messageId){
     throw new Error("room gift realtime event id mismatch");
   }
+  const award=liveGiftEvent?.payload?.message?.starBattleAward;
+  if(award?.roundId!==starBattleId || award?.deltas?.[0]?.coins!==totalCost ||
+     award?.deltas?.[0]?.uid!==receiverUid) {
+    throw new Error("Star Battle realtime gift score mismatch");
+  }
   cleanup.add(`public_gift_showcases/${receiverUid}/items/${String(selectedGift.id)}`);
 
   const [senderAfter,roomAfter,rocketAfter,txDoc,ledgerDoc,
@@ -487,6 +496,11 @@ try{
   if(!ledgerDoc||ledgerDoc.data.delta!==-totalCost){
     throw new Error("room gift ledger mismatch");
   }
+  const scoreSnapshot=await fsGet(starBattleScorePath);
+  if(scoreSnapshot?.data?.coins!==totalCost ||
+     scoreSnapshot?.data?.roundId!==starBattleId){
+    throw new Error("Star Battle paid support was not persisted");
+  }
   console.log("PASS room gift accounting + period support + realtime delivery + rocket progress");
 
   const duplicate=await api(senderToken,{
@@ -513,6 +527,10 @@ try{
        doc=>doc?.data?.supportCoins!==totalCost||doc?.data?.giftCount!==1
      )){
     throw new Error("duplicate room gift mutated balances or support");
+  }
+  const scoreAfterDuplicate=await fsGet(starBattleScorePath);
+  if(scoreAfterDuplicate?.data?.coins!==totalCost){
+    throw new Error("duplicate room gift credited Star Battle twice");
   }
   console.log("PASS room gift idempotency");
   console.log("ALL CLOUDFLARE ROOM GIFT E2E CHECKS PASSED");
