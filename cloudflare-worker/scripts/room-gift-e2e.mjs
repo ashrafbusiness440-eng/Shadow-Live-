@@ -244,8 +244,16 @@ async function openRoomRealtime(roomId,idToken){
     {action:"ticket",roomId},
   );
   if(!ticket.res.ok||ticket.body?.ok!==true||!ticket.body.socketPath){
+    // Read-only, failure-scoped diagnosis: distinguish admission Firestore
+    // failure from WebSocket Durable Object routing without polling.
+    const [presence, refresh] = await Promise.all([
+      realtimePost("/api/room-realtime", idToken, {action:"presenceState",roomId}),
+      realtimePost("/api/room-realtime", idToken, {action:"refreshIdentity",roomId}),
+    ]);
     throw new Error(
-      `room realtime ticket failed: ${ticket.res.status} ${JSON.stringify(ticket.body)}`,
+      `room realtime ticket failed: ${ticket.res.status} ${JSON.stringify(ticket.body)};` +
+      ` presence=${presence.res.status}:${presence.body?.code || presence.body?.ok};` +
+      ` refreshIdentity=${refresh.res.status}:${refresh.body?.code || refresh.body?.ok}`,
     );
   }
   const url=new URL(ticket.body.socketPath,workerBase);
