@@ -7,14 +7,70 @@ class StarBattleScoreOverlay {
 
   String _roundId = '';
   final Map<String, int> _deltas = <String, int>{};
+  final Map<String, Map<String, dynamic>> _bootstrapScores =
+      <String, Map<String, dynamic>>{};
+  final Map<String, ({int revision, Map<String, int> deltas})> _recentAwards =
+      <String, ({int revision, Map<String, int> deltas})>{};
   final Set<String> _seenOperations = <String>{};
+  int _revision = 0;
 
   String get roundId => _roundId;
+  int get revision => _revision;
 
   void clear() {
     _roundId = '';
     _deltas.clear();
+    _bootstrapScores.clear();
+    _recentAwards.clear();
     _seenOperations.clear();
+  }
+
+  /// Rebase from one authoritative room-bootstrap batch read. Keep only
+  /// realtime gifts observed after that request started, avoiding replay
+  /// of already committed gift deltas when opening a room mid-round.
+  bool installBootstrap(Map<String, dynamic> battle, {
+    required int startedAtRevision,
+  }) {
+    final id = (battle['id'] ?? '').toString().trim();
+    if (id.isEmpty || battle['status'] != 'active' ||
+        (_roundId.isNotEmpty && _roundId != id)) {
+      return false;
+    }
+    if (_roundId.isEmpty) _roundId = id;
+    final rawScores = battle['scores'];
+    if (rawScores is! Map) return false;
+
+    _bootstrapScores.clear();
+    for (final entry in rawScores.entries) {
+      final uid = entry.key.toString().trim();
+      if (uid.isEmpty || entry.value is! Map ||
+          _bootstrapScores.length >= 50) continue;
+      final data = Map<String, dynamic>.from(entry.value as Map);
+      final coins = data['coins'];
+      if (coins is! num || coins < 0) continue;
+      _bootstrapScores[uid] = <String, dynamic>{
+        ...data,
+        'coins': coins.toInt().clamp(0, _maxSafeCoins).toInt(),
+      };
+    }
+
+    _deltas.clear();
+    _recentAwards.removeWhere((_, value) => value.revision <= startedAtRevision);
+    for (final award in _recentAwards.values) {
+      for (final entry in award.deltas.entries) {
+        _addDelta(entry.key, entry.value);
+      }
+    }
+    return true;
+  }
+
+  void _addDelta(String uid, int coins) {
+    if (!_deltas.containsKey(uid) &&
+        _deltas.length >= _maxTrackedRecipients) {
+      _deltas.remove(_deltas.keys.first);
+    }
+    _deltas[uid] =
+        ((_deltas[uid] ?? 0) + coins).clamp(0, _maxSafeCoins).toInt();
   }
 
   Map<String, dynamic> merge(Map<String, dynamic> room) {
@@ -33,11 +89,14 @@ class StarBattleScoreOverlay {
       clear();
       _roundId = id;
     }
-    if (_deltas.isEmpty) return Map<String, dynamic>.from(room);
+    if (_deltas.isEmpty && _bootstrapScores.isEmpty) {
+      return Map<String, dynamic>.from(room);
+    }
     final rawScores = round['scores'];
     final scores = rawScores is Map
         ? Map<String, dynamic>.from(rawScores)
         : <String, dynamic>{};
+    scores.addAll(_bootstrapScores);
 
     for (final entry in _deltas.entries) {
       final existing = scores[entry.key];
@@ -94,18 +153,19 @@ class StarBattleScoreOverlay {
     if (updates.isEmpty) return false;
 
     for (final entry in updates.entries) {
-      if (!_deltas.containsKey(entry.key) &&
-          _deltas.length >= _maxTrackedRecipients) {
-        _deltas.remove(_deltas.keys.first);
-      }
-      final previous = _deltas[entry.key] ?? 0;
-      _deltas[entry.key] =
-          (previous + entry.value).clamp(0, _maxSafeCoins).toInt();
+      _addDelta(entry.key, entry.value);
     }
+    _revision++;
     if (_seenOperations.length >= _maxSeenOperations) {
-      _seenOperations.remove(_seenOperations.first);
+      final oldest = _seenOperations.first;
+      _seenOperations.remove(oldest);
+      _recentAwards.remove(oldest);
     }
     _seenOperations.add(operationId);
+    _recentAwards[operationId] = (
+      revision: _revision,
+      deltas: updates,
+    );
     return true;
   }
 }

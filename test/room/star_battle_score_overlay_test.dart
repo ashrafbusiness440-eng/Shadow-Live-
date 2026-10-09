@@ -102,4 +102,61 @@ void main() {
       isTrue,
     );
   });
+
+  test('late join snapshot survives room updates without another watcher', () {
+    final overlay = StarBattleScoreOverlay();
+    overlay.merge(room('active_1', 'active'));
+    expect(overlay.installBootstrap(<String, dynamic>{
+      'id': 'active_1',
+      'status': 'active',
+      'scores': <String, dynamic>{
+        'seat_user': <String, dynamic>{'coins': 1200},
+      },
+    }, startedAtRevision: overlay.revision), isTrue);
+    for (var i = 0; i < 3; i++) {
+      final scores = ((overlay.merge(room('active_1', 'active'))
+          ['starBattleState'] as Map)['scores'] as Map);
+      expect((scores['seat_user'] as Map)['coins'], 1200);
+    }
+    final finished = overlay.merge(room('active_1', 'finished'));
+    expect((finished['starBattleState'] as Map)['scores'], isEmpty);
+  });
+
+  test('bootstrap rebase keeps events arriving after request started', () {
+    final overlay = StarBattleScoreOverlay();
+    overlay.merge(room('active_2', 'active'));
+    expect(overlay.apply(<String, dynamic>{
+      'roundId': 'active_2',
+      'operationId': 'old_gift',
+      'deltas': <Map<String, dynamic>>[
+        <String, dynamic>{'uid': 'recipient', 'coins': 200},
+      ],
+    }), isTrue);
+    final revisionBeforeRequest = overlay.revision;
+    expect(overlay.apply(<String, dynamic>{
+      'roundId': 'active_2',
+      'operationId': 'new_gift',
+      'deltas': <Map<String, dynamic>>[
+        <String, dynamic>{'uid': 'recipient', 'coins': 75},
+      ],
+    }), isTrue);
+    expect(overlay.installBootstrap(<String, dynamic>{
+      'id': 'active_2',
+      'status': 'active',
+      'scores': <String, dynamic>{
+        'recipient': <String, dynamic>{'coins': 200},
+      },
+    }, startedAtRevision: revisionBeforeRequest), isTrue);
+    final scores = ((overlay.merge(room('active_2', 'active'))
+        ['starBattleState'] as Map)['scores'] as Map);
+    expect((scores['recipient'] as Map)['coins'], 275);
+    expect(overlay.apply(<String, dynamic>{
+      'roundId': 'active_2',
+      'operationId': 'new_gift',
+      'deltas': <Map<String, dynamic>>[
+        <String, dynamic>{'uid': 'recipient', 'coins': 75},
+      ],
+    }), isFalse);
+  });
+
 }

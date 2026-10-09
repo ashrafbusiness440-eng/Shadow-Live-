@@ -104,12 +104,12 @@ void main() {
     expect(snapshot.serverNowMs, 123456);
   });
 
-  test('room seats retain authoritative Star Battle coins from the active room', () {
+  test('room bootstrap batches paid Star Battle scores for seated users', () {
     final voiceSource =
         File('cloudflare-worker/src/voice-session-legacy.js').readAsStringSync();
     expect(
       voiceSource.contains(
-        'const scoreRaw=battle ? room.starBattleState?.scores?.[seat.uid] : null;',
+        'const snapshots=await db.client.getMany(scorePaths);',
       ),
       isTrue,
     );
@@ -131,6 +131,14 @@ void main() {
         ],
       },
     });
+    expect(
+      voiceSource.contains('scores:starScoreByUid,'),
+      isTrue,
+    );
+    expect(
+      voiceSource.contains('const seats=normalizedSeats.map((seat)=>({'),
+      isTrue,
+    );
     expect(snapshot.seatState.starBattleActive, isTrue);
     expect(snapshot.seatState.seats.single.starBattleCoins, 1250);
   });

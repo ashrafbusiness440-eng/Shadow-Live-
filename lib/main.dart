@@ -817,13 +817,17 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     if (roomId.isEmpty) return;
     if (mounted) setState(() => _loadingRoomInsights = true);
     try {
+      final scoreRevisionAtStart = _voiceSession.starBattleScoreRevision;
       final snapshot = await _roomBootstrapService.load(roomId);
       if (!mounted ||
           (_roomArguments['roomId'] ?? '').toString().trim() != roomId) {
         return;
       }
 
-      _voiceSession.applyBootstrapRoom(snapshot.room);
+      _voiceSession.applyBootstrapRoom(
+        snapshot.room,
+        starBattleStartedAtRevision: scoreRevisionAtStart,
+      );
       final owner = snapshot.ownerProfile;
       final ownerName =
           (owner['displayName'] ?? '').toString().trim();

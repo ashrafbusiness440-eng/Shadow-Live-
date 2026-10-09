@@ -4311,16 +4311,39 @@ async function roomBootstrap(db,decoded,body){
     Number(room.onlineCount||room.participantsCount||0),
   );
   const battle=activeStarBattle(room);
-  const seats=normalizeSeats(room).map((seat)=>{
-    // The normalized battle is a leaderboard view and intentionally omits scores.
-    // Read the persisted per-seat score from the existing room snapshot instead.
-    const scoreRaw=battle ? room.starBattleState?.scores?.[seat.uid] : null;
-    const score=scoreRaw&&typeof scoreRaw==="object"?scoreRaw:{};
-    return {
-      ...seat,
-      starBattleCoins:battle?Math.max(0,Number(score.coins||0)):0,
-    };
-  });
+  const normalizedSeats=normalizeSeats(room);
+  // A single bounded batch read on the existing room bootstrap restores
+  // scores for late joiners. Avoid per-user profiles or polling.
+  const starScoreByUid={};
+  if(battle&&/^[A-Za-z0-9_-]{1,180}$/.test(battle.id)){
+    const activeUids=[...new Set(
+      normalizedSeats.map(seat=>clean(seat.uid)).filter(Boolean),
+    )].slice(0,50);
+    if(activeUids.length){
+      try{
+        const scorePaths=activeUids.map(seatUid=>
+          "rooms/"+roomId+"/star_battle_scores/"+battle.id+"/users/"+seatUid
+        );
+        const snapshots=await db.client.getMany(scorePaths);
+        for(let index=0;index<activeUids.length;index++){
+          const score=snapshots[index]?.data;
+          if(!snapshots[index]?.exists||!score)continue;
+          starScoreByUid[activeUids[index]]={
+            coins:Math.max(0,Math.floor(Number(score.coins||0))),
+          };
+        }
+      }catch(_){
+        // A score read must not block joining or voice initialization.
+      }
+    }
+  }
+  const seats=normalizedSeats.map((seat)=>({
+    ...seat,
+    starBattleCoins:battle
+      ?Math.max(0,Number(starScoreByUid[seat.uid]?.coins||
+        room.starBattleState?.scores?.[seat.uid]?.coins||0))
+      :0,
+  }));
 
   const supporters=topSupportersSnap.docs
     .map(doc=>{
@@ -4386,6 +4409,12 @@ async function roomBootstrap(db,decoded,body){
 
   const roomData={
     ...roomResponse(roomId,room),
+    // Transient bootstrap-only snapshot. Not written to rooms/{roomId}.
+    ...(battle?{starBattleState:{
+      id:battle.id,
+      status:"active",
+      scores:starScoreByUid,
+    }}:{}),
     selfVipLevel:actorVipEntitlements.level,
     canUseVipEmoji:actorVipEntitlements.exclusiveEmoji,
     vipCustomerService:actorVipEntitlements.vipCustomerService,

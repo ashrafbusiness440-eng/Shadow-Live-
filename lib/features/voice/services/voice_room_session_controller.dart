@@ -161,13 +161,26 @@ class VoiceRoomSessionController extends ChangeNotifier {
               'غرفة صوتية')
           .toString();
 
-  void applyBootstrapRoom(Map<String, dynamic> room) {
+  int get starBattleScoreRevision => _starBattleScores.revision;
+
+  void applyBootstrapRoom(
+    Map<String, dynamic> room, {
+    int? starBattleStartedAtRevision,
+  }) {
     final targetRoomId = (room['roomId'] ?? '').toString().trim();
     if (targetRoomId.isEmpty || targetRoomId != roomId) return;
     _roomArguments = <String, dynamic>{
       ..._roomArguments,
       ...room,
     };
+    final battle = room['starBattleState'];
+    if (starBattleStartedAtRevision != null && battle is Map &&
+        _starBattleScores.installBootstrap(
+          Map<String, dynamic>.from(battle),
+          startedAtRevision: starBattleStartedAtRevision,
+        ) && _lastRawRoomState.isNotEmpty) {
+      _roomStateController.add(_starBattleScores.merge(_lastRawRoomState));
+    }
     notifyListeners();
   }
 
