@@ -263,7 +263,7 @@ void main() {
     expect(effects.contains('top: entranceTop,'), isTrue);
     expect(effects.contains('bottom: joinBottom,'), isTrue);
     expect(effects.contains('maxWidth: 244'), isTrue);
-    expect(effects.contains('width: 36,'), isTrue);
+    expect(effects.contains('width: 18,'), isTrue);
     expect(effects.contains('height: 36,'), isTrue);
     expect(effects.contains('compact: true'), isTrue);
     expect(screen.contains('entranceTop: (micTop - 50).clamp(80.0, 125.0).toDouble()'), isTrue);
