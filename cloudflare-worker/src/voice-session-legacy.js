@@ -6,6 +6,7 @@ import {gameCatalog} from "./legacy-games/game-runtime.js";
 import {loadUserLevelPolicy} from "./user-level-policy.js";
 import {summarizeUserLevelData} from "./user-level-summary.js";
 import {publicLevelMetadata} from "./user-level-visibility.js";
+import {pkRoundDecision} from "./pk-gift-scoring.js";
 import {
   activeHideRankingLists,
   activeHiddenRoomEntry,
@@ -3952,8 +3953,9 @@ async function syncPk(db,uid,body){
     const scoreB=scored.participants.filter(item=>item.team==="b")
       .reduce((sum,item)=>sum+Number(item.score||0),0);
     const now=Date.now();
-    const tie=scoreA===scoreB;
-    const next=tie&&!current.overtimeUsed
+    const decision=pkRoundDecision(scoreA,scoreB,current.overtimeUsed);
+    if(!decision)throw new ApiError("invalid_pk_score",409);
+    const next=decision.overtime
       ?{
           ...current,
           status:"active",
@@ -3967,7 +3969,7 @@ async function syncPk(db,uid,body){
           status:"finished",
           participants:scored.participants,
           supporters:scored.supporters,
-          winner:tie?"draw":(scoreA>scoreB?"a":"b"),
+          winner:decision.winner,
           finishedAtMs:now,
         };
     tx.update(roomRef,{pkState:next,updatedAt:FieldValue.serverTimestamp()});
