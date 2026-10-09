@@ -409,6 +409,10 @@ class _StarBattleSheetState extends State<StarBattleSheet> {
                                   leading: ProfileAvatarWithFrame(
                                     diameter: 40,
                                     userId: leader.uid,
+                                    // A masked Star Battle identity is already
+                                    // projected by the gift ledger snapshot.
+                                    // Never fetch the account's real avatar.
+                                    snapshotOnly: true,
                                     fallbackProfile: <String, dynamic>{
                                       'profileImageUrl':
                                           leader.profileImageUrl,
