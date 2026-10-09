@@ -250,10 +250,14 @@ async function openRoomRealtime(roomId,idToken){
       realtimePost("/api/room-realtime", idToken, {action:"presenceState",roomId}),
       realtimePost("/api/room-realtime", idToken, {action:"refreshIdentity",roomId}),
     ]);
+    const retry = await realtimePost("/api/room-realtime", idToken, {
+      action: "ticket", roomId, reconnectAttempt: 1,
+    });
     throw new Error(
       `room realtime ticket failed: ${ticket.res.status} ${JSON.stringify(ticket.body)};` +
       ` presence=${presence.res.status}:${presence.body?.code || presence.body?.ok};` +
-      ` refreshIdentity=${refresh.res.status}:${refresh.body?.code || refresh.body?.ok}`,
+      ` refreshIdentity=${refresh.res.status}:${refresh.body?.code || refresh.body?.ok};` +
+      ` delayedRetry=${retry.res.status}:${retry.body?.code || retry.body?.ok}`,
     );
   }
   const url=new URL(ticket.body.socketPath,workerBase);
