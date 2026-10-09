@@ -221,7 +221,11 @@ void main() {
     expect(stage.contains('if (top.isEmpty) return const SizedBox.shrink()'), isFalse);
     expect(stage.contains('supporter == null'), isTrue);
     expect(stage.contains('snapshotOnly: true'), isTrue);
-    expect(source.contains('includeSupporters: true,'), isTrue);
+    // Bootstrap already bundles supporters; do not add a room entry request.
+    expect(source.contains('unawaited(_loadRoomInsights(roomId));'), isFalse);
+    final bootstrap = File('cloudflare-worker/src/voice-session-legacy.js')
+        .readAsStringSync();
+    expect(bootstrap.contains('dailySupportRef.collection("users").limit(3).get()'), isTrue);
     expect(stage.contains('Timer.periodic'), isFalse);
   });
 
