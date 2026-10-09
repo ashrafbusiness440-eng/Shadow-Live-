@@ -41,6 +41,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
   Map<String, dynamic> _lastRawRoomState = <String, dynamic>{};
   bool _refreshScoresAfterReconnect = false;
   bool _starBattleSyncInFlight = false;
+  bool _pkSyncInFlight = false;
   final http.Client _effectSoundHttp = http.Client();
 
   StreamSubscription<User?>? _authSubscription;
@@ -528,6 +529,28 @@ class VoiceRoomSessionController extends ChangeNotifier {
     }
   }
 
+  Future<void> _refreshPkAfterReconnect(String targetRoomId) async {
+    // Only after a real disconnect, and only when a PK round is displayed.
+    if (_pkSyncInFlight || !_active || _pkScores.roundId.isEmpty) return;
+    _pkSyncInFlight = true;
+    final revision = _pkScores.revision;
+    try {
+      final snapshot = await _seatService.syncPkScoreSnapshot(targetRoomId);
+      if (!_active || roomId != targetRoomId ||
+          snapshot == null || _lastRawRoomState.isEmpty) return;
+      if (_pkScores.installSnapshot(
+        snapshot,
+        startedAtRevision: revision,
+      )) {
+        _roomStateController.add(_projectRoomState());
+      }
+    } catch (_) {
+      // A failed cosmetic catch-up must never block ZEGO voice or room chat.
+    } finally {
+      _pkSyncInFlight = false;
+    }
+  }
+
   void _handleRealtimeEvent(RoomRealtimeEvent event) {
     if (!_active && !_joining) return;
     final eventRoomId = (event.payload['roomId'] ?? '').toString();
@@ -538,6 +561,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
       if (_refreshScoresAfterReconnect) {
         _refreshScoresAfterReconnect = false;
         unawaited(_refreshStarBattleAfterReconnect(roomId));
+        unawaited(_refreshPkAfterReconnect(roomId));
       }
       changed = _replaceRoomParticipants(event.payload['participants']) ||
           changed;
