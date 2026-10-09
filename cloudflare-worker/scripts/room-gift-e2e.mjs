@@ -417,6 +417,17 @@ try{
   console.log("PASS sender + receiver realtime room presence");
   console.log("PASS real two-account room presence/count and websocket chat");
 
+  // Room gift chat is intentionally ephemeral, delivered on the existing
+  // WebSocket; it must not create rooms/{roomId}/messages writes.
+  const roomGiftRealtime = waitForRealtimeEvent(
+    receiverSocket,
+    event => event?.type === "room.chat_message" &&
+      event?.payload?.message?.type === "gift" &&
+      event?.payload?.message?.senderUid === senderUid &&
+      event?.payload?.message?.receiverUid === receiverUid &&
+      event?.payload?.message?.giftId === String(selectedGift.id),
+    20000,
+  );
   const sent=await apiWhenReady(senderToken,{
     roomId,
     receiverId:receiverUid,
@@ -431,17 +442,19 @@ try{
     throw new Error("room gift E2E unexpectedly triggered rocket explosion");
   }
   messageId=sent.body.messageId;
-  cleanup.add(`rooms/${roomId}/messages/${messageId}`);
+  const liveGiftEvent = await roomGiftRealtime;
+  if(liveGiftEvent?.payload?.message?.id!==messageId){
+    throw new Error("room gift realtime event id mismatch");
+  }
   cleanup.add(`public_gift_showcases/${receiverUid}/items/${String(selectedGift.id)}`);
 
-  const [senderAfter,roomAfter,rocketAfter,txDoc,ledgerDoc,msgDoc,
+  const [senderAfter,roomAfter,rocketAfter,txDoc,ledgerDoc,
     supportDaily,supportWeekly,supportMonthly]=await Promise.all([
     fsGet(`users/${senderUid}`),
     fsGet(`rooms/${roomId}`),
     fsGet(`room_rocket_state/${roomId}`),
     fsGet(`gift_transactions/${key}`),
     fsGet(`financial_ledger/gift_${key}`),
-    fsGet(`rooms/${roomId}/messages/${messageId}`),
     fsGet(`rooms/${roomId}/support_daily/${periods.day}`),
     fsGet(`rooms/${roomId}/support_weekly/${periods.week}`),
     fsGet(`rooms/${roomId}/support_monthly/${periods.month}`),
@@ -474,10 +487,7 @@ try{
   if(!ledgerDoc||ledgerDoc.data.delta!==-totalCost){
     throw new Error("room gift ledger mismatch");
   }
-  if(!msgDoc||msgDoc.data.type!=="gift"||msgDoc.data.giftId!==String(selectedGift.id)){
-    throw new Error("room gift message mismatch");
-  }
-  console.log("PASS room gift accounting + support + rocket progress");
+  console.log("PASS room gift accounting + period support + realtime delivery + rocket progress");
 
   const duplicate=await api(senderToken,{
     roomId,
