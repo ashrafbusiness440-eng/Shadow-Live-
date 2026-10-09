@@ -315,6 +315,19 @@ class RoomSeatService {
     return snapshot is Map ? Map<String, dynamic>.from(snapshot) : null;
   }
 
+  /// One-shot PK round snapshot after a confirmed room socket reconnection.
+  /// Reuses the existing voice-session action; no new stream or polling.
+  Future<Map<String, dynamic>?> syncPkRoundSnapshot(String roomId) async {
+    final id = roomId.trim();
+    if (id.isEmpty) return null;
+    final response = await _post({
+      'action': 'pkState',
+      'roomId': id,
+    });
+    final raw = response['pk'];
+    return raw is Map ? Map<String, dynamic>.from(raw) : null;
+  }
+
   Future<void> syncMysteriousIdentity(String roomId) async {
     final id = roomId.trim();
     if (id.isEmpty) return;
