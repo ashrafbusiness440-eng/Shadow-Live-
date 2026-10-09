@@ -68,6 +68,25 @@ void main() {
         as Map)['scores'], isEmpty);
   });
 
+  test('round score cache stays bounded after long gift sessions', () {
+    final overlay = StarBattleScoreOverlay();
+    overlay.merge(room('active_long_round', 'active'));
+    for (var index = 0; index < 270; index++) {
+      expect(overlay.apply(<String, dynamic>{
+        'roundId': 'active_long_round',
+        'operationId': 'operation_\$index',
+        'deltas': <Map<String, dynamic>>[
+          <String, dynamic>{'uid': 'receiver_\$index', 'coins': 1},
+        ],
+      }), isTrue);
+    }
+    final projected = overlay.merge(room('active_long_round', 'active'));
+    final scores = Map<String, dynamic>.from(
+      (projected['starBattleState'] as Map)['scores'] as Map,
+    );
+    expect(scores.length, lessThanOrEqualTo(256));
+  });
+
   test('score updates use existing room state stream and no new listener', () {
     final controller = File(
       'lib/features/voice/services/voice_room_session_controller.dart',
