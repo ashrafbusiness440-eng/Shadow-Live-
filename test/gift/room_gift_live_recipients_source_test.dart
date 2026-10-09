@@ -30,6 +30,10 @@ void main() {
         isTrue);
     expect(source.contains('final seatNumber = _seatNumber(uid);'), isTrue);
     expect(source.contains('Set<String> get _micIds => _liveSeats'), isTrue);
+    expect(source.contains('_selectedIds.intersection(_availableReceiverIds)'),
+        isTrue);
+    expect(source.contains('recipientIds: _currentSelectedIds.toList('),
+        isTrue);
   });
 
   test('live gift picker adds no Firestore or websocket observer', () {
