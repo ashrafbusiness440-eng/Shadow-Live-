@@ -29,6 +29,9 @@ void main() {
     expect(source.contains('if (!seat.occupied || !seen.add(seat.uid)) continue;'),
         isTrue);
     expect(source.contains('final seatNumber = _seatNumber(uid);'), isTrue);
+    expect(source.contains('occupiedSeat?.profileImageUrl'), isTrue);
+    expect(source.contains('occupiedSeat?.mysteriousMode == true'), isTrue);
+    expect(source.contains('occupiedSeat?.frameAssetKey'), isTrue);
     expect(source.contains('Set<String> get _micIds => _liveSeats'), isTrue);
     expect(source.contains('_selectedIds.intersection(_availableReceiverIds)'),
         isTrue);
