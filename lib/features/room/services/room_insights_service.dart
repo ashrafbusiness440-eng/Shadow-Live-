@@ -12,6 +12,7 @@ class RoomSupporter {
     required this.totalSupport,
     required this.dailySupport,
     this.publicId = '',
+    this.profileAvatarAsset = '',
     this.vipLevel = 0,
     this.badges = const [],
     this.wealthLevel = 0,
@@ -32,6 +33,7 @@ class RoomSupporter {
   final num totalSupport;
   final num dailySupport;
   final String publicId;
+  final String profileAvatarAsset;
   final int vipLevel;
   final List<String> badges;
   final int wealthLevel;
@@ -50,6 +52,7 @@ class RoomSupporter {
         displayName:
             (json['displayName'] ?? 'مستخدم Shadow Live').toString(),
         profileImageUrl: (json['profileImageUrl'] ?? '').toString(),
+        profileAvatarAsset: (json['profileAvatarAsset'] ?? '').toString(),
         totalSupport: (json['totalSupport'] as num?) ?? 0,
         dailySupport: (json['dailySupport'] as num?) ?? 0,
         publicId: (json['publicId'] ?? '').toString(),
