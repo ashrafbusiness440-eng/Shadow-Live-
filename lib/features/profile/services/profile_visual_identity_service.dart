@@ -120,9 +120,14 @@ class ProfileVisualIdentityService {
     if (!hasAvatar) return;
     final cached = _cache[normalized];
     if (cached != null &&
-        DateTime.now().difference(cached.loadedAt) < _ttl) {
+        DateTime.now().difference(cached.loadedAt) < _ttl &&
+        (cached.value.profileImageUrl.isNotEmpty ||
+            cached.value.profileAvatarAsset.isNotEmpty ||
+            cached.value.profileAvatarAnimationUrl.isNotEmpty)) {
       return;
     }
+    // A populated, privacy-filtered visual snapshot may repair a cached
+    // empty public profile. It must never replace a populated cache entry.
     _putCache(normalized, candidate);
   }
 
