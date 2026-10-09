@@ -3480,23 +3480,24 @@ async function loadActiveStarBattleMicScores(db,roomId,seats,battle){
   if(!battle||!/^[A-Za-z0-9_-]{1,180}$/.test(clean(battle.id))){
     return scores;
   }
-  // Reuse the production-proven bounded score query used by round
-  // finalization; filter to occupied mics. One request, no per-UID reads.
-  const activeUids=new Set(
+  // One existing Firestore batchGet for exact occupied seat UIDs.
+  // The response parser handles Firestore's newline-delimited result.
+  // Do not scan ranked supporters: even a low-ranked occupant needs a score.
+  const activeUids=[...new Set(
     seats.map(seat=>clean(seat.uid))
-      .filter(id=>id.length>0&&id.length<=180&&!id.includes("/"))
-      .slice(0,50),
-  );
-  if(!activeUids.size)return scores;
+      .filter(id=>id.length>0&&id.length<=180&&!id.includes("/")),
+  )].slice(0,50);
+  if(!activeUids.length)return scores;
   try{
-    const snapshots=await db.collection("rooms").doc(roomId)
-      .collection("star_battle_scores").doc(battle.id)
-      .collection("users").orderBy("coins","desc").limit(99).get();
-    for(const doc of snapshots.docs){
-      if(!activeUids.has(doc.id))continue;
-      const score=doc.data()||{};
-      scores[doc.id]={
-        coins:Math.max(0,Math.floor(Number(score.coins||0))),
+    const paths=activeUids.map(uid=>
+      "rooms/"+roomId+"/star_battle_scores/"+battle.id+"/users/"+uid
+    );
+    const snapshots=await db.client.getMany(paths);
+    for(let index=0;index<activeUids.length;index++){
+      const row=snapshots[index];
+      if(!row?.exists)continue;
+      scores[activeUids[index]]={
+        coins:Math.max(0,Math.floor(Number(row.data?.coins||0))),
       };
     }
   }catch(_){
