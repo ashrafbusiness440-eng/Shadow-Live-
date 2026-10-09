@@ -17,6 +17,7 @@ import {
   isTransientFirestoreError,
   isTransientFirestoreStatus,
   normalizeFirestoreResource,
+  parseFirestoreBatchGetRows,
   registerFirestoreQuotaFailure,
   resetFirestoreQuotaCircuit,
 } from "../../cloudflare-worker/src/firestore.js";
@@ -158,3 +159,36 @@ test("Firestore transient error detection supports transaction retries", () => {
   assert.equal(isTransientFirestoreError(Object.assign(new Error("x"), { status: 409 })), true);
   assert.equal(isTransientFirestoreError(Object.assign(new Error("x"), { status: 403 })), false);
 });
+
+test("Firestore batchGet parses newline-delimited found and missing documents", () => {
+  const rows = [
+    {
+      found: {
+        name: "projects/p/databases/(default)/documents/rooms/r/star_battle_scores/x/users/u1",
+        fields: { coins: { integerValue: "250" } },
+      },
+    },
+    {
+      missing:
+        "projects/p/databases/(default)/documents/rooms/r/star_battle_scores/x/users/u2",
+    },
+  ];
+  assert.deepEqual(
+    parseFirestoreBatchGetRows(rows.map((row) => JSON.stringify(row)).join("\n")),
+    rows,
+  );
+  assert.deepEqual(parseFirestoreBatchGetRows(JSON.stringify(rows)), rows);
+  assert.deepEqual(parseFirestoreBatchGetRows(JSON.stringify(rows[0])), [rows[0]]);
+});
+
+test("Firestore batchGet rejects malformed or oversized responses, not zero scores", () => {
+  assert.throws(() => parseFirestoreBatchGetRows(""), /empty_response/);
+  assert.throws(() => parseFirestoreBatchGetRows("{}"), /invalid_response/);
+  assert.throws(() => parseFirestoreBatchGetRows("{broken"), SyntaxError);
+  const row = JSON.stringify({ missing: "projects/p/databases/(default)/documents/a/b" });
+  assert.throws(
+    () => parseFirestoreBatchGetRows(Array(101).fill(row).join("\n")),
+    /invalid_response/,
+  );
+});
+
