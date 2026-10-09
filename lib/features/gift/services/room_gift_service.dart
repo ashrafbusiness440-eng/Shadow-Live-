@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -50,7 +51,9 @@ class RoomGiftService {
       giftId,
     ].join('_');
 
-    final response = await _client.post(
+    late final http.Response response;
+    try {
+      response = await _client.post(
       Uri.parse('$_baseUrl/room-gift'),
       headers: {
         'authorization': 'Bearer $token',
@@ -67,7 +70,12 @@ class RoomGiftService {
         'useGiftBag': useGiftBag,
         'idempotencyKey': key,
       }),
-    );
+    ).timeout(const Duration(seconds: 25));
+    } on TimeoutException {
+      throw StateError('gift_connection_timeout');
+    } on http.ClientException {
+      throw StateError('gift_network_unavailable');
+    }
 
     Map<String, dynamic> body = <String, dynamic>{};
     try {
