@@ -428,11 +428,11 @@ class RoomEffectCoordinatorHost extends StatelessWidget {
                   right: 12,
                   child: Center(
                     child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 268),
+                      constraints: const BoxConstraints(maxWidth: 244),
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 4,
+                          horizontal: 5,
+                          vertical: 1,
                         ),
                         decoration: BoxDecoration(
                           color: const Color(0xDD140E20),
@@ -445,8 +445,8 @@ class RoomEffectCoordinatorHost extends StatelessWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             SizedBox(
-                              width: 36,
-                              height: 36,
+                              width: 18,
+                              height: 18,
                               child: ClipRect(
                                 child: CosmeticAssetVisual(
                                   assetKey: event.assetKey,
@@ -511,6 +511,39 @@ class _EntranceWelcomeStrip extends StatelessWidget {
       event.badgeLabel,
       event.levelLabel,
     ].where((value) => value.trim().isNotEmpty).join(' • ');
+    if (compact) {
+      // 20px banner between the insights row and the first mic row.
+      // Do not stack a second framed avatar or two lines of text.
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              event.displayName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            event.levelLabel.isEmpty ? event.badgeLabel : event.levelLabel,
+            maxLines: 1,
+            style: const TextStyle(
+              color: Color(0xFFFFD54A),
+              fontSize: 9,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(width: 4),
+        ],
+      );
+    }
     return Container(
       constraints: const BoxConstraints(maxWidth: 330),
       margin: compact
