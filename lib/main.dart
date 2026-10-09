@@ -6547,6 +6547,14 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         ownerPhotoUrl: _ownerPhotoUrl,
                         participants: _voiceSession.roomParticipants,
                         seats: _roomSeatState?.seats ?? const <VoiceSeat>[],
+                        // Reuse this room's existing ChangeNotifier and
+                        // Firestore seat snapshot, not another network watch.
+                        rosterListenable: _voiceSession,
+                        currentParticipants: () =>
+                            _voiceSession.roomParticipants,
+                        currentSeats: () =>
+                            _roomSeatState?.seats ?? const <VoiceSeat>[],
+                        currentOwnerPhotoUrl: () => _ownerPhotoUrl,
                         ensurePresence:
                             _voiceSession.ensureRoomPresenceReady,
                       ),

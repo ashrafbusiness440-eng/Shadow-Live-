@@ -7,7 +7,7 @@ void main() {
     final source = File(
       'lib/features/gift/widgets/room_gift_sheet.dart',
     ).readAsStringSync();
-    expect(source.contains('for (final seat in widget.seats)'), isTrue);
+    expect(source.contains('for (final seat in _liveSeats)'), isTrue);
     expect(source.contains('if (!seat.occupied || !seen.add(seat.uid)) continue;'),
         isTrue);
     expect(source.contains('RoomPresenceUser.fromMap('), isTrue);

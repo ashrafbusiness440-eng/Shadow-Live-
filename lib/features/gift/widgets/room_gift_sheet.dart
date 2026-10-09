@@ -16,6 +16,10 @@ Future<void> showRoomGiftSheet(
   required String ownerPhotoUrl,
   required List<RoomPresenceUser> participants,
   required List<VoiceSeat> seats,
+  Listenable? rosterListenable,
+  List<RoomPresenceUser> Function()? currentParticipants,
+  List<VoiceSeat> Function()? currentSeats,
+  String Function()? currentOwnerPhotoUrl,
   Future<bool> Function()? ensurePresence,
 }) {
   return showModalBottomSheet<void>(
@@ -31,6 +35,10 @@ Future<void> showRoomGiftSheet(
       ownerPhotoUrl: ownerPhotoUrl,
       participants: participants,
       seats: seats,
+      rosterListenable: rosterListenable,
+      currentParticipants: currentParticipants,
+      currentSeats: currentSeats,
+      currentOwnerPhotoUrl: currentOwnerPhotoUrl,
       ensurePresence: ensurePresence,
     ),
   );
@@ -43,6 +51,10 @@ class _RoomGiftContext extends StatefulWidget {
     required this.ownerPhotoUrl,
     required this.participants,
     required this.seats,
+    this.rosterListenable,
+    this.currentParticipants,
+    this.currentSeats,
+    this.currentOwnerPhotoUrl,
     this.ensurePresence,
   });
 
@@ -51,6 +63,12 @@ class _RoomGiftContext extends StatefulWidget {
   final String ownerPhotoUrl;
   final List<RoomPresenceUser> participants;
   final List<VoiceSeat> seats;
+  // Read current lists when the already-existing room controller notifies.
+  // No second websocket, Firebase subscription or network request.
+  final Listenable? rosterListenable;
+  final List<RoomPresenceUser> Function()? currentParticipants;
+  final List<VoiceSeat> Function()? currentSeats;
+  final String Function()? currentOwnerPhotoUrl;
   final Future<bool> Function()? ensurePresence;
 
   @override
@@ -63,6 +81,11 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
   String _recipientMode = 'users';
 
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
+
+  List<RoomPresenceUser> get _liveParticipants =>
+      widget.currentParticipants?.call() ?? widget.participants;
+  List<VoiceSeat> get _liveSeats =>
+      widget.currentSeats?.call() ?? widget.seats;
 
   @override
   void initState() {
@@ -90,12 +113,12 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
 
   List<RoomPresenceUser> get _participants {
     final seen = <String>{};
-    final items = widget.participants
+    final items = _liveParticipants
         .where((item) => item.uid.isNotEmpty && seen.add(item.uid))
         .toList(growable: true);
     // The seat snapshot is already present in this sheet. Do not hide real
     // microphone occupants if realtime roster has not arrived yet.
-    for (final seat in widget.seats) {
+    for (final seat in _liveSeats) {
       if (!seat.occupied || !seen.add(seat.uid)) continue;
       items.add(RoomPresenceUser.fromMap(<String, dynamic>{
         'uid': seat.uid,
@@ -122,13 +145,13 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
   }
 
   int? _seatNumber(String uid) {
-    for (final seat in widget.seats) {
+    for (final seat in _liveSeats) {
       if (seat.occupied && seat.uid == uid) return seat.index + 1;
     }
     return null;
   }
 
-  Set<String> get _micIds => widget.seats
+  Set<String> get _micIds => _liveSeats
       .where((seat) => seat.occupied && seat.uid.isNotEmpty)
       .map((seat) => seat.uid)
       .toSet();
@@ -148,10 +171,20 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
     });
   }
 
+  // An attendee may leave while this picker remains open. Never keep an
+  // invisible, departed attendee in the set submitted to the gift ledger.
+  // The owner remains a valid choice even when not currently on a mic.
+  Set<String> get _availableReceiverIds => <String>{
+        if (widget.ownerUid.trim().isNotEmpty) widget.ownerUid.trim(),
+        for (final user in _participants) user.uid,
+      };
+  Set<String> get _currentSelectedIds =>
+      _selectedIds.intersection(_availableReceiverIds);
+
   bool get _canSend => switch (_recipientMode) {
         'all_mics' => _micIds.isNotEmpty,
         'all_room' => _participants.isNotEmpty || _uid.isNotEmpty,
-        _ => _selectedIds.isNotEmpty,
+        _ => _currentSelectedIds.isNotEmpty,
       };
 
   RoomPresenceUser? _participant(String uid) {
@@ -163,6 +196,15 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
 
   Widget _avatar(String uid, {double diameter = 38}) {
     final user = _participant(uid);
+    final occupiedSeat = _liveSeats
+        .where((seat) => seat.occupied && seat.uid == uid)
+        .firstOrNull;
+    // A socket roster may omit photos before the seat snapshot arrives.
+    // The anonymous presentation always wins over both snapshots.
+    if (user?.mysteriousMode == true ||
+        occupiedSeat?.mysteriousMode == true) {
+      return MysteriousIdentityAvatar(diameter: diameter);
+    }
     if (user == null) {
       final ownerUid = widget.ownerUid.trim();
       if (uid == ownerUid && ownerUid.isNotEmpty) {
@@ -172,7 +214,8 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
           backgroundColor: const Color(0xFF25183F),
           placeholderColor: Colors.white70,
           fallbackProfile: <String, dynamic>{
-            'profileImageUrl': widget.ownerPhotoUrl.trim(),
+            'profileImageUrl': (widget.currentOwnerPhotoUrl?.call() ??
+                  widget.ownerPhotoUrl).trim(),
           },
           fallbackIsVisualSnapshot: true,
           useVipFallback: true,
@@ -188,11 +231,6 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
         ),
       );
     }
-    if (user.mysteriousMode) {
-      // Anonymous identities must never resolve their real profile photo,
-      // even when a seat snapshot arrives before the realtime roster.
-      return MysteriousIdentityAvatar(diameter: diameter);
-    }
     return ProfileAvatarWithFrame(
       diameter: diameter,
       userId: user.uid,
@@ -200,10 +238,21 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
       backgroundColor: const Color(0xFF25183F),
       placeholderColor: Colors.white70,
       fallbackProfile: <String, dynamic>{
-        'profileImageUrl': user.profileImageUrl,
-        'activeProfileFrameAssetKey': user.activeProfileFrameAssetKey,
-        'activeProfileFrameImageUrl': user.activeProfileFrameImageUrl,
-        'activeProfileFrameExpiresAtMs': user.activeProfileFrameExpiresAtMs,
+        'profileImageUrl': user.profileImageUrl.isNotEmpty
+            ? user.profileImageUrl
+            : (occupiedSeat?.profileImageUrl ?? ''),
+        'activeProfileFrameAssetKey':
+            user.activeProfileFrameAssetKey.isNotEmpty
+                ? user.activeProfileFrameAssetKey
+                : (occupiedSeat?.frameAssetKey ?? ''),
+        'activeProfileFrameImageUrl':
+            user.activeProfileFrameImageUrl.isNotEmpty
+                ? user.activeProfileFrameImageUrl
+                : (occupiedSeat?.frameImageUrl ?? ''),
+        'activeProfileFrameExpiresAtMs':
+            user.activeProfileFrameExpiresAtMs > 0
+                ? user.activeProfileFrameExpiresAtMs
+                : (occupiedSeat?.frameExpiresAtMs ?? 0),
         'activeProfileFramePermanent': user.activeProfileFramePermanent,
       },
       fallbackIsVisualSnapshot: true,
@@ -239,7 +288,7 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
       giftId: gift.id,
       quantity: quantity,
       recipientMode: _recipientMode,
-      recipientIds: _selectedIds.toList(growable: false),
+      recipientIds: _currentSelectedIds.toList(growable: false),
       useGiftBag: useGiftBag,
     );
     final balance = (result['balance'] as num?)?.toInt();
@@ -434,13 +483,23 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
     );
   }
 
+  Widget _buildCurrentPicker(BuildContext context) =>
+      UnifiedGiftPickerSheet(
+        title: 'الهدايا',
+        recipientArea: _recipientArea(),
+        canSend: _canSend,
+        onSend: _send,
+      );
+
   @override
   Widget build(BuildContext context) {
-    return UnifiedGiftPickerSheet(
-      title: 'الهدايا',
-      recipientArea: _recipientArea(),
-      canSend: _canSend,
-      onSend: _send,
+    final existingRoomNotifier = widget.rosterListenable;
+    if (existingRoomNotifier == null) {
+      return _buildCurrentPicker(context);
+    }
+    return AnimatedBuilder(
+      animation: existingRoomNotifier,
+      builder: (context, _) => _buildCurrentPicker(context),
     );
   }
 }
