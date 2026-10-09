@@ -450,6 +450,11 @@ try{
   if(liveGiftEvent?.payload?.message?.id!==messageId){
     throw new Error("room gift realtime event id mismatch");
   }
+  const award=liveGiftEvent?.payload?.message?.starBattleAward;
+  if(award?.roundId!==starBattleId || award?.deltas?.[0]?.coins!==totalCost ||
+     award?.deltas?.[0]?.uid!==receiverUid) {
+    throw new Error("Star Battle realtime gift score mismatch");
+  }
   cleanup.add(`public_gift_showcases/${receiverUid}/items/${String(selectedGift.id)}`);
 
   const [senderAfter,roomAfter,rocketAfter,txDoc,ledgerDoc,
