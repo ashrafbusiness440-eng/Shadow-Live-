@@ -3315,6 +3315,31 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     }
   }
 
+  Future<void> _showPkSheet() async {
+    final roomId = (_roomArguments['roomId'] ?? '').toString().trim();
+    if (roomId.isEmpty) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF0C101A),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      ),
+      builder: (_) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: RoomPkPanel(
+              roomId: roomId,
+              canManage: _canManagePk,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _showStarBattleSheet() async {
     final roomId = (_roomArguments['roomId'] ?? '').toString().trim();
     if (roomId.isEmpty) return;
@@ -3603,6 +3628,16 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                           },
                           iconColor: const Color(0xFFF48FB1),
                         ),
+                        if (_roomArguments['pkEnabled'] != false)
+                          tool(
+                            icon: Icons.sports_mma_rounded,
+                            label: 'تحدي PK',
+                            onTap: () {
+                              Navigator.pop(sheetContext);
+                              _showPkSheet();
+                            },
+                            iconColor: const Color(0xFFFFAB91),
+                          ),
                         tool(
                           icon: Icons.star_rounded,
                           label: 'حرب النجوم',
