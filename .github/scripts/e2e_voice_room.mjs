@@ -9,6 +9,56 @@ const page = await browser.newPage({
   deviceScaleFactor: 1,
 });
 
+// Snapshot the ACTUAL room-stage widget, not just the Greedy Cat game.
+// Entirely synthetic E2E fixtures; no real users, gifts or backend actions.
+// This is a bounded four-case visual check (8/10/20/22 microphones).
+const previews = [
+  { name: '8-empty-inactive', seats: 8, supporters: 'empty', stars: 'off' },
+  { name: '10-ranked-active', seats: 10, supporters: 'filled', stars: 'on' },
+  { name: '20-ranked-active', seats: 20, supporters: 'filled', stars: 'on' },
+  { name: '22-empty-active', seats: 22, supporters: 'empty', stars: 'on' },
+];
+const stage = await browser.newPage({
+  viewport: { width: 390, height: 844 },
+  deviceScaleFactor: 1,
+});
+const visualDiagnostics = [];
+stage.on('pageerror', error =>
+  visualDiagnostics.push(String(error.stack || error.message || error)),
+);
+for (const preview of previews) {
+  const params = new URLSearchParams({
+    room_stage_preview: '1',
+    seats: String(preview.seats),
+    supporters: preview.supporters,
+    stars: preview.stars,
+  });
+  const stageReady = stage.waitForEvent('console', {
+    predicate: msg => msg.text().includes(
+      'ROOM_E2E_STAGE_READY:' + preview.seats + ':' + preview.supporters + ':',
+    ),
+    timeout: 30000,
+  });
+  await stage.goto('http://127.0.0.1:8089/?' + params.toString(), {
+    waitUntil: 'domcontentloaded',
+    timeout: 120000,
+  });
+  await stageReady;
+  await stage.waitForTimeout(900);
+  await stage.screenshot({
+    path: 'room-e2e-screenshots/stage-' + preview.name + '.png',
+    fullPage: true,
+  });
+  console.log('ROOM_STAGE_VISUAL_CAPTURED:' + preview.name);
+}
+await stage.close();
+fs.writeFileSync(
+  'room-e2e-screenshots/stage-browser-errors.log',
+  visualDiagnostics.length
+    ? visualDiagnostics.join('\\n\\n')
+    : 'NO_STAGE_BROWSER_ERRORS\\n',
+);
+
 const diagnostics = [];
 let gameOverlayReady = false;
 let gameOverlayMarker = '';
