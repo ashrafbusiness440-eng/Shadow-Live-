@@ -74,9 +74,9 @@ void main() {
     for (var index = 0; index < 270; index++) {
       expect(overlay.apply(<String, dynamic>{
         'roundId': 'active_long_round',
-        'operationId': 'operation_\$index',
+        'operationId': 'operation_$index',
         'deltas': <Map<String, dynamic>>[
-          <String, dynamic>{'uid': 'receiver_\$index', 'coins': 1},
+          <String, dynamic>{'uid': 'receiver_$index', 'coins': 1},
         ],
       }), isTrue);
     }
