@@ -4162,7 +4162,8 @@ async function enrichSupporterPublicMetadata(db,supporters,viewerUid){
           profile.profileImageUrl,
         ),
         profileAvatarAsset:clean(
-          data.profileAvatarAsset||profile.profileAvatarAsset,
+          data.profileAvatarAsset||profile.profileAvatarAsset||
+          item.profileAvatarAsset,
         ),
         publicId:clean(profile.publicId),
         vipLevel:Math.max(
@@ -4261,6 +4262,7 @@ async function roomInsights(db,uid,body={}){
         uid:doc.id,
         displayName:String(data.displayName||data.username||"مستخدم Shadow Live"),
         profileImageUrl:String(data.profileImageUrl||""),
+        profileAvatarAsset:clean(data.profileAvatarAsset),
         activeProfileFrameAssetKey:clean(data.activeProfileFrameAssetKey),
         activeProfileFrameImageUrl:clean(data.activeProfileFrameImageUrl),
         activeProfileFrameExpiresAtMs:Math.max(0,Number(data.activeProfileFrameExpiresAtMs||0)),
@@ -4495,6 +4497,7 @@ async function roomBootstrap(db,decoded,body){
         uid:doc.id,
         displayName:clean(data.displayName||data.username||"مستخدم Shadow Live"),
         profileImageUrl:clean(data.profileImageUrl),
+        profileAvatarAsset:clean(data.profileAvatarAsset),
         activeProfileFrameAssetKey:clean(data.activeProfileFrameAssetKey),
         activeProfileFrameImageUrl:clean(data.activeProfileFrameImageUrl),
         activeProfileFrameExpiresAtMs:Math.max(0,Number(data.activeProfileFrameExpiresAtMs||0)),
