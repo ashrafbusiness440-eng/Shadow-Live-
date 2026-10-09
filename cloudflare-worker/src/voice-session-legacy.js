@@ -4085,7 +4085,7 @@ async function filterSupporterRankingVisibility(db,supporters,viewerUid){
       .map(item=>{
         const user=byUid.get(clean(item.uid))||{};
         // Reuse the user snapshots already read for ranking privacy.
-        // The daily gift snapshot may predate a user's avatar change.
+        // The daily gift snapshot may predate the current avatar.
         return applyMysteriousIdentityPresentation({
           ...item,
           profileImageUrl:clean(
