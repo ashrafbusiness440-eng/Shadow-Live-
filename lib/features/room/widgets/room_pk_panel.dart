@@ -447,8 +447,15 @@ class _RoomPkPanelState extends State<RoomPkPanel> {
         pk.status == 'finished' ||
         pk.status == 'cancelled';
 
-    if (inactive && !widget.canManage) {
-      if (pk == null) return const SizedBox.shrink();
+    if (inactive && !widget.canManage && pk == null) {
+      return const Padding(
+        padding: EdgeInsets.all(18),
+        child: Text(
+          'لا يوجد تحدي PK حاليًا.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Colors.white70),
+        ),
+      );
     }
 
     if (pk == null) {
