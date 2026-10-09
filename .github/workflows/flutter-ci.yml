@@ -216,7 +216,7 @@ jobs:
         with:
           node-version: '22'
       - name: Install bounded Cloudflare diagnostics
-        run: npm --prefix cloudflare-worker ci --ignore-scripts --no-audit --no-fund
+        run: npm --prefix cloudflare-worker install --ignore-scripts --no-audit --no-fund
       - name: Exercise actual live two-user room and gift API
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
