@@ -3572,7 +3572,8 @@ async function finishStarBattle(db,uid,body,{allowSystem=false}={}){
     const historyRef=roomRef.collection("star_battle_history").doc(preparation.id);
     tx.update(roomRef,{starBattleState:finished,updatedAt:FieldValue.serverTimestamp()});
     tx.set(historyRef,{...result,createdAt:FieldValue.serverTimestamp()});
-    const auditRef=db.collection("room_audit_logs").doc(roomId).collection("items").doc();
+    const auditRef=db.collection("room_audit_logs").doc(roomId)
+      .collection("items").doc("star_battle_finish_"+preparation.id);
     tx.create(auditRef,{
       action:"finishStarBattle",
       actorUid:clean(raw.endedBy)||uid,
