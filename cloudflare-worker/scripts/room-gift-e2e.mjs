@@ -402,6 +402,7 @@ try{
     payload: { roomId, text: "CI isolated room chat" },
   }));
   await chatAck;
+  console.log("PASS sender + receiver realtime room presence");
   console.log("PASS real two-account room presence/count and websocket chat");
 
   const sent=await apiWhenReady(senderToken,{
