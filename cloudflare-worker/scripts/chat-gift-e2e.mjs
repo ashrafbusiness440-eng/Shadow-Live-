@@ -332,6 +332,63 @@ try{
     throw new Error("duplicate gift mutated sender balance");
   }
   console.log("PASS chat gift idempotency");
+  // Production API proof for the SAME path that powers a diary gift.
+  // The diary belongs only to this synthetic recipient and is deleted below.
+  const diaryId = "cf_gift_diary_" + runId;
+  const diaryKey = key + "_diary";
+  cleanup.add("diaries/" + diaryId);
+  cleanup.add("users/" + receiverUid + "/diaries/" + diaryId);
+  cleanup.add("diaries/" + diaryId + "/gifts/" + diaryKey);
+  cleanup.add("notifications/diary_gift_" + diaryKey);
+  cleanup.add("gift_operations/" + diaryKey);
+  cleanup.add("gift_transactions/" + diaryKey);
+  cleanup.add("financial_ledger/gift_" + diaryKey);
+  cleanup.add("financial_ledger/gift_earnings_" + diaryKey);
+  const diary = {
+    diaryId, ownerUid: receiverUid,
+    ownerName: "Cloudflare Gift Receiver",
+    text: "CI isolated test diary", images: [],
+    commentsEnabled: true, createdAt: new Date(),
+    createdAtMs: Date.now(), giftCount: 0, giftCoins: 0,
+  };
+  await Promise.all([
+    fsSet("diaries/" + diaryId, diary),
+    fsSet("users/" + receiverUid + "/diaries/" + diaryId, diary),
+  ]);
+  const diarySent = await api(senderToken, {
+    receiverId: receiverUid,
+    giftId: String(selectedGift.id),
+    quantity, diaryId, idempotencyKey: diaryKey,
+  });
+  if (!diarySent.res.ok || diarySent.body.ok !== true ||
+      diarySent.body.contextType !== "diary") {
+    throw new Error("production diary gift failed:" + diarySent.res.status +
+      ":" + JSON.stringify(diarySent.body));
+  }
+  const [diaryRoot, diaryMirror, diaryEvent, afterDiary] = await Promise.all([
+    fsGet("diaries/" + diaryId),
+    fsGet("users/" + receiverUid + "/diaries/" + diaryId),
+    fsGet("diaries/" + diaryId + "/gifts/" + diaryKey),
+    fsGet("users/" + senderUid),
+  ]);
+  if (diaryRoot?.data?.giftCount !== quantity ||
+      diaryMirror?.data?.giftCount !== quantity ||
+      !diaryEvent ||
+      afterDiary?.data?.coins !== senderOpening - totalCost * 2) {
+    throw new Error("production diary gift counter/ledger mismatch");
+  }
+  const diaryDuplicate = await api(senderToken, {
+    receiverId: receiverUid, giftId: String(selectedGift.id),
+    quantity, diaryId, idempotencyKey: diaryKey,
+  });
+  const afterDiaryDuplicate = await fsGet("users/" + senderUid);
+  if (!diaryDuplicate.res.ok ||
+      diaryDuplicate.body.code !== "duplicate" ||
+      afterDiaryDuplicate?.data?.coins !== senderOpening - totalCost * 2) {
+    throw new Error("production diary gift duplicate charged twice");
+  }
+  console.log("PASS production isolated diary gift delivery and once-only charge");
+
   console.log("ALL CLOUDFLARE CHAT GIFT E2E CHECKS PASSED");
 }finally{
   for(const path of [...cleanup].reverse()){
