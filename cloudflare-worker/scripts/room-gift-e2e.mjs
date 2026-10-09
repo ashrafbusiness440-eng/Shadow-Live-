@@ -562,6 +562,17 @@ try{
     throw new Error("late join score failure: HTTP "+bootResponse.status+" mic="+occupiedScore+" snapshot="+hydratedScore+" code="+boot?.code);
   }
   console.log("PASS late join bootstrap occupied mic score");
+  // Bootstrap Top3 uses the exact same supporter ranking/masking policy
+  // as the detailed insights action, rather than leaking raw profiles.
+  const bootstrapSupporter=boot?.insights?.supporters?.find(
+    supporter=>supporter.uid===senderUid
+  );
+  if(!bootstrapSupporter||
+     bootstrapSupporter.dailySupport!==totalCost){
+    throw new Error("room bootstrap Top3 missing paid sender support");
+  }
+  console.log("PASS room bootstrap sanitized Top3 support");
+
 
   // The same active score document must be available for a socket
   // reconnect via the existing syncStarBattle action (no new endpoint).

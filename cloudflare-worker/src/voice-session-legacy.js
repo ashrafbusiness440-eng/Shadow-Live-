@@ -4454,6 +4454,12 @@ async function roomBootstrap(db,decoded,body){
     .slice(0,3)
     .map((item,index)=>({...item,rank:index+1,totalSupport:item.dailySupport}));
 
+  // Bootstrap Top3 obey the same anonymous and hidden-ranking policy
+  // already used by the room insights endpoint.
+  const visibleSupporters=await filterSupporterRankingVisibility(
+    db,supporters,uid,
+  );
+
   const dailySupport=Math.max(
     0,
     Number(dailySupportSnap.data()?.supportCoins||0),
@@ -4576,7 +4582,7 @@ async function roomBootstrap(db,decoded,body){
       dailyRank:Number.isFinite(Number(room.dailyRank))
         ?Math.max(1,Number(room.dailyRank))
         :null,
-      supporters,
+      supporters:visibleSupporters,
       ranking:[],
     },
     rocketState:rocketSnap.exists
