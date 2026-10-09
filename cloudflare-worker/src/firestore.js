@@ -1,6 +1,26 @@
 import { googleAccessToken, parseServiceAccount } from "./google-auth.js";
 import { recordFirestoreTelemetry } from "./pressure-telemetry.js";
 
+// Firestore documents:batchGet returns newline-delimited JSON responses,
+// not necessarily a JSON array. A JSON-only parse silently loses scores.
+export function parseFirestoreBatchGetRows(payload, maxRows = 100) {
+  const text = String(payload ?? "").trim();
+  if (!text) throw new Error("firestore_batch_get_empty_response");
+  let rows;
+  try {
+    const value = JSON.parse(text);
+    rows = Array.isArray(value) ? value : [value];
+  } catch (_) {
+    rows = text.split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
+  }
+  if (!rows.length || rows.length > maxRows ||
+      rows.some((row) => !row || typeof row !== "object" ||
+        (!row.found && !row.missing))) {
+    throw new Error("firestore_batch_get_invalid_response");
+  }
+  return rows;
+}
+
 export const FIRESTORE_TRANSIENT_MAX_ATTEMPTS = 3;
 export const FIRESTORE_RETRY_BASE_DELAY_MS = 350;
 export const FIRESTORE_RETRY_MAX_DELAY_MS = 2500;
@@ -333,7 +353,9 @@ export function firestoreClient(env) {
         return { response, body: null };
       }
       if (response) {
-        body = await response.json().catch(() => ({}));
+        body = response.ok && readMode === "batch"
+          ? parseFirestoreBatchGetRows(await response.text())
+          : await response.json().catch(() => ({}));
         if (response.ok) {
           if (retryTransient) resetFirestoreQuotaCircuit(firestoreQuotaCircuit);
           observe({ status: response.status, body });

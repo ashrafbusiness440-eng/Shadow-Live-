@@ -37,6 +37,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
   final RoomSeatService _seatService = RoomSeatService();
   final StarBattleScoreOverlay _starBattleScores = StarBattleScoreOverlay();
   Map<String, dynamic> _lastRawRoomState = <String, dynamic>{};
+  bool _refreshScoresAfterReconnect = false;
+  bool _starBattleSyncInFlight = false;
   final http.Client _effectSoundHttp = http.Client();
 
   StreamSubscription<User?>? _authSubscription;
@@ -483,6 +485,28 @@ class VoiceRoomSessionController extends ChangeNotifier {
     );
   }
 
+  Future<void> _refreshStarBattleAfterReconnect(String targetRoomId) async {
+    if (_starBattleSyncInFlight || !_active ||
+        _starBattleScores.roundId.isEmpty) return;
+    _starBattleSyncInFlight = true;
+    final revision = _starBattleScores.revision;
+    try {
+      final snapshot = await _seatService.syncStarBattleSnapshot(targetRoomId);
+      if (!_active || roomId != targetRoomId ||
+          snapshot == null || _lastRawRoomState.isEmpty) return;
+      if (_starBattleScores.installBootstrap(
+        snapshot,
+        startedAtRevision: revision,
+      )) {
+        _roomStateController.add(_starBattleScores.merge(_lastRawRoomState));
+      }
+    } catch (_) {
+      // Catch-up is best effort and must never block live room voice.
+    } finally {
+      _starBattleSyncInFlight = false;
+    }
+  }
+
   void _handleRealtimeEvent(RoomRealtimeEvent event) {
     if (!_active && !_joining) return;
     final eventRoomId = (event.payload['roomId'] ?? '').toString();
@@ -490,6 +514,10 @@ class VoiceRoomSessionController extends ChangeNotifier {
 
     var changed = false;
     if (event.type == 'server.ready') {
+      if (_refreshScoresAfterReconnect) {
+        _refreshScoresAfterReconnect = false;
+        unawaited(_refreshStarBattleAfterReconnect(roomId));
+      }
       changed = _replaceRoomParticipants(event.payload['participants']) ||
           changed;
       _roomArguments = <String, dynamic>{
@@ -498,6 +526,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
       };
       changed = true;
     } else if (event.type == 'room.connection_lost') {
+      _refreshScoresAfterReconnect = true;
       // Do not keep displaying stale off-mic listeners after a socket loss.
       // Occupied seat snapshots remain available from the existing room doc.
       _roomParticipants.clear();
@@ -820,6 +849,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
 
     await _ensureService();
     _starBattleScores.clear();
+    _refreshScoresAfterReconnect = false;
     _lastRawRoomState = <String, dynamic>{};
     _roomChatMessages.clear();
     _roomParticipants.clear();
@@ -936,6 +966,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
     _connectionState = VoiceConnectionState.disconnected;
     _roomArguments = <String, dynamic>{};
     _starBattleScores.clear();
+    _refreshScoresAfterReconnect = false;
     _lastRawRoomState = <String, dynamic>{};
     _roomChatMessages.clear();
     _roomParticipants.clear();
