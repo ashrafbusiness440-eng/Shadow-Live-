@@ -178,6 +178,24 @@ void main() {
     expect(sheet.contains('Timer.periodic'), isFalse);
   });
 
+  test('chat message avatars reuse room event snapshots without per-message reads', () {
+    final chat = File(
+      'lib/features/room/widgets/room_chat_panel.dart',
+    ).readAsStringSync();
+    final avatar = File(
+      'lib/features/profile/widgets/profile_avatar_with_frame.dart',
+    ).readAsStringSync();
+    expect(
+      chat.contains(
+        'userId: message.senderUid,\n                        snapshotOnly: true,',
+      ),
+      isTrue,
+    );
+    expect(chat.contains("'profileImageUrl': message.profileImageUrl"), isTrue);
+    expect(chat.contains("'activeProfileFrameAssetKey':"), isTrue);
+    expect(avatar.contains('if (widget.snapshotOnly) return _render(fallback);'), isTrue);
+  });
+
   test('room gift checks existing presence service before mutation', () {
     final sheet = File(
       'lib/features/gift/widgets/room_gift_sheet.dart',
