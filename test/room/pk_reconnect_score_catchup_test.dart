@@ -16,6 +16,7 @@ void main() {
     expect(controller.contains('unawaited(_refreshPkAfterReconnect(roomId));'),
         true);
     expect(controller.contains('_pkSyncInFlight'), true);
+    expect(controller.contains('.timeout(const Duration(seconds: 8))'), true);
     expect(controller.contains('_pkScores.installSnapshot('), true);
     expect(seats.contains("'action': 'pkState'"), true);
     expect(seats.contains('syncPkScoreSnapshot(String roomId)'), true);
