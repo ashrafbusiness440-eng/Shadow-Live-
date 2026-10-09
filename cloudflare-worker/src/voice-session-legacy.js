@@ -3748,6 +3748,7 @@ async function loadPkPaidRoundScores(db,roomId,pk){
     uid:doc.id,
     displayName:clean(doc.data()?.displayName||"مستخدم Shadow Live"),
     profileImageUrl:clean(doc.data()?.profileImageUrl),
+    mysteriousMode:doc.data()?.mysteriousMode===true,
     coins:Math.max(0,Number(doc.data()?.coins||0)),
   }));
   return {...pk,participants:scoredParticipants,supporters};

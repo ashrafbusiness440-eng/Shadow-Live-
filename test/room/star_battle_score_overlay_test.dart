@@ -92,9 +92,15 @@ void main() {
       'lib/features/voice/services/voice_room_session_controller.dart',
     ).readAsStringSync();
     expect(
-      controller.contains(
-        '_roomStateController.add(_starBattleScores.merge(_lastRawRoomState));',
-      ),
+      controller.contains('_roomStateController.add(_projectRoomState());'),
+      isTrue,
+    );
+    expect(
+      controller.contains('_starBattleScores.merge(_lastRawRoomState)'),
+      isTrue,
+    );
+    expect(
+      controller.contains('_pkScores.merge('),
       isTrue,
     );
     expect(

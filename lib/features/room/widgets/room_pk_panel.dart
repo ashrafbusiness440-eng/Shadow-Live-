@@ -11,10 +11,18 @@ class RoomPkPanel extends StatefulWidget {
     super.key,
     required this.roomId,
     required this.canManage,
+    required this.roomStateEvents,
+    required this.initialRoomState,
+    required this.scoreRevision,
+    required this.applyScoreSnapshot,
   });
 
   final String roomId;
   final bool canManage;
+  final Stream<Map<String, dynamic>> roomStateEvents;
+  final Map<String, dynamic> initialRoomState;
+  final int Function() scoreRevision;
+  final void Function(Map<String, dynamic>, int) applyScoreSnapshot;
 
   @override
   State<RoomPkPanel> createState() => _RoomPkPanelState();
@@ -22,7 +30,7 @@ class RoomPkPanel extends StatefulWidget {
 
 class _RoomPkPanelState extends State<RoomPkPanel> {
   final RoomPkService _service = RoomPkService();
-  StreamSubscription<RoomPkContext>? _subscription;
+  StreamSubscription<Map<String, dynamic>>? _subscription;
   Timer? _timer;
   RoomPkContext? _context;
   bool _busy = false;
@@ -34,11 +42,13 @@ class _RoomPkPanelState extends State<RoomPkPanel> {
   @override
   void initState() {
     super.initState();
-    _subscription = _service.watch(widget.roomId).listen((value) {
+    _context = RoomPkService.fromRoomData(widget.initialRoomState);
+    _subscription = widget.roomStateEvents.listen((room) {
       if (!mounted) return;
-      setState(() => _context = value);
+      setState(() => _context = RoomPkService.fromRoomData(room));
       unawaited(_maybeSync());
     });
+    unawaited(_hydratePaidPkScores());
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       setState(() {});
@@ -52,6 +62,17 @@ class _RoomPkPanelState extends State<RoomPkPanel> {
     unawaited(_subscription?.cancel());
     _service.close();
     super.dispose();
+  }
+
+  Future<void> _hydratePaidPkScores() async {
+    final startedAt = widget.scoreRevision();
+    try {
+      final snapshot = await _service.loadPaidState(widget.roomId);
+      if (!mounted || snapshot == null) return;
+      widget.applyScoreSnapshot(snapshot, startedAt);
+    } catch (_) {
+      // Live room audio and PK interactions must not block on a score read.
+    }
   }
 
   String _errorText(Object error) {
@@ -447,8 +468,15 @@ class _RoomPkPanelState extends State<RoomPkPanel> {
         pk.status == 'finished' ||
         pk.status == 'cancelled';
 
-    if (inactive && !widget.canManage) {
-      if (pk == null) return const SizedBox.shrink();
+    if (inactive && !widget.canManage && pk == null) {
+      return const Padding(
+        padding: EdgeInsets.all(18),
+        child: Text(
+          'لا يوجد تحدي PK حاليًا.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Colors.white70),
+        ),
+      );
     }
 
     if (pk == null) {
@@ -602,24 +630,34 @@ class _RoomPkPanelState extends State<RoomPkPanel> {
                     (supporter) => Expanded(
                       child: Column(
                         children: [
-                          ProfileAvatarWithFrame(
-                            diameter: 34,
-                            userId: supporter.uid,
-                            backgroundColor: const Color(0xFF25183F),
-                            placeholderColor: Colors.white54,
-                            fallbackProfile: <String, dynamic>{
-                              'profileImageUrl': supporter.profileImageUrl,
-                              'activeProfileFrameAssetKey':
-                                  supporter.activeProfileFrameAssetKey,
-                              'activeProfileFrameImageUrl':
-                                  supporter.activeProfileFrameImageUrl,
-                              'activeProfileFrameExpiresAtMs':
-                                  supporter.activeProfileFrameExpiresAtMs,
-                              'activeProfileFramePermanent':
-                                  supporter.activeProfileFramePermanent,
-                            },
-                            fallbackIsVisualSnapshot: true,
-                          ),
+                          if (supporter.mysteriousMode)
+                            const CircleAvatar(
+                              radius: 17,
+                              backgroundColor: Color(0xFF25183F),
+                              child: Icon(
+                                Icons.person_outline_rounded,
+                                color: Colors.white70,
+                              ),
+                            )
+                          else
+                            ProfileAvatarWithFrame(
+                              diameter: 34,
+                              userId: supporter.uid,
+                              backgroundColor: const Color(0xFF25183F),
+                              placeholderColor: Colors.white54,
+                              fallbackProfile: <String, dynamic>{
+                                'profileImageUrl': supporter.profileImageUrl,
+                                'activeProfileFrameAssetKey':
+                                    supporter.activeProfileFrameAssetKey,
+                                'activeProfileFrameImageUrl':
+                                    supporter.activeProfileFrameImageUrl,
+                                'activeProfileFrameExpiresAtMs':
+                                    supporter.activeProfileFrameExpiresAtMs,
+                                'activeProfileFramePermanent':
+                                    supporter.activeProfileFramePermanent,
+                              },
+                              fallbackIsVisualSnapshot: true,
+                            ),
                           const SizedBox(height: 3),
                           Text(
                             supporter.displayName,

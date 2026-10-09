@@ -10,6 +10,7 @@ import '../../../core/assets/shadow_asset_registry.dart';
 import '../../room/services/room_presence_service.dart';
 import '../../room/services/room_seat_service.dart';
 import '../../room/services/star_battle_score_overlay.dart';
+import '../../room/services/pk_score_overlay.dart';
 import 'voice_service.dart';
 import 'zego_voice_service.dart';
 
@@ -36,6 +37,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
   final RoomPresenceService _presenceService = RoomPresenceService();
   final RoomSeatService _seatService = RoomSeatService();
   final StarBattleScoreOverlay _starBattleScores = StarBattleScoreOverlay();
+  final PkScoreOverlay _pkScores = PkScoreOverlay();
   Map<String, dynamic> _lastRawRoomState = <String, dynamic>{};
   bool _refreshScoresAfterReconnect = false;
   bool _starBattleSyncInFlight = false;
@@ -94,6 +96,25 @@ class VoiceRoomSessionController extends ChangeNotifier {
   Stream<RoomRealtimeEvent> get realtimeEvents => _presenceService.events;
   Stream<Map<String, dynamic>> get roomStateEvents =>
       _roomStateController.stream;
+  int get pkScoreRevision => _pkScores.revision;
+  Map<String, dynamic> get currentRoomState => _projectRoomState();
+
+  Map<String, dynamic> _projectRoomState() => _pkScores.merge(
+        _starBattleScores.merge(_lastRawRoomState),
+      );
+
+  void applyPkSnapshot(
+    Map<String, dynamic> snapshot, {
+    required int startedAtRevision,
+  }) {
+    if (!_active || _lastRawRoomState.isEmpty) return;
+    if (_pkScores.installSnapshot(
+      snapshot,
+      startedAtRevision: startedAtRevision,
+    )) {
+      _roomStateController.add(_projectRoomState());
+    }
+  }
   List<Map<String, dynamic>> get roomChatMessages =>
       List<Map<String, dynamic>>.unmodifiable(
         _roomChatMessages.reversed,
@@ -181,7 +202,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
           Map<String, dynamic>.from(battle),
           startedAtRevision: starBattleStartedAtRevision,
         ) && _lastRawRoomState.isNotEmpty) {
-      _roomStateController.add(_starBattleScores.merge(_lastRawRoomState));
+      _roomStateController.add(_projectRoomState());
     }
     notifyListeners();
   }
@@ -498,7 +519,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
         snapshot,
         startedAtRevision: revision,
       )) {
-        _roomStateController.add(_starBattleScores.merge(_lastRawRoomState));
+        _roomStateController.add(_projectRoomState());
       }
     } catch (_) {
       // Catch-up is best effort and must never block live room voice.
@@ -581,12 +602,14 @@ class VoiceRoomSessionController extends ChangeNotifier {
         _appendRoomChat(Map<String, dynamic>.from(rawMessage));
         changed = true;
         final rawAward = rawMessage['starBattleAward'];
-        if (rawAward is Map &&
-            _starBattleScores.apply(Map<String, dynamic>.from(rawAward)) &&
-            _lastRawRoomState.isNotEmpty) {
-          // The room already listens to roomStateEvents. Reuse it instead of
-          // opening a new socket or Firestore subscription for score updates.
-          _roomStateController.add(_starBattleScores.merge(_lastRawRoomState));
+        final rawPkAward = rawMessage['pkAward'];
+        final starChanged = rawAward is Map &&
+            _starBattleScores.apply(Map<String, dynamic>.from(rawAward));
+        final pkChanged = rawPkAward is Map &&
+            _pkScores.apply(Map<String, dynamic>.from(rawPkAward));
+        if ((starChanged || pkChanged) && _lastRawRoomState.isNotEmpty) {
+          // Reuse the current room stream, not a new socket or query.
+          _roomStateController.add(_projectRoomState());
         }
       }
     } else if (event.type == 'room.presence_joined') {
@@ -746,7 +769,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
           ...data,
           'roomId': targetRoomId,
         };
-        _roomStateController.add(_starBattleScores.merge(_lastRawRoomState));
+        _roomStateController.add(_projectRoomState());
         final rawMusicState = data['musicState'];
         final musicState = rawMusicState is Map
             ? Map<String, dynamic>.from(rawMusicState)
@@ -849,6 +872,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
 
     await _ensureService();
     _starBattleScores.clear();
+    _pkScores.clear();
     _refreshScoresAfterReconnect = false;
     _lastRawRoomState = <String, dynamic>{};
     _roomChatMessages.clear();
@@ -966,6 +990,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
     _connectionState = VoiceConnectionState.disconnected;
     _roomArguments = <String, dynamic>{};
     _starBattleScores.clear();
+    _pkScores.clear();
     _refreshScoresAfterReconnect = false;
     _lastRawRoomState = <String, dynamic>{};
     _roomChatMessages.clear();

@@ -1791,6 +1791,13 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
           roundId: pkRoundId,
           operationId: key,
           firstGift: pkFirstGift,
+          supporter: {
+            uid: senderUid,
+            displayName: roomSenderName,
+            profileImageUrl: roomSenderPhoto,
+            mysteriousMode: senderMysteriousMode,
+            coins: paidRecipientCost * eligiblePkReceivers.length,
+          },
           deltas: eligiblePkReceivers.map((uid) => ({
             uid,
             scoreTwice: pkScoreTwice,
@@ -1827,11 +1834,12 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
         {
           uid: senderUid,
           roundId: pkRoundId,
-          displayName: senderName,
-          profileImageUrl: senderPhoto,
+          displayName: roomSenderName,
+          profileImageUrl: roomSenderPhoto,
+          mysteriousMode: senderMysteriousMode,
           updatedAt: now,
         },
-        ["uid", "roundId", "displayName", "profileImageUrl", "updatedAt"],
+        ["uid", "roundId", "displayName", "profileImageUrl", "mysteriousMode", "updatedAt"],
         [db.increment("coins", paidRecipientCost * eligiblePkReceivers.length)],
       ));
     }
