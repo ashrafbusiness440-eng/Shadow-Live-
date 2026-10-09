@@ -6692,6 +6692,51 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                           ],
                         ),
                       ),
+                      // One stable lower-corner shortcut for Star Battle.
+                      // Owner/moderator permissions are enforced by the
+                      // existing sheet and server, not by a new control path.
+                      Positioned(
+                        right: 14,
+                        bottom: 78,
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            key: const Key('room-star-battle-corner'),
+                            onTap: _showStarBattleSheet,
+                            borderRadius: BorderRadius.circular(16),
+                            child: Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color: const Color(0xEE25183F),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: const Color(0x88FFD54A),
+                                ),
+                              ),
+                              child: Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  const Icon(
+                                    Icons.stars_rounded,
+                                    color: Color(0xFFFFD54A),
+                                    size: 25,
+                                  ),
+                                  if (_roomSeatState?.starBattleActive == true)
+                                    const Positioned(
+                                      top: 3,
+                                      right: 4,
+                                      child: CircleAvatar(
+                                        radius: 4,
+                                        backgroundColor: Color(0xFF39D98A),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                       Positioned(
                         left: 0,
                         right: 0,
