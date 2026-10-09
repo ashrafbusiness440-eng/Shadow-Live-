@@ -22,7 +22,7 @@ import {
   resetFirestoreQuotaCircuit,
 } from "../../cloudflare-worker/src/firestore.js";
 import { firestoreQuotaResponse } from "../../cloudflare-worker/src/http.js";
-import { shouldRetryLegacyTransaction } from "../../cloudflare-worker/src/legacy-firebase-admin-shim.js";
+import { getFirestoreForEnv, shouldRetryLegacyTransaction } from "../../cloudflare-worker/src/legacy-firebase-admin-shim.js";
 
 test("Firestore telemetry resource normalization strips all document identifiers", () => {
   assert.equal(normalizeFirestoreResource("users/user-secret"), "users/:id");
@@ -192,3 +192,54 @@ test("Firestore batchGet rejects malformed or oversized responses, not zero scor
   );
 });
 
+
+test("legacy Firestore getAll supports privacy ranking in one bounded batch", async () => {
+  const db = getFirestoreForEnv({
+    FIREBASE_SERVICE_ACCOUNT: JSON.stringify({
+      project_id: "shadow-unit-test",
+      client_email: "test@example.invalid",
+      private_key: "unused_fake_private_key",
+    }),
+  });
+  let calls = 0;
+  db.client.getMany = async (paths) => {
+    calls++;
+    assert.deepEqual(paths, ["users/sender", "users/viewer"]);
+    return [
+      { exists: true, data: { displayName: "Sender", hidden: true } },
+      { exists: false },
+    ];
+  };
+  const [sender, missing] = await db.getAll(
+    db.collection("users").doc("sender"),
+    db.collection("users").doc("viewer"),
+  );
+  assert.equal(calls, 1);
+  assert.equal(sender.id, "sender");
+  assert.equal(sender.exists, true);
+  assert.equal(sender.data().displayName, "Sender");
+  assert.equal(missing.id, "viewer");
+  assert.equal(missing.exists, false);
+});
+
+test("legacy Firestore getAll rejects unbounded or alien references", async () => {
+  const env = {
+    FIREBASE_SERVICE_ACCOUNT: JSON.stringify({
+      project_id: "shadow-unit-test",
+      client_email: "test@example.invalid",
+      private_key: "unused_fake_private_key",
+    }),
+  };
+  const db = getFirestoreForEnv(env);
+  const other = getFirestoreForEnv(env);
+  await assert.rejects(
+    () => db.getAll(...Array.from({ length: 101 }, (_, index) =>
+      db.collection("users").doc(String(index)),
+    )),
+    /invalid_getall_references/,
+  );
+  await assert.rejects(
+    () => db.getAll(other.collection("users").doc("unrelated")),
+    /invalid_getall_references/,
+  );
+});
