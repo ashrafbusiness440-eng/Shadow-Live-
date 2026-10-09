@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import '../../../core/assets/shadow_asset_registry.dart';
 import '../../room/services/room_presence_service.dart';
 import '../../room/services/room_seat_service.dart';
+import '../../room/services/star_battle_score_overlay.dart';
 import 'voice_service.dart';
 import 'zego_voice_service.dart';
 
@@ -34,6 +35,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
   final VoiceService _voiceService = ZegoVoiceService();
   final RoomPresenceService _presenceService = RoomPresenceService();
   final RoomSeatService _seatService = RoomSeatService();
+  final StarBattleScoreOverlay _starBattleScores = StarBattleScoreOverlay();
+  Map<String, dynamic> _lastRawRoomState = <String, dynamic>{};
   final http.Client _effectSoundHttp = http.Client();
 
   StreamSubscription<User?>? _authSubscription;
@@ -535,6 +538,14 @@ class VoiceRoomSessionController extends ChangeNotifier {
       if (rawMessage is Map) {
         _appendRoomChat(Map<String, dynamic>.from(rawMessage));
         changed = true;
+        final rawAward = rawMessage['starBattleAward'];
+        if (rawAward is Map &&
+            _starBattleScores.apply(Map<String, dynamic>.from(rawAward)) &&
+            _lastRawRoomState.isNotEmpty) {
+          // The room already listens to roomStateEvents. Reuse it instead of
+          // opening a new socket or Firestore subscription for score updates.
+          _roomStateController.add(_starBattleScores.merge(_lastRawRoomState));
+        }
       }
     } else if (event.type == 'room.presence_joined') {
       final uid = (event.payload['uid'] ?? '').toString().trim();
@@ -689,10 +700,11 @@ class VoiceRoomSessionController extends ChangeNotifier {
       }
 
       if (data != null && _active && roomId == targetRoomId) {
-        _roomStateController.add(<String, dynamic>{
+        _lastRawRoomState = <String, dynamic>{
           ...data,
           'roomId': targetRoomId,
-        });
+        };
+        _roomStateController.add(_starBattleScores.merge(_lastRawRoomState));
         final rawMusicState = data['musicState'];
         final musicState = rawMusicState is Map
             ? Map<String, dynamic>.from(rawMusicState)
@@ -794,6 +806,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
     }
 
     await _ensureService();
+    _starBattleScores.clear();
+    _lastRawRoomState = <String, dynamic>{};
     _roomChatMessages.clear();
     _roomParticipants.clear();
     _roomChatReplyTarget = null;
@@ -908,6 +922,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
     _error = null;
     _connectionState = VoiceConnectionState.disconnected;
     _roomArguments = <String, dynamic>{};
+    _starBattleScores.clear();
+    _lastRawRoomState = <String, dynamic>{};
     _roomChatMessages.clear();
     _roomParticipants.clear();
     _roomChatReplyTarget = null;
