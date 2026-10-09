@@ -263,7 +263,7 @@ void main() {
     expect(effects.contains('top: entranceTop,'), isTrue);
     expect(effects.contains('bottom: joinBottom,'), isTrue);
     expect(effects.contains('maxWidth: 302'), isTrue);
-    expect(screen.contains('entranceTop: (micTop - 96).clamp(48.0, 104.0)'), isTrue);
+    expect(screen.contains('entranceTop: (micTop - 96).clamp(48.0, 104.0).toDouble()'), isTrue);
     expect(effects.contains('Timer.periodic'), isFalse);
   });
 
