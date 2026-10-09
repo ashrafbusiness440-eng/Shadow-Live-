@@ -534,7 +534,7 @@ class _EntranceWelcomeStrip extends StatelessWidget {
                 ? null
                 : NetworkImage(event.profileImageUrl),
             child: event.profileImageUrl.trim().isEmpty
-                ? const Icon(
+                ? Icon(
                     Icons.person_rounded,
                     color: Colors.white70,
                     size: compact ? 15 : 20,
