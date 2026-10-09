@@ -535,7 +535,9 @@ class VoiceRoomSessionController extends ChangeNotifier {
     _pkSyncInFlight = true;
     final revision = _pkScores.revision;
     try {
-      final snapshot = await _seatService.syncPkScoreSnapshot(targetRoomId);
+      final snapshot = await _seatService
+          .syncPkScoreSnapshot(targetRoomId)
+          .timeout(const Duration(seconds: 8));
       if (!_active || roomId != targetRoomId ||
           snapshot == null || _lastRawRoomState.isEmpty) return;
       if (_pkScores.installSnapshot(
