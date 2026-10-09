@@ -1135,6 +1135,7 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
                     : ProfileAvatarWithFrame(
                         diameter: 32,
                         userId: message.senderUid,
+                        snapshotOnly: true,
                         fallbackProfile: <String, dynamic>{
                           'profileImageUrl': message.profileImageUrl,
                           'activeProfileFrameAssetKey':
