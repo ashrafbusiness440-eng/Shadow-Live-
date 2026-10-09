@@ -394,9 +394,15 @@ class RoomEffectCoordinatorHost extends StatelessWidget {
   const RoomEffectCoordinatorHost({
     super.key,
     required this.coordinator,
+    this.entranceTop = 100,
+    this.joinBottom = 96,
   });
 
   final RoomEffectCoordinator coordinator;
+  // Position the entrance above the microphone grid. A separate, very short
+  // join notice appears above chat, using this SAME coordinator/queue.
+  final double entranceTop;
+  final double joinBottom;
 
   @override
   Widget build(BuildContext context) {
@@ -406,10 +412,6 @@ class RoomEffectCoordinatorHost extends StatelessWidget {
         if (!coordinator.visualEnabled) return const SizedBox.shrink();
         final event = coordinator.currentCinematic;
         final roomJoin = coordinator.currentRoomJoin;
-        final duplicateEntrance = event != null &&
-            roomJoin != null &&
-            event.kind == 'entrance' &&
-            event.recipientUids.any(roomJoin.recipientUids.contains);
         if (event == null && roomJoin == null) {
           return const SizedBox.shrink();
         }
@@ -419,7 +421,50 @@ class RoomEffectCoordinatorHost extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              if (event != null)
+              if (event != null && event.kind == 'entrance')
+                Positioned(
+                  top: entranceTop,
+                  left: 12,
+                  right: 12,
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 302),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xDD140E20),
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: const Color(0xAAFFD54A),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: 64,
+                              height: 62,
+                              child: ClipRect(
+                                child: CosmeticAssetVisual(
+                                  assetKey: event.assetKey,
+                                  imageUrl: event.imageUrl,
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
+                            ),
+                            Flexible(
+                              child: _EntranceWelcomeStrip(event: event),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              if (event != null && event.kind != 'entrance')
                 Center(
                   child: SizedBox(
                     width: event.size > 0 ? event.size.toDouble() : 320,
@@ -431,17 +476,17 @@ class RoomEffectCoordinatorHost extends StatelessWidget {
                     ),
                   ),
                 ),
-              if (event != null && event.kind == 'entrance')
-                Align(
-                  alignment: const Alignment(0, -.72),
-                  child: _EntranceWelcomeStrip(event: event),
-                ),
-              if (roomJoin != null && !duplicateEntrance)
-                Align(
-                  alignment: event?.kind == 'entrance'
-                      ? const Alignment(0, -.95)
-                      : const Alignment(0, -.72),
-                  child: _EntranceWelcomeStrip(event: roomJoin),
+              if (roomJoin != null)
+                Positioned(
+                  left: 14,
+                  right: 14,
+                  bottom: joinBottom,
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 280),
+                      child: _EntranceWelcomeStrip(event: roomJoin),
+                    ),
+                  ),
                 ),
             ],
           ),
