@@ -95,7 +95,7 @@ class StarBattleScoreOverlay {
     for (final entry in updates.entries) {
       final previous = _deltas[entry.key] ?? 0;
       _deltas[entry.key] =
-          (previous + entry.value).clamp(0, _maxSafeCoins);
+          (previous + entry.value).clamp(0, _maxSafeCoins).toInt();
     }
     if (_seenOperations.length >= _maxSeenOperations) {
       _seenOperations.remove(_seenOperations.first);
