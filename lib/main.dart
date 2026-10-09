@@ -195,6 +195,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   final RoomSeatService _roomSeatService = RoomSeatService();
   late final RoomEffectCoordinator _roomEffectCoordinator;
   bool _voiceStarted = false;
+  bool _minimizeAfterJoin = false;
+  bool _roomNavigationInFlight = false;
 
   @override
   void initState() {
@@ -482,6 +484,12 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         'roomId': roomId,
         'displayName': displayName.isEmpty ? 'Shadow Live' : displayName,
       });
+      // Android back can close the room screen while the voice connection
+      // is still joining. Keep that successfully joined session minimized.
+      if (_minimizeAfterJoin) {
+        _voiceSession.minimize();
+        return;
+      }
       if (mounted) {
         setState(() {
           _voiceJoining = _voiceSession.joining;
@@ -722,9 +730,17 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   }
 
   Future<void> _minimizeVoiceRoom({int destinationNavIndex = 1}) async {
-    if (!_voiceSession.active) return;
-    _voiceSession.minimize();
-    if (!mounted) return;
+    if (_roomNavigationInFlight || !mounted) return;
+    _roomNavigationInFlight = true;
+    if (_voiceSession.active) {
+      // Leave the mic, audio and presence connected. Only switch UI.
+      _voiceSession.minimize();
+    } else if (_voiceSession.joining || _voiceJoining) {
+      // Back during initial join must not trap the user in a non-poppable
+      // room or leave an invisible live connection once joining finishes.
+      _minimizeAfterJoin = true;
+    }
+    // If joining failed, return to room discovery without a phantom mini room.
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(
         builder: (_) => MainShellScreen(
