@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -59,4 +60,24 @@ test("invalid and binary messages are rejected without business side effects", (
   const binary = parseClientRealtimeMessage(new Uint8Array([1, 2]), 6001);
   assert.equal(binary.ok, false);
   assert.equal(binary.response.payload.code, "binary_messages_not_supported");
+});
+
+test("room ticket imports the existing VIP privacy guards it invokes", () => {
+  const source = readFileSync(
+    new URL("../../cloudflare-worker/src/room-realtime.js", import.meta.url),
+    "utf8",
+  );
+  const vip = readFileSync(
+    new URL("../../cloudflare-worker/src/vip-entitlements.js", import.meta.url),
+    "utf8",
+  );
+  const imports = source.match(
+    /import\s*\{([^}]+)\}\s*from\s*["']\.\/vip-entitlements\.js["']/,
+  );
+  assert.ok(imports, "realtime ticket must import its VIP privacy policy");
+  for (const name of ["activeRoomGhostMode", "activeHiddenRoomEntry"]) {
+    assert.match(vip, new RegExp("export function " + name + "\\("));
+    assert.match(imports[1], new RegExp("\\b" + name + "\\b"));
+    assert.ok(source.includes(name + "(profileData, Date.now())"));
+  }
 });
