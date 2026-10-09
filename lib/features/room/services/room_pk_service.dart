@@ -115,6 +115,7 @@ class RoomPkSupporter {
     required this.activeProfileFrameImageUrl,
     required this.activeProfileFrameExpiresAtMs,
     required this.activeProfileFramePermanent,
+    required this.mysteriousMode,
     required this.coins,
   });
 
@@ -126,6 +127,7 @@ class RoomPkSupporter {
   final int activeProfileFrameExpiresAtMs;
   final bool activeProfileFramePermanent;
   final num coins;
+  final bool mysteriousMode;
 
   factory RoomPkSupporter.fromMap(Map<String, dynamic> data) =>
       RoomPkSupporter(
@@ -150,6 +152,7 @@ class RoomPkSupporter {
         activeProfileFramePermanent:
             data['activeProfileFramePermanent'] == true,
         coins: (data['coins'] as num?) ?? 0,
+        mysteriousMode: data['mysteriousMode'] == true,
       );
 }
 
