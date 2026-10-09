@@ -4082,10 +4082,34 @@ async function filterSupporterRankingVisibility(db,supporters,viewerUid){
   try{
     const byUid=await supporterRankingUserSnapshots(db,list,viewerUid,3);
     return filterHiddenSupporters(list,byUid,viewerUid)
-      .map(item=>applyMysteriousIdentityPresentation(
-        item,
-        byUid.get(clean(item.uid))||{},
-      ));
+      .map(item=>{
+        const user=byUid.get(clean(item.uid))||{};
+        // Reuse the user snapshots already read for ranking privacy.
+        // The daily gift snapshot may predate a user's avatar change.
+        return applyMysteriousIdentityPresentation({
+          ...item,
+          profileImageUrl:clean(
+            user.profileImageUrl||user.photoUrl||user.avatarUrl||
+            item.profileImageUrl,
+          ),
+          profileAvatarAsset:clean(
+            user.profileAvatarAsset||item.profileAvatarAsset,
+          ),
+          activeProfileFrameAssetKey:clean(
+            user.activeProfileFrameAssetKey||item.activeProfileFrameAssetKey,
+          ),
+          activeProfileFrameImageUrl:clean(
+            user.activeProfileFrameImageUrl||item.activeProfileFrameImageUrl,
+          ),
+          activeProfileFrameExpiresAtMs:Math.max(0,Number(
+            user.activeProfileFrameExpiresAtMs||
+            item.activeProfileFrameExpiresAtMs||0,
+          )),
+          activeProfileFramePermanent:
+            user.activeProfileFramePermanent===true||
+            item.activeProfileFramePermanent===true,
+        },user);
+      });
   }catch(_){
     // Privacy fails closed: never expose a possibly hidden supporter.
     return [];
@@ -4133,21 +4157,32 @@ async function enrichSupporterPublicMetadata(db,supporters,viewerUid){
           :[];
       byUid.set(userId,{
         displayName:clean(profile.displayName),
-        profileImageUrl:clean(profile.profileImageUrl),
-        profileAvatarAsset:clean(profile.profileAvatarAsset),
+        profileImageUrl:clean(
+          data.profileImageUrl||data.photoUrl||data.avatarUrl||
+          profile.profileImageUrl,
+        ),
+        profileAvatarAsset:clean(
+          data.profileAvatarAsset||profile.profileAvatarAsset,
+        ),
         publicId:clean(profile.publicId),
         vipLevel:Math.max(
           Number(profile.effectiveVipLevel||0),
           vipEntitlementsFromUser(data,Date.now()).level,
         ),
         badges:rawBadges.map(clean).filter(Boolean).slice(0,12),
-        activeProfileFrameAssetKey:clean(profile.activeProfileFrameAssetKey),
-        activeProfileFrameImageUrl:clean(profile.activeProfileFrameImageUrl),
+        activeProfileFrameAssetKey:clean(
+          data.activeProfileFrameAssetKey||profile.activeProfileFrameAssetKey,
+        ),
+        activeProfileFrameImageUrl:clean(
+          data.activeProfileFrameImageUrl||profile.activeProfileFrameImageUrl,
+        ),
         activeProfileFrameExpiresAtMs:Math.max(
           0,
-          Number(profile.activeProfileFrameExpiresAtMs||0),
+          Number(data.activeProfileFrameExpiresAtMs||
+            profile.activeProfileFrameExpiresAtMs||0),
         ),
         activeProfileFramePermanent:
+          data.activeProfileFramePermanent===true||
           profile.activeProfileFramePermanent===true,
         ...levels,
       });
