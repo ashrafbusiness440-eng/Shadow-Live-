@@ -109,7 +109,7 @@ void main() {
         File('cloudflare-worker/src/voice-session-legacy.js').readAsStringSync();
     expect(
       voiceSource.contains(
-        const snapshots=await db.client.getMany(paths);,
+        'const snapshots=await db.client.getMany(paths);',
       ),
       isTrue,
     );
