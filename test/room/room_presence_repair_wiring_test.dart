@@ -157,6 +157,45 @@ void main() {
     expect(shim.contains('export function getFirestoreForEnv(env)'), isTrue);
   });
 
+  test('people sheet lists both microphone occupants and room listeners', () {
+    final screen = File('lib/main.dart').readAsStringSync();
+    final start = screen.indexOf('Future<void> _showRoomParticipantsSheet()');
+    final end = screen.indexOf('Future<void> _showMicRequestsSheet()', start);
+    expect(start, greaterThanOrEqualTo(0));
+    expect(end, greaterThan(start));
+    final sheet = screen.substring(start, end);
+    // The roster must share the existing mic and socket snapshots without
+    // hiding seated people, querying every user profile, or leaking mystery.
+    expect(sheet.contains('final seatByUid = <String, VoiceSeat>{'), isTrue);
+    expect(sheet.contains('for (final user in _voiceSession.roomParticipants)'), isTrue);
+    expect(sheet.contains('usersByUid.putIfAbsent('), isTrue);
+    expect(sheet.contains('if (seat.occupied && seat.uid.isNotEmpty)'), isTrue);
+    expect(sheet.contains('usersByUid.values.toList('), isTrue);
+    expect(sheet.contains('!seatedUids.contains(user.uid)'), isFalse);
+    expect(sheet.contains("'mysteriousMode': seat.mysteriousMode"), isTrue);
+    expect(sheet.contains('MysteriousRoomPresenceSkin('), isTrue);
+    expect(sheet.contains('snapshotOnly: true,'), isTrue);
+    expect(sheet.contains('Timer.periodic'), isFalse);
+  });
+
+  test('chat message avatars reuse room event snapshots without per-message reads', () {
+    final chat = File(
+      'lib/features/room/widgets/room_chat_panel.dart',
+    ).readAsStringSync();
+    final avatar = File(
+      'lib/features/profile/widgets/profile_avatar_with_frame.dart',
+    ).readAsStringSync();
+    expect(
+      chat.contains(
+        'userId: message.senderUid,\n                        snapshotOnly: true,',
+      ),
+      isTrue,
+    );
+    expect(chat.contains("'profileImageUrl': message.profileImageUrl"), isTrue);
+    expect(chat.contains("'activeProfileFrameAssetKey':"), isTrue);
+    expect(avatar.contains('if (widget.snapshotOnly) return _render(fallback);'), isTrue);
+  });
+
   test('room gift checks existing presence service before mutation', () {
     final sheet = File(
       'lib/features/gift/widgets/room_gift_sheet.dart',

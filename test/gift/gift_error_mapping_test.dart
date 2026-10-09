@@ -30,6 +30,38 @@ void main() {
     expect(avatar.contains('if (widget.snapshotOnly) return;'), isTrue);
   });
 
+  test('room gift retry retains the same key after uncertain delivery', () {
+    final source = File(
+      'lib/features/gift/services/room_gift_service.dart',
+    ).readAsStringSync();
+    expect(source.contains('String _retryFingerprint ='), isTrue);
+    expect(source.contains('String _retryIdempotencyKey ='), isTrue);
+    expect(
+      source.contains(
+        '_retryFingerprint == fingerprint && _retryIdempotencyKey.isNotEmpty',
+      ),
+      isTrue,
+    );
+    // Sender, room, gift, quantity, mode, ordered recipients, and bag flag
+    // are all part of the operation fingerprint.
+    for (final part in <String>[
+      'user.uid,',
+      'roomId,',
+      'giftId,',
+      'quantity,',
+      'recipientMode,',
+      'normalizedIds,',
+      'useGiftBag,',
+    ]) {
+      expect(source.contains(part), isTrue, reason: part);
+    }
+    expect(source.contains("StateError('gift_connection_timeout')"), isTrue);
+    expect(source.contains("StateError('gift_network_unavailable')"), isTrue);
+    expect(source.contains('response.statusCode != 408'), isTrue);
+    expect(source.contains('_clearRetryReservation();'), isTrue);
+    expect(source.contains('Timer.periodic'), isFalse);
+  });
+
   test('direct gift retry reuses server key only for the same unresolved request', () {
     final source = File(
       'lib/features/gift/widgets/direct_gift_sheet.dart',

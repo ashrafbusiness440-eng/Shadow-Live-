@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_chat_room/features/room/services/room_seat_service.dart';
 
 void main() {
-  test('audience strip uses room presence once and filters mic occupants', () {
+  test('audience strip and people sheet include both seated users and listeners', () {
     final source = File('lib/main.dart').readAsStringSync();
     final start = source.indexOf('Widget _buildRoomAudienceStrip()');
     final end = source.indexOf('Future<void> _showRoomParticipantsSheet()', start);
@@ -42,7 +42,13 @@ void main() {
         'Future<void> _showMicRequestsSheet(', sheetStart);
     expect(sheetEnd, greaterThan(sheetStart));
     final sheet = source.substring(sheetStart, sheetEnd);
-    expect(sheet.contains('!seatedUids.contains(user.uid)'), isTrue);
+    // Occupied microphones must NEVER be filtered out of the people sheet.
+    // Both the room listener snapshot and seated occupants share one list.
+    expect(sheet.contains('for (final user in _voiceSession.roomParticipants)'), isTrue);
+    expect(sheet.contains('if (seat.occupied && seat.uid.isNotEmpty)'), isTrue);
+    expect(sheet.contains('usersByUid.putIfAbsent('), isTrue);
+    expect(sheet.contains('final users = usersByUid.values.toList(growable: true)'), isTrue);
+    expect(sheet.contains('!seatedUids.contains(user.uid)'), isFalse);
   });
 
   test('locked and muted mic flags roundtrip without affecting normal seats', () {
