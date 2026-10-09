@@ -3481,7 +3481,7 @@ async function loadActiveStarBattleMicScores(db,roomId,seats,battle){
     return scores;
   }
   // One existing Firestore batchGet for exact occupied seat UIDs.
-  // The response parser handles Firestore's newline-delimited result.
+  // The response parser handles newline-delimited Firestore results.
   // Do not scan ranked supporters: even a low-ranked occupant needs a score.
   const activeUids=[...new Set(
     seats.map(seat=>clean(seat.uid))
