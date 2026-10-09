@@ -201,3 +201,26 @@ jobs:
           path: control-e2e-screenshots
           if-no-files-found: warn
           retention-days: 3
+
+  # Temporary PR-scoped production proof. Remove before merging.
+  isolated-live-room-proof:
+    if: github.event_name == 'pull_request' && github.head_ref == 'fix/room-presence-action-recovery-and-gift-errors-20261009'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    concurrency:
+      group: shadow-live-production-firestore-e2e
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exercise actual live two-user room and gift API
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          ALLOW_PRODUCTION_DURABLE_OBJECT_E2E: '1'
+        run: node cloudflare-worker/scripts/room-gift-e2e.mjs
+      - name: Exercise actual live chat and diary gift API
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node cloudflare-worker/scripts/chat-gift-e2e.mjs
