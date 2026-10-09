@@ -41,6 +41,7 @@ import { giftLevelPointAwards, safeAddUserLevelPoints } from "./user-level-polic
 import { userLevelSupportAggregateWrites } from "./user-level-support.js";
 import { vipCosmeticsFromUser } from "./vip-entitlements.js";
 import { activeMysteriousIdentity } from "./mysterious-identity.js";
+import { pkGiftScoreTwice } from "./pk-gift-scoring.js";
 
 const clean = (value) => String(value ?? "").trim();
 const validKey = (value) => /^[A-Za-z0-9_-]{12,220}$/.test(clean(value));
@@ -629,9 +630,9 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       : { exists: false };
     const pkFirstGift = earnsPkScore && !pkFirstGiftSnap.exists;
     const pkScoreTwice = earnsPkScore
-      ? paidRecipientCost * (pkFirstGift ? 21 : 20)
+      ? pkGiftScoreTwice(paidRecipientCost, pkFirstGift)
       : 0;
-    if (earnsPkScore && !Number.isSafeInteger(pkScoreTwice)) {
+    if (earnsPkScore && pkScoreTwice === null) {
       throw new ApiError("invalid_pk_score", 409);
     }
     const bagQuantityRemaining = useGiftBag
