@@ -215,11 +215,53 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Install bounded Cloudflare diagnostics
+        run: npm --prefix cloudflare-worker ci --ignore-scripts --no-audit --no-fund
       - name: Exercise actual live two-user room and gift API
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           ALLOW_PRODUCTION_DURABLE_OBJECT_E2E: '1'
-        run: node cloudflare-worker/scripts/room-gift-e2e.mjs
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set +e
+          (cd cloudflare-worker && timeout 45s npx wrangler tail shadow-live --format json --ip self > /tmp/shadow-ticket-diagnostic.jsonl 2>/tmp/shadow-ticket-tail-error.txt) &
+          tail_pid=$!
+          sleep 8
+          node cloudflare-worker/scripts/room-gift-e2e.mjs
+          test_status=$?
+          sleep 3
+          kill "$tail_pid" 2>/dev/null || true
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const raw=fs.existsSync('/tmp/shadow-ticket-diagnostic.jsonl')
+            ?fs.readFileSync('/tmp/shadow-ticket-diagnostic.jsonl','utf8'):'';
+          let count=0;
+          for(const line of raw.split('\n')){
+            try{
+              const entry=JSON.parse(line);
+              const path=String(entry?.event?.request?.url || '').split('?')[0];
+              if(!path.endsWith('/api/room-realtime'))continue;
+              count++;
+              const exceptions=Array.isArray(entry?.exceptions)?entry.exceptions:[];
+              for(const exception of exceptions.slice(0,3)){
+                const name=String(exception?.name || '').slice(0,40);
+                const message=String(exception?.message || '').replace(/[\r\n]/g,' ').slice(0,210);
+                console.log('ROOM_TICKET_EXCEPTION',name,message);
+              }
+              console.log('ROOM_TICKET_OUTCOME',String(entry?.outcome || 'unknown'));
+            }catch{}
+          }
+          console.log('ROOM_TICKET_DIAGNOSTIC_EVENTS',count);
+          const errorFile='/tmp/shadow-ticket-tail-error.txt';
+          if(count===0 && fs.existsSync(errorFile)){
+            console.log('ROOM_TICKET_TAIL_STATUS',
+              fs.readFileSync(errorFile,'utf8').split('\n')
+                .filter(line=>/error|denied|permission|Failed/i.test(line)).slice(-3)
+                .map(line=>line.replace(/\s+/g,' ').slice(0,150)).join(' | '));
+          }
+          NODE
+          exit "$test_status"
       - name: Exercise actual live chat and diary gift API
         if: always()
         env:
