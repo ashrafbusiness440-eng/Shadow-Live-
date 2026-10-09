@@ -523,7 +523,7 @@ try{
   const hydratedScore=boot?.room?.starBattleState?.scores?.[receiverUid]?.coins;
   if(!bootResponse.ok || occupiedScore!==totalCost ||
      hydratedScore!==totalCost){
-    throw new Error("late join bootstrap omitted paid Star Battle scores");
+    throw new Error("late join score failure: HTTP "+bootResponse.status+" mic="+occupiedScore+" snapshot="+hydratedScore+" code="+boot?.code);
   }
   console.log("PASS late join bootstrap occupied mic score");
 
