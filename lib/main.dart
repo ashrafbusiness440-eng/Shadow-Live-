@@ -228,11 +228,14 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         Map<String, dynamic>.from(rawEntrance),
       );
     }
+    // Join notices use the existing short cinematic strip, not the chat
+    // feed or chat session history. No new subscription or effect queue.
+    for (final notice in _voiceSession.roomRecentJoinNotices.take(8)) {
+      _roomEffectCoordinator.ingestRoomJoin(notice);
+    }
     for (final message in _voiceSession.roomChatMessages.take(8)) {
       final systemKind = (message['systemKind'] ?? '').toString();
-      if (systemKind == 'room_join') {
-        _roomEffectCoordinator.ingestRoomJoin(message);
-      } else if (systemKind == 'gift') {
+      if (systemKind == 'gift') {
         _roomEffectCoordinator.ingestGiftMessage(message);
       } else if (
         systemKind == 'animated_emoji' ||

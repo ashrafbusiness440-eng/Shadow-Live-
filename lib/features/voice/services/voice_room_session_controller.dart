@@ -62,6 +62,10 @@ class VoiceRoomSessionController extends ChangeNotifier {
   static const int _maxRoomParticipants = 200;
   final List<Map<String, dynamic>> _roomChatMessages =
       <Map<String, dynamic>>[];
+  // A bounded collection only for the already-present entrance coordinator;
+  // presence events are never placed into session chat history.
+  final List<Map<String, dynamic>> _roomRecentJoinNotices =
+      <Map<String, dynamic>>[];
   final List<RoomPresenceUser> _roomParticipants = <RoomPresenceUser>[];
   Map<String, dynamic>? _roomChatReplyTarget;
   Map<String, dynamic>? _roomChatMentionTarget;
@@ -119,6 +123,10 @@ class VoiceRoomSessionController extends ChangeNotifier {
   List<Map<String, dynamic>> get roomChatMessages =>
       List<Map<String, dynamic>>.unmodifiable(
         _roomChatMessages.reversed,
+      );
+  List<Map<String, dynamic>> get roomRecentJoinNotices =>
+      List<Map<String, dynamic>>.unmodifiable(
+        _roomRecentJoinNotices.reversed,
       );
   List<RoomPresenceUser> get roomParticipants =>
       List<RoomPresenceUser>.unmodifiable(_roomParticipants);
@@ -419,6 +427,20 @@ class VoiceRoomSessionController extends ChangeNotifier {
     return before != _roomParticipants.length;
   }
 
+  void _appendRoomJoinNotice(Map<String, dynamic> notice) {
+    final id = (notice['id'] ?? '').toString().trim();
+    if (id.isEmpty ||
+        _roomRecentJoinNotices.any(
+          (item) => (item['id'] ?? '').toString() == id,
+        )) return;
+    _roomRecentJoinNotices.add(Map<String, dynamic>.from(notice));
+    if (_roomRecentJoinNotices.length > 8) {
+      _roomRecentJoinNotices.removeRange(
+        0, _roomRecentJoinNotices.length - 8,
+      );
+    }
+  }
+
   void _appendRoomChat(Map<String, dynamic> message) {
     final id = (message['id'] ?? '').toString().trim();
     if (id.isNotEmpty &&
@@ -648,7 +670,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
         changed = _upsertRoomParticipant(event.payload) || changed;
         final vipLevel =
             (event.payload['vipLevel'] as num?)?.toInt() ?? 0;
-        _appendRoomChat({
+        _appendRoomJoinNotice({
           'id': 'join_' +
               uid +
               '_' +
@@ -902,6 +924,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
     _refreshScoresAfterReconnect = false;
     _lastRawRoomState = <String, dynamic>{};
     _roomChatMessages.clear();
+    _roomRecentJoinNotices.clear();
     _roomParticipants.clear();
     _roomChatReplyTarget = null;
     _roomChatMentionTarget = null;
@@ -932,6 +955,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
       _joining = false;
       _sessionUserUid = null;
       _roomChatMessages.clear();
+    _roomRecentJoinNotices.clear();
       _roomChatReplyTarget = null;
       _roomChatMentionTarget = null;
       _error = error.toString();
@@ -1020,6 +1044,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
     _refreshScoresAfterReconnect = false;
     _lastRawRoomState = <String, dynamic>{};
     _roomChatMessages.clear();
+    _roomRecentJoinNotices.clear();
     _roomParticipants.clear();
     _roomChatReplyTarget = null;
     _roomChatMentionTarget = null;
