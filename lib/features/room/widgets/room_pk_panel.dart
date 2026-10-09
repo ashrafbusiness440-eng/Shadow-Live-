@@ -630,24 +630,34 @@ class _RoomPkPanelState extends State<RoomPkPanel> {
                     (supporter) => Expanded(
                       child: Column(
                         children: [
-                          ProfileAvatarWithFrame(
-                            diameter: 34,
-                            userId: supporter.uid,
-                            backgroundColor: const Color(0xFF25183F),
-                            placeholderColor: Colors.white54,
-                            fallbackProfile: <String, dynamic>{
-                              'profileImageUrl': supporter.profileImageUrl,
-                              'activeProfileFrameAssetKey':
-                                  supporter.activeProfileFrameAssetKey,
-                              'activeProfileFrameImageUrl':
-                                  supporter.activeProfileFrameImageUrl,
-                              'activeProfileFrameExpiresAtMs':
-                                  supporter.activeProfileFrameExpiresAtMs,
-                              'activeProfileFramePermanent':
-                                  supporter.activeProfileFramePermanent,
-                            },
-                            fallbackIsVisualSnapshot: true,
-                          ),
+                          if (supporter.mysteriousMode)
+                            const CircleAvatar(
+                              radius: 17,
+                              backgroundColor: Color(0xFF25183F),
+                              child: Icon(
+                                Icons.person_outline_rounded,
+                                color: Colors.white70,
+                              ),
+                            )
+                          else
+                            ProfileAvatarWithFrame(
+                              diameter: 34,
+                              userId: supporter.uid,
+                              backgroundColor: const Color(0xFF25183F),
+                              placeholderColor: Colors.white54,
+                              fallbackProfile: <String, dynamic>{
+                                'profileImageUrl': supporter.profileImageUrl,
+                                'activeProfileFrameAssetKey':
+                                    supporter.activeProfileFrameAssetKey,
+                                'activeProfileFrameImageUrl':
+                                    supporter.activeProfileFrameImageUrl,
+                                'activeProfileFrameExpiresAtMs':
+                                    supporter.activeProfileFrameExpiresAtMs,
+                                'activeProfileFramePermanent':
+                                    supporter.activeProfileFramePermanent,
+                              },
+                              fallbackIsVisualSnapshot: true,
+                            ),
                           const SizedBox(height: 3),
                           Text(
                             supporter.displayName,
