@@ -607,6 +607,33 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       round?.status === "active" &&
       /^[A-Za-z0-9_-]{1,180}$/.test(starBattleId) &&
       Number(round.endsAtMs || 0) > nowMs;
+    // PK uses the existing paid gift transaction, never a room-root write.
+    // All PK scores use integer doubled units so the opening x10.5 bonus
+    // stays exact even for an odd-Coin gift; subsequent gifts earn x10.
+    const pkRound = room.pkState;
+    const pkRoundId = clean(pkRound?.id);
+    const pkParticipants = Array.isArray(pkRound?.participants)
+      ? pkRound.participants : [];
+    const eligiblePkReceivers = recipientIds.filter((id) =>
+      pkParticipants.some((participant) => clean(participant?.uid) === id));
+    const earnsPkScore =
+      paidRecipientCost > 0 &&
+      pkRound?.status === "active" &&
+      /^[A-Za-z0-9_-]{1,180}$/.test(pkRoundId) &&
+      Number(pkRound.endsAtMs || 0) > nowMs &&
+      eligiblePkReceivers.length > 0;
+    const pkFirstGiftPath = roomPath + "/pk_round_scores/" + pkRoundId +
+      "/first_gift/marker";
+    const pkFirstGiftSnap = earnsPkScore
+      ? await db.get(pkFirstGiftPath, transaction)
+      : { exists: false };
+    const pkFirstGift = earnsPkScore && !pkFirstGiftSnap.exists;
+    const pkScoreTwice = earnsPkScore
+      ? paidRecipientCost * (pkFirstGift ? 21 : 20)
+      : 0;
+    if (earnsPkScore && !Number.isSafeInteger(pkScoreTwice)) {
+      throw new ApiError("invalid_pk_score", 409);
+    }
     const bagQuantityRemaining = useGiftBag
       ? bagBefore - requiredBagQuantity
       : null;
@@ -1755,6 +1782,59 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       }
     }
 
+    // All round credits (including the first-gift marker and sender Top3
+    // aggregate) are committed with the wallet debit and idempotency record.
+    // One first marker is created for the whole PK round, not per recipient.
+    const pkAward = earnsPkScore
+      ? {
+          roundId: pkRoundId,
+          operationId: key,
+          firstGift: pkFirstGift,
+          deltas: eligiblePkReceivers.map((uid) => ({
+            uid,
+            scoreTwice: pkScoreTwice,
+          })),
+        }
+      : null;
+    if (pkAward) {
+      if (pkFirstGift) {
+        writes.push(db.writeCreate(pkFirstGiftPath, {
+          operationId: key,
+          senderUid,
+          createdAt: now,
+        }));
+      }
+      for (const uid of eligiblePkReceivers) {
+        const receiver = recipientResults.find((item) => item.receiverId === uid);
+        const scorePath = roomPath + "/pk_round_scores/" + pkRoundId +
+          "/participants/" + uid;
+        writes.push(db.writeUpdate(
+          scorePath,
+          {
+            uid,
+            roundId: pkRoundId,
+            displayName: receiver?.roomReceiverName || "",
+            profileImageUrl: receiver?.roomReceiverProfileImageUrl || "",
+            updatedAt: now,
+          },
+          ["uid", "roundId", "displayName", "profileImageUrl", "updatedAt"],
+          [db.increment("scoreTwice", pkScoreTwice)],
+        ));
+      }
+      writes.push(db.writeUpdate(
+        roomPath + "/pk_round_scores/" + pkRoundId + "/supporters/" + senderUid,
+        {
+          uid: senderUid,
+          roundId: pkRoundId,
+          displayName: senderName,
+          profileImageUrl: senderPhoto,
+          updatedAt: now,
+        },
+        ["uid", "roundId", "displayName", "profileImageUrl", "updatedAt"],
+        [db.increment("coins", paidRecipientCost * eligiblePkReceivers.length)],
+      ));
+    }
+
     const first = recipientResults[0];
     const resultData = {
       giftId,
@@ -1982,6 +2062,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
           paidCost,
           useGiftBag,
           starBattleAward,
+          pkAward,
           assetKey,
           imageUrl,
           vipLevel: roomSenderVipLevel,
