@@ -24,12 +24,29 @@ class _StarBattleSheetState extends State<StarBattleSheet> {
   StarBattleState? _battle;
   bool _busy = false;
   bool _syncing = false;
+  bool _loadingLeaders = false;
+  String _loadedLeaderboardRound = '';
+  StarBattleState? _liveRanking;
 
   @override
   void initState() {
     super.initState();
     _subscription = _service.watch(widget.roomId).listen((value) {
-      if (mounted) setState(() => _battle = value);
+      if (!mounted) return;
+      setState(() {
+        _battle = value;
+        if (value?.active != true) {
+          _liveRanking = null;
+          _loadedLeaderboardRound = '';
+        } else if (_liveRanking?.id != value?.id) {
+          _liveRanking = null;
+        }
+      });
+      if (value?.active == true &&
+          value!.id != _loadedLeaderboardRound) {
+        _loadedLeaderboardRound = value.id;
+        unawaited(_loadLiveTop99());
+      }
       // A previous finalization can resume from its persisted marker on
       // reopening this sheet, without a new poll or Firestore subscription.
       if (value?.status == 'finalizing' && !_syncing) {
@@ -56,6 +73,24 @@ class _StarBattleSheetState extends State<StarBattleSheet> {
         );
       }
     });
+  }
+
+  Future<void> _loadLiveTop99() async {
+    if (!mounted || _loadingLeaders) return;
+    final id = _battle?.id;
+    if (id == null || id.isEmpty || _battle?.active != true) return;
+    setState(() => _loadingLeaders = true);
+    try {
+      final ranked = await _service.loadActiveTop99(widget.roomId);
+      if (!mounted || _battle?.id != id) return;
+      if (ranked?.id == id && ranked?.active == true) {
+        setState(() => _liveRanking = ranked);
+      }
+    } catch (_) {
+      // The original room and ZEGO audio remain available if Top99 fails.
+    } finally {
+      if (mounted) setState(() => _loadingLeaders = false);
+    }
   }
 
   @override
@@ -259,6 +294,9 @@ class _StarBattleSheetState extends State<StarBattleSheet> {
   Widget build(BuildContext context) {
     final battle = _battle;
     final active = battle?.active == true;
+    final leaders = _liveRanking?.id == battle?.id
+        ? _liveRanking!.leaders
+        : (battle?.leaders ?? const <StarBattleLeader>[]);
     return Directionality(
       textDirection: TextDirection.rtl,
       child: SafeArea(
@@ -302,6 +340,22 @@ class _StarBattleSheetState extends State<StarBattleSheet> {
                       icon: const Icon(Icons.history_rounded),
                       label: const Text('آخر 100 جولة'),
                     ),
+                    if (active)
+                      IconButton(
+                        tooltip: 'تحديث أفضل 99 داعمًا',
+                        onPressed: _loadingLeaders
+                            ? null
+                            : () => unawaited(_loadLiveTop99()),
+                        icon: _loadingLeaders
+                            ? const SizedBox(
+                                width: 17,
+                                height: 17,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.refresh_rounded),
+                      ),
                     const Spacer(),
                     if (!active && widget.canManage)
                       FilledButton(
@@ -338,7 +392,7 @@ class _StarBattleSheetState extends State<StarBattleSheet> {
                             style: TextStyle(color: Colors.white54),
                           ),
                         )
-                      : battle!.leaders.isEmpty
+                      : leaders.isEmpty
                           ? const Center(
                               child: Text(
                                 'بانتظار أول دعم خلال الجولة',
@@ -346,15 +400,19 @@ class _StarBattleSheetState extends State<StarBattleSheet> {
                               ),
                             )
                           : ListView.separated(
-                              itemCount: battle.leaders.length,
+                              itemCount: leaders.length,
                               separatorBuilder: (_, __) =>
                                   const Divider(color: Colors.white10),
                               itemBuilder: (_, index) {
-                                final leader = battle.leaders[index];
+                                final leader = leaders[index];
                                 return ListTile(
                                   leading: ProfileAvatarWithFrame(
                                     diameter: 40,
                                     userId: leader.uid,
+                                    // A masked Star Battle identity is already
+                                    // projected by the gift ledger snapshot.
+                                    // Never fetch the account's real avatar.
+                                    snapshotOnly: true,
                                     fallbackProfile: <String, dynamic>{
                                       'profileImageUrl':
                                           leader.profileImageUrl,

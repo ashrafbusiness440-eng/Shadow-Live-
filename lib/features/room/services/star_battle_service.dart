@@ -148,6 +148,20 @@ class StarBattleService {
     await _post({'action': 'syncStarBattle', 'roomId': roomId});
   }
 
+  /// Read the current Top99 only when the player opens or manually
+  /// refreshes the sheet; no additional Firestore listener or polling.
+  Future<StarBattleState?> loadActiveTop99(String roomId) async {
+    final result = await _post({
+      'action': 'syncStarBattle',
+      'roomId': roomId,
+      'includeLeaders': true,
+    });
+    final raw = result['battle'];
+    return raw is Map
+        ? StarBattleState.fromMap(Map<String, dynamic>.from(raw))
+        : null;
+  }
+
   Future<List<StarBattleState>> history(String roomId) async {
     final map = await _post({'action': 'starBattleHistory', 'roomId': roomId});
     final raw = map['history'];

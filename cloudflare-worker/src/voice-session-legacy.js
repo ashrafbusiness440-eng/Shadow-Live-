@@ -3633,8 +3633,26 @@ async function syncStarBattle(db,uid,body){
       db,roomId,normalizeSeats(room),battle,
     ),
   }:null;
+  let displayBattle=normalizeStarBattleState(room);
+  if(battle&&body.includeLeaders===true){
+    // A bounded, on-demand read when the Top99 sheet is opened or its
+    // refresh button is tapped. Never query per gift, per seat or on a timer.
+    const scoresSnap=await db.collection("rooms").doc(roomId)
+      .collection("star_battle_scores").doc(battle.id)
+      .collection("users").orderBy("coins","desc").limit(99).get();
+    const paidLeaders=scoresSnap.docs.map(doc=>({
+      uid:doc.id,
+      ...(doc.data()||{}),
+    })).filter(item=>clean(item.uid)&&Number(item.coins||0)>0);
+    displayBattle=normalizeStarBattleState({
+      starBattleState:{
+        ...(room.starBattleState||{}),
+        leaders:paidLeaders,
+      },
+    });
+  }
   return {
-    ok:true,roomId,battle:normalizeStarBattleState(room),starBattleSnapshot,
+    ok:true,roomId,battle:displayBattle,starBattleSnapshot,
   };
 }
 
