@@ -158,6 +158,26 @@ void main() {
     expect(supporter['profileImageUrl'], '');
   });
 
+  test('reconnect installs paid scores without replaying older events', () {
+    final overlay = PkScoreOverlay();
+    final room = activeRoom('pk_round_1');
+    overlay.merge(room);
+    expect(overlay.apply(award('old_event', 21)), isTrue);
+    final revisionAtStart = overlay.revision;
+    expect(overlay.apply(award('during_request', 20)), isTrue);
+    expect(overlay.installSnapshot(<String, dynamic>{
+      'id': 'pk_round_1',
+      'status': 'active',
+      'participants': <Map<String, dynamic>>[
+        <String, dynamic>{'uid': 'a', 'score': 10.5},
+        <String, dynamic>{'uid': 'b', 'score': 0},
+      ],
+    }, startedAtRevision: revisionAtStart), isTrue);
+    expect(displayedScore(overlay, room), 20.5);
+    expect(overlay.apply(award('during_request', 20)), isFalse);
+    expect(displayedScore(overlay, room), 20.5);
+  });
+
   test('PK overlay keeps bounded operation identifiers', () {
     final overlay = PkScoreOverlay();
     final room = activeRoom('pk_round_1');
