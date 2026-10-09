@@ -171,10 +171,20 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
     });
   }
 
+  // An attendee may leave while this picker remains open. Never keep an
+  // invisible, departed attendee in the set submitted to the gift ledger.
+  // The owner remains a valid choice even when not currently on a mic.
+  Set<String> get _availableReceiverIds => <String>{
+        if (widget.ownerUid.trim().isNotEmpty) widget.ownerUid.trim(),
+        for (final user in _participants) user.uid,
+      };
+  Set<String> get _currentSelectedIds =>
+      _selectedIds.intersection(_availableReceiverIds);
+
   bool get _canSend => switch (_recipientMode) {
         'all_mics' => _micIds.isNotEmpty,
         'all_room' => _participants.isNotEmpty || _uid.isNotEmpty,
-        _ => _selectedIds.isNotEmpty,
+        _ => _currentSelectedIds.isNotEmpty,
       };
 
   RoomPresenceUser? _participant(String uid) {
@@ -263,7 +273,7 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
       giftId: gift.id,
       quantity: quantity,
       recipientMode: _recipientMode,
-      recipientIds: _selectedIds.toList(growable: false),
+      recipientIds: _currentSelectedIds.toList(growable: false),
       useGiftBag: useGiftBag,
     );
     final balance = (result['balance'] as num?)?.toInt();
