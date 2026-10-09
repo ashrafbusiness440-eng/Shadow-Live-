@@ -21,6 +21,17 @@ class RoomGiftService {
   final http.Client _client;
   final String _baseUrl;
 
+  // Reuse an unresolved operation if an HTTP timeout/network failure may
+  // have hidden an already committed gift. This is scoped to this sheet's
+  // existing service instance; no extra backend request or listener.
+  String _retryFingerprint = '';
+  String _retryIdempotencyKey = '';
+
+  void _clearRetryReservation() {
+    _retryFingerprint = '';
+    _retryIdempotencyKey = '';
+  }
+
   Future<Map<String, dynamic>> send({
     required String roomId,
     required String giftId,
@@ -44,12 +55,28 @@ class RoomGiftService {
       throw StateError('recipient_required');
     }
 
-    final key = [
-      'roomgift',
+    // Preserve the recipient order: the server records recipient suboperations
+    // by index. A different order/selection must start a new transaction.
+    final fingerprint = jsonEncode(<Object>[
       user.uid,
-      DateTime.now().microsecondsSinceEpoch.toString(),
+      roomId,
       giftId,
-    ].join('_');
+      quantity,
+      recipientMode,
+      normalizedIds,
+      useGiftBag,
+    ]);
+    final key =
+        _retryFingerprint == fingerprint && _retryIdempotencyKey.isNotEmpty
+            ? _retryIdempotencyKey
+            : [
+                'roomgift',
+                user.uid,
+                DateTime.now().microsecondsSinceEpoch.toString(),
+                giftId,
+              ].join('_');
+    _retryFingerprint = fingerprint;
+    _retryIdempotencyKey = key;
 
     late final http.Response response;
     try {
@@ -84,8 +111,17 @@ class RoomGiftService {
     } catch (_) {}
 
     if (response.statusCode != 200 || body['ok'] != true) {
+      // A definitive client rejection cannot have charged the sender.
+      // Retain the operation key for ambiguous timeouts and 5xx errors.
+      if (response.statusCode >= 400 &&
+          response.statusCode < 500 &&
+          response.statusCode != 408) {
+        _clearRetryReservation();
+      }
       throw StateError((body['code'] ?? 'room_gift_failed').toString());
     }
+    // A confirmed success or existing-operation response is definitive.
+    _clearRetryReservation();
     return body;
   }
 
