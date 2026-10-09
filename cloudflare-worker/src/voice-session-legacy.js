@@ -3725,14 +3725,17 @@ async function loadPkPaidRoundScores(db,roomId,pk){
   if(!pk||!/^[A-Za-z0-9_-]{1,180}$/.test(pk.id))return pk;
   const participants=Array.isArray(pk.participants)
     ?pk.participants.slice(0,8):[];
-  const uids=participants.map(item=>clean(item.uid));
+  const uids=[...new Set(participants.map(item=>clean(item.uid))
+    .filter(id=>id.length>0&&id.length<=180&&!id.includes("/")))];
   const paths=uids.map(uid=>
     "rooms/"+roomId+"/pk_round_scores/"+pk.id+"/participants/"+uid
   );
   const scoreRows=paths.length?await db.client.getMany(paths):[];
-  const scoredParticipants=participants.map((participant,index)=>{
-    const twice=scoreRows[index]?.exists
-      ?Number(scoreRows[index]?.data?.scoreTwice||0):0;
+  const scoreByUid=new Map(uids.map((uid,index)=>[uid,scoreRows[index]]));
+  const scoredParticipants=participants.map((participant)=>{
+    const row=scoreByUid.get(clean(participant.uid));
+    const twice=row?.exists
+      ?Number(row.data?.scoreTwice||0):0;
     return {
       ...participant,
       score:Number.isSafeInteger(twice)&&twice>0?twice/2:0,
