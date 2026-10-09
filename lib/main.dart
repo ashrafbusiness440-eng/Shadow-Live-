@@ -2616,7 +2616,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                   fontWeight: FontWeight.w700,
                 ),
               ),
-              if (seat.occupied && seat.starBattleCoins > 0)
+              if (seat.occupied && state?.starBattleActive == true)
                 Text(
                   _formatStarBattleCoins(seat.starBattleCoins) + ' ⭐',
                   maxLines: 1,
@@ -6150,45 +6150,65 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   }
 
   Widget _buildSupporterCluster() {
+    // The Top 3 positions are always visible, even before the first gift.
+    // Reuse profile data already supplied by the room insights snapshot.
     final top = (_roomInsights?.supporters ?? const <RoomSupporter>[])
         .take(3)
-        .toList();
-    if (top.isEmpty) return const SizedBox.shrink();
+        .toList(growable: false);
 
     return InkWell(
       onTap: _showSupportersSheet,
       borderRadius: BorderRadius.circular(999),
       child: Row(
         mainAxisSize: MainAxisSize.min,
-        children: List.generate(top.length, (index) {
-          final supporter = top[index];
+        children: List.generate(3, (index) {
+          final supporter = index < top.length ? top[index] : null;
           return Transform.translate(
-            offset: Offset(index * 5.0, 0),
+            offset: Offset(index * 4.0, 0),
             child: Stack(
               clipBehavior: Clip.none,
               children: [
-                supporter.mysteriousMode
-                    ? const MysteriousIdentityAvatar(diameter: 28)
-                    : ProfileAvatarWithFrame(
-                        diameter: 28,
-                        userId: supporter.uid,
-                        backgroundColor: const Color(0xFF25183F),
-                        placeholderColor: Colors.white,
-                        fallbackProfile: <String, dynamic>{
-                          'profileImageUrl': supporter.profileImageUrl,
-                          'activeProfileFrameAssetKey':
-                              supporter.activeProfileFrameAssetKey,
-                          'activeProfileFrameImageUrl':
-                              supporter.activeProfileFrameImageUrl,
-                          'activeProfileFrameExpiresAtMs':
-                              supporter.activeProfileFrameExpiresAtMs,
-                          'activeProfileFramePermanent':
-                              supporter.activeProfileFramePermanent,
-                        },
-                        fallbackIsVisualSnapshot: true,
-                        vipLevel: supporter.vipLevel,
-                        useVipFallback: true,
+                if (supporter == null)
+                  Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFF21172E),
+                      border: Border.all(
+                        color: const Color(0x66FFD54A),
                       ),
+                    ),
+                    child: const Icon(
+                      Icons.person_outline_rounded,
+                      color: Colors.white54,
+                      size: 16,
+                    ),
+                  )
+                else if (supporter.mysteriousMode)
+                  const MysteriousIdentityAvatar(diameter: 28)
+                else
+                  ProfileAvatarWithFrame(
+                    diameter: 28,
+                    userId: supporter.uid,
+                    snapshotOnly: true,
+                    backgroundColor: const Color(0xFF25183F),
+                    placeholderColor: Colors.white,
+                    fallbackProfile: <String, dynamic>{
+                      'profileImageUrl': supporter.profileImageUrl,
+                      'activeProfileFrameAssetKey':
+                          supporter.activeProfileFrameAssetKey,
+                      'activeProfileFrameImageUrl':
+                          supporter.activeProfileFrameImageUrl,
+                      'activeProfileFrameExpiresAtMs':
+                          supporter.activeProfileFrameExpiresAtMs,
+                      'activeProfileFramePermanent':
+                          supporter.activeProfileFramePermanent,
+                    },
+                    fallbackIsVisualSnapshot: true,
+                    vipLevel: supporter.vipLevel,
+                    useVipFallback: true,
+                  ),
                 Positioned(
                   right: -2,
                   top: -4,
@@ -6208,7 +6228,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       (index + 1).toString(),
                       style: const TextStyle(
                         color: Colors.black,
-                        fontSize: 7,
+                        fontSize: 8,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
@@ -6228,13 +6248,18 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       return const SizedBox.shrink();
     }
     if (insights == null) {
-      return _loadingRoomInsights
-          ? const LinearProgressIndicator(
-              minHeight: 2,
-              color: Color(0xFF8A3DFF),
-              backgroundColor: Colors.transparent,
-            )
-          : const SizedBox.shrink();
+      // Empty Top 3 slots must not vanish while insights are loading.
+      return Row(
+        children: [
+          if (_showRoomSupport) _buildSupporterCluster(),
+          if (_loadingRoomInsights) const Spacer(),
+          if (_loadingRoomInsights)
+            const SizedBox(
+              width: 56,
+              child: LinearProgressIndicator(minHeight: 2),
+            ),
+        ],
+      );
     }
 
     Widget levelBox() => InkWell(
@@ -6578,6 +6603,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       Positioned.fill(
                         child: RoomEffectCoordinatorHost(
                           coordinator: _roomEffectCoordinator,
+                          entranceTop: (micTop - 50).clamp(80.0, 125.0).toDouble(),
+                          joinBottom: 106,
                         ),
                       ),
                       Positioned(
@@ -6618,71 +6645,94 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                           ),
                         ),
                       ),
+                      // The chat list owns scrolling. Never drag the room stage
+                      // or the fixed agency/rocket controls when reading history.
                       Positioned.fill(
                         top: feedTop,
                         bottom: 57,
-                        child: DraggableScrollableSheet(
-                          // Display messages directly on the room background.
-                          // Dragging is still possible without an opaque panel.
-                          initialChildSize: 1,
-                          minChildSize: .56,
-                          maxChildSize: 1,
-                          snap: true,
-                          snapSizes: const [.56, 1],
-                          builder: (context, scrollController) => Container(
-                            // No black sheet covering the voice-room background.
-                            color: Colors.transparent,
-                            child: Stack(
-                              children: [
-                                Column(
-                                  children: [
-                                    const SizedBox(height: 3),
-                                Expanded(
-                                  child: const bool.fromEnvironment('E2E_ROOM_TEST')
-                                      ? ListView(
-                                          controller: scrollController,
-                                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-                                          children: const [
-                                            Text(
-                                              'Shadow دخل إلى الغرفة',
-                                              style: TextStyle(color: Colors.white60, fontSize: 11),
-                                            ),
-                                            SizedBox(height: 10),
-                                            Text(
-                                              'Ashraf: أهلاً وسهلاً بالجميع',
-                                              style: TextStyle(color: Colors.white, fontSize: 11),
-                                            ),
-                                            SizedBox(height: 10),
-                                            Text(
-                                              'Shadow أرسل هدية التاج إلى Ashraf — 10,000 كوينز',
-                                              style: TextStyle(color: Color(0xFFFFD54A), fontSize: 11),
-                                            ),
-                                          ],
-                                        )
-                                      : RoomChatFeed(
-                                          roomId: roomId,
-                                          roomEffectsEnabled: _roomEffectsEnabled,
-                                          effectSoundEnabled: _effectSoundEnabled,
-                                          scrollController: scrollController,
-                                        ),
-                                ),
-                                  ],
-                                ),
-                                Positioned(
-                                  left: 12,
-                                  top: 22,
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      if (_roomAgencyId.isNotEmpty) ...[
-                                        _buildAgencyLogoButton(),
-                                        const SizedBox(height: 8),
-                                      ],
-                                      _buildRoomRocketButton(),
-                                    ],
+                        child: const bool.fromEnvironment('E2E_ROOM_TEST')
+                            ? ListView(
+                                padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                                children: const [
+                                  Text(
+                                    'Shadow دخل إلى الغرفة',
+                                    style: TextStyle(color: Colors.white60, fontSize: 11),
                                   ),
+                                  SizedBox(height: 10),
+                                  Text(
+                                    'Ashraf: أهلاً وسهلاً بالجميع',
+                                    style: TextStyle(color: Colors.white, fontSize: 11),
+                                  ),
+                                  SizedBox(height: 10),
+                                  Text(
+                                    'Shadow أرسل هدية التاج إلى Ashraf — 10,000 كوينز',
+                                    style: TextStyle(color: Color(0xFFFFD54A), fontSize: 11),
+                                  ),
+                                ],
+                              )
+                            : RoomChatFeed(
+                                roomId: roomId,
+                                roomEffectsEnabled: _roomEffectsEnabled,
+                                effectSoundEnabled: _effectSoundEnabled,
+                              ),
+                      ),
+                      // These are siblings of the chat, NOT children of the
+                      // chat's scrolling/dragging viewport.
+                      Positioned(
+                        left: 12,
+                        top: feedTop + 22,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (_roomAgencyId.isNotEmpty) ...[
+                              _buildAgencyLogoButton(),
+                              const SizedBox(height: 8),
+                            ],
+                            _buildRoomRocketButton(),
+                          ],
+                        ),
+                      ),
+                      // One stable lower-corner shortcut for Star Battle.
+                      // Owner/moderator permissions are enforced by the
+                      // existing sheet and server, not by a new control path.
+                      Positioned(
+                        right: 14,
+                        bottom: 78,
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            key: const Key('room-star-battle-corner'),
+                            onTap: _showStarBattleSheet,
+                            borderRadius: BorderRadius.circular(16),
+                            child: Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color: const Color(0xEE25183F),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: const Color(0x88FFD54A),
                                 ),
-                              ],
+                              ),
+                              child: Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  const Icon(
+                                    Icons.stars_rounded,
+                                    color: Color(0xFFFFD54A),
+                                    size: 25,
+                                  ),
+                                  if (_roomSeatState?.starBattleActive == true)
+                                    const Positioned(
+                                      top: 3,
+                                      right: 4,
+                                      child: CircleAvatar(
+                                        radius: 4,
+                                        backgroundColor: Color(0xFF39D98A),
+                                      ),
+                                    ),
+                                ],
+                              ),
                             ),
                           ),
                         ),

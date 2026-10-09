@@ -211,4 +211,60 @@ void main() {
     expect(sheet.contains('final result = await _gifts.send('), isTrue);
     expect(main.contains('_voiceSession.ensureRoomPresenceReady'), isTrue);
   });
+
+  test('Top 3 podium persists with empty supporters and reuses cached snapshots', () {
+    final source = File('lib/main.dart').readAsStringSync();
+    final begin = source.indexOf('Widget _buildSupporterCluster()');
+    final end = source.indexOf('Widget _buildRoomInsightsBar()', begin);
+    final stage = source.substring(begin, end);
+    expect(stage.contains('List.generate(3,'), isTrue);
+    expect(stage.contains('if (top.isEmpty) return const SizedBox.shrink()'), isFalse);
+    expect(stage.contains('supporter == null'), isTrue);
+    expect(stage.contains('snapshotOnly: true'), isTrue);
+    // Bootstrap already bundles supporters; do not add a room entry request.
+    expect(source.contains('unawaited(_loadRoomInsights(roomId));'), isFalse);
+    final bootstrap = File('cloudflare-worker/src/voice-session-legacy.js')
+        .readAsStringSync();
+    expect(bootstrap.contains('dailySupportRef.collection("users").limit(3).get()'), isTrue);
+    expect(stage.contains('Timer.periodic'), isFalse);
+  });
+
+  test('Star Battle shows zero score on occupied microphones during active rounds', () {
+    final source = File('lib/main.dart').readAsStringSync();
+    final start = source.indexOf('Widget _buildVoiceSeats()');
+    final end = source.indexOf('Future<void> _show', start);
+    final micView = source.substring(start, end);
+    expect(micView.contains('state?.starBattleActive == true'), isTrue);
+    expect(micView.contains('seat.starBattleCoins > 0'), isFalse);
+    expect(micView.contains('_formatStarBattleCoins(seat.starBattleCoins)'), isTrue);
+    expect(source.contains("Key('room-star-battle-corner')"), isTrue);
+    expect(source.contains('onTap: _showStarBattleSheet,'), isTrue);
+    expect(source.contains('if (_roomSeatState?.starBattleActive == true)'), isTrue);
+  });
+
+  test('room chat scroll leaves agency and rocket pinned outside the chat list', () {
+    final source = File('lib/main.dart').readAsStringSync();
+    final start = source.indexOf('final micTop = min(');
+    final stage = source.substring(start);
+    expect(stage.contains('DraggableScrollableSheet('), isFalse);
+    expect(stage.contains('RoomChatFeed('), isTrue);
+    expect(stage.contains('top: feedTop + 22,'), isTrue);
+    expect(stage.contains('_buildAgencyLogoButton(),'), isTrue);
+    expect(stage.contains('_buildRoomRocketButton(),'), isTrue);
+    expect(stage.contains('child: _buildRoomBottomBar(),'), isTrue);
+  });
+
+  test('VIP entrance is bounded above mics and join toast uses same coordinator', () {
+    final effects = File('lib/features/room/widgets/room_effect_coordinator.dart')
+        .readAsStringSync();
+    final screen = File('lib/main.dart').readAsStringSync();
+    expect(effects.contains('required this.coordinator,'), isTrue);
+    expect(effects.contains("event.kind == 'entrance'"), isTrue);
+    expect(effects.contains('top: entranceTop,'), isTrue);
+    expect(effects.contains('bottom: joinBottom,'), isTrue);
+    expect(effects.contains('maxWidth: 302'), isTrue);
+    expect(screen.contains('entranceTop: (micTop - 50).clamp(80.0, 125.0).toDouble()'), isTrue);
+    expect(effects.contains('Timer.periodic'), isFalse);
+  });
+
 }
