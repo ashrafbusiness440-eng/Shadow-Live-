@@ -3475,6 +3475,35 @@ function activeStarBattle(room){
   const battle=normalizeStarBattleState(room);
   return battle&&battle.status==="active"?battle:null;
 }
+async function loadActiveStarBattleMicScores(db,roomId,seats,battle){
+  const scores={};
+  if(!battle||!/^[A-Za-z0-9_-]{1,180}$/.test(clean(battle.id))){
+    return scores;
+  }
+  // One bounded batchGet, reused by bootstrap and reconnect sync.
+  const activeUids=[...new Set(
+    seats.map(seat=>clean(seat.uid))
+      .filter(id=>/^[A-Za-z0-9_-]{1,180}$/.test(id)),
+  )].slice(0,50);
+  if(!activeUids.length)return scores;
+  try{
+    const paths=activeUids.map(seatUid=>
+      "rooms/"+roomId+"/star_battle_scores/"+battle.id+"/users/"+seatUid
+    );
+    const snapshots=await db.client.getMany(paths);
+    for(let index=0;index<activeUids.length;index++){
+      const score=snapshots[index]?.data;
+      if(!snapshots[index]?.exists||!score)continue;
+      scores[activeUids[index]]={
+        coins:Math.max(0,Math.floor(Number(score.coins||0))),
+      };
+    }
+  }catch(_){
+    // Cosmetic snapshots must never block audio or room admission.
+  }
+  return scores;
+}
+
 
 async function createStarBattle(db,uid,body){
   const roomId=clean(body.roomId);
@@ -3594,7 +3623,16 @@ async function syncStarBattle(db,uid,body){
      (battle&&battle.endsAtMs>0&&Date.now()>=battle.endsAtMs)){
     return finishStarBattle(db,uid,{roomId},{allowSystem:true});
   }
-  return {ok:true,roomId,battle:normalizeStarBattleState(snap.data()||{})};
+  const starBattleSnapshot=battle?{
+    id:battle.id,
+    status:"active",
+    scores:await loadActiveStarBattleMicScores(
+      db,roomId,normalizeSeats(room),battle,
+    ),
+  }:null;
+  return {
+    ok:true,roomId,battle:normalizeStarBattleState(room),starBattleSnapshot,
+  };
 }
 
 async function starBattleHistory(db,roomId){
@@ -4312,31 +4350,9 @@ async function roomBootstrap(db,decoded,body){
   );
   const battle=activeStarBattle(room);
   const normalizedSeats=normalizeSeats(room);
-  // A single bounded batch read on the existing room bootstrap restores
-  // scores for late joiners. Avoid per-user profiles or polling.
-  const starScoreByUid={};
-  if(battle&&/^[A-Za-z0-9_-]{1,180}$/.test(battle.id)){
-    const activeUids=[...new Set(
-      normalizedSeats.map(seat=>clean(seat.uid)).filter(Boolean),
-    )].slice(0,50);
-    if(activeUids.length){
-      try{
-        const scorePaths=activeUids.map(seatUid=>
-          "rooms/"+roomId+"/star_battle_scores/"+battle.id+"/users/"+seatUid
-        );
-        const snapshots=await db.client.getMany(scorePaths);
-        for(let index=0;index<activeUids.length;index++){
-          const score=snapshots[index]?.data;
-          if(!snapshots[index]?.exists||!score)continue;
-          starScoreByUid[activeUids[index]]={
-            coins:Math.max(0,Math.floor(Number(score.coins||0))),
-          };
-        }
-      }catch(_){
-        // A score read must not block joining or voice initialization.
-      }
-    }
-  }
+  const starScoreByUid=await loadActiveStarBattleMicScores(
+    db,roomId,normalizedSeats,battle,
+  );
   const seats=normalizedSeats.map((seat)=>({
     ...seat,
     starBattleCoins:battle
