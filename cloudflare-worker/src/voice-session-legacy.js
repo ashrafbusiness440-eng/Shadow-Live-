@@ -3483,7 +3483,7 @@ async function loadActiveStarBattleMicScores(db,roomId,seats,battle){
   // One bounded batchGet, reused by bootstrap and reconnect sync.
   const activeUids=[...new Set(
     seats.map(seat=>clean(seat.uid))
-      .filter(id=>/^[A-Za-z0-9_-]{1,180}$/.test(id)),
+      .filter(id=>id.length>0&&id.length<=180&&!id.includes("/")),
   )].slice(0,50);
   if(!activeUids.length)return scores;
   try{
