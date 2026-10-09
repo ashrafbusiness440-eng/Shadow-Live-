@@ -61,6 +61,16 @@ class _DirectGiftContextState extends State<_DirectGiftContext> {
 
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
+  // Keep the same server idempotency key after an ambiguous network failure.
+  // Changing recipient, gift, quantity, bag mode or context starts a new operation.
+  String _retryFingerprint = '';
+  String _retryIdempotencyKey = '';
+
+  void _clearRetryReservation() {
+    _retryFingerprint = '';
+    _retryIdempotencyKey = '';
+  }
+
   String _conversationId() {
     final ids = [_uid, widget.receiverId]..sort();
     return ids.join('_');
@@ -110,12 +120,28 @@ class _DirectGiftContextState extends State<_DirectGiftContext> {
 
     final token = await FirebaseAuth.instance.currentUser?.getIdToken();
     if (token == null || token.isEmpty) throw StateError('not_signed_in');
-    final key = [
+    // A request may have committed even when its response times out. Reuse
+    // the original key for exactly the same gift, instead of charging again.
+    final fingerprint = [
       _uid,
-      DateTime.now().microsecondsSinceEpoch.toString(),
+      widget.receiverId,
       gift.id,
-      diaryId.isEmpty ? 'profile' : 'diary',
-    ].join('_');
+      quantity.toString(),
+      useGiftBag.toString(),
+      diaryId,
+      conversationId,
+    ].join('|');
+    final key =
+        _retryFingerprint == fingerprint && _retryIdempotencyKey.isNotEmpty
+            ? _retryIdempotencyKey
+            : [
+                _uid,
+                DateTime.now().microsecondsSinceEpoch.toString(),
+                gift.id,
+                diaryId.isEmpty ? 'profile' : 'diary',
+              ].join('_');
+    _retryFingerprint = fingerprint;
+    _retryIdempotencyKey = key;
     late final http.Response response;
     try {
       response = await http.post(
@@ -150,9 +176,18 @@ class _DirectGiftContextState extends State<_DirectGiftContext> {
     } catch (_) {}
 
     if (response.statusCode != 200 || body['ok'] != true) {
+      // A definite client-side rejection cannot have charged the account.
+      // Keep the key for timeouts and server failures, where commit is unclear.
+      if (response.statusCode >= 400 &&
+          response.statusCode < 500 &&
+          response.statusCode != 408) {
+        _clearRetryReservation();
+      }
       throw StateError((body['code'] ?? 'gift_send_failed').toString());
     }
 
+    // Success, including a server-side duplicate response, is definitive.
+    _clearRetryReservation();
     final totalCost =
         (body['totalCost'] as num?)?.toInt() ?? gift.priceCoins * quantity;
     final paidCost =
