@@ -237,6 +237,9 @@ void main() {
     expect(micView.contains('state?.starBattleActive == true'), isTrue);
     expect(micView.contains('seat.starBattleCoins > 0'), isFalse);
     expect(micView.contains('_formatStarBattleCoins(seat.starBattleCoins)'), isTrue);
+    expect(source.contains("Key('room-star-battle-corner')"), isTrue);
+    expect(source.contains('onTap: _showStarBattleSheet,'), isTrue);
+    expect(source.contains('if (_roomSeatState?.starBattleActive == true)'), isTrue);
   });
 
   test('room chat scroll leaves agency and rocket pinned outside the chat list', () {
