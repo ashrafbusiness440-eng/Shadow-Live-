@@ -4,11 +4,28 @@
 class PkScoreOverlay {
   static const int _maxOperations = 256;
   static const int _maxRecipients = 16;
+  static const int _maxSupporters = 256;
   static const int _safeMax = 9007199254740991;
   String _roundId = '';
   int _revision = 0;
   final Map<String, int> _baseTwice = <String, int>{};
   final Map<String, int> _deltasTwice = <String, int>{};
+  final Map<String, Map<String, dynamic>> _supporterBase =
+      <String, Map<String, dynamic>>{};
+  final Map<String, int> _supporterDeltas = <String, int>{};
+  final Map<String, Map<String, dynamic>> _supporterProfiles =
+      <String, Map<String, dynamic>>{};
+  final Map<String, ({
+    int revision,
+    String uid,
+    int coins,
+    Map<String, dynamic> profile,
+  })> _recentSupport = <String, ({
+    int revision,
+    String uid,
+    int coins,
+    Map<String, dynamic> profile,
+  })>{};
   final Set<String> _seen = <String>{};
   final Map<String, ({int revision, Map<String, int> deltas})> _recent =
       <String, ({int revision, Map<String, int> deltas})>{};
@@ -20,6 +37,10 @@ class PkScoreOverlay {
     _roundId = '';
     _baseTwice.clear();
     _deltasTwice.clear();
+    _supporterBase.clear();
+    _supporterDeltas.clear();
+    _supporterProfiles.clear();
+    _recentSupport.clear();
     _seen.clear();
     _recent.clear();
   }
@@ -42,7 +63,8 @@ class PkScoreOverlay {
       clear();
       _roundId = id;
     }
-    if (_baseTwice.isEmpty && _deltasTwice.isEmpty) {
+    if (_baseTwice.isEmpty && _deltasTwice.isEmpty &&
+        _supporterBase.isEmpty && _supporterDeltas.isEmpty) {
       return Map<String, dynamic>.from(room);
     }
     final source = pk['participants'];
@@ -59,6 +81,31 @@ class PkScoreOverlay {
       person['score'] = twice / 2;
       return person;
     }).toList(growable: false);
+    if (_supporterBase.isNotEmpty || _supporterDeltas.isNotEmpty) {
+      final byUid = <String, Map<String, dynamic>>{
+        for (final entry in _supporterBase.entries)
+          entry.key: Map<String, dynamic>.from(entry.value),
+      };
+      for (final delta in _supporterDeltas.entries) {
+        final base = byUid[delta.key] ??
+            _supporterProfiles[delta.key] ??
+            <String, dynamic>{'uid': delta.key};
+        final coins = base['coins'];
+        final baseCoins = coins is num ? coins.toInt() : 0;
+        byUid[delta.key] = <String, dynamic>{
+          ...base,
+          'uid': delta.key,
+          'coins': (baseCoins + delta.value).clamp(0, _safeMax).toInt(),
+        };
+      }
+      final leaders = byUid.values.where((item) {
+        final value = item['coins'];
+        return value is num && value > 0;
+      }).toList()
+        ..sort((a, b) =>
+            ((b['coins'] as num).compareTo(a['coins'] as num)));
+      pk['supporters'] = leaders.take(3).toList(growable: false);
+    }
     return <String, dynamic>{...room, 'pkState': pk};
   }
 
@@ -87,9 +134,31 @@ class PkScoreOverlay {
       final oldest = _seen.first;
       _seen.remove(oldest);
       _recent.remove(oldest);
+      _recentSupport.remove(oldest);
     }
     _seen.add(op);
     _recent[op] = (revision: _revision, deltas: updates);
+    final rawSupporter = award['supporter'];
+    if (rawSupporter is Map) {
+      final uid = (rawSupporter['uid'] ?? '').toString().trim();
+      final coins = rawSupporter['coins'];
+      if (uid.isNotEmpty && coins is int && coins > 0 &&
+          coins <= _safeMax) {
+        final profile = <String, dynamic>{
+          'uid': uid,
+          'displayName': (rawSupporter['displayName'] ?? '').toString(),
+          'profileImageUrl':
+              (rawSupporter['profileImageUrl'] ?? '').toString(),
+        };
+        _addSupport(uid, coins, profile);
+        _recentSupport[op] = (
+          revision: _revision,
+          uid: uid,
+          coins: coins,
+          profile: profile,
+        );
+      }
+    }
     return true;
   }
 
@@ -111,6 +180,27 @@ class PkScoreOverlay {
       _baseTwice[uid] = (score * 2).round().clamp(0, _safeMax).toInt();
     }
     _deltasTwice.clear();
+    _supporterBase.clear();
+    final rawSupporters = state['supporters'];
+    if (rawSupporters is List) {
+      for (final raw in rawSupporters) {
+        if (raw is! Map || _supporterBase.length >= 3) continue;
+        final uid = (raw['uid'] ?? '').toString().trim();
+        final coins = raw['coins'];
+        if (uid.isEmpty || coins is! num || coins < 0) continue;
+        _supporterBase[uid] = <String, dynamic>{
+          ...Map<String, dynamic>.from(raw),
+          'coins': coins.toInt().clamp(0, _safeMax).toInt(),
+        };
+      }
+    }
+    _supporterDeltas.clear();
+    _supporterProfiles.clear();
+    _recentSupport.removeWhere((_, award) =>
+        award.revision <= startedAtRevision);
+    for (final award in _recentSupport.values) {
+      _addSupport(award.uid, award.coins, award.profile);
+    }
     _recent.removeWhere((_, award) =>
         award.revision <= startedAtRevision);
     for (final award in _recent.values) {
@@ -119,6 +209,35 @@ class PkScoreOverlay {
       }
     }
     return true;
+  }
+
+  void _addSupport(
+    String uid,
+    int coins,
+    Map<String, dynamic> profile,
+  ) {
+    if (!_supporterDeltas.containsKey(uid) &&
+        _supporterDeltas.length >= _maxSupporters) {
+      // Keep the strongest 256 observed donors. The authoritative Top3
+      // snapshot remains in _supporterBase when weaker donors are evicted.
+      String? weakest;
+      for (final entry in _supporterDeltas.entries) {
+        if (weakest == null ||
+            entry.value < (_supporterDeltas[weakest] ?? _safeMax)) {
+          weakest = entry.key;
+        }
+      }
+      if (weakest != null && coins <= (_supporterDeltas[weakest] ?? 0)) {
+        return;
+      }
+      if (weakest != null) {
+        _supporterDeltas.remove(weakest);
+        _supporterProfiles.remove(weakest);
+      }
+    }
+    _supporterDeltas[uid] =
+        ((_supporterDeltas[uid] ?? 0) + coins).clamp(0, _safeMax).toInt();
+    _supporterProfiles[uid] = profile;
   }
 
   void _add(String uid, int amount) {
