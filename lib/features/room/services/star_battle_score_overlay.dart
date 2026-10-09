@@ -2,6 +2,7 @@
 /// snapshot that is already watched for seats. Does not award coins locally.
 class StarBattleScoreOverlay {
   static const int _maxSeenOperations = 256;
+  static const int _maxTrackedRecipients = 256;
   static const int _maxSafeCoins = 9007199254740991;
 
   String _roundId = '';
@@ -93,6 +94,10 @@ class StarBattleScoreOverlay {
     if (updates.isEmpty) return false;
 
     for (final entry in updates.entries) {
+      if (!_deltas.containsKey(entry.key) &&
+          _deltas.length >= _maxTrackedRecipients) {
+        _deltas.remove(_deltas.keys.first);
+      }
       final previous = _deltas[entry.key] ?? 0;
       _deltas[entry.key] =
           (previous + entry.value).clamp(0, _maxSafeCoins).toInt();
