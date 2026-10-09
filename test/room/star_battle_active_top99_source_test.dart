@@ -28,6 +28,7 @@ void main() {
     expect(sheet.contains('final leaders = _liveRanking?.id == battle?.id'),
         isTrue);
     expect(service.contains("'includeLeaders': true"), isTrue);
+    expect(sheet.contains('snapshotOnly: true,'), isTrue);
   });
 
   test('isolated production gift E2E verifies an active paid Top99', () {
