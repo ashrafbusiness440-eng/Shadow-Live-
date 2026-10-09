@@ -478,7 +478,9 @@ try{
   const pkAward=liveGiftEvent?.payload?.message?.pkAward;
   if(pkAward?.roundId!==pkRoundId || pkAward?.firstGift!==true ||
      pkAward?.deltas?.[0]?.uid!==receiverUid ||
-     pkAward?.deltas?.[0]?.scoreTwice!==totalCost*21){
+     pkAward?.deltas?.[0]?.scoreTwice!==totalCost*21 ||
+     pkAward?.supporter?.uid!==senderUid ||
+     pkAward?.supporter?.coins!==totalCost){
     throw new Error("first paid PK gift missing exact x10.5 realtime points");
   }
   cleanup.add(`public_gift_showcases/${receiverUid}/items/${String(selectedGift.id)}`);
