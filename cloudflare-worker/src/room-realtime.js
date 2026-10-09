@@ -8,7 +8,11 @@ import {
 } from "./firebase-auth.js";
 import { firestoreQuotaResponse, json, readJson } from "./http.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
-import { vipCosmeticsFromUser } from "./vip-entitlements.js";
+import {
+  activeHiddenRoomEntry,
+  activeRoomGhostMode,
+  vipCosmeticsFromUser,
+} from "./vip-entitlements.js";
 import {
   createAsyncLimiter,
   createAsyncTtlCache,
