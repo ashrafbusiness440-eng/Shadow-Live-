@@ -15,7 +15,7 @@ void main() {
 
     expect(server.contains('async function loadActiveStarBattleMicScores('),
         isTrue);
-    expect(server.contains(const snapshots=await db.client.getMany(paths);),
+    expect(server.contains('const snapshots=await db.client.getMany(paths);'),
         isTrue);
     expect(server.contains('starBattleSnapshot=battle?{'), isTrue);
     expect(
