@@ -428,11 +428,11 @@ class RoomEffectCoordinatorHost extends StatelessWidget {
                   right: 12,
                   child: Center(
                     child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 302),
+                      constraints: const BoxConstraints(maxWidth: 268),
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 6,
+                          horizontal: 6,
+                          vertical: 4,
                         ),
                         decoration: BoxDecoration(
                           color: const Color(0xDD140E20),
@@ -445,8 +445,8 @@ class RoomEffectCoordinatorHost extends StatelessWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             SizedBox(
-                              width: 64,
-                              height: 62,
+                              width: 36,
+                              height: 36,
                               child: ClipRect(
                                 child: CosmeticAssetVisual(
                                   assetKey: event.assetKey,
@@ -456,7 +456,7 @@ class RoomEffectCoordinatorHost extends StatelessWidget {
                               ),
                             ),
                             Flexible(
-                              child: _EntranceWelcomeStrip(event: event),
+                              child: _EntranceWelcomeStrip(event: event, compact: true),
                             ),
                           ],
                         ),
@@ -497,9 +497,13 @@ class RoomEffectCoordinatorHost extends StatelessWidget {
 }
 
 class _EntranceWelcomeStrip extends StatelessWidget {
-  const _EntranceWelcomeStrip({required this.event});
+  const _EntranceWelcomeStrip({
+    required this.event,
+    this.compact = false,
+  });
 
   final RoomVisualEffect event;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -509,18 +513,22 @@ class _EntranceWelcomeStrip extends StatelessWidget {
     ].where((value) => value.trim().isNotEmpty).join(' • ');
     return Container(
       constraints: const BoxConstraints(maxWidth: 330),
-      margin: const EdgeInsets.symmetric(horizontal: 18),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      margin: compact
+          ? EdgeInsets.zero
+          : const EdgeInsets.symmetric(horizontal: 18),
+      padding: compact
+          ? const EdgeInsets.symmetric(horizontal: 6, vertical: 4)
+          : const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xDD171020),
+        color: compact ? Colors.transparent : const Color(0xDD171020),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0x99FFD54A)),
+        border: compact ? null : Border.all(color: const Color(0x99FFD54A)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           CircleAvatar(
-            radius: 18,
+            radius: compact ? 12 : 18,
             backgroundColor: const Color(0xFF2A2038),
             backgroundImage: event.profileImageUrl.trim().isEmpty
                 ? null
@@ -529,7 +537,7 @@ class _EntranceWelcomeStrip extends StatelessWidget {
                 ? const Icon(
                     Icons.person_rounded,
                     color: Colors.white70,
-                    size: 20,
+                    size: compact ? 15 : 20,
                   )
                 : null,
           ),
@@ -546,6 +554,7 @@ class _EntranceWelcomeStrip extends StatelessWidget {
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w900,
+                    fontSize: compact ? 12 : 14,
                   ),
                 ),
                 Text(
@@ -554,7 +563,7 @@ class _EntranceWelcomeStrip extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: Color(0xFFFFD54A),
-                    fontSize: 11,
+                    fontSize: compact ? 10 : 11,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
