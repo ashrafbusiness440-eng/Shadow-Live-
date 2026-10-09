@@ -3,6 +3,11 @@ name: Pressure Step 12 Level 5000 Full
 on:
   # Production load tests are manual-only. Never run 5000 VUs from a normal push.
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/pressure_step12_level10.mjs'
+      - '.github/workflows/pressure-step12-level10.yml'
 
 permissions:
   contents: read
