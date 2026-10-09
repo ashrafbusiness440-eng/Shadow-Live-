@@ -22,6 +22,7 @@ void main() {
           'rank': 1,
           'displayName': 'A',
           'profileImageUrl': '',
+          'profileAvatarAsset': 'assets/avatars/supporter.png',
           'totalSupport': 7000,
           'dailySupport': 7000,
           'publicId': '7777',
@@ -50,6 +51,8 @@ void main() {
     expect(insights.supporters.first.rank, 1);
     expect(insights.supporters.first.dailySupport, 7000);
     expect(insights.supporters.first.publicId, '7777');
+    expect(insights.supporters.first.profileAvatarAsset,
+        'assets/avatars/supporter.png');
     expect(insights.supporters.first.vipLevel, 4);
     expect(insights.supporters.first.badges, ['verified', 'support_team']);
     expect(insights.supporters.first.wealthLevel, 6);

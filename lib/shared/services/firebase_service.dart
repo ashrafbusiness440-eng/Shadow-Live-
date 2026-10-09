@@ -25,6 +25,21 @@ class FirebaseService {
  Future<void> signOut()=>_auth.signOut();Future<void> resetPassword(String email)async{try{await _auth.setLanguageCode('ar');await _auth.sendPasswordResetEmail(email:email.trim());}catch(e){throw _handleAuthError(e);}}
  Future<void> touchLastLogin(String userId)=>updateUserProfile(userId,{'lastLoginAt':FieldValue.serverTimestamp(),'isOnline':true});
 
+ String _publicAvatarUrl(Map<String,dynamic> data){
+  final photo=(data['profileImageUrl']??'').toString().trim();
+  if(photo.isNotEmpty)return photo;
+  // A selected bundled avatar or animation replaces older photo aliases.
+  if((data['profileAvatarAsset']??'').toString().trim().isNotEmpty||
+      (data['profileAvatarAnimationUrl']??'').toString().trim().isNotEmpty){
+    return '';
+  }
+  for(final key in const <String>['photoUrl','avatarUrl']){
+    final legacy=(data[key]??'').toString().trim();
+    if(legacy.isNotEmpty)return legacy;
+  }
+  return '';
+ }
+
  Map<String,dynamic> _publicProfileData(String userId,Map<String,dynamic> data){
   final displayName=(data['displayName']??data['name']??'').toString();
   final username=(data['username']??'').toString();
@@ -35,9 +50,14 @@ class FirebaseService {
    'username':username,
    'publicId':publicId,
    'searchTokens':buildSearchTokens([displayName,username,publicId]),
-   'profileImageUrl':data['profileImageUrl']??data['photoUrl']??data['avatarUrl']??'',
+   'profileImageUrl':_publicAvatarUrl(data),
    'profileImageObjectId':data['profileImageObjectId']??'',
    'profileAvatarAsset':data['profileAvatarAsset']??'',
+   'profileAvatarAnimationUrl':data['profileAvatarAnimationUrl']??'',
+   'activeProfileFrameAssetKey':data['activeProfileFrameAssetKey']??'',
+   'activeProfileFrameImageUrl':data['activeProfileFrameImageUrl']??'',
+   'activeProfileFrameExpiresAtMs':data['activeProfileFrameExpiresAtMs']??0,
+   'activeProfileFramePermanent':data['activeProfileFramePermanent']==true,
    'coverImageUrl':data['coverImageUrl']??'',
    'coverImageObjectId':data['coverImageObjectId']??'',
    'bio':data['bio']??'',
