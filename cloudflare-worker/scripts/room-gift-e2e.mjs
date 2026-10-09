@@ -351,6 +351,7 @@ try{
   const nowMs=Date.now();
   await fsSet(`users/${senderUid}`,{
     displayName:"Cloudflare Room Gift Sender",
+    profileAvatarAsset:"assets/avatars/room_e2e_sender.png",
     role:"user",
     coins:senderOpening,
     diamonds:0,
@@ -568,10 +569,31 @@ try{
     supporter=>supporter.uid===senderUid
   );
   if(!bootstrapSupporter||
-     bootstrapSupporter.dailySupport!==totalCost){
-    throw new Error("room bootstrap Top3 missing paid sender support");
+     bootstrapSupporter.dailySupport!==totalCost||
+     bootstrapSupporter.profileAvatarAsset!=="assets/avatars/room_e2e_sender.png"){
+    throw new Error("room bootstrap Top3 missing paid sender support or avatar");
   }
-  console.log("PASS room bootstrap sanitized Top3 support");
+  console.log("PASS room bootstrap sanitized Top3 support and shared avatar");
+
+  const supporterDetailResponse=await fetch(`${workerBase}/api/voice-session`,{
+    method:"POST",
+    headers:{
+      "authorization":`Bearer ${senderToken}`,
+      "content-type":"application/json",
+    },
+    body:JSON.stringify({action:"roomInsights",roomId,includeSupporters:true}),
+  });
+  const supporterDetail=await supporterDetailResponse.json().catch(()=>({}));
+  const detailedSender=supporterDetail?.insights?.supporters?.find(
+    supporter=>supporter.uid===senderUid
+  )||supporterDetail?.supporters?.find(
+    supporter=>supporter.uid===senderUid
+  );
+  if(!supporterDetailResponse.ok||
+     detailedSender?.profileAvatarAsset!=="assets/avatars/room_e2e_sender.png"){
+    throw new Error("room supporters sheet missing canonical sender avatar asset");
+  }
+  console.log("PASS room supporter details reuses canonical avatar asset");
 
 
   // The same active score document must be available for a socket
