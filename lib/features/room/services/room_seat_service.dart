@@ -302,6 +302,19 @@ class RoomSeatService {
     );
   }
 
+  /// Reuse the current voice-session endpoint only after a real room
+  /// socket reconnect. No Firestore subscription or retry polling.
+  Future<Map<String, dynamic>?> syncStarBattleSnapshot(String roomId) async {
+    final id = roomId.trim();
+    if (id.isEmpty) return null;
+    final response = await _post({
+      'action': 'syncStarBattle',
+      'roomId': id,
+    });
+    final snapshot = response['starBattleSnapshot'];
+    return snapshot is Map ? Map<String, dynamic>.from(snapshot) : null;
+  }
+
   Future<void> syncMysteriousIdentity(String roomId) async {
     final id = roomId.trim();
     if (id.isEmpty) return;
