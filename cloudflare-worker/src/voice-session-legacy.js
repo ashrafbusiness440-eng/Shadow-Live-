@@ -4313,7 +4313,7 @@ async function roomBootstrap(db,decoded,body){
   const battle=activeStarBattle(room);
   const normalizedSeats=normalizeSeats(room);
   // A single bounded batch read on the existing room bootstrap restores
-  // scores for late joiners. Never query each user's profile or poll scores.
+  // scores for late joiners. Avoid per-user profiles or polling.
   const starScoreByUid={};
   if(battle&&/^[A-Za-z0-9_-]{1,180}$/.test(battle.id)){
     const activeUids=[...new Set(
