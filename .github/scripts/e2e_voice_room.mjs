@@ -17,6 +17,7 @@ const previews = [
   { name: '10-ranked-active', seats: 10, supporters: 'filled', stars: 'on' },
   { name: '20-ranked-active', seats: 20, supporters: 'filled', stars: 'on' },
   { name: '22-empty-active', seats: 22, supporters: 'empty', stars: 'on' },
+  { name: '20-vip-entry-toast', seats: 20, supporters: 'filled', stars: 'on', effects: true },
 ];
 const stage = await browser.newPage({
   viewport: { width: 390, height: 844 },
@@ -32,6 +33,7 @@ for (const preview of previews) {
     seats: String(preview.seats),
     supporters: preview.supporters,
     stars: preview.stars,
+    room_stage_fx: preview.effects ? '1' : '0',
   });
   const stageReady = stage.waitForEvent('console', {
     predicate: msg => msg.text().includes(
@@ -44,7 +46,7 @@ for (const preview of previews) {
     timeout: 120000,
   });
   await stageReady;
-  await stage.waitForTimeout(900);
+  await stage.waitForTimeout(preview.effects ? 650 : 900);
   await stage.screenshot({
     path: 'room-e2e-screenshots/stage-' + preview.name + '.png',
     fullPage: true,
@@ -52,6 +54,9 @@ for (const preview of previews) {
   console.log('ROOM_STAGE_VISUAL_CAPTURED:' + preview.name);
 }
 await stage.close();
+if (visualDiagnostics.length) {
+  throw new Error('ROOM_STAGE_BROWSER_ERRORS: ' + visualDiagnostics.slice(0, 3).join(' | '));
+}
 fs.writeFileSync(
   'room-e2e-screenshots/stage-browser-errors.log',
   visualDiagnostics.length

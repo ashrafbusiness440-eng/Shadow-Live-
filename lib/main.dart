@@ -408,6 +408,32 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         '${emptySupport ? 'empty' : 'filled'}:'
         '${activeStars ? 'active' : 'inactive'}',
       );
+      // Exercise the REAL room effect coordinator in the E2E fixture. Use
+      // a bundled same-origin image; never depend on remote user assets.
+      if (Uri.base.queryParameters['room_stage_fx'] == '1') {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          final nowMs = DateTime.now().millisecondsSinceEpoch;
+          _roomEffectCoordinator.ingestEntrance(<String, dynamic>{
+            'eventId': 'e2e-visual-vip10',
+            'uid': 'e2e-visual-joiner',
+            'displayName': 'SHADOW',
+            'vipLevel': 10,
+            'badgeLabel': 'دخول الغرفة',
+            'eventAtMs': nowMs,
+            'rewardExpiresAtMs': nowMs + 60000,
+            'imageUrl': '${Uri.base.origin}/assets/assets/images/levels/'
+                'wealth/lv16_20/wealth_lv16_20_entry_effect.webp',
+          });
+          _roomEffectCoordinator.ingestRoomJoin(<String, dynamic>{
+            'id': 'e2e-visual-room-join',
+            'senderUid': 'e2e-visual-joiner',
+            'displayName': 'SHADOW',
+            'joinedAtMs': nowMs,
+            'vipLevel': 10,
+          });
+        });
+      }
       // Visual stage screenshots skip the game overlay but reuse the exact
       // same room widget. The regular Greedy Cat E2E remains unchanged.
       if (const bool.fromEnvironment('E2E_GAME_TEST') &&
@@ -6624,7 +6650,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       Positioned.fill(
                         child: RoomEffectCoordinatorHost(
                           coordinator: _roomEffectCoordinator,
-                          entranceTop: (micTop - 50).clamp(80.0, 125.0).toDouble(),
+                          entranceTop: (micTop - 20).clamp(0.0, 145.0).toDouble(),
                           joinBottom: 106,
                         ),
                       ),
