@@ -757,7 +757,10 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     if (roomId.isEmpty || _loadingRoomInsights) return;
     if (mounted) setState(() => _loadingRoomInsights = true);
     try {
-      final insights = await _roomInsightsService.load(roomId);
+      final insights = await _roomInsightsService.load(
+        roomId,
+        includeSupporters: true,
+      );
       if (mounted) setState(() => _roomInsights = insights);
     } catch (_) {
       // Voice remains available even if non-critical room insights fail.
@@ -805,7 +808,14 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       // Voice/audio stay independent. The shared room snapshot stream keeps
       // seats/moderators live even when the non-critical bootstrap is blocked.
     } finally {
-      if (mounted) setState(() => _loadingRoomInsights = false);
+      if (mounted) {
+        setState(() => _loadingRoomInsights = false);
+        // The bootstrap omits the detailed Top 3 list. Load it once with
+        // the existing cached insights service; no new listener or polling.
+        if ((_roomArguments['roomId'] ?? '').toString().trim() == roomId) {
+          unawaited(_loadRoomInsights(roomId));
+        }
+      }
     }
   }
 
@@ -2616,7 +2626,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                   fontWeight: FontWeight.w700,
                 ),
               ),
-              if (seat.occupied && seat.starBattleCoins > 0)
+              if (seat.occupied && state?.starBattleActive == true)
                 Text(
                   _formatStarBattleCoins(seat.starBattleCoins) + ' ⭐',
                   maxLines: 1,
@@ -6150,45 +6160,65 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   }
 
   Widget _buildSupporterCluster() {
+    // The Top 3 positions are always visible, even before the first gift.
+    // Reuse profile data already supplied by the room insights snapshot.
     final top = (_roomInsights?.supporters ?? const <RoomSupporter>[])
         .take(3)
-        .toList();
-    if (top.isEmpty) return const SizedBox.shrink();
+        .toList(growable: false);
 
     return InkWell(
       onTap: _showSupportersSheet,
       borderRadius: BorderRadius.circular(999),
       child: Row(
         mainAxisSize: MainAxisSize.min,
-        children: List.generate(top.length, (index) {
-          final supporter = top[index];
+        children: List.generate(3, (index) {
+          final supporter = index < top.length ? top[index] : null;
           return Transform.translate(
-            offset: Offset(index * 5.0, 0),
+            offset: Offset(index * 4.0, 0),
             child: Stack(
               clipBehavior: Clip.none,
               children: [
-                supporter.mysteriousMode
-                    ? const MysteriousIdentityAvatar(diameter: 28)
-                    : ProfileAvatarWithFrame(
-                        diameter: 28,
-                        userId: supporter.uid,
-                        backgroundColor: const Color(0xFF25183F),
-                        placeholderColor: Colors.white,
-                        fallbackProfile: <String, dynamic>{
-                          'profileImageUrl': supporter.profileImageUrl,
-                          'activeProfileFrameAssetKey':
-                              supporter.activeProfileFrameAssetKey,
-                          'activeProfileFrameImageUrl':
-                              supporter.activeProfileFrameImageUrl,
-                          'activeProfileFrameExpiresAtMs':
-                              supporter.activeProfileFrameExpiresAtMs,
-                          'activeProfileFramePermanent':
-                              supporter.activeProfileFramePermanent,
-                        },
-                        fallbackIsVisualSnapshot: true,
-                        vipLevel: supporter.vipLevel,
-                        useVipFallback: true,
+                if (supporter == null)
+                  Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFF21172E),
+                      border: Border.all(
+                        color: const Color(0x66FFD54A),
                       ),
+                    ),
+                    child: const Icon(
+                      Icons.person_outline_rounded,
+                      color: Colors.white54,
+                      size: 16,
+                    ),
+                  )
+                else if (supporter.mysteriousMode)
+                  const MysteriousIdentityAvatar(diameter: 28)
+                else
+                  ProfileAvatarWithFrame(
+                    diameter: 28,
+                    userId: supporter.uid,
+                    snapshotOnly: true,
+                    backgroundColor: const Color(0xFF25183F),
+                    placeholderColor: Colors.white,
+                    fallbackProfile: <String, dynamic>{
+                      'profileImageUrl': supporter.profileImageUrl,
+                      'activeProfileFrameAssetKey':
+                          supporter.activeProfileFrameAssetKey,
+                      'activeProfileFrameImageUrl':
+                          supporter.activeProfileFrameImageUrl,
+                      'activeProfileFrameExpiresAtMs':
+                          supporter.activeProfileFrameExpiresAtMs,
+                      'activeProfileFramePermanent':
+                          supporter.activeProfileFramePermanent,
+                    },
+                    fallbackIsVisualSnapshot: true,
+                    vipLevel: supporter.vipLevel,
+                    useVipFallback: true,
+                  ),
                 Positioned(
                   right: -2,
                   top: -4,
@@ -6208,7 +6238,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       (index + 1).toString(),
                       style: const TextStyle(
                         color: Colors.black,
-                        fontSize: 7,
+                        fontSize: 8,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
@@ -6228,13 +6258,18 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       return const SizedBox.shrink();
     }
     if (insights == null) {
-      return _loadingRoomInsights
-          ? const LinearProgressIndicator(
-              minHeight: 2,
-              color: Color(0xFF8A3DFF),
-              backgroundColor: Colors.transparent,
-            )
-          : const SizedBox.shrink();
+      // Empty Top 3 slots must not vanish while insights are loading.
+      return Row(
+        children: [
+          if (_showRoomSupport) _buildSupporterCluster(),
+          if (_loadingRoomInsights) const Spacer(),
+          if (_loadingRoomInsights)
+            const SizedBox(
+              width: 56,
+              child: LinearProgressIndicator(minHeight: 2),
+            ),
+        ],
+      );
     }
 
     Widget levelBox() => InkWell(
