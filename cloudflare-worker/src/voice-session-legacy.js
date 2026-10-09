@@ -4031,7 +4031,7 @@ async function roomInsights(db,uid,body={}){
     dailySupportRef.get(),
     weeklySupportRef.get(),
     monthlySupportRef.get(),
-    dailySupportRef.collection("users").limit(includeSupporters?50:3).get(),
+    dailySupportRef.collection("users").orderBy("supportCoins","desc").limit(includeSupporters?50:3).get(),
     realtimeRoomCount(roomId),
   ]);
   if(!roomSnap.exists)throw new ApiError("room_not_found",404);
@@ -4044,6 +4044,10 @@ async function roomInsights(db,uid,body={}){
         uid:doc.id,
         displayName:String(data.displayName||data.username||"مستخدم Shadow Live"),
         profileImageUrl:String(data.profileImageUrl||""),
+        activeProfileFrameAssetKey:clean(data.activeProfileFrameAssetKey),
+        activeProfileFrameImageUrl:clean(data.activeProfileFrameImageUrl),
+        activeProfileFrameExpiresAtMs:Math.max(0,Number(data.activeProfileFrameExpiresAtMs||0)),
+        activeProfileFramePermanent:data.activeProfileFramePermanent===true,
         dailySupport:Math.max(0,Number(data.supportCoins||0)),
         giftCount:Math.max(0,Number(data.giftCount||0)),
       };
@@ -4192,7 +4196,7 @@ async function roomBootstrap(db,decoded,body){
     dailySupportRef.get(),
     weeklySupportRef.get(),
     monthlySupportRef.get(),
-    dailySupportRef.collection("users").limit(3).get(),
+    dailySupportRef.collection("users").orderBy("supportCoins","desc").limit(3).get(),
     rocketRef.get(),
     realtimeRoomCount(roomId),
     gameCatalog(db),
@@ -4271,6 +4275,10 @@ async function roomBootstrap(db,decoded,body){
         uid:doc.id,
         displayName:clean(data.displayName||data.username||"مستخدم Shadow Live"),
         profileImageUrl:clean(data.profileImageUrl),
+        activeProfileFrameAssetKey:clean(data.activeProfileFrameAssetKey),
+        activeProfileFrameImageUrl:clean(data.activeProfileFrameImageUrl),
+        activeProfileFrameExpiresAtMs:Math.max(0,Number(data.activeProfileFrameExpiresAtMs||0)),
+        activeProfileFramePermanent:data.activeProfileFramePermanent===true,
         dailySupport:Math.max(0,Number(data.supportCoins||0)),
         giftCount:Math.max(0,Number(data.giftCount||0)),
       };

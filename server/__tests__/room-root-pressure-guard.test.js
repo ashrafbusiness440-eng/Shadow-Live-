@@ -210,3 +210,38 @@ test("Agency application review cards are lazy and open the full profile", () =>
   );
   assert.equal(block.includes("runQuery("), false);
 });
+
+test("Room Top 3 query ranks before applying bounded limits and keeps supporter frames", () => {
+  const voice = source("../../cloudflare-worker/src/voice-session-legacy.js");
+  const insightsStart = voice.indexOf("async function roomInsights(");
+  const bootstrapStart = voice.indexOf("async function roomBootstrap(");
+  const insights = voice.slice(insightsStart, bootstrapStart);
+  const bootstrap = voice.slice(bootstrapStart);
+
+  assert.ok(insightsStart >= 0);
+  assert.ok(bootstrapStart > insightsStart);
+  assert.equal(
+    insights.includes('dailySupportRef.collection("users").orderBy("supportCoins","desc").limit(includeSupporters?50:3).get()'),
+    true,
+  );
+  assert.equal(
+    bootstrap.includes('dailySupportRef.collection("users").orderBy("supportCoins","desc").limit(3).get()'),
+    true,
+  );
+  assert.equal(bootstrap.includes('dailySupportRef.collection("users").limit(3).get()'), false);
+  // The gift worker writes these four cosmetic fields to the SAME support doc;
+  // bootstrap must not request each user's profile independently.
+  const gift = source("../../cloudflare-worker/src/room-gift.js");
+  for (const key of [
+    "activeProfileFrameAssetKey",
+    "activeProfileFrameImageUrl",
+    "activeProfileFrameExpiresAtMs",
+    "activeProfileFramePermanent",
+  ]) {
+    assert.ok(gift.includes(key), "gift ledger must persist " + key);
+    assert.ok(insights.includes(key), "insights must preserve " + key);
+    assert.ok(bootstrap.includes(key), "bootstrap must preserve " + key);
+  }
+  assert.equal(bootstrap.includes("topSupportersSnap.docs"), true);
+  assert.equal(bootstrap.includes('roomRef.collection("users")'), false);
+});
