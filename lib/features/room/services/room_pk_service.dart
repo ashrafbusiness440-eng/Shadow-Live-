@@ -263,29 +263,42 @@ class RoomPkService {
   final http.Client _client;
   final String _baseUrl;
 
+  static RoomPkContext fromRoomData(Map<String, dynamic> data) {
+    final rawSeats = data['seats'];
+    final speakers = rawSeats is List
+        ? rawSeats
+            .whereType<Map>()
+            .map(
+              (item) => RoomPkSpeaker.fromMap(
+                Map<String, dynamic>.from(item),
+              ),
+            )
+            .where((item) => item.uid.isNotEmpty)
+            .toList(growable: false)
+        : const <RoomPkSpeaker>[];
+    final rawPk = data['pkState'];
+    return RoomPkContext(
+      pk: rawPk is Map
+          ? RoomPkState.fromMap(Map<String, dynamic>.from(rawPk))
+          : null,
+      speakers: speakers,
+    );
+  }
+
   Stream<RoomPkContext> watch(String roomId) {
-    return _firestore.collection('rooms').doc(roomId).snapshots().map((snap) {
-      final data = snap.data() ?? <String, dynamic>{};
-      final rawSeats = data['seats'];
-      final speakers = rawSeats is List
-          ? rawSeats
-              .whereType<Map>()
-              .map(
-                (item) => RoomPkSpeaker.fromMap(
-                  Map<String, dynamic>.from(item),
-                ),
-              )
-              .where((item) => item.uid.isNotEmpty)
-              .toList(growable: false)
-          : const <RoomPkSpeaker>[];
-      final rawPk = data['pkState'];
-      return RoomPkContext(
-        pk: rawPk is Map
-            ? RoomPkState.fromMap(Map<String, dynamic>.from(rawPk))
-            : null,
-        speakers: speakers,
-      );
+    return _firestore.collection('rooms').doc(roomId).snapshots().map(
+      (snap) => fromRoomData(snap.data() ?? <String, dynamic>{}),
+    );
+  }
+
+  /// One authoritative read on opening PK, not a new Firestore listener.
+  Future<Map<String, dynamic>?> loadPaidState(String roomId) async {
+    final result = await _post({
+      'action': 'pkState',
+      'roomId': roomId,
     });
+    final raw = result['pk'];
+    return raw is Map ? Map<String, dynamic>.from(raw) : null;
   }
 
   Future<Map<String, dynamic>> _post(Map<String, dynamic> body) async {
