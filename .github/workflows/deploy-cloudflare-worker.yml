@@ -159,6 +159,20 @@ jobs:
             sleep 2
           done
 
+      - name: Verify production room ticket, two-user presence, chat and gift
+        working-directory: .
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          ALLOW_PRODUCTION_DURABLE_OBJECT_E2E: '1'
+        run: node cloudflare-worker/scripts/room-gift-e2e.mjs
+
+      - name: Verify production chat and diary gifts with isolated accounts
+        if: always()
+        working-directory: .
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node cloudflare-worker/scripts/chat-gift-e2e.mjs
+
       - name: Check R2 storage health
         run: |
           BODY=$(curl --silent --show-error \
