@@ -527,6 +527,24 @@ try{
   }
   console.log("PASS late join bootstrap occupied mic score");
 
+  // The same active score document must be available for a socket
+  // reconnect via the existing syncStarBattle action (no new endpoint).
+  const reconnectResponse=await fetch(`${workerBase}/api/voice-session`,{
+    method:"POST",
+    headers:{
+      "authorization":`Bearer ${senderToken}`,
+      "content-type":"application/json",
+    },
+    body:JSON.stringify({action:"syncStarBattle",roomId}),
+  });
+  const reconnect=await reconnectResponse.json().catch(()=>({}));
+  if(!reconnectResponse.ok ||
+     reconnect?.starBattleSnapshot?.scores?.[receiverUid]?.coins!==totalCost){
+    throw new Error("room reconnect failed to resync the active Star Battle mic");
+  }
+  console.log("PASS one-shot active Star Battle reconnect score");
+
+
 
   const duplicate=await api(senderToken,{
     roomId,
