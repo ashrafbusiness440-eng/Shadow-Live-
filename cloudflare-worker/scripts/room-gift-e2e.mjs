@@ -417,6 +417,17 @@ try{
   console.log("PASS sender + receiver realtime room presence");
   console.log("PASS real two-account room presence/count and websocket chat");
 
+  // Room gift chat is intentionally ephemeral, delivered on the existing
+  // WebSocket; it must not create rooms/{roomId}/messages writes.
+  const roomGiftRealtime = waitForRealtimeEvent(
+    receiverSocket,
+    event => event?.type === "room.chat_message" &&
+      event?.payload?.message?.type === "gift" &&
+      event?.payload?.message?.senderUid === senderUid &&
+      event?.payload?.message?.receiverUid === receiverUid &&
+      event?.payload?.message?.giftId === String(selectedGift.id),
+    20000,
+  );
   const sent=await apiWhenReady(senderToken,{
     roomId,
     receiverId:receiverUid,
@@ -431,26 +442,41 @@ try{
     throw new Error("room gift E2E unexpectedly triggered rocket explosion");
   }
   messageId=sent.body.messageId;
-  cleanup.add(`rooms/${roomId}/messages/${messageId}`);
+  const liveGiftEvent = await roomGiftRealtime;
+  if(liveGiftEvent?.payload?.message?.id!==messageId){
+    throw new Error("room gift realtime event id mismatch");
+  }
   cleanup.add(`public_gift_showcases/${receiverUid}/items/${String(selectedGift.id)}`);
 
-  const [senderAfter,roomAfter,rocketAfter,txDoc,ledgerDoc,msgDoc]=await Promise.all([
+  const [senderAfter,roomAfter,rocketAfter,txDoc,ledgerDoc,
+    supportDaily,supportWeekly,supportMonthly]=await Promise.all([
     fsGet(`users/${senderUid}`),
     fsGet(`rooms/${roomId}`),
     fsGet(`room_rocket_state/${roomId}`),
     fsGet(`gift_transactions/${key}`),
     fsGet(`financial_ledger/gift_${key}`),
-    fsGet(`rooms/${roomId}/messages/${messageId}`),
+    fsGet(`rooms/${roomId}/support_daily/${periods.day}`),
+    fsGet(`rooms/${roomId}/support_weekly/${periods.week}`),
+    fsGet(`rooms/${roomId}/support_monthly/${periods.month}`),
   ]);
 
   if(senderAfter?.data?.coins!==senderOpening-totalCost){
     throw new Error("sender room-gift debit mismatch");
   }
-  if(roomAfter?.data?.totalSupport!==totalCost||
-     roomAfter?.data?.dailySupport!==totalCost||
-     roomAfter?.data?.weeklySupport!==totalCost||
-     roomAfter?.data?.monthlySupport!==totalCost){
-    throw new Error(`room support mismatch: ${JSON.stringify(roomAfter?.data)}`);
+  // Room gifts intentionally do not rewrite rooms/{roomId}: listeners must
+  // not receive a full-room fanout for every purchase. Test period aggregates.
+  if(roomAfter?.data?.totalSupport!==0||
+     roomAfter?.data?.dailySupport!==0||
+     roomAfter?.data?.weeklySupport!==0||
+     roomAfter?.data?.monthlySupport!==0){
+    throw new Error("room root was unexpectedly mutated for gift support");
+  }
+  for(const [period,doc] of [
+    ["daily",supportDaily],["weekly",supportWeekly],["monthly",supportMonthly],
+  ]){
+    if(doc?.data?.supportCoins!==totalCost||doc?.data?.giftCount!==1){
+      throw new Error(`room ${period} support mismatch: ${JSON.stringify(doc?.data)}`);
+    }
   }
   if(rocketAfter?.data?.progressCoins!==totalCost){
     throw new Error(`rocket progress mismatch: ${rocketAfter?.data?.progressCoins}`);
@@ -461,10 +487,7 @@ try{
   if(!ledgerDoc||ledgerDoc.data.delta!==-totalCost){
     throw new Error("room gift ledger mismatch");
   }
-  if(!msgDoc||msgDoc.data.type!=="gift"||msgDoc.data.giftId!==String(selectedGift.id)){
-    throw new Error("room gift message mismatch");
-  }
-  console.log("PASS room gift accounting + support + rocket progress");
+  console.log("PASS room gift accounting + period support + realtime delivery + rocket progress");
 
   const duplicate=await api(senderToken,{
     roomId,
@@ -476,10 +499,19 @@ try{
   if(!duplicate.res.ok||duplicate.body.code!=="duplicate"){
     throw new Error(`room gift idempotency failed: ${duplicate.res.status} ${JSON.stringify(duplicate.body)}`);
   }
-  const senderAfterDup=await fsGet(`users/${senderUid}`);
-  const roomAfterDup=await fsGet(`rooms/${roomId}`);
+  const [senderAfterDup,roomAfterDup,supportDailyDup,supportWeeklyDup,
+    supportMonthlyDup]=await Promise.all([
+    fsGet(`users/${senderUid}`),
+    fsGet(`rooms/${roomId}`),
+    fsGet(`rooms/${roomId}/support_daily/${periods.day}`),
+    fsGet(`rooms/${roomId}/support_weekly/${periods.week}`),
+    fsGet(`rooms/${roomId}/support_monthly/${periods.month}`),
+  ]);
   if(senderAfterDup?.data?.coins!==senderOpening-totalCost||
-     roomAfterDup?.data?.totalSupport!==totalCost){
+     roomAfterDup?.data?.totalSupport!==0||
+     [supportDailyDup,supportWeeklyDup,supportMonthlyDup].some(
+       doc=>doc?.data?.supportCoins!==totalCost||doc?.data?.giftCount!==1
+     )){
     throw new Error("duplicate room gift mutated balances or support");
   }
   console.log("PASS room gift idempotency");
