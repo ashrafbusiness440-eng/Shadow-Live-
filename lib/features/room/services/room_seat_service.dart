@@ -315,6 +315,19 @@ class RoomSeatService {
     return snapshot is Map ? Map<String, dynamic>.from(snapshot) : null;
   }
 
+  /// Bounded one-shot PK refresh after the existing room socket reconnects.
+  /// The backend uses the existing pkState action; no Firestore listener.
+  Future<Map<String, dynamic>?> syncPkScoreSnapshot(String roomId) async {
+    final id = roomId.trim();
+    if (id.isEmpty) return null;
+    final response = await _post({
+      'action': 'pkState',
+      'roomId': id,
+    });
+    final raw = response['pk'];
+    return raw is Map ? Map<String, dynamic>.from(raw) : null;
+  }
+
   Future<void> syncMysteriousIdentity(String roomId) async {
     final id = roomId.trim();
     if (id.isEmpty) return;
