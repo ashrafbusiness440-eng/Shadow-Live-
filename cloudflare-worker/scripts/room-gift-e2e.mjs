@@ -284,6 +284,7 @@ async function deleteAuthUser(idToken){
 
 const periods=utcPeriodKeys();
 const starBattleId=`star_e2e_${runId}`;
+const pkRoundId=`pk_e2e_${runId}`;
 const starBattleScorePath=`rooms/${roomId}/star_battle_scores/${starBattleId}/users/${receiverUid}`;
 let senderToken=null;
 let receiverToken=null;
@@ -298,6 +299,9 @@ const cleanup=new Set([
   `room_rocket_state/${roomId}`,
   `gift_operations/${key}`,
   starBattleScorePath,
+  `rooms/${roomId}/pk_round_scores/${pkRoundId}/participants/${receiverUid}`,
+  `rooms/${roomId}/pk_round_scores/${pkRoundId}/supporters/${senderUid}`,
+  `rooms/${roomId}/pk_round_scores/${pkRoundId}/first_gift/marker`,
   `rooms/${roomId}/star_battle_history/${starBattleId}`,
   `room_audit_logs/${roomId}/items/star_battle_finish_${starBattleId}`,
   `gift_transactions/${key}`,
@@ -370,12 +374,25 @@ try{
     publicId:"99112233",
     ownerUid:receiverUid,
     isActive:true,
-    seats:[{index:0,uid:receiverUid,displayName:"Cloudflare Room Gift Receiver",profileImageUrl:"",muted:true}],
+    seats:[
+      {index:0,uid:receiverUid,displayName:"Cloudflare Room Gift Receiver",profileImageUrl:"",muted:true},
+      {index:1,uid:senderUid,displayName:"Cloudflare Room Gift Sender",profileImageUrl:"",muted:true},
+    ],
     totalSupport:0,
     dailySupport:0,
     weeklySupport:0,
     monthlySupport:0,
     starBattleState:{id:starBattleId,status:"active",durationMinutes:60,createdBy:receiverUid,createdAtMs:nowMs,endsAtMs:nowMs+3600000,scores:{}},
+    pkState:{
+      id:pkRoundId,status:"active",mode:"1v1",durationMinutes:60,
+      createdBy:receiverUid,createdAtMs:nowMs,
+      countdownEndsAtMs:nowMs-3000,endsAtMs:nowMs+3600000,
+      overtimeUsed:false,winner:"",giftCount:0,supporters:[],
+      participants:[
+        {uid:receiverUid,team:"a",accepted:true,seatIndex:0,score:0},
+        {uid:senderUid,team:"b",accepted:true,seatIndex:1,score:0},
+      ],
+    },
     createdAt:new Date(),
   });
   await fsSet(`room_rocket_state/${roomId}`,{
@@ -458,6 +475,12 @@ try{
      award?.deltas?.[0]?.uid!==receiverUid) {
     throw new Error("Star Battle realtime gift score mismatch");
   }
+  const pkAward=liveGiftEvent?.payload?.message?.pkAward;
+  if(pkAward?.roundId!==pkRoundId || pkAward?.firstGift!==true ||
+     pkAward?.deltas?.[0]?.uid!==receiverUid ||
+     pkAward?.deltas?.[0]?.scoreTwice!==totalCost*21){
+    throw new Error("first paid PK gift missing exact x10.5 realtime points");
+  }
   cleanup.add(`public_gift_showcases/${receiverUid}/items/${String(selectedGift.id)}`);
 
   const [senderAfter,roomAfter,rocketAfter,txDoc,ledgerDoc,
@@ -504,6 +527,17 @@ try{
      scoreSnapshot?.data?.roundId!==starBattleId){
     throw new Error("Star Battle paid support was not persisted");
   }
+  const [pkScoreDoc,pkSupporterDoc,pkFirstDoc]=await Promise.all([
+    fsGet(`rooms/${roomId}/pk_round_scores/${pkRoundId}/participants/${receiverUid}`),
+    fsGet(`rooms/${roomId}/pk_round_scores/${pkRoundId}/supporters/${senderUid}`),
+    fsGet(`rooms/${roomId}/pk_round_scores/${pkRoundId}/first_gift/marker`),
+  ]);
+  if(pkScoreDoc?.data?.scoreTwice!==totalCost*21||
+     pkSupporterDoc?.data?.coins!==totalCost||
+     pkFirstDoc?.data?.operationId!==key){
+    throw new Error("first paid PK gift not committed with score and supporter");
+  }
+  console.log("PASS paid PK first gift x10.5, ledger and supporter");
   console.log("PASS room gift accounting + period support + realtime delivery + rocket progress");
 
   // Bootstrap must read active paid score for a new listener without
@@ -574,6 +608,12 @@ try{
   const scoreAfterDuplicate=await fsGet(starBattleScorePath);
   if(scoreAfterDuplicate?.data?.coins!==totalCost){
     throw new Error("duplicate room gift credited Star Battle twice");
+  }
+  const pkAfterDuplicate=await fsGet(
+    `rooms/${roomId}/pk_round_scores/${pkRoundId}/participants/${receiverUid}`
+  );
+  if(pkAfterDuplicate?.data?.scoreTwice!==totalCost*21){
+    throw new Error("duplicate gift credited PK points twice");
   }
   console.log("PASS room gift idempotency");
   // End the isolated real round and verify archived Top99 from paid score docs.
