@@ -136,6 +136,28 @@ void main() {
     expect((leaders.first as Map)['coins'], 150);
   });
 
+  test('mysterious PK supporters keep their masked display identity', () {
+    final overlay = PkScoreOverlay();
+    final room = activeRoom('pk_round_1');
+    overlay.merge(room);
+    final realtime = <String, dynamic>{
+      ...award('mysterious_gift', 210),
+      'supporter': <String, dynamic>{
+        'uid': 'masked_user',
+        'displayName': 'الشخص الغامض',
+        'profileImageUrl': '',
+        'mysteriousMode': true,
+        'coins': 10,
+      },
+    };
+    expect(overlay.apply(realtime), isTrue);
+    final pk = overlay.merge(room)['pkState'] as Map;
+    final supporter = (pk['supporters'] as List).first as Map;
+    expect(supporter['mysteriousMode'], true);
+    expect(supporter['displayName'], 'الشخص الغامض');
+    expect(supporter['profileImageUrl'], '');
+  });
+
   test('PK overlay keeps bounded operation identifiers', () {
     final overlay = PkScoreOverlay();
     final room = activeRoom('pk_round_1');
