@@ -496,6 +496,11 @@ try{
   if(!ledgerDoc||ledgerDoc.data.delta!==-totalCost){
     throw new Error("room gift ledger mismatch");
   }
+  const scoreSnapshot=await fsGet(starBattleScorePath);
+  if(scoreSnapshot?.data?.coins!==totalCost ||
+     scoreSnapshot?.data?.roundId!==starBattleId){
+    throw new Error("Star Battle paid support was not persisted");
+  }
   console.log("PASS room gift accounting + period support + realtime delivery + rocket progress");
 
   const duplicate=await api(senderToken,{
