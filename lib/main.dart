@@ -3333,6 +3333,14 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             child: RoomPkPanel(
               roomId: roomId,
               canManage: _canManagePk,
+              roomStateEvents: _voiceSession.roomStateEvents,
+              initialRoomState: _voiceSession.currentRoomState,
+              scoreRevision: () => _voiceSession.pkScoreRevision,
+              applyScoreSnapshot: (snapshot, revision) =>
+                  _voiceSession.applyPkSnapshot(
+                snapshot,
+                startedAtRevision: revision,
+              ),
             ),
           ),
         ),
