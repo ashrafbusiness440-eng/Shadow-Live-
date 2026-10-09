@@ -3480,21 +3480,22 @@ async function loadActiveStarBattleMicScores(db,roomId,seats,battle){
   if(!battle||!/^[A-Za-z0-9_-]{1,180}$/.test(clean(battle.id))){
     return scores;
   }
-  // One bounded batchGet, reused by bootstrap and reconnect sync.
-  const activeUids=[...new Set(
+  // Reuse the production-proven bounded score query used by round
+  // finalization; filter to occupied mics. One request, no per-UID reads.
+  const activeUids=new Set(
     seats.map(seat=>clean(seat.uid))
-      .filter(id=>id.length>0&&id.length<=180&&!id.includes("/")),
-  )].slice(0,50);
-  if(!activeUids.length)return scores;
+      .filter(id=>id.length>0&&id.length<=180&&!id.includes("/"))
+      .slice(0,50),
+  );
+  if(!activeUids.size)return scores;
   try{
-    const paths=activeUids.map(seatUid=>
-      "rooms/"+roomId+"/star_battle_scores/"+battle.id+"/users/"+seatUid
-    );
-    const snapshots=await db.client.getMany(paths);
-    for(let index=0;index<activeUids.length;index++){
-      const score=snapshots[index]?.data;
-      if(!snapshots[index]?.exists||!score)continue;
-      scores[activeUids[index]]={
+    const snapshots=await db.collection("rooms").doc(roomId)
+      .collection("star_battle_scores").doc(battle.id)
+      .collection("users").orderBy("coins","desc").limit(99).get();
+    for(const doc of snapshots.docs){
+      if(!activeUids.has(doc.id))continue;
+      const score=doc.data()||{};
+      scores[doc.id]={
         coins:Math.max(0,Math.floor(Number(score.coins||0))),
       };
     }
