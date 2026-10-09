@@ -378,7 +378,31 @@ try{
     openRoomRealtime(roomId,senderToken),
     openRoomRealtime(roomId,receiverToken),
   ]);
-  console.log("PASS sender + receiver realtime room presence");
+  // Assert the real live websocket admitted BOTH independent test users,
+  // and that chat reaches the existing room protocol (not just voice UI).
+  const presence = await realtimePost("/api/room-realtime", senderToken, {
+    action: "presenceState", roomId,
+  });
+  if (!presence.res.ok || presence.body.ok !== true ||
+      !Array.isArray(presence.body.participants) ||
+      presence.body.onlineCount !== 2 ||
+      ![senderUid, receiverUid].every(uid =>
+        presence.body.participants.some(item => item.uid === uid))) {
+    throw new Error("two-user room presence/count mismatch:" +
+      presence.res.status + ":" + JSON.stringify(presence.body));
+  }
+  const chatRequestId = "ci_chat_" + runId;
+  const chatAck = waitForRealtimeEvent(
+    senderSocket,
+    event => event?.type === "room.chat_ack" &&
+      event?.payload?.requestId === chatRequestId,
+  );
+  senderSocket.send(JSON.stringify({
+    type: "client.room_chat", requestId: chatRequestId,
+    payload: { roomId, text: "CI isolated room chat" },
+  }));
+  await chatAck;
+  console.log("PASS real two-account room presence/count and websocket chat");
 
   const sent=await apiWhenReady(senderToken,{
     roomId,
