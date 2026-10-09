@@ -757,10 +757,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     if (roomId.isEmpty || _loadingRoomInsights) return;
     if (mounted) setState(() => _loadingRoomInsights = true);
     try {
-      final insights = await _roomInsightsService.load(
-        roomId,
-        includeSupporters: true,
-      );
+      final insights = await _roomInsightsService.load(roomId);
       if (mounted) setState(() => _roomInsights = insights);
     } catch (_) {
       // Voice remains available even if non-critical room insights fail.
@@ -808,14 +805,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       // Voice/audio stay independent. The shared room snapshot stream keeps
       // seats/moderators live even when the non-critical bootstrap is blocked.
     } finally {
-      if (mounted) {
-        setState(() => _loadingRoomInsights = false);
-        // The bootstrap omits the detailed Top 3 list. Load it once with
-        // the existing cached insights service; no new listener or polling.
-        if ((_roomArguments['roomId'] ?? '').toString().trim() == roomId) {
-          unawaited(_loadRoomInsights(roomId));
-        }
-      }
+      if (mounted) setState(() => _loadingRoomInsights = false);
     }
   }
 
