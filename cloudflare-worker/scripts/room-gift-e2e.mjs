@@ -579,6 +579,27 @@ try{
     throw new Error("room reconnect failed to resync the active Star Battle mic");
   }
   console.log("PASS one-shot active Star Battle reconnect score");
+  // The visible Top99 must come from real paid round score documents,
+  // without new polling or scanning unbounded supporter collections.
+  const top99Response=await fetch(`${workerBase}/api/voice-session`,{
+    method:"POST",
+    headers:{
+      "authorization":`Bearer ${senderToken}`,
+      "content-type":"application/json",
+    },
+    body:JSON.stringify({
+      action:"syncStarBattle",roomId,includeLeaders:true,
+    }),
+  });
+  const top99=await top99Response.json().catch(()=>({}));
+  if(!top99Response.ok ||
+     top99?.battle?.status!=="active" ||
+     top99?.battle?.leaders?.[0]?.uid!==receiverUid ||
+     top99?.battle?.leaders?.[0]?.coins!==totalCost){
+    throw new Error("active Star Battle Top99 omitted paid gift score");
+  }
+  console.log("PASS on-demand paid Star Battle active Top99");
+
 
 
 
