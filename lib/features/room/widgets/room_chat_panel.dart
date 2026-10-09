@@ -108,13 +108,21 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
     } on StateError catch (error) {
       if (!mounted) return;
       final code = error.message.toString();
-      final message = code == 'rate_limited'
-          ? 'أرسلت رسائل بسرعة كبيرة. حاول بعد قليل.'
-          : code == 'room_banned'
-              ? 'لا يمكنك الكتابة في هذه الغرفة حالياً.'
-              : code == 'room_chat_disabled'
-                  ? 'دردشة الغرفة متوقفة حالياً.'
-                  : 'تعذر إرسال الرسالة حالياً.';
+      final message = code == 'room_realtime_not_connected' ||
+              code == 'room_realtime_disconnected'
+          ? 'اتصال الغرفة غير متاح. أعد المحاولة بعد التأكد من اتصال الغرفة.'
+          : code == 'room_realtime_ready_timeout' ||
+                  code == 'room_chat_timeout'
+              ? 'تأخر اتصال الغرفة؛ لم يتم تأكيد إرسال الرسالة.'
+              : code == 'room_network_unavailable'
+                  ? 'تعذر الاتصال بخادم الغرفة. تأكد من الإنترنت.'
+                  : code == 'rate_limited'
+                      ? 'أرسلت رسائل بسرعة كبيرة.'
+                      : code == 'room_chat_disabled'
+                          ? 'دردشة الغرفة متوقفة.'
+                          : RegExp(r'^[a-z][a-z0-9_]{1,39}$').hasMatch(code)
+                              ? 'تعذر الإرسال. رمز السبب: $code'
+                              : 'تعذر إرسال الرسالة حاليًا.';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message)),
       );
@@ -1433,13 +1441,21 @@ class _RoomChatComposerState extends State<RoomChatComposer> {
     } on StateError catch (error) {
       if (!mounted) return;
       final code = error.message.toString();
-      final message = code == 'rate_limited'
-          ? 'أرسلت رسائل بسرعة كبيرة.'
-          : code == 'vip4_emoji_required'
-              ? 'الإيموجي الحصري متاح من VIP4.'
-              : code == 'room_chat_disabled'
-                  ? 'دردشة الغرفة متوقفة حالياً.'
-                  : 'تعذر إرسال الرسالة حالياً.';
+      final message = code == 'room_realtime_not_connected' ||
+              code == 'room_realtime_disconnected'
+          ? 'اتصال الغرفة غير متاح. أعد المحاولة بعد التأكد من اتصال الغرفة.'
+          : code == 'room_realtime_ready_timeout' ||
+                  code == 'room_chat_timeout'
+              ? 'تأخر اتصال الغرفة؛ لم يتم تأكيد إرسال الرسالة.'
+              : code == 'room_network_unavailable'
+                  ? 'تعذر الاتصال بخادم الغرفة. تأكد من الإنترنت.'
+                  : code == 'rate_limited'
+                      ? 'أرسلت رسائل بسرعة كبيرة.'
+                      : code == 'room_chat_disabled'
+                          ? 'دردشة الغرفة متوقفة.'
+                          : RegExp(r'^[a-z][a-z0-9_]{1,39}$').hasMatch(code)
+                              ? 'تعذر الإرسال. رمز السبب: $code'
+                              : 'تعذر إرسال الرسالة حاليًا.';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message)),
       );
