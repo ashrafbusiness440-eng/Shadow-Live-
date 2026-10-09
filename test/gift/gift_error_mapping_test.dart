@@ -30,6 +30,33 @@ void main() {
     expect(avatar.contains('if (widget.snapshotOnly) return;'), isTrue);
   });
 
+  test('direct gift retry reuses server key only for the same unresolved request', () {
+    final source = File(
+      'lib/features/gift/widgets/direct_gift_sheet.dart',
+    ).readAsStringSync();
+
+    // A timeout or network error does not prove the first send rolled back.
+    // Reusing the key on retry allows the existing server gift_operations
+    // transaction to return the previous result without charging twice.
+    expect(source.contains('String _retryFingerprint ='), isTrue);
+    expect(source.contains('String _retryIdempotencyKey ='), isTrue);
+    expect(source.contains('_retryFingerprint == fingerprint && _retryIdempotencyKey.isNotEmpty'), isTrue);
+    for (final argument in <String>[
+      'widget.receiverId,',
+      'gift.id,',
+      'quantity.toString(),',
+      'useGiftBag.toString(),',
+      'diaryId,',
+      'conversationId,',
+    ]) {
+      expect(source.contains(argument), isTrue, reason: argument);
+    }
+    expect(source.contains("StateError('gift_connection_timeout')"), isTrue);
+    expect(source.contains("StateError('gift_network_unavailable')"), isTrue);
+    expect(source.contains('response.statusCode != 408'), isTrue);
+    expect(source.contains('_clearRetryReservation();'), isTrue);
+  });
+
   test('direct diary gifting reports connection and backend cause', () {
     final direct = File(
       'lib/features/gift/widgets/direct_gift_sheet.dart',
