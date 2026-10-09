@@ -53,6 +53,8 @@ void main() {
     final mirror =
         File('lib/shared/services/firebase_service.dart')
             .readAsStringSync();
+    final giftHandler =
+        File('cloudflare-worker/src/room-gift.js').readAsStringSync();
 
     expect(roomService.contains("json['profileAvatarAsset']"), isTrue);
     expect(room.contains("'profileAvatarAsset': supporter.profileAvatarAsset"),
@@ -67,5 +69,11 @@ void main() {
     expect(mirror.contains("'profileAvatarAnimationUrl':data['profileAvatarAnimationUrl']"), isTrue);
     expect(backend.contains('return applyMysteriousIdentityPresentation({'),
         isTrue);
+    expect(giftHandler.contains('profileAvatarAsset: senderAvatarAsset'),
+        isTrue);
+    expect(giftHandler.contains('"profileAvatarAsset",'), isTrue);
+    expect(backend.contains('profileAvatarAsset:clean(data.profileAvatarAsset)'),
+        isTrue);
+    expect(backend.contains('item.profileAvatarAsset,'), isTrue);
   });
 }
