@@ -1882,16 +1882,46 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                     child: AnimatedBuilder(
                       animation: _voiceSession,
                       builder: (context, _) {
-                        final seatedUids =
-                            (_roomSeatState?.seats ?? const <VoiceSeat>[])
-                                .where((seat) => seat.occupied)
-                                .map((seat) => seat.uid)
-                                .toSet();
-                        final users = _voiceSession.roomParticipants
-                            .where((user) =>
-                                user.uid != me &&
-                                !seatedUids.contains(user.uid))
-                            .toList(growable: false);
+                        // The people sheet must show the SAME union as
+                        // the room counter and gift recipient list. Previously
+                        // it excluded everyone sitting on a microphone.
+                        final seatByUid = <String, VoiceSeat>{
+                          for (final seat in _roomSeatState?.seats ??
+                              const <VoiceSeat>[])
+                            if (seat.occupied && seat.uid.isNotEmpty)
+                              seat.uid: seat,
+                        };
+                        final usersByUid = <String, RoomPresenceUser>{
+                          for (final user in _voiceSession.roomParticipants)
+                            if (user.uid.isNotEmpty) user.uid: user,
+                        };
+                        for (final seat in seatByUid.values) {
+                          usersByUid.putIfAbsent(
+                            seat.uid,
+                            () => RoomPresenceUser.fromMap(<String, dynamic>{
+                              'uid': seat.uid,
+                              'displayName': seat.mysteriousMode
+                                  ? 'الشخص الغامض'
+                                  : seat.displayName,
+                              'profileImageUrl': seat.mysteriousMode
+                                  ? ''
+                                  : seat.profileImageUrl,
+                              'mysteriousMode': seat.mysteriousMode,
+                              'mysteriousId': seat.mysteriousId,
+                            }),
+                          );
+                        }
+                        final users = usersByUid.values.toList(growable: true)
+                          ..sort((a, b) {
+                            final aSeat = seatByUid[a.uid]?.index;
+                            final bSeat = seatByUid[b.uid]?.index;
+                            if (aSeat != null && bSeat == null) return -1;
+                            if (bSeat != null && aSeat == null) return 1;
+                            if (aSeat != null && bSeat != null) {
+                              return aSeat.compareTo(bSeat);
+                            }
+                            return a.joinedAtMs.compareTo(b.joinedAtMs);
+                          });
                         if (users.isEmpty) {
                           return const Center(
                             child: Text(
@@ -1906,18 +1936,12 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                               const Divider(color: Colors.white10),
                           itemBuilder: (_, index) {
                             final user = users[index];
-                            final seat = (_roomSeatState?.seats ??
-                                    const <VoiceSeat>[])
-                                .where((item) => item.uid == user.uid)
-                                .fold<VoiceSeat?>(
-                                  null,
-                                  (found, item) => found ?? item,
-                                );
+                            final seat = seatByUid[user.uid];
                             final onMic = seat != null;
                             final invited =
                                 _roomSeatState?.invited(user.uid) == true;
                             final adminActions = <QuickProfileAction>[];
-                            if (_canManageMic) {
+                            if (_canManageMic && user.uid != me) {
                               if (!onMic) {
                                 adminActions.add(
                                   QuickProfileAction(
@@ -2019,6 +2043,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                   : ProfileAvatarWithFrame(
                                       diameter: 40,
                                       userId: user.uid,
+                                      snapshotOnly: true,
                                       backgroundColor:
                                           const Color(0xFF25183F),
                                       placeholderColor: Colors.white54,
@@ -2052,7 +2077,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                   fontSize: 10,
                                 ),
                               ),
-                              trailing: _canManageMic
+                              trailing: _canManageMic && user.uid != me
                                   ? onMic
                                       ? const Chip(
                                           label: Text('على المايك'),
