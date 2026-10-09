@@ -370,6 +370,7 @@ try{
     publicId:"99112233",
     ownerUid:receiverUid,
     isActive:true,
+    seats:[{index:0,uid:receiverUid,displayName:"Cloudflare Room Gift Receiver",profileImageUrl:"",muted:true}],
     totalSupport:0,
     dailySupport:0,
     weeklySupport:0,
@@ -504,6 +505,28 @@ try{
     throw new Error("Star Battle paid support was not persisted");
   }
   console.log("PASS room gift accounting + period support + realtime delivery + rocket progress");
+
+  // Bootstrap must read active paid score for a new listener without
+  // issuing one profile fetch per occupied microphone.
+  const bootResponse=await fetch(`${workerBase}/api/voice-session`,{
+    method:"POST",
+    headers:{
+      "authorization":`Bearer ${senderToken}`,
+      "content-type":"application/json",
+    },
+    body:JSON.stringify({action:"roomBootstrap",roomId}),
+  });
+  const boot=await bootResponse.json().catch(()=>({}));
+  const occupiedScore=boot?.seatState?.seats?.find(
+    seat=>seat?.uid===receiverUid
+  )?.starBattleCoins;
+  const hydratedScore=boot?.room?.starBattleState?.scores?.[receiverUid]?.coins;
+  if(!bootResponse.ok || occupiedScore!==totalCost ||
+     hydratedScore!==totalCost){
+    throw new Error("late join bootstrap omitted paid Star Battle scores");
+  }
+  console.log("PASS late join bootstrap occupied mic score");
+
 
   const duplicate=await api(senderToken,{
     roomId,
