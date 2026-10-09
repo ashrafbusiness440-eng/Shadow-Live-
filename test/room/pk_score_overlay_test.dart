@@ -68,6 +68,74 @@ void main() {
     expect(overlay.roundId, 'pk_round_2');
   });
 
+  test('live PK supporter Top3 updates from confirmed gift events', () {
+    final overlay = PkScoreOverlay();
+    final room = activeRoom('pk_round_1');
+    overlay.merge(room);
+    Map<String, dynamic> supporterAward(
+      String operation,
+      String uid,
+      int coins,
+    ) => <String, dynamic>{
+      ...award(operation, coins * 20),
+      'supporter': <String, dynamic>{
+        'uid': uid,
+        'displayName': 'Donor $uid',
+        'profileImageUrl': '',
+        'coins': coins,
+      },
+    };
+    for (final item in <(String, String, int)>[
+      ('op1', 'donor_1', 100),
+      ('op2', 'donor_2', 300),
+      ('op3', 'donor_3', 200),
+      ('op4', 'donor_4', 50),
+      ('op5', 'donor_1', 250),
+    ]) {
+      expect(overlay.apply(supporterAward(item.$1, item.$2, item.$3)), isTrue);
+    }
+    final pk = overlay.merge(room)['pkState'] as Map;
+    final leaders = (pk['supporters'] as List).cast<Map>();
+    expect(leaders.map((x) => x['uid']).toList(),
+        <String>['donor_1', 'donor_2', 'donor_3']);
+    expect(leaders.first['coins'], 350);
+    expect(overlay.apply(supporterAward('op5', 'donor_1', 250)), isFalse);
+  });
+
+  test('authoritative PK Top3 snapshot rebases new supporter events', () {
+    final overlay = PkScoreOverlay();
+    final room = activeRoom('pk_round_1');
+    overlay.merge(room);
+    overlay.apply(<String, dynamic>{
+      ...award('before_open', 200),
+      'supporter': <String, dynamic>{
+        'uid': 'donor_1', 'coins': 100, 'displayName': 'Donor 1',
+      },
+    });
+    final before = overlay.revision;
+    overlay.apply(<String, dynamic>{
+      ...award('while_loading', 100),
+      'supporter': <String, dynamic>{
+        'uid': 'donor_1', 'coins': 50, 'displayName': 'Donor 1',
+      },
+    });
+    expect(overlay.installSnapshot(<String, dynamic>{
+      'id': 'pk_round_1',
+      'status': 'active',
+      'participants': <Map<String, dynamic>>[
+        <String, dynamic>{'uid': 'a', 'score': 100},
+      ],
+      'supporters': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'uid': 'donor_1', 'coins': 100, 'displayName': 'Donor 1',
+        },
+      ],
+    }, startedAtRevision: before), isTrue);
+    final leaders =
+        (overlay.merge(room)['pkState'] as Map)['supporters'] as List;
+    expect((leaders.first as Map)['coins'], 150);
+  });
+
   test('PK overlay keeps bounded operation identifiers', () {
     final overlay = PkScoreOverlay();
     final room = activeRoom('pk_round_1');
