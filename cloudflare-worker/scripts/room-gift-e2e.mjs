@@ -283,6 +283,8 @@ async function deleteAuthUser(idToken){
 }
 
 const periods=utcPeriodKeys();
+const starBattleId=`star_e2e_${runId}`;
+const starBattleScorePath=`rooms/${roomId}/star_battle_scores/${starBattleId}/users/${receiverUid}`;
 let senderToken=null;
 let receiverToken=null;
 let senderSocket=null;
@@ -295,6 +297,7 @@ const cleanup=new Set([
   `rooms/${roomId}`,
   `room_rocket_state/${roomId}`,
   `gift_operations/${key}`,
+  starBattleScorePath,
   `gift_transactions/${key}`,
   `financial_ledger/gift_${key}`,
   `financial_ledger/gift_earnings_${key}`,
@@ -369,6 +372,7 @@ try{
     dailySupport:0,
     weeklySupport:0,
     monthlySupport:0,
+    starBattleState:{id:starBattleId,status:"active",durationMinutes:60,createdBy:receiverUid,createdAtMs:nowMs,endsAtMs:nowMs+3600000,scores:{}},
     createdAt:new Date(),
   });
   await fsSet(`room_rocket_state/${roomId}`,{
