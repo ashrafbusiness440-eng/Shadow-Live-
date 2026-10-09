@@ -6603,7 +6603,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       Positioned.fill(
                         child: RoomEffectCoordinatorHost(
                           coordinator: _roomEffectCoordinator,
-                          entranceTop: (micTop - 96).clamp(48.0, 104.0).toDouble(),
+                          entranceTop: (micTop - 50).clamp(80.0, 125.0).toDouble(),
                           joinBottom: 106,
                         ),
                       ),
