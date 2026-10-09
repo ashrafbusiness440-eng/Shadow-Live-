@@ -94,6 +94,7 @@ class _ProfileAvatarWithFrameState extends State<ProfileAvatarWithFrame> {
   String _snapshotSignature(Map<String, dynamic> profile) => <Object?>[
         profile['profileImageUrl'],
         profile['profileAvatarAsset'],
+        profile['profileAvatarAnimationUrl'],
         profile['activeProfileFrameAssetKey'],
         profile['activeProfileFrameImageUrl'],
         profile['activeProfileFrameExpiresAtMs'],
@@ -207,10 +208,28 @@ class _ProfileAvatarWithFrameState extends State<ProfileAvatarWithFrame> {
         final identity = snapshot.data;
         if (identity == null) return _render(fallback);
 
-        return _render(<String, dynamic>{
-          ...fallback,
-          ...identity.toProfileMap(),
-        });
+        final loaded = identity.toProfileMap();
+        // Quick/public profiles already have a freshly fetched public record.
+        // Do not let a cached room snapshot with an empty avatar override it.
+        // Room snapshots keep the loaded identity authoritative instead.
+        if (!widget.fallbackIsVisualSnapshot) {
+          const avatarFields = <String>[
+            'profileImageUrl',
+            'profileAvatarAsset',
+            'profileAvatarAnimationUrl',
+            'photoUrl',
+            'avatarUrl',
+          ];
+          final hasFreshAvatar = avatarFields.any(
+            (field) => (fallback[field] ?? '').toString().trim().isNotEmpty,
+          );
+          if (hasFreshAvatar) {
+            for (final field in avatarFields) {
+              loaded[field] = fallback[field] ?? '';
+            }
+          }
+        }
+        return _render(<String, dynamic>{...fallback, ...loaded});
       },
     );
   }
