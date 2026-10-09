@@ -2808,6 +2808,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                         fallbackProfile: <String, dynamic>{
                                           'profileImageUrl':
                                               supporter.profileImageUrl,
+                                          'profileAvatarAsset':
+                                              supporter.profileAvatarAsset,
                                           'activeProfileFrameAssetKey':
                                               supporter.activeProfileFrameAssetKey,
                                           'activeProfileFrameImageUrl':
@@ -6293,6 +6295,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                     placeholderColor: Colors.white,
                     fallbackProfile: <String, dynamic>{
                       'profileImageUrl': supporter.profileImageUrl,
+                      'profileAvatarAsset': supporter.profileAvatarAsset,
                       'activeProfileFrameAssetKey':
                           supporter.activeProfileFrameAssetKey,
                       'activeProfileFrameImageUrl':
