@@ -528,6 +528,10 @@ try{
      )){
     throw new Error("duplicate room gift mutated balances or support");
   }
+  const scoreAfterDuplicate=await fsGet(starBattleScorePath);
+  if(scoreAfterDuplicate?.data?.coins!==totalCost){
+    throw new Error("duplicate room gift credited Star Battle twice");
+  }
   console.log("PASS room gift idempotency");
   console.log("ALL CLOUDFLARE ROOM GIFT E2E CHECKS PASSED");
 }finally{
