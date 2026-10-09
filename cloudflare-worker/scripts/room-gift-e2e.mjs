@@ -244,8 +244,20 @@ async function openRoomRealtime(roomId,idToken){
     {action:"ticket",roomId},
   );
   if(!ticket.res.ok||ticket.body?.ok!==true||!ticket.body.socketPath){
+    // Read-only, failure-scoped diagnosis: distinguish admission Firestore
+    // failure from WebSocket Durable Object routing without polling.
+    const [presence, refresh] = await Promise.all([
+      realtimePost("/api/room-realtime", idToken, {action:"presenceState",roomId}),
+      realtimePost("/api/room-realtime", idToken, {action:"refreshIdentity",roomId}),
+    ]);
+    const retry = await realtimePost("/api/room-realtime", idToken, {
+      action: "ticket", roomId, reconnectAttempt: 1,
+    });
     throw new Error(
-      `room realtime ticket failed: ${ticket.res.status} ${JSON.stringify(ticket.body)}`,
+      `room realtime ticket failed: ${ticket.res.status} ${JSON.stringify(ticket.body)};` +
+      ` presence=${presence.res.status}:${presence.body?.code || presence.body?.ok};` +
+      ` refreshIdentity=${refresh.res.status}:${refresh.body?.code || refresh.body?.ok};` +
+      ` delayedRetry=${retry.res.status}:${retry.body?.code || retry.body?.ok}`,
     );
   }
   const url=new URL(ticket.body.socketPath,workerBase);
@@ -378,7 +390,32 @@ try{
     openRoomRealtime(roomId,senderToken),
     openRoomRealtime(roomId,receiverToken),
   ]);
+  // Assert the real live websocket admitted BOTH independent test users,
+  // and that chat reaches the existing room protocol (not just voice UI).
+  const presence = await realtimePost("/api/room-realtime", senderToken, {
+    action: "presenceState", roomId,
+  });
+  if (!presence.res.ok || presence.body.ok !== true ||
+      !Array.isArray(presence.body.participants) ||
+      presence.body.onlineCount !== 2 ||
+      ![senderUid, receiverUid].every(uid =>
+        presence.body.participants.some(item => item.uid === uid))) {
+    throw new Error("two-user room presence/count mismatch:" +
+      presence.res.status + ":" + JSON.stringify(presence.body));
+  }
+  const chatRequestId = "ci_chat_" + runId;
+  const chatAck = waitForRealtimeEvent(
+    senderSocket,
+    event => event?.type === "room.chat_ack" &&
+      event?.payload?.requestId === chatRequestId,
+  );
+  senderSocket.send(JSON.stringify({
+    type: "client.room_chat", requestId: chatRequestId,
+    payload: { roomId, text: "CI isolated room chat" },
+  }));
+  await chatAck;
   console.log("PASS sender + receiver realtime room presence");
+  console.log("PASS real two-account room presence/count and websocket chat");
 
   const sent=await apiWhenReady(senderToken,{
     roomId,
