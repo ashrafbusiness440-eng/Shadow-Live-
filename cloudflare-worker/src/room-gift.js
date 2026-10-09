@@ -1791,6 +1791,12 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
           roundId: pkRoundId,
           operationId: key,
           firstGift: pkFirstGift,
+          supporter: {
+            uid: senderUid,
+            displayName: senderName,
+            profileImageUrl: senderPhoto,
+            coins: paidRecipientCost * eligiblePkReceivers.length,
+          },
           deltas: eligiblePkReceivers.map((uid) => ({
             uid,
             scoreTwice: pkScoreTwice,
