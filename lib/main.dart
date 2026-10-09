@@ -6613,6 +6613,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       Positioned.fill(
                         child: RoomEffectCoordinatorHost(
                           coordinator: _roomEffectCoordinator,
+                          entranceTop: (micTop - 96).clamp(48.0, 104.0),
+                          joinBottom: 106,
                         ),
                       ),
                       Positioned(
@@ -6653,73 +6655,51 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                           ),
                         ),
                       ),
+                      // The chat list owns scrolling. Never drag the room stage
+                      // or the fixed agency/rocket controls when reading history.
                       Positioned.fill(
                         top: feedTop,
                         bottom: 57,
-                        child: DraggableScrollableSheet(
-                          // Display messages directly on the room background.
-                          // Dragging is still possible without an opaque panel.
-                          initialChildSize: 1,
-                          minChildSize: .56,
-                          maxChildSize: 1,
-                          snap: true,
-                          snapSizes: const [.56, 1],
-                          builder: (context, scrollController) => Container(
-                            // No black sheet covering the voice-room background.
-                            color: Colors.transparent,
-                            child: Stack(
-                              children: [
-                                Column(
-                                  children: [
-                                    const SizedBox(height: 3),
-                                Expanded(
-                                  child: const bool.fromEnvironment('E2E_ROOM_TEST')
-                                      ? ListView(
-                                          controller: scrollController,
-                                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-                                          children: const [
-                                            Text(
-                                              'Shadow دخل إلى الغرفة',
-                                              style: TextStyle(color: Colors.white60, fontSize: 11),
-                                            ),
-                                            SizedBox(height: 10),
-                                            Text(
-                                              'Ashraf: أهلاً وسهلاً بالجميع',
-                                              style: TextStyle(color: Colors.white, fontSize: 11),
-                                            ),
-                                            SizedBox(height: 10),
-                                            Text(
-                                              'Shadow أرسل هدية التاج إلى Ashraf — 10,000 كوينز',
-                                              style: TextStyle(color: Color(0xFFFFD54A), fontSize: 11),
-                                            ),
-                                          ],
-                                        )
-                                      : RoomChatFeed(
-                                          roomId: roomId,
-                                          roomEffectsEnabled: _roomEffectsEnabled,
-                                          effectSoundEnabled: _effectSoundEnabled,
-                                          scrollController: scrollController,
-                                        ),
-                                ),
-                                  ],
-                                ),
-                                Positioned(
-                                  left: 12,
-                                  top: 22,
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      if (_roomAgencyId.isNotEmpty) ...[
-                                        _buildAgencyLogoButton(),
-                                        const SizedBox(height: 8),
-                                      ],
-                                      _buildRoomRocketButton(),
-                                    ],
+                        child: const bool.fromEnvironment('E2E_ROOM_TEST')
+                            ? ListView(
+                                padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                                children: const [
+                                  Text(
+                                    'Shadow دخل إلى الغرفة',
+                                    style: TextStyle(color: Colors.white60, fontSize: 11),
                                   ),
-                                ),
-                              ],
-                            ),
-                          ),
+                                  SizedBox(height: 10),
+                                  Text(
+                                    'Ashraf: أهلاً وسهلاً بالجميع',
+                                    style: TextStyle(color: Colors.white, fontSize: 11),
+                                  ),
+                                  SizedBox(height: 10),
+                                  Text(
+                                    'Shadow أرسل هدية التاج إلى Ashraf — 10,000 كوينز',
+                                    style: TextStyle(color: Color(0xFFFFD54A), fontSize: 11),
+                                  ),
+                                ],
+                              )
+                            : RoomChatFeed(
+                                roomId: roomId,
+                                roomEffectsEnabled: _roomEffectsEnabled,
+                                effectSoundEnabled: _effectSoundEnabled,
+                              ),
+                      ),
+                      // These are siblings of the chat, NOT children of the
+                      // chat's scrolling/dragging viewport.
+                      Positioned(
+                        left: 12,
+                        top: feedTop + 22,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (_roomAgencyId.isNotEmpty) ...[
+                              _buildAgencyLogoButton(),
+                              const SizedBox(height: 8),
+                            ],
+                            _buildRoomRocketButton(),
+                          ],
                         ),
                       ),
                       Positioned(
