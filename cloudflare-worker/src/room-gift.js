@@ -598,6 +598,15 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     }
     const paidRecipientCost = useGiftBag ? 0 : recipientCost;
     const paidCost = useGiftBag ? 0 : totalCost;
+    // Only settled, paid support during the active window earns Star Battle coins.
+    // Read the round from the room snapshot already loaded by this transaction.
+    const round = room.starBattleState;
+    const starBattleId = clean(round?.id);
+    const earnsStarBattleCoins =
+      paidRecipientCost > 0 &&
+      round?.status === "active" &&
+      /^[A-Za-z0-9_-]{1,180}$/.test(starBattleId) &&
+      Number(round.endsAtMs || 0) > nowMs;
     const bagQuantityRemaining = useGiftBag
       ? bagBefore - requiredBagQuantity
       : null;
@@ -1711,6 +1720,41 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       );
     }
 
+    // The ledger operation and each recipient's round score commit atomically.
+    // Scores live in per-recipient round documents: no hot rooms/{roomId} write.
+    const starBattleAward = earnsStarBattleCoins
+      ? {
+          roundId: starBattleId,
+          operationId: key,
+          deltas: recipientResults.map((item) => ({
+            uid: item.receiverId,
+            coins: paidRecipientCost,
+          })),
+        }
+      : null;
+    if (starBattleAward) {
+      for (const item of recipientResults) {
+        const scorePath =
+          roomPath + "/star_battle_scores/" + starBattleId + "/users/" +
+          item.receiverId;
+        writes.push(
+          db.writeUpdate(
+            scorePath,
+            {
+              uid: item.receiverId,
+              roomId,
+              roundId: starBattleId,
+              displayName: item.roomReceiverName,
+              profileImageUrl: item.roomReceiverProfileImageUrl,
+              updatedAt: now,
+            },
+            ["uid", "roomId", "roundId", "displayName", "profileImageUrl", "updatedAt"],
+            [db.increment("coins", paidRecipientCost)],
+          ),
+        );
+      }
+    }
+
     const first = recipientResults[0];
     const resultData = {
       giftId,
@@ -1937,6 +1981,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
           totalCost,
           paidCost,
           useGiftBag,
+          starBattleAward,
           assetKey,
           imageUrl,
           vipLevel: roomSenderVipLevel,
