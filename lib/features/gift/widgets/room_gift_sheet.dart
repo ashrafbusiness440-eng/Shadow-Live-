@@ -196,6 +196,15 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
 
   Widget _avatar(String uid, {double diameter = 38}) {
     final user = _participant(uid);
+    final occupiedSeat = _liveSeats
+        .where((seat) => seat.occupied && seat.uid == uid)
+        .firstOrNull;
+    // A socket roster may omit photos before the seat snapshot arrives.
+    // The anonymous presentation always wins over both snapshots.
+    if (user?.mysteriousMode == true ||
+        occupiedSeat?.mysteriousMode == true) {
+      return MysteriousIdentityAvatar(diameter: diameter);
+    }
     if (user == null) {
       final ownerUid = widget.ownerUid.trim();
       if (uid == ownerUid && ownerUid.isNotEmpty) {
@@ -222,11 +231,6 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
         ),
       );
     }
-    if (user.mysteriousMode) {
-      // Anonymous identities must never resolve their real profile photo,
-      // even when a seat snapshot arrives before the realtime roster.
-      return MysteriousIdentityAvatar(diameter: diameter);
-    }
     return ProfileAvatarWithFrame(
       diameter: diameter,
       userId: user.uid,
@@ -234,10 +238,21 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
       backgroundColor: const Color(0xFF25183F),
       placeholderColor: Colors.white70,
       fallbackProfile: <String, dynamic>{
-        'profileImageUrl': user.profileImageUrl,
-        'activeProfileFrameAssetKey': user.activeProfileFrameAssetKey,
-        'activeProfileFrameImageUrl': user.activeProfileFrameImageUrl,
-        'activeProfileFrameExpiresAtMs': user.activeProfileFrameExpiresAtMs,
+        'profileImageUrl': user.profileImageUrl.isNotEmpty
+            ? user.profileImageUrl
+            : (occupiedSeat?.profileImageUrl ?? ''),
+        'activeProfileFrameAssetKey':
+            user.activeProfileFrameAssetKey.isNotEmpty
+                ? user.activeProfileFrameAssetKey
+                : (occupiedSeat?.frameAssetKey ?? ''),
+        'activeProfileFrameImageUrl':
+            user.activeProfileFrameImageUrl.isNotEmpty
+                ? user.activeProfileFrameImageUrl
+                : (occupiedSeat?.frameImageUrl ?? ''),
+        'activeProfileFrameExpiresAtMs':
+            user.activeProfileFrameExpiresAtMs > 0
+                ? user.activeProfileFrameExpiresAtMs
+                : (occupiedSeat?.frameExpiresAtMs ?? 0),
         'activeProfileFramePermanent': user.activeProfileFramePermanent,
       },
       fallbackIsVisualSnapshot: true,
