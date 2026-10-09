@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:voice_chat_room/features/room/services/room_bootstrap_service.dart';
@@ -101,4 +103,36 @@ void main() {
     expect(snapshot.games.single.key, 'greedy_cat');
     expect(snapshot.serverNowMs, 123456);
   });
+
+  test('room seats retain authoritative Star Battle coins from the active room', () {
+    final voiceSource =
+        File('cloudflare-worker/src/voice-session-legacy.js').readAsStringSync();
+    expect(
+      voiceSource.contains(
+        'const scoreRaw=battle ? room.starBattleState?.scores?.[seat.uid] : null;',
+      ),
+      isTrue,
+    );
+    expect(
+      voiceSource.contains('const scoreRaw=battle?.scores?.[seat.uid];'),
+      isFalse,
+    );
+
+    final snapshot = RoomBootstrapSnapshot.fromJson(<String, dynamic>{
+      'seatState': <String, dynamic>{
+        'roomId': 'room_star_test',
+        'starBattleActive': true,
+        'seats': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'index': 0,
+            'uid': 'speaker_1',
+            'starBattleCoins': 1250,
+          },
+        ],
+      },
+    });
+    expect(snapshot.seatState.starBattleActive, isTrue);
+    expect(snapshot.seatState.seats.single.starBattleCoins, 1250);
+  });
+
 }
