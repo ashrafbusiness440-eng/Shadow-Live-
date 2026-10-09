@@ -551,7 +551,7 @@ class _EntranceWelcomeStrip extends StatelessWidget {
                   event.displayName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w900,
                     fontSize: compact ? 12 : 14,
@@ -561,7 +561,7 @@ class _EntranceWelcomeStrip extends StatelessWidget {
                   badge.isEmpty ? 'أهلاً بك في الغرفة' : badge,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Color(0xFFFFD54A),
                     fontSize: compact ? 10 : 11,
                     fontWeight: FontWeight.w800,
