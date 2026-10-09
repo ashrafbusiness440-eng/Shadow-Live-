@@ -302,6 +302,15 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   Future<void> _connectVoice() async {
     if (const bool.fromEnvironment('E2E_ROOM_TEST')) {
       if (!mounted) return;
+      // Browser-only fixture: no login, backend reads or real user balance.
+      const supportedCounts = <int>[8, 10, 20, 22];
+      final requestedSeats =
+          int.tryParse(Uri.base.queryParameters['seats'] ?? '') ?? 20;
+      final stageSeatCount = supportedCounts.contains(requestedSeats)
+          ? requestedSeats
+          : 20;
+      final emptySupport = Uri.base.queryParameters['supporters'] == 'empty';
+      final activeStars = Uri.base.queryParameters['stars'] != 'off';
       setState(() {
         _roomArguments = <String, dynamic>{
           'roomId': 'e2e_room',
@@ -340,7 +349,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         _roomSeatState = RoomSeatState(
           roomId: 'e2e_room',
           seats: const [
-            VoiceSeat(index: 0, uid: 'u1', displayName: 'Shadow', profileImageUrl: '', muted: false, starBattleCoins: 12000),
+            VoiceSeat(index: 0, uid: 'u1', displayName: 'Shadow', profileImageUrl: '', muted: false, starBattleCoins: 0),
             VoiceSeat(index: 1, uid: 'u2', displayName: 'Ashraf', profileImageUrl: '', muted: true, starBattleCoins: 8400),
             VoiceSeat(index: 2, uid: 'u3', displayName: 'Lina', profileImageUrl: '', muted: false, starBattleCoins: 2200),
             VoiceSeat(index: 3, uid: '', displayName: '', profileImageUrl: '', muted: true),
@@ -360,16 +369,18 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             VoiceSeat(index: 17, uid: '', displayName: '', profileImageUrl: '', muted: true),
             VoiceSeat(index: 18, uid: '', displayName: '', profileImageUrl: '', muted: true),
             VoiceSeat(index: 19, uid: '', displayName: '', profileImageUrl: '', muted: true),
-          ],
+            VoiceSeat(index: 20, uid: '', displayName: '', profileImageUrl: '', muted: true),
+            VoiceSeat(index: 21, uid: '', displayName: '', profileImageUrl: '', muted: true),
+          ].take(stageSeatCount).toList(growable: false),
           micInvites: const [],
           micRequests: const ['request_1', 'request_2'],
           micInviteOnly: true,
-          starBattleActive: true,
+          starBattleActive: activeStars,
           isOwner: true,
           isActive: true,
           onlineCount: 18,
         );
-        _roomInsights = const RoomInsights(
+        _roomInsights = RoomInsights(
           roomId: 'e2e_room',
           level: 5,
           levelPoints: 18600,
@@ -382,7 +393,9 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           monthlySupport: 241000,
           activityScore: 950,
           dailyRank: 4,
-          supporters: [
+          supporters: emptySupport
+              ? const <RoomSupporter>[]
+              : const [
             RoomSupporter(uid: 's1', rank: 1, displayName: 'A', profileImageUrl: '', totalSupport: 10000, dailySupport: 10000),
             RoomSupporter(uid: 's2', rank: 2, displayName: 'B', profileImageUrl: '', totalSupport: 6000, dailySupport: 6000),
             RoomSupporter(uid: 's3', rank: 3, displayName: 'C', profileImageUrl: '', totalSupport: 2500, dailySupport: 2500),
@@ -390,7 +403,15 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           ranking: [],
         );
       });
-      if (const bool.fromEnvironment('E2E_GAME_TEST')) {
+      debugPrint(
+        'ROOM_E2E_STAGE_READY:$stageSeatCount:'
+        '${emptySupport ? 'empty' : 'filled'}:'
+        '${activeStars ? 'active' : 'inactive'}',
+      );
+      // Visual stage screenshots skip the game overlay but reuse the exact
+      // same room widget. The regular Greedy Cat E2E remains unchanged.
+      if (const bool.fromEnvironment('E2E_GAME_TEST') &&
+          Uri.base.queryParameters['room_stage_preview'] != '1') {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           unawaited(_showRoomGameOverlay(initialGameKey: 'greedy_cat'));
