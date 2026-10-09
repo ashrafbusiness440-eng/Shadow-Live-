@@ -369,6 +369,21 @@ class LegacyFirestore {
     return new LegacyDocumentSnapshot(ref, raw);
   }
 
+  // Firebase Admin getAll semantics, reusing the same bounded Firestore
+  // batch reader as occupied microphone score hydration. Ranking privacy
+  // depends on this call to resolve each donor and the viewer together.
+  async getAll(...refs) {
+    if (!refs.length) return [];
+    if (refs.length > 100 ||
+        refs.some((ref) =>
+          !(ref instanceof LegacyDocumentReference) ||
+          ref._store !== this)) {
+      throw new Error("invalid_getall_references");
+    }
+    const rows = await this.client.getMany(refs.map((ref) => ref.path));
+    return refs.map((ref, i) => new LegacyDocumentSnapshot(ref, rows[i]));
+  }
+
   _writeUpdate(ref, data) {
     const compiled = compileData(this.client, data);
     const mask = [...compiled.normalPaths, ...compiled.deletePaths];
