@@ -10,6 +10,7 @@ import '../../profile/screens/public_profile_screen.dart';
 import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../services/discovery_service.dart';
 import 'discovery_search_screen.dart';
+import '../../../shared/widgets/loading_indicator.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -197,20 +198,23 @@ class _HomeScreenState extends State<HomeScreen> {
                   if (_error != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 10),
-                      child: Text(
-                        _error!,
-                        style: const TextStyle(
-                          color: Colors.orangeAccent,
-                          fontSize: 12,
-                        ),
+                      child: ShadowReadState(
+                        icon: Icons.wifi_off_rounded,
+                        message: _data == null
+                            ? 'تعذر تحميل الاستكشاف. تحقق من اتصال الإنترنت.'
+                            : 'تعذر تحديث الاستكشاف. يمكنك متابعة عرض البيانات السابقة.',
+                        onRetry: _loading
+                            ? null
+                            : () => _load(forceRefresh: true),
                       ),
                     ),
                   const SizedBox(height: 18),
                   _searchBox(),
                   const SizedBox(height: 18),
                   _hero(),
-                  const SizedBox(height: 24),
-                  _sectionHeader('غرف مقترحة', 'اختيارات مناسبة الآن'),
+                  if (_data != null || _error == null) ...[
+                    const SizedBox(height: 24),
+                    _sectionHeader('غرف مقترحة', 'اختيارات مناسبة الآن'),
                   const SizedBox(height: 12),
                   _roomRail(_data?.suggested ?? const []),
                   const SizedBox(height: 24),
@@ -278,6 +282,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ],
                   ),
+                  ],
                 ],
               ),
             ),
