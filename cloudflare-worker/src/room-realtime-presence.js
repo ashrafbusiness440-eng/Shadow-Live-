@@ -29,6 +29,7 @@ export function presenceSnapshotFromAttachments(
         uid,
         displayName: clean(item.displayName) || "مستخدم Shadow Live",
         profileImageUrl: clean(item.profileImageUrl),
+        profileAvatarAsset: clean(item.profileAvatarAsset),
         activeProfileFrameAssetKey: clean(item.activeProfileFrameAssetKey),
         activeProfileFrameImageUrl: clean(item.activeProfileFrameImageUrl),
         activeProfileFrameExpiresAtMs: Math.max(
@@ -62,6 +63,9 @@ export function presenceSnapshotFromAttachments(
     }
     if (!existing.profileImageUrl && clean(item.profileImageUrl)) {
       existing.profileImageUrl = clean(item.profileImageUrl);
+    }
+    if (!existing.profileAvatarAsset && clean(item.profileAvatarAsset)) {
+      existing.profileAvatarAsset = clean(item.profileAvatarAsset);
     }
     if (
       !existing.activeProfileFrameAssetKey &&
