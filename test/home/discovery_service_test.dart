@@ -42,7 +42,7 @@ void main() {
     ]);
   });
 
-  test('suggested people prefer online then VIP and level', () {
+  test('suggested people rank VIP and level without trusting stale online flags', () {
     const data = HomeDiscoveryData(
       userData: null,
       config: {},
@@ -64,9 +64,9 @@ void main() {
     );
 
     expect(data.suggestedPeople.map((person) => person.id).toList(), [
+      'offline-vip',
       'online-vip',
       'online-basic',
-      'offline-vip',
     ]);
   });
 
