@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class ProfileVisualIdentity {
   const ProfileVisualIdentity({
     required this.uid,
+    this.displayName = '',
     required this.profileImageUrl,
     required this.profileAvatarAsset,
     required this.profileAvatarAnimationUrl,
@@ -18,6 +19,7 @@ class ProfileVisualIdentity {
   });
 
   final String uid;
+  final String displayName;
   final String profileImageUrl;
   final String profileAvatarAsset;
   final String profileAvatarAnimationUrl;
@@ -38,6 +40,7 @@ class ProfileVisualIdentity {
   ) {
     return ProfileVisualIdentity(
       uid: uid,
+      displayName: (data['displayName'] ?? data['username'] ?? '').toString().trim(),
       profileImageUrl:
           (data['profileImageUrl'] ?? '').toString().trim(),
       profileAvatarAsset:
@@ -70,6 +73,7 @@ class ProfileVisualIdentity {
       ProfileVisualIdentity.fromMap(uid, const <String, dynamic>{});
 
   Map<String, dynamic> toProfileMap() => <String, dynamic>{
+        if (displayName.isNotEmpty) 'displayName': displayName,
         'profileImageUrl': profileImageUrl,
         'profileAvatarAsset': profileAvatarAsset,
         'profileAvatarAnimationUrl': profileAvatarAnimationUrl,
