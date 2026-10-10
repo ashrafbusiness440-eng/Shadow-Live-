@@ -53,6 +53,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
   String _category = 'الكل';
   String _viewMode = 'all';
   bool _libraryLoading = false;
+  bool _libraryError = false;
   List<DiscoveryRoom> _favoriteRooms = const [];
   List<DiscoveryRoom> _historyRooms = const [];
 
@@ -153,7 +154,10 @@ class _RoomListScreenState extends State<RoomListScreen> {
 
   Future<void> _loadRoomLibrary() async {
     if (_libraryLoading) return;
-    setState(() => _libraryLoading = true);
+    setState(() {
+      _libraryLoading = true;
+      _libraryError = false;
+    });
     try {
       final library = await _roomActions.loadRoomLibrary();
 
@@ -176,9 +180,10 @@ class _RoomListScreenState extends State<RoomListScreen> {
       }
     } catch (_) {
       if (mounted) {
+        setState(() => _libraryError = true);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('تعذر تحميل مفضلة وسجل الغرف حالياً.'),
+            content: Text('تعذر تحميل المفضلة أو السجل. يمكنك إعادة المحاولة.'),
           ),
         );
       }
@@ -452,12 +457,37 @@ class _RoomListScreenState extends State<RoomListScreen> {
                   SliverPadding(
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                     sliver: SliverToBoxAdapter(
-                      child: Text(
-                        _error!,
-                        style: const TextStyle(
-                          color: Colors.orangeAccent,
-                          fontSize: 12,
-                        ),
+                      child: Row(
+                        children: [
+                          Expanded(child: Text(
+                            _error!,
+                            style: const TextStyle(color: Colors.orangeAccent, fontSize: 12),
+                          )),
+                          TextButton(
+                            onPressed: _loading ? null : () => _load(forceRefresh: true),
+                            child: const Text('إعادة المحاولة'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                if (_libraryError && _viewMode != 'all')
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                    sliver: SliverToBoxAdapter(
+                      child: Row(
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              'تعذر تحميل المفضلة والسجل. تحقق من اتصال الإنترنت.',
+                              style: TextStyle(color: Colors.orangeAccent, fontSize: 12),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: _libraryLoading ? null : _loadRoomLibrary,
+                            child: const Text('إعادة المحاولة'),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -511,7 +541,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
                             borderRadius: BorderRadius.circular(22),
                             border: Border.all(color: Colors.white10),
                           ),
-                          child: const Column(
+                          child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(
@@ -521,7 +551,9 @@ class _RoomListScreenState extends State<RoomListScreen> {
                               ),
                               SizedBox(height: 10),
                               Text(
-                                'لا توجد غرف متاحة حالياً',
+                                _error != null || (_libraryError && _viewMode != 'all')
+                                    ? 'تعذر تحميل الغرف. اضغط إعادة المحاولة أعلاه.'
+                                    : 'لا توجد غرف متاحة حالياً',
                                 style: TextStyle(
                                   color: Colors.white70,
                                   fontWeight: FontWeight.w800,
@@ -529,7 +561,9 @@ class _RoomListScreenState extends State<RoomListScreen> {
                               ),
                               SizedBox(height: 4),
                               Text(
-                                'اسحب للأسفل للتحديث',
+                                _error != null || (_libraryError && _viewMode != 'all')
+                                    ? 'يمكنك إعادة تحميل البيانات يدويًا.'
+                                    : 'اسحب للأسفل للتحديث',
                                 style: TextStyle(
                                   color: Colors.white38,
                                   fontSize: 11,
