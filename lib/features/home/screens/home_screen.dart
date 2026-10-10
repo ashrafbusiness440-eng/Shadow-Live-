@@ -84,22 +84,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  ImageProvider? _profileImage() {
-    final userData = _data?.userData;
-    final url =
-        (userData?['profileImageUrl'] ?? userData?['avatarUrl'])?.toString();
-    if (url != null && url.trim().isNotEmpty) return NetworkImage(url);
-
-    final asset = userData?['profileAvatarAsset']?.toString();
-    if (asset != null && asset.trim().isNotEmpty) return AssetImage(asset);
-
-    final authUrl = FirebaseAuth.instance.currentUser?.photoURL;
-    if (authUrl != null && authUrl.trim().isNotEmpty) {
-      return NetworkImage(authUrl);
-    }
-    return null;
-  }
-
   Future<void> _recharge(int tab) async {
     await Navigator.push(
       context,
@@ -528,9 +512,18 @@ class _HomeScreenState extends State<HomeScreen> {
             .toString();
         final value = (entry['value'] ?? entry['score'] ?? '—').toString();
         final label = (entry['label'] ?? '').toString();
-        final avatarUrl = (entry['avatarUrl'] ?? entry['imageUrl'] ?? '')
-            .toString()
-            .trim();
+        // The ranking payload is already present in HomeDiscoveryData. Keep
+        // rendering snapshot-only: no profile read or listener per ranking item.
+        final avatarData = <String, dynamic>{
+          ...entry,
+          'profileImageUrl': (entry['profileImageUrl'] ??
+                  entry['avatarUrl'] ??
+                  entry['imageUrl'] ??
+                  '')
+              .toString(),
+        };
+        final rankingUserId =
+            (entry['uid'] ?? entry['userId'] ?? '').toString();
 
         return Container(
           margin: EdgeInsets.only(bottom: index == 2 ? 0 : 8),
@@ -552,27 +545,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
-              Container(
-                width: 40,
-                height: 40,
-                clipBehavior: Clip.antiAlias,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Color(0xFF281847),
-                ),
-                child: avatarUrl.isNotEmpty
-                    ? CachedNetworkImage(
-                        imageUrl: avatarUrl,
-                        fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) => const Icon(
-                          Icons.person_rounded,
-                          color: Colors.white54,
-                        ),
-                      )
-                    : const Icon(
-                        Icons.person_rounded,
-                        color: Colors.white54,
-                      ),
+              ProfileAvatarWithFrame(
+                diameter: 40,
+                userId: rankingUserId,
+                fallbackProfile: avatarData,
+                snapshotOnly: true,
+                frameScale: 1,
+                backgroundColor: const Color(0xFF281847),
+                placeholderColor: Colors.white54,
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -1061,23 +1041,7 @@ class _PersonCard extends StatelessWidget {
                   backgroundColor: const Color(0xFF281847),
                   placeholderColor: Colors.white54,
                 ),
-                if (person.isOnline)
-                  PositionedDirectional(
-                    end: -1,
-                    bottom: 1,
-                    child: Container(
-                      width: 13,
-                      height: 13,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF42D77D),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: const Color(0xFF111321),
-                          width: 2,
-                        ),
-                      ),
-                    ),
-                  ),
+
               ],
             ),
             const SizedBox(height: 8),
