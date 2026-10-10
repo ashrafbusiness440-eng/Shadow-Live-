@@ -19,6 +19,23 @@ bool isPinnedOfficialDiscoveryRoom(DiscoveryRoom room) =>
 int comparePublicDiscoveryRooms(DiscoveryRoom a, DiscoveryRoom b) =>
     compareRoomsByDiscoveryPriority(a, b);
 
+/// Reuse already verified public discovery counts for saved library entries.
+/// Server-saved favorite/history metadata is not a live presence reading.
+/// No extra query is issued, and hidden rooms remain unverified.
+List<DiscoveryRoom> roomLibraryWithVerifiedPresence(
+  Iterable<DiscoveryRoom> savedRooms,
+  Iterable<DiscoveryRoom> publicRooms,
+) {
+  final liveCounts = <String, int>{
+    for (final room in publicRooms)
+      if (room.data['presenceState'] == 'live') room.id: room.onlineCount,
+  };
+  return [
+    for (final room in savedRooms)
+      roomWithVerifiedPresence(room, liveCounts[room.id]),
+  ];
+}
+
 class RoomListScreen extends StatefulWidget {
   const RoomListScreen({super.key});
 
@@ -78,7 +95,15 @@ class _RoomListScreenState extends State<RoomListScreen> {
         });
       }
     } catch (_) {
-      if (mounted) setState(() => _error = 'تعذر تحميل الغرف حالياً');
+      if (mounted) {
+        setState(() {
+          _error = 'تعذر تحميل الغرف حالياً';
+          // A failed refresh invalidates previously verified live counts.
+          _rooms = [
+            for (final room in _rooms) roomWithVerifiedPresence(room, null),
+          ];
+        });
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -147,11 +172,14 @@ class _RoomListScreenState extends State<RoomListScreen> {
     if (_viewMode != 'all' && (!_libraryLoaded || _libraryUid != uid)) {
       return const [];
     }
+    // Do not reuse previous live counts while a refresh is pending/failed.
+    final publicRooms =
+        _loading || _error != null ? const <DiscoveryRoom>[] : _rooms;
     switch (_viewMode) {
       case 'favorites':
-        return _favoriteRooms;
+        return roomLibraryWithVerifiedPresence(_favoriteRooms, publicRooms);
       case 'history':
-        return _historyRooms;
+        return roomLibraryWithVerifiedPresence(_historyRooms, publicRooms);
       default:
         return _rooms;
     }
