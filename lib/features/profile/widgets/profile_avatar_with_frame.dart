@@ -140,14 +140,17 @@ class _ProfileAvatarWithFrameState extends State<ProfileAvatarWithFrame> {
     return CircleAvatar(
       radius: widget.diameter / 2,
       backgroundColor: widget.backgroundColor,
-      backgroundImage: provider,
-      child: provider == null
-          ? Icon(
-              widget.placeholderIcon,
-              color: widget.placeholderColor,
-              size: widget.diameter * .46,
-            )
-          : null,
+      // Foreground images cover the fallback icon only after successfully
+      // loading. If a network URL/asset breaks, the shared default avatar
+      // stays visible; no extra profile read, retry timer or listener.
+      foregroundImage: provider,
+      onForegroundImageError:
+          provider == null ? null : (error, stackTrace) {},
+      child: Icon(
+        widget.placeholderIcon,
+        color: widget.placeholderColor,
+        size: widget.diameter * .46,
+      ),
     );
   }
 
