@@ -60,7 +60,9 @@ void main() {
     expect(profile.contains("context.read<AuthBloc>().add(SignOutRequested())"), isTrue);
     expect(profile.contains('if (_guest)'), isTrue);
 
-    expect(diaries.contains("title: const Text('تسجيل الدخول')"), isTrue);
+    expect(diaries.contains('showShadowConfirmation('), isTrue);
+    expect(diaries.contains("title: 'تسجيل الدخول'"), isTrue);
+    expect(diaries.contains("confirmLabel: 'تسجيل الدخول'"), isTrue);
     expect(diaries.contains("context.read<AuthBloc>().add(SignOutRequested())"), isTrue);
     expect(diaries.contains('if (_guest || !_signedIn)'), isTrue);
 
