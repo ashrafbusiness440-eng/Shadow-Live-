@@ -22,7 +22,8 @@ void main() {
     expect(edit.contains("animationToDelete"), isTrue);
     expect(edit.contains("_deleteStoredObject(animationToDelete)"), isTrue);
     expect(
-      edit.contains("scope:'profile_avatar_animation'"),
+      edit.contains("scope: 'profile_avatar_animation'") ||
+          edit.contains("scope:'profile_avatar_animation'"),
       isTrue,
     );
 
