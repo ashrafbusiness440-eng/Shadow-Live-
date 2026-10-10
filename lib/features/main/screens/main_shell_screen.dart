@@ -265,7 +265,10 @@ class _MainShellScreenState extends State<MainShellScreen> {
   }
 
   List<Widget> get _pages => [
-    const HomeScreen(),
+    HomeScreen(
+      onOpenGames: () => _changePage(2),
+      onOpenRooms: () => _changePage(1),
+    ),
     const RoomListScreen(),
     const GamesHubScreen(),
     const ChatListScreen(),
