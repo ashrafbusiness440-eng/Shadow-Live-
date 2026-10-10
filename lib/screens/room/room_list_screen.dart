@@ -739,23 +739,29 @@ class RoomListTile extends StatelessWidget {
               SizedBox(
                 width: 44,
                 height: 48,
-                child: IconButton(
-                  tooltip: isFavorite ? 'إزالة من المفضلة' : 'أضف إلى المفضلة',
-                  onPressed: favoriteBusy ? null : onFavoriteTap,
-                  icon: favoriteBusy
-                      ? const SizedBox(
-                          width: 19,
-                          height: 19,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Icon(
-                          isFavorite
-                              ? Icons.favorite_rounded
-                              : Icons.favorite_border_rounded,
-                          color: isFavorite
-                              ? const Color(0xFFFFD54A)
-                              : Colors.white60,
-                        ),
+                child: GestureDetector(
+                  // A disabled/loading favorite still owns its hit area, so
+                  // it never bubbles into the parent room-entry InkWell.
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {},
+                  child: IconButton(
+                    tooltip: isFavorite ? 'إزالة من المفضلة' : 'أضف إلى المفضلة',
+                    onPressed: favoriteBusy ? null : onFavoriteTap,
+                    icon: favoriteBusy
+                        ? const SizedBox(
+                            width: 19,
+                            height: 19,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Icon(
+                            isFavorite
+                                ? Icons.favorite_rounded
+                                : Icons.favorite_border_rounded,
+                            color: isFavorite
+                                ? const Color(0xFFFFD54A)
+                                : Colors.white60,
+                          ),
+                  ),
                 ),
               ),
           ],
