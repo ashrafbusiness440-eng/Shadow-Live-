@@ -261,7 +261,7 @@ async function requireAdmin(db, decoded, write = false) {
     (owner || (write ? caps.includes("reviewReports")
       : READ_CAPABILITIES.some((cap) => caps.includes(cap))));
   if (!allowed) throw new GeneralReportError("forbidden", 403);
-  return uid;
+  return { uid, canReview: owner || caps.includes("reviewReports") };
 }
 
 export async function generalReports(request, env) {
@@ -275,16 +275,16 @@ export async function generalReports(request, env) {
     const body = await readJson(request);
     const action = clean(body.action);
     const db = firestoreClient(env);
-    const actorUid = await requireAdmin(db, decoded, action === "reviewReport");
+    const actor = await requireAdmin(db, decoded, action === "reviewReport");
     const result = action === "listReports"
       ? await listGeneralReports(db, body)
       : action === "getReport"
         ? await getGeneralReport(db, body)
         : action === "reviewReport"
-          ? await reviewGeneralReport(db, actorUid, body)
+          ? await reviewGeneralReport(db, actor.uid, body)
           : null;
     if (!result) throw new GeneralReportError("unsupported_action", 400);
-    return json(request, env, result);
+    return json(request, env, { ...result, canReview: actor.canReview });
   } catch (error) {
     const quota = firestoreQuotaResponse(request, env, error);
     if (quota) return quota;
