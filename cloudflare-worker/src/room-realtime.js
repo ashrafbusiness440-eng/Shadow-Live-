@@ -151,6 +151,9 @@ function roomRealtimeIdentityPresentation(
       profileImageUrl: clean(
         publicProfile.profileImageUrl || user.profileImageUrl
       ),
+      profileAvatarAsset: clean(
+        publicProfile.profileAvatarAsset || user.profileAvatarAsset
+      ),
       activeProfileFrameAssetKey: clean(
         publicProfile.activeProfileFrameAssetKey
       ),
@@ -588,6 +591,8 @@ export async function roomRealtime(request, env) {
             String(identityPresentation.displayName || "مستخدم Shadow Live"),
           profileImageUrl:
             String(identityPresentation.profileImageUrl || ""),
+          profileAvatarAsset:
+            String(identityPresentation.profileAvatarAsset || ""),
           activeProfileFrameAssetKey:
             String(identityPresentation.activeProfileFrameAssetKey || ""),
           activeProfileFrameImageUrl:
