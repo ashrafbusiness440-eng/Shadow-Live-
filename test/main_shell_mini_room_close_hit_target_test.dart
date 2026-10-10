@@ -1,8 +1,61 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_chat_room/features/main/screens/main_shell_screen.dart';
 
 void main() {
+  test('mini room disconnects when seat cleanup never resolves', () async {
+    final waiting = Completer<void>();
+    var disconnectCalls = 0;
+    await leaveMiniRoomSafely(
+      releaseSeat: () => waiting.future,
+      disconnect: () async { disconnectCalls++; },
+      seatTimeout: Duration.zero,
+    );
+    expect(disconnectCalls, 1);
+    waiting.complete();
+  });
+
+  test('mini room disconnects after a seat removal failure', () async {
+    var disconnectCalls = 0;
+    await leaveMiniRoomSafely(
+      releaseSeat: () async { throw StateError('offline'); },
+      disconnect: () async { disconnectCalls++; },
+    );
+    expect(disconnectCalls, 1);
+  });
+
+  test('mini room normally removes seat before disconnecting', () async {
+    final steps = <String>[];
+    await leaveMiniRoomSafely(
+      releaseSeat: () async { steps.add('seat'); },
+      disconnect: () async { steps.add('voice'); },
+    );
+    expect(steps, ['seat', 'voice']);
+  });
+
+  testWidgets('busy mini room close stays 44px and ignores repeated taps',
+      (tester) async {
+    var closeCalls = 0;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: MiniRoomCloseControl(
+            leaving: true,
+            onLeave: () => closeCalls++,
+          ),
+        ),
+      ),
+    ));
+    final close = find.byKey(const Key('mini-room-close'));
+    expect(tester.getSize(close), const Size(44, 44));
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    await tester.tap(close);
+    await tester.pump();
+    expect(closeCalls, 0);
+  });
+
   testWidgets('mini-room close owns its full 44px in-bounds target on narrow screens',
       (tester) async {
     addTearDown(() => tester.binding.setSurfaceSize(null));

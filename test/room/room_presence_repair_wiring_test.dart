@@ -3,6 +3,27 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('room leave closes socket before bounded API cleanup and ZEGO exit', () {
+    final presence =
+        File('lib/features/room/services/room_presence_service.dart')
+            .readAsStringSync();
+    final controller =
+        File('lib/features/voice/services/voice_room_session_controller.dart')
+            .readAsStringSync();
+    final start = presence.indexOf('Future<void> leave(String roomId) async {');
+    final end = presence.indexOf('Future<void> refreshIdentity(', start);
+    expect(start, greaterThanOrEqualTo(0));
+    expect(end, greaterThan(start));
+    final leave = presence.substring(start, end);
+    expect(leave.indexOf('await _socketSubscription?.cancel();'),
+        lessThan(leave.indexOf("await _post('voice-session'")));
+    expect(leave.contains("'action': 'roomSessionLeave'"), isTrue);
+    expect(leave.contains('}).timeout(const Duration(seconds: 3));'), isTrue);
+    expect(controller.contains('await _presenceService.leave(id);'), isTrue);
+    expect(controller.contains('await _stopPresence(activeRoomId);'), isTrue);
+    expect(controller.contains('await _voiceService.leaveRoom();'), isTrue);
+  });
+
   test('room presence waits for server.ready and repairs once without polling', () {
     final presence = File(
       'lib/features/room/services/room_presence_service.dart',

@@ -40,7 +40,13 @@ void main() {
     expect(shell.contains('onPanUpdate: (details)'), isTrue);
     expect(shell.contains('clampMiniRoomInset('), isTrue);
     expect(shell.contains('onTap: _restoreMiniRoom'), isTrue);
-    expect(shell.contains('MiniRoomCloseControl(onLeave: _leaveMiniRoom)'), isTrue);
+    expect(shell.contains('child: MiniRoomCloseControl('), isTrue);
+    expect(shell.contains('onLeave: _leaveMiniRoom,'), isTrue);
+    expect(shell.contains('leaving: _miniRoomLeaving,'), isTrue);
+    expect(shell.contains('if (_miniRoomLeaving || !_voiceSession.active) return;'), isTrue);
+    expect(shell.contains('if (_miniRoomLeaving) return;'), isTrue);
+    expect(shell.contains('disconnect: _voiceSession.leave,'), isTrue);
+    expect(shell.contains('Duration(seconds: 3)'), isTrue);
     expect(shell.contains('width: 44,'), isTrue);
     expect(shell.contains('height: 44,'), isTrue);
     expect(shell.contains("key: const Key('mini-room-close')"), isTrue);

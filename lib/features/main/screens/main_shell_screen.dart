@@ -34,22 +34,44 @@ double clampMiniRoomInset(
 
 /// Full-size accessible hit area, contained within the draggable thumbnail.
 /// Taps here are handled independently from the parent's restore gesture.
+/// Bound the best-effort seat cleanup so it cannot indefinitely block
+/// disconnecting voice and presence when the device network stalls.
+Future<void> leaveMiniRoomSafely({
+  required Future<void> Function() releaseSeat,
+  required Future<void> Function() disconnect,
+  Duration seatTimeout = const Duration(seconds: 3),
+}) async {
+  try {
+    await releaseSeat().timeout(seatTimeout);
+  } catch (_) {
+    // Even when seat removal times out, disconnect the live room session.
+    // The server's existing presence lifecycle remains authoritative.
+  }
+  await disconnect();
+}
+
 class MiniRoomCloseControl extends StatelessWidget {
-  const MiniRoomCloseControl({super.key, required this.onLeave});
+  const MiniRoomCloseControl({
+    super.key,
+    required this.onLeave,
+    this.leaving = false,
+  });
 
   final VoidCallback onLeave;
+  final bool leaving;
 
   @override
   Widget build(BuildContext context) {
     return Semantics(
       label: 'مغادرة الغرفة',
       button: true,
+      enabled: !leaving,
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           key: const Key('mini-room-close'),
           borderRadius: BorderRadius.circular(22),
-          onTap: onLeave,
+          onTap: leaving ? null : onLeave,
           child: SizedBox(
             width: 44,
             height: 44,
@@ -60,14 +82,22 @@ class MiniRoomCloseControl extends StatelessWidget {
                   color: Colors.black.withValues(alpha: .88),
                   shape: BoxShape.circle,
                 ),
-                child: const SizedBox(
+                child: SizedBox(
                   width: 28,
                   height: 28,
-                  child: Icon(
-                    Icons.close_rounded,
-                    size: 17,
-                    color: Colors.white,
-                  ),
+                  child: leaving
+                      ? const Padding(
+                          padding: EdgeInsets.all(5),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(
+                          Icons.close_rounded,
+                          size: 17,
+                          color: Colors.white,
+                        ),
                 ),
               ),
             ),
@@ -94,6 +124,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
   final RoomSeatService _miniRoomSeatService = RoomSeatService();
   double _miniRoomRight = 14;
   double _miniRoomBottom = 14;
+  bool _miniRoomLeaving = false;
 
   @override
   void initState() {
@@ -117,7 +148,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
       roomSurfaceImageUrl(_voiceSession.roomArguments);
 
   void _restoreMiniRoom() {
-    if (!_voiceSession.active) return;
+    if (_miniRoomLeaving || !_voiceSession.active) return;
     final arguments =
         Map<String, dynamic>.from(_voiceSession.roomArguments);
     _voiceSession.restore();
@@ -128,15 +159,19 @@ class _MainShellScreenState extends State<MainShellScreen> {
   }
 
   Future<void> _leaveMiniRoom() async {
+    if (_miniRoomLeaving || !_voiceSession.active) return;
+    setState(() => _miniRoomLeaving = true);
     final roomId = _voiceSession.roomId.trim();
-    if (roomId.isNotEmpty) {
-      try {
-        await _miniRoomSeatService.leaveSeat(roomId);
-      } catch (_) {
-        // Voice/presence leave still proceeds if the seat cleanup is already done.
-      }
+    try {
+      await leaveMiniRoomSafely(
+        releaseSeat: () async {
+          if (roomId.isNotEmpty) await _miniRoomSeatService.leaveSeat(roomId);
+        },
+        disconnect: _voiceSession.leave,
+      );
+    } finally {
+      if (mounted) setState(() => _miniRoomLeaving = false);
     }
-    await _voiceSession.leave();
   }
 
   Widget _buildMiniRoom({
@@ -167,6 +202,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
         behavior: HitTestBehavior.opaque,
         onTap: _restoreMiniRoom,
         onPanUpdate: (details) {
+          if (_miniRoomLeaving) return;
           setState(() {
             _miniRoomRight = clampMiniRoomInset(
               right - details.delta.dx,
@@ -216,7 +252,10 @@ class _MainShellScreenState extends State<MainShellScreen> {
               Positioned(
                 top: 0,
                 right: 0,
-                child: MiniRoomCloseControl(onLeave: _leaveMiniRoom),
+                child: MiniRoomCloseControl(
+                  onLeave: _leaveMiniRoom,
+                  leaving: _miniRoomLeaving,
+                ),
               ),
             ],
           ),
