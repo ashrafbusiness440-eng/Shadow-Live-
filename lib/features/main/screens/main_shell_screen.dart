@@ -17,8 +17,8 @@ import '../../user/screens/profile_screen.dart';
 import '../../voice/services/voice_room_session_controller.dart';
 import '../../../services/navigation_service.dart';
 
-/// Keep the draggable mini room inside the visible shell even when the
-/// close control extends slightly beyond the thumbnail. Pure and IO-free.
+/// Keep the draggable mini room inside the visible shell with its controls
+/// entirely within the thumbnail. Pure and IO-free.
 double clampMiniRoomInset(
   double value, {
   required double extent,
@@ -30,6 +30,52 @@ double clampMiniRoomInset(
       (extent - cardSize - farMargin).clamp(0.0, double.infinity).toDouble();
   final minInset = maxInset < edgeMargin ? maxInset : edgeMargin;
   return value.clamp(minInset, maxInset).toDouble();
+}
+
+/// Full-size accessible hit area, contained within the draggable thumbnail.
+/// Taps here are handled independently from the parent's restore gesture.
+class MiniRoomCloseControl extends StatelessWidget {
+  const MiniRoomCloseControl({super.key, required this.onLeave});
+
+  final VoidCallback onLeave;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'مغادرة الغرفة',
+      button: true,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          key: const Key('mini-room-close'),
+          borderRadius: BorderRadius.circular(22),
+          onTap: onLeave,
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Align(
+              alignment: Alignment.topRight,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: .88),
+                  shape: BoxShape.circle,
+                ),
+                child: const SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: Icon(
+                    Icons.close_rounded,
+                    size: 17,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class MainShellScreen extends StatefulWidget {
@@ -102,8 +148,8 @@ class _MainShellScreenState extends State<MainShellScreen> {
     }
 
     const cardSize = 72.0;
-    // Reserve space for the close button (-6px outside the thumbnail)
-    // and the top system inset. No new listeners or network reads.
+    // Respect the top system inset. The 44px close hit target now stays
+    // inside the 72px thumbnail. No new listeners or network reads.
     final topInset = MediaQuery.paddingOf(context).top;
     final right = clampMiniRoomInset(_miniRoomRight, extent: maxWidth);
     final bottom = clampMiniRoomInset(
@@ -168,26 +214,9 @@ class _MainShellScreenState extends State<MainShellScreen> {
                 ),
               ),
               Positioned(
-                top: -6,
-                right: -6,
-                child: Material(
-                  color: Colors.black.withValues(alpha: .88),
-                  shape: const CircleBorder(),
-                  child: InkWell(
-                    key: const Key('mini-room-close'),
-                    customBorder: const CircleBorder(),
-                    onTap: _leaveMiniRoom,
-                    child: const SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: Icon(
-                        Icons.close_rounded,
-                        size: 16,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
+                top: 0,
+                right: 0,
+                child: MiniRoomCloseControl(onLeave: _leaveMiniRoom),
               ),
             ],
           ),

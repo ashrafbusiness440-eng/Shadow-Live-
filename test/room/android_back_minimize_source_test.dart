@@ -37,7 +37,7 @@ void main() {
     expect(shell.contains("key: const Key('mini-room-close')"), isTrue);
     expect(shell.contains('onPanUpdate: (details)'), isTrue);
     expect(shell.contains('onTap: _restoreMiniRoom'), isTrue);
-    expect(shell.contains('onTap: _leaveMiniRoom'), isTrue);
+    expect(shell.contains('MiniRoomCloseControl(onLeave: _leaveMiniRoom)'), isTrue);
     expect(shell.contains('if (!_voiceSession.active || !_voiceSession.minimized)'),
         isTrue);
     expect(session.contains('void minimize() {'), isTrue);
