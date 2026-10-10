@@ -5,6 +5,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import 'private_chat_screen.dart';
+import '../../notifications/services/notification_service.dart';
+import '../../../services/navigation_service.dart';
 import '../../profile/widgets/quick_profile_sheet.dart';
 import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../../profile/services/profile_action_service.dart';
@@ -25,6 +27,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
   final Map<String, _ChatIdentityRead> _identityReads = {};
   StreamSubscription<String>? _identityInvalidations;
   String? _identityOwnerUid;
+  final NotificationService _notificationService = NotificationService();
+  String? _notificationOwnerUid;
+  Stream<bool>? _unreadNotifications;
 
   @override
   void initState() {
@@ -378,6 +383,14 @@ class _ChatListScreenState extends State<ChatListScreen> {
       _identityReads.clear();
       _identityOwnerUid = me;
     }
+    // Memoize per account: rebuilding the conversation list must not
+    // resubscribe to notification reads or leak another user's badge.
+    if (_notificationOwnerUid != me) {
+      _notificationOwnerUid = me;
+      _unreadNotifications = me == null || me.isEmpty
+          ? null
+          : _notificationService.watchHasUnread(me);
+    }
     if (me == null || me.isEmpty ||
         FirebaseAuth.instance.currentUser?.isAnonymous == true) {
       return const Directionality(
@@ -406,6 +419,14 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     const Icon(Icons.chat_bubble_rounded, color: Color(0xFFFFD54A)),
                     const SizedBox(width: 10),
                     const Expanded(child: Text('الرسائل', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900))),
+                    StreamBuilder<bool>(
+                      stream: _unreadNotifications,
+                      builder: (context, snapshot) => ChatNotificationBell(
+                        hasUnread: snapshot.data == true,
+                        onPressed: () => Navigator.of(context)
+                            .pushNamed(AppRoutes.notifications),
+                      ),
+                    ),
                     IconButton(onPressed: _newChat, tooltip: 'محادثة جديدة', icon: const Icon(Icons.add_comment_rounded, color: Color(0xFFFFD54A))),
                   ],
                 ),
@@ -648,4 +669,53 @@ class _ChatIdentityRead {
 
   final Future<ProfileVisualIdentity> future;
   final DateTime createdAt;
+}
+
+ 
+/// One notification entry beside Messages, with a server-backed unread dot.
+/// The notification page owns marking items read and routing to their sources.
+class ChatNotificationBell extends StatelessWidget {
+  const ChatNotificationBell({
+    super.key,
+    required this.hasUnread,
+    required this.onPressed,
+  });
+
+  final bool hasUnread;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        IconButton(
+          key: const Key('messages-notifications'),
+          tooltip: 'الإشعارات',
+          onPressed: onPressed,
+          icon: const Icon(
+            Icons.notifications_none_rounded,
+            color: Colors.white,
+          ),
+        ),
+        if (hasUnread)
+          PositionedDirectional(
+            end: 9,
+            top: 9,
+            child: IgnorePointer(
+              child: Container(
+                key: const Key('messages-notifications-unread'),
+                width: 9,
+                height: 9,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFF455B),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: const Color(0xFF05060D)),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
 }
