@@ -95,7 +95,15 @@ class _RoomListScreenState extends State<RoomListScreen> {
         });
       }
     } catch (_) {
-      if (mounted) setState(() => _error = 'تعذر تحميل الغرف حالياً');
+      if (mounted) {
+        setState(() {
+          _error = 'تعذر تحميل الغرف حالياً';
+          // A failed refresh invalidates previously verified live counts.
+          _rooms = [
+            for (final room in _rooms) roomWithVerifiedPresence(room, null),
+          ];
+        });
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -164,11 +172,14 @@ class _RoomListScreenState extends State<RoomListScreen> {
     if (_viewMode != 'all' && (!_libraryLoaded || _libraryUid != uid)) {
       return const [];
     }
+    // Do not reuse previous live counts while a refresh is pending/failed.
+    final publicRooms =
+        _loading || _error != null ? const <DiscoveryRoom>[] : _rooms;
     switch (_viewMode) {
       case 'favorites':
-        return roomLibraryWithVerifiedPresence(_favoriteRooms, _rooms);
+        return roomLibraryWithVerifiedPresence(_favoriteRooms, publicRooms);
       case 'history':
-        return roomLibraryWithVerifiedPresence(_historyRooms, _rooms);
+        return roomLibraryWithVerifiedPresence(_historyRooms, publicRooms);
       default:
         return _rooms;
     }
