@@ -5,6 +5,9 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('room audience pictures reuse the canonical snapshot-only renderer', () {
     final room = File('lib/main.dart').readAsStringSync();
+    final giftSheet =
+        File('lib/features/gift/widgets/room_gift_sheet.dart')
+            .readAsStringSync();
     final presence =
         File('lib/features/room/services/room_presence_service.dart')
             .readAsStringSync();
@@ -33,6 +36,9 @@ void main() {
     final sheet = room.substring(stripEnd);
     expect(sheet.contains("'profileAvatarAsset':\n                                            user.profileAvatarAsset"), isTrue);
     expect(presence.contains("data['profileAvatarAsset']"), isTrue);
+    expect(giftSheet.contains("'profileAvatarAsset': user.profileAvatarAsset"),
+        isTrue);
+    expect(giftSheet.contains('snapshotOnly: true'), isTrue);
     expect(serverSnapshot.contains('profileAvatarAsset: clean(item.profileAvatarAsset)'), isTrue);
     expect(identity.contains('publicProfile.profileAvatarAsset || user.profileAvatarAsset'), isTrue);
     expect(roomObject.contains('profileAvatarAsset: String(body.profileAvatarAsset || "").trim()'), isTrue);
