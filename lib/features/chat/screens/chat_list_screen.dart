@@ -52,7 +52,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
             const Duration(seconds: 45)) {
       return cached.future;
     }
-    final future = ProfileVisualIdentityService.instance.load(id);
+    final future = ProfileVisualIdentityService.instance.load(
+      id,
+      requirePublicRecord: true,
+    );
     _identityReads.remove(id);
     _identityReads[id] = _ChatIdentityRead(future);
     // Bound only the visible-list memo; the shared service owns batched
