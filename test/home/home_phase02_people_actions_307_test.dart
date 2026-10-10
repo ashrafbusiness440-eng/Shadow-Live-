@@ -182,7 +182,7 @@ void main() {
     expect(home.contains('_followService.isFollowing('), isFalse);
     expect(follow.contains('whereIn: byRelationId.keys.toList()'), isTrue);
     expect(follow.contains('.take(10)'), isTrue);
-    expect(follow.contains("Uri.parse('\\$_baseUrl/chat-actions')"), isTrue);
+    expect(follow.contains(r"Uri.parse('$_baseUrl/chat-actions')"), isTrue);
     expect(follow.contains("'action': 'setFollow'"), isTrue);
   });
 }
