@@ -15,68 +15,60 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  analyze-and-test:
+  # Independent checks run on parallel bounded GitHub runners; no gate is skipped.
+  security-and-integration:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Audit Cloudflare cutover
         run: python3 scripts/phase7_cloudflare_audit.py
-
       - name: Pressure regression guardrails
         run: python3 scripts/pressure_guardrail_audit.py
-
       - name: Audit Diaries Stage 09 pressure and security
         run: python3 scripts/diaries_stage09_audit.py
-
       - name: Audit Agency integration CI coverage
         run: python3 .github/scripts/audit_agency_ci_coverage.py
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
-
-      - name: Install dependencies
-        run: flutter pub get
-
       - name: Check Cloudflare Worker JavaScript syntax
         run: |
           find cloudflare-worker/src -type f -name '*.js' -print0 | xargs -0 -n1 node --check
-
       - name: Validate Cloudflare Durable Object bundle
         run: |
           npm --prefix cloudflare-worker install --no-audit --no-fund
           cd cloudflare-worker
           npx wrangler deploy --dry-run --outdir ../wrangler-dry-run
-
       - name: Run economy, agency financial security, mic, and realtime policy unit tests
         run: node --test server/__tests__/economy-policy.test.js server/__tests__/agency-data-model.test.js server/__tests__/agency-permissions.test.js server/__tests__/agency-financial-safety.test.js server/__tests__/mic-activity.test.js server/__tests__/economy-permissions.test.js server/__tests__/room-rocket.test.js server/__tests__/game-engine.test.js server/__tests__/room-realtime-protocol.test.js server/__tests__/room-realtime-presence.test.js server/__tests__/room-realtime-game.test.js server/__tests__/auth-state-reliability.test.js server/__tests__/firestore-reliability.test.js server/__tests__/config-cache.test.js server/__tests__/pressure-telemetry.test.js server/__tests__/room-realtime-pressure.test.js server/__tests__/room-rocket-feed.test.js server/__tests__/room-root-pressure-guard.test.js server/__tests__/pk-room-gift-score.test.js server/__tests__/room-level-surfaces.test.js server/__tests__/settlement-pressure-guard.test.js server/__tests__/agency-final-ui-regression.test.js server/__tests__/system-health.test.js server/__tests__/user-storage.test.js server/__tests__/asset-studio-core.test.js server/__tests__/relationships-core.test.js server/__tests__/diaries-core.test.js server/__tests__/diary-moderation.test.js server/__tests__/admin-inbox.test.js server/__tests__/user-level-policy.test.js server/__tests__/user-level-summary.test.js server/__tests__/user-level-control.test.js server/__tests__/user-level-access.test.js server/__tests__/user-level-visibility.test.js server/__tests__/owner-absolute-room-access.test.js server/__tests__/vip-policy.test.js server/__tests__/vip-state.test.js server/__tests__/vip-level-control.test.js server/__tests__/vip-cosmetics.test.js server/__tests__/vip4-privacy-consumers.test.js server/__tests__/vip-upgrade-broadcast.test.js server/__tests__/vip-information-center.test.js server/__tests__/vip-runtime-closure.test.js server/__tests__/vip-final-closure.test.js
-
       - name: Set up Java for Firestore emulator
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
-
       - name: Install API integration test dependencies
         run: npm install --no-save firebase-admin@13.5.0 firebase@12.19.0 @firebase/rules-unit-testing@5.0.2
-
       - name: Build Firebase functions
         run: |
           npm --prefix functions install --no-audit --no-fund
           npm --prefix functions run build
-
       - name: Run wallet gift agency application and settlement Firestore integration tests
         run: npx --yes firebase-tools@15.1.0 emulators:exec --only firestore --project shadow-live-economy-test "node --test --test-concurrency=1 server/__tests__/wallet-actions.integration.test.js server/__tests__/gift-transactions.integration.test.js server/__tests__/agency-application.integration.test.js server/__tests__/agency-approval.integration.test.js server/__tests__/agency-rejection.integration.test.js server/__tests__/agency-membership-request.integration.test.js server/__tests__/agency-membership-commit.integration.test.js server/__tests__/agency-membership-departure.integration.test.js server/__tests__/agency-membership-cooldown.integration.test.js server/__tests__/agency-membership-cooldown-override.integration.test.js server/__tests__/agency-stage04-closure.integration.test.js server/__tests__/agency-manager-role.integration.test.js server/__tests__/agency-stage05-closure.integration.test.js server/__tests__/agency-stage06a-target-progress.integration.test.js server/__tests__/agency-stage06b-immediate-salary.integration.test.js server/__tests__/agency-stage06c-monthly-lifecycle.integration.test.js server/__tests__/agency-stage07a-share-accrual.integration.test.js server/__tests__/agency-stage07b-wallet-carryover.integration.test.js server/__tests__/agency-stage07c-concurrency-security.integration.test.js server/__tests__/agency-stage08a-bonus-core.integration.test.js server/__tests__/agency-stage08b-month-rollover-bonus.integration.test.js server/__tests__/agency-stage08c-concurrency-security.integration.test.js server/__tests__/agency-stage09a-surplus-policy.integration.test.js server/__tests__/agency-stage09b-month-end-surplus.integration.test.js server/__tests__/agency-stage09c-concurrency-security.integration.test.js server/__tests__/agency-stage10a-public-page.integration.test.js server/__tests__/agency-stage10b-public-rankings.integration.test.js server/__tests__/agency-stage11a-host-my-agency-core.integration.test.js server/__tests__/agency-stage11c-host-leave-request.integration.test.js server/__tests__/agency-stage12a-owner-dashboard.integration.test.js server/__tests__/agency-stage12b-owner-performance.integration.test.js server/__tests__/agency-stage12c-owner-management.integration.test.js server/__tests__/agency-stage13a-control-identity.integration.test.js server/__tests__/agency-stage13b-policy-controls.integration.test.js server/__tests__/agency-stage13c-safety-closure.integration.test.js server/__tests__/agency-stage15a-search.integration.test.js server/__tests__/agency-packages.integration.test.js server/__tests__/firestore-security.integration.test.js server/__tests__/diaries-lifecycle.integration.test.js server/__tests__/vip-actions.integration.test.js server/__tests__/vip-recharge-growth.integration.test.js server/__tests__/vip-room-ghost.integration.test.js server/__tests__/vip-kick-protection.integration.test.js server/__tests__/vip-hidden-entry.integration.test.js server/__tests__/vip-hide-ranking-lists.integration.test.js server/__tests__/vip4-privacy.integration.test.js server/__tests__/vip-trial-cards.integration.test.js server/__tests__/vip-frame-customization.integration.test.js server/__tests__/vip10-global-entry.integration.test.js server/__tests__/room-rocket.integration.test.js server/__tests__/reward-inventory.integration.test.js server/__tests__/cosmetic-room.integration.test.js server/__tests__/game-runtime.integration.test.js server/__tests__/game-control.integration.test.js functions/lib-test/test/game_settlement.integration.test.js"
 
+  flutter-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Install dependencies
+        run: flutter pub get
       - name: Audit Dart reachability
         run: python3 .github/scripts/find_unreachable_dart.py
-
       - name: Upload Dart reachability
         uses: actions/upload-artifact@v4
         with:
@@ -84,30 +76,26 @@ jobs:
           path: dart_reachability.json
           if-no-files-found: error
           retention-days: 3
-
       - name: Analyze
         run: flutter analyze --no-fatal-infos --no-fatal-warnings lib test
-
       - name: Test
         run: flutter test
 
-      - name: Build Shadow Control web
-        run: |
-          flutter build web --target lib/main_control.dart
-          rm -rf build/control-web
-          cp -R build/web build/control-web
-
-      - name: Upload Shadow Control build
-        uses: actions/upload-artifact@v4
+  main-tab-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
         with:
-          name: shadow-control-web
-          path: build/control-web
-          if-no-files-found: error
-          retention-days: 3
-
+          channel: stable
+          cache: true
+      - name: Install dependencies
+        run: flutter pub get
       - name: Build web
         run: flutter build web
-
       - name: Upload web build
         uses: actions/upload-artifact@v4
         with:
@@ -115,10 +103,8 @@ jobs:
           path: build/web
           if-no-files-found: error
           retention-days: 3
-
       - name: Build E2E web
         run: flutter build web --dart-define=E2E_TEST=true
-
       - name: Start E2E web server
         run: |
           python3 -m http.server 8088 --directory build/web > /tmp/shadow-e2e-server.log 2>&1 &
@@ -130,15 +116,12 @@ jobs:
           done
           cat /tmp/shadow-e2e-server.log
           exit 1
-
       - name: Install Playwright Chromium
         run: |
           npm install --no-save playwright@latest
           npx playwright install --with-deps chromium
-
       - name: Run main-tab browser E2E
         run: node .github/scripts/e2e_tabs.mjs
-
       - name: Upload E2E screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -148,9 +131,21 @@ jobs:
           if-no-files-found: warn
           retention-days: 3
 
+  voice-room-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Install dependencies
+        run: flutter pub get
       - name: Build voice-room E2E web
         run: flutter build web --dart-define=E2E_ROOM_TEST=true --dart-define=E2E_GAME_TEST=true
-
       - name: Start voice-room E2E server
         run: |
           python3 -m http.server 8089 --directory build/web > /tmp/shadow-room-e2e-server.log 2>&1 &
@@ -162,10 +157,12 @@ jobs:
           done
           cat /tmp/shadow-room-e2e-server.log
           exit 1
-
+      - name: Install Playwright Chromium
+        run: |
+          npm install --no-save playwright@latest
+          npx playwright install --with-deps chromium
       - name: Run voice-room browser E2E
         run: node .github/scripts/e2e_voice_room.mjs
-
       - name: Upload voice-room E2E screenshot
         if: always()
         uses: actions/upload-artifact@v4
@@ -175,9 +172,33 @@ jobs:
           if-no-files-found: warn
           retention-days: 3
 
+  shadow-control-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Build Shadow Control web
+        run: |
+          flutter build web --target lib/main_control.dart
+          rm -rf build/control-web
+          cp -R build/web build/control-web
+      - name: Upload Shadow Control build
+        uses: actions/upload-artifact@v4
+        with:
+          name: shadow-control-web
+          path: build/control-web
+          if-no-files-found: error
+          retention-days: 3
       - name: Build Shadow Control E2E web
         run: flutter build web --target lib/main_control.dart --dart-define=CONTROL_E2E_TEST=true
-
       - name: Start Shadow Control E2E server
         run: |
           python3 -m http.server 8090 --directory build/web > /tmp/shadow-control-e2e-server.log 2>&1 &
@@ -189,10 +210,12 @@ jobs:
           done
           cat /tmp/shadow-control-e2e-server.log
           exit 1
-
+      - name: Install Playwright Chromium
+        run: |
+          npm install --no-save playwright@latest
+          npx playwright install --with-deps chromium
       - name: Run Shadow Control browser E2E
         run: node .github/scripts/e2e_control_rooms.mjs
-
       - name: Upload Shadow Control E2E screenshot
         if: always()
         uses: actions/upload-artifact@v4
@@ -201,3 +224,19 @@ jobs:
           path: control-e2e-screenshots
           if-no-files-found: warn
           retention-days: 3
+
+  # Keep the original required check name as a fail-closed aggregate. A PR
+  # cannot receive a green analyze-and-test unless all five groups succeed.
+  analyze-and-test:
+    name: analyze-and-test
+    needs: [security-and-integration, flutter-quality, main-tab-browser, voice-room-browser, shadow-control-browser]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require success from every parallel group
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS_JSON" | jq -r 'to_entries[] | "\\(.key): \\(.value.result)"'
+          echo "$NEEDS_JSON" | jq -e 'all(.[]; .result == "success")'
