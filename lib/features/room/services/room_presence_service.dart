@@ -11,6 +11,7 @@ class RoomPresenceUser {
     required this.uid,
     required this.displayName,
     required this.profileImageUrl,
+    this.profileAvatarAsset = '',
     this.activeProfileFrameAssetKey = '',
     this.activeProfileFrameImageUrl = '',
     this.activeProfileFrameExpiresAtMs = 0,
@@ -26,6 +27,7 @@ class RoomPresenceUser {
   final String uid;
   final String displayName;
   final String profileImageUrl;
+  final String profileAvatarAsset;
   final String activeProfileFrameAssetKey;
   final String activeProfileFrameImageUrl;
   final int activeProfileFrameExpiresAtMs;
@@ -43,6 +45,7 @@ class RoomPresenceUser {
         displayName:
             (data['displayName'] ?? 'مستخدم Shadow Live').toString(),
         profileImageUrl: (data['profileImageUrl'] ?? '').toString(),
+        profileAvatarAsset: (data['profileAvatarAsset'] ?? '').toString(),
         activeProfileFrameAssetKey:
             (data['activeProfileFrameAssetKey'] ?? '').toString(),
         activeProfileFrameImageUrl:

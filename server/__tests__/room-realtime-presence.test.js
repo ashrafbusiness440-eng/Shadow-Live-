@@ -25,6 +25,7 @@ test("open socket attachments define room presence", () => {
       uid: "u2",
       displayName: "Two",
       profileImageUrl: "",
+      profileAvatarAsset: "assets/images/avatars/male_2.png",
       joinedAtMs: 2000,
       connectedAtMs: 2000,
     },
@@ -32,6 +33,10 @@ test("open socket attachments define room presence", () => {
 
   assert.deepEqual(participants.map((item) => item.uid), ["u1", "u2"]);
   assert.equal(participants[0].lastSeenAtMs, 9000);
+  assert.equal(
+    participants[1].profileAvatarAsset,
+    "assets/images/avatars/male_2.png",
+  );
   assert.equal(hasPresenceUid(participants, "u1"), true);
   assert.equal(hasPresenceUid(participants, "missing"), false);
 });
@@ -49,6 +54,7 @@ test("multiple sockets for one uid produce one participant", () => {
       uid: "u1",
       displayName: "One",
       profileImageUrl: "profile.webp",
+      profileAvatarAsset: "assets/images/avatars/female_3.png",
       joinedAtMs: 1000,
       connectedAtMs: 4000,
     },
@@ -58,6 +64,39 @@ test("multiple sockets for one uid produce one participant", () => {
   assert.equal(participants[0].uid, "u1");
   assert.equal(participants[0].joinedAtMs, 1000);
   assert.equal(participants[0].profileImageUrl, "profile.webp");
+  assert.equal(
+    participants[0].profileAvatarAsset,
+    "assets/images/avatars/female_3.png",
+  );
+});
+
+test("mysterious mode hides selected avatars across overlapping sockets", () => {
+  const [user] = presenceSnapshotFromAttachments([
+    {
+      uid: "u1",
+      displayName: "Real Name",
+      profileImageUrl: "real.jpg",
+      profileAvatarAsset: "assets/images/avatars/male_1.png",
+      activeProfileFrameAssetKey: "real-frame",
+      vipLevel: 9,
+      connectedAtMs: 1000,
+    },
+    {
+      uid: "u1",
+      displayName: "الشخص الغامض",
+      mysteriousMode: true,
+      mysteriousId: "123456789",
+      profileImageUrl: "",
+      profileAvatarAsset: "",
+      connectedAtMs: 2000,
+    },
+  ], 5000);
+  assert.equal(user.mysteriousMode, true);
+  assert.equal(user.displayName, "الشخص الغامض");
+  assert.equal(user.profileImageUrl, "");
+  assert.equal(user.profileAvatarAsset, "");
+  assert.equal(user.activeProfileFrameAssetKey, "");
+  assert.equal(user.vipLevel, 0);
 });
 
 test("invalid attachments never create phantom users", () => {
@@ -217,4 +256,42 @@ test("realtime object separates hideRoomPresence from hiddenRoomEntry", () => {
     source.includes('url.pathname === "/presence/internal"'),
     true,
   );
+});
+
+test("avatar asset survives the realtime room roster and duplicate sockets", () => {
+  const participants = presenceSnapshotFromAttachments([
+    { uid: "u1", profileImageUrl: "", profileAvatarAsset: "", joinedAtMs: 1000 },
+    { uid: "u1", profileAvatarAsset: "assets/avatars/selected.png", joinedAtMs: 1100 },
+    { uid: "u2", profileAvatarAsset: "assets/avatars/guest.png", joinedAtMs: 1200 },
+  ], 1500);
+  assert.equal(participants.length, 2);
+  assert.equal(participants[0].profileAvatarAsset, "assets/avatars/selected.png");
+  assert.equal(participants[1].profileAvatarAsset, "assets/avatars/guest.png");
+});
+
+test("mysterious users do not expose their avatar through room identity", async () => {
+  const { applyMysteriousIdentityPresentation } = await import(
+    "../../cloudflare-worker/src/mysterious-identity.js"
+  );
+  const visible = applyMysteriousIdentityPresentation(
+    { profileImageUrl: "photo.webp", profileAvatarAsset: "assets/avatars/secret.png" },
+    { mysteriousMode: false },
+  );
+  assert.equal(visible.profileAvatarAsset, "assets/avatars/secret.png");
+  const hidden = applyMysteriousIdentityPresentation(
+    { profileImageUrl: "photo.webp", profileAvatarAsset: "assets/avatars/secret.png" },
+    { mysteriousEnabled: true, mysteriousPermanent: true, mysteriousId: "123456789" },
+  );
+  assert.equal(hidden.profileImageUrl, "");
+  assert.equal(hidden.profileAvatarAsset, "");
+});
+
+test("existing ticket, socket, roster and identity refresh pass avatar asset once", () => {
+  const worker = readFileSync("cloudflare-worker/src/room-realtime.js", "utf8");
+  const object = readFileSync("cloudflare-worker/src/room-realtime-object.js", "utf8");
+  assert.ok(worker.includes("publicProfile.profileAvatarAsset || user.profileAvatarAsset"));
+  assert.ok(worker.includes("identityPresentation.profileAvatarAsset"));
+  assert.ok(object.includes('const profileAvatarAsset = String(body.profileAvatarAsset || "").trim()'));
+  assert.ok(object.includes('const profileAvatarAsset = String(record.profileAvatarAsset || "").trim()'));
+  assert.ok(object.includes('profileAvatarAsset: String(body.profileAvatarAsset || "").trim()'));
 });
