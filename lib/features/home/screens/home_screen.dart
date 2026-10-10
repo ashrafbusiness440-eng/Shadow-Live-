@@ -1386,10 +1386,9 @@ class HomeCompactPersonCard extends StatelessWidget {
                   placeholderColor: Colors.white54,
                 ),
                 if (onFollow != null) ...[
-                  const SizedBox(width: 4),
                   SizedBox(
-                    height: 40,
-                    width: 32,
+                    height: 44,
+                    width: 40,
                     child: IconButton(
                       key: Key('home-follow-${person.id}'),
                       tooltip: isFollowing == true
