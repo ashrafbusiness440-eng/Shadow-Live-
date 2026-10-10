@@ -1,10 +1,38 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
+import 'admin_account_identity_tile.dart';
 import 'control_api_endpoints.dart';
 import 'control_firebase.dart';
+
+String shortDiaryReportReference(String reportId) {
+  if (reportId.length <= 14) return reportId;
+  return '…' + reportId.substring(reportId.length - 12);
+}
+
+/// Never surface StateError codes or raw backend traces to an admin.
+String diaryReportActionMessage(Object error) {
+  final raw = error.toString();
+  final code = raw.startsWith('Bad state: ')
+      ? raw.substring('Bad state: '.length)
+      : raw;
+  return switch (code) {
+    'invalid_report_id' => 'تعذر التعرف على البلاغ. حدّث القائمة وأعد المحاولة.',
+    'invalid_idempotency_key' => 'تعذر تسجيل العملية. أعد المحاولة.',
+    'invalid_report_transition' => 'تغيّرت حالة هذا البلاغ. حدّث القائمة ثم حاول مرة أخرى.',
+    'report_not_found' => 'البلاغ لم يعد موجودًا. حدّث القائمة.',
+    'recent_auth_required' => 'يلزم تسجيل الدخول من جديد قبل هذا الإجراء.',
+    'forbidden' => 'ليس لديك صلاحية لتنفيذ هذا الإجراء.',
+    'auth_required' => 'يلزم تسجيل الدخول لمراجعة البلاغات.',
+    'invalid_reason' => 'اكتب سببًا واضحًا للقرار بين 3 و200 حرف.',
+    'comment_not_found' => 'التعليق لم يعد متاحًا. حدّث البلاغات.',
+    'diary_not_found' => 'اليومية لم تعد متاحة. حدّث البلاغات.',
+    _ => 'تعذّر تنفيذ الطلب. تحقق من الاتصال وحاول مرة أخرى.',
+  };
+}
 
 class _DiaryReportItem {
   const _DiaryReportItem({
@@ -16,6 +44,9 @@ class _DiaryReportItem {
     required this.targetOwnerUid,
     required this.targetAuthorUid,
     required this.reporterUid,
+    required this.reporterIdentity,
+    required this.authorIdentity,
+    required this.ownerIdentity,
     required this.reasonLabel,
     required this.status,
     required this.evidence,
@@ -30,6 +61,9 @@ class _DiaryReportItem {
   final String targetOwnerUid;
   final String targetAuthorUid;
   final String reporterUid;
+  final AdminAccountIdentity reporterIdentity;
+  final AdminAccountIdentity authorIdentity;
+  final AdminAccountIdentity ownerIdentity;
   final String reasonLabel;
   final String status;
   final Map<String, dynamic> evidence;
@@ -37,6 +71,13 @@ class _DiaryReportItem {
 
   factory _DiaryReportItem.fromMap(Map<String, dynamic> data) {
     final rawEvidence = data['evidence'];
+    Map<String, dynamic>? profile(String field) {
+      final value = data[field];
+      return value is Map ? Map<String, dynamic>.from(value) : null;
+    }
+    final reporterUid = (data['reporterUid'] ?? '').toString().trim();
+    final authorUid = (data['targetAuthorUid'] ?? '').toString().trim();
+    final ownerUid = (data['targetOwnerUid'] ?? '').toString().trim();
     return _DiaryReportItem(
       reportId: (data['reportId'] ?? '').toString().trim(),
       targetType: (data['targetType'] ?? '').toString().trim(),
@@ -45,7 +86,13 @@ class _DiaryReportItem {
       commentId: (data['commentId'] ?? '').toString().trim(),
       targetOwnerUid: (data['targetOwnerUid'] ?? '').toString().trim(),
       targetAuthorUid: (data['targetAuthorUid'] ?? '').toString().trim(),
-      reporterUid: (data['reporterUid'] ?? '').toString().trim(),
+      reporterUid: reporterUid,
+      reporterIdentity:
+          AdminAccountIdentity.fromProfile(reporterUid, profile('reporterProfile')),
+      authorIdentity:
+          AdminAccountIdentity.fromProfile(authorUid, profile('targetAuthorProfile')),
+      ownerIdentity:
+          AdminAccountIdentity.fromProfile(ownerUid, profile('diaryOwnerProfile')),
       reasonLabel: (data['reasonLabel'] ?? data['reason'] ?? '').toString().trim(),
       status: (data['status'] ?? 'new').toString().trim(),
       evidence: rawEvidence is Map
@@ -132,11 +179,10 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
     return data;
   }
 
-  String _operationKey(String action, String reportId) {
-    final uid = controlAuth.currentUser?.uid ?? 'admin';
-    final safeUid = uid.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
-    final safeReport = reportId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
-    return 'diaryctl_${action}_${safeUid}_${safeReport}_${DateTime.now().microsecondsSinceEpoch}';
+  // The full legacy report ID can exceed 300 chars. It belongs in reportId,
+  // never in the server's 180-character idempotency key.
+  String _operationKey(String action) {
+    return 'diaryctl_${action}_${DateTime.now().microsecondsSinceEpoch}';
   }
 
   Future<void> _load({required bool reset}) async {
@@ -253,13 +299,13 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
         'reportId': item.reportId,
         'status': status,
         'reason': reason,
-        'idempotencyKey': _operationKey('review', item.reportId),
+        'idempotencyKey': _operationKey('review'),
       });
       await _load(reset: true);
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذر تحديث البلاغ: $error')),
+          SnackBar(content: Text(diaryReportActionMessage(error))),
         );
       }
     } finally {
@@ -283,16 +329,13 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
         'diaryId': item.diaryId,
         if (isComment) 'commentId': item.commentId,
         'reason': reason,
-        'idempotencyKey': _operationKey(
-          isComment ? 'deletecomment' : 'deletediary',
-          item.reportId,
-        ),
+        'idempotencyKey': _operationKey(isComment ? 'deletecomment' : 'deletediary'),
       });
       await _load(reset: true);
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذر تنفيذ الحذف: $error')),
+          SnackBar(content: Text(diaryReportActionMessage(error))),
         );
       }
     } finally {
@@ -336,17 +379,75 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
                 Chip(label: Text(_statusLabel(item.status))),
               ],
             ),
+            const SizedBox(height: 12),
+            const Text(
+              'الأطراف المرتبطة بالبلاغ',
+              style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w700),
+            ),
             const SizedBox(height: 8),
-            Text(
-              'Report ID: ${item.reportId}',
-              textDirection: TextDirection.ltr,
-              style: const TextStyle(color: Colors.white38, fontSize: 11),
+            AdminAccountIdentityTile(
+              roleLabel: 'مقدّم البلاغ',
+              identity: item.reporterIdentity,
             ),
-            Text(
-              'Diary: ${item.diaryId}${item.commentId.isNotEmpty ? ' • Comment: ${item.commentId}' : ''}',
-              textDirection: TextDirection.ltr,
-              style: const TextStyle(color: Colors.white38, fontSize: 11),
+            const SizedBox(height: 8),
+            AdminAccountIdentityTile(
+              roleLabel: 'الحساب المبلّغ عليه',
+              identity: item.authorIdentity,
             ),
+            if (item.targetType == 'diary_comment' &&
+                item.targetOwnerUid.isNotEmpty &&
+                item.targetOwnerUid != item.targetAuthorUid) ...[
+              const SizedBox(height: 8),
+              AdminAccountIdentityTile(
+                roleLabel: 'صاحب اليومية',
+                identity: item.ownerIdentity,
+              ),
+            ],
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'مرجع البلاغ: ' + shortDiaryReportReference(item.reportId),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.white54, fontSize: 11),
+                  ),
+                ),
+                IconButton(
+                  key: const Key('copy-diary-report-id'),
+                  tooltip: 'نسخ رقم البلاغ الكامل',
+                  onPressed: () async {
+                    await Clipboard.setData(ClipboardData(text: item.reportId));
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('تم نسخ رقم البلاغ')),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.copy_rounded, size: 19),
+                ),
+              ],
+            ),
+            if (item.diaryId.isNotEmpty)
+              ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                title: const Text(
+                  'معرّفات المحتوى',
+                  style: TextStyle(color: Colors.white60, fontSize: 12),
+                ),
+                children: [
+                  SelectableText(
+                    'اليومية: ' + item.diaryId,
+                    style: const TextStyle(color: Colors.white54, fontSize: 11),
+                  ),
+                  if (item.commentId.isNotEmpty)
+                    SelectableText(
+                      'التعليق: ' + item.commentId,
+                      style: const TextStyle(color: Colors.white54, fontSize: 11),
+                    ),
+                ],
+              ),
             if (evidenceText.isNotEmpty) ...[
               const SizedBox(height: 10),
               Container(
@@ -438,7 +539,7 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
                 child: ListTile(
                   leading: const Icon(Icons.error_outline, color: Colors.redAccent),
                   title: const Text('تعذر تحميل البلاغات'),
-                  subtitle: Text(_error.toString()),
+                  subtitle: Text(diaryReportActionMessage(_error!)),
                   trailing: IconButton(
                     onPressed: () => _load(reset: true),
                     icon: const Icon(Icons.refresh),
