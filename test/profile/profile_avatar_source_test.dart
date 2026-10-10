@@ -76,6 +76,36 @@ void main() {
     expect(cleanup, greaterThan(uploadBeforeCleanup));
   });
 
+  test('shared avatar cache carries verified VIP level and expiry', () {
+    final expires = DateTime.now().add(const Duration(days: 2));
+    final identity = ProfileVisualIdentity.fromMap('vip4', {
+      'profileImageUrl': 'https://example.com/avatar.webp',
+      'profileAvatarAnimationUrl': 'https://example.com/avatar.gif',
+      'effectiveVipLevel': 4,
+      'vipExpiresAt': expires,
+    });
+    final resolved = identity.toProfileMap();
+    expect(resolved['effectiveVipLevel'], 4);
+    expect(resolved['vipExpiresAt'], expires);
+    final avatar = effectiveProfileAvatarProvider(resolved);
+    expect(avatar, isA<NetworkImage>());
+    expect((avatar as NetworkImage).url, 'https://example.com/avatar.gif');
+
+    final expired = ProfileVisualIdentity.fromMap('vip4', {
+      ...resolved,
+      'vipExpiresAt': DateTime.now().subtract(const Duration(seconds: 1)),
+    }).toProfileMap();
+    final still = effectiveProfileAvatarProvider(expired);
+    expect(still, isA<NetworkImage>());
+    expect((still as NetworkImage).url, 'https://example.com/avatar.webp');
+
+    final partial = ProfileVisualIdentity.fromMap('partial', {
+      'profileAvatarAnimationUrl': 'https://example.com/avatar.gif',
+    }).toProfileMap();
+    expect(partial.containsKey('effectiveVipLevel'), isFalse);
+    expect(partial.containsKey('vipExpiresAt'), isFalse);
+  });
+
   test('room supporter and quick profile use one bounded visual resolver', () {
     final room = File('lib/main.dart').readAsStringSync();
     final service =
