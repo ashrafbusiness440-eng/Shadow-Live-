@@ -170,9 +170,11 @@ test("Agency room discovery reuses the already-loaded room list", () => {
   const rooms = source("../../lib/screens/room/room_list_screen.dart");
 
   assert.equal(
-    rooms.includes("return ['الكل', 'دردشة', 'رسمية', 'وكالات', ...result];"),
+    rooms.includes("static const _fixedCategories = ['الكل', 'دردشة', 'رسمية', 'وكالات'];"),
     true,
   );
+  assert.equal(rooms.includes("if (!_fixedCategories.contains(category)) values.add(category);"), true);
+  assert.equal(rooms.includes("return [..._fixedCategories, ...result];"), true);
   assert.equal(rooms.includes("case 'وكالات':"), true);
   assert.equal(rooms.includes("return _isAgencyRoom(room);"), true);
   assert.equal(
