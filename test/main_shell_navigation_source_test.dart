@@ -41,6 +41,21 @@ void main() {
     );
   });
 
+  test('private chat back preserves the existing navigator stack', () {
+    final chat = File(
+      'lib/features/chat/screens/private_chat_screen.dart',
+    ).readAsStringSync();
+
+    expect(chat.contains('if (navigator.canPop())'), isTrue);
+    expect(chat.contains('navigator.pop();'), isTrue);
+    expect(chat.contains('navigator.pushReplacement('), isTrue);
+    expect(chat.contains('MainShellScreen(initialNavIndex: 3)'), isTrue);
+    expect(chat.contains('MainShellScreen(initialNavIndex: 4)'), isFalse);
+    expect(chat.contains('pushAndRemoveUntil('), isFalse);
+    expect(chat.contains('onPressed: _backToMessages'), isTrue);
+    expect(chat.contains('onWillPop: () async {'), isTrue);
+  });
+
   test('browser E2E follows the approved six-tab order', () {
     final e2e = File('.github/scripts/e2e_tabs.mjs').readAsStringSync();
     for (final name in const [
