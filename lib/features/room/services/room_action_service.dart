@@ -188,6 +188,23 @@ class RoomActionService {
     });
   }
 
+  /// Uses the existing authenticated room favorite action on voice-session.
+  /// The server verifies the room and owns the persistent favorite state.
+  Future<bool> setRoomFavorite({
+    required String roomId,
+    required bool favorite,
+  }) async {
+    final body = await _post({
+      'action': 'setRoomFavorite',
+      'roomId': roomId,
+      'favorite': favorite,
+    });
+    if (body['roomId'] != roomId || body['favorite'] is! bool) {
+      throw const FormatException('invalid_room_favorite');
+    }
+    return body['favorite'] == true;
+  }
+
   Future<({
     List<Map<String, dynamic>> favorites,
     List<Map<String, dynamic>> history,
