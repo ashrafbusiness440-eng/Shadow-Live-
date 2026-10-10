@@ -42,7 +42,10 @@ void main() {
       final cardRect = tester.getRect(find.byKey(const Key('mini-room-restore')));
       expect(closeRect.size, const Size(44, 44));
       expect(cardRect.contains(closeRect.topLeft), isTrue);
-      expect(cardRect.contains(closeRect.bottomRight), isTrue);
+      // Rect.contains() excludes its bottom/right boundary even when the
+      // child and the card meet exactly at the edge.
+      expect(closeRect.right <= cardRect.right, isTrue);
+      expect(closeRect.bottom <= cardRect.bottom, isTrue);
       expect(tester.takeException(), isNull);
 
       // Inside the 44px target, even close to the edge of its bounding box.
