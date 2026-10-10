@@ -326,5 +326,41 @@ class RoomActionService {
     });
   }
 
+  /// Report the room itself (not an individual chat message).
+  /// The backend checks the real DO session presence and room owner.
+  Future<String> reportRoom({
+    required String roomId,
+    required String reason,
+    String details = '',
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.isAnonymous) throw StateError('not_signed_in');
+    final token = await _idToken();
+    final key = 'roomrep_${user.uid}_${DateTime.now().microsecondsSinceEpoch}';
+    final response = await _client.post(
+      Uri.parse('$_baseUrl/chat-actions'),
+      headers: {
+        'authorization': 'Bearer $token',
+        'content-type': 'application/json',
+      },
+      body: jsonEncode({
+        'action': 'reportRoom',
+        'roomId': roomId,
+        'reason': reason,
+        'details': details,
+        'idempotencyKey': key,
+      }),
+    );
+    Map<String, dynamic> data = <String, dynamic>{};
+    try {
+      final value = jsonDecode(response.body);
+      if (value is Map) data = Map<String, dynamic>.from(value);
+    } catch (_) {}
+    if (response.statusCode != 200 || data['ok'] != true) {
+      throw StateError((data['code'] ?? 'room_report_failed').toString());
+    }
+    return (data['reportId'] ?? '').toString();
+  }
+
   void close() => _client.close();
 }
