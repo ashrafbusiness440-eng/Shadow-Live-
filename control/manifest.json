@@ -1,0 +1,21 @@
+{
+  "id": "/Shadow-Live-/control/",
+  "name": "Shadow Control",
+  "short_name": "Shadow Control",
+  "start_url": "/Shadow-Live-/control/",
+  "scope": "/Shadow-Live-/control/",
+  "display": "standalone",
+  "background_color": "#05060D",
+  "theme_color": "#D8B84A",
+  "description": "Shadow Control - لوحة إدارة Shadow Live",
+  "orientation": "portrait-primary",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "assets/assets/images/app_icon.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
