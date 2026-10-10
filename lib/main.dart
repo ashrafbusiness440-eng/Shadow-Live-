@@ -1821,16 +1821,22 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                               : seat?.profileImageUrl.isNotEmpty == true
                                   ? seat!.profileImageUrl
                                   : isOwnerTile ? _ownerPhotoUrl : '';
-                      final frameAssetKey =
-                          user?.activeProfileFrameAssetKey ?? '';
-                      final frameImageUrl =
-                          user?.activeProfileFrameImageUrl ?? '';
-                      final frameValid = user != null &&
-                          frameAssetKey.isNotEmpty &&
-                          (user.activeProfileFramePermanent ||
-                              user.activeProfileFrameExpiresAtMs <= 0 ||
-                              user.activeProfileFrameExpiresAtMs >
-                                  DateTime.now().millisecondsSinceEpoch);
+                      // Resolve the audience portrait from the same bounded
+                      // presence snapshot as the count and recipient list.
+                      // No per-user profile reads or extra subscriptions.
+                      final avatarSnapshot = <String, dynamic>{
+                        'profileImageUrl': profileImage,
+                        'profileAvatarAsset':
+                            user?.profileAvatarAsset ?? '',
+                        'activeProfileFrameAssetKey':
+                            user?.activeProfileFrameAssetKey ?? '',
+                        'activeProfileFrameImageUrl':
+                            user?.activeProfileFrameImageUrl ?? '',
+                        'activeProfileFrameExpiresAtMs':
+                            user?.activeProfileFrameExpiresAtMs ?? 0,
+                        'activeProfileFramePermanent':
+                            user?.activeProfileFramePermanent == true,
+                      };
 
                       return InkWell(
                         onTap: () {
@@ -1854,31 +1860,21 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                             children: [
                               isMysterious
                                   ? const MysteriousIdentityAvatar(diameter: 38)
-                                  : CircleAvatar(
-                                      radius: 19,
-                                      backgroundColor: const Color(0xFF25183F),
-                                      backgroundImage: profileImage.isEmpty
-                                          ? null
-                                          : NetworkImage(profileImage),
-                                      child: profileImage.isEmpty
-                                          ? const Icon(Icons.person_rounded,
-                                              color: Colors.white70, size: 18)
-                                          : null,
-                                    ),
-                              if (!isMysterious && frameValid)
-                                Positioned(
-                                  left: -5,
-                                  top: -5,
-                                  child: IgnorePointer(
-                                    child: SizedBox.square(
+                                  : SizedBox.square(
                                       dimension: 48,
-                                      child: CosmeticAssetVisual(
-                                        assetKey: frameAssetKey,
-                                        imageUrl: frameImageUrl,
+                                      child: Center(
+                                        child: ProfileAvatarWithFrame(
+                                          diameter: 38,
+                                          userId: profileUid,
+                                          snapshotOnly: true,
+                                          fallbackIsVisualSnapshot: true,
+                                          fallbackProfile: avatarSnapshot,
+                                          backgroundColor:
+                                              const Color(0xFF25183F),
+                                          placeholderColor: Colors.white70,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ),
                               if (isOwnerTile)
                                 const Positioned(
                                   right: -3,
@@ -2121,6 +2117,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                       fallbackProfile: <String, dynamic>{
                                         'profileImageUrl':
                                             user.profileImageUrl,
+                                        'profileAvatarAsset':
+                                            user.profileAvatarAsset,
                                         'activeProfileFrameAssetKey':
                                             user.activeProfileFrameAssetKey,
                                         'activeProfileFrameImageUrl':
