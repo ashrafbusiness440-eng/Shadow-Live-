@@ -45,6 +45,53 @@ void main() {
     expect(find.byKey(const Key('shadow-read-retry')), findsNothing);
   });
 
+  testWidgets('Arabic read feedback stays usable at 390 and 430 widths',
+      (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    for (final width in <double>[390, 430]) {
+      await tester.binding.setSurfaceSize(Size(width, 844));
+      var attempts = 0;
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          backgroundColor: const Color(0xFF05060D),
+          body: ListView(
+            children: [
+              ShadowReadState(
+                icon: Icons.wifi_off_rounded,
+                message: 'تعذر تحميل الاستكشاف. تحقق من اتصال الإنترنت.',
+                onRetry: () => attempts++,
+              ),
+            ],
+          ),
+        ),
+      ));
+      expect(find.text('إعادة المحاولة'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      expect(attempts, 0);
+      await tester.tap(find.byKey(const Key('shadow-read-retry')));
+      await tester.pump();
+      expect(attempts, 1);
+    }
+  });
+
+  test('home and diaries reuse the read state without new read loops', () {
+    final home = File('lib/features/home/screens/home_screen.dart')
+        .readAsStringSync();
+    expect(home.contains('child: ShadowReadState('), isTrue);
+    expect(home.contains('if (_data != null || _error == null) ...['), isTrue);
+    expect(home.contains('() => _load(forceRefresh: true)'), isTrue);
+
+    final diaries = File('lib/features/diaries/screens/diaries_screen.dart')
+        .readAsStringSync();
+    expect(diaries.contains('child: ShadowReadState('), isTrue);
+    expect(diaries.contains("message: 'جارٍ تحميل اليوميات...'"), isTrue);
+    expect(diaries.contains('onRetry: () => _load(reset: true)'), isTrue);
+    expect(diaries.contains('onRetry: _loading ? null : () => _load(reset: true)'),
+        isTrue);
+    expect(diaries.contains('for (final item in _items) _diaryCard(item)'), isTrue);
+    expect(diaries.contains('else if (_hasMore)'), isTrue);
+  });
+
   test('chat retries data reads only and handles hidden-list failures', () {
     final chat =
         File('lib/features/chat/screens/chat_list_screen.dart').readAsStringSync();

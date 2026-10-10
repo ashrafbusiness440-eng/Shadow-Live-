@@ -15,6 +15,7 @@ import '../widgets/diary_comments_sheet.dart';
 import '../../gift/widgets/direct_gift_sheet.dart';
 import '../widgets/diary_report_sheet.dart';
 import '../widgets/diary_mention_suggestions.dart';
+import '../../../shared/widgets/loading_indicator.dart';
 
 class DiariesScreen extends StatefulWidget {
   const DiariesScreen({
@@ -1207,49 +1208,34 @@ class _DiariesScreenState extends State<DiariesScreen> {
 
     if (_items.isEmpty && _loading) {
       return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 48),
-        child: Center(
-          child: CircularProgressIndicator(color: Color(0xFF8A3DFF)),
+        padding: EdgeInsets.symmetric(vertical: 36),
+        child: LoadingIndicator(
+          size: 30,
+          color: Color(0xFF8A3DFF),
+          message: 'جارٍ تحميل اليوميات...',
         ),
       );
     }
     if (_items.isEmpty && _error != null) {
       return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
-        child: Column(
-          children: [
-            const Icon(
-              Icons.cloud_off_rounded,
-              color: Colors.white30,
-              size: 44,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              diaryErrorMessage(_error!),
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white60),
-            ),
-            const SizedBox(height: 12),
-            OutlinedButton(
-              onPressed: () => _load(reset: true),
-              child: const Text('إعادة المحاولة'),
-            ),
-          ],
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: ShadowReadState(
+          icon: Icons.wifi_off_rounded,
+          message: diaryErrorMessage(_error!),
+          onRetry: () => _load(reset: true),
         ),
       );
     }
     if (_items.isEmpty) {
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 48),
-        child: Center(
-          child: Text(
-            _profileMode
-                ? 'ما في يوميات منشورة لهذا المستخدم.'
-                : (_showFollowing
-                    ? 'ما في يوميات جديدة من الأشخاص اللي بتتابعهم.'
-                    : 'ما في يوميات منشورة لسه.'),
-            style: const TextStyle(color: Colors.white54),
-          ),
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: ShadowReadState(
+          icon: Icons.article_outlined,
+          message: _profileMode
+              ? 'ما في يوميات منشورة لهذا المستخدم.'
+              : (_showFollowing
+                  ? 'ما في يوميات جديدة من الأشخاص اللي بتتابعهم.'
+                  : 'ما في يوميات منشورة لسه.'),
         ),
       );
     }
@@ -1257,7 +1243,16 @@ class _DiariesScreenState extends State<DiariesScreen> {
     return Column(
       children: [
         for (final item in _items) _diaryCard(item),
-        if (_hasMore)
+        if (_error != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 4, 14, 12),
+            child: ShadowReadState(
+              icon: Icons.wifi_off_rounded,
+              message: diaryErrorMessage(_error!),
+              onRetry: _loading ? null : () => _load(reset: true),
+            ),
+          )
+        else if (_hasMore)
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 2, 14, 24),
             child: SizedBox(
