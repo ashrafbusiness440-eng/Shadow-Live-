@@ -800,9 +800,18 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   }
 
   void _backToMessages() {
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const MainShellScreen(initialNavIndex: 4)),
-      (_) => false,
+    final navigator = Navigator.of(context);
+    // Preserve the page that opened the chat (and its minimized voice room).
+    if (navigator.canPop()) {
+      navigator.pop();
+      return;
+    }
+
+    // A directly opened chat may have no previous route.
+    navigator.pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) => const MainShellScreen(initialNavIndex: 3),
+      ),
     );
   }
 
