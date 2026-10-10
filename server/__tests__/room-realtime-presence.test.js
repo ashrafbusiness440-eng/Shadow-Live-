@@ -25,6 +25,7 @@ test("open socket attachments define room presence", () => {
       uid: "u2",
       displayName: "Two",
       profileImageUrl: "",
+      profileAvatarAsset: "assets/images/avatars/male_2.png",
       joinedAtMs: 2000,
       connectedAtMs: 2000,
     },
@@ -32,6 +33,10 @@ test("open socket attachments define room presence", () => {
 
   assert.deepEqual(participants.map((item) => item.uid), ["u1", "u2"]);
   assert.equal(participants[0].lastSeenAtMs, 9000);
+  assert.equal(
+    participants[1].profileAvatarAsset,
+    "assets/images/avatars/male_2.png",
+  );
   assert.equal(hasPresenceUid(participants, "u1"), true);
   assert.equal(hasPresenceUid(participants, "missing"), false);
 });
@@ -49,6 +54,7 @@ test("multiple sockets for one uid produce one participant", () => {
       uid: "u1",
       displayName: "One",
       profileImageUrl: "profile.webp",
+      profileAvatarAsset: "assets/images/avatars/female_3.png",
       joinedAtMs: 1000,
       connectedAtMs: 4000,
     },
@@ -58,6 +64,10 @@ test("multiple sockets for one uid produce one participant", () => {
   assert.equal(participants[0].uid, "u1");
   assert.equal(participants[0].joinedAtMs, 1000);
   assert.equal(participants[0].profileImageUrl, "profile.webp");
+  assert.equal(
+    participants[0].profileAvatarAsset,
+    "assets/images/avatars/female_3.png",
+  );
 });
 
 test("invalid attachments never create phantom users", () => {
