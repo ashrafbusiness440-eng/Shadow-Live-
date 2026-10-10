@@ -104,6 +104,19 @@ class NotificationService {
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
 
+  /// One bounded listener for the messages-tab unread indicator. Keep the
+  /// query inside the notifications service and scoped to the signed-in user.
+  Stream<bool> watchHasUnread(String userId) {
+    if (userId.isEmpty) return Stream<bool>.value(false);
+    return _firestore
+        .collection('notifications')
+        .where('userId', isEqualTo: userId)
+        .where('read', isEqualTo: false)
+        .limit(1)
+        .snapshots()
+        .map((snapshot) => snapshot.docs.isNotEmpty);
+  }
+
   Future<NotificationPage> load({DocumentSnapshot<Map<String, dynamic>>? after}) async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) throw StateError('auth_required');
