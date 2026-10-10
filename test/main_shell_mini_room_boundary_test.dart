@@ -40,11 +40,13 @@ void main() {
     expect(shell.contains('onPanUpdate: (details)'), isTrue);
     expect(shell.contains('clampMiniRoomInset('), isTrue);
     expect(shell.contains('onTap: _restoreMiniRoom'), isTrue);
-    expect(shell.contains('onTap: _leaveMiniRoom'), isTrue);
+    expect(shell.contains('MiniRoomCloseControl(onLeave: _leaveMiniRoom)'), isTrue);
+    expect(shell.contains('width: 44,'), isTrue);
+    expect(shell.contains('height: 44,'), isTrue);
     expect(shell.contains("key: const Key('mini-room-close')"), isTrue);
     expect(shell.contains('roomSurfaceImageUrl(_voiceSession.roomArguments)'), isTrue);
-    expect(shell.contains("top: -6,"), isTrue);
-    expect(shell.contains("right: -6,"), isTrue);
+    expect(shell.contains("top: 0,"), isTrue);
+    expect(shell.contains("right: 0,"), isTrue);
     expect(shell.contains('FirebaseFirestore.instance'), isTrue,
         reason: 'Existing chat unread stream must remain intact');
   });
