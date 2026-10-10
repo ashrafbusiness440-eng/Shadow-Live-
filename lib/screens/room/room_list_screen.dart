@@ -6,6 +6,7 @@ import '../../features/home/screens/discovery_search_screen.dart';
 import '../../features/home/services/discovery_service.dart';
 import '../../features/room/services/room_action_service.dart';
 import '../../features/room/services/room_image_source.dart';
+import '../../features/room/widgets/discovery_room_password_dialog.dart';
 import '../../services/navigation_service.dart';
 
 /// Compatibility wrappers: the shared discovery service owns the rules.
@@ -184,57 +185,6 @@ class _RoomListScreenState extends State<RoomListScreen> {
     if (mode != 'all') await _loadRoomLibrary();
   }
 
-  Future<String?> _askRoomPassword(String roomName) async {
-    final controller = TextEditingController();
-    final value = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          backgroundColor: const Color(0xFF111321),
-          title: Text(
-            roomName,
-            style: const TextStyle(color: Colors.white),
-          ),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            obscureText: true,
-            textInputAction: TextInputAction.done,
-            style: const TextStyle(color: Colors.white),
-            decoration: const InputDecoration(
-              labelText: 'كلمة مرور الغرفة',
-              labelStyle: TextStyle(color: Colors.white60),
-              prefixIcon: Icon(
-                Icons.lock_rounded,
-                color: Color(0xFFFFD54A),
-              ),
-            ),
-            onSubmitted: (value) {
-              if (value.trim().isNotEmpty) Navigator.pop(dialogContext, value);
-            },
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('إلغاء'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final password = controller.text;
-                if (password.trim().isEmpty) return;
-                Navigator.pop(dialogContext, password);
-              },
-              child: const Text('دخول'),
-            ),
-          ],
-        ),
-      ),
-    );
-    controller.dispose();
-    return value;
-  }
-
   Future<void> _openRoom(DiscoveryRoom room) async {
     final args = room.toNavigationArguments();
     final ownerUid =
@@ -243,7 +193,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
     final isOwner = ownerUid == FirebaseAuth.instance.currentUser?.uid;
 
     if (room.isPasswordProtected && !isOwner) {
-      final password = await _askRoomPassword(room.title);
+      final password = await showDiscoveryRoomPasswordPrompt(context, room.title);
       if (!mounted || password == null) return;
       args['roomPassword'] = password;
     }

@@ -8,6 +8,7 @@ import '../../../services/navigation_service.dart';
 import '../../../utils/search_index.dart';
 import '../../profile/screens/public_profile_screen.dart';
 import '../../profile/widgets/profile_avatar_with_frame.dart';
+import '../../room/widgets/discovery_room_password_dialog.dart';
 import '../services/discovery_service.dart';
 import '../../../shared/widgets/loading_indicator.dart';
 
@@ -378,57 +379,6 @@ class _DiscoverySearchScreenState extends State<DiscoverySearchScreen> {
     return asset != null && asset.isNotEmpty ? AssetImage(asset) : null;
   }
 
-  Future<String?> _askRoomPassword(String roomName) async {
-    final controller = TextEditingController();
-    final value = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          backgroundColor: const Color(0xFF101827),
-          title: Text(
-            roomName,
-            style: const TextStyle(color: Colors.white),
-          ),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            obscureText: true,
-            style: const TextStyle(color: Colors.white),
-            decoration: const InputDecoration(
-              labelText: 'كلمة مرور الغرفة',
-              labelStyle: TextStyle(color: Colors.white60),
-              prefixIcon: Icon(
-                Icons.lock_rounded,
-                color: Color(0xFFFFD54A),
-              ),
-            ),
-            onSubmitted: (password) {
-              if (password.trim().isNotEmpty) {
-                Navigator.pop(dialogContext, password);
-              }
-            },
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('إلغاء'),
-            ),
-            FilledButton(
-              onPressed: () {
-                if (controller.text.trim().isEmpty) return;
-                Navigator.pop(dialogContext, controller.text);
-              },
-              child: const Text('دخول'),
-            ),
-          ],
-        ),
-      ),
-    );
-    controller.dispose();
-    return value;
-  }
-
   Future<void> _openRoom(Map<String, dynamic> room) async {
     final args = Map<String, dynamic>.from(room);
     final visibility = (room['visibility'] ?? 'public').toString();
@@ -436,7 +386,8 @@ class _DiscoverySearchScreenState extends State<DiscoverySearchScreen> {
         (room['ownerUid'] ?? room['ownerId'] ?? room['hostId'] ?? '').toString();
     final isOwner = ownerUid == _uid;
     if (visibility == 'password' && !isOwner) {
-      final password = await _askRoomPassword(
+      final password = await showDiscoveryRoomPasswordPrompt(
+        context,
         (room['name'] ?? room['title'] ?? 'غرفة').toString(),
       );
       if (!mounted || password == null) return;
