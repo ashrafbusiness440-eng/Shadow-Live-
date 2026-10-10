@@ -44,6 +44,32 @@ class DiscoveryRoom {
       };
 }
 
+/// Use the same classification for Home suggestions and room discovery.
+/// A featured ordinary room is not an official pinned room.
+bool isOfficialRoomForDiscovery(DiscoveryRoom room) {
+  final type = (room.data['roomType'] ?? room.data['type'] ?? 'personal')
+      .toString()
+      .trim();
+  return room.data['systemOwned'] == true ||
+      room.data['officialRoom'] == true ||
+      const {'official', 'administrative', 'customer_service'}.contains(type);
+}
+
+bool isPinnedOfficialRoomForDiscovery(DiscoveryRoom room) =>
+    isOfficialRoomForDiscovery(room) &&
+    (room.isFeatured ||
+        room.data['isPinned'] == true ||
+        room.data['pinned'] == true);
+
+int compareRoomsByDiscoveryPriority(DiscoveryRoom a, DiscoveryRoom b) {
+  final aPinned = isPinnedOfficialRoomForDiscovery(a);
+  final bPinned = isPinnedOfficialRoomForDiscovery(b);
+  if (aPinned != bPinned) return aPinned ? -1 : 1;
+  final byPresence = b.onlineCount.compareTo(a.onlineCount);
+  if (byPresence != 0) return byPresence;
+  return a.id.compareTo(b.id);
+}
+
 class DiscoveryPerson {
   const DiscoveryPerson({
     required this.id,
@@ -88,17 +114,17 @@ class HomeDiscoveryData {
   final Map<String, dynamic> config;
 
   List<DiscoveryRoom> get suggested {
-    final result = [...rooms]
-      ..sort((a, b) {
-        if (a.isFeatured != b.isFeatured) return a.isFeatured ? -1 : 1;
-        return b.onlineCount.compareTo(a.onlineCount);
-      });
+    final result = [...rooms]..sort(compareRoomsByDiscoveryPriority);
     return result;
   }
 
   List<DiscoveryRoom> get mostActive {
+    // The activity rail remains strictly presence-ranked (no pinned override).
     final result = rooms.where((room) => room.onlineCount > 0).toList()
-      ..sort((a, b) => b.onlineCount.compareTo(a.onlineCount));
+      ..sort((a, b) {
+        final byPresence = b.onlineCount.compareTo(a.onlineCount);
+        return byPresence != 0 ? byPresence : a.id.compareTo(b.id);
+      });
     return result;
   }
 
