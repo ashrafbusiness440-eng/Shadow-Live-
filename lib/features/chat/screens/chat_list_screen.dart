@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -6,6 +8,7 @@ import 'private_chat_screen.dart';
 import '../../profile/widgets/quick_profile_sheet.dart';
 import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../../profile/services/profile_action_service.dart';
+import '../../profile/services/profile_visual_identity_service.dart';
 import '../../../shared/widgets/loading_indicator.dart';
 import '../../../shared/widgets/confirmation_dialog.dart';
 
@@ -19,6 +22,49 @@ class ChatListScreen extends StatefulWidget {
 class _ChatListScreenState extends State<ChatListScreen> {
   int _readRetry = 0;
   final Set<String> _pendingConversationHides = <String>{};
+  final Map<String, _ChatIdentityRead> _identityReads = {};
+  StreamSubscription<String>? _identityInvalidations;
+  String? _identityOwnerUid;
+
+  @override
+  void initState() {
+    super.initState();
+    _identityInvalidations =
+        ProfileVisualIdentityService.instance.invalidations.listen((changedUid) {
+      if (!mounted || !_identityReads.containsKey(changedUid)) return;
+      setState(() => _identityReads.remove(changedUid));
+    });
+  }
+
+  @override
+  void dispose() {
+    _identityInvalidations?.cancel();
+    _identityReads.clear();
+    super.dispose();
+  }
+
+  Future<ProfileVisualIdentity> _identityFor(String otherUid) {
+    final id = otherUid.trim();
+    if (id.isEmpty) return Future.value(ProfileVisualIdentity.empty(''));
+    final cached = _identityReads[id];
+    if (cached != null &&
+        DateTime.now().difference(cached.createdAt) <
+            const Duration(seconds: 45)) {
+      return cached.future;
+    }
+    final future = ProfileVisualIdentityService.instance.load(
+      id,
+      requirePublicRecord: true,
+    );
+    _identityReads.remove(id);
+    _identityReads[id] = _ChatIdentityRead(future);
+    // Bound only the visible-list memo; the shared service owns batched
+    // profile reads, expiry, and invalidation.
+    while (_identityReads.length > 80) {
+      _identityReads.remove(_identityReads.keys.first);
+    }
+    return future;
+  }
 
   void _retryRead() {
     if (mounted) setState(() => _readRetry++);
@@ -208,6 +254,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
   @override
   Widget build(BuildContext context) {
     final me = uid;
+    if (_identityOwnerUid != me) {
+      _identityReads.clear();
+      _identityOwnerUid = me;
+    }
     if (me == null || me.isEmpty ||
         FirebaseAuth.instance.currentUser?.isAnonymous == true) {
       return const Directionality(
@@ -312,6 +362,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                             return _ConversationTile(
                               id: doc.id,
                               otherUid: other,
+                              identityFuture: _identityFor(other),
                               lastMessage: '${data['lastMessage'] ?? ''}',
                               unread: unread,
                               updatedAt: data['updatedAt'],
@@ -387,12 +438,13 @@ class _ChatListScreenState extends State<ChatListScreen> {
 class _ConversationTile extends StatelessWidget {
   final String id;
   final String otherUid;
+  final Future<ProfileVisualIdentity> identityFuture;
   final String lastMessage;
   final int unread;
   final dynamic updatedAt;
   final VoidCallback onDelete;
 
-  const _ConversationTile({required this.id, required this.otherUid, required this.lastMessage, required this.unread, required this.updatedAt, required this.onDelete});
+  const _ConversationTile({required this.id, required this.otherUid, required this.identityFuture, required this.lastMessage, required this.unread, required this.updatedAt, required this.onDelete});
 
   String _time(dynamic value) {
     if (value is! Timestamp) return '';
@@ -402,36 +454,14 @@ class _ConversationTile extends StatelessWidget {
     return '$h:$m ${d.hour >= 12 ? 'م' : 'ص'}';
   }
 
-  Future<Map<String, dynamic>> _loadUser() async {
-    if (otherUid.isEmpty) return const <String, dynamic>{};
-    final publicSnap = await FirebaseFirestore.instance
-        .collection('public_profiles')
-        .doc(otherUid)
-        .get();
-    final publicData = publicSnap.data() ?? const <String, dynamic>{};
-    final hasIdentity =
-        (publicData['displayName'] ?? '').toString().trim().isNotEmpty ||
-        (publicData['profileImageUrl'] ?? '').toString().trim().isNotEmpty ||
-        (publicData['profileAvatarAsset'] ?? '').toString().trim().isNotEmpty;
-    if (hasIdentity) return publicData;
-    final userSnap =
-        await FirebaseFirestore.instance.collection('users').doc(otherUid).get();
-    final userData = userSnap.data() ?? const <String, dynamic>{};
-    return <String, dynamic>{...userData, ...publicData};
-  }
-
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<Map<String, dynamic>>(
-      future: otherUid.isEmpty ? null : _loadUser(),
+    return FutureBuilder<ProfileVisualIdentity>(
+      future: identityFuture,
       builder: (context, snapshot) {
-        final user = snapshot.data ?? const <String, dynamic>{};
-        final name = '${user['displayName'] ?? 'مستخدم Shadow Live'}';
-        final photo = '${user['profileImageUrl'] ?? ''}';
-        final asset = '${user['profileAvatarAsset'] ?? ''}';
-        ImageProvider? provider;
-        if (photo.isNotEmpty) provider = NetworkImage(photo);
-        if (photo.isEmpty && asset.isNotEmpty) provider = AssetImage(asset);
+        final user = snapshot.data?.toProfileMap() ?? const <String, dynamic>{};
+        final name = (user['displayName'] ?? 'مستخدم Shadow Live').toString();
+        final photo = (user['profileImageUrl'] ?? '').toString();
         return Material(
           color: const Color(0xFF101522),
           borderRadius: BorderRadius.circular(18),
@@ -440,6 +470,7 @@ class _ConversationTile extends StatelessWidget {
               diameter: 40,
               userId: otherUid,
               fallbackProfile: user,
+              snapshotOnly: true,
             ),
             title: Text(name, style: TextStyle(color: Colors.white, fontWeight: unread > 0 ? FontWeight.w900 : FontWeight.w700)),
             subtitle: Text(lastMessage.isEmpty ? 'ابدأ المحادثة' : lastMessage, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: unread > 0 ? Colors.white70 : Colors.white54)),
@@ -490,4 +521,11 @@ class _ConversationTile extends StatelessWidget {
       },
     );
   }
+}
+
+class _ChatIdentityRead {
+  _ChatIdentityRead(this.future) : createdAt = DateTime.now();
+
+  final Future<ProfileVisualIdentity> future;
+  final DateTime createdAt;
 }
