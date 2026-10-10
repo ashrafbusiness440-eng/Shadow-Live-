@@ -1364,7 +1364,7 @@ class HomeCompactPersonCard extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(18),
       child: Container(
-        width: 100,
+        width: 108,
         margin: const EdgeInsetsDirectional.only(end: 8),
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
@@ -1388,7 +1388,7 @@ class HomeCompactPersonCard extends StatelessWidget {
                 if (onFollow != null) ...[
                   SizedBox(
                     height: 44,
-                    width: 40,
+                    width: 44,
                     child: IconButton(
                       key: Key('home-follow-${person.id}'),
                       tooltip: isFollowing == true
