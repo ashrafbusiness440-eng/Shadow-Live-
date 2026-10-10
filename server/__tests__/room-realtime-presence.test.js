@@ -280,7 +280,7 @@ test("mysterious users do not expose their avatar through room identity", async 
   assert.equal(visible.profileAvatarAsset, "assets/avatars/secret.png");
   const hidden = applyMysteriousIdentityPresentation(
     { profileImageUrl: "photo.webp", profileAvatarAsset: "assets/avatars/secret.png" },
-    { mysteriousMode: true, mysteriousId: "123456789" },
+    { mysteriousEnabled: true, mysteriousPermanent: true, mysteriousId: "123456789" },
   );
   assert.equal(hidden.profileImageUrl, "");
   assert.equal(hidden.profileAvatarAsset, "");
