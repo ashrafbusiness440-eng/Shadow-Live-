@@ -41,6 +41,34 @@ class FollowService {
     return _follows.doc(relationId(me, targetUid)).snapshots().map((doc) => doc.exists);
   }
 
+  /// One bounded snapshot for the Home suggestions. The existing follow
+  /// document ids are reused; never create a listener per visible person.
+  /// Returns only server-confirmed relations, or throws on read failure so the
+  /// caller can avoid claiming that an unknown relation is "not following".
+  Future<Set<String>> followingAmong(Iterable<String> targetUids) async {
+    final current = _auth.currentUser;
+    if (current == null || current.isAnonymous) return <String>{};
+    final me = current.uid;
+    final targets = targetUids
+        .map((uid) => uid.trim())
+        .where((uid) => uid.isNotEmpty && uid != me)
+        .toSet()
+        .take(10)
+        .toList(growable: false);
+    if (targets.isEmpty) return <String>{};
+
+    final byRelationId = {
+      for (final uid in targets) relationId(me, uid): uid,
+    };
+    final snapshot = await _follows
+        .where(FieldPath.documentId, whereIn: byRelationId.keys.toList())
+        .get();
+    return <String>{
+      for (final doc in snapshot.docs)
+        if (byRelationId.containsKey(doc.id)) byRelationId[doc.id]!,
+    };
+  }
+
   Future<void> setFollowing(String targetUid, bool value) async {
     final me = _auth.currentUser?.uid;
     if (me == null || me.isEmpty) throw StateError('not_signed_in');
