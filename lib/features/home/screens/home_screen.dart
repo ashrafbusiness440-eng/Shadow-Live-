@@ -995,7 +995,9 @@ class _RoomCard extends StatelessWidget {
               ),
             ),
             Text(
-              '${room.onlineCount} متصل',
+              room.hasAvailablePresence
+                  ? '${room.onlineCount} متصل'
+                  : 'الحضور غير متاح',
               style: const TextStyle(color: Colors.white54, fontSize: 11),
             ),
           ],
@@ -1051,7 +1053,9 @@ class _ActiveRoomChip extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    '${room.onlineCount} متصل الآن',
+                    room.hasAvailablePresence
+                        ? '${room.onlineCount} متصل الآن'
+                        : 'الحضور غير متاح',
                     style: const TextStyle(color: Colors.white54, fontSize: 11),
                   ),
                 ],
