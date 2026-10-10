@@ -17,6 +17,21 @@ import '../../user/screens/profile_screen.dart';
 import '../../voice/services/voice_room_session_controller.dart';
 import '../../../services/navigation_service.dart';
 
+/// Keep the draggable mini room inside the visible shell even when the
+/// close control extends slightly beyond the thumbnail. Pure and IO-free.
+double clampMiniRoomInset(
+  double value, {
+  required double extent,
+  double farMargin = 10.0,
+}) {
+  const cardSize = 72.0;
+  const edgeMargin = 10.0;
+  final maxInset =
+      (extent - cardSize - farMargin).clamp(0.0, double.infinity).toDouble();
+  final minInset = maxInset < edgeMargin ? maxInset : edgeMargin;
+  return value.clamp(minInset, maxInset).toDouble();
+}
+
 class MainShellScreen extends StatefulWidget {
   const MainShellScreen({super.key, this.initialNavIndex = 0});
 
@@ -87,10 +102,15 @@ class _MainShellScreenState extends State<MainShellScreen> {
     }
 
     const cardSize = 72.0;
-    final maxRight = maxWidth > cardSize ? maxWidth - cardSize : 0.0;
-    final maxBottom = maxHeight > cardSize ? maxHeight - cardSize : 0.0;
-    final right = _miniRoomRight.clamp(0.0, maxRight).toDouble();
-    final bottom = _miniRoomBottom.clamp(0.0, maxBottom).toDouble();
+    // Reserve space for the close button (-6px outside the thumbnail)
+    // and the top system inset. No new listeners or network reads.
+    final topInset = MediaQuery.paddingOf(context).top;
+    final right = clampMiniRoomInset(_miniRoomRight, extent: maxWidth);
+    final bottom = clampMiniRoomInset(
+      _miniRoomBottom,
+      extent: maxHeight,
+      farMargin: topInset + 10.0,
+    );
     final imageUrl = _miniRoomImageUrl;
 
     return Positioned(
@@ -102,10 +122,15 @@ class _MainShellScreenState extends State<MainShellScreen> {
         onTap: _restoreMiniRoom,
         onPanUpdate: (details) {
           setState(() {
-            _miniRoomRight =
-                (right - details.delta.dx).clamp(0.0, maxRight).toDouble();
-            _miniRoomBottom =
-                (bottom - details.delta.dy).clamp(0.0, maxBottom).toDouble();
+            _miniRoomRight = clampMiniRoomInset(
+              right - details.delta.dx,
+              extent: maxWidth,
+            );
+            _miniRoomBottom = clampMiniRoomInset(
+              bottom - details.delta.dy,
+              extent: maxHeight,
+              farMargin: topInset + 10.0,
+            );
           });
         },
         child: SizedBox(
