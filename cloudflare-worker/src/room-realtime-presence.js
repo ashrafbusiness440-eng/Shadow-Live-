@@ -87,7 +87,24 @@ export function presenceSnapshotFromAttachments(
     }
   }
 
-  return Array.from(byUid.values()).sort((a, b) => {
+  // Multiple sockets for one user may briefly disagree during an identity
+  // switch. A mysterious presentation must never inherit an old real avatar.
+  return Array.from(byUid.values()).map((item) => (
+    item.mysteriousMode === true
+      ? {
+          ...item,
+          displayName: "الشخص الغامض",
+          profileImageUrl: "",
+          profileAvatarAsset: "",
+          activeProfileFrameAssetKey: "",
+          activeProfileFrameImageUrl: "",
+          activeProfileFrameExpiresAtMs: 0,
+          activeProfileFramePermanent: false,
+          vipLevel: 0,
+          vipOnlinePriority: false,
+        }
+      : item
+  )).sort((a, b) => {
     const priority =
       Number(b.vipOnlinePriority === true) - Number(a.vipOnlinePriority === true);
     if (priority !== 0) return priority;
