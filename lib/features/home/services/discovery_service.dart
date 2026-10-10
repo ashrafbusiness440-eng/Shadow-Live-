@@ -105,10 +105,13 @@ class HomeDiscoveryData {
   List<DiscoveryPerson> get suggestedPeople {
     final result = [...people]
       ..sort((a, b) {
-        if (a.isOnline != b.isOnline) return a.isOnline ? -1 : 1;
+        // public_profiles.isOnline is an unverified/stale flag, not a
+        // live server presence lease. Do not rank people by that signal.
         final vipCompare = b.vipLevel.compareTo(a.vipLevel);
         if (vipCompare != 0) return vipCompare;
-        return b.level.compareTo(a.level);
+        final levelCompare = b.level.compareTo(a.level);
+        if (levelCompare != 0) return levelCompare;
+        return a.id.compareTo(b.id);
       });
     return result;
   }

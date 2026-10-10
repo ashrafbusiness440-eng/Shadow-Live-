@@ -239,10 +239,8 @@ class _DiscoverySearchScreenState extends State<DiscoverySearchScreen> {
       final rankCompare = rankA.compareTo(rankB);
       if (rankCompare != 0) return rankCompare;
 
-      final onlineCompare =
-          (b['isOnline'] == true ? 1 : 0).compareTo(a['isOnline'] == true ? 1 : 0);
-      if (onlineCompare != 0) return onlineCompare;
-
+      // Do not sort by public_profiles.isOnline. It is not verified
+      // server-side live presence and can remain stale after disconnect.
       final vipA = (a['vipLevel'] as num?)?.toInt() ?? 0;
       final vipB = (b['vipLevel'] as num?)?.toInt() ?? 0;
       final vipCompare = vipB.compareTo(vipA);
@@ -464,39 +462,15 @@ class _DiscoverySearchScreenState extends State<DiscoverySearchScreen> {
   }
 
   Widget _personCard(Map<String, dynamic> person) {
-    final isOnline = person['isOnline'] == true;
-
     return Card(
       color: const Color(0xFF101827),
       child: ListTile(
         onTap: () => _openPerson(person),
-        leading: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            ProfileAvatarWithFrame(
-              diameter: 40,
-              userId: (person['uid'] ?? '').toString(),
-              fallbackProfile: person,
-              placeholderColor: Colors.white70,
-            ),
-            if (isOnline)
-              PositionedDirectional(
-                end: -1,
-                bottom: -1,
-                child: Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF42D77D),
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: const Color(0xFF101827),
-                      width: 2,
-                    ),
-                  ),
-                ),
-              ),
-          ],
+        leading: ProfileAvatarWithFrame(
+          diameter: 40,
+          userId: (person['uid'] ?? '').toString(),
+          fallbackProfile: person,
+          placeholderColor: Colors.white70,
         ),
         title: Text(
           (person['displayName'] ?? 'مستخدم Shadow Live').toString(),
