@@ -442,6 +442,7 @@ export class RoomRealtimeObject extends DurableObject {
     const expiresAtMs = Number(body.expiresAtMs || 0);
     const displayName = String(body.displayName || "").trim();
     const profileImageUrl = String(body.profileImageUrl || "").trim();
+    const profileAvatarAsset = String(body.profileAvatarAsset || "").trim();
     const activeProfileFrameAssetKey =
       String(body.activeProfileFrameAssetKey || "").trim();
     const activeProfileFrameImageUrl =
@@ -486,6 +487,7 @@ export class RoomRealtimeObject extends DurableObject {
       expiresAtMs,
       displayName,
       profileImageUrl,
+      profileAvatarAsset,
       activeProfileFrameAssetKey,
       activeProfileFrameImageUrl,
       activeProfileFrameExpiresAtMs,
@@ -593,6 +595,7 @@ export class RoomRealtimeObject extends DurableObject {
       : connectedAtMs;
     const displayName = String(record.displayName || "").trim();
     const profileImageUrl = String(record.profileImageUrl || "").trim();
+    const profileAvatarAsset = String(record.profileAvatarAsset || "").trim();
     server.serializeAttachment({
       mode: "room",
       roomId,
@@ -602,6 +605,7 @@ export class RoomRealtimeObject extends DurableObject {
       joinedAtMs,
       displayName,
       profileImageUrl,
+      profileAvatarAsset,
       activeProfileFrameAssetKey:
         String(record.activeProfileFrameAssetKey || "").trim(),
       activeProfileFrameImageUrl:
@@ -660,6 +664,7 @@ export class RoomRealtimeObject extends DurableObject {
         uid,
         displayName: displayName || "مستخدم Shadow Live",
         profileImageUrl,
+        profileAvatarAsset,
         activeProfileFrameAssetKey:
           String(record.activeProfileFrameAssetKey || "").trim(),
         activeProfileFrameImageUrl:
@@ -983,6 +988,7 @@ export class RoomRealtimeObject extends DurableObject {
     const patch = {
       displayName: String(body.displayName || "مستخدم Shadow Live").trim(),
       profileImageUrl: String(body.profileImageUrl || "").trim(),
+      profileAvatarAsset: String(body.profileAvatarAsset || "").trim(),
       activeProfileFrameAssetKey:
         String(body.activeProfileFrameAssetKey || "").trim(),
       activeProfileFrameImageUrl:
