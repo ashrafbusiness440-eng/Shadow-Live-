@@ -6,6 +6,7 @@ import 'private_chat_screen.dart';
 import '../../profile/widgets/quick_profile_sheet.dart';
 import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../../profile/services/profile_action_service.dart';
+import '../../../shared/widgets/loading_indicator.dart';
 
 class ChatListScreen extends StatefulWidget {
   const ChatListScreen({super.key});
@@ -15,6 +16,12 @@ class ChatListScreen extends StatefulWidget {
 }
 
 class _ChatListScreenState extends State<ChatListScreen> {
+  int _readRetry = 0;
+
+  void _retryRead() {
+    if (mounted) setState(() => _readRetry++);
+  }
+
   String? get uid => FirebaseAuth.instance.currentUser?.uid;
 
   String? _conversationId(String otherUid) {
@@ -233,10 +240,23 @@ class _ChatListScreenState extends State<ChatListScreen> {
               ),
               Expanded(
                 child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  key: ValueKey('conversations-$_readRetry'),
                   stream: FirebaseFirestore.instance.collection('conversations').where('participants', arrayContains: me).snapshots(),
                   builder: (context, snapshot) {
-                    if (snapshot.hasError) return _state(Icons.error_outline, 'تعذر تحميل المحادثات');
-                    if (!snapshot.hasData) return const Center(child: CircularProgressIndicator(color: Color(0xFF8A3DFF)));
+                    if (snapshot.hasError) {
+                      return ShadowReadState(
+                        icon: Icons.error_outline_rounded,
+                        message: 'تعذر تحميل المحادثات. تحقق من اتصال الإنترنت.',
+                        onRetry: _retryRead,
+                      );
+                    }
+                    if (!snapshot.hasData) {
+                      return const LoadingIndicator(
+                        size: 30,
+                        color: Color(0xFF8A3DFF),
+                        message: 'جارٍ تحميل المحادثات...',
+                      );
+                    }
                     final allDocs = [...snapshot.data!.docs]
                       ..sort((a, b) => ((b.data()['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0).compareTo((a.data()['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0));
                     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -246,6 +266,20 @@ class _ChatListScreenState extends State<ChatListScreen> {
                           .collection('items')
                           .snapshots(),
                       builder: (context, hiddenSnapshot) {
+                        if (hiddenSnapshot.hasError) {
+                          return ShadowReadState(
+                            icon: Icons.error_outline_rounded,
+                            message: 'تعذر تحديث قائمة المحادثات. تحقق من الاتصال.',
+                            onRetry: _retryRead,
+                          );
+                        }
+                        if (!hiddenSnapshot.hasData) {
+                          return const LoadingIndicator(
+                            size: 30,
+                            color: Color(0xFF8A3DFF),
+                            message: 'جارٍ ترتيب المحادثات...',
+                          );
+                        }
                         final hidden = <String, Timestamp?>{
                           for (final d in hiddenSnapshot.data?.docs ?? const <QueryDocumentSnapshot<Map<String, dynamic>>>[])
                             d.id: d.data()['hiddenAt'] as Timestamp?,
@@ -257,7 +291,12 @@ class _ChatListScreenState extends State<ChatListScreen> {
                           return updatedAt != null &&
                               updatedAt.millisecondsSinceEpoch > hiddenAt.millisecondsSinceEpoch;
                         }).toList();
-                        if (docs.isEmpty) return _state(Icons.forum_outlined, 'لا توجد محادثات بعد\nاضغط + لبدء محادثة');
+                        if (docs.isEmpty) {
+                          return const ShadowReadState(
+                            icon: Icons.forum_outlined,
+                            message: 'ما عندك محادثات بعد. اضغط + لتبدأ محادثة.',
+                          );
+                        }
                         return ListView.separated(
                           padding: const EdgeInsets.fromLTRB(12, 4, 12, 20),
                           itemCount: docs.length,
@@ -315,16 +354,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
     await batch.commit();
   }
 
-  static Widget _state(IconData icon, String text) => Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: Colors.white38, size: 48),
-            const SizedBox(height: 12),
-            Text(text, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white60, height: 1.6)),
-          ],
-        ),
-      );
 }
 
 class _ConversationTile extends StatelessWidget {

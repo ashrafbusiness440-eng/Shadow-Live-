@@ -87,3 +87,62 @@ class LoadingScreen extends StatelessWidget {
     );
   }
 }
+
+
+/// A compact, reusable status for read-only screens. The retry callback is
+/// invoked only by an explicit tap; it must never repeat a payment, gift or bet.
+class ShadowReadState extends StatelessWidget {
+  const ShadowReadState({
+    super.key,
+    required this.icon,
+    required this.message,
+    this.onRetry,
+  });
+
+  final IconData icon;
+  final String message;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 360),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, color: const Color(0xFFB9A5DD), size: 42),
+                const SizedBox(height: 12),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    height: 1.5,
+                  ),
+                ),
+                if (onRetry != null) ...[
+                  const SizedBox(height: 16),
+                  FilledButton.icon(
+                    key: const Key('shadow-read-retry'),
+                    onPressed: onRetry,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('إعادة المحاولة'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF6939BE),
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
