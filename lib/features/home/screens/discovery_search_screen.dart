@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -9,8 +10,46 @@ import '../../../utils/search_index.dart';
 import '../../profile/screens/public_profile_screen.dart';
 import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../../room/widgets/discovery_room_password_dialog.dart';
+import '../../room/services/room_image_source.dart';
 import '../services/discovery_service.dart';
 import '../../../shared/widgets/loading_indicator.dart';
+
+/// Canonical exterior room thumbnail for the search results.
+/// It uses only the already-loaded room snapshot; no extra Firestore reads.
+class DiscoverySearchRoomImage extends StatelessWidget {
+  const DiscoverySearchRoomImage({super.key, required this.room});
+
+  final Map<String, dynamic> room;
+
+  @override
+  Widget build(BuildContext context) {
+    final imageUrl = roomSurfaceImageUrl(room);
+    const fallback = Icon(
+      Icons.mic_rounded,
+      size: 23,
+      color: Color(0xFFFFD54A),
+    );
+
+    return ClipOval(
+      child: SizedBox(
+        width: 46,
+        height: 46,
+        child: ColoredBox(
+          color: const Color(0xFF372064),
+          child: imageUrl.isEmpty
+              ? const Center(child: fallback)
+              : CachedNetworkImage(
+                  imageUrl: imageUrl,
+                  fit: BoxFit.cover,
+                  placeholder: (_, __) => const Center(child: fallback),
+                  errorWidget: (_, __, ___) =>
+                      const Center(child: fallback),
+                ),
+        ),
+      ),
+    );
+  }
+}
 
 class DiscoverySearchScreen extends StatefulWidget {
   const DiscoverySearchScreen({super.key});
@@ -447,10 +486,7 @@ class _DiscoverySearchScreenState extends State<DiscoverySearchScreen> {
       color: const Color(0xFF101827),
       child: ListTile(
         onTap: () => _openRoom(room),
-        leading: const CircleAvatar(
-          backgroundColor: Color(0xFF372064),
-          child: Icon(Icons.mic, color: Color(0xFFFFD54A)),
-        ),
+        leading: DiscoverySearchRoomImage(room: room),
         title: Text(
           (room['name'] ?? room['title'] ?? 'غرفة').toString(),
           style: const TextStyle(
