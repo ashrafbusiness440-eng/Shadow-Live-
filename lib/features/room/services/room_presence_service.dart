@@ -550,10 +550,12 @@ class RoomPresenceService {
     }
 
     if (id.isEmpty) return;
+    // The socket is already closed; do not hold ZEGO disconnect hostage
+    // to an unresponsive final presence API acknowledgment.
     await _post('voice-session', {
       'action': 'roomSessionLeave',
       'roomId': id,
-    });
+    }).timeout(const Duration(seconds: 3));
   }
 
   Future<void> refreshIdentity(String roomId) async {
