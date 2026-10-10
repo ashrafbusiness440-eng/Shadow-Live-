@@ -106,7 +106,7 @@ class ProfileVisualIdentityService {
 
   Stream<String> get invalidations => _invalidations.stream;
 
-  Future<ProfileVisualIdentity> load(String uid) {
+  Future<ProfileVisualIdentity> load(String uid, {bool requirePublicRecord = false}) {
     final normalized = uid.trim();
     if (normalized.isEmpty) {
       return Future.value(ProfileVisualIdentity.empty(''));
@@ -114,7 +114,8 @@ class ProfileVisualIdentityService {
 
     final cached = _cache[normalized];
     if (cached != null &&
-        DateTime.now().difference(cached.loadedAt) < _ttl) {
+        DateTime.now().difference(cached.loadedAt) < _ttl &&
+        (!requirePublicRecord || cached.fromPublicRecord)) {
       return Future.value(cached.value);
     }
 
@@ -153,11 +154,16 @@ class ProfileVisualIdentityService {
     _putCache(normalized, candidate);
   }
 
-  void _putCache(String uid, ProfileVisualIdentity value) {
+  void _putCache(
+    String uid,
+    ProfileVisualIdentity value, {
+    bool fromPublicRecord = false,
+  }) {
     _cache.remove(uid);
     _cache[uid] = _CachedVisualIdentity(
       value: value,
       loadedAt: DateTime.now(),
+      fromPublicRecord: fromPublicRecord,
     );
     while (_cache.length > _maxCacheEntries) {
       _cache.remove(_cache.keys.first);
@@ -195,12 +201,12 @@ class ProfileVisualIdentityService {
         for (final doc in snapshot.docs) {
           final value = ProfileVisualIdentity.fromMap(doc.id, doc.data());
           found[doc.id] = value;
-          _putCache(doc.id, value);
+          _putCache(doc.id, value, fromPublicRecord: true);
         }
 
         for (final uid in batch) {
           final value = found[uid] ?? ProfileVisualIdentity.empty(uid);
-          _putCache(uid, value);
+          _putCache(uid, value, fromPublicRecord: true);
           final completer = _pending.remove(uid);
           if (completer != null && !completer.isCompleted) {
             completer.complete(value);
@@ -233,8 +239,12 @@ class _CachedVisualIdentity {
   const _CachedVisualIdentity({
     required this.value,
     required this.loadedAt,
+    required this.fromPublicRecord,
   });
 
   final ProfileVisualIdentity value;
   final DateTime loadedAt;
+  // A primed room image can lack a display name; chat requires the actual
+  // batched public profile record instead of treating that partial snapshot as complete.
+  final bool fromPublicRecord;
 }
