@@ -62,6 +62,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   @override
   void initState() {
     super.initState();
+    if (FirebaseAuth.instance.currentUser?.isAnonymous ?? true) return;
     _markRead();
     _loadSafetyStatus();
   }
@@ -919,7 +920,19 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       );
 
   @override
-  Widget build(BuildContext context) => Directionality(
+  Widget build(BuildContext context) =>
+      (FirebaseAuth.instance.currentUser?.isAnonymous ?? true)
+      ? const Directionality(
+          textDirection: TextDirection.rtl,
+          child: Scaffold(
+            backgroundColor: Color(0xFF05060D),
+            body: SafeArea(
+              child: Center(child: Text('سجّل الدخول لفتح المحادثات',
+                  style: TextStyle(color: Colors.white70))),
+            ),
+          ),
+        )
+      : Directionality(
         textDirection: TextDirection.rtl,
         child: WillPopScope(
           onWillPop: () async {
