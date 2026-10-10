@@ -516,11 +516,12 @@ class _HomeScreenState extends State<HomeScreen> {
         // rendering snapshot-only: no profile read or listener per ranking item.
         final avatarData = <String, dynamic>{
           ...entry,
-          'profileImageUrl': (entry['profileImageUrl'] ??
-                  entry['avatarUrl'] ??
-                  entry['imageUrl'] ??
-                  '')
-              .toString(),
+          // Legacy ranking entries may use imageUrl. Preserve explicit
+          // profile/asset choices instead of replacing them with a legacy URL.
+          if ((entry['profileImageUrl'] ?? '').toString().trim().isEmpty &&
+              (entry['profileAvatarAsset'] ?? '').toString().trim().isEmpty &&
+              (entry['avatarUrl'] ?? '').toString().trim().isEmpty)
+            'avatarUrl': (entry['imageUrl'] ?? '').toString(),
         };
         final rankingUserId =
             (entry['uid'] ?? entry['userId'] ?? '').toString();
