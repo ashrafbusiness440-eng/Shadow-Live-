@@ -38,6 +38,9 @@ class _RoomListScreenState extends State<RoomListScreen> {
   String _viewMode = 'all';
   bool _libraryLoading = false;
   bool _libraryError = false;
+  bool _libraryLoaded = false;
+  String? _libraryUid;
+  final Set<String> _savingFavoriteIds = <String>{};
   List<DiscoveryRoom> _favoriteRooms = const [];
   List<DiscoveryRoom> _historyRooms = const [];
 
@@ -50,6 +53,10 @@ class _RoomListScreenState extends State<RoomListScreen> {
   void initState() {
     super.initState();
     _load();
+    // One bounded library read per signed-in screen, reused by both tabs
+    // and the favorite action. No per-card reads or realtime listeners.
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null && !user.isAnonymous) _loadRoomLibrary();
   }
 
   Future<void> _load({bool forceRefresh = false}) async {
@@ -119,6 +126,11 @@ class _RoomListScreenState extends State<RoomListScreen> {
   }
 
   List<DiscoveryRoom> get _sourceRooms {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    // Never show one account's private library under another account.
+    if (_viewMode != 'all' && (!_libraryLoaded || _libraryUid != uid)) {
+      return const [];
+    }
     switch (_viewMode) {
       case 'favorites':
         return _favoriteRooms;
@@ -136,8 +148,10 @@ class _RoomListScreenState extends State<RoomListScreen> {
         .toList(growable: false);
   }
 
-  Future<void> _loadRoomLibrary() async {
-    if (_libraryLoading) return;
+  Future<void> _loadRoomLibrary({bool forceRefresh = false}) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.isAnonymous || _libraryLoading) return;
+    if (!forceRefresh && _libraryLoaded && _libraryUid == user.uid) return;
     setState(() {
       _libraryLoading = true;
       _libraryError = false;
@@ -150,8 +164,10 @@ class _RoomListScreenState extends State<RoomListScreen> {
         return DiscoveryRoom(id: id, data: room);
       }
 
-      if (mounted) {
+      if (mounted && FirebaseAuth.instance.currentUser?.uid == user.uid) {
         setState(() {
+          _libraryUid = user.uid;
+          _libraryLoaded = true;
           _favoriteRooms = library.favorites
               .where((room) => (room['roomId'] ?? '').toString().isNotEmpty)
               .map(parse)
@@ -163,7 +179,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
         });
       }
     } catch (_) {
-      if (mounted) {
+      if (mounted && FirebaseAuth.instance.currentUser?.uid == user.uid) {
         setState(() => _libraryError = true);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -173,6 +189,50 @@ class _RoomListScreenState extends State<RoomListScreen> {
       }
     } finally {
       if (mounted) setState(() => _libraryLoading = false);
+    }
+  }
+
+  Future<void> _toggleRoomFavorite(DiscoveryRoom room) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.isAnonymous) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('إضافة غرفة للمفضلة تحتاج تسجيل الدخول.')),
+      );
+      return;
+    }
+    if (_libraryLoading || _savingFavoriteIds.contains(room.id)) return;
+    if (!_libraryLoaded || _libraryUid != user.uid || _libraryError) {
+      await _loadRoomLibrary(forceRefresh: true);
+      if (!mounted || !_libraryLoaded || _libraryUid != user.uid ||
+          _libraryError) return;
+    }
+
+    final wasFavorite = _favoriteRooms.any((entry) => entry.id == room.id);
+    setState(() => _savingFavoriteIds.add(room.id));
+    try {
+      final favorite = await _roomActions.setRoomFavorite(
+        roomId: room.id,
+        favorite: !wasFavorite,
+      );
+      if (!mounted || FirebaseAuth.instance.currentUser?.uid != user.uid) {
+        return;
+      }
+      setState(() {
+        _favoriteRooms = [
+          if (favorite) room,
+          ..._favoriteRooms.where((entry) => entry.id != room.id),
+        ];
+      });
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تعذر تعديل المفضلة. تحقق من اتصال الإنترنت ثم جرّب مرة ثانية.'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _savingFavoriteIds.remove(room.id));
     }
   }
 
@@ -257,6 +317,10 @@ class _RoomListScreenState extends State<RoomListScreen> {
   @override
   Widget build(BuildContext context) {
     final visibleRooms = _visibleRooms;
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
+    final savedFavoriteIds = _libraryLoaded && _libraryUid == currentUid
+        ? _favoriteRooms.map((room) => room.id).toSet()
+        : <String>{};
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -265,7 +329,12 @@ class _RoomListScreenState extends State<RoomListScreen> {
         body: SafeArea(
           bottom: false,
           child: RefreshIndicator(
-            onRefresh: () => _load(forceRefresh: true),
+            onRefresh: () async {
+              await _load(forceRefresh: true);
+              if (_viewMode != 'all') {
+                await _loadRoomLibrary(forceRefresh: true);
+              }
+            },
             child: CustomScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
@@ -404,7 +473,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
                       ),
                     ),
                   ),
-                if (_libraryError && _viewMode != 'all')
+                if (_libraryError)
                   SliverPadding(
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                     sliver: SliverToBoxAdapter(
@@ -417,7 +486,9 @@ class _RoomListScreenState extends State<RoomListScreen> {
                             ),
                           ),
                           TextButton(
-                            onPressed: _libraryLoading ? null : _loadRoomLibrary,
+                            onPressed: _libraryLoading
+                                ? null
+                                : () => _loadRoomLibrary(forceRefresh: true),
                             child: const Text('إعادة المحاولة'),
                           ),
                         ],
@@ -461,7 +532,9 @@ class _RoomListScreenState extends State<RoomListScreen> {
                   ),
                 ),
                 const SliverToBoxAdapter(child: SizedBox(height: 14)),
-                if (!_loading && visibleRooms.isEmpty)
+                if (!_loading &&
+                    !(_viewMode != 'all' && _libraryLoading) &&
+                    visibleRooms.isEmpty)
                   SliverFillRemaining(
                     hasScrollBody: false,
                     child: Center(
@@ -517,6 +590,11 @@ class _RoomListScreenState extends State<RoomListScreen> {
                       itemBuilder: (context, index) => RoomListTile(
                         room: visibleRooms[index],
                         category: _roomCategory(visibleRooms[index]),
+                        isFavorite: savedFavoriteIds.contains(visibleRooms[index].id),
+                        favoriteBusy: _savingFavoriteIds.contains(visibleRooms[index].id),
+                        onFavoriteTap: _libraryLoading
+                            ? null
+                            : () => _toggleRoomFavorite(visibleRooms[index]),
                         onTap: () => _openRoom(visibleRooms[index]),
                       ),
                     ),
@@ -535,11 +613,17 @@ class RoomListTile extends StatelessWidget {
     required this.room,
     required this.category,
     required this.onTap,
+    this.isFavorite = false,
+    this.favoriteBusy = false,
+    this.onFavoriteTap,
   });
 
   final DiscoveryRoom room;
   final String category;
   final VoidCallback onTap;
+  final bool isFavorite;
+  final bool favoriteBusy;
+  final VoidCallback? onFavoriteTap;
 
   @override
   Widget build(BuildContext context) {
@@ -648,6 +732,29 @@ class RoomListTile extends StatelessWidget {
                 ],
               ),
             ),
+            if (onFavoriteTap != null || favoriteBusy)
+              SizedBox(
+                width: 44,
+                height: 48,
+                child: IconButton(
+                  tooltip: isFavorite ? 'إزالة من المفضلة' : 'أضف إلى المفضلة',
+                  onPressed: favoriteBusy ? null : onFavoriteTap,
+                  icon: favoriteBusy
+                      ? const SizedBox(
+                          width: 19,
+                          height: 19,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(
+                          isFavorite
+                              ? Icons.favorite_rounded
+                              : Icons.favorite_border_rounded,
+                          color: isFavorite
+                              ? const Color(0xFFFFD54A)
+                              : Colors.white60,
+                        ),
+                ),
+              ),
           ],
         ),
       ),
