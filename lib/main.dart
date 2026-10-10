@@ -4883,6 +4883,128 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     );
     controller.dispose();
   }
+  Future<void> _reportCurrentRoom() async {
+    final roomId = (_roomArguments['roomId'] ?? '').toString().trim();
+    if (roomId.isEmpty || !_voiceSession.active) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ادخل الغرفة أولاً لتقديم بلاغ عنها.')),
+      );
+      return;
+    }
+    var reason = 'harassment';
+    var sending = false;
+    final detailsController = TextEditingController();
+    const reasons = <String, String>{
+      'harassment': 'مضايقة أو إساءة',
+      'abusive_content': 'محتوى مخالف',
+      'spam': 'إزعاج أو إعلانات',
+      'scam': 'احتيال أو تضليل',
+      'other': 'سبب آخر',
+    };
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('إبلاغ عن الغرفة'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'هذا البلاغ عن الغرفة نفسها. للإبلاغ عن رسالة، استخدم زر إبلاغ الرسالة في الشات.',
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                value: reason,
+                isExpanded: true,
+                items: reasons.entries.map((entry) =>
+                    DropdownMenuItem(
+                      value: entry.key,
+                      child: Text(entry.value, overflow: TextOverflow.ellipsis),
+                    )).toList(),
+                onChanged: sending
+                    ? null
+                    : (value) {
+                        if (value != null) setDialogState(() => reason = value);
+                      },
+                decoration: const InputDecoration(labelText: 'سبب البلاغ'),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: detailsController,
+                maxLength: 500,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'تفاصيل إضافية (اختياري)',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: sending ? null : () => Navigator.pop(dialogContext),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton.icon(
+              onPressed: sending
+                  ? null
+                  : () async {
+                      setDialogState(() => sending = true);
+                      try {
+                        await _roomActions.reportRoom(
+                          roomId: roomId,
+                          reason: reason,
+                          details: detailsController.text.trim(),
+                        );
+                        if (dialogContext.mounted) Navigator.pop(dialogContext);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('تم إرسال بلاغ الغرفة للمراجعة.'),
+                            ),
+                          );
+                        }
+                      } on StateError catch (error) {
+                        if (!mounted) return;
+                        final message = switch (error.message.toString()) {
+                          'cannot_report_own_room' =>
+                            'لا يمكنك الإبلاغ عن غرفتك الشخصية.',
+                          'report_room_not_present' =>
+                            'يلزم أن تكون داخل الغرفة لتقديم البلاغ.',
+                          'room_realtime_unavailable' =>
+                            'تعذر تأكيد وجودك بالغرفة. أعد المحاولة.',
+                          'rate_limited' =>
+                            'أرسلت بلاغات كثيرة مؤخراً. حاول لاحقاً.',
+                          _ => 'تعذر إرسال بلاغ الغرفة. حاول مرة أخرى.',
+                        };
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(message)),
+                        );
+                        if (dialogContext.mounted) {
+                          setDialogState(() => sending = false);
+                        }
+                      } catch (_) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('تعذر إرسال بلاغ الغرفة حالياً.'),
+                            ),
+                          );
+                        }
+                        if (dialogContext.mounted) {
+                          setDialogState(() => sending = false);
+                        }
+                      }
+                    },
+              icon: const Icon(Icons.flag_outlined),
+              label: const Text('إرسال البلاغ'),
+            ),
+          ],
+        ),
+      ),
+    );
+    detailsController.dispose();
+  }
+
   Future<void> _showRoomMenu() async {
     final personal = (_roomArguments['roomType'] ?? '').toString() == 'personal';
     final actualOwner =
@@ -5263,6 +5385,27 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
 
                 sectionTitle('الجلسة'),
                 sectionCard([
+                  if (!actualOwner) ...[
+                    ListTile(
+                      leading: const Icon(
+                        Icons.flag_outlined,
+                        color: Colors.redAccent,
+                      ),
+                      title: const Text(
+                        'إبلاغ عن الغرفة',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                      subtitle: const Text(
+                        'بلاغ عن الغرفة نفسها، وليس رسالة داخل الشات.',
+                        style: TextStyle(color: Colors.white54, fontSize: 10),
+                      ),
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        _reportCurrentRoom();
+                      },
+                    ),
+                    const Divider(height: 1, color: Colors.white10),
+                  ],
                   ListTile(
                     leading: const Icon(
                       Icons.logout_rounded,
