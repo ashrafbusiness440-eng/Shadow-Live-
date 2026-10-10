@@ -71,4 +71,24 @@ void main() {
     expect(chat.contains('تعذر إخفاء المحادثة'), isTrue);
     expect(chat.contains('حذف المحادثة؟'), isFalse);
   });
+
+  test('settings logout uses the shared RTL confirmation without double signout',
+      () {
+    final settings =
+        File('lib/screens/settings/settings_screen.dart').readAsStringSync();
+    expect(settings.contains('await showShadowConfirmation('), isTrue);
+    expect(settings.contains("title: 'تسجيل الخروج'"), isTrue);
+    expect(settings.contains("confirmLabel: 'تسجيل الخروج'"), isTrue);
+    expect(settings.contains('destructive: true'), isTrue);
+    expect(settings.contains('if (_loggingOut) return;'), isTrue);
+    expect(
+      settings.contains('if (!confirmed || !mounted || _loggingOut) return;'),
+      isTrue,
+    );
+    expect(
+      settings.contains('context.read<AuthBloc>().add(SignOutRequested());'),
+      isTrue,
+    );
+    expect(settings.contains('await showDialog<bool>('), isFalse);
+  });
 }
