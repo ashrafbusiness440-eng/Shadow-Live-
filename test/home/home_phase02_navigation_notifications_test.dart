@@ -55,7 +55,8 @@ void main() {
         .readAsStringSync();
     expect(home.contains('this.onOpenGames'), isTrue);
     expect(home.contains('this.onOpenRooms'), isTrue);
-    expect(home.contains('widget.onOpenGames,'), isTrue);
+    expect(home.contains('widget.onOpenGames)'), isTrue);
+    expect(home.contains("_Feature('الألعاب', 'العب واربح'"), isTrue);
     expect(home.contains('onPressed: widget.onOpenRooms,'), isTrue);
     expect(home.contains("label: const Text('استكشف الغرف')"), isTrue);
     expect(home.contains("() => _soon('الألعاب')"), isFalse);

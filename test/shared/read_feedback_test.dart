@@ -78,7 +78,8 @@ void main() {
     final home = File('lib/features/home/screens/home_screen.dart')
         .readAsStringSync();
     expect(home.contains('child: ShadowReadState('), isTrue);
-    expect(home.contains('if (_data != null || _error == null) ...['), isTrue);
+    expect(home.contains('if (discovery != null || _error == null) ...['), isTrue);
+    expect(home.contains('final discovery = _data;'), isTrue);
     expect(home.contains('() => _load(forceRefresh: true)'), isTrue);
 
     final diaries = File('lib/features/diaries/screens/diaries_screen.dart')
