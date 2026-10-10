@@ -590,6 +590,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
                       itemBuilder: (context, index) => RoomListTile(
                         room: visibleRooms[index],
                         category: _roomCategory(visibleRooms[index]),
+                        showFavoriteAction: true,
                         isFavorite: savedFavoriteIds.contains(visibleRooms[index].id),
                         favoriteBusy: _savingFavoriteIds.contains(visibleRooms[index].id),
                         onFavoriteTap: _libraryLoading
@@ -613,6 +614,7 @@ class RoomListTile extends StatelessWidget {
     required this.room,
     required this.category,
     required this.onTap,
+    this.showFavoriteAction = false,
     this.isFavorite = false,
     this.favoriteBusy = false,
     this.onFavoriteTap,
@@ -621,6 +623,7 @@ class RoomListTile extends StatelessWidget {
   final DiscoveryRoom room;
   final String category;
   final VoidCallback onTap;
+  final bool showFavoriteAction;
   final bool isFavorite;
   final bool favoriteBusy;
   final VoidCallback? onFavoriteTap;
@@ -732,7 +735,7 @@ class RoomListTile extends StatelessWidget {
                 ],
               ),
             ),
-            if (onFavoriteTap != null || favoriteBusy)
+            if (showFavoriteAction)
               SizedBox(
                 width: 44,
                 height: 48,
