@@ -268,6 +268,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
     HomeScreen(
       onOpenGames: () => _changePage(2),
       onOpenRooms: () => _changePage(1),
+      onOpenProfile: () => _changePage(5),
     ),
     const RoomListScreen(),
     const GamesHubScreen(),
