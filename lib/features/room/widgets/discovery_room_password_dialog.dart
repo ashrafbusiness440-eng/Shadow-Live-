@@ -5,56 +5,76 @@ import 'package:flutter/material.dart';
 Future<String?> showDiscoveryRoomPasswordPrompt(
   BuildContext context,
   String roomName,
-) async {
-  final controller = TextEditingController();
-  try {
-    return await showDialog<String>(
+) =>
+    showDialog<String>(
       context: context,
-      builder: (dialogContext) => Directionality(
+      builder: (_) => Directionality(
         textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          backgroundColor: const Color(0xFF111321),
-          title: Text(
-            roomName,
-            style: const TextStyle(color: Colors.white),
-          ),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            obscureText: true,
-            textInputAction: TextInputAction.done,
-            style: const TextStyle(color: Colors.white),
-            decoration: const InputDecoration(
-              labelText: 'كلمة مرور الغرفة',
-              labelStyle: TextStyle(color: Colors.white60),
-              prefixIcon: Icon(
-                Icons.lock_rounded,
-                color: Color(0xFFFFD54A),
-              ),
-            ),
-            onSubmitted: (_) {
-              if (controller.text.trim().isNotEmpty) {
-                Navigator.pop(dialogContext, controller.text);
-              }
-            },
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('إلغاء'),
-            ),
-            FilledButton(
-              onPressed: () {
-                if (controller.text.trim().isEmpty) return;
-                Navigator.pop(dialogContext, controller.text);
-              },
-              child: const Text('دخول'),
-            ),
-          ],
-        ),
+        child: _DiscoveryRoomPasswordDialog(roomName: roomName),
       ),
     );
-  } finally {
-    controller.dispose();
+
+/// The dialog owns the controller until its exit animation unmounts the field.
+/// Disposing it immediately when showDialog completes can break the closing UI.
+class _DiscoveryRoomPasswordDialog extends StatefulWidget {
+  const _DiscoveryRoomPasswordDialog({required this.roomName});
+
+  final String roomName;
+
+  @override
+  State<_DiscoveryRoomPasswordDialog> createState() =>
+      _DiscoveryRoomPasswordDialogState();
+}
+
+class _DiscoveryRoomPasswordDialogState
+    extends State<_DiscoveryRoomPasswordDialog> {
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (_controller.text.trim().isEmpty) return;
+    Navigator.pop(context, _controller.text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: const Color(0xFF111321),
+      title: Text(
+        widget.roomName,
+        style: const TextStyle(color: Colors.white),
+      ),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        obscureText: true,
+        textInputAction: TextInputAction.done,
+        style: const TextStyle(color: Colors.white),
+        decoration: const InputDecoration(
+          labelText: 'كلمة مرور الغرفة',
+          labelStyle: TextStyle(color: Colors.white60),
+          prefixIcon: Icon(
+            Icons.lock_rounded,
+            color: Color(0xFFFFD54A),
+          ),
+        ),
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('إلغاء'),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: const Text('دخول'),
+        ),
+      ],
+    );
   }
 }
