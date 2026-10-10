@@ -19,10 +19,12 @@ class HomeScreen extends StatefulWidget {
     super.key,
     this.onOpenGames,
     this.onOpenRooms,
+    this.onOpenProfile,
   });
 
   final VoidCallback? onOpenGames;
   final VoidCallback? onOpenRooms;
+  final VoidCallback? onOpenProfile;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -157,9 +159,14 @@ class _HomeScreenState extends State<HomeScreen> {
         ? 'ضيف Shadow'
         : (userData?['displayName'] ?? userData?['username'] ?? 'صديقنا')
             .toString();
-    final level = (userData?['level'] ?? 1).toString();
-    final coins = formatCompactAmount(userData?['coins']);
-    final diamonds = formatCompactAmount(userData?['diamonds']);
+    final level = userData?['level']?.toString() ?? '—';
+    // These are the existing signed-in user's wallet snapshot fields, not
+    // guessed balances. The profile screen also accepts the legacy 'balance'.
+    final rawCoins = userData?['coins'] ?? userData?['balance'];
+    final rawDiamonds = userData?['diamonds'];
+    final coins = rawCoins == null ? '—' : formatCompactAmount(rawCoins);
+    final diamonds =
+        rawDiamonds == null ? '—' : formatCompactAmount(rawDiamonds);
     // Reuse the existing discovery snapshot, without any per-card requests.
     final discovery = _data;
     final suggestedRooms = discovery?.suggested ?? const <DiscoveryRoom>[];
@@ -189,12 +196,17 @@ class _HomeScreenState extends State<HomeScreen> {
                 controller: _scrollController,
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
                 children: [
-                  _header(
-                    name,
-                    level,
-                    coins,
-                    diamonds,
-                    userData ?? const <String, dynamic>{},
+                  HomeAccountHeader(
+                    name: name,
+                    level: level,
+                    coins: coins,
+                    diamonds: diamonds,
+                    profile: userData ?? const <String, dynamic>{},
+                    userId: _loadedForUid ?? '',
+                    onOpenProfile: widget.onOpenProfile ??
+                        () => NavigationService.navigateTo(AppRoutes.profile),
+                    onOpenCoins: () => _recharge(0),
+                    onOpenDiamonds: () => _recharge(1),
                   ),
                   if (_loading) ...[
                     const SizedBox(height: 10),
@@ -670,103 +682,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _header(
-    String name,
-    String level,
-    String coins,
-    String diamonds,
-    Map<String, dynamic> profile,
-  ) {
-    return Row(
-      children: [
-        ProfileAvatarWithFrame(
-          diameter: 50,
-          userId: _loadedForUid ?? '',
-          fallbackProfile: profile,
-          backgroundColor: const Color(0xFF171D31),
-          placeholderColor: Colors.white,
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'أهلاً، $name',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              Text(
-                'LV.$level',
-                style: const TextStyle(
-                  color: _gold,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-        ),
-        _wallet(Icons.monetization_on_rounded, coins, _gold, 0),
-        const SizedBox(width: 6),
-        _wallet(Icons.diamond_rounded, diamonds, const Color(0xFF64D8FF), 1),
-        const SizedBox(width: 6),
-        // Tasks are not implemented yet. Keep the reserved header slot
-        // visibly disabled rather than linking to a fake task page.
-        const IconButton(
-          onPressed: null,
-          tooltip: 'المهام اليومية والأسبوعية غير متاحة حالياً',
-          icon: Icon(Icons.task_alt_rounded, color: Colors.white38),
-        ),
-      ],
-    );
-  }
-
-  Widget _wallet(
-    IconData icon,
-    String value,
-    Color color,
-    int tab,
-  ) {
-    return InkWell(
-      onTap: () => _recharge(tab),
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: .06),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.white10),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: color, size: 15),
-            const SizedBox(width: 3),
-            Text(
-              value,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(width: 3),
-            const Icon(
-              Icons.add_circle_rounded,
-              color: Color(0xFF9A5CFF),
-              size: 15,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _searchBox() {
     return InkWell(
       onTap: _search,
@@ -911,6 +826,214 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Account and both wallet shortcuts share one already loaded user snapshot.
+/// On narrow devices the identity and balances have separate rows, so long
+/// names never squeeze the finance buttons or the reserved tasks control.
+class HomeAccountHeader extends StatelessWidget {
+  const HomeAccountHeader({
+    super.key,
+    required this.name,
+    required this.level,
+    required this.coins,
+    required this.diamonds,
+    required this.profile,
+    required this.userId,
+    required this.onOpenProfile,
+    required this.onOpenCoins,
+    required this.onOpenDiamonds,
+  });
+
+  final String name;
+  final String level;
+  final String coins;
+  final String diamonds;
+  final Map<String, dynamic> profile;
+  final String userId;
+  final VoidCallback onOpenProfile;
+  final VoidCallback onOpenCoins;
+  final VoidCallback onOpenDiamonds;
+
+  static const _gold = Color(0xFFFFD54A);
+  static const _cyan = Color(0xFF64D8FF);
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Semantics(
+                button: true,
+                label: 'فتح ملفي الشخصي',
+                child: InkWell(
+                  key: const Key('home-account-profile'),
+                  onTap: onOpenProfile,
+                  borderRadius: BorderRadius.circular(16),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Row(
+                      children: [
+                        ProfileAvatarWithFrame(
+                          diameter: 44,
+                          userId: userId,
+                          fallbackProfile: profile,
+                          snapshotOnly: true,
+                          backgroundColor: const Color(0xFF171D31),
+                          placeholderColor: Colors.white,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                level == '—' ? 'المستوى غير متاح' : 'LV.$level',
+                                style: const TextStyle(
+                                  color: _gold,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            // The task system is not ready: never navigate to a fake page.
+            const IconButton(
+              onPressed: null,
+              tooltip: 'المهام اليومية والأسبوعية غير متاحة حالياً',
+              icon: Icon(Icons.task_alt_rounded, color: Colors.white38),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: HomeBalanceShortcut(
+                label: 'كوينز',
+                value: coins,
+                icon: Icons.monetization_on_rounded,
+                color: _gold,
+                onTap: onOpenCoins,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: HomeBalanceShortcut(
+                label: 'ألماس',
+                value: diamonds,
+                icon: Icons.diamond_rounded,
+                color: _cyan,
+                onTap: onOpenDiamonds,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Keep the existing recharge/wallet navigation for each currency; this
+/// component renders the supplied snapshot and never loads funds itself.
+class HomeBalanceShortcut extends StatelessWidget {
+  const HomeBalanceShortcut({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'فتح محفظة $label',
+      child: InkWell(
+        key: Key('home-balance-$label'),
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: .06),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.white12),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, size: 19, color: color),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white60,
+                        fontSize: 10,
+                      ),
+                    ),
+                    Text(
+                      value,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 4),
+              const Icon(
+                Icons.add_circle_rounded,
+                color: Color(0xFF9A5CFF),
+                size: 16,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
