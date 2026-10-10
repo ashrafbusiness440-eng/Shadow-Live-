@@ -7,6 +7,7 @@ import '../../profile/widgets/quick_profile_sheet.dart';
 import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../../profile/services/profile_action_service.dart';
 import '../../../shared/widgets/loading_indicator.dart';
+import '../../../shared/widgets/confirmation_dialog.dart';
 
 class ChatListScreen extends StatefulWidget {
   const ChatListScreen({super.key});
@@ -17,6 +18,7 @@ class ChatListScreen extends StatefulWidget {
 
 class _ChatListScreenState extends State<ChatListScreen> {
   int _readRetry = 0;
+  final Set<String> _pendingConversationHides = <String>{};
 
   void _retryRead() {
     if (mounted) setState(() => _readRetry++);
@@ -331,27 +333,53 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
   Future<void> _hideConversation(String conversationId) async {
     final me = uid;
-    if (me == null || me.isEmpty) return;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          backgroundColor: const Color(0xFF101522),
-          title: const Text('حذف المحادثة؟', style: TextStyle(color: Colors.white)),
-          content: const Text('سيتم حذفها من قائمة رسائلك فقط. إذا وصلتك رسالة جديدة ستظهر المحادثة مرة أخرى.', style: TextStyle(color: Colors.white70, height: 1.5)),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('إلغاء')),
-            FilledButton(onPressed: () => Navigator.pop(dialogContext, true), style: FilledButton.styleFrom(backgroundColor: Colors.redAccent), child: const Text('حذف')),
-          ],
+    if (!mounted ||
+        me == null ||
+        me.isEmpty ||
+        conversationId.isEmpty ||
+        !_pendingConversationHides.add(conversationId)) {
+      return;
+    }
+    try {
+      final confirmed = await showShadowConfirmation(
+        context,
+        title: 'إخفاء المحادثة من قائمتك؟',
+        message: 'ستختفي من قائمة رسائلك فقط، ولن تُحذف رسائل الطرف الآخر. إذا وصلتك رسالة جديدة ستظهر المحادثة مرة ثانية.',
+        confirmLabel: 'إخفاء المحادثة',
+        destructive: true,
+      );
+      // An auth switch or a cancelled dialog must never perform the write.
+      if (!confirmed || !mounted || uid != me) return;
+
+      final batch = FirebaseFirestore.instance.batch();
+      batch.set(
+        FirebaseFirestore.instance
+            .collection('conversation_hides')
+            .doc(me)
+            .collection('items')
+            .doc(conversationId),
+        {'hiddenAt': FieldValue.serverTimestamp()},
+      );
+      batch.update(
+        FirebaseFirestore.instance.collection('conversations').doc(conversationId),
+        {'unreadCounts.$me': 0},
+      );
+      await batch.commit();
+
+      if (!mounted || uid != me) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم إخفاء المحادثة من قائمتك.')),
+      );
+    } catch (_) {
+      if (!mounted || uid != me) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تعذر إخفاء المحادثة. تحقق من الاتصال وحاول مرة ثانية.'),
         ),
-      ),
-    );
-    if (confirmed != true) return;
-    final batch = FirebaseFirestore.instance.batch();
-    batch.set(FirebaseFirestore.instance.collection('conversation_hides').doc(me).collection('items').doc(conversationId), {'hiddenAt': FieldValue.serverTimestamp()});
-    batch.update(FirebaseFirestore.instance.collection('conversations').doc(conversationId), {'unreadCounts.$me': 0});
-    await batch.commit();
+      );
+    } finally {
+      _pendingConversationHides.remove(conversationId);
+    }
   }
 
 }
@@ -444,8 +472,8 @@ class _ConversationTile extends StatelessWidget {
                     ),
                     ListTile(
                       leading: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
-                      title: const Text('حذف المحادثة', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w800)),
-                      subtitle: const Text('حذفها من قائمتي فقط', style: TextStyle(color: Colors.white38)),
+                      title: const Text('إخفاء المحادثة', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w800)),
+                      subtitle: const Text('إخفاؤها من قائمتي فقط', style: TextStyle(color: Colors.white38)),
                       onTap: () { Navigator.pop(sheetContext); onDelete(); },
                     ),
                     ListTile(
