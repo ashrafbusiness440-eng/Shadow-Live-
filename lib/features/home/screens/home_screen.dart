@@ -9,6 +9,7 @@ import '../../wallet/screens/recharge_screen.dart';
 import '../../profile/screens/public_profile_screen.dart';
 import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../../room/services/room_image_source.dart';
+import '../../room/widgets/discovery_room_password_dialog.dart';
 import '../services/discovery_service.dart';
 import 'discovery_search_screen.dart';
 import '../../../shared/widgets/loading_indicator.dart';
@@ -100,10 +101,24 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _openRoom(DiscoveryRoom room) {
+  Future<void> _openRoom(DiscoveryRoom room) async {
+    final args = room.toNavigationArguments();
+    final ownerUid =
+        (room.data['ownerUid'] ?? room.data['ownerId'] ?? room.data['hostId'] ?? '')
+            .toString();
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
+    final isOwner = currentUid != null && ownerUid == currentUid;
+
+    if (room.isPasswordProtected && !isOwner) {
+      final password =
+          await showDiscoveryRoomPasswordPrompt(context, room.title);
+      if (!mounted || password == null) return;
+      args['roomPassword'] = password;
+    }
+
     NavigationService.navigateTo(
       AppRoutes.voiceChatRoom,
-      arguments: room.toNavigationArguments(),
+      arguments: args,
     );
   }
 
