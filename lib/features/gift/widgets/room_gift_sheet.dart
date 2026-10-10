@@ -241,6 +241,7 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
         'profileImageUrl': user.profileImageUrl.isNotEmpty
             ? user.profileImageUrl
             : (occupiedSeat?.profileImageUrl ?? ''),
+        'profileAvatarAsset': user.profileAvatarAsset,
         'activeProfileFrameAssetKey':
             user.activeProfileFrameAssetKey.isNotEmpty
                 ? user.activeProfileFrameAssetKey
