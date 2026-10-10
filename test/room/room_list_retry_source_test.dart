@@ -7,9 +7,11 @@ void main() {
     final source = File('lib/screens/room/room_list_screen.dart')
         .readAsStringSync();
     expect(source.contains("onPressed: _loading ? null : () => _load(forceRefresh: true)"), isTrue);
-    expect(source.contains("onPressed: _libraryLoading ? null : _loadRoomLibrary"), isTrue);
+    expect(source.contains("onPressed: _libraryLoading"), isTrue);
+    expect(source.contains("() => _loadRoomLibrary(forceRefresh: true)"), isTrue);
     expect(source.contains("child: const Text('إعادة المحاولة')"), isTrue);
-    expect(source.contains("Future<void> _loadRoomLibrary() async"), isTrue);
+    expect(source.contains("Future<void> _loadRoomLibrary({bool forceRefresh = false}) async"), isTrue);
+    expect(source.contains("if (!forceRefresh && _libraryLoaded && _libraryUid == user.uid) return;"), isTrue);
     expect(source.contains("Future<void> _load({bool forceRefresh = false}) async"), isTrue);
     expect(source.contains("_libraryError = false;"), isTrue);
     expect(source.contains("_libraryError = true"), isTrue);
