@@ -15,7 +15,14 @@ import 'discovery_search_screen.dart';
 import '../../../shared/widgets/loading_indicator.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({
+    super.key,
+    this.onOpenGames,
+    this.onOpenRooms,
+  });
+
+  final VoidCallback? onOpenGames;
+  final VoidCallback? onOpenRooms;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -142,12 +149,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _soon(String title) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$title سيتم تفعيله في مرحلته القادمة')),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final userData = _data?.userData;
@@ -210,7 +211,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   const SizedBox(height: 18),
                   _searchBox(),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 12),
                   _hero(),
                   if (_data != null || _error == null) ...[
                     const SizedBox(height: 24),
@@ -266,7 +267,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         'الألعاب',
                         'العب واربح',
                         Icons.sports_esports_rounded,
-                        () => _soon('الألعاب'),
+                        widget.onOpenGames,
                       ),
                       _Feature(
                         'الفعاليات',
@@ -717,10 +718,12 @@ class _HomeScreenState extends State<HomeScreen> {
         const SizedBox(width: 6),
         _wallet(Icons.diamond_rounded, diamonds, const Color(0xFF64D8FF), 1),
         const SizedBox(width: 6),
-        IconButton(
-          onPressed: () => NavigationService.navigateTo(AppRoutes.notifications),
-          icon: const Icon(Icons.notifications_none_rounded, color: Colors.white),
-          tooltip: 'الإشعارات',
+        // Tasks are not implemented yet. Keep the reserved header slot
+        // visibly disabled rather than linking to a fake task page.
+        const IconButton(
+          onPressed: null,
+          tooltip: 'المهام اليومية والأسبوعية غير متاحة حالياً',
+          icon: Icon(Icons.task_alt_rounded, color: Colors.white38),
         ),
       ],
     );
@@ -801,7 +804,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final imageUrl = config['heroImageUrl']?.toString().trim() ?? '';
 
     return Container(
-      height: 175,
+      height: 145,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
@@ -831,7 +834,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           Padding(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             child: Row(
               children: [
                 Expanded(
@@ -845,26 +848,41 @@ class _HomeScreenState extends State<HomeScreen> {
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: _gold,
-                          fontSize: 25,
+                          fontSize: 21,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 3),
                       Text(
                         subtitle,
-                        maxLines: 3,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: Colors.white70,
-                          height: 1.5,
-                          fontSize: 13,
+                          height: 1.2,
+                          fontSize: 11,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        height: 36,
+                        child: OutlinedButton.icon(
+                          onPressed: widget.onOpenRooms,
+                          icon: const Icon(Icons.meeting_room_rounded, size: 16),
+                          label: const Text('استكشف الغرف'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            side: const BorderSide(color: _gold),
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
                 if (imageUrl.isEmpty)
-                  const Icon(Icons.mic_rounded, color: _gold, size: 70),
+                  const Icon(Icons.mic_rounded, color: _gold, size: 48),
               ],
             ),
           ),
@@ -1145,7 +1163,7 @@ class _Feature extends StatelessWidget {
   final String title;
   final String subtitle;
   final IconData icon;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
