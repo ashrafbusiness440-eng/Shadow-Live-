@@ -17,6 +17,7 @@ import 'admin/control_asset_manager_page.dart';
 import 'admin/auth_login_control_page.dart';
 import 'admin/control_relationship_types_page.dart';
 import 'admin/diary_reports_control_page.dart';
+import 'admin/general_reports_control_page.dart';
 import 'admin/admin_notifications_page.dart';
 import 'admin/economy_control_page.dart';
 import 'admin/games_control_page.dart';
@@ -3009,6 +3010,8 @@ class MorePage extends StatelessWidget {
             const ControlItem('إدارة أعضاء الوكالات','عرض الأعضاء والمديرين وتغيير الأدوار حسب Permission Matrix',Icons.groups_2_outlined),
           if(canOpenReports)
             const ControlItem('التقارير','بلاغات اليوميات والتعليقات عبر Worker bounded + مراجعة وحذف حسب الصلاحيات',Icons.flag_outlined),
+          if(isOwner||(adminEnabled&&(capabilities.contains('viewReports')||capabilities.contains('reviewReports'))))
+            const ControlItem('بلاغات المستخدمين والغرف','بلاغات المحادثات ورسائل الغرف والغرف نفسها مع الأدلة والأطراف',Icons.report_gmailerrorred_outlined),
           if(canOpenVip)
             const ControlItem('إدارة VIP','بحث المستخدم ومنح/تغيير/سحب VIP حسب الصلاحيات',Icons.workspace_premium_outlined),
           if(canOpenVipInformation)
@@ -3044,6 +3047,7 @@ class ControlList extends StatelessWidget {
     if (item.title == 'الوكالات') return const AgencyControlPage();
     if (item.title == 'إدارة أعضاء الوكالات') return const AgencyManagementPage();
     if (item.title == 'التقارير') return const DiaryReportsControlPage();
+    if (item.title == 'بلاغات المستخدمين والغرف') return const GeneralReportsControlPage();
     if (item.title == 'سجل الإدارة') return const AuditLogPage();
     if (item.title == 'إعدادات النظام') return const SystemConfigPage();
     if (item.title == 'استوديو الأصول' || item.title == 'إدارة أصول التطبيق') return const ControlAssetManagerPage();
