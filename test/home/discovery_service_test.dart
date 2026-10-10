@@ -10,7 +10,7 @@ void main() {
     expect(room.toNavigationArguments()['publicId'], '2222');
   });
 
-  test('suggested rooms prefer featured rooms then activity', () {
+  test('suggestions pin only official featured rooms, then rank by activity', () {
     const data = HomeDiscoveryData(
       userData: null,
       config: {},
@@ -28,17 +28,28 @@ void main() {
           id: 'quiet',
           data: {'name': 'Quiet', 'onlineCount': 0},
         ),
+        DiscoveryRoom(
+          id: 'official-pinned',
+          data: {
+            'name': 'Pinned official',
+            'systemOwned': true,
+            'isPinned': true,
+            'onlineCount': 1,
+          },
+        ),
       ],
     );
 
     expect(data.suggested.map((room) => room.id).toList(), [
-      'featured',
+      'official-pinned',
       'busy',
+      'featured',
       'quiet',
     ]);
     expect(data.mostActive.map((room) => room.id).toList(), [
       'busy',
       'featured',
+      'official-pinned',
     ]);
   });
 
