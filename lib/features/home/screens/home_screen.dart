@@ -160,6 +160,14 @@ class _HomeScreenState extends State<HomeScreen> {
     final level = (userData?['level'] ?? 1).toString();
     final coins = formatCompactAmount(userData?['coins']);
     final diamonds = formatCompactAmount(userData?['diamonds']);
+    // Reuse the existing discovery snapshot, without any per-card requests.
+    final discovery = _data;
+    final suggestedRooms = discovery?.suggested ?? const <DiscoveryRoom>[];
+    final activeRooms = discovery?.mostActive ?? const <DiscoveryRoom>[];
+    final suggestedPeople =
+        discovery?.suggestedPeople ?? const <DiscoveryPerson>[];
+    final events = discovery?.events ?? const <Map<String, dynamic>>[];
+    final ranking = discovery?.rankingPreview ?? const <Map<String, dynamic>>[];
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -213,76 +221,66 @@ class _HomeScreenState extends State<HomeScreen> {
                   _searchBox(),
                   const SizedBox(height: 12),
                   _hero(),
-                  if (_data != null || _error == null) ...[
-                    const SizedBox(height: 24),
+                  if (discovery != null || _error == null) ...[
+                    const SizedBox(height: 16),
                     _sectionHeader('غرف مقترحة', 'اختيارات مناسبة الآن'),
-                  const SizedBox(height: 12),
-                  _roomRail(_data?.suggested ?? const []),
-                  const SizedBox(height: 24),
-                  _sectionHeader('الأكثر تفاعلاً', 'الغرف الأكثر نشاطاً'),
-                  const SizedBox(height: 12),
-                  _activityRail(_data?.mostActive ?? const []),
-                  const SizedBox(height: 24),
-                  _sectionHeader('أشخاص مقترحون', 'اكتشف أعضاء جدد'),
-                  const SizedBox(height: 12),
-                  _peopleRail(_data?.suggestedPeople ?? const []),
-                  const SizedBox(height: 24),
-                  KeyedSubtree(
-                    key: _eventsKey,
-                    child: _sectionHeader(
-                      'الفعاليات',
-                      'أبرز ما يحدث في Shadow Live',
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  _eventRail(_data?.events ?? const []),
-                  const SizedBox(height: 24),
-                  KeyedSubtree(
-                    key: _rankingKey,
-                    child: _sectionHeader(
-                      'الترتيب',
-                      'معاينة من بيانات الإدارة',
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  _rankingPreview(_data?.rankingPreview ?? const []),
-                  const SizedBox(height: 24),
-                  _sectionHeader('استكشف Shadow Live', 'كل شيء من مكان واحد'),
-                  const SizedBox(height: 12),
-                  GridView.count(
-                    crossAxisCount: 2,
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12,
-                    childAspectRatio: 1.65,
-                    children: [
-                      _Feature(
-                        'الأصدقاء',
-                        'ابحث بالاسم أو ID',
-                        Icons.people_alt_rounded,
-                        _search,
-                      ),
-                      _Feature(
-                        'الألعاب',
-                        'العب واربح',
-                        Icons.sports_esports_rounded,
-                        widget.onOpenGames,
-                      ),
-                      _Feature(
-                        'الفعاليات',
-                        'لا تفوّت الجديد',
-                        Icons.celebration_rounded,
-                        () => _scrollTo(_eventsKey),
-                      ),
-                      _Feature(
-                        'الترتيب',
-                        'نجوم المجتمع',
-                        Icons.emoji_events_rounded,
-                        () => _scrollTo(_rankingKey),
-                      ),
+                    const SizedBox(height: 8),
+                    _roomRail(suggestedRooms),
+                    if (activeRooms.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      _sectionHeader('الأكثر تفاعلاً', 'الغرف الأكثر نشاطاً'),
+                      const SizedBox(height: 8),
+                      _activityRail(activeRooms),
                     ],
-                  ),
+                    if (suggestedPeople.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      _sectionHeader('أشخاص مقترحون', 'اكتشف أعضاء جدد'),
+                      const SizedBox(height: 8),
+                      _peopleRail(suggestedPeople),
+                    ],
+                    if (events.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      KeyedSubtree(
+                        key: _eventsKey,
+                        child: _sectionHeader('الفعاليات', 'أبرز ما يحدث في Shadow Live'),
+                      ),
+                      const SizedBox(height: 8),
+                      _eventRail(events),
+                    ],
+                    if (ranking.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      KeyedSubtree(
+                        key: _rankingKey,
+                        child: _sectionHeader('الترتيب', 'نجوم المجتمع'),
+                      ),
+                      const SizedBox(height: 8),
+                      _rankingPreview(ranking),
+                    ],
+                    const SizedBox(height: 16),
+                    _sectionHeader('استكشف Shadow Live', 'كل شيء من مكان واحد'),
+                    const SizedBox(height: 8),
+                    GridView.count(
+                      crossAxisCount: 2,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      mainAxisSpacing: 8,
+                      crossAxisSpacing: 8,
+                      childAspectRatio: 2.1,
+                      children: [
+                        _Feature('الأصدقاء', 'ابحث بالاسم أو ID',
+                            Icons.people_alt_rounded, _search),
+                        _Feature('الألعاب', 'العب واربح',
+                            Icons.sports_esports_rounded, widget.onOpenGames),
+                        if (events.isNotEmpty)
+                          _Feature('الفعاليات', 'لا تفوّت الجديد',
+                              Icons.celebration_rounded,
+                              () => _scrollTo(_eventsKey)),
+                        if (ranking.isNotEmpty)
+                          _Feature('الترتيب', 'نجوم المجتمع',
+                              Icons.emoji_events_rounded,
+                              () => _scrollTo(_rankingKey)),
+                      ],
+                    ),
                   ],
                 ],
               ),
@@ -296,20 +294,20 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _roomRail(List<DiscoveryRoom> rooms) {
     if (_loading && rooms.isEmpty) {
       return const SizedBox(
-        height: 166,
+        height: 126,
         child: Center(child: CircularProgressIndicator(color: _purple)),
       );
     }
     if (rooms.isEmpty) return _emptyRooms('لا توجد غرف مقترحة حالياً');
 
     return SizedBox(
-      height: 170,
+      height: 126,
       child: ListView(
         scrollDirection: Axis.horizontal,
         children: rooms
             .take(8)
             .map(
-              (room) => _RoomCard(
+              (room) => HomeCompactRoomCard(
                 room: room,
                 onTap: () => _openRoom(room),
               ),
@@ -345,7 +343,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     return SizedBox(
-      height: 92,
+      height: 78,
       child: ListView(
         scrollDirection: Axis.horizontal,
         children: rooms
@@ -387,13 +385,13 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     return SizedBox(
-      height: 132,
+      height: 110,
       child: ListView(
         scrollDirection: Axis.horizontal,
         children: people
             .take(10)
             .map(
-              (person) => _PersonCard(
+              (person) => HomeCompactPersonCard(
                 person: person,
                 onTap: () => _openPerson(person),
               ),
@@ -412,7 +410,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     return SizedBox(
-      height: 122,
+      height: 108,
       child: ListView(
         scrollDirection: Axis.horizontal,
         children: events.take(8).map((event) {
@@ -616,7 +614,7 @@ class _HomeScreenState extends State<HomeScreen> {
     required String text,
   }) {
     return Container(
-      height: 78,
+      height: 68,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
         color: _card,
@@ -643,8 +641,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _emptyRooms(String message) {
     return Container(
-      height: 120,
-      padding: const EdgeInsets.all(18),
+      height: 80,
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: _card,
         borderRadius: BorderRadius.circular(20),
@@ -653,8 +651,8 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.mic_none_rounded, color: Colors.white38, size: 32),
-          const SizedBox(height: 8),
+          const Icon(Icons.mic_none_rounded, color: Colors.white38, size: 20),
+          const SizedBox(height: 4),
           Text(
             message,
             style: const TextStyle(
@@ -662,7 +660,7 @@ class _HomeScreenState extends State<HomeScreen> {
               fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           const Text(
             'ستظهر الغرف النشطة هنا تلقائياً',
             style: TextStyle(color: Colors.white38, fontSize: 11),
@@ -899,7 +897,7 @@ class _HomeScreenState extends State<HomeScreen> {
           title,
           style: const TextStyle(
             color: Colors.white,
-            fontSize: 18,
+            fontSize: 16,
             fontWeight: FontWeight.w900,
           ),
         ),
@@ -958,8 +956,8 @@ class _RoomPreviewAvatar extends StatelessWidget {
   }
 }
 
-class _RoomCard extends StatelessWidget {
-  const _RoomCard({
+class HomeCompactRoomCard extends StatelessWidget {
+  const HomeCompactRoomCard({
     required this.room,
     required this.onTap,
   });
@@ -973,9 +971,9 @@ class _RoomCard extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
       child: Container(
-        width: 145,
-        margin: const EdgeInsetsDirectional.only(end: 10),
-        padding: const EdgeInsets.all(14),
+        width: 124,
+        margin: const EdgeInsetsDirectional.only(end: 8),
+        padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(20),
           gradient: const LinearGradient(
@@ -990,7 +988,7 @@ class _RoomCard extends StatelessWidget {
               children: [
                 _RoomPreviewAvatar(
                   room: room,
-                  radius: 27,
+                  radius: 23,
                   fallbackIcon: Icons.mic_rounded,
                 ),
                 const Spacer(),
@@ -1040,9 +1038,9 @@ class _ActiveRoomChip extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(18),
       child: Container(
-        width: 210,
-        margin: const EdgeInsetsDirectional.only(end: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        width: 192,
+        margin: const EdgeInsetsDirectional.only(end: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
           color: const Color(0xFF111321),
           borderRadius: BorderRadius.circular(18),
@@ -1052,7 +1050,7 @@ class _ActiveRoomChip extends StatelessWidget {
           children: [
             _RoomPreviewAvatar(
               room: room,
-              radius: 23,
+              radius: 21,
               fallbackIcon: Icons.graphic_eq_rounded,
             ),
             const SizedBox(width: 10),
@@ -1086,8 +1084,8 @@ class _ActiveRoomChip extends StatelessWidget {
   }
 }
 
-class _PersonCard extends StatelessWidget {
-  const _PersonCard({
+class HomeCompactPersonCard extends StatelessWidget {
+  const HomeCompactPersonCard({
     required this.person,
     required this.onTap,
   });
@@ -1101,9 +1099,9 @@ class _PersonCard extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(18),
       child: Container(
-        width: 112,
-        margin: const EdgeInsetsDirectional.only(end: 10),
-        padding: const EdgeInsets.all(12),
+        width: 100,
+        margin: const EdgeInsetsDirectional.only(end: 8),
+        padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
           color: const Color(0xFF111321),
           borderRadius: BorderRadius.circular(18),
@@ -1115,16 +1113,17 @@ class _PersonCard extends StatelessWidget {
               clipBehavior: Clip.none,
               children: [
                 ProfileAvatarWithFrame(
-                  diameter: 52,
+                  diameter: 44,
                   userId: person.id,
                   fallbackProfile: person.data,
+                  snapshotOnly: true,
                   backgroundColor: const Color(0xFF281847),
                   placeholderColor: Colors.white54,
                 ),
 
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 5),
             Text(
               person.displayName,
               maxLines: 1,
