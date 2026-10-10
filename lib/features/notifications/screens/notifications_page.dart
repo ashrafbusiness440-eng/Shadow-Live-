@@ -7,6 +7,7 @@ import '../../profile/screens/public_profile_screen.dart';
 import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../../relationships/services/relationship_service.dart';
 import '../services/notification_service.dart';
+import '../../../shared/widgets/loading_indicator.dart';
 
 class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key});
@@ -23,6 +24,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
   NotificationPage? _page;
   bool _loading = true;
   Object? _error;
+  bool _loadMoreFailed = false;
 
   @override
   void initState() {
@@ -44,6 +46,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
     setState(() {
       _loading = true;
       _error = null;
+      _loadMoreFailed = false;
     });
     try {
       final page = await _service.load();
@@ -67,7 +70,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
   Future<void> _loadMore() async {
     final page = _page;
     if (_loading || page?.cursor == null || page?.hasMore != true) return;
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = null;
+      _loadMoreFailed = false;
+    });
     try {
       final next = await _service.load(after: page!.cursor);
       if (!mounted) return;
@@ -82,6 +89,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       if (!mounted) return;
       setState(() {
         _error = error;
+        _loadMoreFailed = true;
         _loading = false;
       });
     }
@@ -691,15 +699,16 @@ class _NotificationsPageState extends State<NotificationsPage> {
           body: Builder(
             builder: (context) {
               if (_loading && _items.isEmpty) {
-                return const Center(child: CircularProgressIndicator());
+                return const LoadingIndicator(
+                  size: 32,
+                  message: 'جارٍ تحميل الإشعارات...',
+                );
               }
               if (_error != null && _items.isEmpty) {
-                return Center(
-                  child: FilledButton.icon(
-                    onPressed: _refresh,
-                    icon: const Icon(Icons.refresh_rounded),
-                    label: const Text('تعذر تحميل الإشعارات — إعادة المحاولة'),
-                  ),
+                return ShadowReadState(
+                  icon: Icons.wifi_off_rounded,
+                  message: 'تعذر تحميل الإشعارات. تحقق من اتصال الإنترنت.',
+                  onRetry: _refresh,
                 );
               }
               if (_items.isEmpty) {
@@ -707,11 +716,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
                   onRefresh: _refresh,
                   child: ListView(
                     children: const [
-                      SizedBox(height: 180),
-                      Icon(Icons.notifications_none_rounded,
-                          size: 58, color: Colors.white38),
-                      SizedBox(height: 12),
-                      Center(child: Text('لا توجد إشعارات حالياً')),
+                      SizedBox(height: 120),
+                      ShadowReadState(
+                        icon: Icons.notifications_none_rounded,
+                        message: 'لا توجد إشعارات حاليًا',
+                      ),
                     ],
                   ),
                 );
@@ -720,10 +729,21 @@ class _NotificationsPageState extends State<NotificationsPage> {
                 onRefresh: _refresh,
                 child: ListView.separated(
                   padding: const EdgeInsets.all(14),
-                  itemCount: _items.length + (_page?.hasMore == true ? 1 : 0),
+                  itemCount: _items.length +
+                      (_page?.hasMore == true ||
+                              (_error != null && !_loadMoreFailed)
+                          ? 1
+                          : 0),
                   separatorBuilder: (_, __) => const SizedBox(height: 9),
                   itemBuilder: (context, index) {
                     if (index == _items.length) {
+                      if (_error != null && !_loadMoreFailed) {
+                        return ShadowReadState(
+                          icon: Icons.wifi_off_rounded,
+                          message: 'تعذر تحديث الإشعارات. تظهر البيانات المحملة سابقًا.',
+                          onRetry: _refresh,
+                        );
+                      }
                       return Center(
                         child: OutlinedButton.icon(
                           onPressed: _loading ? null : _loadMore,
@@ -733,7 +753,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
                                   child: CircularProgressIndicator(strokeWidth: 2),
                                 )
                               : const Icon(Icons.expand_more_rounded),
-                          label: const Text('تحميل المزيد'),
+                          label: Text(_loadMoreFailed
+                              ? 'تعذر تحميل المزيد — إعادة المحاولة'
+                              : 'تحميل المزيد'),
                         ),
                       );
                     }
