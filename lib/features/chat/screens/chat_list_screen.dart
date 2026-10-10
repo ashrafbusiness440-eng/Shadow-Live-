@@ -199,7 +199,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
   @override
   Widget build(BuildContext context) {
     final me = uid;
-    if (me == null || me.isEmpty) {
+    if (me == null || me.isEmpty ||
+        FirebaseAuth.instance.currentUser?.isAnonymous == true) {
       return const Directionality(
         textDirection: TextDirection.rtl,
         child: Scaffold(
