@@ -231,7 +231,7 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
     final message = evidence['message'] is Map
         ? Map<String, dynamic>.from(evidence['message'] as Map)
         : <String, dynamic>{};
-    final context = evidence['context'] is List
+    final contextEntries = evidence['context'] is List
         ? (evidence['context'] as List).take(7).whereType<Map>()
             .map((m) => Map<String, dynamic>.from(m)).toList()
         : <Map<String, dynamic>>[];
@@ -284,12 +284,12 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
             if ((message['text'] ?? '').toString().isNotEmpty)
               SelectableText('الرسالة المبلّغ عنها: ' +
                   (message['text'] ?? '').toString()),
-            if (context.isNotEmpty)
+            if (contextEntries.isNotEmpty)
               ExpansionTile(
                 tilePadding: EdgeInsets.zero,
                 title: const Text('الدليل المحفوظ من سياق الرسالة'),
                 children: [
-                  for (final entry in context)
+                  for (final entry in contextEntries)
                     ListTile(
                       dense: true,
                       title: Text((entry['displayName'] ?? 'مستخدم').toString()),
