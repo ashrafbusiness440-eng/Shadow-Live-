@@ -256,6 +256,7 @@ const paths = [
   `report_rate_limits/${reporterUid}`,
   `report_operations/${reportKey}`,
   `reports/report_${reportKey}`,
+  `admin_inbox_items/user_report__report_${reportKey}`,
   `rooms/${roomId}`,
   `room_invite_rate_limits/${roomId}__${reporterUid}__${targetUid}`,
   `room_invites/${roomId}/users/${targetUid}`,

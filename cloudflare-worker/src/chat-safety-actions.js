@@ -2,6 +2,7 @@ import { json, readJson } from "./http.js";
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
+import { adminInboxUpsertWrite } from "./admin-inbox-index.js";
 import {
   agencyPolicySnapshotFor,
   economyWithAgencyPolicySnapshot,
@@ -1857,6 +1858,21 @@ async function reportUser(db, uid, body) {
         createdAt: now,
         updatedAt: now,
       }),
+      adminInboxUpsertWrite(db, {
+        type: "user_report",
+        title: "بلاغ عن مستخدم في محادثة خاصة",
+        body: "بلاغ يحتاج مراجعة",
+        targetId: resultData.reportId,
+        route: "general_reports",
+        createdAt: now,
+        priority: "high",
+        meta: {
+          reporterUid: uid,
+          targetUid: targetUserId,
+          conversationId,
+          status: "open",
+        },
+      }),
       db.writeCreate(opPath, {
         reporterId: uid,
         targetUserId,
@@ -1868,6 +1884,112 @@ async function reportUser(db, uid, body) {
     ]);
 
     return { ok: true, code: "ok", ...resultData };
+  });
+}
+
+// A room complaint is different from a complaint about one chat message.
+// Only an authenticated participant presently in that actual room can report
+// it. A client-supplied owner or membership claim is never authoritative.
+async function reportRoom(db, uid, body, realtimeNamespace) {
+  const roomId = clean(body.roomId);
+  const reason = clean(body.reason);
+  const details = clean(body.details);
+  const key = clean(body.idempotencyKey);
+  const allowedReasons = new Set([
+    "harassment", "abusive_content", "spam", "scam", "other",
+  ]);
+  if (!/^[A-Za-z0-9_-]{1,180}$/.test(roomId) ||
+      !allowedReasons.has(reason) ||
+      details.length > 500 ||
+      !validKey(key) ||
+      key.length > 120) {
+    throw new ApiError("invalid_request", 400);
+  }
+
+  const present = await realtimeUserPresentFromNamespace(
+    realtimeNamespace, roomId, uid,
+  );
+  if (present !== true) {
+    throw new ApiError(
+      present === false ? "report_room_not_present" : "room_realtime_unavailable",
+      present === false ? 403 : 503,
+    );
+  }
+
+  return runTransaction(db, async (transaction) => {
+    const opPath = `report_operations/${key}`;
+    const reportId = `room_report_${key}`;
+    const ratePath = `report_rate_limits/${uid}`;
+    const [op, room, rate, config] = await Promise.all([
+      db.get(opPath, transaction),
+      db.get(`rooms/${roomId}`, transaction),
+      db.get(ratePath, transaction),
+      db.get("system_config/messaging", transaction),
+    ]);
+    if (op.exists) {
+      await db.rollback(transaction);
+      return { ok: true, code: "duplicate", ...(op.data?.result || {}) };
+    }
+    if (!room.exists) throw new ApiError("room_not_found", 404);
+    const ownerUid = clean(room.data?.ownerUid || room.data?.hostUid);
+    if (ownerUid && ownerUid === uid) {
+      throw new ApiError("cannot_report_own_room", 409);
+    }
+    const cfg = config.data || {};
+    const nowMs = Date.now();
+    const windowMinutes = bounded(cfg.reportRateWindowMinutes, 60, 5, 1440);
+    const maxReports = bounded(cfg.reportRateMax, 5, 1, 20);
+    const startedMs = timestampMs(rate.data?.windowStartedAt);
+    const sameWindow =
+      startedMs > 0 && nowMs - startedMs < windowMinutes * 60 * 1000;
+    const count = sameWindow ? Math.max(0, Number(rate.data?.count || 0)) : 0;
+    if (count >= maxReports) throw new ApiError("rate_limited", 429);
+    const now = new Date(nowMs);
+    const result = { reportId };
+    await db.commit(transaction, [
+      db.writeUpdate(ratePath, {
+        windowStartedAt: new Date(sameWindow ? startedMs : nowMs),
+        count: count + 1,
+        updatedAt: now,
+      }, ["windowStartedAt", "count", "updatedAt"]),
+      db.writeCreate(`reports/${reportId}`, {
+        reportId,
+        targetType: "room",
+        reporterUid: uid,
+        targetUid: ownerUid || null,
+        roomId,
+        reason,
+        details,
+        source: "room_report",
+        status: "new",
+        createdAt: now,
+        updatedAt: now,
+      }),
+      adminInboxUpsertWrite(db, {
+        type: "room_report",
+        title: "بلاغ عن غرفة",
+        body: "غرفة تحتاج مراجعة",
+        targetId: reportId,
+        route: "general_reports",
+        createdAt: now,
+        priority: "high",
+        meta: {
+          reporterUid: uid,
+          targetUid: ownerUid || null,
+          roomId,
+          status: "new",
+        },
+      }),
+      db.writeCreate(opPath, {
+        reporterId: uid,
+        roomId,
+        action: "reportRoom",
+        status: "completed",
+        result,
+        createdAt: now,
+      }),
+    ]);
+    return { ok: true, code: "ok", ...result };
   });
 }
 
@@ -1907,6 +2029,9 @@ export async function chatSafetyActions(request, env, ctx) {
         break;
       case "reportUser":
         result = await reportUser(db, decoded.sub, body);
+        break;
+      case "reportRoom":
+        result = await reportRoom(db, decoded.sub, body, env.ROOM_REALTIME);
         break;
       case "sendGift":
         result = await sendGift(db, decoded.sub, body);

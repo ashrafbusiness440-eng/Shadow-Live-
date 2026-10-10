@@ -1,4 +1,5 @@
 import { firestoreClient } from "./firestore.js";
+import { adminInboxUpsertWrite } from "./admin-inbox-index.js";
 import { getFirestoreForEnv } from "./legacy-firebase-admin-shim.js";
 import { roomSessionLeave } from "./voice-session-legacy.js";
 
@@ -196,6 +197,22 @@ export async function persistRoomChatReport(
       },
       createdAt: now,
       updatedAt: now,
+    }),
+    adminInboxUpsertWrite(db, {
+      type: "room_message_report",
+      title: "بلاغ عن رسالة داخل غرفة",
+      body: "رسالة غرفة تحتاج مراجعة",
+      targetId: reportId,
+      route: "general_reports",
+      createdAt: now,
+      priority: "high",
+      meta: {
+        reporterUid,
+        targetUid,
+        roomId,
+        messageId,
+        status: "new",
+      },
     }),
   ]);
 

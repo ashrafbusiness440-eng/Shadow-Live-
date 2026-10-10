@@ -4,6 +4,7 @@ import {
   verifyFirebaseIdToken,
 } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
+import { generalReportType } from "./general-reports.js";
 import {
   ADMIN_INBOX_INDEX_COLLECTION,
   ADMIN_INBOX_INDEX_LIMIT,
@@ -58,6 +59,10 @@ function itemAllowedForActor(actor, item) {
   switch (clean(item?.type)) {
     case "diary_report":
       return canSeeDiary(actor);
+    case "user_report":
+    case "room_message_report":
+    case "room_report":
+      return canSeeGeneralReports(actor);
     case "agency_application":
       return canReviewAgencyApplications(actor);
     case "agency_identity_change":
@@ -86,6 +91,12 @@ async function loadActor(db, decoded) {
     Array.isArray(data.capabilities) ? data.capabilities.map(clean).filter(Boolean) : [],
   );
   return { uid, owner, role, adminEnabled, capabilities };
+}
+
+function canSeeGeneralReports(actor) {
+  return actor.owner ||
+    actor.capabilities.has("viewReports") ||
+    actor.capabilities.has("reviewReports");
 }
 
 function canSeeDiary(actor) {
@@ -172,6 +183,47 @@ async function loadDiaryItems(db) {
       },
     });
   }).filter((item) => item.targetId);
+}
+
+// One-time, bounded migration for already-saved room and private-chat reports.
+// New reports are indexed atomically at creation; no recurring source scans.
+async function loadGeneralReportItems(db) {
+  const sources = [
+    [{ field: "type", op: "==", value: "user" }],
+    [{ field: "targetType", op: "==", value: "room_message" }],
+    [{ field: "targetType", op: "==", value: "room" }],
+  ];
+  const groups = await Promise.all(sources.map((filters) =>
+    db.runQuery("reports", { filters, limit: 20 })
+  ));
+  return groups.flat().map((row) => {
+    const data = row?.data || {};
+    const reportId = clean(data.reportId || row.id);
+    const type = generalReportType(data);
+    const status = clean(data.status);
+    if (!reportId || !type ||
+        !["open", "new", "under_review"].includes(status)) return null;
+    return inboxItem({
+      key: type + "_" + reportId,
+      type,
+      title: type === "user_report"
+        ? "بلاغ عن مستخدم في محادثة خاصة"
+        : type === "room_report" ? "بلاغ عن غرفة"
+          : "بلاغ عن رسالة داخل غرفة",
+      body: "بلاغ يحتاج مراجعة",
+      targetId: reportId,
+      route: "general_reports",
+      createdAt: data.createdAt,
+      priority: "high",
+      meta: {
+        reporterUid: clean(data.reporterUid || data.reporterId) || null,
+        targetUid: clean(data.targetUid || data.targetUserId) || null,
+        roomId: clean(data.roomId) || null,
+        conversationId: clean(data.conversationId) || null,
+        status,
+      },
+    });
+  }).filter(Boolean);
 }
 
 async function loadAgencyApplicationItems(db) {
@@ -334,26 +386,30 @@ async function loadReadState(db, uid) {
 async function loadIndexedItems(db, actor, prefetchedRows = null) {
   const rows = Array.isArray(prefetchedRows)
     ? prefetchedRows
-    : await db.list(
-        ADMIN_INBOX_INDEX_COLLECTION,
-        ADMIN_INBOX_INDEX_LIMIT,
-      );
-  const metaPresent = rows.some((row) => row.id === "__meta");
+    : await db.list(ADMIN_INBOX_INDEX_COLLECTION, ADMIN_INBOX_INDEX_LIMIT);
+  const meta = rows.find((row) => row.id === "__meta");
   const indexed = rows
     .filter((row) => row.id !== "__meta")
     .map(normalizeAdminInboxIndexRow)
-    .filter((item) => item.key && item.targetId && itemAllowedForActor(actor, item))
-    .sort((a, b) => {
-      const byTime = b.createdAtMs - a.createdAtMs;
-      return byTime !== 0 ? byTime : b.key.localeCompare(a.key);
-    })
-    .slice(0, MAX_VISIBLE_ITEMS);
+    .filter((item) => item.key && item.targetId && itemAllowedForActor(actor, item));
 
-  if (metaPresent) return indexed;
+  if (meta && Number(meta.data?.schemaVersion || 0) >= 2) {
+    return indexed.sort((a, b) =>
+      b.createdAtMs - a.createdAtMs || b.key.localeCompare(a.key)
+    ).slice(0, MAX_VISIBLE_ITEMS);
+  }
 
-  // Safe first-run fallback: build the index from the legacy sources once.
-  const legacy = await loadItems(db, actor);
-  const writes = legacy.map((item) =>
+  // Existing deployments have index schema v1, which omitted every report
+  // in reports/*. Upgrade a single time and retain the old visible items.
+  const [reports, legacy] = await Promise.all([
+    loadGeneralReportItems(db),
+    meta ? Promise.resolve([]) : loadItems(db, actor),
+  ]);
+  const migration = new Map();
+  for (const item of [...indexed, ...legacy, ...reports]) {
+    if (item?.key) migration.set(item.key, item);
+  }
+  const writes = [...legacy, ...reports].map((item) =>
     adminInboxUpsertWrite(db, {
       type: item.type,
       title: item.title,
@@ -365,19 +421,27 @@ async function loadIndexedItems(db, actor, prefetchedRows = null) {
       meta: item.meta,
     })
   );
-  writes.push(
-    db.writeUpdate(
-      `${ADMIN_INBOX_INDEX_COLLECTION}/__meta`,
-      {
-        schemaVersion: 1,
-        ready: true,
-        backfilledAt: new Date(),
-      },
-      ["schemaVersion", "ready", "backfilledAt"],
-    ),
-  );
-  await db.commit(null, writes).catch(() => {});
-  return legacy;
+  const now = new Date();
+  writes.push(db.writeUpdate(
+    ADMIN_INBOX_INDEX_COLLECTION + "/__meta",
+    {
+      schemaVersion: 2,
+      ready: true,
+      migratedGeneralReportsAt: now,
+      ...(meta ? {} : { backfilledAt: now }),
+    },
+    meta
+      ? ["schemaVersion", "ready", "migratedGeneralReportsAt"]
+      : ["schemaVersion", "ready", "migratedGeneralReportsAt", "backfilledAt"],
+  ));
+  // Do not acknowledge migration as done after a failed write: a later
+  // authorized visit can retry without silently losing old reports.
+  await db.commit(null, writes);
+  return [...migration.values()]
+    .filter((item) => itemAllowedForActor(actor, item))
+    .sort((a, b) =>
+      b.createdAtMs - a.createdAtMs || b.key.localeCompare(a.key)
+    ).slice(0, MAX_VISIBLE_ITEMS);
 }
 
 async function listInbox(
@@ -503,4 +567,5 @@ export const adminInboxTestHooks = Object.freeze({
   loadReadState,
   loadIndexedItems,
   listInbox,
+  loadGeneralReportItems,
 });
