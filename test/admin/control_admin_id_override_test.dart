@@ -29,7 +29,9 @@ void main(){
     final control = File('lib/main_control.dart').readAsStringSync();
     final mapping = control.indexOf("if (item.title == 'IDs الخاصة')");
     expect(mapping, greaterThan(0));
-    final target = control.substring(mapping, mapping + 350);
+    final fallback = control.indexOf('return DetailPage(item:item);', mapping);
+    expect(fallback, greaterThan(mapping));
+    final target = control.substring(mapping, fallback);
     expect(target.contains('body: const IdManagementPage()'), isTrue);
     expect(target.contains('DetailPage('), isFalse);
   });
