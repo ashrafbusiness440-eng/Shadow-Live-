@@ -2,6 +2,7 @@ import { json, readJson } from "./http.js";
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
+import { adminInboxUpsertWrite } from "./admin-inbox-index.js";
 import {
   agencyPolicySnapshotFor,
   economyWithAgencyPolicySnapshot,
@@ -1856,6 +1857,21 @@ async function reportUser(db, uid, body) {
         status: "open",
         createdAt: now,
         updatedAt: now,
+      }),
+      adminInboxUpsertWrite(db, {
+        type: "user_report",
+        title: "بلاغ عن مستخدم في محادثة خاصة",
+        body: "بلاغ يحتاج مراجعة",
+        targetId: resultData.reportId,
+        route: "general_reports",
+        createdAt: now,
+        priority: "high",
+        meta: {
+          reporterUid: uid,
+          targetUid: targetUserId,
+          conversationId,
+          status: "open",
+        },
       }),
       db.writeCreate(opPath, {
         reporterId: uid,
