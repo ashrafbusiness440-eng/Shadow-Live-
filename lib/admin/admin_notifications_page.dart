@@ -7,6 +7,7 @@ import 'agency_control_page.dart';
 import 'control_api_endpoints.dart';
 import 'control_firebase.dart';
 import 'diary_reports_control_page.dart';
+import 'general_reports_control_page.dart';
 
 class AdminInboxItem {
   const AdminInboxItem({
@@ -19,6 +20,7 @@ class AdminInboxItem {
     required this.read,
     required this.createdAtMs,
     required this.priority,
+    this.meta = const <String, dynamic>{},
   });
 
   final String key;
@@ -30,6 +32,7 @@ class AdminInboxItem {
   final bool read;
   final int createdAtMs;
   final String priority;
+  final Map<String, dynamic> meta;
 
   factory AdminInboxItem.fromMap(Map<String, dynamic> data) => AdminInboxItem(
         key: (data['key'] ?? '').toString().trim(),
@@ -41,6 +44,9 @@ class AdminInboxItem {
         read: data['read'] == true,
         createdAtMs: (data['createdAtMs'] as num?)?.toInt() ?? 0,
         priority: (data['priority'] ?? 'normal').toString().trim(),
+        meta: data['meta'] is Map
+            ? Map<String, dynamic>.from(data['meta'] as Map)
+            : const <String, dynamic>{},
       );
 }
 
@@ -180,6 +186,8 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
       Widget? page;
       if (item.route == 'diary_reports') {
         page = DiaryReportsControlPage(initialReportId: item.targetId);
+      } else if (item.route == 'general_reports') {
+        page = GeneralReportsControlPage(initialReportId: item.targetId);
       } else if (item.route == 'agency_control') {
         page = AgencyControlPage(
           focusType: item.type,
@@ -215,6 +223,9 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
 
   IconData _iconFor(String type) => switch (type) {
         'diary_report' => Icons.flag_outlined,
+        'user_report' => Icons.person_off_outlined,
+        'room_report' => Icons.meeting_room_outlined,
+        'room_message_report' => Icons.mark_chat_unread_outlined,
         'agency_application' => Icons.apartment_outlined,
         'agency_identity_change' => Icons.edit_location_alt_outlined,
         'agency_ownership_transfer' => Icons.swap_horiz_rounded,
@@ -331,6 +342,14 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
                     subtitle: Text(
                       [
                         if (item.body.isNotEmpty) item.body,
+                        if (item.type == 'user_report' ||
+                            item.type == 'room_report' ||
+                            item.type == 'room_message_report') ...[
+                          if ((item.meta['reporterUid'] ?? '').toString().isNotEmpty)
+                            'مقدّم البلاغ: ' + (item.meta['reporterUid'] ?? '').toString(),
+                          if ((item.meta['targetUid'] ?? '').toString().isNotEmpty)
+                            'المبلّغ عليه: ' + (item.meta['targetUid'] ?? '').toString(),
+                        ],
                         if (_timeLabel(item.createdAtMs).isNotEmpty)
                           _timeLabel(item.createdAtMs),
                       ].join(' • '),
