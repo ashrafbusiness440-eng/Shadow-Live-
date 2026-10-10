@@ -8,6 +8,9 @@ class ProfileVisualIdentity {
     required this.profileImageUrl,
     required this.profileAvatarAsset,
     required this.profileAvatarAnimationUrl,
+    this.effectiveVipLevel,
+    this.vipExpiresAt,
+    this.hasVipExpiresAt = false,
     required this.activeProfileFrameAssetKey,
     required this.activeProfileFrameImageUrl,
     required this.activeProfileFrameExpiresAtMs,
@@ -18,6 +21,12 @@ class ProfileVisualIdentity {
   final String profileImageUrl;
   final String profileAvatarAsset;
   final String profileAvatarAnimationUrl;
+  // Carry the existing public VIP state alongside animation metadata.
+  // The viewer checks both the level and expiry; an image URL alone never
+  // grants animation entitlement.
+  final int? effectiveVipLevel;
+  final Object? vipExpiresAt;
+  final bool hasVipExpiresAt;
   final String activeProfileFrameAssetKey;
   final String activeProfileFrameImageUrl;
   final int activeProfileFrameExpiresAtMs;
@@ -35,6 +44,13 @@ class ProfileVisualIdentity {
           (data['profileAvatarAsset'] ?? '').toString().trim(),
       profileAvatarAnimationUrl:
           (data['profileAvatarAnimationUrl'] ?? '').toString().trim(),
+      effectiveVipLevel: data.containsKey('effectiveVipLevel')
+          ? (data['effectiveVipLevel'] is num
+              ? (data['effectiveVipLevel'] as num).toInt()
+              : int.tryParse((data['effectiveVipLevel'] ?? '').toString()))
+          : null,
+      vipExpiresAt: data['vipExpiresAt'],
+      hasVipExpiresAt: data.containsKey('vipExpiresAt'),
       activeProfileFrameAssetKey:
           (data['activeProfileFrameAssetKey'] ?? '').toString().trim(),
       activeProfileFrameImageUrl:
@@ -57,6 +73,8 @@ class ProfileVisualIdentity {
         'profileImageUrl': profileImageUrl,
         'profileAvatarAsset': profileAvatarAsset,
         'profileAvatarAnimationUrl': profileAvatarAnimationUrl,
+        if (effectiveVipLevel != null) 'effectiveVipLevel': effectiveVipLevel,
+        if (hasVipExpiresAt) 'vipExpiresAt': vipExpiresAt,
         'activeProfileFrameAssetKey': activeProfileFrameAssetKey,
         'activeProfileFrameImageUrl': activeProfileFrameImageUrl,
         'activeProfileFrameExpiresAtMs': activeProfileFrameExpiresAtMs,

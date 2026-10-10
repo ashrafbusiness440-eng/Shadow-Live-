@@ -36,6 +36,76 @@ void main() {
         'https://example.com/animation.gif');
   });
 
+  test('GIF avatar is rendered only with active VIP4+ eligibility', () {
+    final profile = {
+      'profileImageUrl': 'https://example.com/still.webp',
+      'profileAvatarAnimationUrl': 'https://example.com/animated.gif',
+    };
+    final allowed = effectiveProfileAvatarProvider(
+      profile,
+      effectiveVipLevel: 4,
+    );
+    expect(allowed, isA<NetworkImage>());
+    expect((allowed as NetworkImage).url, 'https://example.com/animated.gif');
+
+    final expired = effectiveProfileAvatarProvider(
+      profile,
+      effectiveVipLevel: 3,
+    );
+    expect(expired, isA<NetworkImage>());
+    expect((expired as NetworkImage).url, 'https://example.com/still.webp');
+  });
+
+  test('editing a GIF persists both public URL and object ID', () {
+    final source = File('lib/features/user/screens/edit_profile_screen.dart')
+        .readAsStringSync();
+    expect(source.contains("scope: 'profile_avatar_animation'"), isTrue);
+    expect(source.contains("imageUpdate['profileAvatarAnimationUrl'] = url;"), isTrue);
+    expect(source.contains(
+        "imageUpdate['profileAvatarAnimationObjectId'] = result.objectId;"), isTrue);
+    expect(source.contains("if (url.isEmpty) throw StateError('animation_public_url_missing');"), isTrue);
+    expect(source.contains(
+        "up['profileAvatarAnimationUrl']=FieldValue.delete();"), isTrue);
+    expect(source.contains(
+        "imageUpdate['profileAvatarAnimationUrl'] = FieldValue.delete();"), isTrue);
+    final uploadBeforeCleanup = source.indexOf(
+        'await _uploadImagesInBackground(u.uid,avatarBytes,coverBytes,animationBytes);');
+    final cleanup = source.indexOf(
+        'if(avatarToDelete!=null)await _deleteStoredObject(avatarToDelete);');
+    expect(uploadBeforeCleanup, greaterThan(0));
+    expect(cleanup, greaterThan(uploadBeforeCleanup));
+  });
+
+  test('shared avatar cache carries verified VIP level and expiry', () {
+    final expires = DateTime.now().add(const Duration(days: 2));
+    final identity = ProfileVisualIdentity.fromMap('vip4', {
+      'profileImageUrl': 'https://example.com/avatar.webp',
+      'profileAvatarAnimationUrl': 'https://example.com/avatar.gif',
+      'effectiveVipLevel': 4,
+      'vipExpiresAt': expires,
+    });
+    final resolved = identity.toProfileMap();
+    expect(resolved['effectiveVipLevel'], 4);
+    expect(resolved['vipExpiresAt'], expires);
+    final avatar = effectiveProfileAvatarProvider(resolved);
+    expect(avatar, isA<NetworkImage>());
+    expect((avatar as NetworkImage).url, 'https://example.com/avatar.gif');
+
+    final expired = ProfileVisualIdentity.fromMap('vip4', {
+      ...resolved,
+      'vipExpiresAt': DateTime.now().subtract(const Duration(seconds: 1)),
+    }).toProfileMap();
+    final still = effectiveProfileAvatarProvider(expired);
+    expect(still, isA<NetworkImage>());
+    expect((still as NetworkImage).url, 'https://example.com/avatar.webp');
+
+    final partial = ProfileVisualIdentity.fromMap('partial', {
+      'profileAvatarAnimationUrl': 'https://example.com/avatar.gif',
+    }).toProfileMap();
+    expect(partial.containsKey('effectiveVipLevel'), isFalse);
+    expect(partial.containsKey('vipExpiresAt'), isFalse);
+  });
+
   test('room supporter and quick profile use one bounded visual resolver', () {
     final room = File('lib/main.dart').readAsStringSync();
     final service =
