@@ -8,6 +8,7 @@ import '../../../utils/compact_number.dart';
 import '../../wallet/screens/recharge_screen.dart';
 import '../../profile/screens/public_profile_screen.dart';
 import '../../profile/widgets/profile_avatar_with_frame.dart';
+import '../../room/services/room_image_source.dart';
 import '../services/discovery_service.dart';
 import 'discovery_search_screen.dart';
 import '../../../shared/widgets/loading_indicator.dart';
@@ -883,6 +884,47 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
+/// Both Home room rails use the existing room-surface image source.
+/// No new reads or profile/avatar fallback paths are introduced.
+class _RoomPreviewAvatar extends StatelessWidget {
+  const _RoomPreviewAvatar({
+    required this.room,
+    required this.radius,
+    required this.fallbackIcon,
+  });
+
+  final DiscoveryRoom room;
+  final double radius;
+  final IconData fallbackIcon;
+
+  @override
+  Widget build(BuildContext context) {
+    final imageUrl = roomSurfaceImageUrl(room.data);
+    final fallback = Icon(
+      fallbackIcon,
+      color: const Color(0xFFFFD54A),
+      size: radius,
+    );
+    return ClipOval(
+      child: SizedBox(
+        width: radius * 2,
+        height: radius * 2,
+        child: ColoredBox(
+          color: const Color(0xFF372064),
+          child: imageUrl.isEmpty
+              ? fallback
+              : CachedNetworkImage(
+                  imageUrl: imageUrl,
+                  fit: BoxFit.cover,
+                  placeholder: (_, __) => fallback,
+                  errorWidget: (_, __, ___) => fallback,
+                ),
+        ),
+      ),
+    );
+  }
+}
+
 class _RoomCard extends StatelessWidget {
   const _RoomCard({
     required this.room,
@@ -913,10 +955,10 @@ class _RoomCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                const CircleAvatar(
+                _RoomPreviewAvatar(
+                  room: room,
                   radius: 27,
-                  backgroundColor: Color(0xFF372064),
-                  child: Icon(Icons.mic_rounded, color: Color(0xFFFFD54A)),
+                  fallbackIcon: Icons.mic_rounded,
                 ),
                 const Spacer(),
                 if (room.isFeatured)
@@ -973,10 +1015,10 @@ class _ActiveRoomChip extends StatelessWidget {
         ),
         child: Row(
           children: [
-            const CircleAvatar(
+            _RoomPreviewAvatar(
+              room: room,
               radius: 23,
-              backgroundColor: Color(0xFF2E1A50),
-              child: Icon(Icons.graphic_eq_rounded, color: Color(0xFF8A3DFF)),
+              fallbackIcon: Icons.graphic_eq_rounded,
             ),
             const SizedBox(width: 10),
             Expanded(

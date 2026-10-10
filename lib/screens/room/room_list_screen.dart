@@ -8,32 +8,15 @@ import '../../features/room/services/room_action_service.dart';
 import '../../features/room/services/room_image_source.dart';
 import '../../services/navigation_service.dart';
 
-/// Use the same room classification for display and public-list priority.
-bool isOfficialDiscoveryRoom(DiscoveryRoom room) {
-  final type = (room.data['roomType'] ?? room.data['type'] ?? 'personal')
-      .toString()
-      .trim();
-  return room.data['systemOwned'] == true ||
-      room.data['officialRoom'] == true ||
-      const {'official', 'administrative', 'customer_service'}.contains(type);
-}
+/// Compatibility wrappers: the shared discovery service owns the rules.
+bool isOfficialDiscoveryRoom(DiscoveryRoom room) =>
+    isOfficialRoomForDiscovery(room);
 
-/// A room is pinned only when it is official AND explicitly featured/pinned.
-/// Ordinary official rooms and featured non-official rooms stay activity-ranked.
 bool isPinnedOfficialDiscoveryRoom(DiscoveryRoom room) =>
-    isOfficialDiscoveryRoom(room) &&
-    (room.isFeatured ||
-        room.data['isPinned'] == true ||
-        room.data['pinned'] == true);
+    isPinnedOfficialRoomForDiscovery(room);
 
-int comparePublicDiscoveryRooms(DiscoveryRoom a, DiscoveryRoom b) {
-  final aPinned = isPinnedOfficialDiscoveryRoom(a);
-  final bPinned = isPinnedOfficialDiscoveryRoom(b);
-  if (aPinned != bPinned) return aPinned ? -1 : 1;
-  final byActivity = b.onlineCount.compareTo(a.onlineCount);
-  if (byActivity != 0) return byActivity;
-  return a.id.compareTo(b.id);
-}
+int comparePublicDiscoveryRooms(DiscoveryRoom a, DiscoveryRoom b) =>
+    compareRoomsByDiscoveryPriority(a, b);
 
 class RoomListScreen extends StatefulWidget {
   const RoomListScreen({super.key});
