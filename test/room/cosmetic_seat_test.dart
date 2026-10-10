@@ -32,8 +32,12 @@ void main() {
     expect(strip.contains('showMysteriousIdentitySheet('), isTrue);
     expect(strip.contains('FirebaseFirestore'), isFalse);
     expect(strip.contains('Timer.periodic'), isFalse);
-    expect(strip.contains('ProfileAvatarWithFrame('), isFalse);
-    expect(strip.contains('CosmeticAssetVisual('), isTrue);
+    // The audience now uses the same snapshot-only avatar/frame renderer
+    // as Quick Profile and gifts, without a listener or per-user read.
+    expect(strip.contains('ProfileAvatarWithFrame('), isTrue);
+    expect(strip.contains('snapshotOnly: true'), isTrue);
+    expect(strip.contains("user?.profileAvatarAsset ?? ''"), isTrue);
+    expect(strip.contains('CosmeticAssetVisual('), isFalse);
     expect(source.contains('_buildRoomAudienceStrip(),'), isTrue);
 
     final sheetStart = source.indexOf(
