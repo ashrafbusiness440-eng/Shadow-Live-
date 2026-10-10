@@ -67,12 +67,16 @@ void main() {
     final screen = File('lib/screens/room/room_list_screen.dart')
         .readAsStringSync();
     expect(screen.contains(
-      'roomLibraryWithVerifiedPresence(_favoriteRooms, _rooms)'), isTrue);
+      'roomLibraryWithVerifiedPresence(_favoriteRooms, publicRooms)'), isTrue);
     expect(screen.contains(
-      'roomLibraryWithVerifiedPresence(_historyRooms, _rooms)'), isTrue);
+      'roomLibraryWithVerifiedPresence(_historyRooms, publicRooms)'), isTrue);
     expect(screen.contains("room.data['presenceState'] == 'live'"), isTrue);
     expect(screen.contains('roomWithVerifiedPresence(room, liveCounts[room.id])'),
         isTrue);
+    expect(screen.contains(
+      '_loading || _error != null ? const <DiscoveryRoom>[] : _rooms'), isTrue);
+    expect(screen.contains(
+      'for (final room in _rooms) roomWithVerifiedPresence(room, null)'), isTrue);
     expect(screen.contains('Timer.periodic'), isFalse);
     expect(screen.contains('FirebaseFirestore.instance'), isFalse);
   });
