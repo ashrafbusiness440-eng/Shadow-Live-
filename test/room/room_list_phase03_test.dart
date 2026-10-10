@@ -117,15 +117,17 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
-        body: Center(
-          child: RoomListTile(
-            room: const DiscoveryRoom(
-              id: 'compact-room',
-              data: {'name': 'غرفة المحادثة', 'onlineCount': 8},
+        body: ListView(
+          children: [
+            RoomListTile(
+              room: const DiscoveryRoom(
+                id: 'compact-room',
+                data: {'name': 'غرفة المحادثة', 'onlineCount': 8},
+              ),
+              category: 'دردشة',
+              onTap: () {},
             ),
-            category: 'دردشة',
-            onTap: () {},
-          ),
+          ],
         ),
       ),
     ));
