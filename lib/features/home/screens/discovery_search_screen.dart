@@ -392,7 +392,14 @@ class _DiscoverySearchScreenState extends State<DiscoverySearchScreen> {
       } catch (_) {}
     }
 
-    final rooms = results.values.toList()
+    // Indexed Firestore results are not a live headcount source.
+    // Prefer the existing hydrated discovery cache when the ID matches.
+    // Never start a new per-search presence request or expose stale counts.
+    final cachedRoomsById = {for (final room in _roomCache) room.id: room};
+    final rooms = results.values
+        .map((room) => cachedRoomsById[room.id] ??
+            roomWithVerifiedPresence(room, null))
+        .toList()
       ..sort((a, b) {
         final idRankA = normalizeSearchText(a.publicId) == query ? 0 : 1;
         final idRankB = normalizeSearchText(b.publicId) == query ? 0 : 1;
@@ -401,7 +408,8 @@ class _DiscoverySearchScreenState extends State<DiscoverySearchScreen> {
         final rankCompare =
             searchMatchRank(a.title, query).compareTo(searchMatchRank(b.title, query));
         if (rankCompare != 0) return rankCompare;
-        return b.onlineCount.compareTo(a.onlineCount);
+        final byPresence = b.onlineCount.compareTo(a.onlineCount);
+        return byPresence != 0 ? byPresence : a.id.compareTo(b.id);
       });
 
     return rooms
@@ -498,7 +506,9 @@ class _DiscoverySearchScreenState extends State<DiscoverySearchScreen> {
           [
             if ((room['publicId'] ?? '').toString().isNotEmpty)
               'ID: ${room['publicId']}',
-            '${room['onlineCount'] ?? room['memberCount'] ?? room['participantsCount'] ?? 0} متصل',
+            room['presenceState'] == 'unavailable'
+                ? 'الحضور غير متاح'
+                : '${room['onlineCount'] ?? room['memberCount'] ?? room['participantsCount'] ?? 0} متصل',
           ].join(' • '),
           style: const TextStyle(color: Colors.white54),
         ),

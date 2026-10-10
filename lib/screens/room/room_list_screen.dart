@@ -724,7 +724,9 @@ class RoomListTile extends StatelessWidget {
                     children: [
                       _MetaPill(
                         icon: Icons.graphic_eq_rounded,
-                        text: '${room.onlineCount} متصل',
+                        text: room.hasAvailablePresence
+                            ? '${room.onlineCount} متصل'
+                            : 'الحضور غير متاح',
                       ),
                       _MetaPill(
                         icon: Icons.tag_rounded,

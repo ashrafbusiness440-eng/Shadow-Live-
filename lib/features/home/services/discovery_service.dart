@@ -18,7 +18,10 @@ class DiscoveryRoom {
 
   String get publicId => (data['publicId'] ?? '').toString();
 
+  bool get hasAvailablePresence => data['presenceState'] != 'unavailable';
+
   int get onlineCount {
+    if (!hasAvailablePresence) return 0;
     final value = data['onlineCount'] ??
         data['memberCount'] ??
         data['participantsCount'] ??
@@ -69,6 +72,24 @@ int compareRoomsByDiscoveryPriority(DiscoveryRoom a, DiscoveryRoom b) {
   if (byPresence != 0) return byPresence;
   return a.id.compareTo(b.id);
 }
+
+/// Mark missing realtime counts as unknown, never as a verified zero or
+/// the old Firestore metadata value. Search and Home reuse this policy.
+DiscoveryRoom roomWithVerifiedPresence(
+  DiscoveryRoom room,
+  int? liveCount,
+) =>
+    DiscoveryRoom(
+      id: room.id,
+      data: {
+        ...room.data,
+        'presenceState': liveCount == null ? 'unavailable' : 'live',
+        if (liveCount != null) ...{
+          'onlineCount': liveCount < 0 ? 0 : liveCount,
+          'participantsCount': liveCount < 0 ? 0 : liveCount,
+        },
+      },
+    );
 
 class DiscoveryPerson {
   const DiscoveryPerson({
@@ -201,18 +222,7 @@ class DiscoveryService {
     }
 
     return rooms
-        .map((room) {
-          final liveCount = counts[room.id];
-          if (liveCount == null) return room;
-          return DiscoveryRoom(
-            id: room.id,
-            data: {
-              ...room.data,
-              'onlineCount': liveCount,
-              'participantsCount': liveCount,
-            },
-          );
-        })
+        .map((room) => roomWithVerifiedPresence(room, counts[room.id]))
         .toList(growable: false);
   }
 
