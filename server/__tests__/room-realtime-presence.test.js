@@ -257,3 +257,41 @@ test("realtime object separates hideRoomPresence from hiddenRoomEntry", () => {
     true,
   );
 });
+
+test("avatar asset survives the realtime room roster and duplicate sockets", () => {
+  const participants = presenceSnapshotFromAttachments([
+    { uid: "u1", profileImageUrl: "", profileAvatarAsset: "", joinedAtMs: 1000 },
+    { uid: "u1", profileAvatarAsset: "assets/avatars/selected.png", joinedAtMs: 1100 },
+    { uid: "u2", profileAvatarAsset: "assets/avatars/guest.png", joinedAtMs: 1200 },
+  ], 1500);
+  assert.equal(participants.length, 2);
+  assert.equal(participants[0].profileAvatarAsset, "assets/avatars/selected.png");
+  assert.equal(participants[1].profileAvatarAsset, "assets/avatars/guest.png");
+});
+
+test("mysterious users do not expose their avatar through room identity", async () => {
+  const { applyMysteriousIdentityPresentation } = await import(
+    "../../cloudflare-worker/src/mysterious-identity.js"
+  );
+  const visible = applyMysteriousIdentityPresentation(
+    { profileImageUrl: "photo.webp", profileAvatarAsset: "assets/avatars/secret.png" },
+    { mysteriousMode: false },
+  );
+  assert.equal(visible.profileAvatarAsset, "assets/avatars/secret.png");
+  const hidden = applyMysteriousIdentityPresentation(
+    { profileImageUrl: "photo.webp", profileAvatarAsset: "assets/avatars/secret.png" },
+    { mysteriousMode: true, mysteriousId: "123456789" },
+  );
+  assert.equal(hidden.profileImageUrl, "");
+  assert.equal(hidden.profileAvatarAsset, "");
+});
+
+test("existing ticket, socket, roster and identity refresh pass avatar asset once", () => {
+  const worker = readFileSync("cloudflare-worker/src/room-realtime.js", "utf8");
+  const object = readFileSync("cloudflare-worker/src/room-realtime-object.js", "utf8");
+  assert.ok(worker.includes("publicProfile.profileAvatarAsset || user.profileAvatarAsset"));
+  assert.ok(worker.includes("identityPresentation.profileAvatarAsset"));
+  assert.ok(object.includes('const profileAvatarAsset = String(body.profileAvatarAsset || "").trim()'));
+  assert.ok(object.includes('const profileAvatarAsset = String(record.profileAvatarAsset || "").trim()'));
+  assert.ok(object.includes('profileAvatarAsset: String(body.profileAvatarAsset || "").trim()'));
+});
