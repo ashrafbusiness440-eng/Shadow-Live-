@@ -71,7 +71,12 @@ class _RoomListScreenState extends State<RoomListScreen> {
       final rooms = [
         ...await _service.loadRooms(forceRefresh: forceRefresh),
       ]..sort(comparePublicDiscoveryRooms);
-      if (mounted) setState(() => _rooms = rooms);
+      if (mounted) {
+        setState(() {
+          _rooms = rooms;
+          if (_viewMode == 'all') _resetUnavailableCustomFilter(rooms);
+        });
+      }
     } catch (_) {
       if (mounted) setState(() => _error = 'تعذر تحميل الغرف حالياً');
     } finally {
@@ -114,15 +119,26 @@ class _RoomListScreenState extends State<RoomListScreen> {
     }
   }
 
+  static const _fixedCategories = ['الكل', 'دردشة', 'رسمية', 'وكالات'];
+
+  void _resetUnavailableCustomFilter(Iterable<DiscoveryRoom> rooms) {
+    // Keep named tabs selectable when empty, but don't strand users on a
+    // custom category that disappeared after an actual data refresh.
+    if (_fixedCategories.contains(_category)) return;
+    if (!rooms.any((room) => _matchesRoomFilter(room, _category))) {
+      _category = 'الكل';
+    }
+  }
+
   List<String> get _categories {
     final values = <String>{};
     for (final room in _sourceRooms) {
       if (_isAgencyRoom(room) || _isOfficialRoom(room)) continue;
       final category = _roomCategory(room);
-      if (category != 'دردشة') values.add(category);
+      if (!_fixedCategories.contains(category)) values.add(category);
     }
     final result = values.toList()..sort();
-    return ['الكل', 'دردشة', 'رسمية', 'وكالات', ...result];
+    return [..._fixedCategories, ...result];
   }
 
   List<DiscoveryRoom> get _sourceRooms {
@@ -176,6 +192,11 @@ class _RoomListScreenState extends State<RoomListScreen> {
               .where((room) => (room['roomId'] ?? '').toString().isNotEmpty)
               .map(parse)
               .toList(growable: false);
+          if (_viewMode == 'favorites') {
+            _resetUnavailableCustomFilter(_favoriteRooms);
+          } else if (_viewMode == 'history') {
+            _resetUnavailableCustomFilter(_historyRooms);
+          }
         });
       }
     } catch (_) {
@@ -416,7 +437,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
                     ),
                   ),
                 SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
                   sliver: SliverToBoxAdapter(
                     child: Row(
                       children: [
@@ -496,42 +517,27 @@ class _RoomListScreenState extends State<RoomListScreen> {
                     ),
                   ),
                 SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                   sliver: SliverToBoxAdapter(
                     child: SizedBox(
-                      height: 38,
+                      height: 44,
                       child: ListView.separated(
                         scrollDirection: Axis.horizontal,
                         itemCount: _categories.length,
-                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        separatorBuilder: (_, __) => const SizedBox(width: 6),
                         itemBuilder: (context, index) {
                           final category = _categories[index];
-                          final selected = category == _category;
-                          return ChoiceChip(
-                            label: Text(category),
-                            selected: selected,
-                            onSelected: (_) {
-                              setState(() => _category = category);
-                            },
-                            backgroundColor: _card,
-                            selectedColor: _purple,
-                            side: BorderSide(
-                              color: selected ? _purple : Colors.white10,
-                            ),
-                            labelStyle: TextStyle(
-                              color: selected ? Colors.white : Colors.white60,
-                              fontWeight:
-                                  selected ? FontWeight.w800 : FontWeight.w600,
-                              fontSize: 11,
-                            ),
-                            showCheckmark: false,
+                          return RoomCategoryFilterChip(
+                            label: category,
+                            selected: category == _category,
+                            onTap: () => setState(() => _category = category),
                           );
                         },
                       ),
                     ),
                   ),
                 ),
-                const SliverToBoxAdapter(child: SizedBox(height: 14)),
+                const SliverToBoxAdapter(child: SizedBox(height: 6)),
                 if (!_loading &&
                     !(_viewMode != 'all' && _libraryLoading) &&
                     visibleRooms.isEmpty)
@@ -807,6 +813,61 @@ class _MetaPill extends StatelessWidget {
   }
 }
 
+
+/// Compact visual pill with a full-height 44px touch target.
+class RoomCategoryFilterChip extends StatelessWidget {
+  const RoomCategoryFilterChip({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: SizedBox(
+          height: 44,
+          child: Center(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: selected
+                    ? const Color(0xFF8A3DFF)
+                    : const Color(0xFF111321),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: selected
+                      ? const Color(0xFF8A3DFF)
+                      : Colors.white10,
+                ),
+              ),
+              child: Text(
+                label,
+                maxLines: 1,
+                style: TextStyle(
+                  color: selected ? Colors.white : Colors.white60,
+                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                  fontSize: 11,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class _RoomViewChip extends StatelessWidget {
   const _RoomViewChip({
