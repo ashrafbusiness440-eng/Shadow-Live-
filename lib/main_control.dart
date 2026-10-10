@@ -3052,6 +3052,14 @@ class ControlList extends StatelessWidget {
     if (item.title == 'إدارة VIP') return const VipLevelControlPage();
     if (item.title == 'عروض VIP السريعة') return const VipInformationControlPage();
     if (item.title == 'الشخص الغامض') return const MysteriousPersonControlPage();
+    if (item.title == 'IDs الخاصة') {
+      // Reuse the existing user/room ID administration tool; its server-side
+      // permission checks remain authoritative for sensitive changes.
+      return Scaffold(
+        appBar: AppBar(title: const Text('إدارة المعرّفات')),
+        body: const IdManagementPage(),
+      );
+    }
     return DetailPage(item:item);
   }
 

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_chat_room/admin/control_admin_id_override.dart';
 
@@ -23,4 +25,15 @@ void main(){
   test('rejects no-op ID changes',(){
     expect(()=>AdminIdOverridePolicy.validateChange('1111','١١١١'),throwsArgumentError);
   });
+  test('Control More reuses the existing ID admin screen, not a placeholder', () {
+    final control = File('lib/main_control.dart').readAsStringSync();
+    final mapping = control.indexOf("if (item.title == 'IDs الخاصة')");
+    expect(mapping, greaterThan(0));
+    final fallback = control.indexOf('return DetailPage(item:item);', mapping);
+    expect(fallback, greaterThan(mapping));
+    final target = control.substring(mapping, fallback);
+    expect(target.contains('body: const IdManagementPage()'), isTrue);
+    expect(target.contains('DetailPage('), isFalse);
+  });
+
 }
