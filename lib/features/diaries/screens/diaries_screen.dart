@@ -16,6 +16,7 @@ import '../../gift/widgets/direct_gift_sheet.dart';
 import '../widgets/diary_report_sheet.dart';
 import '../widgets/diary_mention_suggestions.dart';
 import '../../../shared/widgets/loading_indicator.dart';
+import '../../../shared/widgets/confirmation_dialog.dart';
 
 class DiariesScreen extends StatefulWidget {
   const DiariesScreen({
@@ -77,6 +78,7 @@ class _DiariesScreenState extends State<DiariesScreen> {
   List<_PickedDiaryImage> _pickedImages = const <_PickedDiaryImage>[];
   final Set<String> _likedDiaryIds = <String>{};
   final Set<String> _busyLikeIds = <String>{};
+  final Set<String> _busyReportIds = <String>{};
   final Set<String> _viewRecordedThisSession = <String>{};
   Timer? _mentionDebounce;
   List<DiaryMentionCandidate> _mentionCandidates =
@@ -187,18 +189,25 @@ class _DiariesScreenState extends State<DiariesScreen> {
   }
 
   Future<void> _reportDiary(DiaryItem item) async {
+    if (_busyReportIds.contains(item.diaryId)) return;
     if (_guest) {
       await _guestAction();
       return;
     }
-    final reason = await showDiaryReportReasonSheet(context);
-    if (!mounted || reason == null) return;
+    if (!_signedIn || item.diaryId.isEmpty) return;
+
+    // The report sheet is an explicit user action. Never send more than one
+    // report per diary while a reason is being picked or a write is pending.
+    final reporterUid = _uid;
+    setState(() => _busyReportIds.add(item.diaryId));
     try {
+      final reason = await showDiaryReportReasonSheet(context);
+      if (!mounted || reason == null || _uid != reporterUid) return;
       final duplicate = await _service.reportDiary(
         diaryId: item.diaryId,
         reason: reason,
       );
-      if (!mounted) return;
+      if (!mounted || _uid != reporterUid) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -209,10 +218,13 @@ class _DiariesScreenState extends State<DiariesScreen> {
         ),
       );
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || _uid != reporterUid) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(diaryErrorMessage(error))),
       );
+    } finally {
+      _busyReportIds.remove(item.diaryId);
+      if (mounted) setState(() {});
     }
   }
 
@@ -222,26 +234,13 @@ class _DiariesScreenState extends State<DiariesScreen> {
       return;
     }
     if (!mounted) return;
-    final shouldLogin = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('تسجيل الدخول'),
-        content: const Text(
-          'يمكنك مشاهدة اليوميات العامة كضيف، لكن يلزم تسجيل الدخول للتفاعل.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('لاحقاً'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('تسجيل الدخول'),
-          ),
-        ],
-      ),
+    final shouldLogin = await showShadowConfirmation(
+      context,
+      title: 'تسجيل الدخول',
+      message: 'يمكنك مشاهدة اليوميات العامة كضيف، لكن يلزم تسجيل الدخول للتفاعل.',
+      confirmLabel: 'تسجيل الدخول',
     );
-    if (shouldLogin == true && mounted) {
+    if (shouldLogin && mounted) {
       context.read<AuthBloc>().add(SignOutRequested());
     }
   }
@@ -1006,12 +1005,23 @@ class _DiariesScreenState extends State<DiariesScreen> {
                 if (_guest || item.ownerUid != _uid)
                   IconButton(
                     tooltip: 'إبلاغ',
-                    onPressed: () => _reportDiary(item),
-                    icon: const Icon(
-                      Icons.flag_outlined,
-                      color: Colors.white38,
-                      size: 20,
-                    ),
+                    onPressed: _busyReportIds.contains(item.diaryId)
+                        ? null
+                        : () => _reportDiary(item),
+                    icon: _busyReportIds.contains(item.diaryId)
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white54,
+                            ),
+                          )
+                        : const Icon(
+                            Icons.flag_outlined,
+                            color: Colors.white38,
+                            size: 20,
+                          ),
                   ),
               ],
             ),
