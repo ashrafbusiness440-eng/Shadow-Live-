@@ -142,7 +142,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
   Widget _userTile(BuildContext sheetContext, QueryDocumentSnapshot<Map<String, dynamic>> doc) {
     final user = doc.data();
     final name = '${user['displayName'] ?? 'مستخدم Shadow Live'}';
-    final provider = _avatar(user);
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
       leading: ProfileAvatarWithFrame(
