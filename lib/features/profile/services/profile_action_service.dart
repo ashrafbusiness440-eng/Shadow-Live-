@@ -71,8 +71,10 @@ abstract final class ProfileActionService {
     required String otherName,
     String otherPhoto = '',
   }) async {
-    final me = FirebaseAuth.instance.currentUser?.uid;
-    if (me == null || me.isEmpty || me == otherUid) return;
+    final user = FirebaseAuth.instance.currentUser;
+    final me = user?.uid;
+    // Enforce this before creating any conversation, including direct links.
+    if (user == null || user.isAnonymous || me == null || me.isEmpty || me == otherUid) return;
 
     try {
       final id = await _ensureConversation(me: me, otherUid: otherUid);
