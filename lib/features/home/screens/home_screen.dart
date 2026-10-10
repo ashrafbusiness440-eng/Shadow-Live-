@@ -7,6 +7,7 @@ import '../../../services/navigation_service.dart';
 import '../../../utils/compact_number.dart';
 import '../../wallet/screens/recharge_screen.dart';
 import '../../profile/screens/public_profile_screen.dart';
+import '../../profile/services/follow_service.dart';
 import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../../room/services/room_image_source.dart';
 import '../../room/widgets/discovery_room_password_dialog.dart';
@@ -32,11 +33,16 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final DiscoveryService _discoveryService = DiscoveryService();
+  final FollowService _followService = FollowService();
   final ScrollController _scrollController = ScrollController();
   final GlobalKey _eventsKey = GlobalKey();
   final GlobalKey _rankingKey = GlobalKey();
 
   HomeDiscoveryData? _data;
+  // Null means the server follow state has not been verified. No guessed
+  // follow buttons and no individual person listeners on the home feed.
+  Set<String>? _followingSuggestions;
+  final Set<String> _changingFollows = <String>{};
   StreamSubscription<User?>? _authSub;
   String? _loadedForUid;
   bool _loading = true;
@@ -56,7 +62,11 @@ class _HomeScreenState extends State<HomeScreen> {
       if (nextUid == _loadedForUid) return;
       _loadedForUid = nextUid;
       if (!mounted) return;
-      setState(() => _data = null);
+      setState(() {
+        _data = null;
+        _followingSuggestions = null;
+        _changingFollows.clear();
+      });
       unawaited(_load());
     });
     _load();
@@ -85,13 +95,94 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       if (FirebaseAuth.instance.currentUser?.uid != requestUid) return;
       _loadedForUid = requestUid;
-      setState(() => _data = data);
+      setState(() {
+        _data = data;
+        _followingSuggestions = null;
+      });
+      unawaited(_refreshSuggestionFollows(
+        data.suggestedPeople,
+        requestUid,
+      ));
     } catch (_) {
       if (mounted) {
         setState(() => _error = 'تعذر تحديث الاستكشاف حالياً');
       }
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  /// Existing follows collection, one bounded request for up to ten people.
+  /// An error leaves state unknown instead of showing incorrect unfollow UI.
+  Future<void> _refreshSuggestionFollows(
+    List<DiscoveryPerson> people,
+    String? expectedUid,
+  ) async {
+    final current = FirebaseAuth.instance.currentUser;
+    if (current == null ||
+        current.isAnonymous ||
+        current.uid != expectedUid) {
+      return;
+    }
+    try {
+      final confirmed = await _followService.followingAmong(
+        people.take(10).map((person) => person.id),
+      );
+      if (!mounted ||
+          FirebaseAuth.instance.currentUser?.uid != expectedUid) {
+        return;
+      }
+      setState(() => _followingSuggestions = confirmed);
+    } catch (_) {
+      if (!mounted ||
+          FirebaseAuth.instance.currentUser?.uid != expectedUid) {
+        return;
+      }
+      setState(() => _followingSuggestions = null);
+    }
+  }
+
+  bool _canFollowSuggestion(DiscoveryPerson person) {
+    final user = FirebaseAuth.instance.currentUser;
+    return user != null &&
+        !user.isAnonymous &&
+        user.uid != person.id &&
+        _followingSuggestions != null;
+  }
+
+  Future<void> _changeSuggestionFollow(DiscoveryPerson person) async {
+    if (!_canFollowSuggestion(person) ||
+        _changingFollows.contains(person.id)) {
+      return;
+    }
+    final ownerUid = FirebaseAuth.instance.currentUser?.uid;
+    final isFollowing = _followingSuggestions!.contains(person.id);
+    setState(() => _changingFollows.add(person.id));
+    try {
+      // Same authenticated server action as the existing public profile.
+      await _followService.setFollowing(person.id, !isFollowing);
+      if (!mounted || FirebaseAuth.instance.currentUser?.uid != ownerUid) {
+        return;
+      }
+      setState(() {
+        final updated = <String>{...?_followingSuggestions};
+        if (isFollowing) {
+          updated.remove(person.id);
+        } else {
+          updated.add(person.id);
+        }
+        _followingSuggestions = updated;
+      });
+    } catch (_) {
+      if (mounted && FirebaseAuth.instance.currentUser?.uid == ownerUid) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تعذر تحديث المتابعة. حاول مرة أخرى.'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _changingFollows.remove(person.id));
     }
   }
 
@@ -131,11 +222,48 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _openPerson(DiscoveryPerson person) {
-    Navigator.push(
+  Future<void> _openPerson(DiscoveryPerson person) async {
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => PublicProfileScreen(userId: person.id),
+      ),
+    );
+    if (!mounted) return;
+    // The profile itself can also change the relation. Refresh once on
+    // return instead of leaving stale Home follow controls.
+    unawaited(_refreshSuggestionFollows(
+      _data?.suggestedPeople ?? const <DiscoveryPerson>[],
+      FirebaseAuth.instance.currentUser?.uid,
+    ));
+  }
+
+  Future<void> _openPersonActions(DiscoveryPerson person) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF111321),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (sheetContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: HomePersonActionsSheet(
+          person: person,
+          isFollowing: _followingSuggestions?.contains(person.id),
+          onOpenProfile: () {
+            Navigator.pop(sheetContext);
+            unawaited(_openPerson(person));
+          },
+          onFollow: _canFollowSuggestion(person)
+              ? () {
+                  Navigator.pop(sheetContext);
+                  unawaited(_changeSuggestionFollow(person));
+                }
+              : null,
+          // The public room discovery snapshot only confirms aggregate
+          // counts, not that THIS person currently occupies a joinable
+          // room. Never expose a room action from those counts.
+        ),
       ),
     );
   }
@@ -405,7 +533,12 @@ class _HomeScreenState extends State<HomeScreen> {
             .map(
               (person) => HomeCompactPersonCard(
                 person: person,
-                onTap: () => _openPerson(person),
+                onTap: () => _openPersonActions(person),
+                isFollowing: _followingSuggestions?.contains(person.id),
+                followBusy: _changingFollows.contains(person.id),
+                onFollow: _canFollowSuggestion(person)
+                    ? () => _changeSuggestionFollow(person)
+                    : null,
               ),
             )
             .toList(),
@@ -1207,14 +1340,23 @@ class _ActiveRoomChip extends StatelessWidget {
   }
 }
 
+/// Compact recommendation with one independently tappable follow action.
+/// Relation state comes from the parent page's bounded batch fetch.
 class HomeCompactPersonCard extends StatelessWidget {
   const HomeCompactPersonCard({
+    super.key,
     required this.person,
     required this.onTap,
+    this.isFollowing,
+    this.followBusy = false,
+    this.onFollow,
   });
 
   final DiscoveryPerson person;
   final VoidCallback onTap;
+  final bool? isFollowing;
+  final bool followBusy;
+  final VoidCallback? onFollow;
 
   @override
   Widget build(BuildContext context) {
@@ -1232,8 +1374,8 @@ class HomeCompactPersonCard extends StatelessWidget {
         ),
         child: Column(
           children: [
-            Stack(
-              clipBehavior: Clip.none,
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 ProfileAvatarWithFrame(
                   diameter: 44,
@@ -1243,7 +1385,29 @@ class HomeCompactPersonCard extends StatelessWidget {
                   backgroundColor: const Color(0xFF281847),
                   placeholderColor: Colors.white54,
                 ),
-
+                if (onFollow != null) ...[
+                  const SizedBox(width: 4),
+                  SizedBox(
+                    height: 40,
+                    width: 32,
+                    child: IconButton(
+                      key: Key('home-follow-${person.id}'),
+                      tooltip: isFollowing == true
+                          ? 'إلغاء المتابعة'
+                          : 'متابعة',
+                      onPressed: followBusy ? null : onFollow,
+                      padding: EdgeInsets.zero,
+                      visualDensity: VisualDensity.compact,
+                      iconSize: 20,
+                      icon: Icon(
+                        isFollowing == true
+                            ? Icons.person_remove_alt_1_rounded
+                            : Icons.person_add_alt_1_rounded,
+                        color: const Color(0xFFFFD54A),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
             const SizedBox(height: 5),
@@ -1272,6 +1436,76 @@ class HomeCompactPersonCard extends StatelessWidget {
                 fontWeight: FontWeight.w700,
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Room choice must be absent until a verified server-side user-to-room
+/// presence proof and visitor access check exists. Do not infer it from
+/// room owner ids, cached public_profiles.isOnline, or room headcounts.
+class HomePersonActionsSheet extends StatelessWidget {
+  const HomePersonActionsSheet({
+    super.key,
+    required this.person,
+    required this.onOpenProfile,
+    this.isFollowing,
+    this.onFollow,
+  });
+
+  final DiscoveryPerson person;
+  final VoidCallback onOpenProfile;
+  final bool? isFollowing;
+  final VoidCallback? onFollow;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              person.displayName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              key: const Key('home-person-view-profile'),
+              leading: const Icon(
+                Icons.account_circle_outlined,
+                color: Color(0xFFB692FF),
+              ),
+              title: const Text(
+                'عرض الملف الشخصي',
+                style: TextStyle(color: Colors.white),
+              ),
+              onTap: onOpenProfile,
+            ),
+            if (onFollow != null)
+              ListTile(
+                key: const Key('home-person-follow'),
+                leading: Icon(
+                  isFollowing == true
+                      ? Icons.person_remove_alt_1_rounded
+                      : Icons.person_add_alt_1_rounded,
+                  color: const Color(0xFFFFD54A),
+                ),
+                title: Text(
+                  isFollowing == true ? 'إلغاء المتابعة' : 'متابعة',
+                  style: const TextStyle(color: Colors.white),
+                ),
+                onTap: onFollow,
+              ),
           ],
         ),
       ),
