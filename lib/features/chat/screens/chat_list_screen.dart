@@ -84,6 +84,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
     final me = uid;
     if (q.length < 2 || me == null || me.isEmpty) return [];
     final found = <String, QueryDocumentSnapshot<Map<String, dynamic>>>{};
+    var successfulPaths = 0;
+    Object? lastFailure;
     try {
       final idDoc = await FirebaseFirestore.instance.collection('public_ids').doc(q).get();
       final targetUid = idDoc.data()?['uid']?.toString();
@@ -93,33 +95,34 @@ class _ChatListScreenState extends State<ChatListScreen> {
           found[doc.id] = doc;
         }
       }
-    } catch (_) {}
+      successfulPaths++;
+    } catch (error) {
+      lastFailure = error;
+    }
     try {
       final snap = await FirebaseFirestore.instance.collection('public_profiles').orderBy('displayName').startAt([q]).endAt(['$q\uf8ff']).limit(20).get();
       for (final doc in snap.docs) {
         if (doc.id != me) found[doc.id] = doc;
       }
-    } catch (_) {}
+      successfulPaths++;
+    } catch (error) {
+      lastFailure = error;
+    }
+    // A failed read must not be presented to the user as "no results".
+    // Retain partial successful ID/name matches if either path worked.
+    if (successfulPaths == 0 && lastFailure != null) throw lastFailure;
     return found.values.toList();
   }
 
   Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _suggestedUsers() async {
     final me = uid;
     if (me == null || me.isEmpty) return [];
-    try {
-      final snap = await FirebaseFirestore.instance.collection('public_profiles').orderBy('createdAt', descending: true).limit(20).get();
-      return snap.docs.where((d) => d.id != me).take(12).toList();
-    } catch (_) {
-      return [];
-    }
-  }
-
-  ImageProvider? _avatar(Map<String, dynamic> user) {
-    final photo = '${user['profileImageUrl'] ?? ''}';
-    final asset = '${user['profileAvatarAsset'] ?? ''}';
-    if (photo.isNotEmpty) return NetworkImage(photo);
-    if (asset.isNotEmpty) return AssetImage(asset);
-    return null;
+    final snap = await FirebaseFirestore.instance
+        .collection('public_profiles')
+        .orderBy('createdAt', descending: true)
+        .limit(20)
+        .get();
+    return snap.docs.where((d) => d.id != me).take(12).toList();
   }
 
   Future<void> _openChat(BuildContext sheetContext, QueryDocumentSnapshot<Map<String, dynamic>> doc) async {
@@ -139,7 +142,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
   Widget _userTile(BuildContext sheetContext, QueryDocumentSnapshot<Map<String, dynamic>> doc) {
     final user = doc.data();
     final name = '${user['displayName'] ?? 'مستخدم Shadow Live'}';
-    final provider = _avatar(user);
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
       leading: ProfileAvatarWithFrame(
@@ -159,10 +161,91 @@ class _ChatListScreenState extends State<ChatListScreen> {
     var results = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
     var suggestions = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
     var loading = false;
-    var loadingSuggestions = true;
+    var searchError = false;
+    var suggestionsLoading = true;
+    var suggestionsError = false;
+    var suggestionsRequested = false;
     var searchVersion = 0;
+    final sessionUid = uid;
+    Timer? searchDebounce;
 
-    await showModalBottomSheet<void>(
+    void queueSearch(
+      String raw,
+      StateSetter setSheetState,
+      BuildContext sheetContext, {
+      bool immediate = false,
+    }) {
+      searchDebounce?.cancel();
+      final version = ++searchVersion;
+      final query = raw.trim();
+      if (!sheetContext.mounted) return;
+      if (query.length < 2) {
+        setSheetState(() {
+          loading = false;
+          searchError = false;
+          results = [];
+        });
+        return;
+      }
+
+      setSheetState(() {
+        loading = true;
+        searchError = false;
+        results = [];
+      });
+      searchDebounce = Timer(
+        immediate ? Duration.zero : const Duration(milliseconds: 320),
+        () async {
+          if (!sheetContext.mounted || uid != sessionUid) return;
+          try {
+            final next = await _searchUsers(query);
+            if (!sheetContext.mounted ||
+                uid != sessionUid ||
+                version != searchVersion) {
+              return;
+            }
+            setSheetState(() {
+              results = next;
+              loading = false;
+            });
+          } catch (_) {
+            if (!sheetContext.mounted ||
+                uid != sessionUid ||
+                version != searchVersion) {
+              return;
+            }
+            setSheetState(() {
+              searchError = true;
+              loading = false;
+            });
+          }
+        },
+      );
+    }
+
+    Future<void> loadSuggestions(
+      StateSetter setSheetState,
+      BuildContext sheetContext,
+    ) async {
+      try {
+        final next = await _suggestedUsers();
+        if (!sheetContext.mounted || uid != sessionUid) return;
+        setSheetState(() {
+          suggestions = next;
+          suggestionsLoading = false;
+          suggestionsError = false;
+        });
+      } catch (_) {
+        if (!sheetContext.mounted || uid != sessionUid) return;
+        setSheetState(() {
+          suggestionsLoading = false;
+          suggestionsError = true;
+        });
+      }
+    }
+
+    try {
+      await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF101522),
@@ -171,11 +254,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
         textDirection: TextDirection.rtl,
         child: StatefulBuilder(
           builder: (context, setSheetState) {
-            if (loadingSuggestions) {
-              loadingSuggestions = false;
-              _suggestedUsers().then((value) {
-                if (sheetContext.mounted) setSheetState(() => suggestions = value);
-              });
+            if (!suggestionsRequested) {
+              suggestionsRequested = true;
+              unawaited(loadSuggestions(setSheetState, sheetContext));
             }
             final searching = controller.text.trim().length >= 2;
             return Padding(
@@ -198,33 +279,39 @@ class _ChatListScreenState extends State<ChatListScreen> {
                         fillColor: const Color(0xFF181C29),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide.none),
                       ),
-                      onChanged: (value) async {
-                        final version = ++searchVersion;
-                        final q = value.trim();
-                        if (q.length < 2) {
-                          setSheetState(() {
-                            loading = false;
-                            results = [];
-                          });
-                          return;
-                        }
-                        setSheetState(() => loading = true);
-                        final next = await _searchUsers(q);
-                        if (!context.mounted || version != searchVersion) return;
-                        setSheetState(() {
-                          results = next;
-                          loading = false;
-                        });
-                      },
+                      onChanged: (value) =>
+                          queueSearch(value, setSheetState, sheetContext),
                     ),
                     const SizedBox(height: 14),
                     Expanded(
                       child: loading
-                          ? const Center(child: CircularProgressIndicator(color: Color(0xFF8A3DFF)))
+                          ? const LoadingIndicator(
+                              size: 28,
+                              color: Color(0xFF8A3DFF),
+                              message: 'جارٍ البحث عن مستخدمين...',
+                            )
                           : searching
-                              ? (results.isEmpty
-                                  ? const Center(child: Text('لا توجد نتائج', style: TextStyle(color: Colors.white54)))
-                                  : ListView.builder(itemCount: results.length, itemBuilder: (_, i) => _userTile(sheetContext, results[i])))
+                              ? (searchError
+                                  ? ShadowReadState(
+                                      icon: Icons.wifi_off_rounded,
+                                      message: 'تعذر البحث حالياً. تحقق من الاتصال.',
+                                      onRetry: () => queueSearch(
+                                        controller.text,
+                                        setSheetState,
+                                        sheetContext,
+                                        immediate: true,
+                                      ),
+                                    )
+                                  : results.isEmpty
+                                      ? const ShadowReadState(
+                                          icon: Icons.search_off_rounded,
+                                          message: 'لا توجد حسابات مطابقة لبحثك.',
+                                        )
+                                      : ListView.builder(
+                                          itemCount: results.length,
+                                          itemBuilder: (_, i) =>
+                                              _userTile(sheetContext, results[i]),
+                                        ))
                               : Column(
                                   crossAxisAlignment: CrossAxisAlignment.stretch,
                                   children: [
@@ -233,9 +320,38 @@ class _ChatListScreenState extends State<ChatListScreen> {
                                     const Text('أحدث الحسابات المنضمة إلى Shadow Live', style: TextStyle(color: Colors.white38, fontSize: 12)),
                                     const SizedBox(height: 8),
                                     Expanded(
-                                      child: suggestions.isEmpty
-                                          ? const Center(child: Text('لا توجد حسابات مقترحة حالياً', style: TextStyle(color: Colors.white38)))
-                                          : ListView.builder(itemCount: suggestions.length, itemBuilder: (_, i) => _userTile(sheetContext, suggestions[i])),
+                                      child: suggestionsLoading
+                                          ? const LoadingIndicator(
+                                              size: 28,
+                                              color: Color(0xFF8A3DFF),
+                                              message: 'جارٍ تحميل الحسابات المقترحة...',
+                                            )
+                                          : suggestionsError
+                                              ? ShadowReadState(
+                                                  icon: Icons.wifi_off_rounded,
+                                                  message: 'تعذر تحميل المقترحات. تحقق من الاتصال.',
+                                                  onRetry: () {
+                                                    if (suggestionsLoading) return;
+                                                    setSheetState(() {
+                                                      suggestionsLoading = true;
+                                                      suggestionsError = false;
+                                                    });
+                                                    unawaited(loadSuggestions(
+                                                      setSheetState,
+                                                      sheetContext,
+                                                    ));
+                                                  },
+                                                )
+                                              : suggestions.isEmpty
+                                                  ? const ShadowReadState(
+                                                      icon: Icons.people_outline_rounded,
+                                                      message: 'لا توجد حسابات مقترحة حالياً.',
+                                                    )
+                                                  : ListView.builder(
+                                                      itemCount: suggestions.length,
+                                                      itemBuilder: (_, i) =>
+                                                          _userTile(sheetContext, suggestions[i]),
+                                                    ),
                                     ),
                                   ],
                                 ),
@@ -248,7 +364,11 @@ class _ChatListScreenState extends State<ChatListScreen> {
         ),
       ),
     );
-    controller.dispose();
+    } finally {
+      searchDebounce?.cancel();
+      searchVersion++;
+      controller.dispose();
+    }
   }
 
   @override
