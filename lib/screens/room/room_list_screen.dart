@@ -19,6 +19,23 @@ bool isPinnedOfficialDiscoveryRoom(DiscoveryRoom room) =>
 int comparePublicDiscoveryRooms(DiscoveryRoom a, DiscoveryRoom b) =>
     compareRoomsByDiscoveryPriority(a, b);
 
+/// Reuse already verified public discovery counts for saved library entries.
+/// Server-saved favorite/history metadata is not a live presence reading.
+/// No extra query is issued, and hidden rooms remain unverified.
+List<DiscoveryRoom> roomLibraryWithVerifiedPresence(
+  Iterable<DiscoveryRoom> savedRooms,
+  Iterable<DiscoveryRoom> publicRooms,
+) {
+  final liveCounts = <String, int>{
+    for (final room in publicRooms)
+      if (room.data['presenceState'] == 'live') room.id: room.onlineCount,
+  };
+  return [
+    for (final room in savedRooms)
+      roomWithVerifiedPresence(room, liveCounts[room.id]),
+  ];
+}
+
 class RoomListScreen extends StatefulWidget {
   const RoomListScreen({super.key});
 
@@ -149,9 +166,9 @@ class _RoomListScreenState extends State<RoomListScreen> {
     }
     switch (_viewMode) {
       case 'favorites':
-        return _favoriteRooms;
+        return roomLibraryWithVerifiedPresence(_favoriteRooms, _rooms);
       case 'history':
-        return _historyRooms;
+        return roomLibraryWithVerifiedPresence(_historyRooms, _rooms);
       default:
         return _rooms;
     }
