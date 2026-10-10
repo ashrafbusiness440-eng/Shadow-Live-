@@ -70,6 +70,35 @@ test("multiple sockets for one uid produce one participant", () => {
   );
 });
 
+test("mysterious mode hides selected avatars across overlapping sockets", () => {
+  const [user] = presenceSnapshotFromAttachments([
+    {
+      uid: "u1",
+      displayName: "Real Name",
+      profileImageUrl: "real.jpg",
+      profileAvatarAsset: "assets/images/avatars/male_1.png",
+      activeProfileFrameAssetKey: "real-frame",
+      vipLevel: 9,
+      connectedAtMs: 1000,
+    },
+    {
+      uid: "u1",
+      displayName: "الشخص الغامض",
+      mysteriousMode: true,
+      mysteriousId: "123456789",
+      profileImageUrl: "",
+      profileAvatarAsset: "",
+      connectedAtMs: 2000,
+    },
+  ], 5000);
+  assert.equal(user.mysteriousMode, true);
+  assert.equal(user.displayName, "الشخص الغامض");
+  assert.equal(user.profileImageUrl, "");
+  assert.equal(user.profileAvatarAsset, "");
+  assert.equal(user.activeProfileFrameAssetKey, "");
+  assert.equal(user.vipLevel, 0);
+});
+
 test("invalid attachments never create phantom users", () => {
   const participants = presenceSnapshotFromAttachments([
     null,
