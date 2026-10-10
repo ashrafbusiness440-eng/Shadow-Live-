@@ -9,6 +9,7 @@ import '../../../utils/search_index.dart';
 import '../../profile/screens/public_profile_screen.dart';
 import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../services/discovery_service.dart';
+import '../../../shared/widgets/loading_indicator.dart';
 
 class DiscoverySearchScreen extends StatefulWidget {
   const DiscoverySearchScreen({super.key});
@@ -22,6 +23,7 @@ class _DiscoverySearchScreenState extends State<DiscoverySearchScreen> {
   final _discoveryService = DiscoveryService();
 
   Timer? _debounce;
+  int _searchGeneration = 0;
   bool _loading = false;
   bool _roomCacheLoading = false;
   String? _error;
@@ -49,11 +51,18 @@ class _DiscoverySearchScreenState extends State<DiscoverySearchScreen> {
   }
 
   void _changed(String value) {
+    // Invalidate an in-flight response as soon as the input changes.
+    _searchGeneration++;
     _debounce?.cancel();
     _debounce = Timer(
       const Duration(milliseconds: 250),
       () => _search(value),
     );
+  }
+
+  void _retryRead() {
+    _debounce?.cancel();
+    _search(_controller.text);
   }
 
   Future<void> _warmLegacyPeopleCache() async {
@@ -92,6 +101,7 @@ class _DiscoverySearchScreenState extends State<DiscoverySearchScreen> {
   }
 
   Future<void> _search(String rawQuery) async {
+    final generation = ++_searchGeneration;
     final query = normalizeSearchText(rawQuery);
 
     if (query.isEmpty) {
@@ -109,24 +119,28 @@ class _DiscoverySearchScreenState extends State<DiscoverySearchScreen> {
     setState(() {
       _loading = true;
       _error = null;
+      _people = const [];
+      _rooms = const [];
     });
 
     try {
       final people = await _searchPeople(query, rawQuery.trim());
       final rooms = await _searchRooms(query, rawQuery.trim());
 
-      if (mounted) {
+      if (mounted && generation == _searchGeneration) {
         setState(() {
           _people = people;
           _rooms = rooms;
         });
       }
     } catch (_) {
-      if (mounted) {
-        setState(() => _error = 'تعذر البحث حالياً. حاول مرة أخرى.');
+      if (mounted && generation == _searchGeneration) {
+        setState(() => _error = 'تعذر البحث حالياً. تحقق من الاتصال وأعد المحاولة.');
       }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && generation == _searchGeneration) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -541,29 +555,32 @@ class _DiscoverySearchScreenState extends State<DiscoverySearchScreen> {
 
   Widget _results() {
     if (_error != null) {
-      return Center(
-        child: Text(
-          _error!,
-          style: const TextStyle(color: Colors.white60),
-        ),
+      return ShadowReadState(
+        icon: Icons.wifi_off_rounded,
+        message: _error!,
+        onRetry: _loading ? null : _retryRead,
       );
     }
 
     if (normalizeSearchText(_controller.text).isEmpty) {
-      return const Center(
-        child: Text(
-          'اكتب حرفاً، جزءاً من الاسم أو إيموجي للبحث',
-          style: TextStyle(color: Colors.white38),
-        ),
+      return const ShadowReadState(
+        icon: Icons.search_rounded,
+        message: 'اكتب اسم شخص أو غرفة أو رقم ID للبحث.',
       );
     }
 
-    if (_people.isEmpty && _rooms.isEmpty && !_loading) {
-      return const Center(
-        child: Text(
-          'لا توجد نتائج مطابقة',
-          style: TextStyle(color: Colors.white54),
-        ),
+    if (_loading && _people.isEmpty && _rooms.isEmpty) {
+      return const LoadingIndicator(
+        size: 30,
+        color: Color(0xFF8A3DFF),
+        message: 'جارٍ البحث...',
+      );
+    }
+
+    if (_people.isEmpty && _rooms.isEmpty) {
+      return const ShadowReadState(
+        icon: Icons.search_off_rounded,
+        message: 'ما لقينا نتائج مطابقة. جرّب اسمًا أو رقم ID آخر.',
       );
     }
 
