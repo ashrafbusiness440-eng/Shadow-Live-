@@ -72,7 +72,6 @@ class AdminAccountIdentityTile extends StatelessWidget {
             border: Border.all(color: Colors.white10),
           ),
           child: Row(
-            mainAxisSize: MainAxisSize.min,
             children: [
               ProfileAvatarWithFrame(
                 userId: identity.uid,
@@ -82,7 +81,7 @@ class AdminAccountIdentityTile extends StatelessWidget {
                 backgroundColor: const Color(0xFF171D31),
               ),
               const SizedBox(width: 7),
-              Flexible(
+              Expanded(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
