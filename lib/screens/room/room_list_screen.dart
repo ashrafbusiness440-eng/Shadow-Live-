@@ -8,6 +8,33 @@ import '../../features/room/services/room_action_service.dart';
 import '../../features/room/services/room_image_source.dart';
 import '../../services/navigation_service.dart';
 
+/// Use the same room classification for display and public-list priority.
+bool isOfficialDiscoveryRoom(DiscoveryRoom room) {
+  final type = (room.data['roomType'] ?? room.data['type'] ?? 'personal')
+      .toString()
+      .trim();
+  return room.data['systemOwned'] == true ||
+      room.data['officialRoom'] == true ||
+      const {'official', 'administrative', 'customer_service'}.contains(type);
+}
+
+/// A room is pinned only when it is official AND explicitly featured/pinned.
+/// Ordinary official rooms and featured non-official rooms stay activity-ranked.
+bool isPinnedOfficialDiscoveryRoom(DiscoveryRoom room) =>
+    isOfficialDiscoveryRoom(room) &&
+    (room.isFeatured ||
+        room.data['isPinned'] == true ||
+        room.data['pinned'] == true);
+
+int comparePublicDiscoveryRooms(DiscoveryRoom a, DiscoveryRoom b) {
+  final aPinned = isPinnedOfficialDiscoveryRoom(a);
+  final bPinned = isPinnedOfficialDiscoveryRoom(b);
+  if (aPinned != bPinned) return aPinned ? -1 : 1;
+  final byActivity = b.onlineCount.compareTo(a.onlineCount);
+  if (byActivity != 0) return byActivity;
+  return a.id.compareTo(b.id);
+}
+
 class RoomListScreen extends StatefulWidget {
   const RoomListScreen({super.key});
 
@@ -51,7 +78,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
     try {
       final rooms = [
         ...await _service.loadRooms(forceRefresh: forceRefresh),
-      ]..sort((a, b) => b.onlineCount.compareTo(a.onlineCount));
+      ]..sort(comparePublicDiscoveryRooms);
       if (mounted) setState(() => _rooms = rooms);
     } catch (_) {
       if (mounted) setState(() => _error = 'تعذر تحميل الغرف حالياً');
@@ -74,12 +101,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
 
   bool _isAgencyRoom(DiscoveryRoom room) => _roomType(room) == 'agency';
 
-  bool _isOfficialRoom(DiscoveryRoom room) {
-    final type = _roomType(room);
-    return room.data['systemOwned'] == true ||
-        room.data['officialRoom'] == true ||
-        const {'official', 'administrative', 'customer_service'}.contains(type);
-  }
+  bool _isOfficialRoom(DiscoveryRoom room) => isOfficialDiscoveryRoom(room);
 
   bool _matchesRoomFilter(DiscoveryRoom room, String filter) {
     switch (filter) {
@@ -524,8 +546,8 @@ class _RoomListScreenState extends State<RoomListScreen> {
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                     sliver: SliverList.separated(
                       itemCount: visibleRooms.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 12),
-                      itemBuilder: (context, index) => _RoomTile(
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (context, index) => RoomListTile(
                         room: visibleRooms[index],
                         category: _roomCategory(visibleRooms[index]),
                         onTap: () => _openRoom(visibleRooms[index]),
@@ -541,8 +563,8 @@ class _RoomListScreenState extends State<RoomListScreen> {
   }
 }
 
-class _RoomTile extends StatelessWidget {
-  const _RoomTile({
+class RoomListTile extends StatelessWidget {
+  const RoomListTile({
     required this.room,
     required this.category,
     required this.onTap,
@@ -559,24 +581,24 @@ class _RoomTile extends StatelessWidget {
 
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(18),
       child: Container(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: const Color(0xFF111321),
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(18),
           border: Border.all(color: Colors.white10),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Container(
-              width: 76,
-              height: 76,
+              width: 60,
+              height: 60,
               clipBehavior: Clip.antiAlias,
               decoration: BoxDecoration(
                 color: const Color(0xFF2B1950),
-                borderRadius: BorderRadius.circular(18),
+                borderRadius: BorderRadius.circular(14),
               ),
               child: roomImageUrl.isNotEmpty
                   ? CachedNetworkImage(
@@ -594,7 +616,7 @@ class _RoomTile extends StatelessWidget {
                       size: 34,
                     ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -608,7 +630,7 @@ class _RoomTile extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 15,
+                            fontSize: 14,
                             fontWeight: FontWeight.w900,
                           ),
                         ),
@@ -624,7 +646,7 @@ class _RoomTile extends StatelessWidget {
                         ),
                     ],
                   ),
-                  const SizedBox(height: 5),
+                  const SizedBox(height: 3),
                   if (description.isNotEmpty)
                     Text(
                       description,
@@ -635,20 +657,20 @@ class _RoomTile extends StatelessWidget {
                         fontSize: 11,
                       ),
                     ),
-                  const SizedBox(height: 8),
-                  Row(
+                  const SizedBox(height: 5),
+                  Wrap(
+                    spacing: 5,
+                    runSpacing: 4,
                     children: [
                       _MetaPill(
                         icon: Icons.graphic_eq_rounded,
                         text: '${room.onlineCount} متصل',
                       ),
-                      const SizedBox(width: 6),
                       _MetaPill(
                         icon: Icons.tag_rounded,
                         text: category,
                       ),
                       if (room.isPasswordProtected) ...[
-                        const SizedBox(width: 6),
                         const _MetaPill(
                           icon: Icons.lock_rounded,
                           text: 'بكلمة مرور',
@@ -658,11 +680,6 @@ class _RoomTile extends StatelessWidget {
                   ),
                 ],
               ),
-            ),
-            const SizedBox(width: 8),
-            const Icon(
-              Icons.chevron_left_rounded,
-              color: Colors.white38,
             ),
           ],
         ),
