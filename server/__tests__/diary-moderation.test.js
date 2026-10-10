@@ -219,3 +219,64 @@ test("exact report lookup supports admin notification deep links", async () => {
     /report_not_found/,
   );
 });
+
+
+test("legacy long comment report ids remain actionable and cursor-safe", async () => {
+  const diaryId = "diary_" + "a".repeat(90);
+  const commentId = "comment_" + "b".repeat(88);
+  const reporterUid = "reporter_" + "c".repeat(87);
+  const reportId = `diary_comment_${diaryId}_${commentId}_${reporterUid}`;
+  assert.equal(reportId.length > 220, true);
+  assert.equal(reportId.length <= 512, true);
+  const db = new FakeDb({
+    [`diary_reports/${reportId}`]: {
+      ...report(reportId, 9000),
+      targetType: "diary_comment",
+      targetId: commentId,
+      diaryId,
+      commentId,
+      reporterUid,
+      targetAuthorUid: "comment_author",
+      targetOwnerUid: "diary_owner",
+    },
+    [`reports/${reportId}`]: report(reportId, 9000),
+    [`public_profiles/${reporterUid}`]: {
+      displayName: "صاحب البلاغ",
+      publicId: "12345678",
+    },
+    "public_profiles/comment_author": {
+      displayName: "صاحب التعليق",
+      publicId: "87654321",
+    },
+    "public_profiles/diary_owner": {
+      displayName: "صاحب اليومية",
+      publicId: "11112222",
+    },
+  });
+  const focused = await getReport(db, { reportId });
+  assert.equal(focused.item.reportId, reportId);
+  assert.equal(focused.item.reporterProfile.displayName, "صاحب البلاغ");
+  assert.equal(focused.item.targetAuthorProfile.displayName, "صاحب التعليق");
+  assert.equal(focused.item.diaryOwnerProfile.displayName, "صاحب اليومية");
+  assert.equal(focused.item.reporterProfile.publicId, "12345678");
+
+  const list = await listReports(db, { limit: 20 });
+  assert.equal(list.items[0].reportId, reportId);
+  assert.deepEqual(parseCursor(`9000|${reportId}`), { createdAtMs: 9000, reportId });
+
+  const reviewed = await reviewReport(db, "admin_uid", {
+    reportId,
+    status: "under_review",
+    reason: "راجعنا البلاغ",
+    idempotencyKey: "diaryctl_review_12345678901",
+  });
+  assert.equal(reviewed.status, "under_review");
+  assert.equal(db.docs.get(`diary_reports/${reportId}`).status, "under_review");
+});
+
+test("report-only long id validation rejects path injection and >512 chars", () => {
+  assert.equal(diaryModerationTestHooks.safeReportId("x".repeat(310)), "x".repeat(310));
+  assert.throws(() => diaryModerationTestHooks.safeReportId("x".repeat(513)), /invalid_report_id/);
+  assert.throws(() => diaryModerationTestHooks.safeReportId("a/b"), /invalid_report_id/);
+  assert.throws(() => diaryModerationTestHooks.safeReportId("a\\\\b"), /invalid_report_id/);
+});
