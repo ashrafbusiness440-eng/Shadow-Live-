@@ -32,10 +32,11 @@ class _ShadowGlobalWallpaperState extends State<ShadowGlobalWallpaper>
     _reload();
   }
 
-  Future<Uri?> _resolve() async {
+  Future<Uri?> _resolve({bool refresh = false}) async {
     try {
       return await (widget.resolveUrl?.call() ??
-          ShadowAssetRegistry.remoteUrl(ShadowAssetKeys.globalWallpaper));
+          ShadowAssetRegistry.remoteUrl(ShadowAssetKeys.globalWallpaper,
+              refresh: refresh));
     } catch (_) {
       // Network and registry outages must not hide the bundled wallpaper.
       return null;
@@ -44,11 +45,7 @@ class _ShadowGlobalWallpaperState extends State<ShadowGlobalWallpaper>
 
   void _reload({bool refresh = false}) {
     _lastCheckedAt = DateTime.now();
-    if (refresh && widget.resolveUrl == null) {
-      ShadowAssetRegistry.remoteUrl(ShadowAssetKeys.globalWallpaper,
-          refresh: true);
-    }
-    _remote = _resolve();
+    _remote = _resolve(refresh: refresh);
   }
 
   @override
