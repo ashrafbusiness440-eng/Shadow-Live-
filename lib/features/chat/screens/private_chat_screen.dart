@@ -934,7 +934,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       ? const Directionality(
           textDirection: TextDirection.rtl,
           child: Scaffold(
-            backgroundColor: Color(0xFF05060D),
+            backgroundColor: Colors.transparent,
             body: SafeArea(
               child: Center(child: Text('سجّل الدخول لفتح المحادثات',
                   style: TextStyle(color: Colors.white70))),
@@ -949,7 +949,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
             return false;
           },
           child: Scaffold(
-            backgroundColor: const Color(0xFF05060D),
+            backgroundColor: Colors.transparent,
             appBar: AppBar(
               automaticallyImplyLeading: false,
               backgroundColor: const Color(0xFF0B0D16),

@@ -337,7 +337,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       child: Directionality(
         textDirection: TextDirection.rtl,
         child: Scaffold(
-          backgroundColor: const Color(0xFF020711),
+          backgroundColor: Colors.transparent,
           body: _guest
               ? _guestView()
               : BlocBuilder<UserBloc, UserState>(

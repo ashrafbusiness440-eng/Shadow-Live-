@@ -396,7 +396,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
       return const Directionality(
         textDirection: TextDirection.rtl,
         child: Scaffold(
-          backgroundColor: Color(0xFF05060D),
+          backgroundColor: Colors.transparent,
           body: SafeArea(
             child: Center(
               child: Text('سجّل الدخول لعرض الرسائل', style: TextStyle(color: Colors.white60)),
@@ -408,7 +408,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: const Color(0xFF05060D),
+        backgroundColor: Colors.transparent,
         body: SafeArea(
           child: Column(
             children: [

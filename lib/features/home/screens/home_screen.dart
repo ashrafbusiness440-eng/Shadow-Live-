@@ -307,13 +307,13 @@ class _HomeScreenState extends State<HomeScreen> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: _bg,
+        backgroundColor: Colors.transparent,
         body: Container(
           decoration: const BoxDecoration(
             gradient: RadialGradient(
               center: Alignment(.7, -.9),
               radius: 1.25,
-              colors: [Color(0xFF251047), _bg],
+              colors: [Color(0xAA251047), Color(0x4405060D)],
             ),
           ),
           child: SafeArea(

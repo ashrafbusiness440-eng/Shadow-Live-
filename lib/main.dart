@@ -67,6 +67,7 @@ import 'features/room/widgets/cosmetic_effect_widgets.dart';
 import 'features/room/widgets/room_effect_coordinator.dart';
 import 'features/room/services/room_rocket_service.dart';
 import 'core/assets/shadow_asset_registry.dart';
+import 'shared/widgets/shadow_global_wallpaper.dart';
 import 'features/room/widgets/star_battle_sheet.dart';
 import 'features/room/services/room_seat_service.dart';
 import 'features/room/services/room_presence_service.dart';
@@ -127,12 +128,15 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Shadow Live',
       navigatorKey: NavigationService.navigatorKey,
-      builder: (context, child) => AccountEnforcementHost(
-        child: RoomRocketBannerHost(
-          child: child ?? const SizedBox.shrink(),
+      builder: (context, child) => ShadowGlobalWallpaper(
+        child: AccountEnforcementHost(
+          child: RoomRocketBannerHost(
+            child: child ?? const SizedBox.shrink(),
+          ),
         ),
       ),
       theme: ThemeData(
+        scaffoldBackgroundColor: Colors.transparent,
         colorScheme: ColorScheme.dark(
           primary: Colors.yellow[400]!,
           surface: Colors.black,

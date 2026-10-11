@@ -300,7 +300,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: const Color(0xFF05060D),
+        backgroundColor: Colors.transparent,
         body: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
           future: _profileFuture,
           builder: (context, snapshot) {

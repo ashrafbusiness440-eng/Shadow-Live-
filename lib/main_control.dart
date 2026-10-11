@@ -6,6 +6,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'firebase_options.dart';
+import 'shared/widgets/shadow_global_wallpaper.dart';
 import 'utils/compact_number.dart';
 import 'features/profile/widgets/profile_avatar_with_frame.dart';
 import 'admin/control_admin_id_override.dart';
@@ -41,8 +42,11 @@ class ShadowControlApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     debugShowCheckedModeBanner: false,
     title: 'Shadow Control',
+    builder: (context, child) => ShadowGlobalWallpaper(
+      child: child ?? const SizedBox.shrink(),
+    ),
     theme: ThemeData.dark(useMaterial3: true).copyWith(
-      scaffoldBackgroundColor: const Color(0xFF07050D),
+      scaffoldBackgroundColor: Colors.transparent,
       cardTheme: const CardThemeData(color: Color(0xFF151022)),
       navigationBarTheme: const NavigationBarThemeData(backgroundColor: Color(0xFF0D0917), indicatorColor: Color(0x443F2B71)),
     ),
@@ -270,7 +274,7 @@ class _ControlShellState extends State<ControlShell> {
     ];
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0D0917),
+        backgroundColor: Colors.transparent,
         title: const Column(crossAxisAlignment: CrossAxisAlignment.start,children:[
           Text('Shadow Control',style:TextStyle(fontWeight:FontWeight.w800)),
           Text('بيئة تجريبية • Firebase متصل',style:TextStyle(fontSize:11,color:Color(0xFFD7B85A))),

@@ -36,6 +36,11 @@ abstract final class ShadowAssetRegistry {
 }
 
 abstract final class ShadowAssetKeys {
+  // App-wide presentation only; room/profile custom selections keep priority.
+  static const globalWallpaper = 'app.background.global';
+  static const globalWallpaperBundledPath =
+      'assets/images/system/shadow_live_global_wallpaper.webp';
+
   static const authLoginHeader = 'auth.login.header';
   static const verifiedBadge = 'badge.verified';
   static const officialBadge = 'badge.official';
