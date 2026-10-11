@@ -280,3 +280,35 @@ test("report-only long id validation rejects path injection and >512 chars", () 
   assert.throws(() => diaryModerationTestHooks.safeReportId("a/b"), /invalid_report_id/);
   assert.throws(() => diaryModerationTestHooks.safeReportId("a\\\\b"), /invalid_report_id/);
 });
+
+test("rejecting one long report preserves another reporter's colliding legacy alert", async () => {
+  const base = "diary_comment_" + "same".repeat(46);
+  const reportA = base + "_reporter_A";
+  const reportB = base + "_reporter_B";
+  const legacyPath = "admin_inbox_items/diary_report__" + reportA.slice(0, 160);
+  const db = new FakeDb({
+    [`diary_reports/${reportA}`]: report(reportA, 8000),
+    [`reports/${reportA}`]: report(reportA, 8000),
+    [`diary_reports/${reportB}`]: report(reportB, 8100),
+    [`reports/${reportB}`]: report(reportB, 8100),
+    [legacyPath]: { type: "diary_report", targetId: reportB, key: "diary_report_" + reportB },
+    [`admin_inbox_items/diary_report__${reportA}`]: { targetId: reportA },
+  });
+  await reviewReport(db, "admin_uid", {
+    reportId: reportA,
+    status: "rejected",
+    reason: "بلاغ غير مؤكد",
+    idempotencyKey: "diaryctl_reject_report_A_123456",
+  });
+  assert.equal(db.docs.get(`diary_reports/${reportA}`).status, "rejected");
+  assert.equal(db.docs.has(`admin_inbox_items/diary_report__${reportA}`), false);
+  assert.equal(db.docs.get(legacyPath).targetId, reportB);
+
+  await reviewReport(db, "admin_uid", {
+    reportId: reportB,
+    status: "rejected",
+    reason: "انتهت المراجعة",
+    idempotencyKey: "diaryctl_reject_report_B_123456",
+  });
+  assert.equal(db.docs.has(legacyPath), false);
+});

@@ -53,15 +53,27 @@ export function adminInboxDeleteWrite(db, type, targetId) {
   return db.writeDelete(adminInboxIndexPath(type, targetId));
 }
 
-// Older indexed report rows used a 160-character target prefix. When a
-// long report is resolved, remove both its modern index row and any legacy
-// truncated row. Short IDs only need one deletion.
-export function adminInboxDeleteWrites(db, type, targetId) {
+// Return the exact historic prefix-only document path. A legacy row can
+// belong to a DIFFERENT reporter sharing the same first 160 characters.
+export function adminInboxLegacyIndexPath(typeInput, targetIdInput) {
+  const type = clean(typeInput).replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80);
+  const targetId = clean(targetIdInput).replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 160);
+  if (!type || !targetId) throw new Error("invalid_admin_inbox_index_id");
+  return `${ADMIN_INBOX_INDEX_COLLECTION}/${type}__${targetId}`;
+}
+
+// Delete the full index row; delete the older, truncated row only if the
+// caller READ that exact legacy document within its review transaction and
+// confirmed it belongs to this very report. Never delete a colliding row.
+export function adminInboxDeleteWrites(db, type, targetId, legacySnapshot = null) {
   const current = adminInboxIndexPath(type, targetId);
-  const legacyType = clean(type).replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80);
-  const legacyTarget = clean(targetId).replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 160);
-  const legacy = `${ADMIN_INBOX_INDEX_COLLECTION}/${legacyType}__${legacyTarget}`;
-  const paths = current === legacy ? [current] : [current, legacy];
+  const legacy = adminInboxLegacyIndexPath(type, targetId);
+  const paths = [current];
+  if (legacy !== current &&
+      legacySnapshot?.exists === true &&
+      clean(legacySnapshot.data?.targetId) === clean(targetId)) {
+    paths.push(legacy);
+  }
   return paths.map((path) => db.writeDelete(path));
 }
 

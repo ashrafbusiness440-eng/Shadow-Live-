@@ -5,7 +5,11 @@ import {
 } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { deleteDiary, deleteComment } from "./diaries.js";
-import { adminInboxDeleteWrites } from "./admin-inbox-index.js";
+import {
+  adminInboxDeleteWrites,
+  adminInboxIndexPath,
+  adminInboxLegacyIndexPath,
+} from "./admin-inbox-index.js";
 import { loadPublicProfilePresentations } from "./public-profile-presentation.js";
 
 const clean = (value) => String(value ?? "").trim();
@@ -203,9 +207,12 @@ async function reviewReport(db, actorUid, body) {
   const globalPath = `reports/${reportId}`;
   const transaction = await db.beginTransaction();
   try {
-    const [operation, report] = await Promise.all([
+    const legacyPath = adminInboxLegacyIndexPath("diary_report", reportId);
+    const hasDistinctLegacy = legacyPath !== adminInboxIndexPath("diary_report", reportId);
+    const [operation, report, legacyIndex] = await Promise.all([
       db.get(operationPath, transaction),
       db.get(reportPath, transaction),
+      hasDistinctLegacy ? db.get(legacyPath, transaction) : Promise.resolve(null),
     ]);
     if (operation.exists) {
       await db.rollback(transaction);
@@ -253,7 +260,7 @@ async function reviewReport(db, actorUid, body) {
         createdAt: now,
       }),
       ...(nextStatus === "rejected"
-        ? adminInboxDeleteWrites(db, "diary_report", reportId)
+        ? adminInboxDeleteWrites(db, "diary_report", reportId, legacyIndex)
         : []),
     ]);
     return { ok: true, code: "ok", ...result };
@@ -266,36 +273,51 @@ async function reviewReport(db, actorUid, body) {
 async function markReportActioned(db, actorUid, reportId, reason, key) {
   if (!reportId) return;
   const reportPath = `diary_reports/${reportId}`;
-  const report = await db.get(reportPath);
-  if (!report.exists) return;
-  const now = new Date();
-  const patch = {
-    status: "actioned",
-    reviewedBy: actorUid,
-    reviewReason: reason,
-    reviewedAt: now,
-    updatedAt: now,
-  };
-  const mask = Object.keys(patch);
-  await db.commit(null, [
-    db.writeUpdate(reportPath, patch, mask),
-    db.writeUpdate(`reports/${reportId}`, patch, mask),
-    db.writeCreate(`admin_audit_logs/diary_report_action_${key}`, {
-      actorUid,
-      action: "actionDiaryReport",
-      targetType: clean(report.data?.targetType),
-      targetId: clean(report.data?.targetId),
-      reportId,
-      reason,
-      before: { status: clean(report.data?.status || "new") },
-      after: { status: "actioned" },
-      operationId: key,
-      createdAt: now,
-    }),
-    ...adminInboxDeleteWrites(db, "diary_report", reportId),
-  ]);
+  const legacyPath = adminInboxLegacyIndexPath("diary_report", reportId);
+  const hasDistinctLegacy = legacyPath !== adminInboxIndexPath("diary_report", reportId);
+  const transaction = await db.beginTransaction();
+  try {
+    // Read before writing so a colliding legacy row is never removed when
+    // another account reported the same comment.
+    const [report, legacyIndex] = await Promise.all([
+      db.get(reportPath, transaction),
+      hasDistinctLegacy ? db.get(legacyPath, transaction) : Promise.resolve(null),
+    ]);
+    if (!report.exists) {
+      await db.rollback(transaction);
+      return;
+    }
+    const now = new Date();
+    const patch = {
+      status: "actioned",
+      reviewedBy: actorUid,
+      reviewReason: reason,
+      reviewedAt: now,
+      updatedAt: now,
+    };
+    const mask = Object.keys(patch);
+    await db.commit(transaction, [
+      db.writeUpdate(reportPath, patch, mask),
+      db.writeUpdate(`reports/${reportId}`, patch, mask),
+      db.writeCreate(`admin_audit_logs/diary_report_action_${key}`, {
+        actorUid,
+        action: "actionDiaryReport",
+        targetType: clean(report.data?.targetType),
+        targetId: clean(report.data?.targetId),
+        reportId,
+        reason,
+        before: { status: clean(report.data?.status || "new") },
+        after: { status: "actioned" },
+        operationId: key,
+        createdAt: now,
+      }),
+      ...adminInboxDeleteWrites(db, "diary_report", reportId, legacyIndex),
+    ]);
+  } catch (error) {
+    await db.rollback(transaction);
+    throw error;
+  }
 }
-
 async function deleteDiaryTarget(db, actorUid, body) {
   const diaryId = safeId(body.diaryId, "invalid_diary_id");
   const reportId = clean(body.reportId);

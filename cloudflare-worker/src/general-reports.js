@@ -6,6 +6,8 @@ import {
 import { firestoreClient } from "./firestore.js";
 import {
   adminInboxDeleteWrites,
+  adminInboxIndexPath,
+  adminInboxLegacyIndexPath,
   adminInboxUpsertWrite,
 } from "./admin-inbox-index.js";
 import { loadPublicProfilePresentations } from "./public-profile-presentation.js";
@@ -167,6 +169,7 @@ async function reviewGeneralReport(db, actorUid, body = {}) {
   try {
     const operationPath = "control_operations/" + key;
     const reportPath = "reports/" + reportId;
+    // Resolve the authoritative type before checking an old index row.
     const [operation, report] = await Promise.all([
       db.get(operationPath, trx),
       db.get(reportPath, trx),
@@ -182,6 +185,10 @@ async function reviewGeneralReport(db, actorUid, body = {}) {
     if (!TRANSITIONS[item.status]?.has(status)) {
       throw new GeneralReportError("invalid_report_transition", 409);
     }
+    const legacyPath = adminInboxLegacyIndexPath(item.type, reportId);
+    const hasDistinctLegacy = legacyPath !== adminInboxIndexPath(item.type, reportId);
+    const legacyIndex = hasDistinctLegacy
+      ? await db.get(legacyPath, trx) : null;
     const now = new Date();
     const patch = {
       status,
@@ -211,7 +218,7 @@ async function reviewGeneralReport(db, actorUid, body = {}) {
             status,
           },
         })]
-      : adminInboxDeleteWrites(db, item.type, reportId);
+      : adminInboxDeleteWrites(db, item.type, reportId, legacyIndex);
     await db.commit(trx, [
       db.writeUpdate(reportPath, patch, Object.keys(patch)),
       ...indexWrites,
