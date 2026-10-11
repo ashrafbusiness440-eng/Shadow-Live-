@@ -97,23 +97,32 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final boundary = boundaryKey.currentContext!.findRenderObject()!
-        as RenderRepaintBoundary;
-    final image = await boundary.toImage(pixelRatio: 1);
-    final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
-    expect(data, isNotNull);
-    final pixels = data!.buffer.asUint8List();
-    final colors = <int>{};
-    for (var y = 80; y < 720; y += 17) {
-      for (var x = 20; x < 380; x += 11) {
-        final index = (y * image.width + x) * 4;
-        colors.add((pixels[index] << 16) |
-            (pixels[index + 1] << 8) |
-            pixels[index + 2]);
+    // Image encoding uses real engine callbacks. Read it outside the
+    // widget tester fake-async zone to avoid deadlocking the whole CI run.
+    final colorCount = await tester.runAsync(() async {
+      final boundary = boundaryKey.currentContext!.findRenderObject()!
+          as RenderRepaintBoundary;
+      final image = await boundary.toImage(pixelRatio: 1);
+      try {
+        final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+        if (data == null) return 0;
+        final pixels = data.buffer.asUint8List();
+        final colors = <int>{};
+        for (var y = 80; y < 720; y += 17) {
+          for (var x = 20; x < 380; x += 11) {
+            final index = (y * image.width + x) * 4;
+            colors.add((pixels[index] << 16) |
+                (pixels[index + 1] << 8) |
+                pixels[index + 2]);
+          }
+        }
+        return colors.length;
+      } finally {
+        image.dispose();
       }
-    }
-    image.dispose();
-    expect(colors.length, greaterThan(18),
+    });
+    expect(colorCount, isNotNull);
+    expect(colorCount!, greaterThan(18),
         reason: 'Pattern must actually paint behind the route; a flat dark '
             'Scaffold or stale loading fallback is not sufficient.');
   });
