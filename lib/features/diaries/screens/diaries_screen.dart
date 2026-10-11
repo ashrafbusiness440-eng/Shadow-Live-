@@ -961,12 +961,12 @@ class _DiariesScreenState extends State<DiariesScreen> {
 
   Widget _feedSelector() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 4, 14, 8),
+      padding: const EdgeInsets.fromLTRB(14, 2, 14, 6),
       child: Container(
         padding: const EdgeInsets.all(4),
         decoration: BoxDecoration(
           color: const Color(0xFF0E111A),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(14),
         ),
         child: Row(
           children: [
@@ -1003,7 +1003,7 @@ class _DiariesScreenState extends State<DiariesScreen> {
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
+          padding: const EdgeInsets.symmetric(vertical: 8),
           child: Text(
             label,
             textAlign: TextAlign.center,
@@ -1088,25 +1088,34 @@ class _DiariesScreenState extends State<DiariesScreen> {
                   ),
                 ),
                 if (_guest || item.ownerUid != _uid)
-                  IconButton(
-                    tooltip: 'إبلاغ',
-                    onPressed: _busyReportIds.contains(item.diaryId)
-                        ? null
-                        : () => _reportDiary(item),
+                  PopupMenuButton<String>(
+                    key: ValueKey('diary-post-menu-${item.diaryId}'),
+                    tooltip: 'خيارات اليومية',
+                    enabled: !_busyReportIds.contains(item.diaryId),
+                    onSelected: (action) {
+                      if (action == 'report' &&
+                          !_busyReportIds.contains(item.diaryId)) {
+                        unawaited(_reportDiary(item));
+                      }
+                    },
+                    itemBuilder: (_) => const <PopupMenuEntry<String>>[
+                      PopupMenuItem<String>(
+                        value: 'report',
+                        child: Row(
+                          children: [
+                            Icon(Icons.flag_outlined,
+                                color: Color(0xFFFFD54A), size: 20),
+                            SizedBox(width: 10),
+                            Text('إبلاغ عن اليومية'),
+                          ],
+                        ),
+                      ),
+                    ],
                     icon: _busyReportIds.contains(item.diaryId)
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white54,
-                            ),
-                          )
-                        : const Icon(
-                            Icons.flag_outlined,
-                            color: Colors.white38,
-                            size: 20,
-                          ),
+                        ? const Icon(Icons.hourglass_top_rounded,
+                            color: Colors.white54, size: 20)
+                        : const Icon(Icons.more_horiz_rounded,
+                            color: Colors.white70, size: 22),
                   ),
               ],
             ),
