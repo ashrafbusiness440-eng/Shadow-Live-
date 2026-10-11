@@ -233,9 +233,9 @@ class _AuthChoiceScreenState extends State<AuthChoiceScreen> {
               center: Alignment(0, -.35),
               radius: 1.1,
               colors: [
-                Color(0xFF241044),
-                Color(0xFF0B0D18),
-                Color(0xFF05060D),
+                Color(0xAA241044),
+                Color(0x880B0D18),
+                Color(0x3305060D),
               ],
             ),
           ),
