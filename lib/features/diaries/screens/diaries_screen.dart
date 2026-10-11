@@ -74,6 +74,7 @@ class _DiariesScreenState extends State<DiariesScreen> {
 
   bool _showFollowing = false;
   bool _publishing = false;
+  bool _composerExpanded = false;
   bool _commentsEnabled = true;
   List<_PickedDiaryImage> _pickedImages = const <_PickedDiaryImage>[];
   final Set<String> _likedDiaryIds = <String>{};
@@ -459,6 +460,7 @@ class _DiariesScreenState extends State<DiariesScreen> {
         _mentionLoading = false;
         _pickedImages = const <_PickedDiaryImage>[];
         _commentsEnabled = true;
+        _composerExpanded = false;
         _showFollowing = false;
       });
       await _load(reset: true, following: false);
@@ -714,8 +716,76 @@ class _DiariesScreenState extends State<DiariesScreen> {
       );
     }
 
+    // A single compact entry leaves room for the first real diary post.
+    // Keep the existing editor and publishing service alive only on request;
+    // drafts and selected photos are preserved when collapsing the editor.
+    if (!_composerExpanded) {
+      return Container(
+        key: const ValueKey('diary-compact-composer'),
+        margin: const EdgeInsets.fromLTRB(14, 8, 14, 4),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: const Color(0xFF101522),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.white.withValues(alpha: .08)),
+        ),
+        child: Row(
+          children: [
+            ProfileAvatarWithFrame(
+              diameter: 40,
+              userId: _uid,
+              backgroundColor: const Color(0xFF272C39),
+              placeholderColor: Colors.white70,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Material(
+                color: const Color(0xFF090C14),
+                borderRadius: BorderRadius.circular(12),
+                child: InkWell(
+                  key: const ValueKey('diary-open-composer'),
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => setState(() => _composerExpanded = true),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 13,
+                    ),
+                    child: Text(
+                      _text.text.trim().isEmpty
+                          ? 'شو حابب تشارك اليوم؟'
+                          : _text.text.trim(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white60,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            IconButton(
+              key: const ValueKey('diary-open-photos'),
+              tooltip: 'إضافة صور لليومية',
+              onPressed: () async {
+                setState(() => _composerExpanded = true);
+                await _pickImages();
+              },
+              icon: const Icon(
+                Icons.add_photo_alternate_outlined,
+                color: Color(0xFFFFD54A),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Container(
-      margin: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+      key: const ValueKey('diary-expanded-composer'),
+      margin: const EdgeInsets.fromLTRB(14, 8, 14, 6),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: const Color(0xFF101522),
@@ -725,15 +795,30 @@ class _DiariesScreenState extends State<DiariesScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
-            'شو حابب تشارك اليوم؟',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w900,
-              fontSize: 16,
-            ),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'اكتب يوميتك',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+              IconButton(
+                key: const ValueKey('diary-collapse-composer'),
+                tooltip: 'إغلاق المحرر مع حفظ المسودة',
+                onPressed: _publishing
+                    ? null
+                    : () => setState(() => _composerExpanded = false),
+                icon: const Icon(Icons.keyboard_arrow_up_rounded,
+                    color: Colors.white70),
+              ),
+            ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 4),
           TextField(
             controller: _text,
             enabled: !_publishing,
@@ -1302,7 +1387,7 @@ class _DiariesScreenState extends State<DiariesScreen> {
               children: [
                 if (!widget.embedded)
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 2),
+                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
                     child: Row(
                       children: [
                         Expanded(
@@ -1310,7 +1395,7 @@ class _DiariesScreenState extends State<DiariesScreen> {
                             widget.title,
                             style: const TextStyle(
                               color: Colors.white,
-                              fontSize: 24,
+                              fontSize: 20,
                               fontWeight: FontWeight.w900,
                             ),
                           ),
