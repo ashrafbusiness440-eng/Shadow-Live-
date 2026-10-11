@@ -225,7 +225,7 @@ class _AuthChoiceScreenState extends State<AuthChoiceScreen> {
         }
       },
       child: Scaffold(
-        backgroundColor: const Color(0xFF05060D),
+        backgroundColor: Colors.transparent,
         body: Container(
           width: double.infinity,
           decoration: const BoxDecoration(
