@@ -104,10 +104,10 @@ class _ShadowGlobalWallpaperState extends State<ShadowGlobalWallpaper>
             },
           ),
         ),
-        // Keep foreground text, chat, controls and rank cards legible.
+        // Wallpaper must remain visible; opaque cards retain their own contrast.
         const Positioned.fill(
           child: IgnorePointer(
-            child: ColoredBox(color: Color(0x6605060D)),
+            child: ColoredBox(color: Color(0x2205060D)),
           ),
         ),
         widget.child,
