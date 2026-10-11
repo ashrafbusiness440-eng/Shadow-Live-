@@ -6,6 +6,7 @@ import {
 import { firestoreClient } from "./firestore.js";
 import { deleteDiary, deleteComment } from "./diaries.js";
 import { adminInboxDeleteWrite } from "./admin-inbox-index.js";
+import { loadPublicProfilePresentations } from "./public-profile-presentation.js";
 
 const clean = (value) => String(value ?? "").trim();
 const KEY_PATTERN = /^[A-Za-z0-9_-]{12,180}$/;
@@ -27,6 +28,17 @@ class ModerationApiError extends Error {
 function safeId(value, code = "invalid_id") {
   const id = clean(value);
   if (!id || id.length > 220 || id.includes("/") || id.includes("\\")) {
+    throw new ModerationApiError(code, 400);
+  }
+  return id;
+}
+
+// Existing diary-comment report ids concatenate three independently bounded
+// identifiers (diary, comment, reporter) and can exceed the ordinary 220-char
+// document-key limit. Keep these legacy ids valid in review and pagination.
+function safeReportId(value, code = "invalid_report_id") {
+  const id = clean(value);
+  if (!id || id.length > 512 || id.includes("/") || id.includes("\\")) {
     throw new ModerationApiError(code, 400);
   }
   return id;
@@ -58,7 +70,7 @@ function parseCursor(value) {
   if (!Number.isSafeInteger(createdAtMs) || createdAtMs <= 0) {
     throw new ModerationApiError("invalid_cursor", 400);
   }
-  safeId(reportId, "invalid_cursor");
+  safeReportId(reportId, "invalid_cursor");
   return { createdAtMs, reportId };
 }
 
@@ -112,14 +124,36 @@ function normalizeReport(id, data = {}) {
   };
 }
 
+// Enrich one already-authorized report page with small public identity
+// previews in a bounded, deduplicated batch. Do not expose private users/*,
+// emails, phones or an unverified online/room status.
+async function withReportActors(db, reports) {
+  const uids = reports.flatMap((item) => [
+    item.reporterUid,
+    item.targetAuthorUid,
+    item.targetOwnerUid,
+  ]).filter(Boolean);
+  const profiles = await loadPublicProfilePresentations(db, uids, {
+    limit: 60,
+    concurrency: 8,
+  }).catch(() => new Map());
+  return reports.map((item) => ({
+    ...item,
+    reporterProfile: profiles.get(item.reporterUid) ?? null,
+    targetAuthorProfile: profiles.get(item.targetAuthorUid) ?? null,
+    diaryOwnerProfile: profiles.get(item.targetOwnerUid) ?? null,
+  }));
+}
+
 async function getReport(db, body) {
-  const reportId = safeId(body.reportId, "invalid_report_id");
+  const reportId = safeReportId(body.reportId);
   const report = await db.get(`diary_reports/${reportId}`);
   if (!report.exists) throw new ModerationApiError("report_not_found", 404);
-  return {
-    ok: true,
-    item: normalizeReport(reportId, report.data || {}),
-  };
+  const [item] = await withReportActors(
+    db,
+    [normalizeReport(reportId, report.data || {})],
+  );
+  return { ok: true, item };
 }
 
 async function listReports(db, body) {
@@ -143,7 +177,10 @@ async function listReports(db, body) {
   const last = visible[visible.length - 1];
   return {
     ok: true,
-    items: visible.map((row) => normalizeReport(row.id, row.data || {})),
+    items: await withReportActors(
+      db,
+      visible.map((row) => normalizeReport(row.id, row.data || {})),
+    ),
     hasMore,
     nextCursor:
       hasMore && last
@@ -153,7 +190,7 @@ async function listReports(db, body) {
 }
 
 async function reviewReport(db, actorUid, body) {
-  const reportId = safeId(body.reportId, "invalid_report_id");
+  const reportId = safeReportId(body.reportId);
   const nextStatus = clean(body.status);
   const reason = clean(body.reason);
   const key = operationKey(body.idempotencyKey);
@@ -262,7 +299,7 @@ async function markReportActioned(db, actorUid, reportId, reason, key) {
 async function deleteDiaryTarget(db, actorUid, body) {
   const diaryId = safeId(body.diaryId, "invalid_diary_id");
   const reportId = clean(body.reportId);
-  if (reportId) safeId(reportId, "invalid_report_id");
+  if (reportId) safeReportId(reportId);
   const reason = clean(body.reason);
   const key = operationKey(body.idempotencyKey);
   if (reason.length < 3 || reason.length > 200) {
@@ -298,7 +335,7 @@ async function deleteCommentTarget(db, actorUid, body) {
   const diaryId = safeId(body.diaryId, "invalid_diary_id");
   const commentId = safeId(body.commentId, "invalid_comment_id");
   const reportId = clean(body.reportId);
-  if (reportId) safeId(reportId, "invalid_report_id");
+  if (reportId) safeReportId(reportId);
   const reason = clean(body.reason);
   const key = operationKey(body.idempotencyKey);
   if (reason.length < 3 || reason.length > 200) {
@@ -402,4 +439,6 @@ export const diaryModerationTestHooks = Object.freeze({
   deleteCommentTarget,
   normalizeReport,
   parseCursor,
+  safeReportId,
+  withReportActors,
 });
