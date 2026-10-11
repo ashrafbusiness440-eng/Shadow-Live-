@@ -65,11 +65,13 @@ class AdminInboxSnapshot {
     required this.items,
     required this.unreadCount,
     required this.capped,
+    this.diaryLongRepair = const <String, dynamic>{},
   });
 
   final List<AdminInboxItem> items;
   final int unreadCount;
   final bool capped;
+  final Map<String, dynamic> diaryLongRepair;
 }
 
 class AdminInboxService {
@@ -120,8 +122,14 @@ class AdminInboxService {
       items: items,
       unreadCount: (data['unreadCount'] as num?)?.toInt() ?? 0,
       capped: data['capped'] == true,
+      diaryLongRepair: data['diaryLongRepair'] is Map
+          ? Map<String, dynamic>.from(data['diaryLongRepair'] as Map)
+          : const <String, dynamic>{},
     );
   }
+
+  static Future<Map<String, dynamic>> repairDiaryReportInbox() =>
+      _post('repairDiaryReportInbox');
 
   static Future<void> markRead(String key) async {
     await _post('markRead', <String, dynamic>{'key': key});
@@ -144,6 +152,7 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
   Object? _error;
   bool _loading = false;
   bool _markingAll = false;
+  bool _repairingOldReports = false;
 
   @override
   void initState() {
@@ -183,6 +192,32 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
       }
     } finally {
       if (mounted) setState(() => _markingAll = false);
+    }
+  }
+
+  Future<void> _repairOldReports() async {
+    if (_repairingOldReports) return;
+    setState(() => _repairingOldReports = true);
+    try {
+      final result = await AdminInboxService.repairDiaryReportInbox();
+      if (!mounted) return;
+      await _load();
+      if (!mounted) return;
+      final complete = result['done'] == true;
+      final pageSize = (result['pageSize'] as num?)?.toInt() ?? 0;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(complete
+            ? 'اكتملت مراجعة البلاغات القديمة المحفوظة.'
+            : 'تم فحص $pageSize بلاغاً. اضغط متابعة الاستعادة لفحص الدفعة التالية.'),
+      ));
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تعذرت استعادة هذه الدفعة. تحقق من الاتصال وحاول مجدداً.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _repairingOldReports = false);
     }
   }
 
@@ -287,6 +322,38 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
               ),
             ],
             const SizedBox(height: 14),
+            if (snapshot?.diaryLongRepair['available'] == true &&
+                snapshot?.diaryLongRepair['done'] != true) ...[
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('استعادة البلاغات القديمة',
+                          style: TextStyle(fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 6),
+                      Text(
+                        'تمت مراجعة ${snapshot?.diaryLongRepair['processed'] ?? 0} سجلاً محفوظاً. '
+                        'الاستعادة تفحص دفعة صغيرة بكل ضغطة دون إعادة فتح البلاغات المغلقة.',
+                        style: const TextStyle(color: Colors.white70, fontSize: 12),
+                      ),
+                      Align(
+                        alignment: AlignmentDirectional.centerEnd,
+                        child: TextButton.icon(
+                          onPressed: _repairingOldReports ? null : _repairOldReports,
+                          icon: _repairingOldReports
+                              ? const SizedBox(width: 16, height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2))
+                              : const Icon(Icons.history_rounded),
+                          label: const Text('متابعة الاستعادة'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
             if (_error != null)
               Card(
                 child: ListTile(
