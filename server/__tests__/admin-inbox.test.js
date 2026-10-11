@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { adminInboxTestHooks } from "../../cloudflare-worker/src/admin-inbox.js";
 
-const { safeKey, loadItems, loadReadKeys, listInbox } = adminInboxTestHooks;
+const { safeKey, loadItems, loadReadKeys, listInbox, markRead } = adminInboxTestHooks;
 
 class FakeDb {
   constructor(seed = {}) {
@@ -320,4 +320,37 @@ test("inbox actors never infer a user from raw text or public ids", async () => 
   assert.equal(result.items.length, 1);
   assert.deepEqual(result.items[0].actors, []);
   assert.equal(db.getCalls, 1);
+});
+
+test("long diary notification keys remain marked read after reopening inbox", async () => {
+  const id = "diary_comment_" + "d".repeat(96) + "_" + "c".repeat(96) +
+    "_" + "reporter".repeat(13);
+  const key = "diary_report_" + id;
+  assert.equal(key.length > 180, true);
+  assert.equal(safeKey(key), key);
+  const db = new FakeDb({
+    "admin_inbox_items/__meta": { schemaVersion: 2 },
+    ["admin_inbox_items/diary_report__" + id]: {
+      key,
+      type: "diary_report",
+      targetId: id,
+      route: "diary_reports",
+      createdAtMs: 5000,
+      meta: {},
+    },
+    "admin_notification_read_state/admin_uid": {
+      userId: "admin_uid",
+      readThroughMs: 0,
+      keys: [],
+    },
+  });
+  const authorized = actor(["viewReports"]);
+  const first = await listInbox(db, authorized);
+  assert.equal(first.items.length, 1);
+  assert.equal(first.unreadCount, 1);
+  await markRead(db, authorized, { key });
+  const second = await listInbox(db, authorized);
+  assert.equal(second.unreadCount, 0);
+  assert.equal(second.items[0].read, true);
+  assert.equal(db.docs.get("admin_notification_read_state/admin_uid").keys[0], key);
 });

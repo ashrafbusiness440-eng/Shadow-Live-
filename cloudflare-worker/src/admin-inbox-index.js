@@ -5,7 +5,10 @@ export const ADMIN_INBOX_INDEX_LIMIT = 200;
 
 export function adminInboxIndexId(typeInput, targetIdInput) {
   const type = clean(typeInput).replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80);
-  const targetId = clean(targetIdInput).replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 160);
+  // Existing diary-comment reports can have 300+ character IDs. Keep the
+  // entire bounded ID so different reporters cannot overwrite one another.
+  // 768 ASCII characters plus the 80-character type fit a Firestore doc ID.
+  const targetId = clean(targetIdInput).replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 768);
   return type && targetId ? `${type}__${targetId}` : "";
 }
 
@@ -48,6 +51,18 @@ export function adminInboxUpsertWrite(db, {
 
 export function adminInboxDeleteWrite(db, type, targetId) {
   return db.writeDelete(adminInboxIndexPath(type, targetId));
+}
+
+// Older indexed report rows used a 160-character target prefix. When a
+// long report is resolved, remove both its modern index row and any legacy
+// truncated row. Short IDs only need one deletion.
+export function adminInboxDeleteWrites(db, type, targetId) {
+  const current = adminInboxIndexPath(type, targetId);
+  const legacyType = clean(type).replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80);
+  const legacyTarget = clean(targetId).replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 160);
+  const legacy = `${ADMIN_INBOX_INDEX_COLLECTION}/${legacyType}__${legacyTarget}`;
+  const paths = current === legacy ? [current] : [current, legacy];
+  return paths.map((path) => db.writeDelete(path));
 }
 
 export function normalizeAdminInboxIndexRow(row) {

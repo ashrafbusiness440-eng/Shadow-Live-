@@ -5,7 +5,7 @@ import {
 } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { deleteDiary, deleteComment } from "./diaries.js";
-import { adminInboxDeleteWrite } from "./admin-inbox-index.js";
+import { adminInboxDeleteWrites } from "./admin-inbox-index.js";
 import { loadPublicProfilePresentations } from "./public-profile-presentation.js";
 
 const clean = (value) => String(value ?? "").trim();
@@ -253,7 +253,7 @@ async function reviewReport(db, actorUid, body) {
         createdAt: now,
       }),
       ...(nextStatus === "rejected"
-        ? [adminInboxDeleteWrite(db, "diary_report", reportId)]
+        ? adminInboxDeleteWrites(db, "diary_report", reportId)
         : []),
     ]);
     return { ok: true, code: "ok", ...result };
@@ -292,7 +292,7 @@ async function markReportActioned(db, actorUid, reportId, reason, key) {
       operationId: key,
       createdAt: now,
     }),
-    adminInboxDeleteWrite(db, "diary_report", reportId),
+    ...adminInboxDeleteWrites(db, "diary_report", reportId),
   ]);
 }
 

@@ -45,7 +45,9 @@ function timestampMs(value) {
 }
 
 function safeKey(value) {
-  return clean(value).replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 180);
+  // Preserve full server-generated keys for existing 300+ char diary reports.
+  // Older 180-char truncation prevented these alerts from staying marked read.
+  return clean(value).replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 768);
 }
 
 function readPath(uid, key) {
@@ -641,4 +643,5 @@ export const adminInboxTestHooks = Object.freeze({
   loadGeneralReportItems,
   inboxActorRoles,
   withInboxActorProfiles,
+  markRead,
 });
