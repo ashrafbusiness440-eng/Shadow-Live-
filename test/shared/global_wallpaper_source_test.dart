@@ -43,7 +43,7 @@ void main() {
     expect(control.contains(
         'builder: (context, child) => ShadowGlobalWallpaper('), isTrue);
     expect(home.contains('backgroundColor: Colors.transparent'), isTrue);
-    expect(room.contains('RoomImageSource'), isTrue);
+    expect(room.contains("import 'features/room/services/room_image_source.dart';"), isTrue);
   });
 
   testWidgets('global wallpaper does not block foreground interactions',
