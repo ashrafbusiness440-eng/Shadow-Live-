@@ -256,3 +256,68 @@ test("admin inbox key sanitizer rejects path separators implicitly", () => {
   assert.equal(safeKey("diary/report:123"), "diary_report_123");
   assert.equal(safeKey(""), "");
 });
+
+
+test("authorized diary inbox previews public actors once with bounded profile reads", async () => {
+  const db = new FakeDb({
+    "admin_inbox_items/__meta": { schemaVersion: 2, ready: true },
+    "admin_inbox_items/diary_report__long": {
+      key: "diary_report_long",
+      type: "diary_report",
+      targetId: "long",
+      route: "diary_reports",
+      createdAtMs: 12000,
+      meta: {
+        reporterUid: "reporter",
+        targetUid: "author",
+        ownerUid: "owner",
+      },
+    },
+    "admin_notification_read_state/admin_uid": {
+      userId: "admin_uid",
+      readThroughMs: 0,
+      keys: [],
+    },
+    "public_profiles/reporter": {
+      displayName: "مقدم البلاغ", publicId: "12345678",
+      email: "must-not-be-sent@example.com",
+    },
+    "public_profiles/author": { displayName: "صاحب التعليق", publicId: "87654321" },
+    "public_profiles/owner": { displayName: "صاحب اليومية", publicId: "11223344" },
+  });
+  const snapshot = await listInbox(db, actor(["viewReports"]));
+  assert.equal(snapshot.items.length, 1);
+  const item = snapshot.items[0];
+  assert.deepEqual(item.actors.map((a) => a.role), [
+    "مقدّم البلاغ", "الحساب المبلّغ عليه", "صاحب اليومية",
+  ]);
+  assert.equal(item.actors[0].profile.displayName, "مقدم البلاغ");
+  assert.equal(item.actors[1].profile.publicId, "87654321");
+  assert.equal(Object.hasOwn(item.actors[0].profile, "email"), false);
+  assert.equal(db.queryCalls, 0);
+  assert.equal(db.getCalls, 4); // one read-state + three unique public profiles
+
+  const denied = await listInbox(db, actor(["manageAgencies"]));
+  assert.equal(denied.items.length, 0);
+  assert.equal(db.getCalls, 5); // no additional profile reads after permission filter
+});
+
+test("inbox actors never infer a user from raw text or public ids", async () => {
+  const db = new FakeDb({
+    "admin_inbox_items/__meta": { schemaVersion: 2 },
+    "admin_inbox_items/agency_application__no_uid": {
+      key: "agency_application_no_uid",
+      type: "agency_application",
+      targetId: "no_uid",
+      route: "agency_control",
+      createdAtMs: 15000,
+      body: "مقدم الطلب 12345678",
+      meta: { applicantPublicId: "12345678" },
+    },
+    "admin_notification_read_state/admin_uid": { readThroughMs: 0, keys: [] },
+  });
+  const result = await listInbox(db, actor(["reviewAgencyApplications"]));
+  assert.equal(result.items.length, 1);
+  assert.deepEqual(result.items[0].actors, []);
+  assert.equal(db.getCalls, 1);
+});
