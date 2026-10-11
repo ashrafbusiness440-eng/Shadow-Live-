@@ -1384,7 +1384,7 @@ class _DiariesScreenState extends State<DiariesScreen> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: const Color(0xFF05060D),
+        backgroundColor: Colors.transparent,
         body: SafeArea(
           top: !widget.embedded,
           bottom: false,
