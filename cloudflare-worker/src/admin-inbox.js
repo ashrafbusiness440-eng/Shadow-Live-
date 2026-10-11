@@ -7,9 +7,14 @@ import { firestoreClient } from "./firestore.js";
 import { generalReportType } from "./general-reports.js";
 import { loadPublicProfilePresentations } from "./public-profile-presentation.js";
 import {
+  recoverLongDiaryAlertsPage,
+  longDiaryAlertRecoveryStatus,
+} from "./admin-inbox-recovery.js";
+import {
   ADMIN_INBOX_INDEX_COLLECTION,
   ADMIN_INBOX_INDEX_LIMIT,
   adminInboxUpsertWrite,
+  adminInboxIndexId,
   normalizeAdminInboxIndexRow,
 } from "./admin-inbox-index.js";
 
@@ -399,10 +404,19 @@ async function loadIndexedItems(db, actor, prefetchedRows = null) {
     ? prefetchedRows
     : await db.list(ADMIN_INBOX_INDEX_COLLECTION, ADMIN_INBOX_INDEX_LIMIT);
   const meta = rows.find((row) => row.id === "__meta");
-  const indexed = rows
-    .filter((row) => row.id !== "__meta")
-    .map(normalizeAdminInboxIndexRow)
-    .filter((item) => item.key && item.targetId && itemAllowedForActor(actor, item));
+  // During legacy restoration, a prefix-keyed row and a full-keyed row can
+  // briefly coexist. Render each real report once, preferring the full key.
+  const indexedMap = new Map();
+  for (const row of rows) {
+    if (row.id === "__meta") continue;
+    const item = normalizeAdminInboxIndexRow(row);
+    if (!item.key || !item.targetId || !itemAllowedForActor(actor, item)) continue;
+    const existing = indexedMap.get(item.key);
+    if (!existing || row.id === adminInboxIndexId(item.type, item.targetId)) {
+      indexedMap.set(item.key, item);
+    }
+  }
+  const indexed = [...indexedMap.values()];
 
   if (meta && Number(meta.data?.schemaVersion || 0) >= 2) {
     return indexed.sort((a, b) =>
@@ -542,6 +556,12 @@ async function listInbox(
     unreadCount,
     capped: visible.length >= MAX_VISIBLE_ITEMS,
     limit: MAX_VISIBLE_ITEMS,
+    diaryLongRepair: longDiaryAlertRecoveryStatus(
+      Array.isArray(prefetchedRows)
+        ? (prefetchedRows.find((row) => row.id === "__meta")?.data || {})
+        : {},
+      actor.owner,
+    ),
   };
 }
 
@@ -613,6 +633,10 @@ export async function adminInbox(request, env) {
     }
 
     const actor = await loadActor(db, decoded);
+    if (action === "repairDiaryReportInbox") {
+      if (!actor.owner) throw new AdminInboxError("forbidden", 403);
+      return json(request, env, await recoverLongDiaryAlertsPage(db));
+    }
     if (action === "markRead") {
       return json(request, env, await markRead(db, actor, body));
     }
