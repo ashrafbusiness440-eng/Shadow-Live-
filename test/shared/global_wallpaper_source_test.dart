@@ -1,6 +1,8 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_chat_room/shared/widgets/shadow_global_wallpaper.dart';
 
@@ -70,4 +72,72 @@ void main() {
     await tester.tap(find.text('اختبر اللمس'));
     expect(taps, 1);
   });
+  testWidgets('visible wallpaper pixels survive transparent Navigator route',
+      (tester) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final boundaryKey = GlobalKey();
+    await tester.pumpWidget(
+      RepaintBoundary(
+        key: boundaryKey,
+        child: MaterialApp(
+          builder: (context, child) => ShadowGlobalWallpaper(
+            resolveUrl: () async => null,
+            child: child ?? const SizedBox.shrink(),
+          ),
+          home: const Scaffold(
+            backgroundColor: Colors.transparent,
+            body: SizedBox.expand(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    // Wait for the actual bundled image codec before capturing a frame.
+    // pumpAndSettle alone does not guarantee async image decode completion.
+    final preloaded = await tester.runAsync(() async {
+      await precacheImage(
+        const AssetImage(
+          'assets/images/system/shadow_live_global_wallpaper.webp',
+        ),
+        boundaryKey.currentContext!,
+      );
+      return true;
+    });
+    expect(preloaded, isTrue);
+    await tester.pump();
+
+    // Image encoding uses real engine callbacks. Read it outside the
+    // widget tester fake-async zone to avoid deadlocking the whole CI run.
+    final sample = await tester.runAsync(() async {
+      final boundary = boundaryKey.currentContext!.findRenderObject()!
+          as RenderRepaintBoundary;
+      final image = await boundary.toImage(pixelRatio: 1);
+      try {
+        final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+        if (data == null) return <int>[0, -1];
+        final pixels = data.buffer.asUint8List();
+        final colors = <int>{};
+        for (var y = 80; y < 720; y += 17) {
+          for (var x = 20; x < 380; x += 11) {
+            final index = (y * image.width + x) * 4;
+            colors.add((pixels[index] << 16) |
+                (pixels[index + 1] << 8) |
+                pixels[index + 2]);
+          }
+        }
+        return <int>[colors.length, colors.first];
+      } finally {
+        image.dispose();
+      }
+    });
+    expect(sample, isNotNull);
+    expect(sample!.first, greaterThan(18),
+        reason: 'Pattern must paint behind route, actual unique colors: '
+            '${sample.first}, sample RGB: ${sample.last.toRadixString(16)}');
+  });
+
 }

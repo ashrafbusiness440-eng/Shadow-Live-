@@ -79,6 +79,46 @@ jobs:
           cp -R build/web/. site/live/
           sed -i 's#/Shadow-Live-/app/#/Shadow-Live-/live/#g' site/live/manifest.json
 
+      - name: Version production Flutter entrypoints per deployment
+        run: |
+          # Both the Flutter bootstrap and the actual Dart bundle need unique
+          # URLs; otherwise an installed Android PWA can reuse older JS.
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          sha = os.environ["GITHUB_SHA"]
+          assert len(sha) == 40 and all(ch in "0123456789abcdef" for ch in sha)
+          for scope in ("live", "control"):
+              root = Path("site") / scope
+              html_path = root / "index.html"
+              html = html_path.read_text()
+              if scope == "live":
+                  old = "v=20261002-main-shell-fix"
+                  assert html.count(old) >= 1, "missing Live bootstrap revision"
+                  html = html.replace(old, "v=" + sha)
+              else:
+                  old = 'src="flutter_bootstrap.js"'
+                  assert html.count(old) == 1, "missing Control bootstrap"
+                  html = html.replace(
+                      old, 'src="flutter_bootstrap.js?v=' + sha + '"'
+                  )
+              html_path.write_text(html)
+              bootstrap_path = root / "flutter_bootstrap.js"
+              bootstrap = bootstrap_path.read_text()
+              old_main = '"mainJsPath":"main.dart.js"'
+              assert bootstrap.count(old_main) == 1, (
+                  "unexpected Flutter bootstrap format in " + scope
+              )
+              bootstrap = bootstrap.replace(
+                  old_main, '"mainJsPath":"main.dart.js?v=' + sha + '"'
+              )
+              bootstrap_path.write_text(bootstrap)
+              assert "flutter_bootstrap.js?v=" + sha in html
+              assert '"mainJsPath":"main.dart.js?v=' + sha + '"' in bootstrap
+              print(scope, "bundle cache version", sha[:12])
+          PY
+
       - name: Verify Shadow Live build
         run: |
           test -f site/live/main.dart.js
