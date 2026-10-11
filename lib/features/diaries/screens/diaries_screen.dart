@@ -1019,11 +1019,12 @@ class _DiariesScreenState extends State<DiariesScreen> {
 
   Widget _diaryCard(DiaryItem item) {
     return Container(
-      margin: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-      padding: const EdgeInsets.all(14),
+      key: ValueKey('diary-post-card-${item.diaryId}'),
+      margin: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: const Color(0xFF0E121C),
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.white.withValues(alpha: .07)),
       ),
       child: Column(
@@ -1035,7 +1036,7 @@ class _DiariesScreenState extends State<DiariesScreen> {
             child: Row(
               children: [
                 ProfileAvatarWithFrame(
-                  diameter: 44,
+                  diameter: 40,
                   userId: item.ownerUid,
                   backgroundColor: const Color(0xFF272C39),
                   placeholderColor: Colors.white54,
@@ -1044,7 +1045,7 @@ class _DiariesScreenState extends State<DiariesScreen> {
                     'profileAvatarAsset': item.ownerProfileAvatarAsset,
                   },
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1063,11 +1064,15 @@ class _DiariesScreenState extends State<DiariesScreen> {
                       Row(
                         children: [
                           if (item.ownerPublicId.isNotEmpty) ...[
-                            Text(
-                              'ID: ${item.ownerPublicId}',
-                              style: const TextStyle(
-                                color: Colors.white38,
-                                fontSize: 11,
+                            Flexible(
+                              child: Text(
+                                'ID: ${item.ownerPublicId}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white38,
+                                  fontSize: 11,
+                                ),
                               ),
                             ),
                             const Text(
@@ -1135,10 +1140,12 @@ class _DiariesScreenState extends State<DiariesScreen> {
             const SizedBox(height: 12),
             _networkImages(item),
           ],
-          const SizedBox(height: 12),
-          Divider(color: Colors.white.withValues(alpha: .07), height: 1),
           const SizedBox(height: 10),
-          Row(
+          Divider(color: Colors.white.withValues(alpha: .07), height: 1),
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            spacing: 6,
+            runSpacing: 0,
             children: [
               _metric(
                 _likedDiaryIds.contains(item.diaryId)
@@ -1161,7 +1168,6 @@ class _DiariesScreenState extends State<DiariesScreen> {
                 item.giftCount,
                 onTap: () => _openGifts(item),
               ),
-              const Spacer(),
               _metric(Icons.visibility_outlined, item.viewCount),
             ],
           ),
@@ -1233,7 +1239,7 @@ class _DiariesScreenState extends State<DiariesScreen> {
     bool busy = false,
   }) {
     final content = Padding(
-      padding: const EdgeInsetsDirectional.only(end: 16),
+      padding: const EdgeInsetsDirectional.symmetric(horizontal: 4),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1260,14 +1266,15 @@ class _DiariesScreenState extends State<DiariesScreen> {
         ],
       ),
     );
-    if (onTap == null) return content;
+    final touchTarget = ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 44),
+      child: Center(child: content),
+    );
+    if (onTap == null) return touchTarget;
     return InkWell(
       borderRadius: BorderRadius.circular(18),
       onTap: busy ? null : onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5),
-        child: content,
-      ),
+      child: touchTarget,
     );
   }
 
