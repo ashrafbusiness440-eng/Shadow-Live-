@@ -96,16 +96,29 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    // Wait for the actual bundled image codec before capturing a frame.
+    // pumpAndSettle alone does not guarantee async image decode completion.
+    final preloaded = await tester.runAsync(() async {
+      await precacheImage(
+        const AssetImage(
+          'assets/images/system/shadow_live_global_wallpaper.webp',
+        ),
+        boundaryKey.currentContext!,
+      );
+      return true;
+    });
+    expect(preloaded, isTrue);
+    await tester.pump();
 
     // Image encoding uses real engine callbacks. Read it outside the
     // widget tester fake-async zone to avoid deadlocking the whole CI run.
-    final colorCount = await tester.runAsync(() async {
+    final sample = await tester.runAsync(() async {
       final boundary = boundaryKey.currentContext!.findRenderObject()!
           as RenderRepaintBoundary;
       final image = await boundary.toImage(pixelRatio: 1);
       try {
         final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
-        if (data == null) return 0;
+        if (data == null) return <int>[0, -1];
         final pixels = data.buffer.asUint8List();
         final colors = <int>{};
         for (var y = 80; y < 720; y += 17) {
@@ -116,15 +129,15 @@ void main() {
                 pixels[index + 2]);
           }
         }
-        return colors.length;
+        return <int>[colors.length, colors.first];
       } finally {
         image.dispose();
       }
     });
-    expect(colorCount, isNotNull);
-    expect(colorCount!, greaterThan(18),
-        reason: 'Pattern must actually paint behind the route; a flat dark '
-            'Scaffold or stale loading fallback is not sufficient.');
+    expect(sample, isNotNull);
+    expect(sample!.first, greaterThan(18),
+        reason: 'Pattern must paint behind route, actual unique colors: '
+            '${sample.first}, sample RGB: ${sample.last.toRadixString(16)}');
   });
 
 }
