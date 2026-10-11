@@ -11,12 +11,11 @@ class GamesHubScreen extends StatelessWidget {
     final games = <_GameEntry>[
       _GameEntry(
         title: 'القط الجشع',
-        subtitle: 'جولة جماعية • 8 اختيارات • نتائج واضحة',
+        subtitle: 'اختار حظك ونافس على جوائز الجولة',
         icon: Icons.pets_rounded,
         coverAsset: GameAssetPaths.greedyCover,
         accent: const Color(0xFFFFC84A),
         secondary: const Color(0xFFFF7A3D),
-        bets: '200 • 2K • 20K • 200K',
         onOpen: () => GameRoomLauncher.open(
           context,
           gameKey: 'greedy_cat',
@@ -24,12 +23,11 @@ class GamesHubScreen extends StatelessWidget {
       ),
       _GameEntry(
         title: 'الساحرة',
-        subtitle: 'عادي ومتقدم • معاملات مستقلة لكل وضع',
+        subtitle: 'جرّب حظك بين الوضع العادي والمتقدم',
         icon: Icons.auto_awesome_rounded,
         coverAsset: GameAssetPaths.witchCover,
         accent: const Color(0xFFB96CFF),
         secondary: const Color(0xFF5D21C7),
-        bets: '100–100K / 200–200K',
         onOpen: () => GameRoomLauncher.open(
           context,
           gameKey: 'witch',
@@ -37,12 +35,11 @@ class GamesHubScreen extends StatelessWidget {
       ),
       _GameEntry(
         title: 'Shadow Slot',
-        subtitle: 'Spin • Auto Play • هوية أصلية لشادو لايف',
+        subtitle: 'لفّ البكرات واكتشف نتيجتك',
         icon: Icons.casino_rounded,
         coverAsset: GameAssetPaths.slotCover,
         accent: const Color(0xFF49D7FF),
         secondary: const Color(0xFF7B2DFF),
-        bets: '200 → 200K',
         onOpen: () => GameRoomLauncher.open(
           context,
           gameKey: 'slot',
@@ -60,14 +57,12 @@ class GamesHubScreen extends StatelessWidget {
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
                   const _GamesHeader(),
-                  const SizedBox(height: 16),
-                  const _GamesHero(),
-                  const SizedBox(height: 22),
+                  const SizedBox(height: 14),
                   Row(
                     children: [
                       const Expanded(
                         child: Text(
-                          'الألعاب المعتمدة',
+                          'اختار لعبتك',
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 20,
@@ -107,8 +102,6 @@ class GamesHubScreen extends StatelessWidget {
                       child: _GameCard(game: game),
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  const _SafetyCard(),
                 ]),
               ),
             ),
@@ -152,7 +145,7 @@ class _GamesHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'ألعاب Shadow Live',
+                'الألعاب',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 22,
@@ -161,7 +154,7 @@ class _GamesHeader extends StatelessWidget {
               ),
               SizedBox(height: 2),
               Text(
-                'العب، نافس، وشوف نتائج كل جولة بوضوح',
+                'ثلاث ألعاب، اختر لعبتك وابدأ الجولة',
                 style: TextStyle(
                   color: Colors.white60,
                   fontSize: 12,
@@ -189,7 +182,7 @@ class _GamesHeader extends StatelessWidget {
               ),
               SizedBox(width: 5),
               Text(
-                'Coins',
+                'بالكوينز',
                 style: TextStyle(
                   color: Color(0xFFFFE082),
                   fontWeight: FontWeight.w800,
@@ -200,111 +193,6 @@ class _GamesHeader extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _GamesHero extends StatelessWidget {
-  const _GamesHero();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(26),
-        gradient: const LinearGradient(
-          begin: Alignment.topRight,
-          end: Alignment.bottomLeft,
-          colors: [
-            Color(0xFF1B1036),
-            Color(0xFF0D1535),
-            Color(0xFF090A13),
-          ],
-        ),
-        border: Border.all(
-          color: const Color(0xFF9A55FF).withValues(alpha: .38),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF7B2DFF).withValues(alpha: .18),
-            blurRadius: 28,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 9,
-                    vertical: 5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFC84A)
-                        .withValues(alpha: .13),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: const Text(
-                    'PHASE 8 • GAMES',
-                    style: TextStyle(
-                      color: Color(0xFFFFD86B),
-                      fontWeight: FontWeight.w900,
-                      fontSize: 10,
-                      letterSpacing: .6,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'ثلاث ألعاب فقط في الإطلاق الأول',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 19,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 7),
-                const Text(
-                  'واجهة واحدة واضحة، رهانات محددة، وسجل نتائج قابل للتدقيق.',
-                  style: TextStyle(
-                    color: Colors.white70,
-                    height: 1.5,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          Container(
-            width: 84,
-            height: 84,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: const LinearGradient(
-                colors: [Color(0xFF8A3DFF), Color(0xFFFFC84A)],
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF8A3DFF)
-                      .withValues(alpha: .35),
-                  blurRadius: 24,
-                ),
-              ],
-            ),
-            child: const Icon(
-              Icons.stadium_rounded,
-              size: 42,
-              color: Colors.white,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -338,8 +226,8 @@ class _GameCard extends StatelessWidget {
         child: Row(
           children: [
             Container(
-              width: 62,
-              height: 62,
+              width: 86,
+              height: 86,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(18),
                 gradient: LinearGradient(
@@ -363,7 +251,7 @@ class _GameCard extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(width: 13),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -380,25 +268,7 @@ class _GameCard extends StatelessWidget {
                           ),
                         ),
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF28D17C)
-                              .withValues(alpha: .12),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: const Text(
-                          'متاحة',
-                          style: TextStyle(
-                            color: Color(0xFF65E9A4),
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
+
                     ],
                   ),
                   const SizedBox(height: 5),
@@ -410,29 +280,23 @@ class _GameCard extends StatelessWidget {
                       height: 1.35,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 10),
                   Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
-                        Icons.toll_rounded,
+                        Icons.play_circle_fill_rounded,
+                        size: 18,
                         color: game.accent,
-                        size: 14,
                       ),
-                      const SizedBox(width: 5),
-                      Expanded(
-                        child: Text(
-                          game.bets,
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w700,
-                          ),
+                      const SizedBox(width: 6),
+                      const Text(
+                        'العب الآن',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
                         ),
-                      ),
-                      const Icon(
-                        Icons.arrow_back_ios_new_rounded,
-                        color: Colors.white38,
-                        size: 13,
                       ),
                     ],
                   ),
@@ -446,43 +310,6 @@ class _GameCard extends StatelessWidget {
   }
 }
 
-class _SafetyCard extends StatelessWidget {
-  const _SafetyCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        color: Colors.white.withValues(alpha: .035),
-        border: Border.all(color: Colors.white.withValues(alpha: .08)),
-      ),
-      child: const Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            Icons.verified_user_rounded,
-            color: Color(0xFF70C7FF),
-            size: 22,
-          ),
-          SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'النتائج المالية النهائية ستكون Server-side فقط: كل جولة لها ID، الخصم مرة واحدة، والتسوية محفوظة حتى لو انقطع الاتصال.',
-              style: TextStyle(
-                color: Colors.white60,
-                fontSize: 11.5,
-                height: 1.5,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _GameEntry {
   const _GameEntry({
     required this.title,
@@ -491,7 +318,6 @@ class _GameEntry {
     required this.coverAsset,
     required this.accent,
     required this.secondary,
-    required this.bets,
     required this.onOpen,
   });
 
@@ -501,6 +327,5 @@ class _GameEntry {
   final String coverAsset;
   final Color accent;
   final Color secondary;
-  final String bets;
   final VoidCallback onOpen;
 }

@@ -15,7 +15,12 @@ Widget _host(Widget child) => MaterialApp(
 void main() {
   testWidgets('Games hub exposes the three approved launch games', (tester) async {
     await tester.pumpWidget(_host(const GamesHubScreen()));
-    expect(find.text('ألعاب Shadow Live'), findsOneWidget);
+    expect(find.text('الألعاب'), findsOneWidget);
+    expect(find.text('اختار لعبتك'), findsOneWidget);
+    expect(find.text('العب الآن'), findsWidgets);
+    expect(find.textContaining('PHASE 8'), findsNothing);
+    expect(find.textContaining('Server-side'), findsNothing);
+    expect(find.text('متاحة'), findsNothing);
     expect(find.text('القط الجشع'), findsOneWidget);
     expect(find.text('الساحرة'), findsOneWidget);
     expect(find.text('Shadow Slot'), findsOneWidget);
