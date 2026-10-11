@@ -643,4 +643,5 @@ export const adminInboxTestHooks = Object.freeze({
   loadGeneralReportItems,
   inboxActorRoles,
   withInboxActorProfiles,
+  markRead,
 });
