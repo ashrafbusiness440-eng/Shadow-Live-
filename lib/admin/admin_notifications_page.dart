@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
+import 'admin_account_identity_tile.dart';
 import 'agency_control_page.dart';
 import 'control_api_endpoints.dart';
 import 'control_firebase.dart';
@@ -21,6 +22,7 @@ class AdminInboxItem {
     required this.createdAtMs,
     required this.priority,
     this.meta = const <String, dynamic>{},
+    this.actors = const <Map<String, dynamic>>[],
   });
 
   final String key;
@@ -33,6 +35,7 @@ class AdminInboxItem {
   final int createdAtMs;
   final String priority;
   final Map<String, dynamic> meta;
+  final List<Map<String, dynamic>> actors;
 
   factory AdminInboxItem.fromMap(Map<String, dynamic> data) => AdminInboxItem(
         key: (data['key'] ?? '').toString().trim(),
@@ -47,6 +50,13 @@ class AdminInboxItem {
         meta: data['meta'] is Map
             ? Map<String, dynamic>.from(data['meta'] as Map)
             : const <String, dynamic>{},
+        actors: data['actors'] is List
+            ? (data['actors'] as List)
+                .whereType<Map>()
+                .map((value) => Map<String, dynamic>.from(value))
+                .where((value) => (value['uid'] ?? '').toString().trim().isNotEmpty)
+                .toList(growable: false)
+            : const <Map<String, dynamic>>[],
       );
 }
 
@@ -307,7 +317,10 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
             else
               ...items.map(
                 (item) => Card(
-                  child: ListTile(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ListTile(
                     onTap: () => _open(item),
                     leading: Stack(
                       clipBehavior: Clip.none,
@@ -342,19 +355,35 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
                     subtitle: Text(
                       [
                         if (item.body.isNotEmpty) item.body,
-                        if (item.type == 'user_report' ||
-                            item.type == 'room_report' ||
-                            item.type == 'room_message_report') ...[
-                          if ((item.meta['reporterUid'] ?? '').toString().isNotEmpty)
-                            'مقدّم البلاغ: ' + (item.meta['reporterUid'] ?? '').toString(),
-                          if ((item.meta['targetUid'] ?? '').toString().isNotEmpty)
-                            'المبلّغ عليه: ' + (item.meta['targetUid'] ?? '').toString(),
-                        ],
                         if (_timeLabel(item.createdAtMs).isNotEmpty)
                           _timeLabel(item.createdAtMs),
                       ].join(' • '),
                     ),
                     trailing: const Icon(Icons.chevron_left_rounded),
+                      ),
+                      if (item.actors.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              for (final actor in item.actors)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 6),
+                                  child: AdminAccountIdentityTile(
+                                    roleLabel: (actor['role'] ?? 'الحساب').toString(),
+                                    identity: AdminAccountIdentity.fromProfile(
+                                      (actor['uid'] ?? '').toString(),
+                                      actor['profile'] is Map
+                                          ? Map<String, dynamic>.from(actor['profile'] as Map)
+                                          : null,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ),

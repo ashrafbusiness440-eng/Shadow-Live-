@@ -1212,6 +1212,9 @@ async function reportDiary(db, uid, body) {
         meta: {
           diaryId,
           commentId: null,
+          reporterUid: uid,
+          targetUid: ownerUid,
+          ownerUid,
           status: "new",
         },
       }),
@@ -1291,6 +1294,9 @@ async function reportComment(db, uid, body) {
         meta: {
           diaryId,
           commentId,
+          reporterUid: uid,
+          targetUid: authorUid,
+          ownerUid,
           status: "new",
         },
       }),

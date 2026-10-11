@@ -5,6 +5,7 @@ import {
 } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { generalReportType } from "./general-reports.js";
+import { loadPublicProfilePresentations } from "./public-profile-presentation.js";
 import {
   ADMIN_INBOX_INDEX_COLLECTION,
   ADMIN_INBOX_INDEX_LIMIT,
@@ -179,6 +180,9 @@ async function loadDiaryItems(db) {
       meta: {
         diaryId: clean(data.diaryId) || null,
         commentId: clean(data.commentId) || null,
+        reporterUid: clean(data.reporterUid) || null,
+        targetUid: clean(data.targetAuthorUid) || null,
+        ownerUid: clean(data.targetOwnerUid) || null,
         status: clean(data.status),
       },
     });
@@ -245,7 +249,10 @@ async function loadAgencyApplicationItems(db) {
       route: "agency_control",
       createdAt: data.createdAt,
       priority: "high",
-      meta: { status: clean(data.status) },
+      meta: {
+        applicantUid: clean(data.applicantUid) || null,
+        status: clean(data.status),
+      },
     });
   }).filter((item) => item.targetId);
 }
@@ -265,6 +272,8 @@ async function loadSimpleAgencyRequests(db, collection, type, title, bodyBuilder
       createdAt: data.createdAt,
       meta: {
         agencyId: clean(data.agencyId) || null,
+        requesterUid: clean(data.requesterUid || data.userUid || data.uid) || null,
+        targetUid: clean(data.newOwnerUid) || null,
         status: clean(data.status),
       },
     });
@@ -444,6 +453,68 @@ async function loadIndexedItems(db, actor, prefetchedRows = null) {
     ).slice(0, MAX_VISIBLE_ITEMS);
 }
 
+
+// Only identities already attached to authorized inbox items are shown here.
+// Do not fetch users/*, infer a user from a public ID, or reveal hidden status.
+function inboxActorRoles(item) {
+  const meta = item.meta && typeof item.meta === "object" ? item.meta : {};
+  const candidates = [];
+  switch (clean(item.type)) {
+    case "diary_report":
+      candidates.push(["مقدّم البلاغ", meta.reporterUid]);
+      candidates.push(["الحساب المبلّغ عليه", meta.targetUid]);
+      if (clean(meta.ownerUid) && clean(meta.ownerUid) !== clean(meta.targetUid)) {
+        candidates.push(["صاحب اليومية", meta.ownerUid]);
+      }
+      break;
+    case "user_report":
+    case "room_message_report":
+    case "room_report":
+      candidates.push(["مقدّم البلاغ", meta.reporterUid]);
+      candidates.push(["الحساب المبلّغ عليه", meta.targetUid]);
+      break;
+    case "agency_application":
+      candidates.push(["مقدّم الطلب", meta.applicantUid]);
+      break;
+    case "agency_identity_change":
+    case "agency_cooldown_exception":
+      candidates.push(["مقدّم الطلب", meta.requesterUid]);
+      break;
+    case "agency_ownership_transfer":
+      candidates.push(["مقدّم الطلب", meta.requesterUid]);
+      candidates.push(["المالك الجديد", meta.targetUid]);
+      break;
+    default:
+      break;
+  }
+  const used = new Set();
+  return candidates.map(([role, value]) => ({ role, uid: clean(value) }))
+    .filter(({ uid }) => {
+      if (!uid || uid.includes("/") || uid.includes("\\") || used.has(uid)) return false;
+      used.add(uid);
+      return true;
+    });
+}
+
+async function withInboxActorProfiles(db, items) {
+  const roles = items.map(inboxActorRoles);
+  const uids = roles.flat().map((actor) => actor.uid);
+  if (uids.length === 0) return items.map((item) => ({ ...item, actors: [] }));
+  // One bounded public presentation batch, shared across the visible 40 items.
+  const profiles = await loadPublicProfilePresentations(db, uids, {
+    limit: 80,
+    concurrency: 8,
+  }).catch(() => new Map());
+  return items.map((item, index) => ({
+    ...item,
+    actors: roles[index].map((actor) => ({
+      role: actor.role,
+      uid: actor.uid,
+      profile: profiles.get(actor.uid) || null,
+    })),
+  }));
+}
+
 async function listInbox(
   db,
   actor,
@@ -465,7 +536,7 @@ async function listInbox(
   });
   return {
     ok: true,
-    items: visible,
+    items: await withInboxActorProfiles(db, visible),
     unreadCount,
     capped: visible.length >= MAX_VISIBLE_ITEMS,
     limit: MAX_VISIBLE_ITEMS,
@@ -568,4 +639,6 @@ export const adminInboxTestHooks = Object.freeze({
   loadIndexedItems,
   listInbox,
   loadGeneralReportItems,
+  inboxActorRoles,
+  withInboxActorProfiles,
 });
