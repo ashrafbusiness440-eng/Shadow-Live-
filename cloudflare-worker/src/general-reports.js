@@ -5,7 +5,7 @@ import {
 } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import {
-  adminInboxDeleteWrite,
+  adminInboxDeleteWrites,
   adminInboxUpsertWrite,
 } from "./admin-inbox-index.js";
 import { loadPublicProfilePresentations } from "./public-profile-presentation.js";
@@ -191,8 +191,8 @@ async function reviewGeneralReport(db, actorUid, body = {}) {
       updatedAt: now,
     };
     const result = { reportId, status };
-    const indexWrite = ACTIVE_STATUSES.has(status)
-      ? adminInboxUpsertWrite(db, {
+    const indexWrites = ACTIVE_STATUSES.has(status)
+      ? [adminInboxUpsertWrite(db, {
           type: item.type,
           title: item.type === "user_report"
             ? "بلاغ عن مستخدم في محادثة خاصة"
@@ -210,11 +210,11 @@ async function reviewGeneralReport(db, actorUid, body = {}) {
             conversationId: item.conversationId || null,
             status,
           },
-        })
-      : adminInboxDeleteWrite(db, item.type, reportId);
+        })]
+      : adminInboxDeleteWrites(db, item.type, reportId);
     await db.commit(trx, [
       db.writeUpdate(reportPath, patch, Object.keys(patch)),
-      indexWrite,
+      ...indexWrites,
       db.writeCreate("admin_audit_logs/general_report_" + key, {
         action: "reviewGeneralReport",
         actorUid,
