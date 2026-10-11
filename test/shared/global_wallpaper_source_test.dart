@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -70,4 +71,50 @@ void main() {
     await tester.tap(find.text('اختبر اللمس'));
     expect(taps, 1);
   });
+  testWidgets('visible wallpaper pixels survive transparent Navigator route',
+      (tester) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final boundaryKey = GlobalKey();
+    await tester.pumpWidget(
+      RepaintBoundary(
+        key: boundaryKey,
+        child: MaterialApp(
+          builder: (context, child) => ShadowGlobalWallpaper(
+            resolveUrl: () async => null,
+            child: child ?? const SizedBox.shrink(),
+          ),
+          home: const Scaffold(
+            backgroundColor: Colors.transparent,
+            body: SizedBox.expand(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final boundary = boundaryKey.currentContext!.findRenderObject()!
+        as RenderRepaintBoundary;
+    final image = await boundary.toImage(pixelRatio: 1);
+    final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+    expect(data, isNotNull);
+    final pixels = data!.buffer.asUint8List();
+    final colors = <int>{};
+    for (var y = 80; y < 720; y += 17) {
+      for (var x = 20; x < 380; x += 11) {
+        final index = (y * image.width + x) * 4;
+        colors.add((pixels[index] << 16) |
+            (pixels[index + 1] << 8) |
+            pixels[index + 2]);
+      }
+    }
+    image.dispose();
+    expect(colors.length, greaterThan(18),
+        reason: 'Pattern must actually paint behind the route; a flat dark '
+            'Scaffold or stale loading fallback is not sufficient.');
+  });
+
 }
