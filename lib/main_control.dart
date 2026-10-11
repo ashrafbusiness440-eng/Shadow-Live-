@@ -274,7 +274,7 @@ class _ControlShellState extends State<ControlShell> {
     ];
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0D0917),
+        backgroundColor: Colors.transparent,
         title: const Column(crossAxisAlignment: CrossAxisAlignment.start,children:[
           Text('Shadow Control',style:TextStyle(fontWeight:FontWeight.w800)),
           Text('بيئة تجريبية • Firebase متصل',style:TextStyle(fontSize:11,color:Color(0xFFD7B85A))),
