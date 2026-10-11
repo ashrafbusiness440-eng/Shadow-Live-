@@ -410,7 +410,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: const Color(0xFF05060D),
+        backgroundColor: Colors.transparent,
         body: LayoutBuilder(
           builder: (context, constraints) => Stack(
             fit: StackFit.expand,
