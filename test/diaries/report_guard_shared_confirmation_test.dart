@@ -58,8 +58,13 @@ void main() {
     expect(src.contains('_busyReportIds.remove(item.diaryId);'), isTrue);
     expect(src.contains('if (!mounted || reason == null || _uid != reporterUid)'),
         isTrue);
-    expect(src.contains('onPressed: _busyReportIds.contains(item.diaryId)'),
+    expect(src.contains('enabled: !_busyReportIds.contains(item.diaryId)'),
         isTrue);
+    expect(src.contains("PopupMenuButton<String>("), isTrue);
+    expect(src.contains("value: 'report'"), isTrue);
+    expect(src.contains("Text('إبلاغ عن اليومية')"), isTrue);
+    expect(src.contains('unawaited(_reportDiary(item))'), isTrue);
+    expect(src.contains("tooltip: 'إبلاغ'"), isFalse);
     expect(src.contains('showShadowConfirmation('), isTrue);
     expect(src.contains('showDiaryReportReasonSheet(context)'), isTrue);
     expect(src.contains('_service.reportDiary('), isTrue);
