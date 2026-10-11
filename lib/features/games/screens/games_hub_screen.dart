@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../game_asset_paths.dart';
 import '../services/game_room_launcher.dart';
+import '../widgets/games_wallet_panel.dart';
 
 class GamesHubScreen extends StatelessWidget {
   const GamesHubScreen({super.key});
@@ -57,6 +58,8 @@ class GamesHubScreen extends StatelessWidget {
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
                   const _GamesHeader(),
+                  const SizedBox(height: 10),
+                  const GamesWalletPanel(),
                   const SizedBox(height: 14),
                   Row(
                     children: [
@@ -163,35 +166,7 @@ class _GamesHeader extends StatelessWidget {
             ],
           ),
         ),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          decoration: BoxDecoration(
-            color: const Color(0xFFFFC84A).withValues(alpha: .10),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: const Color(0xFFFFC84A).withValues(alpha: .28),
-            ),
-          ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.toll_rounded,
-                color: Color(0xFFFFD54A),
-                size: 16,
-              ),
-              SizedBox(width: 5),
-              Text(
-                'بالكوينز',
-                style: TextStyle(
-                  color: Color(0xFFFFE082),
-                  fontWeight: FontWeight.w800,
-                  fontSize: 11,
-                ),
-              ),
-            ],
-          ),
-        ),
+
       ],
     );
   }

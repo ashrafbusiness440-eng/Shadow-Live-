@@ -17,6 +17,7 @@ void main() {
     await tester.pumpWidget(_host(const GamesHubScreen()));
     expect(find.text('الألعاب'), findsOneWidget);
     expect(find.text('اختار لعبتك'), findsOneWidget);
+    expect(find.text('رصيد الكوينز'), findsOneWidget);
     expect(find.text('العب الآن'), findsWidgets);
     expect(find.textContaining('PHASE 8'), findsNothing);
     expect(find.textContaining('Server-side'), findsNothing);
