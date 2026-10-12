@@ -1227,7 +1227,11 @@ class _UserLevelSupportSheetState extends State<_UserLevelSupportSheet> {
         _loadingMore = false;
         _error = code.contains('level_hidden')
             ? 'تفاصيل هذا المستوى مخفية.'
-            : 'تعذر تحميل تفاصيل الدعم حالياً.';
+            : code.contains('not_signed_in') || code.contains('unauthorized')
+                ? 'يلزم تسجيل الدخول لعرض تفاصيل الدعم.'
+                : code.contains('invalid_cursor')
+                    ? 'تعذر متابعة القائمة. أعد تحميلها من البداية.'
+                    : 'تعذر جلب قائمة الدعم. تأكد من اتصالك ثم أعد المحاولة.';
       });
     }
   }
