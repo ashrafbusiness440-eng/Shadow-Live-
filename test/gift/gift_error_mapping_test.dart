@@ -122,4 +122,43 @@ void main() {
       expect(source.contains("'$code'"), isTrue, reason: code);
     }
   });
+
+  test('confirmed gifts cannot be relabelled as failures by local UI updates', () {
+    final picker = File(
+      'lib/features/gift/widgets/unified_gift_picker_sheet.dart',
+    ).readAsStringSync();
+    final start = picker.indexOf('Future<void> _send() async');
+    final end = picker.indexOf('Widget _wealthStrip()', start);
+    final send = picker.substring(start, end);
+    final networkEnd = send.indexOf('} on StateError catch (error)');
+    final confirmed = send.indexOf('if (confirmed == null || !mounted) return;');
+    final uiRefresh = send.indexOf('_applyWealthDelta(result.wealthDeltaCoins)');
+    expect(send.contains('confirmed = await widget.onSend('), isTrue);
+    expect(networkEnd, greaterThan(0));
+    expect(confirmed, greaterThan(networkEnd));
+    expect(uiRefresh, greaterThan(confirmed));
+    expect(send.contains('ScaffoldMessenger.maybeOf(context)?.showSnackBar('), isTrue);
+
+    final direct = File(
+      'lib/features/gift/widgets/direct_gift_sheet.dart',
+    ).readAsStringSync();
+    expect(direct.contains('try {\n      widget.onGiftSent?.call('), isTrue);
+    expect(direct.contains("StateError('gift_confirmation_pending')"), isTrue);
+
+    final room = File(
+      'lib/features/gift/services/room_gift_service.dart',
+    ).readAsStringSync();
+    expect(room.contains("StateError('gift_confirmation_pending')"), isTrue);
+    expect(room.contains('response.statusCode != 409'), isTrue);
+    expect(direct.contains('response.statusCode != 409'), isTrue);
+    for (final code in <String>[
+      'gift_confirmation_pending',
+      'gift_connection_timeout',
+      'gift_network_unavailable',
+    ]) {
+      expect(picker.contains("'$code'"), isTrue);
+    }
+    expect(room.contains('Timer.periodic'), isFalse);
+  });
+
 }
