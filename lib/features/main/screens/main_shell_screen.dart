@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../screens/room/room_list_screen.dart';
+import '../../../core/assets/shadow_asset_registry.dart';
+import '../../../shared/widgets/shadow_global_wallpaper.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../chat/screens/chat_list_screen.dart';
 import '../../diaries/screens/diaries_screen.dart';
@@ -527,8 +529,14 @@ class _ShadowBottomNavigation extends StatelessWidget {
                 ),
               ],
             ),
-            child: Row(
-              children: List.generate(_items.length, (index) {
+            child: ShadowGlobalWallpaper(
+              key: const ValueKey('shadow-bottom-navigation-wallpaper'),
+              assetKey: ShadowAssetKeys.bottomNavigationBackground,
+              bundledAsset:
+                  ShadowAssetKeys.bottomNavigationBackgroundBundledPath,
+              scrimColor: const Color(0x2205060D),
+              child: Row(
+                children: List.generate(_items.length, (index) {
                 final item = _items[index];
                 final selected = currentIndex == index;
 
@@ -642,7 +650,8 @@ class _ShadowBottomNavigation extends StatelessWidget {
                     ),
                   ),
                 );
-              }),
+                }),
+              ),
             ),
           ),
         );

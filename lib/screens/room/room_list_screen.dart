@@ -61,7 +61,6 @@ class _RoomListScreenState extends State<RoomListScreen> {
   List<DiscoveryRoom> _favoriteRooms = const [];
   List<DiscoveryRoom> _historyRooms = const [];
 
-  static const _bg = Color(0xFF05060D);
   static const _card = Color(0xFF111321);
   static const _purple = Color(0xFF8A3DFF);
   static const _gold = Color(0xFFFFD54A);
@@ -374,7 +373,9 @@ class _RoomListScreenState extends State<RoomListScreen> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: _bg,
+        // Let the one global wallpaper show under the room catalog.
+        // Room cards retain their existing opaque surfaces for legibility.
+        backgroundColor: Colors.transparent,
         body: SafeArea(
           bottom: false,
           child: RefreshIndicator(
