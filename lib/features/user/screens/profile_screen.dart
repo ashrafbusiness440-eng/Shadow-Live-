@@ -35,7 +35,6 @@ class _ProfileScreenState extends State<ProfileScreen>
   late final TabController _tabs;
   bool _loggingOut = false;
   bool _openingEdit = false;
-  int _profileTabIndex = 0;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _profileSub;
   StreamSubscription<User?>? _authSub;
   String? _boundUid;
@@ -43,8 +42,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 4, vsync: this);
-    _tabs.addListener(_handleProfileTabChanged);
+    _tabs = TabController(length: 3, vsync: this);
     _boundUid = FirebaseAuth.instance.currentUser?.uid;
     _authSub = FirebaseAuth.instance.userChanges().listen((user) {
       final nextUid = user?.uid;
@@ -65,17 +63,10 @@ class _ProfileScreenState extends State<ProfileScreen>
     });
   }
 
-  void _handleProfileTabChanged() {
-    final next = _tabs.index;
-    if (!mounted || next == _profileTabIndex) return;
-    setState(() => _profileTabIndex = next);
-  }
-
   @override
   void dispose() {
     _authSub?.cancel();
     _profileSub?.cancel();
-    _tabs.removeListener(_handleProfileTabChanged);
     _tabs.dispose();
     super.dispose();
   }
@@ -454,7 +445,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                                 Tab(text: 'حول'),
                                 Tab(text: 'الغرف'),
                                 Tab(text: 'الهدايا'),
-                                Tab(text: 'الشخص الغامض'),
                               ],
                             ),
                           ),
@@ -476,9 +466,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                               style: TextStyle(color: Colors.white54),
                             ),
                           ),
-                          _profileTabIndex == 3
-                              ? const MysteriousPersonScreen(embedded: true)
-                              : const SizedBox.shrink(),
                         ],
                       ),
                     );
@@ -896,7 +883,18 @@ class _ProfileScreenState extends State<ProfileScreen>
           _openVip,
         ),
         const SizedBox(height: 10),
-
+        // Keep the former fourth profile tab accessible as a normal,
+        // full-screen destination from the expandable account action grid.
+        _action(
+          Icons.visibility_off_rounded,
+          'الشخص الغامض',
+          () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => const MysteriousPersonScreen(),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
         _action(
           Icons.favorite_rounded,
           'العلاقات',
