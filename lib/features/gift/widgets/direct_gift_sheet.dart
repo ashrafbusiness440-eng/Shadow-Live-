@@ -202,7 +202,13 @@ class _DirectGiftContextState extends State<_DirectGiftContext> {
         (body['paidCost'] as num?)?.toInt() ?? (useGiftBag ? 0 : totalCost);
     final balance = (body['balance'] as num?)?.toInt();
     if (balance != null) GiftCatalogService.updateCachedBalance(balance);
-    widget.onGiftSent?.call(quantity, paidCost);
+    // The financial operation has already succeeded on the server.
+    // A parent card refresh is best-effort, never another send failure.
+    try {
+      widget.onGiftSent?.call(quantity, paidCost);
+    } catch (_) {
+      // The authoritative gift receipt remains valid.
+    }
     return GiftPickerSendResult(
       balanceCoins: balance,
       wealthDeltaCoins: paidCost,
