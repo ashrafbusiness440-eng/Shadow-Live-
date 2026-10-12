@@ -183,7 +183,7 @@ class _DirectGiftContextState extends State<_DirectGiftContext> {
       }
     } catch (_) {}
 
-    if (response.statusCode != 200 || body['ok'] != true) {
+    if (response.statusCode < 200 || response.statusCode >= 300 || body['ok'] != true) {
       // A definite client-side rejection cannot have charged the account.
       // Keep the key for timeouts and server failures, where commit is unclear.
       if (response.statusCode >= 400 &&
