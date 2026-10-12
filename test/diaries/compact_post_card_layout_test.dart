@@ -22,7 +22,12 @@ void main() {
     expect(begin, greaterThanOrEqualTo(0));
     expect(end, greaterThan(begin));
     final card = source.substring(begin, end);
-    expect(card.contains('Wrap(\n            alignment: WrapAlignment.spaceBetween,'), isTrue);
+    // Regression: the previous unconstrained Wrap/Center expanded every
+    // reaction to a separate full-width line on narrow mobile web screens.
+    expect(card.contains('Row(\n            children: ['), isTrue);
+    expect(card.contains('Wrap(\n            alignment: WrapAlignment.spaceBetween,'), isFalse);
+    final strip = card.substring(card.indexOf('// Four equally sized reaction targets:'));
+    expect('Expanded('.allMatches(strip).length, 4);
     expect(card.contains('const Spacer()'), isFalse);
     expect(card.contains('onTap: () => _toggleLike(item)'), isTrue);
     expect(card.contains('onTap: () => _openComments(item)'), isTrue);
