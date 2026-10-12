@@ -246,6 +246,41 @@ ShadowCountryOption? shadowCountryByName(String? name) {
   return null;
 }
 
+/// Displays only the verified country flag in full/quick profile identity.
+//// No additional reads: this resolves from the same canonical country options
+/// used by account setup, including the pinned custom country "الباشان".
+class ShadowProfileCountryFlag extends StatelessWidget {
+  const ShadowProfileCountryFlag({
+    super.key,
+    required this.location,
+    this.fontSize = 20,
+    this.padding = EdgeInsets.zero,
+  });
+
+  final String? location;
+  final double fontSize;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    final country = shadowCountryByName(location);
+    if (country == null || country.isoCode.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Semantics(
+      label: 'علم دولة الحساب: ${country.nameAr}',
+      child: Padding(
+        padding: padding,
+        child: Text(
+          country.flag,
+          textDirection: TextDirection.ltr,
+          style: TextStyle(fontSize: fontSize),
+        ),
+      ),
+    );
+  }
+}
+
 Future<ShadowCountryOption?> showShadowCountryPicker(
   BuildContext context, {
   String? selectedName,
