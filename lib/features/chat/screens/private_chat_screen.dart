@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/assets/shadow_asset_registry.dart';
+import '../../../shared/widgets/shadow_global_wallpaper.dart';
 import '../../../shared/services/user_storage_service.dart';
 import '../../gift/widgets/direct_gift_sheet.dart';
 import '../../../services/navigation_service.dart';
@@ -1058,7 +1059,12 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
             body: Column(
               children: [
                 Expanded(
-                  child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  child: ShadowGlobalWallpaper(
+                    key: const ValueKey('private-chat-interior-wallpaper'),
+                    assetKey: ShadowAssetKeys.chatWallpaper,
+                    bundledAsset: ShadowAssetKeys.chatWallpaperBundledPath,
+                    scrimColor: const Color(0x4405060D),
+                    child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                     stream: _conversation
                         .collection('messages')
                         .orderBy('createdAt', descending: true)
@@ -1089,6 +1095,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                         itemBuilder: (_, index) => _messageBubble(docs[index].data()),
                       );
                     },
+                    ),
                   ),
                 ),
                 if (_loadingSafety)
