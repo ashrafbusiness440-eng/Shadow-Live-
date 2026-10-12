@@ -1142,33 +1142,41 @@ class _DiariesScreenState extends State<DiariesScreen> {
           ],
           const SizedBox(height: 10),
           Divider(color: Colors.white.withValues(alpha: .07), height: 1),
-          Wrap(
-            alignment: WrapAlignment.spaceBetween,
-            spacing: 6,
-            runSpacing: 0,
+          // Four equally sized reaction targets: a Wrap plus a loose Center
+          // gave each item the entire row width on narrow web viewports.
+          // Keep all four actions visible on one horizontal RTL line.
+          Row(
             children: [
-              _metric(
-                _likedDiaryIds.contains(item.diaryId)
-                    ? Icons.favorite_rounded
-                    : Icons.favorite_border_rounded,
-                item.likeCount,
-                onTap: () => _toggleLike(item),
-                active: _likedDiaryIds.contains(item.diaryId),
-                busy: _busyLikeIds.contains(item.diaryId),
+              Expanded(
+                child: _metric(
+                  _likedDiaryIds.contains(item.diaryId)
+                      ? Icons.favorite_rounded
+                      : Icons.favorite_border_rounded,
+                  item.likeCount,
+                  onTap: () => _toggleLike(item),
+                  active: _likedDiaryIds.contains(item.diaryId),
+                  busy: _busyLikeIds.contains(item.diaryId),
+                ),
               ),
-              _metric(
-                item.commentsEnabled
-                    ? Icons.chat_bubble_outline_rounded
-                    : Icons.comments_disabled_outlined,
-                item.commentCount,
-                onTap: () => _openComments(item),
+              Expanded(
+                child: _metric(
+                  item.commentsEnabled
+                      ? Icons.chat_bubble_outline_rounded
+                      : Icons.comments_disabled_outlined,
+                  item.commentCount,
+                  onTap: () => _openComments(item),
+                ),
               ),
-              _metric(
-                Icons.card_giftcard_rounded,
-                item.giftCount,
-                onTap: () => _openGifts(item),
+              Expanded(
+                child: _metric(
+                  Icons.card_giftcard_rounded,
+                  item.giftCount,
+                  onTap: () => _openGifts(item),
+                ),
               ),
-              _metric(Icons.visibility_outlined, item.viewCount),
+              Expanded(
+                child: _metric(Icons.visibility_outlined, item.viewCount),
+              ),
             ],
           ),
         ],
