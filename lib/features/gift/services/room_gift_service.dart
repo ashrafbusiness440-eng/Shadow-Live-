@@ -110,13 +110,20 @@ class RoomGiftService {
       if (decoded is Map<String, dynamic>) body = decoded;
     } catch (_) {}
 
-    if (response.statusCode != 200 || body['ok'] != true) {
+    if (response.statusCode < 200 || response.statusCode >= 300 || body['ok'] != true) {
       // A definitive client rejection cannot have charged the sender.
       // Retain the operation key for ambiguous timeouts and 5xx errors.
       if (response.statusCode >= 400 &&
           response.statusCode < 500 &&
-          response.statusCode != 408) {
+          response.statusCode != 408 &&
+          response.statusCode != 409) {
         _clearRetryReservation();
+      }
+      if (response.statusCode >= 500 ||
+          response.statusCode == 408 ||
+          response.statusCode == 409 ||
+          (response.statusCode >= 200 && response.statusCode < 300 && body['code'] == null)) {
+        throw StateError('gift_confirmation_pending');
       }
       throw StateError((body['code'] ?? 'room_gift_failed').toString());
     }
