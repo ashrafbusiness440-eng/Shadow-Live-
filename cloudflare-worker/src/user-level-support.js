@@ -152,9 +152,14 @@ export async function loadUserLevelSupportPage(
   );
   const collectionPath = `user_level_support/${uid}/${normalizedMetric}`;
   const rows = await db.runQuery(collectionPath, {
+    // Firestore's automatic descending single-field index already orders
+    // equal-point documents by __name__ descending. Requesting ascending
+    // document names would require a custom composite index, causing the
+    // support sheet to fail with FAILED_PRECONDITION in production.
+    // Keep the cursor in exactly this order; no scans or extra reads.
     orderBy: [
       { field: "points", direction: "desc" },
-      { field: "__name__", direction: "asc" },
+      { field: "__name__", direction: "desc" },
     ],
     limit: pageSize + 1,
     startAfter: decoded.points === null
