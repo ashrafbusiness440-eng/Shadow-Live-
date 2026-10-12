@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../core/assets/shadow_asset_registry.dart';
+import '../../../shared/widgets/country_selector.dart';
 
 import '../screens/public_profile_screen.dart';
 import '../screens/user_level_screen.dart';
@@ -305,6 +306,16 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                               'ID: ${fancyId.isNotEmpty ? fancyId : publicId}',
                               textDirection: TextDirection.ltr,
                               style: const TextStyle(color: Colors.white54),
+                            ),
+                            ShadowProfileCountryFlag(
+                              location: (data['location'] ??
+                                      data['country'] ??
+                                      '')
+                                  .toString(),
+                              fontSize: 19,
+                              padding: const EdgeInsetsDirectional.only(
+                                start: 6,
+                              ),
                             ),
                             const SizedBox(width: 3),
                             IconButton(
