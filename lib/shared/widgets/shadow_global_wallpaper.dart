@@ -10,10 +10,16 @@ class ShadowGlobalWallpaper extends StatefulWidget {
     super.key,
     required this.child,
     this.resolveUrl,
+    this.assetKey = ShadowAssetKeys.globalWallpaper,
+    this.bundledAsset = ShadowAssetKeys.globalWallpaperBundledPath,
+    this.scrimColor = const Color(0x2205060D),
   });
 
   final Widget child;
   final Future<Uri?> Function()? resolveUrl;
+  final String assetKey;
+  final String bundledAsset;
+  final Color scrimColor;
 
   @override
   State<ShadowGlobalWallpaper> createState() => _ShadowGlobalWallpaperState();
@@ -35,7 +41,7 @@ class _ShadowGlobalWallpaperState extends State<ShadowGlobalWallpaper>
   Future<Uri?> _resolve({bool refresh = false}) async {
     try {
       return await (widget.resolveUrl?.call() ??
-          ShadowAssetRegistry.remoteUrl(ShadowAssetKeys.globalWallpaper,
+          ShadowAssetRegistry.remoteUrl(widget.assetKey,
               refresh: refresh));
     } catch (_) {
       // Network and registry outages must not hide the bundled wallpaper.
@@ -51,7 +57,9 @@ class _ShadowGlobalWallpaperState extends State<ShadowGlobalWallpaper>
   @override
   void didUpdateWidget(covariant ShadowGlobalWallpaper oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.resolveUrl != widget.resolveUrl) {
+    if (oldWidget.resolveUrl != widget.resolveUrl ||
+        oldWidget.assetKey != widget.assetKey ||
+        oldWidget.bundledAsset != widget.bundledAsset) {
       setState(() => _reload(refresh: true));
     }
   }
@@ -73,7 +81,7 @@ class _ShadowGlobalWallpaperState extends State<ShadowGlobalWallpaper>
   }
 
   Widget _bundledImage() => Image.asset(
-        ShadowAssetKeys.globalWallpaperBundledPath,
+        widget.bundledAsset,
         fit: BoxFit.cover,
         filterQuality: FilterQuality.low,
         errorBuilder: (_, __, ___) =>
@@ -105,9 +113,9 @@ class _ShadowGlobalWallpaperState extends State<ShadowGlobalWallpaper>
           ),
         ),
         // Wallpaper must remain visible; opaque cards retain their own contrast.
-        const Positioned.fill(
+        Positioned.fill(
           child: IgnorePointer(
-            child: ColoredBox(color: Color(0x2205060D)),
+            child: ColoredBox(color: widget.scrimColor),
           ),
         ),
         widget.child,
