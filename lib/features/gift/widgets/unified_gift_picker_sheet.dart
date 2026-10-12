@@ -278,30 +278,12 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
     final gift = _selected;
     if (gift == null || !widget.canSend || _sending) return;
     setState(() => _sending = true);
+    final useGiftBag = _category == 'bag';
+    GiftPickerSendResult? confirmed;
+    // Only the network send belongs to this failure handler. A local UI
+    // update must never turn a confirmed server gift into a "send failed".
     try {
-      final useGiftBag = _category == 'bag';
-      final result = await widget.onSend(gift, _quantity, useGiftBag);
-      if (!mounted) return;
-      if (result.balanceCoins != null) {
-        GiftCatalogService.updateCachedBalance(result.balanceCoins!);
-        _balanceCoins = result.balanceCoins;
-      }
-      _applyWealthDelta(result.wealthDeltaCoins);
-      if (useGiftBag) {
-        final remaining = result.bagQuantityRemaining ??
-            ((_bagQuantities[gift.id] ?? 0) - _quantity).clamp(0, 1 << 31).toInt();
-        GiftCatalogService.updateCachedBagQuantity(gift.id, remaining);
-        _bagQuantities = GiftCatalogService.cachedBagQuantities;
-        if (remaining <= 0) {
-          _selected = null;
-        }
-      }
-      final message = result.message.trim();
-      if (message.isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(message)),
-        );
-      }
+      confirmed = await widget.onSend(gift, _quantity, useGiftBag);
     } on StateError catch (error) {
       if (!mounted) return;
       final failureCode = error.message.toString().trim();
@@ -331,10 +313,12 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
           'حساب المستلم لم يعد متاحاً.',
         'diary_not_found' =>
           'هذه اليومية لم تعد موجودة. حدّث الصفحة وحاول مجدداً.',
+        'gift_confirmation_pending' =>
+          'لم نتأكد من نتيجة الهدية. قد تكون وصلت بالفعل، تحقق من رصيدك قبل إعادة الإرسال.',
         'gift_connection_timeout' =>
-          'لم يصل رد الخادم. تحقّق من رصيدك قبل إعادة الإرسال.',
+          'انتهت مهلة التأكيد، وقد تكون الهدية وصلت. تحقق من رصيدك قبل إعادة الإرسال.',
         'gift_network_unavailable' =>
-          'تعذر الاتصال بالخادم. تأكد من الإنترنت وأعد المحاولة.',
+          'انقطع الاتصال قبل التأكيد. قد تكون الهدية وصلت؛ تحقق من الرصيد أولاً.',
         'gift_auth_failed' =>
           'تعذر تأكيد جلسة حسابك. أعد تسجيل الدخول ثم حاول مجددًا.',
         'not_found' || 'gift_not_found' =>
@@ -366,6 +350,35 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
       }
     } finally {
       if (mounted) setState(() => _sending = false);
+    }
+
+    if (confirmed == null || !mounted) return;
+    try {
+      final result = confirmed;
+      if (result.balanceCoins != null) {
+        GiftCatalogService.updateCachedBalance(result.balanceCoins!);
+        _balanceCoins = result.balanceCoins;
+      }
+      _applyWealthDelta(result.wealthDeltaCoins);
+      if (useGiftBag) {
+        final remaining = result.bagQuantityRemaining ??
+            ((_bagQuantities[gift.id] ?? 0) - _quantity).clamp(0, 1 << 31).toInt();
+        GiftCatalogService.updateCachedBagQuantity(gift.id, remaining);
+        _bagQuantities = GiftCatalogService.cachedBagQuantities;
+        if (remaining <= 0) {
+          _selected = null;
+        }
+      }
+    } catch (_) {
+      // The backend already confirmed sending. Any local balance/level/bag
+      // display issue is non-financial and must not be presented as a failed gift.
+    }
+    if (!mounted) return;
+    final message = confirmed.message.trim();
+    if (message.isNotEmpty) {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text(message)),
+      );
     }
   }
 

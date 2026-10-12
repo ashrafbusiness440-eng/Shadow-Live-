@@ -183,13 +183,20 @@ class _DirectGiftContextState extends State<_DirectGiftContext> {
       }
     } catch (_) {}
 
-    if (response.statusCode != 200 || body['ok'] != true) {
+    if (response.statusCode < 200 || response.statusCode >= 300 || body['ok'] != true) {
       // A definite client-side rejection cannot have charged the account.
       // Keep the key for timeouts and server failures, where commit is unclear.
       if (response.statusCode >= 400 &&
           response.statusCode < 500 &&
-          response.statusCode != 408) {
+          response.statusCode != 408 &&
+          response.statusCode != 409) {
         _clearRetryReservation();
+      }
+      if (response.statusCode >= 500 ||
+          response.statusCode == 408 ||
+          response.statusCode == 409 ||
+          (response.statusCode >= 200 && response.statusCode < 300 && body['code'] == null)) {
+        throw StateError('gift_confirmation_pending');
       }
       throw StateError((body['code'] ?? 'gift_send_failed').toString());
     }
@@ -202,7 +209,13 @@ class _DirectGiftContextState extends State<_DirectGiftContext> {
         (body['paidCost'] as num?)?.toInt() ?? (useGiftBag ? 0 : totalCost);
     final balance = (body['balance'] as num?)?.toInt();
     if (balance != null) GiftCatalogService.updateCachedBalance(balance);
-    widget.onGiftSent?.call(quantity, paidCost);
+    // The financial operation has already succeeded on the server.
+    // A parent card refresh is best-effort, never another send failure.
+    try {
+      widget.onGiftSent?.call(quantity, paidCost);
+    } catch (_) {
+      // The authoritative gift receipt remains valid.
+    }
     return GiftPickerSendResult(
       balanceCoins: balance,
       wealthDeltaCoins: paidCost,
