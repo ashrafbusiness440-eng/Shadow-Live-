@@ -22,9 +22,13 @@ void main() {
     expect(privacy.contains('_mysterious.setEnabled(enabled)'), isTrue);
     expect(privacy.contains('تشغيل الشخص الغامض'), isTrue);
 
-    expect(profile.contains('TabController(length: 4'), isTrue);
-    expect(profile.contains("Tab(text: 'الشخص الغامض')"), isTrue);
-    expect(profile.contains('MysteriousPersonScreen(embedded: true)'), isTrue);
+    // The same authorized Mysterious Person destination is now reached from
+    // the profile's lower account action cards, not the header tab strip.
+    expect(profile.contains('TabController(length: 3'), isTrue);
+    expect(profile.contains("Tab(text: 'الشخص الغامض')"), isFalse);
+    expect(profile.contains("'الشخص الغامض',"), isTrue);
+    expect(profile.contains('const MysteriousPersonScreen()'), isTrue);
+    expect(profile.contains('Navigator.of(context).push('), isTrue);
 
     expect(screen.contains("Key('mysterious-change-id')"), isTrue);
     expect(screen.contains("Key('mysterious-toggle')"), isTrue);
