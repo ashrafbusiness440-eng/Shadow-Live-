@@ -61,7 +61,6 @@ class _RoomListScreenState extends State<RoomListScreen> {
   List<DiscoveryRoom> _favoriteRooms = const [];
   List<DiscoveryRoom> _historyRooms = const [];
 
-  static const _bg = Color(0xFF05060D);
   static const _card = Color(0xFF111321);
   static const _purple = Color(0xFF8A3DFF);
   static const _gold = Color(0xFFFFD54A);
