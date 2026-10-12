@@ -215,19 +215,17 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
                 currentSlice: _sliceFor(summary.wealth.level, 5),
                 previewSlice: _wealthPreviewSlice,
                 onSliceSelected: (index) => setState(() => _wealthPreviewSlice = index),
+                supportEntry: _supportDetailsEntry(
+                  metric: 'wealth',
+                  title: 'تفاصيل دعم الثروة',
+                  subtitle: 'الأشخاص الذين أرسلت لهم هدايا، حسب قيمة الدعم.',
+                ),
                 footer: Column(
                   children: [
                     _wealthPrivilegesForSlice(
                       _wealthPreviewSlice ??
                           _sliceFor(summary.wealth.level, 5),
                       _sliceFor(summary.wealth.level, 5),
-                    ),
-                    const SizedBox(height: 12),
-                    _supportDetailsEntry(
-                      metric: 'wealth',
-                      title: 'تفاصيل دعم الثروة',
-                      subtitle:
-                          'الأشخاص الذين أرسلت لهم هدايا، مرتبين حسب قيمة الدعم.',
                     ),
                   ],
                 ),
@@ -255,6 +253,11 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
                 previewSlice: _attractionPreviewSlice,
                 onSliceSelected: (index) =>
                     setState(() => _attractionPreviewSlice = index),
+                supportEntry: _supportDetailsEntry(
+                  metric: 'attraction',
+                  title: 'تفاصيل دعم الجاذبية',
+                  subtitle: 'الأشخاص الذين أرسلوا لك هدايا، حسب قيمة الدعم.'
+                ),
                 footer: Column(
                   children: [
                     _rankPreview(
@@ -263,13 +266,6 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
                           _sliceFor(summary.attraction.level, 5),
                       currentSlice:
                           _sliceFor(summary.attraction.level, 5),
-                    ),
-                    const SizedBox(height: 12),
-                    _supportDetailsEntry(
-                      metric: 'attraction',
-                      title: 'تفاصيل دعم الجاذبية',
-                      subtitle:
-                          'الأشخاص الذين أرسلوا لك هدايا، مرتبين حسب قيمة الدعم.',
                     ),
                   ],
                 ),
@@ -351,6 +347,7 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
     int? previewSlice,
     ValueChanged<int>? onSliceSelected,
     required Widget footer,
+    Widget? supportEntry,
     required bool canEditVisibility,
     required bool hiddenPreference,
   }) {
@@ -365,6 +362,10 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (supportEntry != null) ...[
+          supportEntry,
+          const SizedBox(height: 14),
+        ],
         Container(
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
@@ -564,40 +565,30 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
     required String subtitle,
   }) {
     return Material(
-      color: const Color(0xFF0C1728),
+      color: const Color(0xFF111B30),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: const BorderSide(color: Colors.white10),
+        borderRadius: BorderRadius.circular(18),
+        side: const BorderSide(color: Color(0x66FFD54A), width: 1),
       ),
       clipBehavior: Clip.antiAlias,
       child: ListTile(
         key: Key('level-support-details-$metric'),
-        leading: const CircleAvatar(
-          backgroundColor: Color(0xFF22163A),
-          child: Icon(
-            Icons.people_alt_rounded,
-            color: Color(0xFFFFD54A),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        leading: Container(
+          width: 46,
+          height: 46,
+          decoration: BoxDecoration(
+            color: const Color(0xFF2B1B43),
+            borderRadius: BorderRadius.circular(14),
           ),
+          child: const Icon(Icons.people_alt_rounded, color: Color(0xFFFFD54A)),
         ),
-        title: Text(
-          title,
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        subtitle: Text(
-          subtitle,
-          style: const TextStyle(
-            color: Colors.white54,
-            fontSize: 11,
-            height: 1.4,
-          ),
-        ),
-        trailing: const Icon(
-          Icons.chevron_left_rounded,
-          color: Colors.white54,
-        ),
+        title: Text(title, style: const TextStyle(
+          color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16,
+        )),
+        subtitle: Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: Colors.white60, fontSize: 11, height: 1.35)),
+        trailing: const Icon(Icons.chevron_left_rounded, color: Color(0xFFFFD54A)),
         onTap: () => _openSupportDetails(metric),
       ),
     );
