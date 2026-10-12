@@ -85,4 +85,54 @@ void main() {
     await tester.tap(find.byKey(const Key('level-badge-2')));
     expect(taps, [0, 2]);
   });
+
+  testWidgets('profile level badge labels and touch targets remain usable', (tester) async {
+    for (final compact in <bool>[false, true]) {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: UserLevelBadges.fromLevels(
+              wealthLevel: 7,
+              attractionLevel: 3,
+              gameLevel: 5,
+              compact: compact,
+              onTap: (_) {},
+            ),
+          ),
+        ),
+      );
+
+      for (final index in <int>[0, 1, 2]) {
+        expect(
+          tester.getSize(find.byKey(Key('level-badge-$index'))).height,
+          greaterThanOrEqualTo(44),
+        );
+      }
+      final wealthText = tester.widget<Text>(find.text('الثروة LV7'));
+      expect(wealthText.semanticsLabel, 'الثروة، المستوى 7');
+    }
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: UserLevelBadges.fromLevels(
+            wealthLevel: 7,
+            attractionLevel: 0,
+            gameLevel: 5,
+            micro: true,
+            onTap: (_) {},
+          ),
+        ),
+      ),
+    );
+    expect(
+      tester.widget<Text>(find.text('LV7')).semanticsLabel,
+      'الثروة، المستوى 7',
+    );
+    expect(
+      tester.getSize(find.byKey(const Key('level-badge-0'))).height,
+      lessThan(44),
+    );
+  });
+
 }

@@ -77,6 +77,7 @@ class UserLevelBadges extends StatelessWidget {
             onTap: () => onTap(item.tab),
             borderRadius: BorderRadius.circular(16),
             child: Container(
+              constraints: BoxConstraints(minHeight: micro ? 0 : 44),
               padding: EdgeInsets.symmetric(
                 horizontal: micro ? 6 : (compact ? 8 : 10),
                 vertical: micro ? 3 : (compact ? 5 : 7),
@@ -105,6 +106,7 @@ class UserLevelBadges extends StatelessWidget {
                   Text(
                     micro ? 'LV${item.level}' : '${item.label} LV${item.level}',
                     textDirection: TextDirection.rtl,
+                    semanticsLabel: '${item.label}، المستوى ${item.level}',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: micro ? 9 : (compact ? 10.5 : 12),
