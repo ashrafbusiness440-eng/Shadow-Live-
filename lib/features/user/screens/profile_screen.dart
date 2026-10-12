@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../services/navigation_service.dart';
+import '../../../shared/widgets/country_selector.dart';
 import '../../../shared/widgets/custom_button.dart';
 import '../../../shared/widgets/loading_indicator.dart';
 import '../../../utils/compact_number.dart';
@@ -599,14 +600,10 @@ class _ProfileScreenState extends State<ProfileScreen>
                   ),
                 ),
               ),
-              if (location.isNotEmpty)
-                Text(
-                  location,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 12,
-                  ),
-                ),
+              ShadowProfileCountryFlag(
+                location: location,
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+              ),
               if (gender == 'ذكر' || gender == 'أنثى')
                 Text(
                   gender == 'ذكر' ? '♂' : '♀',
