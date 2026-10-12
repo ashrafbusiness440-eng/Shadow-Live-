@@ -46,6 +46,11 @@ abstract final class ShadowAssetKeys {
   static const chatWallpaperBundledPath =
       'assets/images/system/shadow_live_chat_wallpaper.png';
 
+  // Bottom tab bar presentation only, shared across all six main tabs.
+  static const bottomNavigationBackground = 'app.navigation.bottomBar';
+  static const bottomNavigationBackgroundBundledPath =
+      'assets/images/system/shadow_live_bottom_bar_background.png';
+
   static const authLoginHeader = 'auth.login.header';
   static const verifiedBadge = 'badge.verified';
   static const officialBadge = 'badge.official';
