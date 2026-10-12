@@ -23,6 +23,16 @@ void main() {
     expect(screen.contains('showQuickProfileSheet('), isTrue);
     expect(screen.contains('showMysteriousIdentitySheet('), isTrue);
     expect(screen.contains('Timer.periodic'), isFalse);
+    // The sheet keeps a single on-demand request and ignores rapid retries.
+    expect(screen.contains('bool _requestInFlight = false;'), isTrue);
+    expect(screen.contains('if (_requestInFlight) return;'), isTrue);
+    expect(screen.contains('finally {\n      _requestInFlight = false;'), isTrue);
+    expect(screen.contains("Key('level-support-error-state')"), isTrue);
+    expect(screen.contains("Key('level-support-empty-state')"), isTrue);
+    expect(screen.contains("error.contains('مخفية')"), isTrue);
+    expect(screen.contains("error.contains('تسجيل الدخول')"), isTrue);
+    expect(screen.contains('onRetry: accessError ? null'), isTrue);
+    expect(screen.contains('heightFactor: .76'), isTrue);
     expect(screen.contains('.snapshots()'), isFalse);
   });
 }

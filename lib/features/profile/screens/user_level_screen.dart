@@ -611,7 +611,7 @@ class _UserLevelScreenState extends State<UserLevelScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
       ),
       builder: (_) => FractionallySizedBox(
-        heightFactor: .84,
+        heightFactor: .76,
         child: _UserLevelSupportSheet(
           targetUid: targetUid,
           metric: metric,
@@ -1177,6 +1177,7 @@ class _UserLevelSupportSheetState extends State<_UserLevelSupportSheet> {
   final List<UserLevelSupportItem> _items = <UserLevelSupportItem>[];
   bool _loading = true;
   bool _loadingMore = false;
+  bool _requestInFlight = false;
   String? _nextCursor;
   String? _error;
 
@@ -1195,13 +1196,16 @@ class _UserLevelSupportSheetState extends State<_UserLevelSupportSheet> {
   }
 
   Future<void> _load({required bool reset}) async {
+    // Do not issue duplicate reads when users tap retry or refresh rapidly.
+    if (_requestInFlight) return;
+    if (!reset && (_loadingMore || _nextCursor == null)) return;
+    _requestInFlight = true;
     if (reset) {
       setState(() {
         _loading = true;
         _error = null;
       });
     } else {
-      if (_loadingMore || _nextCursor == null) return;
       setState(() => _loadingMore = true);
     }
 
@@ -1233,6 +1237,8 @@ class _UserLevelSupportSheetState extends State<_UserLevelSupportSheet> {
                     ? 'تعذر متابعة القائمة. أعد تحميلها من البداية.'
                     : 'تعذر جلب قائمة الدعم. تأكد من اتصالك ثم أعد المحاولة.';
       });
+    } finally {
+      _requestInFlight = false;
     }
   }
 
@@ -1317,39 +1323,107 @@ class _UserLevelSupportSheetState extends State<_UserLevelSupportSheet> {
     );
   }
 
-  Widget _body() {
-    if (_loading && _items.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_error != null && _items.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                _error!,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white60),
-              ),
-              const SizedBox(height: 12),
-              FilledButton.icon(
-                onPressed: () => _load(reset: true),
-                icon: const Icon(Icons.refresh_rounded),
-                label: const Text('إعادة المحاولة'),
-              ),
-            ],
+  Widget _supportStateCard({
+    required Key key,
+    required IconData icon,
+    required String title,
+    required String message,
+    VoidCallback? onRetry,
+  }) {
+    return Align(
+      alignment: Alignment.topCenter,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 28, 20, 20),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 440),
+          child: Container(
+            key: key,
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 26),
+            decoration: BoxDecoration(
+              color: const Color(0xFF10182A),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: const Color(0x4DFFD54A)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 58,
+                  height: 58,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF291A40),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Icon(icon, size: 29, color: const Color(0xFFFFD54A)),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white60,
+                    fontSize: 12,
+                    height: 1.5,
+                  ),
+                ),
+                if (onRetry != null) ...[
+                  const SizedBox(height: 18),
+                  FilledButton.icon(
+                    onPressed: onRetry,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFFFD54A),
+                      foregroundColor: const Color(0xFF17121F),
+                      minimumSize: const Size(160, 44),
+                    ),
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('إعادة المحاولة'),
+                  ),
+                ],
+              ],
+            ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _body() {
+    if (_loading && _items.isEmpty) {
+      return const Center(
+        child: CircularProgressIndicator(color: Color(0xFFFFD54A)),
+      );
+    }
+    if (_error != null && _items.isEmpty) {
+      final error = _error!;
+      final accessError =
+          error.contains('مخفية') || error.contains('تسجيل الدخول');
+      return _supportStateCard(
+        key: const Key('level-support-error-state'),
+        icon: accessError ? Icons.lock_outline_rounded : Icons.wifi_off_rounded,
+        title: accessError ? 'هذه التفاصيل غير متاحة' : 'تعذر عرض تفاصيل الدعم',
+        message: error,
+        onRetry: accessError ? null : () => _load(reset: true),
       );
     }
     if (_items.isEmpty) {
-      return const Center(
-        child: Text(
-          'لا توجد بيانات دعم حتى الآن.',
-          style: TextStyle(color: Colors.white54),
-        ),
+      return _supportStateCard(
+        key: const Key('level-support-empty-state'),
+        icon: Icons.volunteer_activism_rounded,
+        title: 'لا توجد بيانات دعم حتى الآن',
+        message: _isWealth
+            ? 'ستظهر هنا الحسابات التي أرسلت لها هدايا تُحتسب في نقاط الثروة.'
+            : 'ستظهر هنا الحسابات التي أرسلت لك هدايا تُحتسب في نقاط الجاذبية.',
       );
     }
 
