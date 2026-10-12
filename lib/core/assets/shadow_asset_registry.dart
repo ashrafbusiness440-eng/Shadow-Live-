@@ -41,6 +41,11 @@ abstract final class ShadowAssetKeys {
   static const globalWallpaperBundledPath =
       'assets/images/system/shadow_live_global_wallpaper.webp';
 
+  // Private DM conversation canvas; this must never replace room imagery.
+  static const chatWallpaper = 'app.background.chat';
+  static const chatWallpaperBundledPath =
+      'assets/images/system/shadow_live_chat_wallpaper.png';
+
   static const authLoginHeader = 'auth.login.header';
   static const verifiedBadge = 'badge.verified';
   static const officialBadge = 'badge.official';
