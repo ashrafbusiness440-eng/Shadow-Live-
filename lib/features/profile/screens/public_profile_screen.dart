@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../../../shared/widgets/country_selector.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -617,6 +618,14 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
                 'ID: ${fancyId.isNotEmpty ? fancyId : publicId}',
                 textDirection: TextDirection.ltr,
                 style: const TextStyle(color: Colors.white60),
+              ),
+              ShadowProfileCountryFlag(
+                location: (profile['location'] ??
+                        profile['country'] ??
+                        '')
+                    .toString(),
+                fontSize: 20,
+                padding: const EdgeInsetsDirectional.only(start: 6),
               ),
               const SizedBox(width: 4),
               IconButton(
