@@ -85,6 +85,33 @@ void main() {
     expect(find.text('خصم الخمول محسوب'), findsOneWidget);
     expect(find.text('دعم اللعبة'), findsOneWidget);
   });
+  testWidgets('wealth and attraction support details stay above level cards',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: UserLevelScreen(loadSummary: () async => summary),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final wealth = find.byKey(const Key('level-support-details-wealth'));
+    final wealthPreview = find.byKey(const Key('level-preview-next-wealth'));
+    expect(wealth, findsOneWidget);
+    expect(tester.getTopLeft(wealth).dy,
+        lessThan(tester.getTopLeft(wealthPreview).dy));
+
+    await tester.tap(find.text('الجاذبية'));
+    await tester.pumpAndSettle();
+
+    final attraction =
+        find.byKey(const Key('level-support-details-attraction'));
+    final attractionPreview =
+        find.byKey(const Key('level-preview-next-attraction'));
+    expect(attraction, findsOneWidget);
+    expect(tester.getTopLeft(attraction).dy,
+        lessThan(tester.getTopLeft(attractionPreview).dy));
+  });
+
   testWidgets('wealth allows previewing locked cosmetic tiers', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -311,7 +338,12 @@ void hiddenLevelStage07Tests(UserLevelSummary baseSummary) {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('level-visibility-wealth')));
+    // Support details now appear at the top; scroll to the existing
+    // visibility setting rather than tapping an offscreen test widget.
+    final visibilityToggle = find.byKey(const Key('level-visibility-wealth'));
+    await tester.ensureVisible(visibilityToggle);
+    await tester.pumpAndSettle();
+    await tester.tap(visibilityToggle);
     await tester.pumpAndSettle();
 
     expect(savedWealth, isTrue);
