@@ -1715,15 +1715,18 @@ export async function filterDiscoveryPeople(db, viewerUid, body) {
     `users/${id}`,
     `user_blocks/${viewerUid}/items/${id}`,
     `user_blocks/${id}/items/${viewerUid}`,
+    `follows/${viewerUid}__${id}`,
   ]);
-  // At most 40 documents, in one existing Firestore batchGet.
+  // At most 50 documents, in one existing Firestore batchGet.
   const results = await db.getMany(paths);
   const allowedIds = [];
   for (let i = 0; i < ids.length; i++) {
-    const [publicProfile, user, outgoingBlock, incomingBlock] =
-      results.slice(i * 4, i * 4 + 4);
+    const [publicProfile, user, outgoingBlock, incomingBlock, outgoingFollow] =
+      results.slice(i * 5, i * 5 + 5);
+    // Suggestions must exclude everyone the viewer already follows.
     if (!publicProfile?.exists || !user?.exists ||
-        outgoingBlock?.exists || incomingBlock?.exists) continue;
+        outgoingBlock?.exists || incomingBlock?.exists ||
+        outgoingFollow?.exists) continue;
     const profile = publicProfile.data || {};
     const account = user.data || {};
     const restricted = (value) =>
