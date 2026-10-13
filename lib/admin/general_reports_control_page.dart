@@ -19,6 +19,11 @@ String generalReportErrorMessage(Object error) {
     'invalid_idempotency_key' => 'تعذّر تسجيل العملية. أعد المحاولة.',
     'invalid_report_type' => 'اختر نوع بلاغ صحيح.',
     'invalid_cursor' => 'تعذّر عرض هذه الصفحة. ارجع للصفحة الأولى.',
+    'invalid_account_action' => 'تحقق من الإجراء وسبب القرار.',
+    'unverified_account_action' => 'تعذر تأكيد تنفيذ العقوبة؛ حدّث البلاغ.',
+    'owner_protected' => 'حساب المالك محمي ولا يمكن حظره أو تعليقه.',
+    'not_found' => 'الحساب المبلّغ عليه غير موجود.',
+    'invalid_suspend_duration' => 'مدة التعليق غير صحيحة.',
     _ => 'تعذّر تنفيذ الطلب. تحقق من الاتصال وأعد المحاولة.',
   };
 }
@@ -101,6 +106,18 @@ class GeneralReportsService {
     if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
   });
 
+  static Future<void> applyAccountAction(
+    String reportId, String action, String reason, int durationMinutes,
+  ) async {
+    await _post('applyAccountAction', <String, dynamic>{
+      'reportId': reportId,
+      'accountAction': action,
+      'reason': reason,
+      if (action == 'suspend') 'durationMinutes': durationMinutes,
+      'idempotencyKey': 'gr_action_${DateTime.now().microsecondsSinceEpoch}',
+    });
+  }
+
   static Future<void> review(String reportId, String status, String reason) async {
     // Never append a potentially long report ID to the idempotency key.
     final key = 'grctl_' + DateTime.now().microsecondsSinceEpoch.toString();
@@ -124,6 +141,8 @@ class GeneralReportsControlPage extends StatefulWidget {
 class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
   bool _loading = false;
   bool _canReview = false;
+  bool _canSuspend = false;
+  bool _canBan = false;
   bool _capped = false;
   String? _error;
   List<GeneralReportItem> _items = [];
@@ -153,6 +172,8 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
       setState(() {
         _items = items;
         _canReview = result['canReview'] == true;
+        _canSuspend = result['canSuspend'] == true;
+        _canBan = result['canBan'] == true;
         _capped = result['capped'] == true;
       });
     } catch (error) {
@@ -226,6 +247,97 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text(
           'تم تحديث البلاغ وتسجيل إشعار لصاحب البلاغ.',
+        )),
+      );
+      await _load();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(generalReportErrorMessage(error))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy.remove(item.id));
+    }
+  }
+
+  Future<void> _takeAccountAction(
+    GeneralReportItem item, String action,
+  ) async {
+    if (_busy.contains(item.id) || item.targetUid.isEmpty ||
+        item.status != 'under_review') return;
+    if (action == 'suspend' && !_canSuspend ||
+        action == 'ban' && !_canBan) return;
+    final reason = TextEditingController();
+    var minutes = 1440;
+    final confirmed = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: Text(action == 'suspend'
+              ? 'تعليق الحساب المبلّغ عليه' : 'حظر الحساب المبلّغ عليه'),
+          content: SizedBox(
+            width: 400,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'سيتم تنفيذ العقوبة فعلًا، ولن يصلك تأكيد حتى ينجح الخادم. '
+                  'عندها سيتلقى صاحب البلاغ إشعارًا بنتيجة المراجعة.',
+                ),
+                if (action == 'suspend')
+                  DropdownButtonFormField<int>(
+                    initialValue: minutes,
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: 'مدة التعليق'),
+                    items: const [
+                      DropdownMenuItem(value: 60, child: Text('ساعة')),
+                      DropdownMenuItem(value: 1440, child: Text('يوم')),
+                      DropdownMenuItem(value: 10080, child: Text('أسبوع')),
+                      DropdownMenuItem(value: 43200, child: Text('30 يومًا')),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) update(() => minutes = value);
+                    },
+                  ),
+                TextField(
+                  controller: reason,
+                  maxLength: 160,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'سبب إجراء الحساب — مطلوب',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (reason.text.trim().length >= 3) {
+                  Navigator.pop(dialogContext, reason.text.trim());
+                }
+              },
+              child: const Text('تأكيد التنفيذ'),
+            ),
+          ],
+        ),
+      ),
+    );
+    reason.dispose();
+    if (!mounted || confirmed == null) return;
+    setState(() => _busy.add(item.id));
+    try {
+      await GeneralReportsService.applyAccountAction(
+        item.id, action, confirmed, minutes);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(
+          'تم تنفيذ الإجراء وتسجيل إشعار لصاحب البلاغ.',
         )),
       );
       await _load();
@@ -372,11 +484,27 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
                           ? null : () => _review(item, 'rejected'),
                       child: const Text('رفض البلاغ'),
                     ),
+                  if (inReview && item.targetUid.isNotEmpty &&
+                      _canSuspend)
+                    FilledButton.icon(
+                      onPressed: _busy.contains(item.id)
+                          ? null : () => _takeAccountAction(item, 'suspend'),
+                      icon: const Icon(Icons.pause_circle_outline),
+                      label: const Text('تعليق الحساب'),
+                    ),
+                  if (inReview && item.targetUid.isNotEmpty &&
+                      _canBan)
+                    OutlinedButton.icon(
+                      onPressed: _busy.contains(item.id)
+                          ? null : () => _takeAccountAction(item, 'ban'),
+                      icon: const Icon(Icons.block_rounded),
+                      label: const Text('حظر الحساب'),
+                    ),
                   if (inReview)
-                    FilledButton(
+                    TextButton(
                       onPressed: _busy.contains(item.id)
                           ? null : () => _review(item, 'actioned'),
-                      child: const Text('تسجيل إجراء منفّذ'),
+                      child: const Text('توثيق إجراء نُفّذ سابقًا'),
                     ),
                   if (inReview || item.status == 'actioned')
                     OutlinedButton(
