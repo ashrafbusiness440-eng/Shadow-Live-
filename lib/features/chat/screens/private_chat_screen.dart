@@ -117,6 +117,9 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
         return;
       }
       switch (body['code']) {
+        case 'content_blocked':
+          _snack('هذه الرسالة تحتوي على كلمات غير مسموح بإرسالها.');
+          break;
         case 'message_limit_reached':
           _snack('وصلت للحد: 3 رسائل غير مُجابة حتى تصبح المتابعة متبادلة.');
           break;
