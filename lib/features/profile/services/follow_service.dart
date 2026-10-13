@@ -69,10 +69,10 @@ class FollowService {
     };
   }
 
-  /// One authenticated server batch for at most ten candidates, checking
-  /// both directions of blocks and current visibility before rendering.
+  /// Only people the viewer does not follow, who pass both block directions
+  /// and current visibility. One server-side batch, max ten candidates.
   /// A failed response throws; callers must not expose unverified profiles.
-  Future<Set<String>> visibleDiscoveryPeopleAmong(
+  Future<Set<String>> eligibleDiscoveryPeopleAmong(
     Iterable<String> targetUids,
   ) async {
     final current = _auth.currentUser;
