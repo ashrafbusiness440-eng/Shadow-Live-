@@ -81,3 +81,19 @@ test("rejects duplicates, arbitrary regex and oversized imports", () => {
   ))), /invalid_filter_config/);
   assert.equal(contentFilterInternals.tokenMatches("لطيف", "طيف").length, 0);
 });
+
+test("punctuation evasion is caught without joining normal spaced words", () => {
+  const p = policy([rule("rule_obfuscation", "حقير")]);
+  assert.equal(applyContentFilter("يا ح.ق.ي.ر", p, "room_chat").text,
+    "يا ***");
+  assert.equal(applyContentFilter("يا ح ق ي ر", p, "room_chat").text,
+    "يا ح ق ي ر");
+});
+
+test("allowlisted phrase does not disable a separate offending occurrence", () => {
+  const p = policy([rule("rule_exceptions", "عبارة", "mask", {
+    exceptions: ["عبارة مفيدة"],
+  })]);
+  assert.equal(applyContentFilter("عبارة مفيدة ثم عبارة", p, "private_chat").text,
+    "عبارة مفيدة ثم ***");
+});
