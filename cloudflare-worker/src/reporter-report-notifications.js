@@ -27,10 +27,12 @@ function reportOutcomeText(status, actionKind, reason) {
       account_suspended: "تم تعليق الحساب المخالف بعد مراجعة بلاغك.",
       account_banned: "تم حظر الحساب المخالف بعد مراجعة بلاغك.",
     };
-    return {
-      title: "تم اتخاذ إجراء بشأن بلاغك",
-      body: actions[actionKind] || "تمت مراجعة بلاغك واتخاذ إجراء مناسب.",
-    };
+    return actionKind && actions[actionKind]
+      ? { title: "تم اتخاذ إجراء بشأن بلاغك", body: actions[actionKind] }
+      : {
+          title: "نتيجة مراجعة بلاغك",
+          body: "اكتملت المراجعة وتم توثيق قرار الإدارة بشأن بلاغك.",
+        };
   }
   if (status === "closed") {
     return {
