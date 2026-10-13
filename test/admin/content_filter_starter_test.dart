@@ -41,6 +41,9 @@ void main() {
     expect(control.contains(" 'enabled': false,"), isTrue);
     expect(control.contains('راجِع'), isFalse);
     expect(control.contains('إضافة للمراجعة'), isTrue);
+    expect(control.contains('المفعّلة فقط'), isTrue);
+    expect(control.contains('المتوقفة فقط'), isTrue);
+    expect(control.contains('كل التصنيفات'), isTrue);
     expect(control.contains('حفظ التغييرات'), isTrue);
   });
 }
