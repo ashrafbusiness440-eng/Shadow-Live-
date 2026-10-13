@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:file_picker/file_picker.dart';
+import 'content_filter_import.dart';
 
 import 'control_api_endpoints.dart';
 import 'control_firebase.dart';
@@ -398,8 +400,11 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
     );
     input.dispose();
     if (accepted == null || !mounted) return;
-    final words = accepted.split(RegExp(r'[\r\n]+'))
-        .map((v) => v.trim())
+    _addUnreviewedWords(accepted.split(RegExp(r'[\r\n]+')));
+  }
+
+  void _addUnreviewedWords(Iterable<String> raw) {
+    final words = raw.map((v) => v.trim())
         .where((v) => v.length >= 2 && v.length <= 80)
         .toSet();
     final known = _rules.map((e) => '${e['pattern']}'.toLowerCase()).toSet();
@@ -420,6 +425,43 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
       }
       _message = 'أُضيفت ${additions.length} كلمة غير مفعّلة. راجعها ثم احفظ.';
     });
+  }
+
+  Future<void> _importFile() async {
+    if (_rules.length >= 300 || _busy) return;
+    try {
+      final picked = await FilePicker.platform.pickFiles(
+        type: FileType.custom, allowedExtensions: const ['txt', 'csv'],
+        withData: true, allowMultiple: false,
+      );
+      if (picked == null || picked.files.isEmpty || !mounted) return;
+      final file = picked.files.single;
+      if (file.bytes == null || file.size > 64 * 1024) {
+        setState(() => _message = 'الملف كبير أو تعذر فتحه. اختر ملفًا أصغر من 64 كيلوبايت.');
+        return;
+      }
+      final words = parseImportedFilterWords(file.bytes!, fileName: file.name);
+      _addUnreviewedWords(words);
+    } on FormatException {
+      if (mounted) setState(() => _message = 'تعذر قراءة الملف. استخدم قائمة كلمات أو جدولًا محفوظًا بالعربية.');
+    } catch (_) {
+      if (mounted) setState(() => _message = 'تعذر فتح الملف. جرّب نسخه ولصقه بدلًا من ذلك.');
+    }
+  }
+
+  Future<void> _copyBackup() async {
+    final lines = _rules.map((rule) => [
+      '${rule['pattern']}'.replaceAll('"', '""'),
+      '${rule['group']}',
+      '${rule['action']}',
+      rule['enabled'] == true ? 'نعم' : 'لا',
+    ].map((value) => '"$value"').join(',')).join('\n');
+    await Clipboard.setData(ClipboardData(
+      text: '"الكلمة","التصنيف","التصرف","مفعلة"\n$lines',
+    ));
+    if (mounted) {
+      setState(() => _message = 'تم نسخ نسخة من القائمة، يمكنك حفظها في مكان آمن.');
+    }
   }
 
   Future<void> _deleteRule(int index) async {
@@ -566,13 +608,15 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
                               label: const Text('إضافة عدة كلمات'),
                             ),
                             OutlinedButton.icon(
-                              onPressed: _rules.isEmpty
-                                  ? null
-                                  : () => Clipboard.setData(ClipboardData(
-                                      text: _rules.map((rule) =>
-                                        '${rule['pattern']}').join('\n'))),
+                              onPressed: _busy || _rules.length >= 300
+                                  ? null : _importFile,
+                              icon: const Icon(Icons.upload_file_outlined),
+                              label: const Text('إضافة من ملف'),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: _rules.isEmpty ? null : _copyBackup,
                               icon: const Icon(Icons.copy_rounded),
-                              label: const Text('نسخ القائمة'),
+                              label: const Text('نسخ نسخة احتياطية'),
                             ),
                           ],
                         ),
